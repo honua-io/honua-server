@@ -8,30 +8,7 @@ using Microsoft.Net.Http.Headers;
 
 namespace Honua.Infrastructure.Caching;
 
-/// <summary>
-/// Output cache policy that stores the deterministic NON-200 outcomes of a tile request —
-/// <c>204 No Content</c> for a tile the layer has no features in, and
-/// <c>413 Payload Too Large</c> for a tile whose encoded MVT exceeds
-/// <c>Limits:Tiles:MaxTileSize</c>.
-/// </summary>
-/// <remarks>
-/// ASP.NET Core's default output-cache policy stores 200 responses only, so without this hook
-/// every empty or over-budget tile re-runs the full <c>ST_AsMVT</c> encode on every request even
-/// though the answer is a pure function of the cache key (tenant, licence, route, tile matrix,
-/// tile coordinates, query/Accept variants and the enforced byte budget). That is the whole
-/// working set for the two tile responses this policy stores: a sparse layer answers 204 for
-/// nearly every tile, and a tile that still exceeds the byte budget after generalization answers
-/// 413. honua-server#4918 measured the cost of refusing before that generalization — the 2026.1
-/// capacity envelope's 10,000-feature layer encodes a 1,492,055-byte z0 tile in ~1.4 s, which the
-/// server then discarded with a 413 on every one of 22,853 requests. Dense low-zoom tiles now
-/// fit the budget before that refusal; 413 stays cached for the pathological remainder.
-/// <para>
-/// Only the tile policies that already partition their cache key by the enforced byte budget opt
-/// into this, so an entry can never outlive the limit that produced it: raising or lowering
-/// <c>Limits:Tiles:MaxTileSize</c> moves every tile to a different key. Staleness after a data
-/// change is bounded by the same TTL that already governs cached 200 tiles.
-/// </para>
-/// </remarks>
+// Only a policy whose cache key includes the byte budget may store an empty or over-budget tile, so the entry cannot outlive the limit that produced it.
 internal sealed class TileOutcomeOutputCachePolicy : IOutputCachePolicy
 {
     public ValueTask CacheRequestAsync(OutputCacheContext context, CancellationToken cancellationToken)
@@ -73,12 +50,7 @@ internal sealed class TileOutcomeOutputCachePolicy : IOutputCachePolicy
         return ValueTask.CompletedTask;
     }
 
-    /// <summary>
-    /// The GeoServices tile routes carry the over-budget refusal as an Esri error envelope with
-    /// body code 413 over HTTP 200. The shared base policy refuses storage for every error
-    /// envelope (honua-server#4980); this refusal is the one deliberate exception, because it is
-    /// as deterministic for the budget-partitioned key as the OGC routes' real 413.
-    /// </summary>
+    // The GeoServices HTTP 200 envelope whose body code is 413 is the one error envelope stored here, because the cache key already includes the byte budget.
     private static bool IsOverBudgetEnvelope(HttpContext httpContext)
         => httpContext.Response.StatusCode == StatusCodes.Status200OK
             && BypassOutputCacheOnErrorEnvelopePolicy.TryGetErrorEnvelopeCode(httpContext, out var code)

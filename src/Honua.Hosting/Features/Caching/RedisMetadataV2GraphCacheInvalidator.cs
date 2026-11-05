@@ -7,32 +7,13 @@ using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Caching;
 
-/// <summary>
-/// Cluster-wide <see cref="IMetadataV2GraphCacheInvalidator"/> for multi-node deployments. A catalog
-/// write invalidates this node's <see cref="MetadataV2GraphSnapshotCache"/> immediately and publishes
-/// the invalidated environment on a Redis pub/sub channel; every other node subscribes to that channel
-/// and drops its own snapshot, so a metadata write on one node is visible to reads on every node
-/// without waiting out <c>Cache:MetadataGraphTtlSeconds</c>.
-/// </summary>
-/// <remarks>
-/// The channel is scoped by <c>Cache:KeyPrefix</c> (<c>{prefix}metadata:v2:graph:invalidations</c>),
-/// so installations that share one Redis under distinct prefixes never invalidate each other.
-/// Composed only when an <see cref="IConnectionMultiplexer"/> is registered; Redis-off (single-node)
-/// deployments keep the plain in-process invalidator. The TTL remains the correctness backstop for a
-/// lost message (Redis pub/sub is at-most-once) or a publish that fails while Redis is unreachable.
-/// The channel is dedicated rather than shared with the cache-refresh coordinator's
-/// <c>honua:cache:invalidations</c> channel because that channel's payload is a cache key the
-/// coordinator records as pending refresh work.
-/// </remarks>
+// Publication is at-most-once, so the lifetime remains the correctness backstop, and the channel is prefix-scoped so installations that share one Redis do not invalidate each other.
 internal sealed partial class RedisMetadataV2GraphCacheInvalidator : IMetadataV2GraphCacheInvalidator, IHostedService
 {
-    /// <summary>The channel suffix appended to the cache key prefix.</summary>
     internal const string ChannelSuffix = "metadata:v2:graph:invalidations";
 
-    /// <summary>The cache key prefix used when none is configured.</summary>
     internal const string DefaultKeyPrefix = "honua:";
 
-    /// <summary>The environment token that invalidates every environment.</summary>
     internal const string AllEnvironments = "*";
 
     private const char Separator = '\n';
@@ -61,13 +42,8 @@ internal sealed partial class RedisMetadataV2GraphCacheInvalidator : IMetadataV2
         _channel = RedisChannel.Literal(ChannelName);
     }
 
-    /// <summary>Gets the Redis pub/sub channel this node publishes and subscribes on.</summary>
     internal string ChannelName { get; }
 
-    /// <summary>
-    /// Builds the deployment-scoped channel name from the configured cache key prefix.
-    /// </summary>
-    /// <param name="keyPrefix">The configured <c>Cache:KeyPrefix</c>; blank uses the default.</param>
     internal static string BuildChannelName(string? keyPrefix)
     {
         var prefix = string.IsNullOrWhiteSpace(keyPrefix) ? DefaultKeyPrefix : keyPrefix.Trim();
@@ -79,7 +55,6 @@ internal sealed partial class RedisMetadataV2GraphCacheInvalidator : IMetadataV2
         return prefix + ChannelSuffix;
     }
 
-    /// <inheritdoc />
     public void Invalidate(string environment)
     {
         ArgumentNullException.ThrowIfNull(environment);
@@ -87,14 +62,12 @@ internal sealed partial class RedisMetadataV2GraphCacheInvalidator : IMetadataV2
         Publish(environment);
     }
 
-    /// <inheritdoc />
     public void InvalidateAll()
     {
         _cache.InvalidateAll();
         Publish(AllEnvironments);
     }
 
-    /// <inheritdoc />
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         try
@@ -112,7 +85,6 @@ internal sealed partial class RedisMetadataV2GraphCacheInvalidator : IMetadataV2
         }
     }
 
-    /// <inheritdoc />
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         if (_subscriber is not { } subscriber)
@@ -130,12 +102,7 @@ internal sealed partial class RedisMetadataV2GraphCacheInvalidator : IMetadataV2
         }
     }
 
-    /// <summary>
-    /// Applies an invalidation received from the channel. Messages this node published are ignored
-    /// because the local cache was already cleared synchronously by the write.
-    /// </summary>
-    /// <param name="channel">The channel the message arrived on.</param>
-    /// <param name="message">The <c>origin\nenvironment</c> payload.</param>
+    // A message this node published is ignored because the local cache was already cleared.
     internal void OnMessage(RedisChannel channel, RedisValue message)
     {
         try

@@ -8,7 +8,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Security.Admission;
 
-/// <summary>Creates invocation identity only from validated principals or durable server-captured job ownership.</summary>
 internal sealed class AiExecutionContextFactory(IOptions<AiExecutionAdmissionOptions> options)
 {
     private readonly string _deploymentId = options.Value.DeploymentId;

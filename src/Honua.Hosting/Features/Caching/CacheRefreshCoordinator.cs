@@ -10,18 +10,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Caching;
 
-/// <summary>
-/// Coordinates background cache refresh operations with per-key deduplication and bounded concurrency.
-/// </summary>
-/// <remarks>
-/// Uses a channel-backed processing loop to decouple refresh requests from the request path.
-/// Each unique cache key can only have one pending refresh at a time. Concurrent requests
-/// for the same near-expiry key produce a single background refresh. Keys that recently
-/// failed are temporarily backed off to avoid immediate retry storms on hot keys.
-///
-/// NOTE: This implementation uses local state only. For distributed coordination across
-/// multiple instances, use DistributedCacheRefreshCoordinator instead.
-/// </remarks>
 [Obsolete("Use DistributedCacheRefreshCoordinator for production deployments to support horizontal scaling")]
 internal sealed partial class CacheRefreshCoordinator : BackgroundService, ICacheRefreshCoordinator
 {
@@ -63,19 +51,14 @@ internal sealed partial class CacheRefreshCoordinator : BackgroundService, ICach
         });
     }
 
-    /// <inheritdoc />
     public int QueueDepth => _pendingKeys.Count;
 
-    /// <inheritdoc />
     public long SuccessCount => Volatile.Read(ref _successCount);
 
-    /// <inheritdoc />
     public long FailureCount => Volatile.Read(ref _failureCount);
 
-    /// <inheritdoc />
     public long SkippedCount => Volatile.Read(ref _skippedCount);
 
-    /// <inheritdoc />
     public void NotifyInvalidation(string key)
     {
         _retryBackoff.Remove(key);
@@ -90,13 +73,11 @@ internal sealed partial class CacheRefreshCoordinator : BackgroundService, ICach
         _pendingKeys.TryUpdate(key, 1, 2);
     }
 
-    /// <inheritdoc />
     public bool WasInvalidated(string key)
     {
         return _pendingKeys.TryGetValue(key, out byte val) && val == 1;
     }
 
-    /// <inheritdoc />
     public bool TryClaimWriteBack(string key)
     {
         // Atomically transition 0 → 2 (write-claimed). Fails if the key was already
@@ -104,7 +85,6 @@ internal sealed partial class CacheRefreshCoordinator : BackgroundService, ICach
         return _pendingKeys.TryUpdate(key, 2, 0);
     }
 
-    /// <inheritdoc />
     public bool TryEnqueueRefresh(string key, Func<CancellationToken, Task> refreshCallback)
     {
         if (_retryBackoff.IsActive(key))
@@ -136,7 +116,6 @@ internal sealed partial class CacheRefreshCoordinator : BackgroundService, ICach
         return true;
     }
 
-    /// <inheritdoc />
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!_options.BackgroundRefreshEnabled)

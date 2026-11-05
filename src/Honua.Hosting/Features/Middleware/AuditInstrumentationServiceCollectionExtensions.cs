@@ -10,20 +10,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Infrastructure.Middleware;
 
-/// <summary>
-/// DI registration for the middleware-driven audit instrumentation (#507):
-/// the route-to-action resolver consumed by the audit middleware and the shared
-/// edit-pipeline <see cref="IFeatureWriter"/> audit decorator.
-/// </summary>
 public static class AuditInstrumentationServiceCollectionExtensions
 {
-    /// <summary>
-    /// Register the <see cref="IAuditActionResolver"/> used by the audit
-    /// middleware to map matched routes to audit descriptors. Uses
-    /// <c>TryAdd</c> so a host can override the matrix.
-    /// </summary>
-    /// <param name="services">The service collection.</param>
-    /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddHonuaAuditActionResolver(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -32,19 +20,6 @@ public static class AuditInstrumentationServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Wrap the currently-registered <see cref="IFeatureWriter"/> with the
-    /// <see cref="AuditingFeatureWriter"/> so that destructive feature writes
-    /// (deletes and bulk/transactional edits) emit audit events at the shared
-    /// edit-pipeline boundary, covering every protocol adapter uniformly.
-    /// </summary>
-    /// <remarks>
-    /// Call this <i>after</i> the active data provider has registered its
-    /// <see cref="IFeatureWriter"/>. The previously-registered descriptor becomes
-    /// the decorated inner writer. If no writer is registered the call is a no-op.
-    /// </remarks>
-    /// <param name="services">The service collection.</param>
-    /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddAuditingFeatureWriter(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);

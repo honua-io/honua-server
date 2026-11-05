@@ -5,12 +5,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Events.Outbox;
 
-/// <summary>
-/// Validates <see cref="OutboxDispatcherOptions"/> at startup so a misconfigured
-/// dispatcher fails fast instead of silently disabling claim/dispatch behavior.
-/// Pairs with <c>.ValidateOnStart()</c> on the options registration. Mirrors the
-/// in-module pattern established by <see cref="Honua.Infrastructure.Events.FeatureChangeWebhookOptionsValidator"/>.
-/// </summary>
 internal sealed class OutboxDispatcherOptionsValidator : IValidateOptions<OutboxDispatcherOptions>
 {
     public ValidateOptionsResult Validate(string? name, OutboxDispatcherOptions options)

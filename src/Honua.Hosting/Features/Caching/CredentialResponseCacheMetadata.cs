@@ -3,9 +3,7 @@
 
 namespace Honua.Infrastructure.Caching;
 
-/// <summary>
-/// Identifies credential exchanges whose responses must never be stored by clients.
-/// </summary>
+// These responses must never be stored by a client cache.
 internal sealed class CredentialResponseCacheMetadata
 {
     internal static CredentialResponseCacheMetadata Instance { get; } = new();

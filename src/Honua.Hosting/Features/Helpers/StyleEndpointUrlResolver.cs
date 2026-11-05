@@ -8,13 +8,7 @@ using Microsoft.AspNetCore.WebUtilities;
 
 namespace Honua.Infrastructure.Helpers;
 
-/// <summary>
-/// Rewrites root-relative endpoint URLs in a MapLibre style document (<c>sprite</c>,
-/// <c>glyphs</c>, and each source's <c>tiles</c>) to absolute URLs against the public
-/// base URL. TileJSON 3.0.0 §3.2 requires absolute tile endpoints (honua-server#5442);
-/// shared by the canonical <c>/ogc/styles/{styleId}</c> route and the deprecated
-/// <c>/api/styles/{layerId}.json</c> alias so both emit the same document.
-/// </summary>
+// TileJSON requires absolute tile endpoints, and the canonical and deprecated style routes must emit the same document.
 internal static class StyleEndpointUrlResolver
 {
     public static JsonElement Resolve(JsonElement style, string baseUrl, HttpRequest? request = null)

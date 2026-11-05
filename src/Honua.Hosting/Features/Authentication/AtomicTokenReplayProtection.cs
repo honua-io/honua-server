@@ -12,24 +12,12 @@ using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Provides atomic token replay protection using Redis SET NX for multi-replica deployments
-/// or in-memory cache with a process-scoped lock for single-instance deployments.
-///
-/// BH5-022: Replaced the reflection-based IDatabase extraction from RedisCache (which
-/// silently degraded to a non-atomic fallback on cold-start or after package renames) with
-/// direct IConnectionMultiplexer resolution from the DI graph.
-/// </summary>
 internal static class AtomicTokenReplayProtection
 {
     private const string CacheKeyPrefix = "jwt_replay:";
     private static readonly object _memoryLock = new();
     private static readonly HashSet<string> _processedTokens = new();
 
-    /// <summary>
-    /// Atomically checks and marks a JWT token as used to prevent replay attacks.
-    /// Returns true if the token is valid and this is the first use, false if it is a replay.
-    /// </summary>
     public static async Task<bool> TryMarkTokenAsUsedAsync(
         SecurityToken securityToken,
         TokenValidationOptions options,

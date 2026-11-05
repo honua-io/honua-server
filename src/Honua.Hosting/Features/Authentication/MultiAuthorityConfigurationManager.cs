@@ -7,31 +7,7 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// <see cref="IConfigurationManager{T}"/> that loads OIDC discovery metadata from
-/// multiple authorities so a single JwtBearer scheme can validate API tokens issued
-/// by every configured provider. Without this, the scheme's <c>Authority</c> points
-/// at the first provider only and bearer tokens from the remaining providers pass
-/// issuer/audience checks but fail signature validation (IDX10501: signing key not found).
-/// </summary>
-/// <remarks>
-/// <para>
-/// Each authority is backed by its own cached
-/// <see cref="ConfigurationManager{OpenIdConnectConfiguration}"/>, so per-request
-/// merges are in-memory once the metadata has been fetched. Individual authority
-/// failures are tolerated as long as at least one authority resolves; the JwtBearer
-/// handler calls <see cref="RequestRefresh"/> on key-rollover signature failures.
-/// </para>
-/// <para>
-/// The merged document still lists every authority's signing keys, because the
-/// JwtBearer handler copies <see cref="OpenIdConnectConfiguration.SigningKeys"/> onto
-/// <see cref="TokenValidationParameters.IssuerSigningKeys"/>. Signature validation
-/// must not use that union: one provider's key could then sign a token that names
-/// another provider's issuer. <see cref="BindIssuerSigningKeys"/> installs a resolver
-/// that returns only the keys discovered for the token's <c>iss</c>
-/// (honua-server#6165).
-/// </para>
-/// </remarks>
+// Signature validation uses only the keys for the token issuer; a merged key union would let one provider sign a token that names another issuer.
 internal sealed class MultiAuthorityConfigurationManager : IConfigurationManager<OpenIdConnectConfiguration>
 {
     private readonly (string Authority, ConfigurationManager<OpenIdConnectConfiguration> Manager)[] _inner;
@@ -39,11 +15,6 @@ internal sealed class MultiAuthorityConfigurationManager : IConfigurationManager
     private volatile IReadOnlyDictionary<string, IReadOnlyList<SecurityKey>> _keysByIssuer =
         new Dictionary<string, IReadOnlyList<SecurityKey>>(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="MultiAuthorityConfigurationManager"/> class.
-    /// </summary>
-    /// <param name="authorities">The OIDC authorities to merge metadata from.</param>
-    /// <param name="requireHttps">Whether metadata retrieval requires HTTPS.</param>
     public MultiAuthorityConfigurationManager(IReadOnlyCollection<string> authorities, bool requireHttps)
     {
         ArgumentNullException.ThrowIfNull(authorities);
@@ -59,12 +30,6 @@ internal sealed class MultiAuthorityConfigurationManager : IConfigurationManager
             .ToArray();
     }
 
-    /// <summary>
-    /// Initializes a manager over discovery documents that have already been fetched.
-    /// Used by tests so two in-memory authorities can prove issuer-bound key selection
-    /// without contacting a network IdP.
-    /// </summary>
-    /// <param name="seeded">Authority URL and its discovery document, in provider order.</param>
     internal MultiAuthorityConfigurationManager(
         IReadOnlyList<(string Authority, OpenIdConnectConfiguration Configuration)> seeded)
     {
@@ -73,7 +38,6 @@ internal sealed class MultiAuthorityConfigurationManager : IConfigurationManager
         _inner = [];
     }
 
-    /// <inheritdoc />
     public async Task<OpenIdConnectConfiguration> GetConfigurationAsync(CancellationToken cancel)
     {
         if (_seeded is not null)
@@ -111,12 +75,6 @@ internal sealed class MultiAuthorityConfigurationManager : IConfigurationManager
         return Merge(sources);
     }
 
-    /// <summary>
-    /// Restricts signature validation to the keys of the authority whose issuer the
-    /// token names. A null resolver result would fall back to the merged key union,
-    /// so an unknown issuer resolves to an empty set instead.
-    /// </summary>
-    /// <param name="parameters">The JwtBearer token validation parameters to bind.</param>
     internal void BindIssuerSigningKeys(TokenValidationParameters parameters)
     {
         ArgumentNullException.ThrowIfNull(parameters);
@@ -125,11 +83,7 @@ internal sealed class MultiAuthorityConfigurationManager : IConfigurationManager
             ResolveSigningKeys(securityToken?.Issuer);
     }
 
-    /// <summary>
-    /// Returns the signing keys discovered for <paramref name="issuer"/>, or an empty
-    /// set when the issuer is unknown. Never returns null.
-    /// </summary>
-    /// <param name="issuer">The token <c>iss</c> claim.</param>
+    // An unknown issuer returns an empty key set, never null.
     internal IEnumerable<SecurityKey> ResolveSigningKeys(string? issuer)
     {
         if (string.IsNullOrWhiteSpace(issuer))
@@ -148,7 +102,6 @@ internal sealed class MultiAuthorityConfigurationManager : IConfigurationManager
         return map.TryGetValue(withoutSlash, out matched) ? matched : [];
     }
 
-    /// <inheritdoc />
     public void RequestRefresh()
     {
         foreach (var (_, manager) in _inner)

@@ -16,7 +16,6 @@ namespace Honua.Infrastructure.Authentication;
 
 internal sealed record ScopedJobAuthenticationDependencies(IScopedJobTokenIssuer? Issuer = null, IExecutionJobStore? Jobs = null);
 
-/// <summary>Authenticates only the current running custom job's frozen, attenuated capability.</summary>
 internal sealed class ScopedJobTokenAuthenticationHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> options,
     ILoggerFactory logger,

@@ -11,23 +11,7 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Infrastructure.Middleware;
 
-/// <summary>
-/// Resolves the tenant context for the current request and stores it on the request
-/// scope (issue #1144). Does not enforce tenant filtering — that is the responsibility
-/// of downstream feature handlers that read <see cref="ITenantContext"/>.
-/// </summary>
-/// <remarks>
-/// Resolution order:
-///  1. <c>X-Honua-Tenant</c> header — accepted only when the authenticated principal
-///     holds one of the configured multi-tenant admin roles. Header overrides emit a
-///     warning-level audit log entry.
-///  2. The first non-empty claim from <see cref="TenantContextOptions.TenantClaimTypes"/>
-///     on the authenticated principal.
-///  3. The configured <see cref="TenantContextOptions.DefaultTenantId"/> for
-///     anonymous public reads (preserves CITE-compliant unauthenticated OGC behavior).
-///  4. Otherwise the context remains <see cref="TenantContextSource.Anonymous"/> with a
-///     <see langword="null"/> tenant id.
-/// </remarks>
+// A tenant header is accepted only from a configured multi-tenant admin role; everyone else uses a claim, then the anonymous default.
 internal sealed class TenantContextMiddleware(
     RequestDelegate next,
     IOptions<TenantContextOptions> options,

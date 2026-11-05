@@ -7,7 +7,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.MultiTenancy;
 
-/// <summary>Shared ownership boundary for durable operation records.</summary>
 internal static class OperationTenantAuthorization
 {
     public static bool CanAccess(HttpContext context, string? ownerTenantId)

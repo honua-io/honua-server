@@ -13,21 +13,11 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Singleton cache of per-authority <see cref="ConfigurationManager{T}"/> instances used by
-/// <see cref="OidcPortalCredentialVerifier"/>. Caching these singletons means that the
-/// JWKS/metadata discovery result (including the signing keys) is retained across requests
-/// instead of being fetched once per DI scope.
-/// </summary>
 internal sealed class OidcConfigurationManagerCache
 {
     private readonly ConcurrentDictionary<string, ConfigurationManager<OpenIdConnectConfiguration>> _managers =
         new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Returns the shared <see cref="ConfigurationManager{T}"/> for the given
-    /// <paramref name="metadataAddress"/>, creating it on first use.
-    /// </summary>
     public ConfigurationManager<OpenIdConnectConfiguration> GetOrCreate(
         string metadataAddress,
         bool requireHttps)
@@ -40,30 +30,6 @@ internal sealed class OidcConfigurationManagerCache
     }
 }
 
-/// <summary>
-/// OIDC-backed <see cref="IPortalCredentialVerifier"/> (#1370). A Portal named-user
-/// login presents an OIDC token (id/access JWT issued by the operator's IdP) as the
-/// <c>password</c> to <c>/sharing/rest/generateToken</c>; this verifier validates it
-/// against the shared OIDC core (#348) and projects the resulting
-/// <see cref="ClaimsPrincipal"/> onto a <see cref="PortalCredentialPrincipal"/>.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Authentication therefore routes through the same identity pipeline as a direct
-/// OIDC session: the token is validated with
-/// <see cref="OidcTokenValidationParametersFactory"/> (the JwtBearer scheme's
-/// issuer/audience/signing rules) and the claims are normalized by the shared
-/// <see cref="OidcClaimsTransformation"/>. No Portal-local user store is introduced.
-/// </para>
-/// <para>
-/// This avoids the deprecated Resource-Owner-Password-Credentials grant (which most
-/// IdPs disable): the client obtains its token from the IdP via the normal OIDC
-/// flow and relays it through <c>generateToken</c>. The issued portal token then
-/// carries the same <c>PrincipalId</c>/<c>TenantId</c>/<c>Roles</c>, so
-/// <c>AccessPolicyHelpers</c>/<c>IPermissionResolver</c> (#349) reach the identical
-/// RBAC decision.
-/// </para>
-/// </remarks>
 internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
 {
     private const string TenantIdClaimType = "tenant_id";
@@ -76,20 +42,7 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
     private readonly IOidcRuntimeProviderSource? _runtimeProviders;
     private readonly JsonWebTokenHandler _handler = new();
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="OidcPortalCredentialVerifier"/> class.
-    /// </summary>
-    /// <param name="oidcOptions">The OIDC authentication options.</param>
-    /// <param name="claimsTransformation">The shared OIDC claims transformation
-    /// used to normalize provider claims into application claims.</param>
-    /// <param name="configurationManagerCache">Singleton cache of per-authority
-    /// <see cref="ConfigurationManager{T}"/> instances so JWKS metadata is shared
-    /// across request scopes rather than fetched on every credential check.</param>
-    /// <param name="logger">Diagnostics logger.</param>
-    /// <param name="runtimeProviders">
-    /// Admin-registered providers merged into the catalog for this process. Null keeps
-    /// validation on the options-configured providers only.
-    /// </param>
+    // A null catalog validates only the providers named in options, and the singleton cache exists so JWKS is not fetched on every check.
     public OidcPortalCredentialVerifier(
         IOptions<OidcAuthenticationOptions> oidcOptions,
         IClaimsTransformation claimsTransformation,
@@ -106,17 +59,12 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
         _runtimeProviders = runtimeProviders;
     }
 
-    /// <inheritdoc />
     public Task<PortalCredentialPrincipal?> VerifyAsync(
         string username,
         string password,
         CancellationToken cancellationToken)
         => VerifyCoreAsync(username, password, providerKey: null, cancellationToken);
 
-    /// <summary>
-    /// Validates an IdP token against the provider that started the broker flow.
-    /// A token signed by a different configured authority is rejected.
-    /// </summary>
     public Task<PortalCredentialPrincipal?> VerifyForProviderAsync(
         string providerKey,
         string token,

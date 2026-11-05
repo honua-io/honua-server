@@ -10,25 +10,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Infrastructure.Collaboration;
 
-/// <summary>
-/// Registration for collaborative-editing lease enforcement at the shared edit-pipeline
-/// boundary (#4402).
-/// </summary>
 public static class FeatureLockEnforcementServiceCollectionExtensions
 {
-    /// <summary>
-    /// Wraps the currently-registered <see cref="IFeatureWriter"/> with
-    /// <see cref="FeatureLockEnforcingFeatureWriter"/> so no protocol adapter — present or
-    /// future — can write through another editor's lease.
-    /// </summary>
-    /// <remarks>
-    /// Call this <i>after</i> the active data provider has registered its
-    /// <see cref="IFeatureWriter"/>; the previously-registered descriptor becomes the
-    /// decorated inner writer. If no writer is registered the call is a no-op. Mirrors
-    /// <c>AddAuditingFeatureWriter</c>, which decorates the same seam for audit events.
-    /// </remarks>
-    /// <param name="services">The service collection.</param>
-    /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddFeatureLockEnforcingFeatureWriter(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);

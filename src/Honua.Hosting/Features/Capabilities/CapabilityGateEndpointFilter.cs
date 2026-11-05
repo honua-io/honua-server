@@ -7,53 +7,15 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Capabilities;
 
-/// <summary>
-/// Shared endpoint filter that gates a route (or route group) on a single
-/// capability descriptor from the unified capability registry (ADR-0058,
-/// Track T5 / #2341). It reads the gated descriptor id from the
-/// <see cref="CapabilityGateMetadata"/> attached by <c>WithCapabilityGate</c>,
-/// resolves it through <see cref="ICapabilityRegistry"/> with the config-driven
-/// experimental precedence (#2339 / T2), and short-circuits the request when an
-/// Experimental or Preview capability resolves <b>experimental-disabled</b>.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The filter only short-circuits the <see cref="CapabilityReasonCodes.ExperimentalDisabled"/>
-/// outcome — an off-by-default Experimental or Preview capability whose flag is not set. In
-/// that case it returns <c>404 Not Found</c> as <c>application/problem+json</c>
-/// with <c>type: honua:capability-experimental-disabled</c> and a hint to enable
-/// the capability via <c>Capabilities:Experimental:{id}</c>, so a disabled
-/// opt-in surface is indistinguishable from an unmapped route. The stable problem type
-/// and configuration namespace remain experimental-named for wire compatibility.
-/// </para>
-/// <para>
-/// Every other resolution passes through to the endpoint: an enabled capability,
-/// an unregistered id, and — deliberately — the flag-on-but-wrong-edition
-/// (<see cref="CapabilityReasonCodes.LicenseRequired"/>) outcome, which the
-/// existing entitlement gate continues to surface as <c>402 Payment Required</c>.
-/// This filter does not change that path.
-/// </para>
-/// <para>
-/// It mirrors the <c>ETagEndpointFilter</c> registration shape — added via
-/// <c>AddEndpointFilter&lt;T&gt;</c> and activated from DI — so it is applied at
-/// the group level exactly like the other endpoint filters.
-/// </para>
-/// </remarks>
+// Only an experimental-disabled capability returns 404; a wrong-edition result is left for the entitlement gate to return 402.
 internal sealed partial class CapabilityGateEndpointFilter : IEndpointFilter
 {
-    /// <summary>The problem <c>type</c> emitted for an experimental-disabled capability.</summary>
     internal const string ExperimentalDisabledProblemType = "honua:capability-experimental-disabled";
 
     private readonly ICapabilityRegistry _registry;
     private readonly IOptions<CapabilityFlagOptions> _flags;
     private readonly ILogger<CapabilityGateEndpointFilter> _logger;
 
-    /// <summary>
-    /// Creates the capability gate filter.
-    /// </summary>
-    /// <param name="registry">The unified capability registry to resolve against.</param>
-    /// <param name="flags">The config-bound experimental feature-flag switches.</param>
-    /// <param name="logger">The logger instance.</param>
     public CapabilityGateEndpointFilter(
         ICapabilityRegistry registry,
         IOptions<CapabilityFlagOptions> flags,
@@ -64,7 +26,6 @@ internal sealed partial class CapabilityGateEndpointFilter : IEndpointFilter
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <inheritdoc />
     public ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {
         var httpContext = context.HttpContext;

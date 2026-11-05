@@ -10,69 +10,35 @@ using Microsoft.Net.Http.Headers;
 
 namespace Honua.Infrastructure.Middleware;
 
-/// <summary>
-/// Marks an endpoint whose successful response remains open until the client disconnects.
-/// </summary>
-/// <remarks>
-/// Response metadata is not a reliable stream marker: some transports negotiate multiple
-/// representations on one route, and the MCP GET stream intentionally owns its response
-/// contract outside MVC/OpenAPI metadata. Applying this marker lets HEAD execute validation
-/// and capacity checks, then stop the handler as soon as it starts the streaming response.
-/// </remarks>
 public sealed class LongLivedStreamEndpointMetadata
 {
     private LongLivedStreamEndpointMetadata()
     {
     }
 
-    /// <summary>The shared marker instance.</summary>
     public static LongLivedStreamEndpointMetadata Instance { get; } = new();
 }
 
-/// <summary>
-/// Marks an endpoint that can negotiate a WebSocket upgrade from a GET request.
-/// </summary>
 public sealed class WebSocketEndpointMetadata
 {
     private WebSocketEndpointMetadata()
     {
     }
 
-    /// <summary>The shared marker instance.</summary>
     public static WebSocketEndpointMetadata Instance { get; } = new();
 }
 
-/// <summary>
-/// Marks a GET endpoint whose handler has side effects and therefore must not be executed
-/// by the shared HEAD-to-GET fallback.
-/// </summary>
-/// <remarks>
-/// GET routes should normally be safe, but compatibility surfaces can expose a mutating
-/// operation through GET. The declared methods are returned in the synthetic 405 response's
-/// <c>Allow</c> header when HEAD selects the marked GET candidate.
-/// </remarks>
+// A GET whose handler has side effects must not run under the HEAD-to-GET fallback.
 internal sealed class HeadRequestRejectedEndpointMetadata
 {
     private readonly Func<HttpContext, bool> _shouldReject;
 
-    /// <summary>
-    /// Creates metadata for a side-effecting GET endpoint that rejects HEAD.
-    /// </summary>
-    /// <param name="allowedMethods">Methods clients may use for the operation.</param>
     public HeadRequestRejectedEndpointMetadata(IReadOnlyList<string> allowedMethods)
         : this(allowedMethods, static _ => true)
     {
     }
 
-    /// <summary>
-    /// Creates metadata for an endpoint where only selected GET-compatible requests have side
-    /// effects and must reject HEAD.
-    /// </summary>
-    /// <param name="allowedMethods">Methods clients may use for the selected operation.</param>
-    /// <param name="shouldReject">
-    /// A predicate evaluated after routing and before the handler runs. It returns
-    /// <see langword="true"/> when the selected request must reject HEAD.
-    /// </param>
+    // Only the selected GET-compatible operation rejects HEAD; other GETs on the same endpoint still run.
     public HeadRequestRejectedEndpointMetadata(
         IReadOnlyList<string> allowedMethods,
         Func<HttpContext, bool> shouldReject)
@@ -88,10 +54,8 @@ internal sealed class HeadRequestRejectedEndpointMetadata
         _shouldReject = shouldReject;
     }
 
-    /// <summary>Methods advertised in the synthetic 405 response's <c>Allow</c> header.</summary>
     public IReadOnlyList<string> AllowedMethods { get; }
 
-    /// <summary>Returns whether this routed HEAD request must stop before endpoint execution.</summary>
     public bool ShouldReject(HttpContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -99,10 +63,6 @@ internal sealed class HeadRequestRejectedEndpointMetadata
     }
 }
 
-/// <summary>
-/// Marks a hidden routing candidate for an endpoint that originally accepted HEAD but not GET,
-/// so the shared pre-routing HEAD fallback can still select the declared HEAD handler.
-/// </summary>
 public sealed class ExplicitHeadOnlyEndpointMetadata
 {
     public ExplicitHeadOnlyEndpointMetadata(IReadOnlyList<string> declaredMethods)
@@ -111,150 +71,31 @@ public sealed class ExplicitHeadOnlyEndpointMetadata
         DeclaredMethods = [.. declaredMethods];
     }
 
-    /// <summary>The methods declared by the real plugin endpoint.</summary>
     public IReadOnlyList<string> DeclaredMethods { get; }
 }
 
-/// <summary>
-/// Cross-cutting RFC 9110 §9.3.2 support: <c>HEAD</c> is answered wherever <c>GET</c> is,
-/// with the same status code and headers (including <c>Content-Length</c>) but no body.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Bug (client-certification epic #3389): the server mapped <c>HEAD</c> on exactly two
-/// routes (<c>/scenes/*</c> and <c>/api/v1/tiles/pmtiles/*</c>). Every other GET route
-/// answered <c>HEAD</c> with 404 or 405 — <c>/healthz/ready</c>, <c>/ogc/features</c>,
-/// <c>/ogc/features/collections</c>, <c>/wfs?REQUEST=GetCapabilities</c>, <c>/stac</c>,
-/// <c>/api/v1/admin/*</c> — because ASP.NET Core routing never falls back from HEAD to
-/// GET: <c>MapMethods(path, [HttpMethods.Get], …)</c> matches GET only, so a HEAD request
-/// either matches nothing (404) or matches the path but no method (405). That broke real
-/// clients (GDAL <c>/vsicurl</c> and its OAPIF/WFS drivers, <c>requests.head</c>, OWSLib,
-/// link checkers, CDNs, reverse proxies) and it silently stalled the entire client-interop
-/// nightly matrix, whose compose healthcheck probed <c>/healthz/ready</c> with
-/// <c>wget --spider</c> (a real HEAD) and therefore never reported the container healthy.
-/// </para>
-/// <para>
-/// Design — a three-part middleware around routing, implemented once here rather than by
-/// adding <c>HEAD</c> to every <c>MapMethods</c> call site:
-/// </para>
-/// <list type="number">
-/// <item>
-/// <description>
-/// <see cref="HeadRequestRewriteMiddleware"/> runs <em>before</em> routing (installed via
-/// <see cref="HeadRequestStartupFilter"/>, because <see cref="WebApplication"/> inserts its
-/// implicit <c>UseRouting</c> ahead of every middleware registered in <c>Program.cs</c>, and
-/// an <c>IStartupFilter</c> is the only seam that precedes it without moving endpoint
-/// matching after the whole pipeline). It rewrites the request method to <c>GET</c> so the
-/// GET endpoint is selected, and replaces the response body feature with a write-discarding,
-/// byte-counting one. Explicit HEAD-only plugin routes are surfaced as hidden GET candidates;
-/// <see cref="ExplicitHeadEndpointMatcherPolicy"/> gives those candidates precedence only for
-/// requests marked by this rewrite.
-/// </description>
-/// </item>
-/// <item>
-/// <description>
-/// <see cref="HeadRequestMethodRestorationMiddleware"/> runs immediately after routing has
-/// selected the endpoint and restores the method to <c>HEAD</c>, so every cross-cutting
-/// component observes the method the client actually sent: authorization
-/// (<c>AdminApiKeyPermission</c> treats HEAD as a read), tenancy, auditing, rate limiting,
-/// telemetry and request logging.
-/// </description>
-/// </item>
-/// <item>
-/// <description>
-/// <see cref="HeadRequestGetSemanticsMiddleware"/> runs last, immediately before endpoint
-/// execution, and hands the *handler* whichever method it was written for: <c>HEAD</c> when
-/// the matched endpoint advertises HEAD itself (the PMTiles range proxy and the scene
-/// endpoints map <c>["GET", "HEAD"]</c> and short-circuit on it to avoid streaming a
-/// payload), otherwise <c>GET</c>. A compatibility GET that has side effects is marked with
-/// <see cref="HeadRequestRejectedEndpointMetadata"/> and returns 405 without executing.
-/// An ordinary GET-only handler has, by definition, no HEAD code path, and several of them
-/// read the request body whenever the method is not GET
-/// (<c>GeoServicesRequestValueHelpers.TryReadRequestValuesAsync</c>,
-/// <c>FeatureServer/MapServer generateRenderer</c>, the import endpoints); showing them
-/// <c>HEAD</c> would answer 400/415 where GET answers 200. Response-cache decisions
-/// (<c>ResponseCacheUtilities.ShouldCache</c>) are GET-gated the same way, so this is also
-/// what keeps the HEAD response's cache headers identical to the GET's — which is what
-/// RFC 9110's "identical to GET" requires.
-/// </description>
-/// </item>
-/// <item>
-/// <description>
-/// When the endpoint completes, the counted byte total becomes <c>Content-Length</c> unless
-/// the handler set one itself (the PMTiles HEAD branch does) or the response has already
-/// started. Discarding the bytes instead of letting the handler write them is what keeps the
-/// response body empty on hosts that do not suppress it themselves (<c>TestServer</c>);
-/// Kestrel additionally suppresses HEAD bodies at the transport level, since rewriting
-/// <c>HttpRequest.Method</c> only changes the request-feature text and not the parsed
-/// <c>HttpMethod</c> Kestrel uses for that decision.
-/// </description>
-/// </item>
-/// </list>
-/// <para>
-/// Rejected alternative: a startup convention that appends <c>HEAD</c> to every endpoint
-/// whose <c>HttpMethodMetadata</c> contains <c>GET</c>. It preserves <c>Request.Method</c>
-/// naturally, but it has to rebuild every endpoint from every endpoint data source
-/// (health checks, gRPC, static assets, dynamic sources) and, more importantly, it leaves
-/// the body suppression entirely to the server: Kestrel would answer HEAD chunked with no
-/// <c>Content-Length</c> at all for the streamed JSON that most Honua endpoints produce,
-/// and <c>TestServer</c> would return the full body. Clients probe HEAD precisely to learn
-/// <c>Content-Length</c>/<c>Content-Type</c>, so that is the wrong trade.
-/// </para>
-/// <para>
-/// What is intentionally unchanged: genuine 405s (HEAD on a POST-only route still fails
-/// method matching, because the rewritten GET does not match either), 404s for unknown
-/// paths, and the explicit "method not allowed" routes that answer POST/PUT/DELETE/PATCH.
-/// A HEAD request executes an ordinary GET handler in full (its output is discarded), which
-/// makes <c>Content-Length</c> exact. Side-effecting compatibility GETs opt out through
-/// <see cref="HeadRequestRejectedEndpointMetadata"/>; expensive safe handlers can still opt
-/// out by mapping HEAD themselves and short-circuiting, as the PMTiles proxy does.
-/// </para>
-/// <para>
-/// Consequences worth knowing: the request is logged, audited and metered as <c>HEAD</c>, but
-/// the handler and its endpoint filters observe <c>GET</c> unless the endpoint maps HEAD, so
-/// <c>Request.Method</c> is not a reliable HEAD signal inside a GET-only handler — use
-/// <see cref="HeadRequestSupport.WasRewrittenFromHead"/> if a handler ever needs to know.
-/// </para>
-/// </remarks>
+// HEAD is rewritten to GET only so routing can select the GET endpoint, then restored before authorization, and the handler still sees GET unless it maps HEAD because several handlers treat any other method as a body read.
 internal static class HeadRequestSupport
 {
-    /// <summary>
-    /// Marks a request whose method was rewritten from HEAD to GET for endpoint matching.
-    /// An object key cannot collide with the string keys other features put in
-    /// <see cref="HttpContext.Items"/>.
-    /// </summary>
     internal static readonly object RewrittenFromHeadKey = new();
 
     internal static bool WasRewrittenFromHead(HttpContext context)
         => context.Items.ContainsKey(RewrittenFromHeadKey);
 
-    /// <summary>
-    /// A 1xx, 204 or 304 response carries no body and must not gain a synthesized
-    /// <c>Content-Length: 0</c> that the equivalent GET would not have sent.
-    /// </summary>
+    // A 1xx, 204, or 304 response must not gain a Content-Length the equivalent GET would not have sent.
     internal static bool CanCarryContentLength(int statusCode)
         => statusCode is not (>= StatusCodes.Status100Continue and < StatusCodes.Status200OK)
             and not StatusCodes.Status204NoContent
             and not StatusCodes.Status304NotModified;
 
-    /// <summary>The media type that identifies a Server-Sent Events response.</summary>
     internal const string EventStreamContentType = "text/event-stream";
 
-    /// <summary>
-    /// Set when the matched endpoint is a long-lived stream. The equivalent GET never
-    /// completes on its own, so the byte count a bounded HEAD probe observed is the size of
-    /// the preamble rather than of the response, and stamping it as <c>Content-Length</c>
-    /// would advertise a length no GET would ever send.
-    /// </summary>
+    // A long-lived stream's HEAD byte count is only the preamble and must not be advertised as Content-Length.
     internal static readonly object SuppressSynthesizedContentLengthKey = new();
 
     internal static bool SuppressesSynthesizedContentLength(HttpContext context)
         => context.Items.ContainsKey(SuppressSynthesizedContentLengthKey);
 
-    /// <summary>
-    /// Retains the original discarding body feature even when downstream middleware decorates
-    /// <see cref="IHttpResponseBodyFeature"/> (for example, response compression).
-    /// </summary>
     internal static readonly object ResponseBodyFeatureKey = new();
 
     internal static HeadResponseBodyFeature? GetResponseBodyFeature(HttpContext context)
@@ -262,15 +103,6 @@ internal static class HeadRequestSupport
             ? feature as HeadResponseBodyFeature
             : null;
 
-    /// <summary>
-    /// True when the endpoint is explicitly marked as a long-lived stream or declares that it
-    /// produces <c>text/event-stream</c>.
-    /// </summary>
-    /// <remarks>
-    /// The explicit marker covers negotiated routes and transports that do not participate in
-    /// MVC response metadata. The <c>Produces</c> fallback keeps ordinary SSE endpoints bounded
-    /// by construction from the metadata that already documents them in OpenAPI.
-    /// </remarks>
     internal static bool IsLongLivedStreamEndpoint(Endpoint? endpoint)
     {
         var metadata = endpoint?.Metadata;
@@ -292,11 +124,6 @@ internal static class HeadRequestSupport
     }
 }
 
-/// <summary>
-/// Installs <see cref="HeadRequestRewriteMiddleware"/> ahead of the implicit
-/// <c>UseRouting</c> that <see cref="WebApplication"/> adds before any middleware
-/// registered in <c>Program.cs</c>. See <see cref="HeadRequestSupport"/> for the design.
-/// </summary>
 internal sealed class HeadRequestStartupFilter : IStartupFilter
 {
     public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)
@@ -311,11 +138,6 @@ internal sealed class HeadRequestStartupFilter : IStartupFilter
     }
 }
 
-/// <summary>
-/// Pre-routing half of HEAD support: rewrites HEAD to GET so endpoint matching selects the
-/// GET endpoint, discards and counts the response body, and stamps the resulting byte count
-/// as <c>Content-Length</c>. See <see cref="HeadRequestSupport"/>.
-/// </summary>
 internal sealed class HeadRequestRewriteMiddleware(RequestDelegate next)
 {
     private readonly RequestDelegate _next = next ?? throw new ArgumentNullException(nameof(next));
@@ -408,10 +230,6 @@ internal sealed class HeadRequestRewriteMiddleware(RequestDelegate next)
     }
 }
 
-/// <summary>
-/// Selects a hidden explicit-HEAD candidate ahead of the ordinary GET candidate for a request
-/// rewritten from HEAD, while preventing that hidden candidate from accepting a real GET.
-/// </summary>
 internal sealed class ExplicitHeadEndpointMatcherPolicy : MatcherPolicy, IEndpointSelectorPolicy
 {
     public override int Order => 0;
@@ -509,10 +327,6 @@ internal sealed class ExplicitHeadEndpointMatcherPolicy : MatcherPolicy, IEndpoi
     }
 }
 
-/// <summary>
-/// Preserves the transport response feature while exposing logical response-start state to
-/// handlers that write into the suppressed HEAD body.
-/// </summary>
 internal sealed class HeadResponseFeature(IHttpResponseFeature inner) : IHttpResponseFeature
 {
     private bool _logicallyStarted;
@@ -552,10 +366,6 @@ internal sealed class HeadResponseFeature(IHttpResponseFeature inner) : IHttpRes
     internal void MarkStarted() => _logicallyStarted = true;
 }
 
-/// <summary>
-/// Post-routing half of HEAD support: restores <c>HEAD</c> as the request method once the
-/// GET endpoint has been selected. See <see cref="HeadRequestSupport"/>.
-/// </summary>
 internal sealed class HeadRequestMethodRestorationMiddleware(RequestDelegate next)
 {
     private readonly RequestDelegate _next = next ?? throw new ArgumentNullException(nameof(next));
@@ -573,12 +383,6 @@ internal sealed class HeadRequestMethodRestorationMiddleware(RequestDelegate nex
     }
 }
 
-/// <summary>
-/// Final stage of HEAD support: gives the matched endpoint the method its handler was written
-/// for. Endpoints that advertise HEAD keep seeing <c>HEAD</c>; marked side-effecting GETs are
-/// rejected, and every other endpoint sees the <c>GET</c> it maps. See
-/// <see cref="HeadRequestSupport"/>.
-/// </summary>
 internal sealed class HeadRequestGetSemanticsMiddleware(RequestDelegate next)
 {
     private readonly RequestDelegate _next = next ?? throw new ArgumentNullException(nameof(next));
@@ -660,26 +464,7 @@ internal sealed class HeadRequestGetSemanticsMiddleware(RequestDelegate next)
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Contains(expected, StringComparer.OrdinalIgnoreCase));
 
-    /// <summary>
-    /// Runs a long-lived streaming handler only as far as its first response activity, then
-    /// cancels it.
-    /// </summary>
-    /// <remarks>
-    /// A Server-Sent Events handler commits its status code and headers and writes a preamble,
-    /// and only then loops until the client disconnects. Left alone under HEAD that loop never
-    /// ends: the discarding body feature swallows every heartbeat, so the transport response is
-    /// never started and nothing ever aborts the request. <c>HEAD
-    /// /api/v1/realtime/incidents/sse</c> therefore hung until the client timed out, and the
-    /// SensorThings observation stream additionally held one of a bounded number of stream
-    /// sessions open for that whole time — a HEAD probe from a link checker or a CDN could
-    /// exhaust them (review finding on honua-server#3489).
-    ///
-    /// Bounding at the first start, flush, or write rather than skipping the handler outright is
-    /// what keeps HEAD honest: the status code and headers are the ones the handler really produced, so the
-    /// early returns that precede the stream still answer as themselves — 404 for an unknown
-    /// datastream, 503 when no session can be leased, 400 when the client did not negotiate
-    /// SSE — instead of being flattened into a synthetic 200.
-    /// </remarks>
+    // A streaming handler is cancelled at its first response activity so HEAD cannot hold a session until the client times out, while an early 404, 503, or 400 still surfaces.
     private async Task InvokeBoundedStreamAsync(HttpContext context)
     {
         // The equivalent GET is unbounded and sends no Content-Length; the preamble byte count
@@ -755,11 +540,6 @@ internal sealed class HeadRequestGetSemanticsMiddleware(RequestDelegate next)
     }
 }
 
-/// <summary>
-/// Response body feature for a HEAD request: accepts every write, forwards none of them to
-/// the transport, and counts the bytes the equivalent GET would have sent so the middleware
-/// can report an accurate <c>Content-Length</c>.
-/// </summary>
 internal sealed class HeadResponseBodyFeature : IHttpResponseBodyFeature, IDisposable
 {
     private readonly CountingNullStream _stream;
@@ -779,13 +559,6 @@ internal sealed class HeadResponseBodyFeature : IHttpResponseBodyFeature, IDispo
 
     public long BytesWritten => _stream.BytesWritten;
 
-    /// <summary>
-    /// Invoked once, when the handler first starts, flushes, or writes the response. A long-lived
-    /// stream commits its status and headers immediately and only then loops, so that first
-    /// response activity is the point at which a HEAD probe has learned everything the
-    /// equivalent GET would tell it. Flush matters for transports such as MCP that expose the
-    /// open stream before the first notification exists.
-    /// </summary>
     internal Action? FirstResponseActivityCallback
     {
         get => _stream.FirstResponseActivityCallback;
@@ -797,10 +570,7 @@ internal sealed class HeadResponseBodyFeature : IHttpResponseBodyFeature, IDispo
         // Nothing is buffered towards the transport; there is nothing to disable.
     }
 
-    /// <summary>
-    /// Deliberately does not start the real response: headers must stay mutable so the
-    /// middleware can still set <c>Content-Length</c> after the endpoint completes.
-    /// </summary>
+    // The real response is not started here so Content-Length can still be set after the endpoint completes.
     public Task StartAsync(CancellationToken cancellationToken = default)
     {
         _stream.SignalResponseActivity();
@@ -813,9 +583,6 @@ internal sealed class HeadResponseBodyFeature : IHttpResponseBodyFeature, IDispo
         return FinishAsync().AsTask();
     }
 
-    /// <summary>
-    /// Counts what the file transfer would have sent without reading a single byte of it.
-    /// </summary>
     public Task SendFileAsync(string path, long offset, long? count, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(path);
@@ -837,10 +604,6 @@ internal sealed class HeadResponseBodyFeature : IHttpResponseBodyFeature, IDispo
 
     public void Dispose() => _stream.Dispose();
 
-    /// <summary>
-    /// Flushes anything still buffered in the pipe writer into the counter and returns the
-    /// total number of bytes the equivalent GET response would have carried.
-    /// </summary>
     internal async ValueTask<long> FinishAsync()
     {
         if (!_finished)
@@ -878,11 +641,6 @@ internal sealed class HeadResponseBodyFeature : IHttpResponseBodyFeature, IDispo
             set => _firstResponseActivityCallback = value;
         }
 
-        /// <summary>
-        /// Fires the first-response-activity callback exactly once. Callbacks run inline on the
-        /// response thread, so this stays allocation-free and never re-enters after the stream
-        /// has committed its response contract.
-        /// </summary>
         internal void SignalResponseActivity()
         {
             if (_firstResponseActivitySignalled)
@@ -968,11 +726,7 @@ internal sealed class HeadResponseBodyFeature : IHttpResponseBodyFeature, IDispo
 
 internal static class HeadRequestMiddlewareExtensions
 {
-    /// <summary>
-    /// Registers the pre-routing HEAD rewrite. Must be called on the builder's services so
-    /// the startup filter is in place before <see cref="WebApplication"/> builds its
-    /// implicit routing middleware.
-    /// </summary>
+    // Register this on the builder services so the startup filter is in place before implicit routing is built.
     public static IServiceCollection AddHonuaHeadRequestSupport(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -983,10 +737,6 @@ internal static class HeadRequestMiddlewareExtensions
         return services;
     }
 
-    /// <summary>
-    /// Restores the HEAD method after routing has matched the GET endpoint. Register this as
-    /// the first middleware in the application pipeline.
-    /// </summary>
     public static IApplicationBuilder UseHonuaHeadRequestMethod(this IApplicationBuilder app)
     {
         ArgumentNullException.ThrowIfNull(app);
@@ -994,11 +744,6 @@ internal static class HeadRequestMiddlewareExtensions
         return app.UseMiddleware<HeadRequestMethodRestorationMiddleware>();
     }
 
-    /// <summary>
-    /// Presents the selected endpoint's handler with the method it was written for. Register
-    /// this as the LAST middleware in the application pipeline, so everything upstream still
-    /// sees HEAD and only endpoint execution sees the substituted GET.
-    /// </summary>
     public static IApplicationBuilder UseHonuaHeadRequestGetSemantics(this IApplicationBuilder app)
     {
         ArgumentNullException.ThrowIfNull(app);

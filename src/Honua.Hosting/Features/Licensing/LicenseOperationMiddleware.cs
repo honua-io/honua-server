@@ -6,7 +6,6 @@ using Honua.Infrastructure.Models;
 
 namespace Honua.Infrastructure.Licensing;
 
-/// <summary>Enforces the paid deployment license before data reads, exports and mutations.</summary>
 internal sealed class LicenseOperationMiddleware(RequestDelegate next)
 {
     public async Task InvokeAsync(HttpContext context, ILicenseOperationPolicy policy)

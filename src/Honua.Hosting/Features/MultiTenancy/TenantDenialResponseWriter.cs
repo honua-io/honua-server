@@ -11,9 +11,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.MultiTenancy;
 
-/// <summary>
-/// Tenant authorization denial causes that must retain their identity across protocol adapters.
-/// </summary>
 internal enum TenantDenialKind
 {
     AuthenticationRequired,
@@ -22,17 +19,11 @@ internal enum TenantDenialKind
     TenantDeleted,
 }
 
-/// <summary>
-/// Writes tenant authorization failures in the request protocol's native wire contract.
-/// </summary>
 internal static class TenantDenialResponseWriter
 {
     private const string CorrelationHeaderName = "X-Correlation-ID";
     private const int JsonRpcServerError = -32000;
 
-    /// <summary>
-    /// Terminates the request with a protocol-native denial envelope.
-    /// </summary>
     internal static Task WriteAsync(HttpContext context, TenantDenialKind denial)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -79,9 +70,6 @@ internal static class TenantDenialResponseWriter
         return StandardErrorResponseFormatter.WriteErrorAsync(context, errorResponse, options);
     }
 
-    /// <summary>
-    /// Identifies MCP calls that cross the tenant data boundary while preserving tenantless discovery.
-    /// </summary>
     internal static async Task<bool> IsTenantBoundMcpRequestAsync(HttpRequest request)
     {
         if (!IsMcpRequest(request.Path))

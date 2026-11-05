@@ -10,10 +10,8 @@ using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Security.Admission;
 
-/// <summary>Composes shared authoritative AI admission without initializing any ledger at startup.</summary>
 public static class AiExecutionAdmissionRegistration
 {
-    /// <summary>Registers a coordinator and one selected backend alias for both invocation and typed control paths.</summary>
     public static IServiceCollection AddAiExecutionAdmission(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddOptions<AiExecutionAdmissionOptions>()

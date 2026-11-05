@@ -7,9 +7,6 @@ using Microsoft.Extensions.Caching.Distributed;
 
 namespace Honua.Infrastructure.Caching;
 
-/// <summary>
-/// Adapter that implements ICacheManager by wrapping IDistributedCache.
-/// </summary>
 internal sealed class RedisCacheManagerAdapter : ICacheManager
 {
     private readonly IDistributedCache _distributedCache;

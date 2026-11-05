@@ -8,11 +8,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Events.Outbox;
 
-/// <summary>
-/// Surfaces feature-change outbox dispatch state to readiness/health endpoints so
-/// operators see backlog growth and dead-letter accumulation before they become silent
-/// data loss. The dispatcher updates the backing snapshot after each pass.
-/// </summary>
 internal sealed class OutboxHealthCheck : IHealthCheck
 {
     private readonly IOutboxCapabilityProvider _capability;

@@ -3,9 +3,6 @@
 
 namespace Honua.Infrastructure.Caching;
 
-/// <summary>
-/// Prevents client caches from reusing authentication decisions or authenticated data.
-/// </summary>
 internal static class AuthenticationResponseCachePolicy
 {
     // Grants an identity with no real credential (blocked outside the Test
@@ -22,13 +19,7 @@ internal static class AuthenticationResponseCachePolicy
         context.Response.Headers.CacheControl = "no-store";
     }
 
-    /// <summary>
-    /// Signals that this request was authenticated entirely inside an endpoint handler
-    /// (a static bearer/API-key check, for example) without attaching an
-    /// <c>IsAuthenticated</c> identity to <see cref="HttpContext.User"/>. Endpoint-local
-    /// authentication paths must call this so <see cref="Apply"/> still applies no-store
-    /// to the success response.
-    /// </summary>
+    // An endpoint that authenticates inside the handler must call this or its success response can be stored.
     internal static void MarkAuthenticated(HttpContext context)
     {
         context.Items[AuthenticationDecisionKey] = true;

@@ -10,9 +10,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Caching;
 
-/// <summary>
-/// Decorator that adds caching to ILayerStyleCatalog operations.
-/// </summary>
 internal sealed class CachingLayerStyleCatalog : ILayerStyleCatalog
 {
     private const string StyleKeyPrefix = "layer-style:";

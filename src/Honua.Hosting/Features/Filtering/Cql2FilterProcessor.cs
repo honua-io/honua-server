@@ -35,13 +35,6 @@ internal sealed class Cql2FilterProcessor(
         public SqlFragment? SqlFilter { get; init; }
         public FilterExpression? Expression { get; init; }
 
-        /// <summary>
-        /// True when the failure is "this resource does not declare a property the
-        /// filter references" rather than "this filter is invalid". A caller that
-        /// applies one filter to several resources (STAC item search across
-        /// collections) uses this to let the non-matching resource contribute no
-        /// rows instead of failing the whole request (honua-server#3392).
-        /// </summary>
         public bool IsUnknownField { get; init; }
 
         public static ProcessingResult Success(SqlFragment? sqlFilter, FilterExpression? expression = null)
@@ -178,15 +171,6 @@ internal sealed class Cql2FilterProcessor(
                 translationResult.IsUnknownField);
     }
 
-    /// <summary>
-    /// Rewrites STAC core queryable property references (<c>id</c>, <c>collection</c>,
-    /// <c>datetime</c>) and the STAC <c>properties.</c> attribute prefix in a parsed CQL2
-    /// expression to the resource's storage fields, so the shared filter translator can resolve
-    /// them. <c>collection</c> comparisons are evaluated against the target collection id and
-    /// folded to an always-true/always-false predicate (the search is already scoped to the
-    /// target collection). This is STAC-only: <see cref="ProcessFilterAsync"/> is consumed
-    /// exclusively by the STAC search endpoints.
-    /// </summary>
     internal static FilterExpression RewriteStacCoreQueryables(
         FilterExpression expression,
         MetadataV2Resource resource,
@@ -201,14 +185,7 @@ internal sealed class Cql2FilterProcessor(
         return RewriteNode(expression, idFieldName, idFieldIsNumeric, temporalFieldName, collectionId);
     }
 
-    /// <summary>
-    /// Replaces a property that is absent from the current collection, but declared by
-    /// another selected collection, with SQL <c>NULL</c>. Typed predicates that cannot
-    /// accept a null operand collapse to a null Boolean result, while the surrounding
-    /// expression is preserved so the provider evaluates AND/OR/NOT with SQL three-valued
-    /// logic. Properties absent from every selected collection remain references and
-    /// continue through the existing unknown-field error path.
-    /// </summary>
+    // A property missing here but declared by another selected collection becomes SQL NULL so AND, OR, and NOT stay three-valued; a property missing from every collection stays on the unknown-field path.
     internal static FilterExpression ApplyCrossCollectionNullSemantics(
         FilterExpression expression,
         MetadataV2Resource resource,

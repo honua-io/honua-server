@@ -5,51 +5,26 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Infrastructure.Models;
 
-/// <summary>
-/// Represents a GeoServices-compatible API error response
-/// Follows GeoServices REST error response format: { "error": { "code": number, "message": "string", "details": [] } }
-/// </summary>
 public sealed class ApiErrorResponse
 {
-    /// <summary>
-    /// The error details
-    /// </summary>
     [JsonPropertyName("error")]
     public required GeoServicesError Error { get; init; }
 }
 
-/// <summary>
-/// Represents the error details in GeoServices-compatible format
-/// </summary>
 public sealed class GeoServicesError
 {
-    /// <summary>
-    /// Error code number
-    /// </summary>
     [JsonPropertyName("code")]
     public required int Code { get; init; }
 
-    /// <summary>
-    /// Error message text
-    /// </summary>
     [JsonPropertyName("message")]
     public required string Message { get; init; }
 
-    /// <summary>
-    /// Optional array of additional error details
-    /// </summary>
     [JsonPropertyName("details")]
     public string[]? Details { get; init; }
 
-    /// <summary>
-    /// Indicates that retrying may succeed once server backpressure clears.
-    /// </summary>
     [JsonPropertyName("retryable")]
     public bool? Retryable { get; init; }
 
-    /// <summary>
-    /// Server-advised delay before retrying, in seconds, when known.
-    /// </summary>
     [JsonPropertyName("retryAfterSeconds")]
     public int? RetryAfterSeconds { get; init; }
 }

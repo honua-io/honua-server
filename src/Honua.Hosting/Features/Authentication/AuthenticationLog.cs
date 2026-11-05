@@ -3,220 +3,136 @@
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Source-generated logger for Authentication features (AOT compatible)
-/// </summary>
 internal static partial class AuthenticationLog
 {
-    /// <summary>
-    /// Logs when development authentication bypass is enabled
-    /// </summary>
     [LoggerMessage(
         EventId = 4100,
         Level = LogLevel.Debug,
         Message = "Development authentication bypass enabled - allowing anonymous access")]
     public static partial void DevelopmentBypassEnabled(ILogger logger);
 
-    /// <summary>
-    /// Logs when development authentication bypass is blocked in production environment
-    /// </summary>
     [LoggerMessage(
         EventId = 4111,
         Level = LogLevel.Warning,
         Message = "SECURITY: Development authentication bypass blocked - production environment detected")]
     public static partial void DevelopmentBypassBlockedInProduction(ILogger logger);
 
-    /// <summary>
-    /// Logs once at startup when the development authentication bypass is fully
-    /// enabled. Operators monitoring logs MUST see this warning if admin
-    /// endpoints are accessible without an API key.
-    /// </summary>
     [LoggerMessage(
         EventId = 4112,
         Level = LogLevel.Warning,
         Message = "SECURITY WARNING: HONUA_DEV_AUTH bypass is ACTIVE for environment '{Environment}'. Admin endpoints accept any X-API-Key. This is only safe in disposable Test environments; unset HONUA_DEV_AUTH and HONUA_DEV_AUTH_ALLOW_BYPASS before deploying to Staging or Production.")]
     public static partial void DevelopmentBypassActiveAtStartup(ILogger logger, string environment);
 
-    /// <summary>
-    /// Logs once at startup when HONUA_DEV_AUTH=true is configured but the
-    /// bypass cannot activate because the explicit acknowledgement
-    /// (HONUA_DEV_AUTH_ALLOW_BYPASS=true) or the environment guard is missing.
-    /// Surfaces accidental staging/QA configuration drift.
-    /// </summary>
     [LoggerMessage(
         EventId = 4113,
         Level = LogLevel.Warning,
         Message = "SECURITY: HONUA_DEV_AUTH=true is set in environment '{Environment}' but the dev-auth bypass is NOT active. Either remove HONUA_DEV_AUTH or, only for disposable Test environments, set HONUA_DEV_AUTH_ALLOW_BYPASS=true.")]
     public static partial void DevelopmentBypassRequestedButRejected(ILogger logger, string environment);
 
-    /// <summary>
-    /// Logs when no API key is found in headers
-    /// </summary>
     [LoggerMessage(
         EventId = 4101,
         Level = LogLevel.Debug,
         Message = "No API key found in {ApiKeyHeader} header")]
     public static partial void NoApiKeyFound(ILogger logger, string apiKeyHeader);
 
-    /// <summary>
-    /// Logs when empty API key is provided
-    /// </summary>
     [LoggerMessage(
         EventId = 4102,
         Level = LogLevel.Debug,
         Message = "Empty API key provided in {ApiKeyHeader} header")]
     public static partial void EmptyApiKeyProvided(ILogger logger, string apiKeyHeader);
 
-    /// <summary>
-    /// Logs when no admin password is configured
-    /// </summary>
     [LoggerMessage(
         EventId = 4103,
         Level = LogLevel.Warning,
         Message = "No admin password configured in {AdminPasswordEnvVar} - authentication will fail")]
     public static partial void NoAdminPasswordConfigured(ILogger logger, string adminPasswordEnvVar);
 
-    /// <summary>
-    /// Logs when invalid API key is provided
-    /// </summary>
     [LoggerMessage(
         EventId = 4104,
         Level = LogLevel.Warning,
         Message = "Invalid API key provided")]
     public static partial void InvalidApiKeyProvided(ILogger logger);
 
-    /// <summary>
-    /// Logs successful API key authentication
-    /// </summary>
     [LoggerMessage(
         EventId = 4105,
         Level = LogLevel.Debug,
         Message = "API key authentication successful")]
     public static partial void ApiKeyAuthenticationSuccessful(ILogger logger);
 
-    /// <summary>
-    /// Logs when development environment with no admin password enables auth bypass.
-    /// This is a security-sensitive path: all admin endpoints are accessible without authentication.
-    /// </summary>
     [LoggerMessage(
         EventId = 4106,
         Level = LogLevel.Warning,
         Message = "SECURITY WARNING: Development auth bypass is active because no HONUA_ADMIN_PASSWORD is configured. All admin endpoints are accessible without authentication. Set HONUA_ADMIN_PASSWORD to require API key authentication.")]
     public static partial void DevelopmentEnvironmentAuthBypass(ILogger logger);
 
-    /// <summary>
-    /// Logs when resolving the admin password via secret providers fails.
-    /// </summary>
     [LoggerMessage(
         EventId = 4107,
         Level = LogLevel.Error,
         Message = "Failed to resolve admin password from secret provider")]
     public static partial void AdminPasswordResolutionFailed(ILogger logger, Exception exception);
 
-    /// <summary>
-    /// Logs when Basic auth compatibility mode is used.
-    /// </summary>
     [LoggerMessage(
         EventId = 4108,
         Level = LogLevel.Debug,
         Message = "HTTP Basic authentication compatibility mode used")]
     public static partial void BasicAuthCompatibilityUsed(ILogger logger);
 
-    /// <summary>
-    /// Logs when Basic auth compatibility mode is rejected due to insecure transport.
-    /// </summary>
     [LoggerMessage(
         EventId = 4109,
         Level = LogLevel.Warning,
         Message = "HTTP Basic authentication compatibility mode rejected because request was not HTTPS")]
     public static partial void BasicAuthRejectedInsecureTransport(ILogger logger);
 
-    /// <summary>
-    /// Logs when an invalid Basic auth header is supplied.
-    /// </summary>
     [LoggerMessage(
         EventId = 4110,
         Level = LogLevel.Debug,
         Message = "Invalid HTTP Basic authorization header supplied")]
     public static partial void InvalidBasicAuthorizationHeader(ILogger logger);
 
-    /// <summary>
-    /// Logs when HONUA_DEV_AUTH=true is set but the bypass is not activated because
-    /// preconditions (environment must be exactly "Test" and a matching
-    /// HONUA_DEV_AUTH_ALLOW_BYPASS token must be set) were not met. This is a startup-time
-    /// security signal so developers learn that their attempted opt-in was rejected.
-    /// </summary>
     [LoggerMessage(
         EventId = 4112,
         Level = LogLevel.Warning,
         Message = "HONUA_DEV_AUTH set but bypass not active because {Reason}")]
     public static partial void DevelopmentBypassRejected(ILogger logger, string reason);
 
-    /// <summary>
-    /// Logs when HONUA_DEV_AUTH=true is detected in a production environment. This
-    /// is a critical misconfiguration and the application will refuse to start.
-    /// </summary>
     [LoggerMessage(
         EventId = 4113,
         Level = LogLevel.Error,
         Message = "SECURITY: HONUA_DEV_AUTH=true detected in Production environment. Refusing to start.")]
     public static partial void DevelopmentBypassInProductionFatal(ILogger logger);
 
-    /// <summary>
-    /// Logs when a scoped admin API key is denied an admin request because its
-    /// persisted permission grants do not authorize the request method (#1985).
-    /// </summary>
     [LoggerMessage(
         EventId = 4114,
         Level = LogLevel.Warning,
         Message = "Scoped admin API key denied {Method} admin request: key permissions do not authorize this operation")]
     public static partial void ScopedAdminKeyDenied(ILogger logger, string method);
 
-    /// <summary>
-    /// Logs when a principal is denied a read-only ops-observability request because it carries
-    /// neither an admin grant nor a read-only <c>ops:</c> grant sufficient for the request method.
-    /// </summary>
     [LoggerMessage(
         EventId = 4115,
         Level = LogLevel.Warning,
         Message = "Ops-reader authorization denied {Method} ops request: principal lacks an admin or ops:read grant authorizing this operation")]
     public static partial void OpsReaderKeyDenied(ILogger logger, string method);
 
-    /// <summary>
-    /// Logs when a non-admin principal is denied the Studio package lifecycle policy because
-    /// <c>Studio:EndUserAuthorization:Enabled</c> is off (honua-server#3001).
-    /// </summary>
     [LoggerMessage(
         EventId = 4116,
         Level = LogLevel.Debug,
         Message = "Studio lifecycle authorization denied: caller is not admin and Studio:EndUserAuthorization:Enabled is false")]
     public static partial void StudioEndUserModeDenied(ILogger logger);
 
-    /// <summary>
-    /// Logs when the managed API-key store cannot be reached. Authentication falls through to
-    /// the bootstrap admin password and otherwise fails closed instead of throwing.
-    /// </summary>
+    // A store outage falls through to the bootstrap password and otherwise fails closed instead of throwing.
     [LoggerMessage(
         EventId = 4117,
         Level = LogLevel.Error,
         Message = "Admin API key store is unavailable; bootstrap admin password remains the break-glass credential")]
     public static partial void AdminApiKeyStoreUnavailable(ILogger logger, Exception exception);
 
-    /// <summary>
-    /// Logs when a principal with general admin write is denied a credential or identity
-    /// management request because it lacks full-admin authority.
-    /// </summary>
     [LoggerMessage(
         EventId = 4119,
         Level = LogLevel.Warning,
         Message = "Credential management denied for {Method} request: principal lacks full-admin credential authority")]
     public static partial void CredentialManagementDenied(ILogger logger, string method);
 
-    /// <summary>
-    /// Logs when a valid managed API key is refused because the request does not satisfy the
-    /// key's referrer (Origin/Referer) or client-IP restrictions. Only the key identifier and
-    /// the failed restriction are logged, never the key material.
-    /// </summary>
+    // A referrer or IP refusal logs the key identifier only, never the key material.
     [LoggerMessage(
         EventId = 4118,
         Level = LogLevel.Warning,

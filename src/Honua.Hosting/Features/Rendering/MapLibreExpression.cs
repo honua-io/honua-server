@@ -3,9 +3,6 @@
 
 namespace Honua.Infrastructure.Rendering;
 
-/// <summary>
-/// Parsed MapLibre expression value.
-/// </summary>
 internal readonly struct MapLibreExpression
 {
     public MapLibreExpressionKind Kind { get; }
@@ -55,9 +52,6 @@ internal readonly struct MapLibreExpression
     }
 }
 
-/// <summary>
-/// Expression value kind.
-/// </summary>
 internal enum MapLibreExpressionKind
 {
     Null = 0,

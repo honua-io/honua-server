@@ -12,14 +12,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.FileStorage;
 
-/// <summary>
-/// Shared-filesystem implementation of <see cref="IGeoprocessingOutputObjectStore"/>
-/// for local worker-pool placement (#3089). The worker and serving hosts mount the
-/// same root directory; object keys map to contained relative paths. Writes are
-/// staged to a temporary sibling and moved into place so a crashed write never
-/// leaves a readable partial object at the final key. Read leases are sidecar
-/// files holding a UTC expiry, honored by the orphan sweeper.
-/// </summary>
+// A write is staged and moved so a crash never leaves a partial object at the final key.
 internal sealed class FileSystemGeoprocessingOutputObjectStore : IGeoprocessingOutputObjectStore
 {
     internal const string ReadLeaseSuffix = ".readlease";
@@ -353,10 +346,6 @@ internal sealed class FileSystemGeoprocessingOutputObjectStore : IGeoprocessingO
         return Task.CompletedTask;
     }
 
-    /// <summary>
-    /// Maps an object key to a contained absolute path, rejecting rooted keys, drive
-    /// or scheme syntax, and traversal escapes (mirrors the worker's VSI containment).
-    /// </summary>
     private string ResolveContainedPath(string objectKey)
     {
         GeoprocessingOutputStoreAttestationValidator.Validate(_options);

@@ -6,9 +6,6 @@ using System.IO.Compression;
 
 namespace Honua.Infrastructure.Tiles;
 
-/// <summary>
-/// Writes the durable tile-export package formats from one canonical ordered tile stream.
-/// </summary>
 internal static class TileExportPackagePipeline
 {
     private static readonly DateTimeOffset DeterministicTimestamp =

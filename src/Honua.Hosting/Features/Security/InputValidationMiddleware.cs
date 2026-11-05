@@ -11,10 +11,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Security;
 
-/// <summary>
-/// Middleware for comprehensive input validation to prevent injection attacks.
-/// Validates request parameters, headers, and query strings for malicious patterns.
-/// </summary>
 internal sealed class InputValidationMiddleware
 {
     private readonly RequestDelegate _next;
@@ -787,77 +783,34 @@ internal sealed class InputValidationMiddleware
     }
 }
 
-/// <summary>
-/// Configuration options for input validation middleware.
-/// </summary>
 public sealed class InputValidationOptions
 {
-    /// <summary>
-    /// Configuration section name for binding.
-    /// </summary>
     public const string SectionName = "InputValidation";
 
-    /// <summary>
-    /// Whether input validation is enabled. Default: true.
-    /// </summary>
     public bool Enabled { get; set; } = true;
 
-    /// <summary>
-    /// Whether to detect SQL injection attempts. Default: true.
-    /// </summary>
     public bool DetectSqlInjection { get; set; } = true;
 
-    /// <summary>
-    /// Whether to detect XSS attempts. Default: true.
-    /// </summary>
     public bool DetectXss { get; set; } = true;
 
-    /// <summary>
-    /// Whether to detect command injection attempts. Default: true.
-    /// </summary>
     public bool DetectCommandInjection { get; set; } = true;
 
-    /// <summary>
-    /// Whether to detect path traversal attempts. Default: true.
-    /// </summary>
     public bool DetectPathTraversal { get; set; } = true;
 
-    /// <summary>
-    /// Whether to detect LDAP injection attempts. Default: true.
-    /// </summary>
     public bool DetectLdapInjection { get; set; } = true;
 
-    /// <summary>
-    /// Whether to detect null bytes in input. Default: true.
-    /// </summary>
     public bool DetectNullBytes { get; set; } = true;
 
-    /// <summary>
-    /// Whether to detect control characters in input. Default: true.
-    /// </summary>
     public bool DetectControlCharacters { get; set; } = true;
 
-    /// <summary>
-    /// Whether to validate suspicious headers that can be spoofed. Default: false.
-    /// </summary>
     public bool ValidateSuspiciousHeaders { get; set; }
 
-    /// <summary>
-    /// Maximum length for ordinary text parameters. Default: 8192. Geometry
-    /// parameters explicitly declared by the routed endpoint use Limits:Geometry
-    /// byte and vertex budgets instead; their security checks remain enabled.
-    /// </summary>
+    // A geometry parameter declared by the endpoint uses the geometry byte and vertex budgets; the ordinary text length limit does not apply, and the security checks stay on.
     public int MaxParameterLength { get; set; } = 8192;
 
-    /// <summary>
-    /// List of paths to exclude from validation (e.g., file upload endpoints).
-    /// </summary>
     public string[] ExcludedPaths { get; set; } = Array.Empty<string>();
 }
 
-/// <summary>
-/// Result of input validation.
-/// </summary>
 internal sealed class InputValidationResult
 {
     public bool IsValid { get; }
@@ -875,14 +828,8 @@ internal sealed class InputValidationResult
     public static InputValidationResult Invalid(string errorMessage, bool isSuspicious = true) => new(false, errorMessage, isSuspicious);
 }
 
-/// <summary>
-/// Extension methods for registering input validation middleware.
-/// </summary>
 public static class InputValidationMiddlewareExtensions
 {
-    /// <summary>
-    /// Adds input validation services to the dependency injection container.
-    /// </summary>
     public static IServiceCollection AddInputValidation(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -893,10 +840,6 @@ public static class InputValidationMiddlewareExtensions
         return services;
     }
 
-    /// <summary>
-    /// Adds input validation middleware to the pipeline.
-    /// Should be added early, but after CORS and before authentication.
-    /// </summary>
     public static IApplicationBuilder UseInputValidation(this IApplicationBuilder app)
     {
         return app.UseMiddleware<InputValidationMiddleware>();

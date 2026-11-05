@@ -8,14 +8,8 @@ using SkiaSharp;
 
 namespace Honua.Infrastructure.Rendering;
 
-/// <summary>
-/// Translates MapLibre style JSON into resolved SkiaSharp styles for rendering.
-/// </summary>
 internal static class StyleTranslator
 {
-    /// <summary>
-    /// Parses MapLibre style JSON into a list of style layers.
-    /// </summary>
     public static MapLibreStyleLayer[] ParseStyleLayers(string? mapLibreStyleJson)
     {
         if (string.IsNullOrWhiteSpace(mapLibreStyleJson))
@@ -56,9 +50,6 @@ internal static class StyleTranslator
         return [];
     }
 
-    /// <summary>
-    /// Collects attribute names referenced by style filters, paint expressions, and layout expressions.
-    /// </summary>
     public static string[] CollectReferencedFields(MapLibreStyleLayer[] styleLayers)
     {
         if (styleLayers.Length == 0)
@@ -79,19 +70,7 @@ internal static class StyleTranslator
         return fields.Count == 0 ? [] : [.. fields];
     }
 
-    /// <summary>
-    /// Returns whether any of a layer's filter, paint, or layout expressions read <c>["zoom"]</c>,
-    /// and so resolve to different values at different zooms.
-    /// </summary>
-    /// <remarks>
-    /// Callers use this to keep zoom-dependent styles out of caches and precomputes that are not
-    /// keyed by zoom. Unlike feature attributes — which vary per feature and are detected by
-    /// <see cref="CollectReferencedFields(MapLibreStyleLayer[])"/> — zoom is constant across a single render but varies
-    /// between renders, so a style value resolved once and reused across requests silently freezes
-    /// at whatever zoom happened to resolve it first. The walk deliberately errs toward reporting
-    /// <see langword="true"/> (it descends into <c>literal</c> arrays as well): a false positive only
-    /// gives up a fast path, whereas a false negative reinstates the stale-value bug.
-    /// </remarks>
+    // The zoom walk prefers a false positive, because a false negative caches a value frozen at the first zoom.
     public static bool UsesZoomExpression(MapLibreStyleLayer layer)
     {
         ArgumentNullException.ThrowIfNull(layer);
@@ -129,12 +108,6 @@ internal static class StyleTranslator
         return items.Any(item => ContainsZoomExpression(item));
     }
 
-    /// <summary>
-    /// Returns whether a style layer should be rendered at the supplied <paramref name="zoom"/>.
-    /// Layer visibility is always honored; minzoom/maxzoom apply when the render carries a derived
-    /// zoom and are left unapplied when <see cref="RenderZoom.NotDerivable"/> states that no zoom
-    /// could be derived for the request.
-    /// </summary>
     public static bool ShouldRenderLayer(
         MapLibreStyleLayer layer,
         RenderZoom zoom,
@@ -150,12 +123,6 @@ internal static class StyleTranslator
         return IsLayerVisible(layer, properties ?? ImmutableDictionary<string, object?>.Empty, zoom);
     }
 
-    /// <summary>
-    /// Returns whether any layer in a style document falls inside its minzoom/maxzoom range at the
-    /// supplied <paramref name="zoom"/>. Callers use this to skip querying features for a layer
-    /// whose style is entirely out of range, since none of it could be drawn. Styles with no layers
-    /// render with default paints and are always in range.
-    /// </summary>
     public static bool IsAnyLayerInZoomRange(MapLibreStyleLayer[] styleLayers, RenderZoom zoom)
     {
         ArgumentNullException.ThrowIfNull(styleLayers);
@@ -169,10 +136,6 @@ internal static class StyleTranslator
         return styleLayers.Any(styleLayer => IsLayerInZoomRange(styleLayer, level));
     }
 
-    /// <summary>
-    /// Resolves a fill style from a MapLibre layer for a specific feature at the supplied
-    /// <paramref name="zoom"/>, which zoom-dependent paint expressions are evaluated against.
-    /// </summary>
     public static ResolvedFillStyle ResolveFillStyle(
         MapLibreStyleLayer layer,
         ImmutableDictionary<string, object?> properties,
@@ -206,10 +169,6 @@ internal static class StyleTranslator
         };
     }
 
-    /// <summary>
-    /// Resolves a line style from a MapLibre layer for a specific feature at the supplied
-    /// <paramref name="zoom"/>, which zoom-dependent paint expressions are evaluated against.
-    /// </summary>
     public static ResolvedLineStyle ResolveLineStyle(
         MapLibreStyleLayer layer,
         ImmutableDictionary<string, object?> properties,
@@ -275,10 +234,6 @@ internal static class StyleTranslator
         };
     }
 
-    /// <summary>
-    /// Resolves a circle style from a MapLibre layer for a specific feature at the supplied
-    /// <paramref name="zoom"/>, which zoom-dependent paint expressions are evaluated against.
-    /// </summary>
     public static ResolvedCircleStyle ResolveCircleStyle(
         MapLibreStyleLayer layer,
         ImmutableDictionary<string, object?> properties,
@@ -319,9 +274,6 @@ internal static class StyleTranslator
         };
     }
 
-    /// <summary>
-    /// Creates default SkiaSharp paints for a geometry type when no style is defined.
-    /// </summary>
     public static (SKPaint fill, SKPaint? stroke) CreateDefaultPaints(
         MetadataV2GeometryType geometryType)
     {

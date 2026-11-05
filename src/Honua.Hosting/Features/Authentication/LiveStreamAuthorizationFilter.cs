@@ -10,11 +10,6 @@ using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Revalidates long-lived transport credentials in a fresh authentication scope.
-/// An authentication handler caches its result for a request, so authenticating the
-/// original context again would keep an expired or revoked principal alive.
-/// </summary>
 internal sealed class LiveStreamAuthorizationFilter : IEndpointFilter
 {
     internal static readonly TimeSpan RevalidationInterval = TimeSpan.FromSeconds(1);

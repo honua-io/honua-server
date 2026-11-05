@@ -6,9 +6,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Monitoring;
 
-/// <summary>
-/// In-memory ring buffer for recent errors.
-/// </summary>
 internal sealed class RecentErrorBuffer
 {
     private readonly int _capacity;
@@ -23,30 +20,13 @@ internal sealed class RecentErrorBuffer
         _instanceId = $"{Environment.MachineName}-{Environment.ProcessId}";
     }
 
-    /// <summary>
-    /// Maximum number of errors retained.
-    /// </summary>
     public int Capacity => _capacity;
 
-    /// <summary>
-    /// Identifier for the current node that owns this buffer.
-    /// </summary>
     public string InstanceId => _instanceId;
 
-    /// <summary>
-    /// Record a server error response into the buffer.
-    /// </summary>
     public void Record(HttpContext context, StandardErrorResponse errorResponse)
         => Record(context, errorResponse.StatusCode, errorResponse.Title, errorResponse.Detail);
 
-    /// <summary>
-    /// Record an error response into the buffer.
-    /// </summary>
-    /// <param name="context">Current request context.</param>
-    /// <param name="statusCode">HTTP status code.</param>
-    /// <param name="title">Short error title.</param>
-    /// <param name="detail">Detailed error text.</param>
-    /// <param name="includeClientErrors">Whether to include 4xx responses.</param>
     public void Record(
         HttpContext context,
         int statusCode,
@@ -88,10 +68,6 @@ internal sealed class RecentErrorBuffer
         }
     }
 
-    /// <summary>
-    /// Inserts a deterministic fixture entry without requiring an HTTP failure path.
-    /// Existing entries with the same correlation, path, status, and message are replaced.
-    /// </summary>
     public void RecordSeed(RecentErrorEntry entry)
     {
         ArgumentNullException.ThrowIfNull(entry);
@@ -123,9 +99,6 @@ internal sealed class RecentErrorBuffer
         }
     }
 
-    /// <summary>
-    /// Returns recent errors ordered newest-first.
-    /// </summary>
     public IReadOnlyList<RecentErrorEntry> Snapshot()
     {
         lock (_lock)

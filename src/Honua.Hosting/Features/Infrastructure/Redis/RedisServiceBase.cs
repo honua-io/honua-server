@@ -6,9 +6,6 @@ using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Redis;
 
-/// <summary>
-/// Base class for Redis-dependent services with standardized fallback behavior.
-/// </summary>
 internal abstract class RedisServiceBase : IRedisService
 {
     protected readonly IConnectionMultiplexer? Redis;
@@ -61,13 +58,6 @@ internal abstract class RedisServiceBase : IRedisService
         return restored;
     }
 
-    /// <summary>
-    /// Executes a Redis operation with standardized error handling and fallback logic.
-    /// </summary>
-    /// <param name="operation">Description of the operation for logging</param>
-    /// <param name="redisOperation">The Redis operation to execute</param>
-    /// <param name="fallbackOperation">Optional fallback operation when Redis is unavailable</param>
-    /// <param name="cancellationToken">Cancellation token</param>
     protected async Task<T> ExecuteWithFallbackAsync<T>(
         string operation,
         Func<IDatabase, CancellationToken, Task<T>> redisOperation,
@@ -116,9 +106,6 @@ internal abstract class RedisServiceBase : IRedisService
         throw FallbackStrategy.GetUnavailableException(operation);
     }
 
-    /// <summary>
-    /// Executes a Redis operation with standardized error handling and fallback logic (synchronous fallback).
-    /// </summary>
     protected async Task<T> ExecuteWithFallbackAsync<T>(
         string operation,
         Func<IDatabase, CancellationToken, Task<T>> redisOperation,
@@ -132,9 +119,6 @@ internal abstract class RedisServiceBase : IRedisService
             cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Executes a Redis operation without fallback (fail-fast).
-    /// </summary>
     protected async Task<T> ExecuteRedisOnlyAsync<T>(
         string operation,
         Func<IDatabase, CancellationToken, Task<T>> redisOperation,
@@ -163,16 +147,8 @@ internal abstract class RedisServiceBase : IRedisService
                ex is RedisServerException;
     }
 
-    /// <summary>
-    /// Called when Redis connectivity is restored after a failure.
-    /// Override to implement service-specific restoration logic.
-    /// </summary>
     protected virtual void OnRedisRestored() { }
 
-    /// <summary>
-    /// Called when a Redis operation fails.
-    /// Override to implement service-specific failure handling.
-    /// </summary>
     protected virtual void OnRedisFailure(string operation, Exception exception) { }
 
     private void LogServiceInitialization()

@@ -12,9 +12,6 @@ internal enum MigrationLifecycleStatus
     Failed = 4
 }
 
-/// <summary>
-/// Tracks the outcome of database migrations for readiness checks.
-/// </summary>
 internal sealed class MigrationState
 {
     private int _status;

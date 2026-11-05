@@ -59,10 +59,7 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
     protected SerializedUploadProgressWriter CreateProgressWriter(string uploadId)
         => new(ProgressStore, Logger, uploadId);
 
-    /// <summary>
-    /// Upload progress is diagnostic. A distributed progress-store failure must not fail
-    /// or cancel an upload that itself succeeded, except for out-of-memory (#6645).
-    /// </summary>
+    // A progress-store failure must not fail an upload that succeeded, except an out-of-memory condition.
     protected async Task TrySetUploadProgressAsync(
         string uploadId,
         UploadProgress progress,
@@ -427,13 +424,6 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
         return false;
     }
 
-    /// <summary>
-    /// Cleanup resources associated with a cancelled upload to prevent storage leaks.
-    /// Override this method in derived classes to implement provider-specific cleanup.
-    /// </summary>
-    /// <param name="uploadId">The upload ID to clean up</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>A task representing the cleanup operation</returns>
     protected virtual async Task CleanupCancelledUploadResourcesAsync(string uploadId, CancellationToken cancellationToken)
     {
         try

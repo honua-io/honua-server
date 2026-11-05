@@ -6,17 +6,8 @@ using Microsoft.AspNetCore.Http;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Authorization requirement for endpoints that create, rotate or revoke credentials or
-/// change identity authority. Added on top of the admin policy so general admin write
-/// (<c>admin:write</c>, <c>admin:manage</c>) is not enough.
-/// </summary>
 internal sealed class AdminCredentialManagementRequirement : IAuthorizationRequirement;
 
-/// <summary>
-/// Evaluates <see cref="AdminCredentialManagementRequirement"/> with
-/// <see cref="AdminApiKeyPermission.HasCredentialManagementAuthority"/>.
-/// </summary>
 internal sealed class AdminCredentialManagementAuthorizationHandler(
     IHttpContextAccessor httpContextAccessor,
     ILogger<AdminCredentialManagementAuthorizationHandler> logger)
@@ -27,7 +18,6 @@ internal sealed class AdminCredentialManagementAuthorizationHandler(
     private readonly IHttpContextAccessor _httpContextAccessor = httpContextAccessor;
     private readonly ILogger<AdminCredentialManagementAuthorizationHandler> _logger = logger;
 
-    /// <inheritdoc />
     protected override Task HandleRequirementAsync(
         AuthorizationHandlerContext context,
         AdminCredentialManagementRequirement requirement)

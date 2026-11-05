@@ -7,9 +7,6 @@ using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Redis;
 
-/// <summary>
-/// Monitors Redis health and provides circuit breaker functionality.
-/// </summary>
 internal sealed partial class RedisHealthMonitor : IRedisHealthMonitor, IDisposable
 {
     private static readonly TimeSpan RetryInterval = TimeSpan.FromSeconds(30);

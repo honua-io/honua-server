@@ -7,11 +7,6 @@ using Honua.Infrastructure.Middleware;
 
 namespace Honua.Infrastructure.Security;
 
-/// <summary>
-/// Shared audit writer for canonical Studio authorization decisions. REST and protocol
-/// adapters use this seam so a denied decision always records the same actor, resource,
-/// operation, and stable policy code.
-/// </summary>
 internal static class StudioAuthorizationAudit
 {
     public static async Task RecordDecisionAsync(

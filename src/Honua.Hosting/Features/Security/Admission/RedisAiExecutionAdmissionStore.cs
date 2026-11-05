@@ -10,7 +10,6 @@ using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Security.Admission;
 
-/// <summary>Atomic, fail-closed AI invocation authority backed by one non-expiring Redis hash.</summary>
 internal sealed partial class RedisAiExecutionAdmissionStore(IConnectionMultiplexer connection) : IAiExecutionAdmissionStore
 {
     private readonly IConnectionMultiplexer _connection = connection;

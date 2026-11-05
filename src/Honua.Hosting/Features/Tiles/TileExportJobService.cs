@@ -18,10 +18,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Tiles;
 
-/// <summary>
-/// Protocol-neutral tile-export job lifecycle over the canonical execution store/queue.
-/// See <see cref="ITileExportJobService"/> for the contract.
-/// </summary>
 internal sealed partial class TileExportJobService : ITileExportJobService
 {
     // Phase marker written on the record when submission fails before the job is durably

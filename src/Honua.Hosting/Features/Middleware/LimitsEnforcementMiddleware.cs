@@ -9,20 +9,6 @@ using InfrastructureLog = Honua.Infrastructure.Logging.ProtocolRequestLog;
 
 namespace Honua.Infrastructure.Middleware;
 
-/// <summary>
-/// Middleware to enforce resource limits across all protocols (GeoServices REST, OGC API Features, OData, MVT).
-/// Provides early validation of request constraints to prevent resource exhaustion and ensure consistent behavior.
-/// </summary>
-/// <remarks>
-/// This middleware enforces limits before requests reach handlers:
-/// - Request payload size validation
-/// - Request timeout configuration
-/// - Connection concurrency tracking (future enhancement)
-/// - Early validation for known limit violations
-///
-/// Per-endpoint limits (MaxRecordCount, spatial bounds) are enforced in individual handlers
-/// using the injected LimitsOptions configuration.
-/// </remarks>
 internal sealed class LimitsEnforcementMiddleware(
     RequestDelegate next,
     ILogger<LimitsEnforcementMiddleware> logger,
@@ -99,9 +85,6 @@ internal sealed class LimitsEnforcementMiddleware(
         // exit; no manual disposal is needed here.
     }
 
-    /// <summary>
-    /// Checks if the request has a body that needs size validation.
-    /// </summary>
     private static bool HasRequestBody(HttpContext context)
     {
         string method = context.Request.Method;
@@ -110,9 +93,6 @@ internal sealed class LimitsEnforcementMiddleware(
                string.Equals(method, "PATCH", StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Validates that the request payload size doesn't exceed configured limits.
-    /// </summary>
     private bool ValidatePayloadSize(HttpContext context, long maxPayloadSize)
     {
         long? contentLength = context.Request.ContentLength;
@@ -175,9 +155,6 @@ internal sealed class LimitsEnforcementMiddleware(
         feature.MaxRequestBodySize = maxPayloadSize;
     }
 
-    /// <summary>
-    /// Writes a standardized error response for limit violations.
-    /// </summary>
     private static Task WriteErrorResponseAsync(HttpContext context, int statusCode, string error, string details)
     {
         var errorResponse = new StandardErrorResponse(statusCode, error, details);
@@ -186,28 +163,15 @@ internal sealed class LimitsEnforcementMiddleware(
     }
 }
 
-/// <summary>
-/// Extension methods for registering LimitsEnforcementMiddleware.
-/// </summary>
 public static class LimitsEnforcementMiddlewareExtensions
 {
-    /// <summary>
-    /// Adds limits enforcement middleware to the application pipeline.
-    /// Should be registered early in the pipeline, but after correlation ID middleware.
-    /// </summary>
-    /// <param name="app">The application builder</param>
-    /// <returns>The application builder for method chaining</returns>
     public static IApplicationBuilder UseLimitsEnforcement(this IApplicationBuilder app)
     {
         ArgumentNullException.ThrowIfNull(app);
         return app.UseMiddleware<LimitsEnforcementMiddleware>();
     }
 
-    /// <summary>
-    /// After portal-token authentication, drops an anonymous caller off an
-    /// import-scale body ceiling. Authenticated multipart uploads keep the
-    /// limit applied by <see cref="UseLimitsEnforcement"/>.
-    /// </summary>
+    // After portal-token authentication, an anonymous caller is taken off an import-scale body ceiling.
     public static IApplicationBuilder UseAnonymousImportPayloadClamp(this IApplicationBuilder app)
     {
         ArgumentNullException.ThrowIfNull(app);
@@ -215,9 +179,6 @@ public static class LimitsEnforcementMiddlewareExtensions
     }
 }
 
-/// <summary>
-/// Rejects anonymous requests that would otherwise inherit an import-scale body limit.
-/// </summary>
 internal sealed class AnonymousImportPayloadClampMiddleware(
     RequestDelegate next,
     IOptions<LimitsOptions> limitsOptions)

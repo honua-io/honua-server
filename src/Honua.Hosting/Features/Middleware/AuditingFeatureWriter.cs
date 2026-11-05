@@ -10,28 +10,6 @@ using Microsoft.AspNetCore.Http;
 
 namespace Honua.Infrastructure.Middleware;
 
-/// <summary>
-/// Decorates the provider <see cref="IFeatureWriter"/> to emit audit events for
-/// destructive feature writes (single deletes and bulk / transactional edits) at
-/// the shared edit-pipeline boundary (#507).
-/// </summary>
-/// <remarks>
-/// <para>
-/// Every protocol adapter that mutates features — GeoServices FeatureServer
-/// <c>applyEdits</c>/<c>deleteFeatures</c>, OGC API Features delete/transaction,
-/// WFS-T, OData CRUD, and gRPC edits — funnels through <see cref="IFeatureWriter"/>.
-/// Auditing here (rather than in each protocol handler) guarantees uniform
-/// coverage and honours the protocol-adapter rule that cross-cutting behaviour is
-/// implemented once in shared infrastructure. Creates and pure updates are not
-/// audited as destructive operations; only deletes and batches that contain a
-/// delete (or are otherwise bulk mutations) are recorded.
-/// </para>
-/// <para>
-/// Audit emission never alters the write result and never throws back into the
-/// edit path: <see cref="IAuditLog"/> implementations are expected to swallow
-/// transient failures, and a defensive try/catch guards the rest.
-/// </para>
-/// </remarks>
 internal sealed class AuditingFeatureWriter(
     IFeatureWriter inner,
     IAuditLog auditLog,
@@ -86,7 +64,6 @@ internal sealed class AuditingFeatureWriter(
         }
     }
 
-    /// <inheritdoc />
     public async Task<FeatureEditApplication> ApplyEditsAsync(
         int layerId,
         FeatureEditBatch editBatch,

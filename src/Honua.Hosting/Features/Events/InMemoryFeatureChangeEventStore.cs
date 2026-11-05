@@ -9,11 +9,7 @@ using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Events;
 
-/// <summary>
-/// Feature-change event store with Redis persistence and in-memory fallback.
-/// Distributed-cache-only persistence is intentionally disabled because it cannot
-/// guarantee cross-node ordering or single-writer safety.
-/// </summary>
+// Distributed-cache-only persistence is disabled because it cannot guarantee cross-node ordering or single-writer safety.
 internal sealed class InMemoryFeatureChangeEventStore(
     IOptions<FeatureChangeEventOptions> options,
     IConnectionMultiplexer? redis = null,
@@ -366,25 +362,7 @@ internal sealed class InMemoryFeatureChangeEventStore(
         }
     }
 
-    /// <summary>
-    /// Walks the index from the low end and returns the retained-window state, pruning index
-    /// members whose payload key has already expired.
-    /// </summary>
-    /// <remarks>
-    /// Each <c>featurechange:event:*</c> key carries its own TTL, but the matching sorted-set
-    /// member is only removed by <see cref="TrimRedisAsync"/> when the index exceeds
-    /// <c>MaxRetainedEvents</c>. On a low-volume stream the members therefore outlive their
-    /// payloads, and rank 0 can name an event that is no longer retained. Reporting that
-    /// cursor as "oldest retained" would make an expired resume cursor look replayable, and
-    /// leaving the tombstones in place also lets a replay batch fill entirely with stale
-    /// members and return empty before reaching live events. Pruning here fixes both.
-    /// <para>
-    /// The result feeds a "can this client still resume from deltas?" test, so an
-    /// UNDER-estimate is unsafe. A known-empty window is distinct from an indeterminate one:
-    /// the former lets a fresh baseline captured at the durable current cursor complete,
-    /// while the latter remains fail-closed.
-    /// </para>
-    /// </remarks>
+    // Expired index members are pruned because reporting one as the oldest cursor makes a trimmed resume look replayable, and an under-estimate is unsafe.
     private async Task<FeatureChangeRetentionWindow> GetRedisRetentionWindowAsync(
         CancellationToken cancellationToken)
     {
@@ -461,16 +439,6 @@ internal sealed class InMemoryFeatureChangeEventStore(
         return FeatureChangeRetentionWindow.Indeterminate(currentCursor);
     }
 
-    /// <summary>
-    /// Reads the monotonic cursor counter, falling back to the highest index member for stores
-    /// created before the counter is available or while migrating existing Redis data.
-    /// </summary>
-    /// <remarks>
-    /// Payload keys expire after seven days and their sorted-set members are pruned lazily.
-    /// The counter has no per-event TTL, so it remains the authoritative baseline boundary
-    /// after the final payload expires. Reading only the index reset a quiescent stream's
-    /// apparent current cursor to zero and made the next append look like a replay gap.
-    /// </remarks>
     private async Task<long> GetCurrentRedisCursorAsync()
     {
         var counter = await _redisDb!.StringGetAsync(CursorKey).ConfigureAwait(false);

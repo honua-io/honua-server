@@ -3,28 +3,12 @@
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// CSRF guard for the cookie-authenticated admin session (#6100). The SAML ACS must issue
-/// <c>honua_admin_session</c> as <c>SameSite=Lax</c> because the IdP POSTs to it cross-site, so the
-/// cookie alone does not prove the request came from Honua's own pages. An unsafe request
-/// (anything but GET/HEAD/OPTIONS/TRACE) authenticated by that cookie must therefore carry a
-/// browser signal that it is not cross-site:
-/// <list type="bullet">
-/// <item><c>Sec-Fetch-Site</c>, when present, must be <c>same-origin</c>, <c>same-site</c> or <c>none</c>;</item>
-/// <item>otherwise an <c>Origin</c> header, when present, must name the request host.</item>
-/// </list>
-/// A request with neither header is not from a browser that could be driven cross-site (every
-/// current browser sends <c>Sec-Fetch-Site</c> on secure requests and <c>Origin</c> on cross-origin
-/// POSTs), so non-browser cookie clients keep working.
-/// </summary>
+// The admin session cookie is SameSite=Lax so the SAML ACS POST can set it, an unsafe request needs a same-site Sec-Fetch-Site or a same-host Origin, and a request with neither header is treated as non-browser.
 internal static class AdminSessionCrossSiteRequestGuard
 {
     private const string SecFetchSiteHeader = "Sec-Fetch-Site";
 
-    /// <summary>
-    /// Returns <see langword="true"/> when <paramref name="request"/> is an unsafe method that a
-    /// browser marked as cross-site, so a session cookie on it must not authenticate it.
-    /// </summary>
+    // An unsafe method a browser marked cross-site must not be authenticated by the session cookie.
     public static bool IsCrossSiteUnsafeRequest(HttpRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);

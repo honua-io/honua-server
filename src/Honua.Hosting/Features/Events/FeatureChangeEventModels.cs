@@ -8,9 +8,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Events;
 
-/// <summary>
-/// Stored feature-change event envelope used for replay and webhook delivery.
-/// </summary>
 internal sealed record FeatureChangeEvent
 {
     public required string EventId { get; init; }
@@ -28,45 +25,19 @@ internal sealed record FeatureChangeEvent
     public string? AuditId { get; init; }
     public string? ProposalId { get; init; }
 
-    /// <summary>
-    /// Optional. Changed attribute values when available. Null when the originating
-    /// protocol does not provide attribute-level change tracking, or for deletes.
-    /// </summary>
     public Dictionary<string, object?>? ChangedAttributes { get; init; }
 
-    /// <summary>
-    /// Whether the feature's geometry was modified by this operation.
-    /// Best-effort: may default to false when the originating protocol cannot determine this.
-    /// </summary>
     public bool GeometryChanged { get; init; }
 
-    /// <summary>
-    /// Geometry bounding box (MinX, MinY, MaxX, MaxY) captured at mutation time.
-    /// Null for deletes or non-spatial features.
-    /// </summary>
     public double[]? GeometryEnvelope { get; init; }
 
-    /// <summary>
-    /// Pre-serialized JSON of feature attributes at mutation time.
-    /// Null for deletes.
-    /// </summary>
     public string? PropertiesJson { get; init; }
 
-    /// <summary>
-    /// Pre-serialized GeoJSON geometry captured at mutation time.
-    /// Null for deletes or non-spatial features.
-    /// </summary>
     public string? GeometryJson { get; init; }
 
-    /// <summary>
-    /// SRID for <see cref="GeometryJson"/> when known.
-    /// </summary>
     public int? GeometrySrid { get; init; }
 }
 
-/// <summary>
-/// Input payload used by writers to publish feature-change events.
-/// </summary>
 internal sealed record FeatureChangeEventRequest
 {
     public string? EventId { get; init; }
@@ -83,95 +54,42 @@ internal sealed record FeatureChangeEventRequest
     public string? ProposalId { get; init; }
     public DateTimeOffset? Timestamp { get; init; }
 
-    /// <summary>
-    /// Optional. Changed attribute values when available. Null when the originating
-    /// protocol does not provide attribute-level change tracking, or for deletes.
-    /// </summary>
     public Dictionary<string, object?>? ChangedAttributes { get; init; }
 
-    /// <summary>
-    /// Whether the feature's geometry was modified by this operation.
-    /// Best-effort: may default to false when the originating protocol cannot determine this.
-    /// </summary>
     public bool GeometryChanged { get; init; }
 
-    /// <summary>
-    /// Geometry bounding box (MinX, MinY, MaxX, MaxY) captured at mutation time.
-    /// Null for deletes or non-spatial features.
-    /// </summary>
     public double[]? GeometryEnvelope { get; init; }
 
-    /// <summary>
-    /// Pre-serialized JSON of feature attributes at mutation time.
-    /// Null for deletes.
-    /// </summary>
     public string? PropertiesJson { get; init; }
 
-    /// <summary>
-    /// Pre-serialized GeoJSON geometry captured at mutation time.
-    /// Null for deletes or non-spatial features.
-    /// </summary>
     public string? GeometryJson { get; init; }
 
-    /// <summary>
-    /// SRID for <see cref="GeometryJson"/> when known.
-    /// </summary>
     public int? GeometrySrid { get; init; }
 }
 
-/// <summary>
-/// Feature-change event configuration.
-/// </summary>
 public sealed class FeatureChangeEventOptions
 {
     public const string SectionName = "FeatureChangeEvents";
 
-    /// <summary>
-    /// Maximum number of events retained in-memory for replay.
-    /// </summary>
     public int MaxRetainedEvents { get; set; } = 20_000;
 }
 
-/// <summary>
-/// Webhook delivery configuration for feature-change events.
-/// </summary>
 public sealed class FeatureChangeWebhookOptions
 {
     public const string SectionName = "FeatureChangeEvents:Webhook";
 
-    /// <summary>
-    /// Enables outbound webhook delivery.
-    /// </summary>
     public bool Enabled { get; set; }
 
-    /// <summary>
-    /// Absolute webhook URL.
-    /// </summary>
     public string? Url { get; set; }
 
-    /// <summary>
-    /// Shared HMAC secret for signature generation.
-    /// </summary>
     public string? Secret { get; set; }
 
-    /// <summary>
-    /// Maximum delivery attempts per event.
-    /// </summary>
     public int MaxAttempts { get; set; } = 5;
 
-    /// <summary>
-    /// Base retry delay in milliseconds. Exponential backoff doubles this value per attempt.
-    /// </summary>
     public int InitialBackoffMs { get; set; } = 500;
 
-    /// <summary>
-    /// Upper bound for retry delay in milliseconds.
-    /// </summary>
     public int MaxBackoffMs { get; set; } = 30_000;
 
-    /// <summary>
-    /// Per-request timeout for webhook calls in seconds.
-    /// </summary>
     public int RequestTimeoutSeconds { get; set; } = 15;
 }
 

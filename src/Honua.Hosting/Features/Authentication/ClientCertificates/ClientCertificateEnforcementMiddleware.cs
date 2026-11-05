@@ -190,11 +190,6 @@ internal sealed partial class ClientCertificateEnforcementMiddleware(
         => endpoint is RouteEndpoint { RoutePattern.RawText: { } rawText } &&
             VersionedAdminPathRegex().IsMatch(rawText);
 
-    /// <summary>
-    /// Rewrites a leading <c>/api/v{major}[.0...]</c> segment to <c>/api/v{major}</c> so a
-    /// configured prefix such as <c>/api/v1/admin/foo</c> also protects
-    /// <c>/api/v1.0/admin/foo</c>.
-    /// </summary>
     private static PathString NormalizeApiVersionSegment(PathString path)
     {
         var value = path.Value;

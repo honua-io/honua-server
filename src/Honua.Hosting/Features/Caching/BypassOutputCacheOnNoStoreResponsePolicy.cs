@@ -6,14 +6,6 @@ using Microsoft.Net.Http.Headers;
 
 namespace Honua.Infrastructure.Caching;
 
-/// <summary>
-/// Output cache policy that disables server-side cache storage when the
-/// outgoing response carries <c>Cache-Control: no-store</c>. The handler may
-/// only learn that the response is non-cacheable after resolving the
-/// downstream resource (e.g. a scene dataset whose registry record sets
-/// <c>cachePolicy.noStore = true</c>); without this hook the response would
-/// still be eligible for the named output-cache policy until TTL/invalidation.
-/// </summary>
 internal sealed class BypassOutputCacheOnNoStoreResponsePolicy : IOutputCachePolicy
 {
     public ValueTask CacheRequestAsync(OutputCacheContext context, CancellationToken cancellationToken)

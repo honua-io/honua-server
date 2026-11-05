@@ -14,19 +14,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Request-scoped <see cref="IFieldMaskSource"/> (#1940). Resolves the current principal's
-/// roles and the layer's <see cref="FieldMaskPolicy"/> set into the union of attribute
-/// (field) names that must be masked (dropped) from query output. This is the field-level
-/// companion to <see cref="RowLevelSecurityFilterSource"/>; masking is enforced inside the
-/// feature store at the shared projection seam, so a masked attribute is removed even when
-/// the caller explicitly requests it.
-/// </summary>
-/// <remarks>
-/// Returning an empty set means "no masking applies". When there is no request context
-/// (e.g. a background job), no masking is applied here — field masking is a request-scoped
-/// concern keyed on the caller's roles.
-/// </remarks>
+// Masking still applies when the caller requests the attribute; no request context means no masking, and an empty set means no masking.
 internal sealed partial class FieldMaskSource : IFieldMaskSource
 {
     private readonly IServiceProvider? _backgroundServices;
@@ -64,7 +52,6 @@ internal sealed partial class FieldMaskSource : IFieldMaskSource
            && ReferenceEquals(_rbacOptions, options)
            && ReferenceEquals(_backgroundServices, backgroundServices);
 
-    /// <inheritdoc />
     public async Task<ImmutableArray<string>> ResolveAsync(MetadataV2Resource resource, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(resource);
@@ -157,17 +144,7 @@ internal sealed partial class FieldMaskSource : IFieldMaskSource
         public static partial void ServiceResolutionFailed(ILogger logger, string layer, Exception exception);
     }
 
-    /// <summary>
-    /// Resolves the principal masking is evaluated against: the live request user when one
-    /// exists, otherwise the submitter snapshot pinned on the executing background job
-    /// (honua-server#3068). Returns <see langword="null"/> only when there is neither — a
-    /// server-internal read with no caller whose masks could apply.
-    /// </summary>
-    /// <exception cref="UnauthorizedAccessException">
-    /// Thrown when a job-execution scope is active but carries no submitter snapshot. The read
-    /// cannot be masked for the submitting caller, so it is refused rather than silently
-    /// returning every attribute unmasked.
-    /// </exception>
+    // A job with no submitter snapshot refuses the read rather than returning every attribute unmasked.
     private ClaimsPrincipal? ResolvePrincipal()
     {
         var requestPrincipal = _httpContextAccessor.HttpContext?.User;

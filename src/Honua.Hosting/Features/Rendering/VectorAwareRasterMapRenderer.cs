@@ -15,31 +15,7 @@ using SkiaSharp;
 
 namespace Honua.Infrastructure.Rendering;
 
-/// <summary>
-/// Decorates the provider's raster-coverage <see cref="IRasterMapRenderer"/> (e.g. the
-/// PostGIS raster renderer) with server-side vector styling. The provider renderer only
-/// rasterizes stored raster coverages (the <c>raster_data</c> table); a bound vector style
-/// applied to a feature layer was therefore never reflected in a static render, and styled
-/// requests threw <see cref="NotSupportedException"/> (honua-server#2498).
-/// </summary>
-/// <remarks>
-/// <para>Behavior is <b>raster-first, vector-fallback</b>: whenever the wrapped renderer
-/// produces raster bytes (a layer backed by a raster coverage), those native bytes are
-/// returned after applying any requested opaque PNG/JPEG background. Format, temporal
-/// mosaics, and multi-layer <c>ST_Union</c> behavior otherwise remain untouched. Only when the raster
-/// path yields no data <b>and</b> the requested layer(s) carry geometry does this decorator
-/// render the features through the shared Skia pipeline
-/// (<see cref="RasterMapRenderingPipeline.RenderBoundStyleVectorLayersAsync"/>), applying
-/// each layer's bound MapLibre/drawingInfo style — the same styled draw path WMS GetMap,
-/// MapServer export, and OGC API Maps use. This is the render path the MCP
-/// <c>honua_render_map</c> tool drives; the tool passes each layer's applied primary catalog
-/// style through <see cref="MapRenderRequest.AppliedStyleJsonByLayerId"/>, so an
-/// <c>honua_apply_style_preset</c> binding is reflected in the rendered pixels rather than the
-/// layer's stored default style.</para>
-/// <para>Styled vector output is encoded by Skia and therefore limited to PNG/JPEG; a TIFF
-/// (or otherwise non-Skia) request that would fall back to the vector path returns an empty
-/// result rather than mislabeled bytes, preserving the raster path's honest content typing.</para>
-/// </remarks>
+// A non-image request that would fall back to the vector path returns empty rather than mislabeled bytes.
 internal sealed class VectorAwareRasterMapRenderer : IRasterMapRenderer
 {
     private readonly IRasterMapRenderer _inner;
@@ -56,7 +32,6 @@ internal sealed class VectorAwareRasterMapRenderer : IRasterMapRenderer
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <inheritdoc />
     public async Task<RasterResult> RenderCollectionMapAsync(
         int layerId,
         MapRenderRequest request,
@@ -76,7 +51,6 @@ internal sealed class VectorAwareRasterMapRenderer : IRasterMapRenderer
             cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<RasterResult> RenderDatasetMapAsync(
         int[] layerIds,
         MapRenderRequest request,
@@ -96,7 +70,6 @@ internal sealed class VectorAwareRasterMapRenderer : IRasterMapRenderer
             cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<RasterResult> RenderStyledMapAsync(
         int layerId,
         string styleId,
@@ -341,13 +314,6 @@ internal sealed class VectorAwareRasterMapRenderer : IRasterMapRenderer
 
     private const int DefaultSrid = 4326;
 
-    /// <summary>
-    /// Resolves the resource for <paramref name="layerId"/>, preferring the handler-resolved
-    /// identity carried on <see cref="MapRenderRequest.ResolvedLayers"/> (looked up by
-    /// canonical resource id) so a colliding StorageLayerId does not re-resolve first-wins to
-    /// the wrong (e.g. raster) resource. Falls back to the first-wins storage-layer index when
-    /// no resolved identity is supplied (legacy callers) (#2799).
-    /// </summary>
     private static MetadataV2Resource? ResolveResourceForLayer(
         MetadataV2GraphSnapshot snapshot,
         int layerId,
@@ -407,19 +373,8 @@ internal sealed class VectorAwareRasterMapRenderer : IRasterMapRenderer
 
 }
 
-/// <summary>
-/// Registration for the vector-aware raster map renderer decorator.
-/// </summary>
 public static class VectorAwareRasterMapRendererServiceCollectionExtensions
 {
-    /// <summary>
-    /// Wraps the currently registered <see cref="IRasterMapRenderer"/> (the provider's
-    /// raster-coverage renderer) with <see cref="VectorAwareRasterMapRenderer"/> so a
-    /// layer's bound vector style is applied at pixel level on the shared render path
-    /// (honua-server#2498). No-op when no inner renderer is registered.
-    /// </summary>
-    /// <param name="services">The service collection.</param>
-    /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddVectorAwareRasterMapRendering(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);

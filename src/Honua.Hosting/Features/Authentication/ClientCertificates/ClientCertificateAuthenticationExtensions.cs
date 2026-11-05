@@ -10,20 +10,7 @@ namespace Honua.Infrastructure.Authentication.ClientCertificates;
 
 internal static class ClientCertificateAuthenticationExtensions
 {
-    /// <summary>
-    /// Registers native mTLS/client-certificate authentication ONLY when the
-    /// <c>security.mtls</c> experimental capability is enabled (#2958). The options section
-    /// is always bound (unvalidated) and the read-only <see cref="IClientCertificateTrustStore"/>
-    /// is always registered so read-only consumers — <c>CapabilityManifestService</c> and the
-    /// anonymous admin auth bootstrap endpoint (<c>HandleGetAuthConfig</c>) — can still report
-    /// the configured <see cref="ClientCertificateAuthenticationOptions.Mode"/> and trust-profile
-    /// hints without eagerly validating or standing up the auth surface. While the capability is
-    /// off the enforcement surface stays fully dormant: no eager options validation, no
-    /// authentication scheme, no DI-registered validator/extractor — an operator who has
-    /// configured (or half-configured) <c>Authentication:ClientCertificates:*</c> without opting
-    /// into the experimental flag never hits a startup validation failure or an interposed
-    /// cert-RBAC check on an otherwise-valid bearer-token admin request.
-    /// </summary>
+    // While security.mtls is off, options stay readable for capability reporting but no certificate scheme or validator is registered, so a bearer admin request is not certificate-checked.
     public static IServiceCollection AddHonuaClientCertificateAuthentication(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -60,12 +47,7 @@ internal static class ClientCertificateAuthenticationExtensions
         return services;
     }
 
-    /// <summary>
-    /// Runs the client-certificate enforcement middleware ONLY when the <c>security.mtls</c>
-    /// experimental capability is enabled (#2958); otherwise it is a no-op so the pipeline
-    /// never attempts to resolve the (unregistered, when the flag is off) enforcement
-    /// dependencies.
-    /// </summary>
+    // Enforcement is a no-op while the capability is off so the pipeline does not resolve dependencies that were not registered.
     public static IApplicationBuilder UseHonuaClientCertificateAuthentication(this IApplicationBuilder app)
     {
         ArgumentNullException.ThrowIfNull(app);
@@ -76,15 +58,7 @@ internal static class ClientCertificateAuthenticationExtensions
             : app;
     }
 
-    /// <summary>
-    /// Whether the <c>security.mtls</c> built-experimental capability is enabled, per the
-    /// same <c>Capabilities:Experimental</c> config precedence as every other experimental
-    /// capability (global switch or per-capability override; see
-    /// <see cref="CapabilityFlagOptions"/>). This is a one-time, startup-time (or per-request,
-    /// for the composite-scheme selector) config read rather than an injected
-    /// <c>IOptions&lt;CapabilityFlagOptions&gt;</c> because several call sites run at
-    /// composition time, before the DI container is built.
-    /// </summary>
+    // The capability flag is read from configuration because these call sites run at composition time, before DI is built.
     public static bool IsMtlsCapabilityEnabled(IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);
