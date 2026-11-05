@@ -11,7 +11,6 @@ internal static class StyleDefaults
 
     public const double DefaultLineWidth = 2d;
     public const double DefaultOutlineWidth = 1d;
-    /// <summary>Conversion fallback when an existing style omits point size; distinct from default style radius (4d) and GeoServices size (8d).</summary>
     public const double DefaultPointSize = 6d;
 
     public const string SourceLayerName = "layer";
@@ -22,12 +21,6 @@ internal static class StyleDefaults
 
     public static string GetTileUrl(int layerId) => $"/tiles/{layerId}/{{z}}/{{x}}/{{y}}.mvt";
 
-    /// <summary>
-    /// Builds a MapLibre guard expression that returns <c>true</c> only when the field
-    /// is present AND its runtime type is <c>"number"</c>.  This routes null, missing,
-    /// string, and other non-numeric values to the fallback branch of a <c>case</c>
-    /// expression, preventing <c>to-number</c> from silently coercing them to 0.
-    /// </summary>
     internal static object[] BuildNumericFieldGuard(string fieldName) =>
     [
         "all",
@@ -35,12 +28,6 @@ internal static class StyleDefaults
         new object[] { "==", new object[] { "typeof", new object[] { "get", fieldName } }, "number" }
     ];
 
-    /// <summary>
-    /// Builds a MapLibre guard expression that returns <c>true</c> only when the field
-    /// is present AND its value is not null.  This routes missing and null values to
-    /// the fallback branch of a <c>case</c> expression, preventing <c>to-string(null)</c>
-    /// from coercing them to <c>""</c> and accidentally matching an empty-string category.
-    /// </summary>
     internal static object[] BuildNonNullFieldGuard(string fieldName) =>
     [
         "all",
@@ -66,9 +53,6 @@ internal static class StyleDefaults
         return BuildStyleDocument(layerId, layerName, layers);
     }
 
-    /// <summary>
-    /// Wraps a layer list in a complete MapLibre v8 style document with vector tile source.
-    /// </summary>
     internal static Dictionary<string, object?> BuildStyleDocument(
         int layerId,
         string layerName,
@@ -114,11 +98,6 @@ internal static class StyleDefaults
         };
     }
 
-    /// <summary>
-    /// Builds a GeoServices symbol matching the updated MapLibre default styling.
-    /// Bakes MapLibre opacity into the GeoServices RGBA alpha channel so the two
-    /// format defaults stay visually aligned.
-    /// </summary>
     internal static Dictionary<string, object?> BuildDefaultGeoServicesSymbol(MetadataV2GeometryType geometryType)
     {
         // #2D69A5 = RGB(45, 105, 165)

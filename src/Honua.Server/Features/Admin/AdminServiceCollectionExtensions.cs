@@ -9,16 +9,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Service collection extensions for admin features.
-/// </summary>
 public static class AdminServiceCollectionExtensions
 {
-    /// <summary>
-    /// Adds enhanced admin services including configuration discovery and management.
-    /// </summary>
-    /// <param name="services">Service collection to configure</param>
-    /// <returns>Updated service collection for chaining</returns>
     public static IServiceCollection AddEnhancedAdminServices(this IServiceCollection services)
     {
         services.TryAddSingleton<IConfigurationValidator, ConfigurationValidator>();

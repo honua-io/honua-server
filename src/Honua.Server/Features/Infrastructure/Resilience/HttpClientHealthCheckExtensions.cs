@@ -9,23 +9,10 @@ using Polly.CircuitBreaker;
 
 namespace Honua.Infrastructure.Resilience;
 
-/// <summary>
-/// Extension methods for adding HTTP client health checks with circuit breaker awareness.
-/// </summary>
 public static class HttpClientHealthCheckExtensions
 {
     private static readonly string[] DefaultTags = ["http", "external"];
 
-    /// <summary>
-    /// Adds health checks for HTTP clients with circuit breaker state monitoring.
-    /// </summary>
-    /// <param name="builder">The health checks builder.</param>
-    /// <param name="serviceType">Service type identifier matching the HTTP client configuration.</param>
-    /// <param name="healthCheckUri">URI to check for service health.</param>
-    /// <param name="httpClientName">Optional HTTP client name. Uses serviceType if not specified.</param>
-    /// <param name="timeout">Health check timeout. Defaults to 10 seconds.</param>
-    /// <param name="tags">Optional health check tags.</param>
-    /// <returns>The health checks builder for chaining.</returns>
     public static IHealthChecksBuilder AddHttpClientHealthCheck(
         this IHealthChecksBuilder builder,
         string serviceType,
@@ -55,9 +42,6 @@ public static class HttpClientHealthCheckExtensions
     }
 }
 
-/// <summary>
-/// Health check implementation that monitors HTTP client connectivity and circuit breaker state.
-/// </summary>
 internal sealed class HttpClientHealthCheck : IHealthCheck
 {
     private readonly IHttpClientFactory _httpClientFactory;

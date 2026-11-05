@@ -6,41 +6,22 @@ using Honua.Core.Features.Observability.Domain;
 
 namespace Honua.Infrastructure.Monitoring;
 
-/// <summary>
-/// One findings evaluation together with the evidence posture of the telemetry sources it actually
-/// read. Both halves come from the same pass so a caller can never pair findings with a posture
-/// collected at a different instant.
-/// </summary>
+// Both halves come from the same pass, so findings cannot be paired with a posture from a different instant.
 internal sealed record OpsFindingsEvaluation
 {
-    /// <summary>Gets the UTC instant the rules were evaluated (response/evaluation time).</summary>
     public required DateTimeOffset EvaluatedAt { get; init; }
 
-    /// <summary>Gets the active findings, ordered by descending severity.</summary>
     public required IReadOnlyList<OpsFinding> Findings { get; init; }
 
-    /// <summary>Gets the posture of every source the evaluation consumed.</summary>
     public required EvidencePosture Posture { get; init; }
 }
 
-/// <summary>
-/// Findings engine that also publishes the observation-source posture behind its evaluation, so the
-/// REST and MCP read surfaces and the proposal gate all reason over the same measured evidence
-/// rather than a response-time approximation of it.
-/// </summary>
 internal interface IOpsFindingsEvidenceSource : IOpsFindingsService
 {
-    /// <summary>Evaluates all rules and returns the findings with the evidence posture used.</summary>
-    /// <param name="cancellationToken">A token to cancel the operation.</param>
-    /// <returns>The findings and the posture of the sources that produced them.</returns>
     Task<OpsFindingsEvaluation> EvaluateWithEvidenceAsync(CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// Closed, documented mapping from a deterministic finding rule to the source ids that rule read.
-/// A rule's required sources must all be complete and fresh before its recommended action may be
-/// routed, and the same list is published on the wire so a client can verify the decision.
-/// </summary>
+// A rule's required sources must be complete and fresh before its action may be routed.
 internal static class OpsFindingEvidenceMap
 {
     private static readonly IReadOnlyList<string> AlertDispatchSources =
@@ -73,13 +54,7 @@ internal static class OpsFindingEvidenceMap
         EvidencePostureVocabulary.SourceIds.FindingsWorkflowOperations,
     ];
 
-    /// <summary>
-    /// Returns the source ids a rule depends on. An unrecognized rule is deliberately mapped to the
-    /// composite findings source, which is complete only when every section is — an unknown rule
-    /// therefore fails closed rather than being treated as dependency-free.
-    /// </summary>
-    /// <param name="rule">The kebab-case rule identifier.</param>
-    /// <returns>The stable source ids required to act on the rule's finding.</returns>
+    // An unrecognized rule maps to the composite source and fails closed instead of being treated as dependency-free.
     public static IReadOnlyList<string> RequiredSourceIds(string rule) => rule switch
     {
         OpsFindingsService.RuleManagedComposeService => [ManagedComposeObserver.SourceId],
@@ -96,7 +71,6 @@ internal static class OpsFindingEvidenceMap
         _ => [EvidencePostureVocabulary.SourceIds.Findings],
     };
 
-    /// <summary>Uses the sources actually read for this finding's backend.</summary>
     public static IReadOnlyList<string> RequiredSourceIds(OpsFinding finding)
         => finding.Rule == OpsFindingsService.RulePlatformReleaseRuntimeDivergence
             && finding.EvidenceRefs.Contains(OpsFindingsService.ManagedComposeReleaseEvidence, StringComparer.Ordinal)

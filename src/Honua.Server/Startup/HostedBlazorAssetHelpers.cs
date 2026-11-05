@@ -6,12 +6,7 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Server.Startup;
 
-/// <summary>
-/// Static-asset wiring + endpoint filtering for the small hosted Blazor shells that ship
-/// inside the server (currently just the optional STAC ops demo at <c>/samples/stac-ops</c>).
-/// The in-tree admin UI was replaced by the separate <c>honua-console</c> repository and is
-/// permanently blocked here so its leftover endpoint metadata cannot resurface.
-/// </summary>
+// The in-tree admin UI stays blocked so leftover endpoint metadata cannot be served.
 internal static class HostedBlazorAssetHelpers
 {
     public static void ConfigureHostedBlazorAssets(

@@ -8,9 +8,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin replay endpoints for normalized feature-change events.
-/// </summary>
 internal static class FeatureChangeEventsEndpoints
 {
     public static void MapFeatureChangeEventsEndpoints(this WebApplication app)

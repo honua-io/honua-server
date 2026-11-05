@@ -8,21 +8,9 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Features.Admin.Federation.Connectors;
 
-/// <summary>
-/// HTTP <see cref="HttpGeoJsonFederatedSourceConnector"/> for OGC API - Features / WFS sources.
-/// It fetches GeoJSON items from <c>{endpoint}/collections/{remoteLayer}/items</c>, pushing
-/// down the predicates the planner allows for the <see cref="FederatedSourceKind.OgcWfs"/>
-/// transport: a CQL2-text attribute <c>filter</c>, a <c>bbox</c> envelope, and offset/limit
-/// paging. Ordering and exact spatial relationships are refined locally by the federation
-/// executor, so this connector never emits them remotely (issue #341).
-/// </summary>
+// Ordering and exact spatial relationships are refined locally, so this connector never sends them to the remote service.
 internal sealed class OgcFeaturesFederatedSourceConnector : HttpGeoJsonFederatedSourceConnector
 {
-    /// <summary>
-    /// Initializes a new instance of the <see cref="OgcFeaturesFederatedSourceConnector"/> class.
-    /// </summary>
-    /// <param name="httpClientFactory">Factory for the named federation HTTP client.</param>
-    /// <param name="logger">Logger for transport diagnostics.</param>
     public OgcFeaturesFederatedSourceConnector(
         IHttpClientFactory httpClientFactory,
         ILogger<OgcFeaturesFederatedSourceConnector> logger)
@@ -30,10 +18,8 @@ internal sealed class OgcFeaturesFederatedSourceConnector : HttpGeoJsonFederated
     {
     }
 
-    /// <inheritdoc />
     public override FederatedSourceKind Kind => FederatedSourceKind.OgcWfs;
 
-    /// <inheritdoc />
     protected override Uri BuildRequestUri(FederatedFetchRequest request)
     {
         var source = request.Source;

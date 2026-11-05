@@ -15,34 +15,15 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Features.Protocols.Coverages.Multidimensional;
 
-/// <summary>
-/// Submit-side helper for the ADR-0039 Path B multidimensional-coverage metadata
-/// scan. Projects a coverage registration onto a durable
-/// <see cref="ExecutionJobKind.Geoprocessing"/> job that the GDAL native worker
-/// claims (process id <c>coverage.multidim.metadata</c>), then maps the worker's
-/// <c>gdalmdiminfo</c> artifact back into canonical coverage metadata.
-/// </summary>
 internal static class MultidimCoverageScanJob
 {
-    /// <summary>
-    /// Canonical process id. MUST match
-    /// <c>GdalMultidimCoverageMetadataJobExecutor.HandledProcessId</c> in the GDAL
-    /// worker (string contract between submit and execute).
-    /// </summary>
+    // The process id must match the worker's handled-process id.
     public const string ProcessId = "coverage.multidim.metadata";
 
-    /// <summary>
-    /// Spec parameter carrying the coverage registration id so the status endpoint
-    /// can resolve which registration a completed scan belongs to. Not read by the
-    /// worker.
-    /// </summary>
     public const string RegistrationIdParam = "honua.coverage.registration_id";
 
     private const string JobContentType = "application/json";
 
-    /// <summary>
-    /// Builds the execution-job spec for a coverage metadata scan.
-    /// </summary>
     public static ExecutionJobSpec BuildSpec(MultidimensionalCoverageRegistration registration)
     {
         ArgumentNullException.ThrowIfNull(registration);
@@ -69,9 +50,6 @@ internal static class MultidimCoverageScanJob
         };
     }
 
-    /// <summary>
-    /// Creates and enqueues the scan job, returning its stable job id.
-    /// </summary>
     public static async Task<string> SubmitAsync(
         IExecutionJobStore jobStore,
         IJobQueue jobQueue,
@@ -104,10 +82,6 @@ internal static class MultidimCoverageScanJob
         return jobId;
     }
 
-    /// <summary>
-    /// Returns true when the job is a coverage metadata scan (so the status
-    /// endpoint does not leak unrelated job ids).
-    /// </summary>
     public static bool IsScanJob(ExecutionJobRecord job)
     {
         ArgumentNullException.ThrowIfNull(job);
@@ -116,9 +90,6 @@ internal static class MultidimCoverageScanJob
                string.Equals(process, ProcessId, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// Reads the coverage registration id stamped on a scan job, if present.
-    /// </summary>
     public static bool TryGetRegistrationId(ExecutionJobRecord job, out long registrationId)
     {
         ArgumentNullException.ThrowIfNull(job);
@@ -127,13 +98,6 @@ internal static class MultidimCoverageScanJob
                long.TryParse(raw, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out registrationId);
     }
 
-    /// <summary>
-    /// Decodes the worker's <c>data:</c> artifact (a <c>{ "mdiminfo", "info" }</c>
-    /// envelope), maps the <c>gdalmdiminfo</c> structure into canonical coverage
-    /// metadata, and enriches it with extent/temporal bounds from the
-    /// <c>gdalinfo</c> document when present. Returns null when the artifact is
-    /// missing or unparseable.
-    /// </summary>
     public static MultidimensionalCoverageMetadata? TryMapArtifact(
         string? artifactReference,
         MultidimensionalCoverageFormat format,
@@ -183,10 +147,6 @@ internal static class MultidimCoverageScanJob
         }
     }
 
-    /// <summary>
-    /// Reads the derived Zarr store root the worker wrote (and reported in the
-    /// artifact envelope) when the NetCDF→Zarr convert succeeded.
-    /// </summary>
     public static bool TryGetZarrRootPath(string? artifactReference, out string rootPath)
     {
         rootPath = string.Empty;
@@ -220,12 +180,6 @@ internal static class MultidimCoverageScanJob
         return false;
     }
 
-    /// <summary>
-    /// Registers the worker's derived Zarr store as a normal Zarr coverage for the
-    /// same layer so OGC Coverages serves pixel slices through the existing Zarr
-    /// reader. Idempotent across status polls; the metadata scan is best-effort
-    /// (a later Zarr refresh completes it if the cloud read is unavailable here).
-    /// </summary>
     public static async Task RegisterDerivedZarrAsync(
         IZarrStore zarrStore,
         IZarrMetadataReader zarrMetadataReader,
@@ -285,12 +239,7 @@ internal static class MultidimCoverageScanJob
         }
     }
 
-    /// <summary>
-    /// Carries the authoritative CF/GDAL metadata discovered from the source into
-    /// the worker-created Zarr registration. The conversion preserves array data
-    /// and row order but does not guarantee that its root attributes contain the
-    /// server's private georeferencing manifest.
-    /// </summary>
+    // Derived Zarr metadata needs the source georeferencing manifest because conversion preserves array data and row order without that manifest.
     internal static ZarrStoreMetadata EnrichDerivedZarrMetadata(
         ZarrStoreMetadata zarrMetadata,
         MultidimensionalCoverageMetadata sourceMetadata)

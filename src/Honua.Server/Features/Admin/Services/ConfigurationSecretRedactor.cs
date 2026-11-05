@@ -5,20 +5,9 @@ using System.Text.RegularExpressions;
 
 namespace Honua.Server.Features.Admin.Services;
 
-/// <summary>
-/// Deny-by-default redaction for admin configuration-discovery values.
-///
-/// The admin discovery surface serializes live option values back to operators. Redacting only by a
-/// property-name denylist (password/secret/key/token) leaks credentials embedded in generically named
-/// fields such as <c>ConnectionString</c>, <c>DefaultConnection</c>, <c>Endpoint</c>, or
-/// <c>Username</c> (honua-server#2804). This helper masks a value when EITHER the property name is
-/// known-sensitive OR the value itself looks credential-bearing (a connection string, an endpoint/URI
-/// with embedded credentials, a <c>key=value</c> secret fragment, or a high-entropy secret token) so
-/// new fields are safe without being added to any list.
-/// </summary>
+// A value is masked when its name is sensitive or the value itself looks like a credential, so a new field is covered without being added to a list.
 internal static class ConfigurationSecretRedactor
 {
-    /// <summary>Placeholder emitted in place of a redacted value.</summary>
     internal const string Mask = "***";
 
     // Property-name tokens that indicate the value is, or carries, a credential. The original
@@ -43,9 +32,6 @@ internal static class ConfigurationSecretRedactor
         @"[a-zA-Z][a-zA-Z0-9+.\-]*://[^/\s:@]+:[^/\s:@]+@",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
-    /// <summary>
-    /// Determines whether a property name implies the value is or carries a credential.
-    /// </summary>
     internal static bool IsSensitiveName(string? propertyName)
     {
         if (string.IsNullOrEmpty(propertyName))
@@ -57,9 +43,6 @@ internal static class ConfigurationSecretRedactor
         return SensitiveNameTokens.Any(token => name.Contains(token, StringComparison.Ordinal));
     }
 
-    /// <summary>
-    /// Determines whether a value looks credential-bearing regardless of the property name it came from.
-    /// </summary>
     internal static bool LooksCredentialBearing(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -79,11 +62,6 @@ internal static class ConfigurationSecretRedactor
             || LooksLikeHighEntropySecret(value);
     }
 
-    /// <summary>
-    /// Returns <see cref="Mask"/> when the value should be hidden, otherwise the original value.
-    /// Deny-by-default: sensitive-named properties are masked unconditionally, and any string value
-    /// that looks credential-bearing is masked even when its property name looks innocuous.
-    /// </summary>
     internal static object? Redact(string? propertyName, object? value)
     {
         if (value is null)

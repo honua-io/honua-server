@@ -5,27 +5,16 @@ using Honua.Core.Features.Authorization.Abstractions;
 
 namespace Honua.Server.Features.Admin.Services;
 
-/// <summary>
-/// Fails startup when a read-policy store is registered without the request-scoped source that
-/// turns its policies into an enforced row filter or field-mask set. The feature providers take
-/// those sources as optional services, so a missing registration would otherwise leave stored
-/// policies unapplied without any error. Registered outside Development and Test only.
-/// </summary>
 internal sealed class ReadPolicyWiringStartupValidator(IServiceProviderIsService registrations) : IHostedService
 {
-    /// <inheritdoc />
     public Task StartAsync(CancellationToken cancellationToken)
     {
         Validate(registrations);
         return Task.CompletedTask;
     }
 
-    /// <inheritdoc />
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
-    /// <summary>
-    /// Throws when a policy store is registered and its enforcement source is not.
-    /// </summary>
     internal static void Validate(IServiceProviderIsService registrations)
     {
         ArgumentNullException.ThrowIfNull(registrations);

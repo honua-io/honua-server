@@ -10,19 +10,11 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// GP process release and binding admin API (honua-server#6221): publish an immutable release
-/// lock, read releases, read the live binding of a process together with what this server can
-/// execute, and activate (deploy or roll back) a release under an expected binding version.
-/// This is the seam honua-release's <c>gp-deploy-process.yml</c> calls after the worker path is
-/// ready; every refusal is returned as data so the deployment receipt can record it.
-/// </summary>
 public static class GpProcessReleaseEndpoints
 {
     private const string ScheduleReconciliationNote =
         "pending-orchestration-integration: activation does not create, modify, or duplicate schedules.";
 
-    /// <summary>Maps the admin routes under <c>/api/v1/admin/gp/process-releases</c>.</summary>
     public static void MapGpProcessReleaseEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/gp/process-releases")

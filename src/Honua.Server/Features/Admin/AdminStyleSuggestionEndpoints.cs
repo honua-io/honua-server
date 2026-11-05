@@ -14,16 +14,10 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoint for auto-cartographic style suggestions.
-/// </summary>
 internal static class AdminStyleSuggestionEndpoints
 {
     internal sealed class AdminStyleSuggestionEndpointsLog;
 
-    /// <summary>
-    /// Maps the style suggestion endpoint to the admin metadata API group.
-    /// </summary>
     public static void MapAdminStyleSuggestionEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/metadata/layers")

@@ -7,12 +7,6 @@ using Honua.Core.Features.Observability.Domain;
 
 namespace Honua.Infrastructure.Monitoring;
 
-/// <summary>
-/// The in-repo consumer of the workflow-transition seam: maps each observed deploy/release transition to
-/// an <see cref="OperateEventKind.Release"/> event and appends it to the <see cref="ReleaseTimelineBuffer"/>
-/// so it appears on the unified Operate timeline (#2562). The realtime hub (#2554) attaches to the SAME
-/// seam as a second, independent listener.
-/// </summary>
 internal sealed class ReleaseTimelineTransitionListener : IWorkflowOperationTransitionListener
 {
     private readonly ReleaseTimelineBuffer _buffer;

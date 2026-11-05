@@ -5,17 +5,9 @@ using Honua.Core.Features.Observability.Domain;
 
 namespace Honua.Server.Features.Admin.Models;
 
-/// <summary>
-/// Maps a normalized <see cref="OperateEvent"/> onto its wire shape (<see cref="OperateEventResponse"/>).
-/// Shared by the REST Operate timeline (<c>GET /api/v1/admin/observability/events</c>) and the realtime
-/// <c>operate-events</c> hub group (#2554) so a live-pushed event is byte-identical to the same event read
-/// back from the timeline API — the reconnect gap-fill contract relies on that identity.
-/// </summary>
+// Shared by the REST timeline and the realtime hub so a live event matches the event a reconnect reads back.
 internal static class OperateEventResponseMapper
 {
-    /// <summary>Projects the domain event onto the camel-cased, kind/severity-lowercased wire shape.</summary>
-    /// <param name="value">The normalized operate event.</param>
-    /// <returns>The wire response.</returns>
     public static OperateEventResponse Map(OperateEvent value)
     {
         ArgumentNullException.ThrowIfNull(value);

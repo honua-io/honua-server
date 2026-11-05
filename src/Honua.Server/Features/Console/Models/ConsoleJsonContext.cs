@@ -8,9 +8,6 @@ using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Console.Models;
 
-/// <summary>
-/// JSON source generation context for Console content/RBAC API models.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

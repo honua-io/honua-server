@@ -12,26 +12,13 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Operations.Status;
 
-/// <summary>
-/// Composes the server-authoritative aggregated operational status: one server-computed verdict plus
-/// per-domain rollups and, when configured, an availability SLO snapshot. Built on the existing
-/// deterministic ops spine — it reuses <see cref="IOpsHealthSnapshotService"/> (which already stitches
-/// health, serving latency, GP queue, alert dispatch, deploy readiness, and database utilization) and
-/// <see cref="IOpsFindingsService"/> rather than re-wiring the low-level seams, and adds the
-/// deploy-operation state counts and telemetry-backend posture on top.
-/// </summary>
 internal interface IOperateStatusService
 {
-    /// <summary>Builds the aggregated operate status.</summary>
-    /// <param name="cancellationToken">A token to cancel the operation.</param>
-    /// <returns>The composed status response.</returns>
     Task<OperateStatusResponse> GetAsync(CancellationToken cancellationToken = default);
 }
 
-/// <inheritdoc />
 internal sealed class OperateStatusService : IOperateStatusService
 {
-    /// <summary>The payload schema version. Additive changes bump the minor component.</summary>
     internal const string SchemaVersion = "1.1";
 
     private const int MaxTopFindings = 5;

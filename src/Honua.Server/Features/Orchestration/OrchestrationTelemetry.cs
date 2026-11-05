@@ -7,9 +7,6 @@ using Honua.ServiceDefaults;
 
 namespace Honua.Server.Features.Orchestration;
 
-/// <summary>
-/// OpenTelemetry instrumentation for workflow orchestration.
-/// </summary>
 internal static class OrchestrationTelemetry
 {
     internal static class Activities

@@ -8,11 +8,6 @@ using Honua.Infrastructure.Helpers;
 
 namespace Honua.Server.Features.Styling.Sld;
 
-/// <summary>
-/// Parses SLD 1.0 and SLD 1.1 / Symbology Encoding documents into the internal
-/// <see cref="SldDocument"/> tree. Always delegates XML loading to
-/// <see cref="SecureXmlDocumentParser"/> so DTDs and external entities are blocked.
-/// </summary>
 internal static class SldParser
 {
     private const int MaxInputCharacters = 1_048_576; // 1 MiB - migration uploads are small.

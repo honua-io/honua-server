@@ -16,7 +16,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Geoprocessing.CustomCode;
 
-/// <summary>Credential-free worker output transport, fenced to one live job attempt.</summary>
+// Worker output transport carries no credential and is fenced to one live job attempt.
 internal static class CustomCodeArtifactEndpoints
 {
     internal const long MaximumArtifactBytes = CustomCodeArtifactQuota.MaximumArtifactBytes;

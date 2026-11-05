@@ -8,14 +8,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.ControlPlane;
 
-/// <summary>Registers the rollback restore gate in front of the deploy executor.</summary>
 internal static class PreMigrationRestoreRegistration
 {
-    /// <summary>
-    /// Registers restore collaborators. Program registers the guarded deploy executor explicitly.
-    /// Forward deploys still reach
-    /// <see cref="DeployOperationExecutor"/>. Rollback is assessed by <see cref="PreMigrationRestoreCoordinator"/>.
-    /// </summary>
     public static IServiceCollection AddPreMigrationRestore(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddOptions<RestoreCellOptions>()

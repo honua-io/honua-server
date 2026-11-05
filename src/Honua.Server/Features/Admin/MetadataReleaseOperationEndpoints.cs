@@ -12,9 +12,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for metadata release workflow operation reads.
-/// </summary>
 internal static class MetadataReleaseOperationEndpoints
 {
     private const string DeployControlUnavailableMessage = "Deploy control is temporarily unavailable.";

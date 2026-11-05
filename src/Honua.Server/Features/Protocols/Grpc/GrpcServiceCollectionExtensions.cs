@@ -11,25 +11,13 @@ using Npgsql;
 
 namespace Honua.Server.Features.Protocols.Grpc;
 
-/// <summary>
-/// Configuration options for the Honua gRPC service.
-/// </summary>
 internal sealed class GrpcOptions
 {
-    /// <summary>
-    /// Number of features per page in streaming responses. Default 1000.
-    /// </summary>
     public int StreamBatchSize { get; set; } = 1000;
 }
 
-/// <summary>
-/// Extension methods for registering gRPC services.
-/// </summary>
 internal static class GrpcServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers gRPC infrastructure and the HonuaFeatureService.
-    /// </summary>
     public static IServiceCollection AddHonuaGrpc(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);

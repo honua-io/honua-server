@@ -12,24 +12,10 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin.Federation;
 
-/// <summary>
-/// Log category for federation admin endpoints.
-/// </summary>
 internal sealed class FederationEndpointsLog;
 
-/// <summary>
-/// Admin endpoints for federated-query source configuration and query-plan inspection
-/// (issue #341). The list endpoint exposes the configured sources (no credentials); the
-/// plan endpoint runs the offline <see cref="IFederationQueryPlanner"/> against a sample
-/// query so operators can see which predicates push down to a remote source versus which
-/// are refined locally — without contacting the remote source.
-/// </summary>
 internal static class FederationEndpoints
 {
-    /// <summary>
-    /// Maps the federation admin endpoints.
-    /// </summary>
-    /// <param name="endpoints">The endpoint route builder.</param>
     public static void MapFederationEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/federation/sources")

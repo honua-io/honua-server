@@ -5,22 +5,8 @@ using Honua.Core.Features.Console.Domain;
 
 namespace Honua.Server.Features.Console;
 
-/// <summary>
-/// Builds the read-only <see cref="ConsoleShareProjection"/> from a content item
-/// and its share state, and resolves the effective access tier shared by the
-/// projection and the dependency-closure validator.
-/// </summary>
 internal static class ConsoleShareMapper
 {
-    /// <summary>
-    /// Resolves the effective Share access tier. Explicit share state is
-    /// authoritative; when none exists the tier is derived from the item's
-    /// membership visibility for backward compatibility (public =&gt;
-    /// public-indexed, organization =&gt; organization, otherwise private).
-    /// A stored public-indexed tier is then capped by visibility so narrowing
-    /// membership revokes anonymous catalog and open-data exposure. Public-link
-    /// stays a token grant and is not capped by membership visibility.
-    /// </summary>
     public static ConsoleShareAccessTier ResolveEffectiveTier(ConsoleShareState? state, ConsoleContentItem item)
     {
         ArgumentNullException.ThrowIfNull(item);
@@ -35,12 +21,6 @@ internal static class ConsoleShareMapper
         return CapToVisibility(tier, item.Visibility);
     }
 
-    /// <summary>
-    /// Caps a public-indexed tier when membership is no longer public.
-    /// Organization visibility drops it to organization. Personal and team
-    /// visibility drop it to private. Public-link, organization, and private
-    /// tiers are left unchanged, including a public-link grant on a non-public item.
-    /// </summary>
     public static ConsoleShareAccessTier CapToVisibility(ConsoleShareAccessTier tier, ConsoleVisibility visibility)
     {
         if (visibility == ConsoleVisibility.Public || tier != ConsoleShareAccessTier.PublicIndexed)
@@ -53,11 +33,7 @@ internal static class ConsoleShareMapper
             : ConsoleShareAccessTier.Private;
     }
 
-    /// <summary>
-    /// Projects a content item plus its share state and store-projected public
-    /// link tokens into the wire share projection. <paramref name="publicLinkTokens"/>
-    /// must already be redacted (no token values) with effective expiry applied.
-    /// </summary>
+    // The caller must already pass redacted tokens with effective expiry applied.
     public static ConsoleShareProjection BuildProjection(
         ConsoleContentItem item,
         ConsoleShareState? state,
@@ -96,21 +72,12 @@ internal static class ConsoleShareMapper
         };
     }
 
-    /// <summary>
-    /// Logical access endpoints surfaced for an item. The canonical self link is
-    /// the authenticated content detail route; protocol distribution links are
-    /// owned by the publication workflow tracked separately.
-    /// </summary>
     public static IReadOnlyDictionary<string, string> BuildEndpoints(string itemId)
         => new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["self"] = $"/api/v1/console/content/{itemId}",
         };
 
-    /// <summary>
-    /// Item types that can be distributed as open data. Compositions (saved maps,
-    /// dashboards, reports, generated apps) are not open-data datasets.
-    /// </summary>
     private static bool IsDistributableType(ConsoleContentItemType itemType) => itemType switch
     {
         ConsoleContentItemType.Layer

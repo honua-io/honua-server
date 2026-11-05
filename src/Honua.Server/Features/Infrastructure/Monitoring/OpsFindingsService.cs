@@ -16,12 +16,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Monitoring;
 
-/// <summary>
-/// Deterministic, evaluation-on-demand implementation of <see cref="IOpsFindingsService"/>. Each rule
-/// is small, side-effect-free, and reads a single live signal; recommended actions route through the
-/// existing <see cref="IOperationGateway"/> approval flow. No background loop and no model calls
-/// (ADR-0028) — findings are computed only when requested.
-/// </summary>
 internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
 {
     internal const string ManagedComposeReleaseEvidence = "compose-executor:live-revision";
@@ -65,10 +59,7 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
     private readonly TimeProvider _clock;
     private readonly IManagedComposeObserver? _managedComposeObserver;
 
-    /// <summary>
-    /// Server-owned validity window for the live operational signals the rules read. A signal older
-    /// than this is stale evidence and cannot authorize a proposal.
-    /// </summary>
+    // A signal older than this window cannot authorize a proposal.
     private static readonly TimeSpan SignalValidity = TimeSpan.FromMinutes(5);
 
     public OpsFindingsService(
@@ -152,12 +143,6 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
         };
     }
 
-    /// <summary>
-    /// Projects the posture of the signals this evaluation actually read. Every entry is derived
-    /// from the live signal — a source that is not wired reports <c>notConfigured</c>, one whose
-    /// backend failed reports <c>unavailable</c>, and a heartbeat-bearing source publishes its own
-    /// observation time rather than the evaluation time.
-    /// </summary>
     private EvidencePosture BuildEvidencePosture(
         DateTimeOffset now,
         OpsFindingsOptions options,
@@ -925,14 +910,7 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
         }
     }
 
-    /// <summary>
-    /// Reads deploys parked in <see cref="WorkflowOperationStatus.ManualInterventionRequired"/> through
-    /// the store's kind + status query. The active index is not the source: the Redis store files the
-    /// status under its terminal index, so reconcilers and the backstop sweep (which walk the active
-    /// index) leave it alone and <c>ListActiveAsync</c> never returns it (#4938). The read is bounded;
-    /// when the store still reports more, the source is published as partial.
-    /// </summary>
-    /// <returns>The stuck deploys, or null when a read failed.</returns>
+    // Parked deploys are read by kind and status, because the active index files them as terminal and never returns them.
     private async Task<List<WorkflowOperationRecord>?> ReadManualInterventionDeploysAsync(
         OpsFindingsStoreCollection workflowCollection,
         CancellationToken cancellationToken)
@@ -995,7 +973,6 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
     // flap the finding. Informational — a generic protocol-level latency/error-rate breach has no single
     // safe automatic remediation (unlike the post-promotion case, there is no specific deploy to roll
     // back). Fails open when the rollup store is unavailable or errors (#2511-style graceful degradation).
-    /// <returns>True when the rollup store is configured but its read failed (degraded coverage).</returns>
     private async Task<bool> EvaluateServingLatencySloAsync(DateTimeOffset now, OpsFindingsOptions options, List<OpsFinding> findings, CancellationToken cancellationToken)
     {
         if (_rollupStore is null)

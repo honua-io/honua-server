@@ -3,9 +3,6 @@
 
 namespace Honua.Server.Features.Console.Services;
 
-/// <summary>
-/// Structured logging hooks for Console authorization decisions.
-/// </summary>
 internal static partial class ConsoleAuthorizationLog
 {
     [LoggerMessage(EventId = 4800, Level = LogLevel.Debug,

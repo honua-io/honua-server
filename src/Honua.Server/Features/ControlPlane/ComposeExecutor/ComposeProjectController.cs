@@ -13,11 +13,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Allowlisted Compose controller. Every mutation uses a fixed <c>docker</c> argument list for the
-/// single project in <see cref="ComposeExecutorOptions"/>. A failed checksum, a scope violation, or
-/// an incomplete readback never reports success and does not start a different image.
-/// </summary>
+// A failed checksum, a scope violation, or an incomplete readback never reports success and does not start a different image.
 internal sealed partial class ComposeProjectController : IDisposable
 {
     private const string MaxSchemaLabel = "org.honua.max-schema";
@@ -37,7 +33,6 @@ internal sealed partial class ComposeProjectController : IDisposable
     private readonly HttpClient _http;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
-    /// <summary>Creates a controller. The HTTP client probes only the operator-configured URLs.</summary>
     public ComposeProjectController(
         ComposeExecutorOptions options,
         IDockerComposeProcess docker,
@@ -59,7 +54,6 @@ internal sealed partial class ComposeProjectController : IDisposable
         };
     }
 
-    /// <summary>Runs one allowlisted operation. Docker mutations are serialized.</summary>
     public async Task<ComposeExecutorResponse> ExecuteAsync(
         ComposeExecutorRequest request,
         CancellationToken cancellationToken = default)
@@ -106,7 +100,6 @@ internal sealed partial class ComposeProjectController : IDisposable
         }
     }
 
-    /// <inheritdoc />
     public void Dispose()
     {
         _http.Dispose();

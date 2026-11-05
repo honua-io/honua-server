@@ -5,11 +5,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Server.Features.Admin.Models;
 
-/// <summary>
-/// JSON source generation context for the GP process release and binding admin API
-/// (honua-server#6221). The lock document itself is written by
-/// <c>Honua.Geoprocessing.Release.GpProcessReleaseLock</c>, not by this context.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     WriteIndented = false)]

@@ -12,9 +12,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Console Operate unified event timeline + log buffer endpoints (#1168).
-/// </summary>
 internal static class ObservabilityEventEndpoints
 {
     public static void MapObservabilityEventEndpoints(this IEndpointRouteBuilder endpoints)

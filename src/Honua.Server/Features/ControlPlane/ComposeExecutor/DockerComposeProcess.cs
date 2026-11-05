@@ -7,28 +7,21 @@ using System.Text;
 
 namespace Honua.ControlPlane;
 
-/// <summary>Result of one allowlisted docker invocation. Non-zero exits are returned, not thrown.</summary>
 internal readonly record struct DockerProcessResult(int ExitCode, string Stdout, string Stderr);
 
-/// <summary>Process seam so unit tests can prove a refusal never starts docker.</summary>
+// The seam exists so a test can prove a refusal never starts docker.
 internal interface IDockerComposeProcess
 {
-    /// <summary>Runs <c>docker</c> with the supplied argument list and no shell.</summary>
     Task<DockerProcessResult> RunAsync(
         IReadOnlyList<string> arguments,
         TimeSpan timeout,
         CancellationToken cancellationToken);
 }
 
-/// <summary>
-/// Starts <c>docker</c> with <see cref="ProcessStartInfo.ArgumentList"/> only. There is no shell,
-/// no extra environment, and no caller-supplied executable path.
-/// </summary>
 internal sealed class DockerComposeProcess : IDockerComposeProcess
 {
     private const int MaxCapturedCharacters = 256_000;
 
-    /// <inheritdoc />
     public async Task<DockerProcessResult> RunAsync(
         IReadOnlyList<string> arguments,
         TimeSpan timeout,

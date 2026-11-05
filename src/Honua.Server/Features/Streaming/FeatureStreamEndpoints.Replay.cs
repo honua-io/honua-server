@@ -7,12 +7,6 @@ using Honua.Infrastructure.Events;
 
 namespace Honua.Server.Features.Streaming;
 
-/// <summary>
-/// Durable-store replay helpers shared by the WebSocket and SSE transports.
-/// Walks the feature-change event store from a cursor, applies subscription
-/// filters and per-(event, subscription) dedup, then writes envelopes to the
-/// transport.
-/// </summary>
 internal static partial class FeatureStreamEndpoints
 {
     internal static bool HasReplayWindowGap(long requestedCursor, long firstAvailableCursor)
@@ -331,14 +325,7 @@ internal static partial class FeatureStreamEndpoints
         throw new FeatureStreamReplayWindowGapException(previousCursor, firstAvailableCursor);
     }
 
-    /// <summary>
-    /// Stamps the next subscription-local sequence onto an envelope that is about to be
-    /// written. Returns the envelope unchanged when no session manager or subscription is
-    /// available (generation-less legacy/test call sites), so the field stays absent rather
-    /// than advertising a sequence the caller cannot honor. Returns <see langword="null"/>
-    /// when the requested subscription generation is no longer current so callers cannot
-    /// accidentally emit a stale sequence-less frame.
-    /// </summary>
+    // The sequence stays absent when no session can honor it, and a generation that is not current is not stamped.
     private static FeatureStreamEnvelope? StampSequence(
         FeatureStreamEnvelope envelope,
         FeatureStreamSessionManager? sessionManager,

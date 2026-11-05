@@ -5,10 +5,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Server.Features.Admin.Routing;
 
-/// <summary>
-/// Source-generated JSON context for the network-topology rebuild and promotion admin API
-/// models (#2718/#2719).
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

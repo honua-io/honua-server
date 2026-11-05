@@ -8,15 +8,6 @@ using Honua.Core.Features.FieldWorkflows.Review;
 
 namespace Honua.Server.Features.FieldWorkflows.Export;
 
-/// <summary>
-/// Serializes a back-office field export record set into the requested format
-/// (GeoJSON <c>FeatureCollection</c> or CSV). Emits the review-resolved submission
-/// projection (form/service/layer/operation/sync state, submitter hash, device id,
-/// attachment count, review state, decision metadata, timestamps). Raw field values
-/// are intentionally excluded; <c>honua.form_submissions</c> persists only sanitized
-/// submission metadata for privacy, so the export carries metadata and review/audit
-/// state rather than user-entered values or raw geometry.
-/// </summary>
 internal static class FieldExportSerializer
 {
     private static readonly string[] CsvHeader =
@@ -28,11 +19,6 @@ internal static class FieldExportSerializer
         "truncated"
     ];
 
-    /// <summary>
-    /// Serializes <paramref name="items"/> into a UTF-8 byte payload for the
-    /// supplied <paramref name="format"/>. <paramref name="truncated"/> is written
-    /// on the GeoJSON collection and as the trailing CSV column.
-    /// </summary>
     public static byte[] Serialize(string format, FieldSubmissionRecord[] items, bool truncated = false)
         => format switch
         {

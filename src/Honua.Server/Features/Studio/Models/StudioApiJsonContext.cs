@@ -8,9 +8,6 @@ using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Studio.Models;
 
-/// <summary>
-/// Source-generated JSON context for the Studio package lifecycle API.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

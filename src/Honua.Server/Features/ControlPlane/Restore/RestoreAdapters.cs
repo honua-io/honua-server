@@ -16,17 +16,14 @@ using Npgsql;
 
 namespace Honua.ControlPlane;
 
-/// <summary>Opens the database the schema probe should read.</summary>
 internal interface IRestoredConnectionOpener
 {
-    /// <summary>Opens the app database when <paramref name="endpoint"/> is null, otherwise that host.</summary>
     Task<DbConnection?> OpenAsync(string? endpoint, CancellationToken cancellationToken);
 }
 
-/// <summary>Swaps only the host of a Postgres connection string. The result must not be logged.</summary>
+// The repointed connection string must not be logged.
 internal static class ConnectionStringHostSwap
 {
-    /// <summary>Replaces the host. False when the string cannot be parsed or the host is not a single hostname.</summary>
     public static bool TrySwapHost(string secret, string host, out string swapped)
     {
         swapped = string.Empty;
@@ -71,7 +68,6 @@ internal static class ConnectionStringHostSwap
         }
     }
 
-    /// <summary>Reads the host from any supported secret representation.</summary>
     public static string? ReadHost(string secret)
     {
         if (string.IsNullOrWhiteSpace(secret)) return null;
@@ -97,10 +93,8 @@ internal static class ConnectionStringHostSwap
            && !host.Contains('/', StringComparison.Ordinal);
 }
 
-/// <summary>Reads applied migrations. Any failure is an unknown journal.</summary>
 internal static class SchemaJournalReader
 {
-    /// <summary>Reads <c>public.schema_versions</c> and the reader-compatibility table when it exists.</summary>
     public static async Task<SchemaJournalSnapshot> ReadAsync(DbConnection connection, CancellationToken cancellationToken)
     {
         try
@@ -180,10 +174,8 @@ internal static class SchemaJournalReader
     }
 }
 
-/// <summary>Journal of the process database. Missing data source or a failed read is unknown.</summary>
 internal sealed class PostgresSchemaJournal(IServiceProvider services) : ISchemaJournal
 {
-    /// <inheritdoc />
     public async Task<SchemaJournalSnapshot> ReadAsync(CancellationToken cancellationToken)
     {
         var dataSource = services.GetService<NpgsqlDataSource>();
@@ -204,10 +196,8 @@ internal sealed class PostgresSchemaJournal(IServiceProvider services) : ISchema
     }
 }
 
-/// <summary>Prior-image schema numbers from <c>ControlPlane:Restore:Revisions</c>.</summary>
 internal sealed class ConfiguredRevisionSchemaCatalog(IOptions<RestoreCellOptions> options) : IRevisionSchemaCatalog
 {
-    /// <inheritdoc />
     public int? MaxSchema(string revision)
     {
         foreach (var entry in options.Value.Revisions)
@@ -222,10 +212,8 @@ internal sealed class ConfiguredRevisionSchemaCatalog(IOptions<RestoreCellOption
     }
 }
 
-/// <summary>Append-only audit file. An empty path or a failed write is not durable.</summary>
 internal sealed class FilePreMigrationRestoreAudit(IOptions<RestoreCellOptions> options) : IPreMigrationRestoreAudit
 {
-    /// <inheritdoc />
     public async Task<bool> AppendAsync(PreMigrationRestoreAuditLine line, CancellationToken cancellationToken)
     {
         var path = options.Value.AuditPath;
@@ -255,7 +243,6 @@ internal sealed class FilePreMigrationRestoreAudit(IOptions<RestoreCellOptions> 
         }
     }
 
-    /// <inheritdoc />
     public async Task<OperationBackendStatus?> FindAsync(string operationId, CancellationToken cancellationToken)
     {
         var path = options.Value.AuditPath;
@@ -309,10 +296,8 @@ internal sealed class FilePreMigrationRestoreAudit(IOptions<RestoreCellOptions> 
     }
 }
 
-/// <summary>Probes schema through <see cref="IRestoredConnectionOpener"/>. A closed opener is an unknown journal.</summary>
 internal sealed class JournalRestoredSchemaProbe(IRestoredConnectionOpener opener) : IRestoredSchemaProbe
 {
-    /// <inheritdoc />
     public async Task<SchemaJournalSnapshot> ProbeAsync(string? endpoint, CancellationToken cancellationToken)
     {
         DbConnection? connection;
@@ -337,10 +322,8 @@ internal sealed class JournalRestoredSchemaProbe(IRestoredConnectionOpener opene
     }
 }
 
-/// <summary>One GET of the configured customer URL. Empty URL, non-200, or an empty body is incomplete.</summary>
 internal sealed class HttpServingCustomerProbe(IHttpClientFactory httpClientFactory, IOptions<RestoreCellOptions> options) : IServingCustomerProbe
 {
-    /// <inheritdoc />
     public async Task<bool> SucceededAsync(CancellationToken cancellationToken)
     {
         var url = options.Value.CustomerProbeUrl;
@@ -369,18 +352,12 @@ internal sealed class HttpServingCustomerProbe(IHttpClientFactory httpClientFact
     }
 }
 
-/// <summary>
-/// Sends one <c>rollback</c> line to the Compose sidecar socket. This process does not talk to Docker.
-/// The sidecar both restores and starts the image; a missing socket is a failure.
-/// </summary>
 internal sealed class ComposeRollbackSocketClient(IOptions<RestoreCellOptions> options) : IComposeRollbackTransport
 {
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromMinutes(10);
 
-    /// <inheritdoc />
     public bool IsConfigured => !string.IsNullOrWhiteSpace(options.Value.ComposeSocketPath);
 
-    /// <inheritdoc />
     public async Task<ComposeRollbackResult> RollbackAsync(
         string image,
         string? backupId,
@@ -456,45 +433,35 @@ internal sealed class ComposeRollbackSocketClient(IOptions<RestoreCellOptions> o
         => new(false, PreMigrationRestoreCodes.ProviderFailed, false, null, false);
 }
 
-/// <summary>Cloud restore is absent from this build. Describe and restore fail closed.</summary>
 internal sealed class UnconfiguredRdsSnapshotRestore : IRdsSnapshotRestore
 {
-    /// <inheritdoc />
     public Task<RdsSnapshotEvidence?> DescribeAsync(string snapshotId, string cellPrefix, CancellationToken cancellationToken)
         => Task.FromResult<RdsSnapshotEvidence?>(null);
 
-    /// <inheritdoc />
     public Task<RdsNewInstance> RestoreNewAsync(RdsRestoreRequest request, CancellationToken cancellationToken)
         => Task.FromResult(new RdsNewInstance(false, null, PreMigrationRestoreCodes.RetargetUnsupported));
 
-    /// <inheritdoc />
     public Task<RdsRestoreSubmission> BeginAsync(RdsRestoreRequest request, CancellationToken cancellationToken)
         => Task.FromResult(new RdsRestoreSubmission(false, null, PreMigrationRestoreCodes.RetargetUnsupported));
 
-    /// <inheritdoc />
     public Task<RdsNewInstance> ObserveAsync(string instanceId, string resourceId, CancellationToken cancellationToken)
         => Task.FromResult(new RdsNewInstance(false, null, PreMigrationRestoreCodes.RetargetUnsupported));
 }
 
-/// <summary>No connection secret can be repointed in this build.</summary>
 internal sealed class UnconfiguredConnectionSecretRetarget : IConnectionSecretRetarget
 {
-    /// <inheritdoc />
     public bool IsConfigured => false;
 
-    /// <inheritdoc />
     public Task<bool> PointAtAsync(string secretId, string host, CancellationToken cancellationToken)
         => Task.FromResult(false);
 
-    /// <inheritdoc />
     public Task<string?> ReadHostAsync(string secretId, CancellationToken cancellationToken)
         => Task.FromResult<string?>(null);
 }
 
-/// <summary>Opens only the process database. A restored endpoint cannot be probed without the cloud secret.</summary>
+// A restored endpoint cannot be probed without the cloud secret.
 internal sealed class AppDatabaseConnectionOpener(IServiceProvider services) : IRestoredConnectionOpener
 {
-    /// <inheritdoc />
     public async Task<DbConnection?> OpenAsync(string? endpoint, CancellationToken cancellationToken)
     {
         if (endpoint is not null)

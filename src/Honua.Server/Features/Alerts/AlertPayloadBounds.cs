@@ -11,20 +11,13 @@ using Honua.Core.Features.Alerts.Domain;
 
 namespace Honua.Alerts;
 
-/// <summary>
-/// Keeps a delivered alert payload inside the selected channel's publish limit.
-/// Oversized geometry is replaced with a reference. A payload that still does not fit
-/// is replaced with an explicit rejection notice and is still enqueued.
-/// </summary>
+// Oversized geometry becomes a reference, and a payload that still does not fit is replaced with an explicit rejection and is still enqueued.
 internal static class AlertPayloadBounds
 {
-    /// <summary>SNS Publish rejects messages larger than 256 KiB.</summary>
     internal const int SnsLimitBytes = 256 * 1024;
 
-    /// <summary>SQS message body limit.</summary>
     internal const int SqsLimitBytes = 256 * 1024;
 
-    /// <summary>Ceiling for channels whose providers accept about 1 MiB.</summary>
     internal const int DefaultLimitBytes = 1024 * 1024;
 
     internal static AlertEventEnvelope Fit(AlertEventEnvelope alertEvent, ImmutableArray<AlertChannelType> channels)

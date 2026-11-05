@@ -5,9 +5,6 @@ using Honua.Core.Features.Console.Domain;
 
 namespace Honua.Server.Features.Console;
 
-/// <summary>
-/// Structured logging hooks for the Console content/RBAC endpoints.
-/// </summary>
 internal static partial class ConsoleEndpointsLog
 {
     [LoggerMessage(EventId = 4803, Level = LogLevel.Information,

@@ -15,7 +15,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Console.Services;
 
-/// <summary>Request-scoped discovery derived from explicitly mapped, authorized published services.</summary>
 internal sealed class ProjectedCatalogDiscoveryRegistryStore(
     IOptions<CatalogDiscoveryOptions> options,
     IMetadataV2GraphProvider graphProvider,

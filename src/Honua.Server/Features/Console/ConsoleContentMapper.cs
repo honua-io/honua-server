@@ -8,10 +8,6 @@ using Honua.Server.Features.Console.Models;
 
 namespace Honua.Server.Features.Console;
 
-/// <summary>
-/// Helpers that project request DTOs into <see cref="ConsoleContentItem"/>
-/// instances and stamp computed actions onto outgoing responses.
-/// </summary>
 internal static class ConsoleContentMapper
 {
     public static ConsoleContentItem FromCreateRequest(CreateConsoleContentItemRequest request, ClaimsPrincipal principal)

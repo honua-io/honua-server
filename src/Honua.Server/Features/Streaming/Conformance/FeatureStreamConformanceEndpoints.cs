@@ -9,31 +9,10 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Streaming.Conformance;
 
-/// <summary>
-/// Controlled-conformance mutation endpoints (honua-server#3038, REQ-005/REQ-006).
-/// </summary>
-/// <remarks>
-/// <para>Discovery rides the existing anonymous <c>/api/v1/streaming/features/capabilities</c>
-/// document, which carries this contract's bounds and nothing else, so a client can decide
-/// whether a deployment supports controlled mutation before authenticating and without a
-/// second discovery surface to keep in step (NFR-002). Every mutating route is
-/// gated twice: the narrowly scoped <c>ConformanceMutate</c> authorization policy admits the
-/// caller at all, and the per-run token issued at lease time proves which run the caller is.
-/// The second gate is what keeps two authorized runs from touching each other's records.</para>
-/// <para>Every mutating route is additionally metered by
-/// <see cref="Honua.Infrastructure.RateLimiting.RateLimitAttribute"/> when the app-level rate
-/// limiter is enabled, on top of the always-enforced per-run mutation and record budgets.</para>
-/// </remarks>
 internal static class FeatureStreamConformanceEndpoints
 {
-    /// <summary>
-    /// Header carrying the per-run ownership token issued by the lease response.
-    /// </summary>
     public const string RunTokenHeader = "X-Honua-Conformance-Run-Token";
 
-    /// <summary>
-    /// Maps the controlled-conformance surface.
-    /// </summary>
     public static void MapFeatureStreamConformanceEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/streaming/conformance")
@@ -184,10 +163,7 @@ internal static class FeatureStreamConformanceEndpoints
             : ToProblem(context, result.Failure, result.Message);
     }
 
-    /// <summary>
-    /// Maps a workflow failure onto a client-safe status. Unknown-run and foreign-record both
-    /// answer 404 so the surface cannot be used to confirm that another run's records exist.
-    /// </summary>
+    // Unknown-run and foreign-record both answer 404 so the surface cannot confirm another run.
     private static IResult ToProblem(HttpContext context, FeatureStreamConformanceFailure failure, string? message)
     {
         var detail = message ?? "The controlled-conformance request was refused.";
@@ -216,9 +192,6 @@ internal static class FeatureStreamConformanceEndpoints
             ? values.ToString()
             : null;
 
-    /// <summary>
-    /// Parses the route run id. Accepts the compact form the lease response returns.
-    /// </summary>
     private static bool TryParseRunId(string? value, out Guid runId)
         => Guid.TryParseExact(value, "N", out runId) || Guid.TryParse(value, out runId);
 

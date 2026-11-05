@@ -8,20 +8,12 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Infrastructure.Security;
 
-/// <summary>
-/// Endpoint for receiving Content Security Policy (CSP) violation reports.
-/// Provides logging and monitoring capabilities for CSP violations to help improve security policies.
-/// </summary>
 public static class CspViolationReportEndpoint
 {
     private const int MaxViolationReportPayloadBytes = 64 * 1024;
     private const int MaxLogFieldLength = 512;
     private const int MaxUserAgentLogLength = 256;
 
-    /// <summary>
-    /// Registers the CSP violation report endpoint.
-    /// </summary>
-    /// <param name="app">The application builder</param>
     public static void MapCspViolationReportEndpoint(this WebApplication app)
     {
         app.MapPost("/csp-violation-report", HandleCspViolationReport)
@@ -33,13 +25,6 @@ public static class CspViolationReportEndpoint
             .AllowAnonymous(); // CSP reports come from browsers without authentication
     }
 
-    /// <summary>
-    /// Handles CSP violation reports sent by browsers.
-    /// </summary>
-    /// <param name="request">The HTTP request containing the violation report</param>
-    /// <param name="logger">Logger for recording violations</param>
-    /// <param name="context">HTTP context for accessing request details</param>
-    /// <returns>HTTP 204 No Content response</returns>
     private static async Task<IResult> HandleCspViolationReport(
         HttpRequest request,
         [FromServices] ILogger<CspViolationReport> logger,
@@ -128,11 +113,6 @@ public static class CspViolationReportEndpoint
         return Results.NoContent();
     }
 
-    /// <summary>
-    /// Checks if a CSP violation appears to be from a potentially malicious source.
-    /// </summary>
-    /// <param name="violation">The CSP violation details</param>
-    /// <returns>True if the violation appears suspicious</returns>
     private static bool IsSuspiciousViolation(CspViolationDetails violation)
     {
         var blockedUri = violation.BlockedUri?.ToLowerInvariant();
@@ -157,11 +137,6 @@ public static class CspViolationReportEndpoint
             sourceFile?.Contains(pattern) == true);
     }
 
-    /// <summary>
-    /// Gets client information from the HTTP context.
-    /// </summary>
-    /// <param name="context">The HTTP context</param>
-    /// <returns>Client information including IP and user agent</returns>
     private static (string IpAddress, string UserAgent) GetClientInfo(HttpContext context)
     {
         var ipAddress = SanitizeForLog(context.Connection.RemoteIpAddress?.ToString(), maxLength: 128);
@@ -253,81 +228,36 @@ public static class CspViolationReportEndpoint
     }
 }
 
-/// <summary>
-/// Represents a CSP violation report structure as sent by browsers.
-/// </summary>
 public sealed class CspViolationReport
 {
-    /// <summary>
-    /// The CSP violation details.
-    /// </summary>
     public CspViolationDetails? CspReport { get; set; }
 }
 
-/// <summary>
-/// Detailed information about a CSP violation.
-/// </summary>
 public sealed class CspViolationDetails
 {
-    /// <summary>
-    /// The URI of the resource that was blocked.
-    /// </summary>
     public string? BlockedUri { get; set; }
 
-    /// <summary>
-    /// The policy directive that was violated.
-    /// </summary>
     public string? ViolatedDirective { get; set; }
 
-    /// <summary>
-    /// The original CSP policy that was violated.
-    /// </summary>
     public string? OriginalPolicy { get; set; }
 
-    /// <summary>
-    /// The URI of the document in which the violation occurred.
-    /// </summary>
     public string? DocumentUri { get; set; }
 
-    /// <summary>
-    /// The URI of the source file where the violation originated.
-    /// </summary>
     public string? SourceFile { get; set; }
 
-    /// <summary>
-    /// The line number in the source file where the violation occurred.
-    /// </summary>
     public int? LineNumber { get; set; }
 
-    /// <summary>
-    /// The column number in the source file where the violation occurred.
-    /// </summary>
     public int? ColumnNumber { get; set; }
 
-    /// <summary>
-    /// The effective directive that was violated.
-    /// </summary>
     public string? EffectiveDirective { get; set; }
 
-    /// <summary>
-    /// Sample of the violating content (may be truncated for security).
-    /// </summary>
     public string? Sample { get; set; }
 
-    /// <summary>
-    /// The status code of the HTTP response.
-    /// </summary>
     public int? StatusCode { get; set; }
 }
 
-/// <summary>
-/// High-performance logging for CSP violation reports using source generation for AOT compatibility.
-/// </summary>
 internal static partial class CspViolationReportLog
 {
-    /// <summary>
-    /// Logs a CSP violation report.
-    /// </summary>
     [LoggerMessage(
         EventId = 4300,
         Level = LogLevel.Warning,
@@ -341,9 +271,6 @@ internal static partial class CspViolationReportLog
         string clientIp,
         string userAgent);
 
-    /// <summary>
-    /// Logs a suspicious CSP violation that might indicate an attack.
-    /// </summary>
     [LoggerMessage(
         EventId = 4301,
         Level = LogLevel.Error,
@@ -355,45 +282,30 @@ internal static partial class CspViolationReportLog
         string clientIp,
         string userAgent);
 
-    /// <summary>
-    /// Logs an empty violation report.
-    /// </summary>
     [LoggerMessage(
         EventId = 4302,
         Level = LogLevel.Information,
         Message = "Empty CSP violation report received from {ClientInfo}")]
     public static partial void EmptyViolationReport(ILogger logger, (string IpAddress, string UserAgent) clientInfo);
 
-    /// <summary>
-    /// Logs an invalid violation report format.
-    /// </summary>
     [LoggerMessage(
         EventId = 4303,
         Level = LogLevel.Warning,
         Message = "Invalid CSP violation report format - Content: {JsonContent}, Client: {ClientInfo}")]
     public static partial void InvalidViolationReport(ILogger logger, string jsonContent, (string IpAddress, string UserAgent) clientInfo);
 
-    /// <summary>
-    /// Logs JSON parsing errors for violation reports.
-    /// </summary>
     [LoggerMessage(
         EventId = 4304,
         Level = LogLevel.Error,
         Message = "Failed to parse CSP violation report JSON - Error: {ErrorMessage}, Client: {ClientInfo}")]
     public static partial void ViolationReportParsingError(ILogger logger, string errorMessage, (string IpAddress, string UserAgent) clientInfo);
 
-    /// <summary>
-    /// Logs general processing errors for violation reports.
-    /// </summary>
     [LoggerMessage(
         EventId = 4305,
         Level = LogLevel.Error,
         Message = "Error processing CSP violation report - Error: {ErrorMessage}, Client: {ClientInfo}")]
     public static partial void ViolationReportProcessingError(ILogger logger, string errorMessage, (string IpAddress, string UserAgent) clientInfo);
 
-    /// <summary>
-    /// Logs when a violation report payload exceeds the configured maximum size.
-    /// </summary>
     [LoggerMessage(
         EventId = 4306,
         Level = LogLevel.Warning,

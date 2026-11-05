@@ -8,20 +8,12 @@ using Honua.Infrastructure.Rendering;
 
 namespace Honua.Server.Features.Styling.Sld;
 
-/// <summary>
-/// Best-effort export of MapLibre layers to SLD 1.0. Only the symbolizer subset
-/// supported by <see cref="SldToMapLibreConverter"/> is reproduced; complex
-/// data-driven expressions surface as warnings rather than aborting export.
-/// </summary>
 internal static class MapLibreToSldConverter
 {
     private static readonly XNamespace Sld = SldNamespaces.SldNs;
     private static readonly XNamespace Ogc = SldNamespaces.OgcNs;
     private static readonly XNamespace Xlink = SldNamespaces.XlinkNs;
 
-    /// <summary>
-    /// Web Mercator zoom-to-scale-denominator constant. Inverse of the import side.
-    /// </summary>
     private const double WebMercatorScaleReference = 559_082_264.028d;
 
     public static SldExportResult Export(MapLibreStyleLayer[] layers, string layerName)

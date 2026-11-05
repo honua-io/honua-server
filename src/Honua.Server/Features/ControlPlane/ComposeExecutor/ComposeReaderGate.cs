@@ -6,39 +6,20 @@ using Honua.Core.Features.ControlPlane.Restore;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// One compatibility row without its script text. Script text is loaded only for expand rows that
-/// still need <see cref="MigrationReaderCompatibility.Verify"/>.
-/// </summary>
-/// <param name="ScriptName">Journal identity, including a fully qualified DbUp name.</param>
-/// <param name="DeclarationFormat">Recorded declaration format.</param>
-/// <param name="Classification">Recorded classification.</param>
-/// <param name="MinReaderSchema">Oldest reader schema the declaration accepts.</param>
 internal readonly record struct ComposeCompatibilityRow(
     string ScriptName,
     int DeclarationFormat,
     string Classification,
     int MinReaderSchema);
 
-/// <summary>Whether rollback must restore, and which expand scripts still need <c>Verify</c>.</summary>
-/// <param name="Required">True when a script above the prior reader is missing, contract, or reader-incompatible.</param>
-/// <param name="ExpandScriptsToVerify">Expand scripts above the prior reader whose text must be re-verified.</param>
+// Rollback must restore when a script above the prior reader is missing, out of contract, or reader-incompatible.
 internal readonly record struct ComposeRestoreAssessment(bool Required, IReadOnlyList<string> ExpandScriptsToVerify);
 
-/// <summary>
-/// Rollback compatibility using <see cref="MigrationReaderCompatibility"/> identities and
-/// classifications. DbUp journal names look like <c>Honua.Server.Migrations.142_Name.sql</c>.
-/// </summary>
 internal static class ComposeReaderGate
 {
-    /// <summary>Script names the executor will embed in SQL. Anything else fails closed.</summary>
     internal static bool IsSafeScriptName(string scriptName)
         => ComposeExecutorRules.ScriptName().IsMatch(scriptName);
 
-    /// <summary>
-    /// Highest migration number in <paramref name="scriptNames"/>, or 0 when the journal is empty.
-    /// Returns null when any name is not a numbered migration identity.
-    /// </summary>
     internal static int? SchemaVersion(IEnumerable<string> scriptNames)
     {
         ArgumentNullException.ThrowIfNull(scriptNames);
@@ -60,7 +41,6 @@ internal static class ComposeReaderGate
         return max;
     }
 
-    /// <summary>Maps database declarations to the shared restore policy inputs.</summary>
     internal static IReadOnlyList<AppliedSchemaMigration> Applied(
         IReadOnlyList<string> journal,
         IReadOnlyList<ComposeCompatibilityRow> rows)
@@ -74,10 +54,6 @@ internal static class ComposeReaderGate
                 row?.MinReaderSchema ?? int.MaxValue);
         }).ToArray();
 
-    /// <summary>
-    /// Decides restore from recorded classification and minimum reader schema. Expand scripts above
-    /// <paramref name="priorMaxSchema"/> are returned for <see cref="MigrationReaderCompatibility.Verify"/>.
-    /// </summary>
     internal static ComposeRestoreAssessment Assess(
         IReadOnlyList<string> journal,
         IReadOnlyList<ComposeCompatibilityRow> rows,

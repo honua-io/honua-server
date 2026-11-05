@@ -11,9 +11,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Features.Styling;
 
-/// <summary>
-/// Default implementation for layer style orchestration.
-/// </summary>
 internal sealed class LayerStyleService : ILayerStyleService
 {
     private static readonly IReadOnlyList<UnsupportedSymbolizerInfo> NoUnsupportedSymbolizers =
@@ -39,7 +36,6 @@ internal sealed class LayerStyleService : ILayerStyleService
         _styleGraphSync = styleGraphSync;
     }
 
-    /// <inheritdoc />
     public async Task<LayerStyleSnapshot?> GetStyleAsync(
         MetadataV2Resource resource,
         int layerId,
@@ -84,7 +80,6 @@ internal sealed class LayerStyleService : ILayerStyleService
         return BuildSnapshot(stored, mapLibreJson!, drawingInfoJson);
     }
 
-    /// <inheritdoc />
     public async Task<JsonElement?> GetDrawingInfoAsync(
         MetadataV2Resource resource,
         int layerId,
@@ -94,7 +89,6 @@ internal sealed class LayerStyleService : ILayerStyleService
         return snapshot?.DrawingInfo;
     }
 
-    /// <inheritdoc />
     public async Task<LayerStyleUpdateResult> UpdateStyleAsync(
         MetadataV2Resource resource,
         int layerId,

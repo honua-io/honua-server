@@ -14,28 +14,13 @@ using Honua.Import.FileImport.Durable;
 
 namespace Honua.Server.Features.Import;
 
-/// <summary>
-/// The host's <see cref="IImportJobService"/> (honua-server#5916). Routes a background file import
-/// by the composition-time <see cref="BackgroundImportRunnerDecision"/>:
-/// <list type="bullet">
-/// <item>durable runner configured: the import becomes a <see cref="ExecutionJobKind.FileImport"/>
-/// execution job carrying the staged object-store reference, enqueued on the local queue (drained by
-/// the server's <c>JobExecutionService</c>) or submitted to the remote batch backend (AWS Batch,
-/// whose worker-only profile runs <see cref="FileImportJobExecutor"/>);</item>
-/// <item>long-lived host without a runner: the in-process <c>UniversalImportJobService</c>;</item>
-/// <item>Lambda host without a runner: refused (the endpoint answers the typed 503 first).</item>
-/// </list>
-/// Reads always go through the import job document; a durable job whose execution record ended
-/// without the worker writing a terminal document (crash, cancel, timeout, rejected submission)
-/// is projected onto it, so a job never reads as <c>processing</c> forever.
-/// </summary>
+// A frozen host without a runner is refused, and a durable job that ended without a terminal document is projected so it never stays processing.
 internal sealed partial class DurableImportJobService : IImportJobService, IDisposable
 {
     internal const string CancelledPhase = "Cancelled by operator";
     private const string SafeImportFailureMessage = "Import failed.";
     private static readonly TimeSpan ProgressRetention = TimeSpan.FromDays(1);
 
-    /// <summary>Ephemeral (scratch) storage headroom per staged byte for the batch job-definition tier.</summary>
     private const int EphemeralBytesMultiplier = 3;
     private const long BytesPerGib = 1024L * 1024 * 1024;
     private static readonly TimeSpan DispatchTimeout = TimeSpan.FromSeconds(30);
@@ -254,12 +239,6 @@ internal sealed partial class DurableImportJobService : IImportJobService, IDisp
         return stillActive;
     }
 
-    /// <summary>
-    /// Applies the background-import queue limits to durable submissions: the active
-    /// <see cref="ExecutionJobKind.FileImport"/> records across every host count against
-    /// <c>MaxConcurrentBackgroundJobs + MaxBackgroundJobQueueDepth</c>, as the in-process runner
-    /// counts its own. Best-effort (not atomic across hosts); a full queue is a 429.
-    /// </summary>
     private async Task EnsureAdmittedAsync(ImportLimits limits, CancellationToken cancellationToken)
     {
         var maxOutstanding = Math.Max(1, limits.MaxConcurrentBackgroundJobs) + Math.Max(0, limits.MaxBackgroundJobQueueDepth);
@@ -273,7 +252,6 @@ internal sealed partial class DurableImportJobService : IImportJobService, IDisp
 
     public void Dispose() => (_inProcess as IDisposable)?.Dispose();
 
-    /// <summary>Builds the durable record for a staged import.</summary>
     internal static ExecutionJobRecord BuildJobRecord(
         string jobId,
         ImportRequest request,
@@ -349,10 +327,6 @@ internal sealed partial class DurableImportJobService : IImportJobService, IDisp
         };
     }
 
-    /// <summary>
-    /// Projects a terminal execution record onto a non-terminal import document: the worker died,
-    /// the job was cancelled or timed out, or the submission was rejected.
-    /// </summary>
     internal static ImportProgress ProjectExecutionOutcome(ImportProgress progress, ExecutionJobRecord job)
     {
         if (job.Spec.Kind != ExecutionJobKind.FileImport || IsTerminal(progress.Status))

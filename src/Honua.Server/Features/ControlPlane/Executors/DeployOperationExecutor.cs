@@ -10,12 +10,6 @@ using Honua.Core.Features.Guardrails.Domain;
 
 namespace Honua.ControlPlane.Executors;
 
-/// <summary>
-/// Gateway executor that adapts the existing two-phase deploy workflow
-/// (<see cref="DeployWorkflowService"/>) to the shared operation gateway. This is
-/// the first adapter over <see cref="IOperationGateway"/>; the durable record,
-/// plan production, and backend submission stay in the deploy service (#1693).
-/// </summary>
 internal sealed class DeployOperationExecutor(DeployWorkflowService deployWorkflowService) : IOperationExecutor
 {
     public OperationClass OperationClass => OperationClass.Deploy;
@@ -154,7 +148,6 @@ internal sealed class DeployOperationExecutor(DeployWorkflowService deployWorkfl
         return operation is null ? null : BackendStatus(operation.Status);
     }
 
-    /// <summary>Reads the saved deploy workflow without collapsing approval and execution phases.</summary>
     internal Task<WorkflowOperationRecord?> GetWorkflowAsync(string operationId, CancellationToken cancellationToken)
         => deployWorkflowService.GetAsync(operationId, cancellationToken);
 
@@ -179,34 +172,24 @@ internal sealed class DeployOperationExecutor(DeployWorkflowService deployWorkfl
     };
 }
 
-/// <summary>
-/// Class-specific execution payload for deploy operations carried through the gateway.
-/// </summary>
 internal sealed record DeployExecutionPayload
 {
-    /// <summary>Stable deploy target identifier.</summary>
     public required string TargetId { get; init; }
 
-    /// <summary>Desired revision to deploy.</summary>
     public required string DesiredRevision { get; init; }
 
-    /// <summary>Currently observed revision, when known.</summary>
     public string? CurrentRevision { get; init; }
 
-    /// <summary>Relative operator priority.</summary>
     public OperationPriority Priority { get; init; } = OperationPriority.Normal;
 
-    /// <summary>Backend parameter overrides.</summary>
     public Dictionary<string, string>? ParameterOverrides { get; init; }
 
-    /// <summary>True when the approved operation explicitly targets a rollback.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool Rollback { get; init; }
 
-    /// <summary>Pre-migration backup id. Ignored unless <see cref="Rollback"/> is true. Never read from parameter overrides.</summary>
+    // The backup id is ignored unless restore is requested, and it is never read from parameter overrides.
     public string? BackupId { get; init; }
 
-    /// <summary>Parses a serialized payload, returning null when missing/malformed.</summary>
     public static DeployExecutionPayload? Parse(string? json)
     {
         if (string.IsNullOrWhiteSpace(json))
@@ -224,7 +207,6 @@ internal sealed record DeployExecutionPayload
         }
     }
 
-    /// <summary>Serializes this payload to JSON for storage on the proposal.</summary>
     public string Serialize()
         => JsonSerializer.Serialize(this, DeployExecutionPayloadJsonContext.Default.DeployExecutionPayload);
 }

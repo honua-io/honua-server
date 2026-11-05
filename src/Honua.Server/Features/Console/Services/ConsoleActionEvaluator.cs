@@ -11,14 +11,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Console.Services;
 
-/// <summary>
-/// Default <see cref="IConsoleActionEvaluator"/> implementation.
-/// </summary>
-/// <remarks>
-/// Maps Console's seven verbs onto the existing <see cref="IRoleStore"/>
-/// permission grant set and the principal's claims. The mapping is documented
-/// inline so behavioural gaps surface in review.
-/// </remarks>
 internal sealed class ConsoleActionEvaluator(
     IRoleStore roleStore,
     IOptions<RbacOptions> rbacOptions,
@@ -36,9 +28,6 @@ internal sealed class ConsoleActionEvaluator(
         ConsoleContentAction.Administer,
     ];
 
-    /// <summary>
-    /// Default Console route keys; entitlements are resolved against capabilities.
-    /// </summary>
     public static IReadOnlyList<string> DefaultRouteKeys { get; } =
     [
         "catalog",

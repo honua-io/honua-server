@@ -11,7 +11,6 @@ using Honua.Geoprocessing;
 
 namespace Honua.Server.Features.Operations;
 
-/// <summary>The two durable inputs required to authenticate a committed sink result.</summary>
 internal sealed class CommittedSinkPublicationSources
 {
     private readonly IExecutionJobStore _jobStore;
@@ -53,10 +52,7 @@ internal sealed class CommittedSinkPublicationSources
             endpointFingerprint, tenantId, cancellationToken);
 }
 
-/// <summary>
-/// Re-reads the completed sink job and its committed receipt before a publication can use the
-/// external-schema exception. Caller-supplied metadata is only an equality claim, never proof.
-/// </summary>
+// Caller-supplied metadata is only an equality claim, and the completed job is re-read before publication.
 internal static class CommittedSinkPublicationVerifier
 {
     internal static Task<VerifiedCommittedSinkPublication> RevalidateAsync(

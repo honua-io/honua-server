@@ -33,18 +33,9 @@ internal sealed partial class ExternalServiceDiscoveryService(
         "External service host resolves to a private, loopback, or unresolvable network address, which is not allowed.",
         "Unable to establish a connection to the external service host.");
 
-    /// <summary>
-    /// Upper bound on a single JSON discovery response. The XML path is already bounded
-    /// (<see cref="CreateSecureXmlReaderSettings"/> caps the document at 2M characters); this is the
-    /// matching guard for JSON so a hostile or buggy external service cannot exhaust server memory
-    /// with a multi-GB body.
-    /// </summary>
+    // A JSON discovery body is size-capped so one response cannot exhaust server memory.
     internal const long MaxJsonResponseBytes = 8 * 1024 * 1024;
 
-    /// <summary>
-    /// Primary handler for the <see cref="HttpClientName"/> client: no redirects, and connections
-    /// only to addresses the shared outbound address check allows.
-    /// </summary>
     internal static HttpMessageHandler CreatePinnedDnsHttpMessageHandler()
         => new PinnedDnsConnector(
                 static (host, cancellationToken) => Dns.GetHostAddressesAsync(host, cancellationToken),
@@ -151,11 +142,6 @@ internal sealed partial class ExternalServiceDiscoveryService(
         };
     }
 
-    /// <summary>
-    /// Reads a single ArcGIS service document and its layers/tables into a service summary. Shared by
-    /// single-service discovery and catalog enumeration. In catalog mode feature counts are skipped to keep
-    /// the per-service cost low; the cheap counts the layer document already exposes are still surfaced.
-    /// </summary>
     private async Task<ExternalServiceSummary> DiscoverGeoServicesServiceCoreAsync(
         Uri serviceUri,
         string serviceType,
@@ -1087,10 +1073,6 @@ internal sealed partial class ExternalServiceDiscoveryService(
 
     // ---- Authentication -------------------------------------------------------------------------------
 
-    /// <summary>
-    /// Resolved, transient authentication material applied to discovery requests: a token appended as a query
-    /// parameter (ArcGIS) and/or an Authorization header (Basic), plus an optional Referer.
-    /// </summary>
     private readonly record struct ResolvedAuth(string? Token, string? AuthorizationHeader, string? Referer)
     {
         public static ResolvedAuth None => default;
@@ -1302,10 +1284,6 @@ internal sealed partial class ExternalServiceDiscoveryService(
 
     // ---- ArcGIS catalog enumeration -------------------------------------------------------------------
 
-    /// <summary>
-    /// Detects an ArcGIS catalog root (<c>.../rest/services</c>) or single folder (<c>.../rest/services/{folder}</c>)
-    /// and returns the folder name (null at the root). Returns false for specific service/layer URLs.
-    /// </summary>
     private static bool TryGetGeoServicesCatalogRemainder(Uri uri, out string? folderPath)
     {
         folderPath = null;

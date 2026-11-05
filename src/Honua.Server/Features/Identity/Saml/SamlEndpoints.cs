@@ -22,23 +22,11 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Identity.Saml;
 
-/// <summary>
-/// SAML 2.0 Service Provider (SP) endpoints (#508). Exposes SP metadata for IdP configuration
-/// and the Assertion Consumer Service (ACS) that consumes a signed SAML assertion, maps its
-/// attributes/groups to RBAC roles, and establishes a Honua admin session. Reuses the existing
-/// <see cref="AdminAuthSessionStore"/> session machinery so downstream code sees the same
-/// session/claims model as OIDC.
-/// </summary>
 internal static partial class SamlEndpoints
 {
-    /// <summary>Log category for SAML endpoints.</summary>
     internal sealed class SamlEndpointsLog;
 
-    /// <summary>
-    /// Maps the SAML 2.0 SP metadata and Assertion Consumer Service endpoints. Both are
-    /// anonymous at the framework level (the SAML assertion is the credential) and enforce the
-    /// enabled/configured guard internally.
-    /// </summary>
+    // The endpoints are anonymous at the framework because the assertion is the credential, and they enforce the enabled guard themselves.
     public static void MapSamlEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
@@ -203,13 +191,6 @@ internal static partial class SamlEndpoints
         return TypedResults.NoContent();
     }
 
-    /// <summary>
-    /// Handles SAML 2.0 Single Logout (SLO) over the HTTP-POST binding. Consumes an
-    /// IdP-initiated, signed <c>LogoutRequest</c>, verifies its signature against the configured
-    /// IdP certificate (reusing the assertion signature path), terminates the local Honua admin
-    /// session (store record + cookie), and emits a <c>LogoutResponse</c> — relayed back to the
-    /// IdP's SLO endpoint via an auto-submitting form when configured, or returned directly.
-    /// </summary>
     private static async Task<IResult> HandleSingleLogout(
         HttpContext context,
         [FromServices] IOptions<SamlAuthenticationOptions> options,
@@ -504,7 +485,6 @@ internal static partial class SamlEndpoints
     private static IResult BadRequest(HttpContext context, string detail)
         => Results.Problem(title: "Invalid SAML request", detail: detail, statusCode: StatusCodes.Status400BadRequest);
 
-    /// <summary>UTF-8 writer used so the metadata XML declaration reports utf-8 (not utf-16).</summary>
     private sealed class StringWriterUtf8 : StringWriter
     {
         public override Encoding Encoding => Encoding.UTF8;

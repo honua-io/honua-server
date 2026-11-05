@@ -19,11 +19,6 @@ using Microsoft.AspNetCore.Authorization;
 
 namespace Honua.Infrastructure.Monitoring;
 
-/// <summary>
-/// Server adapter that backs the read-only MCP operational-observability tools
-/// with the same admin DTOs and ops-read authorization posture as the REST
-/// observability endpoints.
-/// </summary>
 internal sealed class McpOpsObservabilityReader(
     IOpsHealthSnapshotService healthSnapshots,
     IOpsFindingsEvidenceSource findings,
@@ -327,7 +322,6 @@ internal sealed class McpOpsObservabilityReader(
         return EvidencePostureFactory.Build(generatedAt, source);
     }
 
-    /// <summary>Server-owned maximum observation age for bounded event-window reads.</summary>
     private static readonly TimeSpan EventWindowValidity = TimeSpan.FromMinutes(5);
 
     private static JsonElement Serialize<T>(T value, JsonTypeInfo<T> typeInfo)

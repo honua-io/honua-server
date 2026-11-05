@@ -19,10 +19,8 @@ internal sealed class GeoServicesRestFederatedSourceConnector : HttpGeoJsonFeder
     {
     }
 
-    /// <inheritdoc />
     public override FederatedSourceKind Kind => FederatedSourceKind.EsriRest;
 
-    /// <inheritdoc />
     protected override Uri BuildRequestUri(FederatedFetchRequest request)
     {
         var source = request.Source;

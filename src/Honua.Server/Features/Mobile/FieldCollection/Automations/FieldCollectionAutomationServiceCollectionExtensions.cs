@@ -9,11 +9,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Features.Mobile.FieldCollection.Automations;
 
-/// <summary>
-/// Wires the server-side FieldCollection Workflows companion (#2121): the
-/// post-push trigger, configuration-backed action store, in-process dispatch
-/// queue, background delivery service, and online action handlers.
-/// </summary>
 internal static class FieldCollectionAutomationServiceCollectionExtensions
 {
     public static IServiceCollection AddFieldCollectionAutomations(

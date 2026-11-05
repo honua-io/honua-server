@@ -8,19 +8,8 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin.Services;
 
-/// <summary>
-/// Comprehensive validation service for IOptions&lt;T&gt; configuration classes.
-/// Validates all critical configuration options to fail fast at startup with clear error messages.
-/// </summary>
 internal static class ConfigurationOptionsValidator
 {
-    /// <summary>
-    /// Validates all IOptions configuration classes for production readiness.
-    /// </summary>
-    /// <param name="serviceProvider">Service provider to resolve IOptions instances.</param>
-    /// <param name="logger">Logger for validation messages.</param>
-    /// <param name="isDevelopment">Whether running in development mode.</param>
-    /// <returns>List of validation errors, empty if configuration is valid.</returns>
     public static List<string> ValidateAllOptions(
         IServiceProvider serviceProvider,
         ILogger logger,
@@ -250,17 +239,8 @@ internal static class ConfigurationOptionsValidator
     }
 }
 
-/// <summary>
-/// Extension method for adding comprehensive IOptions validation to startup.
-/// </summary>
 internal static class ConfigurationValidationExtensions
 {
-    /// <summary>
-    /// Adds comprehensive validation for all IOptions&lt;T&gt; configuration classes.
-    /// Call this after all configuration services are registered.
-    /// </summary>
-    /// <param name="services">Service collection.</param>
-    /// <returns>Service collection for chaining.</returns>
     public static IServiceCollection AddConfigurationOptionsValidation(this IServiceCollection services)
     {
         // Add a hosted service that validates configuration at startup
@@ -269,9 +249,6 @@ internal static class ConfigurationValidationExtensions
     }
 }
 
-/// <summary>
-/// Hosted service that validates configuration at startup and fails fast if invalid.
-/// </summary>
 internal sealed class ConfigurationValidationHostedService : IHostedService
 {
     private readonly IServiceProvider _serviceProvider;

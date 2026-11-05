@@ -11,32 +11,9 @@ using Honua.Core.Features.Operations.Domain;
 
 namespace Honua.ControlPlane.Executors;
 
-/// <summary>
-/// Gateway executor for metadata-release proposals. Adapts
-/// <see cref="MetadataReleaseControlService.CreateAsync"/> ONLY (#2563) — the same additive
-/// create path <see cref="Honua.Server.Features.Admin.MetadataReleaseControlEndpoints"/> builds
-/// inline today. The execution payload therefore carries an explicit <c>action</c> discriminator
-/// with <see cref="CreateAction"/> as the ONLY supported value.
-/// </summary>
-/// <remarks>
-/// Two related surfaces are deliberately NOT adapted here, by design:
-/// <list type="bullet">
-/// <item>
-/// Metadata-release rollback is an action on an EXISTING release operation id (advance an
-/// already-submitted lifecycle backward), not a new proposal this create-only payload shape can
-/// express. It stays endpoint/cockpit-driven.
-/// </item>
-/// <item>
-/// <see cref="CoordinatedReleaseControlService"/> has its own
-/// approval-gate model (an operator-facing coordinated-release request lane); routing it through
-/// this gateway would stack a second human-approval layer on top of gateway proposals. It stays
-/// endpoint-driven.
-/// </item>
-/// </list>
-/// </remarks>
+// This executor accepts only the create action; rollback is not a new proposal, and coordinated releases already own their approval gates.
 internal sealed class MetadataReleaseOperationExecutor(MetadataReleaseControlService controlService) : IOperationExecutor
 {
-    /// <summary>The only execution-payload action this executor supports.</summary>
     public const string CreateAction = "create";
 
     public OperationClass OperationClass => OperationClass.MetadataRelease;
@@ -125,54 +102,29 @@ internal sealed class MetadataReleaseOperationExecutor(MetadataReleaseControlSer
     }
 }
 
-/// <summary>
-/// Class-specific execution payload for metadata-release operations carried through the gateway.
-/// Mirrors <see cref="Honua.Server.Features.Admin.Models.CreateMetadataReleaseOperationRequest"/>
-/// plus the explicit <see cref="Action"/> discriminator (#2563).
-/// </summary>
 internal sealed record MetadataReleaseExecutionPayload
 {
-    /// <summary>
-    /// Action discriminator. Only <see cref="MetadataReleaseOperationExecutor.CreateAction"/> is
-    /// supported; any other value (including a future rollback action) is rejected rather than
-    /// silently ignored, since rollback stays endpoint/cockpit-driven (#2563).
-    /// </summary>
     public string Action { get; init; } = MetadataReleaseOperationExecutor.CreateAction;
 
-    /// <summary>Release package identifier the lifecycle advances.</summary>
     public required string PackageId { get; init; }
 
-    /// <summary>Target environment whose current graph snapshot is the rollback target.</summary>
     public required string TargetEnvironment { get; init; }
 
-    /// <summary>Semantic identifier of the resource/layer being evolved and smoke-checked.</summary>
     public required string ResourceSemanticId { get; init; }
 
-    /// <summary>Name of the newly added field the smoke stage asserts is present.</summary>
     public required string NewFieldName { get; init; }
 
-    /// <summary>Canonical type of the new field (for example <c>String</c> or <c>Integer</c>).</summary>
     public string? NewFieldType { get; init; }
 
-    /// <summary>Optional ETL/data-populate workload identifier dispatched after the schema change.</summary>
     public string? DataPopulateWorkloadId { get; init; }
 
-    /// <summary>
-    /// Fields the data-populate workload writes. Required with <see cref="DataPopulateWorkloadId"/>;
-    /// the release is rejected before mutation unless every field is the new nullable field.
-    /// </summary>
+    // The release is rejected before mutation unless every populated field is the new nullable field.
     public IReadOnlyList<string>? DataPopulateFields { get; init; }
 
-    /// <summary>Stable script identifier for the additive change.</summary>
     public string? ScriptId { get; init; }
 
-    /// <summary>
-    /// Verified provisioning root from the DevOps handoff. The gateway request field wins when
-    /// both are present; a disagreement is rejected.
-    /// </summary>
     public string? RootProvisioningOperationId { get; init; }
 
-    /// <summary>Parses and validates a serialized payload, returning a descriptive error on failure.</summary>
     public static (MetadataReleaseExecutionPayload? Payload, string? Error) ParseAndValidate(string? json)
     {
         if (string.IsNullOrWhiteSpace(json))
@@ -213,7 +165,6 @@ internal sealed record MetadataReleaseExecutionPayload
         return (payload, null);
     }
 
-    /// <summary>Builds the executable additive script plan the control service consumes.</summary>
     public MetadataReleaseExecutionPlan ToExecutionPlan()
     {
         var scriptId = string.IsNullOrWhiteSpace(ScriptId) ? $"add-{NewFieldName}" : ScriptId!;

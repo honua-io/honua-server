@@ -18,34 +18,13 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Protocols.Elevation;
 
-/// <summary>
-/// Pro-tier scene analysis endpoints (sun/shadow and slice/volumetric
-/// cross-section) that build on the elevation profile sampler. Registered
-/// alongside the elevation API and gated through <see cref="LicenseGate"/>.
-/// </summary>
-/// <remarks>
-/// Like the other protocol mutation surfaces, these POST routes use
-/// <c>AllowAnonymous()</c> to bypass the application-wide authorization policy
-/// so the per-layer access check can run. Every handler invokes
-/// <c>LayerValidationHelpers.ValidateLayerWithAccessAsync(... AccessScope.Read)</c>
-/// (via <see cref="ValidateDatasetAsync"/>) plus the <see cref="LicenseGate"/>
-/// entitlement check before touching the elevation surface, which is what
-/// returns 401/403/402 for unauthenticated, unauthorized, or unlicensed
-/// callers. Removing <c>AllowAnonymous()</c> without first moving the per-layer
-/// gate into the pipeline would lock out every caller whose permissions live on
-/// the layer rather than on a global role.
-/// </remarks>
+// Routes are anonymous so layer permissions can decide access; each handler checks layer authorization and the license before reading elevation.
 internal static partial class SceneAnalysisEndpoints
 {
     private const string JsonContentType = "application/json";
     private const string SunShadowEntitlement = "analytics.sun-shadow";
     private const string SliceEntitlement = "analytics.slice";
 
-    /// <summary>
-    /// Tolerance (in decimal degrees) for treating two WGS 84 coordinates as the same point
-    /// when checking for degenerate (identical start/end) analysis requests. Avoids exact
-    /// double equality on user-supplied coordinates.
-    /// </summary>
     private const double CoordinateEqualityEpsilon = 1e-9;
 
     public static IEndpointRouteBuilder MapSceneAnalysisEndpoints(this IEndpointRouteBuilder endpoints)

@@ -12,11 +12,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Alerts;
 
-/// <summary>
-/// Adapts the alert digest flush to the control-plane scheduled-tick dispatcher so EventBridge
-/// Scheduler can drive one flush under <c>TriggerMode=Event</c> without hosting the in-process timer.
-/// The flush body is idempotent via an atomic batch claim, so a single invocation is safe.
-/// </summary>
 internal sealed class DigestFlushScheduledTickHandler(DigestFlushBackgroundService service)
     : Honua.Core.Features.ControlPlane.Abstractions.IScheduledTickHandler
 {
@@ -27,10 +22,6 @@ internal sealed class DigestFlushScheduledTickHandler(DigestFlushBackgroundServi
         => service.FlushAsync(cancellationToken);
 }
 
-/// <summary>
-/// Background service that batches digest dispatch rows and delivers them to the
-/// configured digest webhook endpoint.
-/// </summary>
 internal sealed partial class DigestFlushBackgroundService : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;

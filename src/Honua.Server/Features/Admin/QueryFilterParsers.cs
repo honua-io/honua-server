@@ -5,11 +5,6 @@ using System.Globalization;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Shared query-string parsers used by the Console Operate observability
-/// endpoints (#1168). Keeps the per-endpoint handlers focused on assembling
-/// filters rather than on reading strings.
-/// </summary>
 internal static class QueryFilterParsers
 {
     public static string? GetString(IQueryCollection query, string key)
@@ -120,11 +115,6 @@ internal static class QueryFilterParsers
         return true;
     }
 
-    /// <summary>
-    /// Parses an enum value while rejecting numeric wire tokens. The admin API
-    /// contracts use symbolic enum names, so both defined and undefined numbers
-    /// are treated as malformed input.
-    /// </summary>
     public static bool TryParseDefinedEnum<TEnum>(string value, out TEnum parsed)
         where TEnum : struct, Enum
     {

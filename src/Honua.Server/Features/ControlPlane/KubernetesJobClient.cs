@@ -8,123 +8,55 @@ using System.Text.Json;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Result envelope returned by <see cref="IKubernetesJobClient.CreateJobAsync"/>.
-/// Captures whether the Job was newly created (2xx), already existed (409 Conflict),
-/// or was rejected, along with the current status snapshot when one is available.
-/// </summary>
 internal sealed record KubernetesJobCreateResult
 {
-    /// <summary>
-    /// HTTP status code returned by the API.
-    /// </summary>
     public required HttpStatusCode StatusCode { get; init; }
 
-    /// <summary>
-    /// True when the API server reported that a Job with the same name already exists.
-    /// </summary>
     public bool AlreadyExists => StatusCode == HttpStatusCode.Conflict;
 
-    /// <summary>
-    /// Observed Job status immediately after the create call, or null when the server
-    /// did not return a usable snapshot.
-    /// </summary>
     public KubernetesJobStatusSnapshot? Snapshot { get; init; }
 }
 
-/// <summary>
-/// Result envelope returned by <see cref="IKubernetesJobClient.GetJobAsync"/>.
-/// </summary>
 internal sealed record KubernetesJobFetchResult
 {
-    /// <summary>
-    /// HTTP status code returned by the API.
-    /// </summary>
     public required HttpStatusCode StatusCode { get; init; }
 
-    /// <summary>
-    /// True when the API server reported that the Job does not exist.
-    /// </summary>
     public bool NotFound => StatusCode == HttpStatusCode.NotFound;
 
-    /// <summary>
-    /// Current Job status snapshot, or null when the Job is not present.
-    /// </summary>
     public KubernetesJobStatusSnapshot? Snapshot { get; init; }
 }
 
-/// <summary>
-/// Result envelope returned by <see cref="IKubernetesJobClient.DeleteJobAsync"/>.
-/// </summary>
 internal sealed record KubernetesJobDeleteResult
 {
-    /// <summary>
-    /// HTTP status code returned by the API.
-    /// </summary>
     public required HttpStatusCode StatusCode { get; init; }
 
-    /// <summary>
-    /// True when the API server reported that the Job was already gone.
-    /// </summary>
     public bool NotFound => StatusCode == HttpStatusCode.NotFound;
 
-    /// <summary>
-    /// Job status as it existed at deletion time, when the API server returns a
-    /// Job body rather than a bare <c>Status</c> kind. The adapter uses this to
-    /// preserve <c>Succeeded</c>/<c>Failed</c> outcomes that occur between the
-    /// pre-delete observation and the delete request itself.
-    /// </summary>
     public KubernetesJobStatusSnapshot? Snapshot { get; init; }
 }
 
-/// <summary>
-/// Narrow REST adapter over the Kubernetes <c>batch/v1</c> Job and <c>core/v1</c> Pod APIs.
-/// Only the verbs needed by <see cref="KubernetesJobBatchComputeBackend"/> are modeled so
-/// the surface stays AOT-friendly and free of external Kubernetes client dependencies.
-/// </summary>
 internal interface IKubernetesJobClient
 {
-    /// <summary>
-    /// Creates a Kubernetes Job from the provided manifest. Returns a 409 Conflict
-    /// result unchanged so the adapter can treat idempotent re-submissions as success.
-    /// </summary>
     Task<KubernetesJobCreateResult> CreateJobAsync(
         KubernetesJobManifest manifest,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Fetches the current status of a Job. Returns a 404 Not Found result unchanged.
-    /// </summary>
     Task<KubernetesJobFetchResult> GetJobAsync(
         string @namespace,
         string name,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Deletes a Job with background cascade so associated pods are cleaned up.
-    /// Returns a 404 Not Found result unchanged.
-    /// </summary>
     Task<KubernetesJobDeleteResult> DeleteJobAsync(
         string @namespace,
         string name,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Lists pods matching a label selector inside a namespace. Used to surface
-    /// container termination detail when a Job enters a terminal failure state.
-    /// </summary>
     Task<IReadOnlyList<KubernetesPodStatusSnapshot>> ListPodsAsync(
         string @namespace,
         string labelSelector,
         CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// Raw-HTTP implementation of <see cref="IKubernetesJobClient"/>. Handles in-cluster
-/// service-account auth via the projected token and CA bundle, and out-of-cluster
-/// auth via an explicit bearer token file. Avoids taking a dependency on the
-/// official <c>KubernetesClient</c> NuGet package to keep the trim/AOT surface small.
-/// </summary>
 internal sealed partial class KubernetesJobClient(
     IHttpClientFactory httpClientFactory,
     KubernetesApiRequestFactory requestFactory,
@@ -337,15 +269,6 @@ internal sealed partial class KubernetesJobClient(
             response.StatusCode);
     }
 
-    /// <summary>
-    /// Creates an <see cref="HttpMessageHandler"/> that trusts the Kubernetes API server CA.
-    /// When <paramref name="inClusterAutoDetect"/> is true and the projected service-account
-    /// CA is available, uses that bundle (matching the in-cluster path selected by
-    /// <see cref="KubernetesApiRequestFactory"/>). Otherwise, trusts a PEM bundle at
-    /// <paramref name="caBundlePath"/> if provided (for clusters fronted by a private or
-    /// self-signed CA); otherwise falls back to the OS trust store so operators whose API
-    /// server chains to a public CA keep working. Wired at DI registration time.
-    /// </summary>
     internal static HttpMessageHandler CreatePrimaryHandler(bool inClusterAutoDetect, string? caBundlePath = null, ILogger? logger = null)
     {
         var handler = new HttpClientHandler();
@@ -378,15 +301,7 @@ internal sealed partial class KubernetesJobClient(
         return handler;
     }
 
-    /// <summary>
-    /// Mirrors the auth-context decision made by <see cref="KubernetesApiRequestFactory"/>: the
-    /// projected in-cluster CA only validates the local cluster's API server, so it is
-    /// preferred only when in-cluster auto-detect is enabled. When operators disable
-    /// auto-detect to target a different cluster via an explicit <c>ApiServerUrl</c>, the
-    /// trust anchor must come from the configured <c>CaBundlePath</c> — otherwise a Honua
-    /// host running inside one cluster would silently validate a remote private-CA API
-    /// server against its local cluster's CA and fail every call.
-    /// </summary>
+    // The projected in-cluster CA is used only when auto-detect is enabled; an explicit API server must trust the configured bundle.
     internal static string? ResolveTrustedCaPath(
         bool inClusterAutoDetect,
         string? configuredCaBundlePath,
@@ -414,16 +329,7 @@ internal sealed partial class KubernetesJobClient(
         return collection;
     }
 
-    /// <summary>
-    /// Validates the server certificate when a custom CA bundle is configured. Extends
-    /// trust to the configured custom root(s) via <see cref="X509ChainTrustMode.CustomRootTrust"/>
-    /// while preserving normal name-binding, expiry, and signature checks. Explicitly
-    /// rejects hostname mismatches and missing-certificate errors so a thumbprint match
-    /// alone cannot silence those policy failures. Intermediate certificates presented
-    /// by the server are carried forward via <see cref="X509ChainPolicy.ExtraStore"/>
-    /// so a root → intermediate → leaf chain verifies when the configured bundle only
-    /// contains the root.
-    /// </summary>
+    // A custom CA extends trust and still rejects a hostname mismatch or a missing certificate, so a thumbprint match cannot silence those failures.
     internal static bool ValidateAgainstTrustedCas(
         X509Certificate2? leaf,
         X509Chain? presentedChain,
@@ -472,10 +378,6 @@ internal sealed partial class KubernetesJobClient(
         return customChain.Build(leaf);
     }
 
-    /// <summary>
-    /// Reads the projected namespace file written by the kubelet; used by the adapter
-    /// to default the target namespace when none is configured explicitly.
-    /// </summary>
     internal static string? TryReadInClusterNamespace(ILogger? logger = null)
     {
         try

@@ -12,7 +12,6 @@ using Honua.Core.Features.WorkflowPackages.Domain;
 
 namespace Honua.Server.Features.Operations;
 
-/// <summary>Projects the accepted request into the sealed, reviewer-visible plan.</summary>
 internal static class AdminOperationReview
 {
     public static OperationProposalPlan Create(IOperationDescriptor descriptor, OperationRequest request,

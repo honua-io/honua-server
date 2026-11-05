@@ -485,14 +485,7 @@ internal static class ElevationEndpoints
     private static bool IsFiniteCoordinate(double value)
         => !double.IsNaN(value) && !double.IsInfinity(value);
 
-    /// <summary>
-    /// True when the resolved SRID is the WGS 84 default — either an explicit
-    /// <c>4326</c> from the caller or omitted (in which case the endpoint
-    /// treats inputs as lon/lat). PostGIS <c>geography</c> only accepts SRID
-    /// 4326, so out-of-range lon/lat values must be rejected at the edge to
-    /// keep the failure mapped to a stable 422 response rather than leaking
-    /// a provider-side geography exception.
-    /// </summary>
+    // Out-of-range longitude and latitude are rejected at the edge because geography accepts only SRID 4326.
     private static bool IsWgs84Default(SridResolutionResult resolvedSrid)
         => !resolvedSrid.Srid.HasValue || resolvedSrid.Srid.Value == DefaultSrid;
 

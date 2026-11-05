@@ -20,9 +20,6 @@ using Proto = Geospatial.V1;
 
 namespace Honua.Server.Features.Protocols.Grpc;
 
-/// <summary>
-/// Converts between domain types and proto-generated message types.
-/// </summary>
 internal static class GrpcConversionHelpers
 {
     private static readonly GeometryFactory _geoFactory = new();
@@ -35,19 +32,6 @@ internal static class GrpcConversionHelpers
     private static WKBReader WkbReader => _wkbReader ??= new WKBReader();
     private static WKBWriter WkbWriter => _wkbWriter ??= new WKBWriter();
 
-    /// <summary>
-    /// Narrows an <c>int64</c> pagination value from <c>QueryFeaturesRequest</c> to the
-    /// <c>int</c> the query pipeline uses.
-    /// </summary>
-    /// <remarks>
-    /// Geospatial.Grpc 0.2.0-alpha.1 retired the <c>int32 result_offset</c> (8) and
-    /// <c>int32 result_record_count</c> (9) fields and replaced them with the <c>int64</c>
-    /// <c>result_offset_long</c> (20) and <c>result_record_count_long</c> (21). The domain
-    /// <see cref="FeatureQuery"/> and the pagination validator are <c>int</c>-based, so a value
-    /// beyond <see cref="int.MaxValue"/> is rejected at the transport boundary rather than
-    /// wrapping into a negative offset. Negative values pass through unchanged so the existing
-    /// pagination validator keeps producing its own diagnostic for them.
-    /// </remarks>
     public static int NarrowPagination(long value, string fieldName)
     {
         if (value is > int.MaxValue or < int.MinValue)
@@ -60,9 +44,6 @@ internal static class GrpcConversionHelpers
         return (int)value;
     }
 
-    /// <summary>
-    /// Converts a proto QueryFeaturesRequest into a domain FeatureQuery.
-    /// </summary>
     public static FeatureQuery ToFeatureQuery(Proto.QueryFeaturesRequest request)
     {
         var query = new FeatureQuery
@@ -124,9 +105,6 @@ internal static class GrpcConversionHelpers
                 : fields;
     }
 
-    /// <summary>
-    /// Converts a proto ApplyEditsRequest into a domain FeatureEditBatch.
-    /// </summary>
     public static FeatureEditBatch ToFeatureEditBatch(Proto.ApplyEditsRequest request)
     {
         var creates = request.Adds.Count == 0
@@ -149,9 +127,6 @@ internal static class GrpcConversionHelpers
             useGlobalIds: false);
     }
 
-    /// <summary>
-    /// Converts a domain FeatureEditResult to a proto ApplyEditsResponse.
-    /// </summary>
     public static Proto.ApplyEditsResponse ToProtoApplyEditsResponse(FeatureEditResult result)
     {
         var response = new Proto.ApplyEditsResponse();
@@ -184,9 +159,6 @@ internal static class GrpcConversionHelpers
         return response;
     }
 
-    /// <summary>
-    /// Resolves an output SRID from proto spatial reference parameters.
-    /// </summary>
     public static int? TryResolveOutputSrid(Proto.SpatialReference? spatialReference)
     {
         if (spatialReference == null)
@@ -207,9 +179,6 @@ internal static class GrpcConversionHelpers
         return null;
     }
 
-    /// <summary>
-    /// Builds effective geometry limits for a gRPC request.
-    /// </summary>
     public static GeometryLimits CreateEffectiveGeometryLimits(GeometryLimits baseLimits, Proto.QueryFeaturesRequest request)
     {
         var precisionOverride = request.GeometryPrecision > 0 ? (int?)request.GeometryPrecision : null;
@@ -222,22 +191,6 @@ internal static class GrpcConversionHelpers
             forceSimplify: simplifyToleranceOverride.HasValue);
     }
 
-    /// <summary>
-    /// Converts a domain Feature to a proto Feature message.
-    /// </summary>
-    /// <param name="feature">Canonical feature.</param>
-    /// <param name="includeGeometry">Whether to encode the geometry.</param>
-    /// <param name="geometryLimits">Geometry encoding limits.</param>
-    /// <param name="objectIdFieldName">
-    /// The layer's object-id field, or <see langword="null"/> to keep every visible
-    /// attribute (for example distinct projections, whose attribute map is the result).
-    /// <c>geospatial.v1.Feature</c> carries the storage object id in
-    /// <see cref="Proto.Feature.Id"/>, so an attribute that only repeats that id under
-    /// this field name or the storage <c>objectid</c> column (any casing) is dropped
-    /// (honua-server#5330). An attribute whose value differs from the id, such as a
-    /// custom string public id, is kept.
-    /// </param>
-    /// <param name="hiddenFields">Declared hidden attribute names to omit from protocol output.</param>
     public static Proto.Feature ToProtoFeature(
         Feature feature,
         bool includeGeometry = true,
@@ -299,9 +252,6 @@ internal static class GrpcConversionHelpers
         };
     }
 
-    /// <summary>
-    /// Converts a Metadata v2 field to proto FieldDefinition messages.
-    /// </summary>
     public static Proto.FieldDefinition ToProtoField(MetadataV2Field field)
     {
         return new Proto.FieldDefinition
@@ -316,9 +266,6 @@ internal static class GrpcConversionHelpers
         };
     }
 
-    /// <summary>
-    /// Converts a domain SpatialReference to a proto SpatialReference.
-    /// </summary>
     public static Proto.SpatialReference ToProtoSpatialReference(SpatialReference sr)
     {
         return new Proto.SpatialReference
@@ -329,9 +276,6 @@ internal static class GrpcConversionHelpers
         };
     }
 
-    /// <summary>
-    /// Converts a Metadata v2 GeometryType to a proto GeometryType.
-    /// </summary>
     public static Proto.GeometryType ToProtoGeometryType(MetadataV2GeometryType geometryType)
     {
         return geometryType switch
@@ -348,9 +292,6 @@ internal static class GrpcConversionHelpers
         };
     }
 
-    /// <summary>
-    /// Converts a domain FeatureExtent to a proto Extent.
-    /// </summary>
     public static Proto.Extent ToProtoExtent(FeatureExtent extent, SpatialReference? sr)
     {
         var proto = new Proto.Extent
@@ -955,12 +896,7 @@ internal static class GrpcConversionHelpers
         };
     }
 
-    /// <summary>
-    /// Resolves parsed <c>order_by</c> clauses against the layer schema (#5466) so the declared
-    /// field name and type reach the SQL builder, matching the OData and WFS sort adapters.
-    /// Managed JSONB attributes sort as text without a type, so population <c>20</c> would
-    /// precede <c>3</c>. Fields the schema does not declare keep the untyped clause.
-    /// </summary>
+    // Schema field types have to travel with the clause because an untyped managed JSONB attribute sorts a numeric value as text.
     public static ImmutableArray<OrderByClause> WithSchemaFieldTypes(
         ImmutableArray<OrderByClause> orderBy,
         IReadOnlyList<MetadataV2Field> schemaFields)

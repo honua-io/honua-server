@@ -15,32 +15,17 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for scene dataset registration and tileset configuration.
-/// All operations are admin-only and use shared problem-details on validation
-/// failure.
-/// </summary>
 internal static partial class SceneDatasetEndpoints
 {
     private const string ScenesAdminTagAdmin = "Admin";
     private const string ScenesAdminTagScenes = "Scene Datasets";
     private const string DefaultTilesetFileName = "tileset.json";
 
-    /// <summary>
-    /// Maps the admin scene dataset endpoints into the request pipeline.
-    /// </summary>
-    /// <remarks>
-    /// No-op when <see cref="ISceneRegistrationService"/> is not registered,
-    /// which is the case for non-Postgres data-source profiles (#844). The
-    /// configuration-backed scene serving path remains available; only the
-    /// admin CRUD surface is suppressed. Registration is checked through
-    /// <see cref="IServiceProviderIsService"/> so that the scoped registration
-    /// service is not constructed from the root provider during mapping.
-    /// </remarks>
     public static IEndpointRouteBuilder MapSceneDatasetEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
+        // Registration is inspected through IServiceProviderIsService so the scoped service is not constructed from the root provider during mapping.
         var serviceInspector = endpoints.ServiceProvider.GetService<IServiceProviderIsService>();
         if (serviceInspector is not null && !serviceInspector.IsService(typeof(ISceneRegistrationService)))
         {
@@ -744,14 +729,8 @@ internal static partial class SceneDatasetEndpoints
     private static string ResolveCreatedBy(HttpContext context)
         => context.User.Identity?.Name is { Length: > 0 } name ? name : "admin";
 
-    /// <summary>
-    /// Log category marker used by <see cref="ILogger{TCategoryName}"/> bindings.
-    /// </summary>
     internal sealed class SceneDatasetEndpointsLogCategory;
 
-    /// <summary>
-    /// Source-generated logger messages for the scene dataset admin endpoints.
-    /// </summary>
     internal static partial class SceneDatasetEndpointsLog
     {
         [LoggerMessage(EventId = 4500, Level = LogLevel.Information,

@@ -5,13 +5,6 @@ using System.Globalization;
 
 namespace Honua.Server.Features.Admin.TileOperations;
 
-/// <summary>
-/// A parsed generated tile-cache object key. The generated cache stores loose per-tile objects whose
-/// key encodes every window-scoping dimension as trailing path segments
-/// (<c>[prefix.../]v2/{publicationScope}/{layerId}/{gridset}/{style}/{hash}/{z}/{x}/{y}.{format}</c>),
-/// so a bounded lifecycle operation (issue #2661) can reconstruct the window from the tracked keys
-/// alone.
-/// </summary>
 internal readonly record struct ParsedGeneratedTileKey(
     string? PublicationScope,
     int LayerId,
@@ -22,21 +15,10 @@ internal readonly record struct ParsedGeneratedTileKey(
     int X,
     int Y);
 
-/// <summary>
-/// The single object-key convention for the generated tile cache. Both the bounded expire/delete
-/// window (<see cref="TileOperationExecutionCore"/>) and the read-only inventory endpoint parse keys
-/// through this one helper so a mis-derivation cannot silently no-op or over-reach — the top risk
-/// called out for issue #2661.
-/// </summary>
+// Expire, delete, and inventory parse keys through this one helper so a second derivation cannot miss the window or exceed it.
 internal static class GeneratedTileCacheKey
 {
-    /// <summary>
-    /// Parses a generated tile-cache object key from its tail so the parse is independent of any
-    /// provider key prefix. Returns <c>false</c> for keys that are not shaped like a generated tile
-    /// (fewer than seven segments, or non-numeric layer/level/col/row), which are then never matched.
-    /// Legacy keys remain readable with a null publication identity, but service-scoped lifecycle
-    /// operations fail closed for those ambiguous entries.
-    /// </summary>
+    // Keys that are not generated tiles never match, and service-scoped lifecycle fails closed on legacy keys that have no publication identity.
     public static bool TryParse(string key, out ParsedGeneratedTileKey parsed)
     {
         parsed = default;
@@ -86,12 +68,6 @@ internal static class GeneratedTileCacheKey
         return true;
     }
 
-    /// <summary>
-    /// Normalizes a gridset/style/format value to the form the on-disk key segments use. Mirrors
-    /// <c>GeoServicesCloudTileCache.SanitizeSegment</c>: lower-cased, with every character outside
-    /// <c>[A-Za-z0-9-_.]</c> replaced by <c>'_'</c>, so a request value compares equal to the key
-    /// segment the serve/write path produced from the same input.
-    /// </summary>
     public static string Sanitize(string value)
     {
         var trimmed = value.Trim();

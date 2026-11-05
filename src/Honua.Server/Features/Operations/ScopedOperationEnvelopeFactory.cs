@@ -10,10 +10,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Operations;
 
-/// <summary>
-/// Singleton-safe envelope factory that resolves the scoped audit sink for each durable
-/// acceptance instead of allowing singleton mutation callers to capture a root scope.
-/// </summary>
 internal sealed class ScopedOperationEnvelopeFactory(
     IServiceScopeFactory scopeFactory,
     bool useVolatileAudit) : IOperationEnvelopeFactory

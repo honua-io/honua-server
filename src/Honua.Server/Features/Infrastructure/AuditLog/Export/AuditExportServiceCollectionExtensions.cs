@@ -12,29 +12,12 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Features.Infrastructure.AuditLog.Export;
 
-/// <summary>
-/// DI registration for the audit SIEM export feature (#2157). Wires the shared
-/// dispatcher, dead-letter store, residency guard, and any enabled connector
-/// sinks (Splunk HEC, Microsoft Sentinel, S3, syslog).
-/// </summary>
-/// <remarks>
-/// Disabled by default — when <c>AuditLog:Export:Enabled</c> is <c>false</c> the
-/// inert dispatcher/store/guard are still registered but no sinks are added, so
-/// the audit trail behaves exactly as before. This method is intentionally not
-/// called from <c>Program.cs</c> here; the host wires it explicitly.
-/// </remarks>
 internal static class AuditExportServiceCollectionExtensions
 {
     private const string SplunkClient = "honua-audit-splunk";
     private const string SentinelClient = "honua-audit-sentinel";
     private const string S3Client = "honua-audit-s3";
 
-    /// <summary>
-    /// Registers the audit export pipeline and enabled sinks.
-    /// </summary>
-    /// <param name="services">The service collection.</param>
-    /// <param name="configuration">Configuration root used to bind <see cref="AuditExportOptions"/>.</param>
-    /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddHonuaAuditExport(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);

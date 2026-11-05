@@ -13,12 +13,6 @@ using Honua.Infrastructure.Events;
 
 namespace Honua.Server.Features.Mobile.FieldCollection.Automations;
 
-/// <summary>
-/// Delivers FieldCollection automation webhooks (#2121). Builds a signed JSON
-/// envelope describing the applied change and POSTs it to the action's configured
-/// HTTPS endpoint, reusing the shared outbound-URL validation, HMAC signing, and
-/// header sanitization used by the alert and feature-change webhook paths.
-/// </summary>
 internal sealed class WebhookFieldCollectionActionHandler : IFieldCollectionActionHandler
 {
     internal const string HttpClientName = "fieldcollection-automation-webhook";

@@ -8,23 +8,17 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Infrastructure.Hosting.Modules;
 
-/// <summary>
-/// Compatibility wrapper delegating to the production OData assembly module.
-/// </summary>
 public sealed class ODataProtocolModule : IHonuaProtocolModule
 {
     private readonly Honua.Protocols.OData.ODataProtocolModule _module = new();
 
-    /// <inheritdoc />
     public string Name => _module.Name;
 
-    /// <inheritdoc />
     public void ConfigureServices(IServiceCollection services, IConfiguration configuration)
     {
         _module.ConfigureServices(services, configuration);
     }
 
-    /// <inheritdoc />
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         _module.MapEndpoints(endpoints);

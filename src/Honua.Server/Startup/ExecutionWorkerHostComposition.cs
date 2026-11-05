@@ -10,42 +10,9 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Startup;
 
-/// <summary>
-/// Narrows a fully composed server host to the <see cref="HostCompositionProfile.ExecutionWorker"/>
-/// profile: the process a batch compute backend launches for exactly one execution job.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The worker runs the generic server image, so it is composed by the same root as the server and
-/// therefore resolves every dependency the job's executor needs (database providers, the operation
-/// key ring for secret-channel reads, file storage, the durable job store and log store). This
-/// pass then removes what a worker must never run:
-/// </para>
-/// <list type="bullet">
-/// <item>every hosted service except telemetry export (the shared <see cref="JobExecutionService"/>
-/// loop and license revalidation are re-added with worker semantics) — the control-plane reconcilers and backstop sweeps (the
-/// <c>ExecutionJobReconcilerBackgroundService</c> that dispatched queued jobs to AWS Batch from
-/// inside the worker in run 38048901509, EventId 9046), the stale-claim reaper, workflow
-/// orchestration, outbox, import/export, alert, audit and cleanup loops;</item>
-/// <item>the HTTP server: <see cref="IServer"/> is replaced by <see cref="NoHttpServer"/>, which
-/// binds no port, so the worker serves no HTTP surface at all;</item>
-/// <item>the batch compute backends (the submission path), the deploy backends, the control-plane
-/// reconcilers and reconcile/tick dispatchers, and the proposal gateway with its per-class
-/// executors;</item>
-/// <item>the shared Redis job queue, replaced by <see cref="AssignedExecutionJobQueue"/>, so the
-/// execution loop can claim only the operation this process was launched for.</item>
-/// </list>
-/// <para>
-/// The worker reports the outcome exactly as an in-process run does: <see cref="JobExecutionService"/>
-/// finalizes the durable record (succeeded with its artifacts and result package, or failed with
-/// the executor's typed error) and the serving host's reconciler observes the terminal record.
-/// </para>
-/// </remarks>
+// The worker drops every hosted loop it must not run, binds no port, and can claim only the operation it was launched for.
 internal static class ExecutionWorkerHostComposition
 {
-    /// <summary>
-    /// Control-plane service types the execution worker profile never composes.
-    /// </summary>
     internal static readonly IReadOnlyList<Type> RemovedServiceTypes =
     [
         typeof(IBatchComputeBackend),
@@ -70,13 +37,6 @@ internal static class ExecutionWorkerHostComposition
         typeof(IJobQueue),
     ];
 
-    /// <summary>
-    /// Applies the execution worker profile to a composed service collection.
-    /// </summary>
-    /// <exception cref="InvalidOperationException">
-    /// The durable job store is not composed (no Redis connection), so the worker could not report
-    /// the job's outcome; the process refuses to start instead of running a job nobody can observe.
-    /// </exception>
     public static IServiceCollection ApplyExecutionWorkerProfile(
         this IServiceCollection services,
         ExecutionWorkerLaunch launch)
@@ -117,11 +77,6 @@ internal static class ExecutionWorkerHostComposition
         return services.AddAssignedExecutionWorker(launch);
     }
 
-    /// <summary>
-    /// The only composed hosted service a worker keeps is OpenTelemetry's provider host, so the
-    /// worker's traces and metrics still export. The execution loop and license revalidation are
-    /// re-added explicitly with worker semantics.
-    /// </summary>
     internal static bool IsRetainedHostedService(ServiceDescriptor descriptor)
     {
         var implementationType = descriptor.IsKeyedService ? null : descriptor.ImplementationType;
@@ -129,9 +84,6 @@ internal static class ExecutionWorkerHostComposition
     }
 }
 
-/// <summary>
-/// The execution worker's <see cref="IServer"/>: starts and stops without binding a port.
-/// </summary>
 internal sealed class NoHttpServer : IServer
 {
     public IFeatureCollection Features { get; } = new FeatureCollection();

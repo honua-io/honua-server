@@ -6,9 +6,6 @@ using Honua.Server.Features.Protocols.Zarr.Models;
 
 namespace Honua.Server.Features.Protocols.Zarr;
 
-/// <summary>
-/// AOT-safe JSON serialization context for Zarr admin endpoints.
-/// </summary>
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(RegisterZarrRequest))]
 [JsonSerializable(typeof(ZarrRegistrationResponse))]

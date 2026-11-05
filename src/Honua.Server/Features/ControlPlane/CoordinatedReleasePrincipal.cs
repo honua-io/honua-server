@@ -8,16 +8,8 @@ using Honua.Infrastructure.MultiTenancy;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Captures and restores the principal that created a coordinated release so the container
-/// step can run the child deploy under that identity instead of <c>principal: null</c>.
-/// </summary>
 internal static class CoordinatedReleasePrincipal
 {
-    /// <summary>
-    /// Copies subject, name, roles, authentication type, and tenant binding onto the context.
-    /// An unauthenticated or missing principal leaves the snapshot empty.
-    /// </summary>
     public static CoordinatedReleaseContext Capture(
         CoordinatedReleaseContext context,
         ClaimsPrincipal? principal,
@@ -75,10 +67,7 @@ internal static class CoordinatedReleasePrincipal
         };
     }
 
-    /// <summary>
-    /// Rebuilds a principal from the snapshot. An empty snapshot is unauthenticated and has no
-    /// roles, so it cannot satisfy an admin exemption or invent a tenant binding.
-    /// </summary>
+    // An empty snapshot is unauthenticated and has no roles, so it cannot satisfy an admin exemption or invent a tenant binding.
     public static ClaimsPrincipal Restore(CoordinatedReleaseContext context)
     {
         ArgumentNullException.ThrowIfNull(context);

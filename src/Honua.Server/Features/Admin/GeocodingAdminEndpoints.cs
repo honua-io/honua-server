@@ -10,9 +10,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for geocoding provider health and capabilities.
-/// </summary>
 internal static class GeocodingAdminEndpoints
 {
     internal sealed class GeocodingAdminEndpointsLog;

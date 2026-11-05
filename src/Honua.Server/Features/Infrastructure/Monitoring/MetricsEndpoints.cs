@@ -11,19 +11,11 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Infrastructure.Monitoring;
 
-/// <summary>
-/// Endpoints for exposing performance metrics and telemetry data to monitoring tools.
-/// </summary>
 public static class MetricsEndpoints
 {
     private static ILogger GetLogger(HttpContext context) =>
         context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("Honua.Monitoring");
 
-    /// <summary>
-    /// Maps metrics endpoints to the application with formal API versioning.
-    /// </summary>
-    /// <param name="app">The web application</param>
-    /// <returns>The web application for chaining</returns>
     public static WebApplication MapMetricsEndpoints(this WebApplication app)
     {
         var group = app.MapGroup("/api/v{version:apiVersion}/metrics")
@@ -66,9 +58,6 @@ public static class MetricsEndpoints
         return app;
     }
 
-    /// <summary>
-    /// Gets basic health metrics.
-    /// </summary>
     private static async Task<IResult> GetHealthMetrics(
         HttpContext context,
         [FromServices] MigrationState migrationState,
@@ -146,9 +135,6 @@ public static class MetricsEndpoints
         };
     }
 
-    /// <summary>
-    /// Gets comprehensive performance metrics.
-    /// </summary>
     private static IResult GetPerformanceMetrics(
         HttpContext context,
         [FromServices] IHttpRequestMetricsSnapshotProvider httpMetricsProvider)
@@ -200,9 +186,6 @@ public static class MetricsEndpoints
         }
     }
 
-    /// <summary>
-    /// Gets database-specific performance metrics.
-    /// </summary>
     private static IResult GetDatabaseMetrics(
         HttpContext context,
         [FromServices] IDatabasePerformanceMetricsProvider databaseMetricsProvider)
@@ -241,9 +224,6 @@ public static class MetricsEndpoints
         }
     }
 
-    /// <summary>
-    /// Gets cache-specific performance metrics.
-    /// </summary>
     private static IResult GetCacheMetrics(
         HttpContext context,
         [FromServices] ICacheMetricsSnapshotProvider cacheMetricsSnapshotProvider)
@@ -283,9 +263,6 @@ public static class MetricsEndpoints
         }
     }
 
-    /// <summary>
-    /// Gets current memory usage metrics.
-    /// </summary>
     private static IResult GetMemoryMetrics(HttpContext context)
     {
         try
@@ -304,9 +281,6 @@ public static class MetricsEndpoints
         }
     }
 
-    /// <summary>
-    /// Gets streaming connection metrics including active sessions and slow-consumer drops.
-    /// </summary>
     private static IResult GetStreamingMetrics(
         HttpContext context,
         [FromServices] FeatureStreamSessionManager sessionManager)

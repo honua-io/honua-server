@@ -9,20 +9,8 @@ using Honua.Infrastructure.Helpers;
 
 namespace Honua.Server.Features.Admin.Services;
 
-/// <summary>
-/// Service for validating configuration at startup.
-/// </summary>
 internal static class ConfigurationValidationService
 {
-    /// <summary>
-    /// Validates required configuration values at startup.
-    /// </summary>
-    /// <param name="configuration">The configuration to validate.</param>
-    /// <param name="logger">Logger for validation messages.</param>
-    /// <param name="isDevelopment">Whether running in the development environment.</param>
-    /// <param name="isTest">Whether running in the test environment.</param>
-    /// <param name="allowMissingDatabase">Whether to allow a missing database connection string (e.g. when migrations are skipped).</param>
-    /// <returns>List of validation errors, empty if configuration is valid.</returns>
     public static List<string> ValidateConfiguration(
         IConfiguration configuration,
         ILogger logger,
@@ -336,11 +324,6 @@ internal static class ConfigurationValidationService
         ConfigurationLog.FeatureStatus(logger, displayName, isEnabled ? "enabled" : "disabled");
     }
 
-    /// <summary>
-    /// Logs an experimental feature flag using the same EventId 4010 log structure.
-    /// Experimental features are off by default; the status reflects whether the
-    /// opt-in configuration key is present and set to true.
-    /// </summary>
     private static void LogExperimentalFeatureStatus(IConfiguration configuration, ILogger logger, string configKey, string displayName)
     {
         var isEnabled = configuration.GetValue<bool>(configKey, false);
@@ -371,14 +354,7 @@ internal static class ConfigurationValidationService
         }
     }
 
-    /// <summary>
-    /// Refuses any secret-bearing configuration value that still carries a credential literal
-    /// this repository ships in an example or harness file. Development and Test keep their
-    /// existing behaviour: those environments are exactly where the shipped values belong.
-    /// </summary>
-    /// <param name="configuration">The configuration to screen.</param>
-    /// <param name="errors">Collected validation errors.</param>
-    /// <param name="isRelaxedEnvironment">Whether this is a Development or Test host.</param>
+    // Development and Test may carry example secrets; every other environment refuses them at startup.
     private static void ValidateNoShippedPlaceholderSecrets(
         IConfiguration configuration,
         List<string> errors,
@@ -583,17 +559,7 @@ internal static class ConfigurationValidationService
         return !string.Equals(hostEntry.Trim(), "*", StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// Credential-shaped literals that ship in this repository's example and harness
-    /// files (compose files, <c>.env*.example</c>, <c>docker/**</c>, CI harness defaults)
-    /// and in operator documentation templates. They are public values, so a non-relaxed
-    /// deployment still carrying one of them is refused at startup.
-    /// </summary>
-    /// <remarks>
-    /// <c>ConfigurationValidationServiceTests.KnownPlaceholderSecrets_CoversCredentialLiteralsInShippedFiles</c>
-    /// re-scans those files and fails when a literal appears that is not listed here, so
-    /// the list cannot silently rot as harnesses are added.
-    /// </remarks>
+    // A non-relaxed deployment that carries one of these example literals is refused at startup, and a test fails when a shipped example literal is missing from this list.
     internal static readonly FrozenSet<string> KnownPlaceholderSecrets = new[]
         {
             // Generic placeholders.
@@ -666,10 +632,6 @@ internal static class ConfigurationValidationService
         }
         .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Secret-bearing configuration paths that are additionally screened against
-    /// <see cref="KnownPlaceholderSecrets"/>, beyond those in <see cref="_secretValidationRules"/>.
-    /// </summary>
     private static readonly string[] _additionalPlaceholderScreenedPaths =
     [
         "Security:ConnectionEncryption:Salt",
@@ -728,77 +690,50 @@ internal static class ConfigurationValidationService
         .ToFrozenDictionary(StringComparer.Ordinal);
 }
 
-/// <summary>
-/// Source-generated logger for configuration validation (AOT compatible).
-/// </summary>
 internal static partial class ConfigurationLog
 {
-    /// <summary>
-    /// Log feature flag status.
-    /// </summary>
     [LoggerMessage(
         EventId = 4010,
         Level = LogLevel.Information,
         Message = "Feature '{FeatureName}' is {Status}")]
     public static partial void FeatureStatus(ILogger logger, string featureName, string status);
 
-    /// <summary>
-    /// Log configuration summary at startup.
-    /// </summary>
     [LoggerMessage(
         EventId = 4011,
         Level = LogLevel.Information,
         Message = "Configuration summary: Database {DatabaseStatus}, Cache {CacheStatus}")]
     public static partial void ConfigurationSummary(ILogger logger, string databaseStatus, string cacheStatus);
 
-    /// <summary>
-    /// Log configuration warning.
-    /// </summary>
     [LoggerMessage(
         EventId = 4012,
         Level = LogLevel.Warning,
         Message = "Configuration warning: {Message}")]
     public static partial void ConfigurationWarning(ILogger logger, string message);
 
-    /// <summary>
-    /// Log configuration error.
-    /// </summary>
     [LoggerMessage(
         EventId = 4013,
         Level = LogLevel.Error,
         Message = "Configuration error: {Message}")]
     public static partial void ConfigurationError(ILogger logger, string message);
 
-    /// <summary>
-    /// Log configuration error with exception.
-    /// </summary>
     [LoggerMessage(
         EventId = 4017,
         Level = LogLevel.Error,
         Message = "Configuration error: {Message}")]
     public static partial void ConfigurationError(ILogger logger, string message, Exception exception);
 
-    /// <summary>
-    /// Log successful configuration validation.
-    /// </summary>
     [LoggerMessage(
         EventId = 4014,
         Level = LogLevel.Information,
         Message = "Configuration validation: {Message}")]
     public static partial void ConfigurationValidated(ILogger logger, string message);
 
-    /// <summary>
-    /// Log configuration validation success.
-    /// </summary>
     [LoggerMessage(
         EventId = 4015,
         Level = LogLevel.Information,
         Message = "All configuration options validated successfully")]
     public static partial void ConfigurationValidationSucceeded(ILogger logger);
 
-    /// <summary>
-    /// Log configuration validation failure.
-    /// </summary>
     [LoggerMessage(
         EventId = 4016,
         Level = LogLevel.Error,

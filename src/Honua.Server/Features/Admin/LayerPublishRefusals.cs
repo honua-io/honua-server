@@ -8,7 +8,6 @@ using Honua.Server.Features.Import;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>Typed refusal when a frozen host cannot finish a large layer publish (honua-server#5948).</summary>
 internal static class LayerPublishRefusals
 {
     internal const string Detail =

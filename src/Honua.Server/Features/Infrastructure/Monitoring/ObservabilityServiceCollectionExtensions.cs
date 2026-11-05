@@ -128,12 +128,6 @@ internal static class ObservabilityServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Register the Console Operate observability feed (#1168) and its
-    /// background OTLP probe. The probe stays opt-in: when no OTLP endpoint
-    /// is configured it reports <c>disabled</c> without generating outbound
-    /// traffic, so air-gapped deployments are unaffected.
-    /// </summary>
     private static void AddOperateObservability(IServiceCollection services)
     {
         services.TryAddSingleton(TimeProvider.System);

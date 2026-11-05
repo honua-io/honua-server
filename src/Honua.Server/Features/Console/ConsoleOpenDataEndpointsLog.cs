@@ -3,12 +3,7 @@
 
 namespace Honua.Server.Features.Console;
 
-/// <summary>
-/// Structured logging hooks for the Console open-data DCAT/STAC publication
-/// endpoints. Anonymous-denial events deliberately omit item identifiers so the
-/// public open-data surface cannot be turned into a log-driven enumeration
-/// oracle.
-/// </summary>
+// Denial logs omit item identifiers so the public surface is not an enumeration oracle.
 internal static partial class ConsoleOpenDataEndpointsLog
 {
     [LoggerMessage(EventId = 4840, Level = LogLevel.Information,

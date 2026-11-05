@@ -12,12 +12,6 @@ using StackExchange.Redis;
 
 namespace Honua.Server.Startup;
 
-/// <summary>
-/// Wires the selected licensing mode plus its Core-facing facades
-/// (<see cref="ILicenseEntitlementService"/>, <see cref="ILicenseStatusProvider"/>,
-/// <see cref="ILicenseManager"/>) and registers the resilient identity-provider HTTP clients
-/// used by the admin auth flows.
-/// </summary>
 internal static class LicensingRegistration
 {
     public static IServiceCollection AddHonuaLicensing(

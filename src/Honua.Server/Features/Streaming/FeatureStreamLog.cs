@@ -3,9 +3,6 @@
 
 namespace Honua.Server.Features.Streaming;
 
-/// <summary>
-/// Source-generated logger for feature streaming (AOT compatible).
-/// </summary>
 internal static partial class FeatureStreamLog
 {
     [LoggerMessage(EventId = 5001, Level = LogLevel.Information,

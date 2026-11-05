@@ -17,11 +17,6 @@ using Microsoft.AspNetCore.Http;
 
 namespace Honua.Server.Features.Protocols.Zarr;
 
-/// <summary>
-/// Focused service for the datacube tile request path. Keeping publication resolution,
-/// authorization, storage access, and rendering behind this seam prevents the endpoint
-/// handler from becoming an unreviewable dependency container.
-/// </summary>
 internal interface IZarrTileService
 {
     Task<IResult> HandleAsync(
@@ -34,7 +29,6 @@ internal interface IZarrTileService
         CancellationToken cancellationToken);
 }
 
-/// <inheritdoc />
 internal sealed class ZarrTileService : IZarrTileService
 {
     private const long MaxTileSliceBytes = 4L * 1024L * 1024L;

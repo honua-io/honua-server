@@ -8,13 +8,6 @@ using Honua.Server.Features.Mobile.Auth;
 
 namespace Honua.Server.Startup;
 
-/// <summary>
-/// Binds and validates authentication-related options (API key / OIDC / mobile / RBAC /
-/// operator approval) and registers operator authorization plumbing. The dev-auth bypass
-/// startup validator runs in <c>Program.cs</c> before this method so misconfigured deploys
-/// fail before any auth handler executes; once invoked here the API-key options block has
-/// already been validated against the resolved environment + admin password complexity rules.
-/// </summary>
 internal static class AuthenticationOptionsRegistration
 {
     public static IServiceCollection AddHonuaAuthenticationOptions(

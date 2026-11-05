@@ -3,16 +3,8 @@
 
 namespace Honua.Server.Features.StaticMap;
 
-/// <summary>
-/// Service collection extensions for StaticMap feature registration.
-/// </summary>
 internal static class StaticMapServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers StaticMap services. StaticMap reuses MapServer rendering infrastructure
-    /// (SkiaSharp, StyleTranslator, WkbToSkiaConverter) and core services (IFeatureReader,
-    /// ILayerStyleCatalog) which are already registered.
-    /// </summary>
     public static IServiceCollection AddStaticMap(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);

@@ -10,20 +10,11 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Identity.Saml;
 
-/// <summary>
-/// Validates a SAML 2.0 Response/Assertion and projects it to a normalized identity (#508).
-/// </summary>
 public interface ISamlAssertionValidator
 {
-    /// <summary>
-    /// Validates the supplied SAML Response XML (already base64-decoded). On success returns a
-    /// <see cref="SamlValidationResult"/> with <see cref="SamlValidationResult.Succeeded"/> set
-    /// and the extracted subject/attributes; otherwise a failure result with a reason.
-    /// </summary>
     SamlValidationResult Validate(string responseXml);
 }
 
-/// <summary>The outcome of validating a SAML Response.</summary>
 public sealed class SamlValidationResult
 {
     private SamlValidationResult(bool succeeded, string? failureReason, SamlSubject? subject)
@@ -33,49 +24,31 @@ public sealed class SamlValidationResult
         Subject = subject;
     }
 
-    /// <summary>Whether validation succeeded.</summary>
     public bool Succeeded { get; }
 
-    /// <summary>Why validation failed (null on success). Safe, non-sensitive summary.</summary>
     public string? FailureReason { get; }
 
-    /// <summary>The validated subject (null on failure).</summary>
     public SamlSubject? Subject { get; }
 
-    /// <summary>Creates a successful result.</summary>
     public static SamlValidationResult Success(SamlSubject subject) => new(true, null, subject);
 
-    /// <summary>Creates a failure result with a non-sensitive reason.</summary>
     public static SamlValidationResult Failure(string reason) => new(false, reason, null);
 }
 
-/// <summary>The normalized subject extracted from a validated SAML assertion.</summary>
 public sealed class SamlSubject
 {
-    /// <summary>The subject NameID (stable user identifier).</summary>
     public required string NameId { get; init; }
 
-    /// <summary>Display name, if present.</summary>
     public string? DisplayName { get; init; }
 
-    /// <summary>Email, if present.</summary>
     public string? Email { get; init; }
 
-    /// <summary>Roles mapped from the configured role attribute.</summary>
     public IReadOnlyList<string> Roles { get; init; } = [];
 
-    /// <summary>The assertion's session-expiry instant, if specified.</summary>
     public DateTimeOffset? SessionNotOnOrAfter { get; init; }
 }
 
-/// <summary>
-/// Default <see cref="ISamlAssertionValidator"/>. Verifies the enveloped XML-DSig signature
-/// against the configured IdP certificate using only <see cref="System.Security.Cryptography"/>
-/// primitives and a hand-rolled exclusive XML canonicalizer — deliberately avoiding
-/// <c>System.Security.Cryptography.Xml.SignedXml</c>, which is not part of the in-box shared
-/// framework and is not AOT/trim-friendly. Enforces signature presence, digest match, issuer,
-/// audience, and the <c>NotBefore</c>/<c>NotOnOrAfter</c> conditions with bounded clock skew.
-/// </summary>
+// Unsigned assertions are rejected, and the signature is checked with primitives rather than the framework signed-XML types.
 internal sealed class SamlAssertionValidator(
     IOptions<SamlAuthenticationOptions> options,
     ISamlAssertionReplayCache? replayCache = null) : ISamlAssertionValidator

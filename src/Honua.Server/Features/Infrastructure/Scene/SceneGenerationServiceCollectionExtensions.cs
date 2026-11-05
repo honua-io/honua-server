@@ -9,23 +9,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Infrastructure.Scene;
 
-/// <summary>
-/// DI registration for the v1 3D Tiles generation pipeline (#842).
-/// </summary>
 internal static class SceneGenerationServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers the scene generation executor and its Postgres-backed
-    /// feature source. The executor is published as both itself (for direct
-    /// invocation by the admin endpoint) and as <see cref="IPublishExecutor"/>
-    /// for future dispatch wiring.
-    /// </summary>
-    /// <remarks>
-    /// No-op when the active <c>DataSource:Provider</c> is not Postgres; the
-    /// admin endpoint mapping is gated by the same condition through
-    /// <c>IServiceProviderIsService</c> so non-Postgres profiles see no scene
-    /// generation surface.
-    /// </remarks>
     public static IServiceCollection AddSceneGeneration(
         this IServiceCollection services,
         IConfiguration configuration,

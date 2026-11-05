@@ -5,9 +5,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Features.Protocols.Zarr;
 
-/// <summary>
-/// Structured logging for Zarr admin operations. Event ID range: 7920-7939.
-/// </summary>
 internal static partial class ZarrLog
 {
     [LoggerMessage(

@@ -7,14 +7,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.PackageReview;
 
-/// <summary>
-/// Dependency-injection wiring for package validation and preview planning.
-/// </summary>
 internal static class PackageReviewServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers package-review services and server-side family adapters.
-    /// </summary>
     public static IServiceCollection AddPackageReview(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);

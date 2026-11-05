@@ -11,11 +11,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoint that submits an additive metadata-release layer-evolution operation. This is the
-/// create path for <see cref="WorkflowOperationKind.MetadataRelease"/>; reads continue to use
-/// <see cref="MetadataReleaseOperationEndpoints"/> and the shared deploy operation endpoints.
-/// </summary>
 internal static class MetadataReleaseControlEndpoints
 {
     private const string ControlUnavailableMessage = "Metadata release control is temporarily unavailable.";

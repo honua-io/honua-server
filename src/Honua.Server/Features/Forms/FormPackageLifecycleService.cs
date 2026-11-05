@@ -179,13 +179,6 @@ internal sealed class FormPackageLifecycleService
         return WriteVersion(context, draft, noStore: true);
     }
 
-    /// <summary>
-    /// Computes the offline compatibility and migration manifest for a published
-    /// form package. Offline clients call this with their locally-cached version
-    /// (<paramref name="clientVersion"/>) to learn whether pending offline edits
-    /// can be submitted against the current published version, whether a refresh
-    /// is recommended, or whether migration is required before submitting.
-    /// </summary>
     public async Task<IResult> GetCompatibilityAsync(HttpContext context, string formId, int? clientVersion)
     {
         using var activity = HonuaTelemetry.ActivitySource.StartActivity("Forms.GetCompatibility");

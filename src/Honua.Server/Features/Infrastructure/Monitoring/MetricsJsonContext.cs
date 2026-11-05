@@ -8,9 +8,6 @@ using Honua.Infrastructure.Licensing;
 
 namespace Honua.Infrastructure.Monitoring;
 
-/// <summary>
-/// JSON serialization context for metrics models with AOT support.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

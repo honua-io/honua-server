@@ -9,14 +9,8 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for validating layer storage metadata.
-/// </summary>
 internal static class AdminLayerValidationEndpoints
 {
-    /// <summary>
-    /// Maps layer validation endpoints to the admin metadata API group.
-    /// </summary>
     public static void MapAdminLayerValidationEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/metadata/layers")

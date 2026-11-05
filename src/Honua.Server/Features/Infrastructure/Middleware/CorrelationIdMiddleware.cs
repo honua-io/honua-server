@@ -10,22 +10,6 @@ using InfrastructureLog = Honua.Infrastructure.Logging.Log;
 
 namespace Honua.Infrastructure.Middleware;
 
-/// <summary>
-/// Middleware to propagate or generate correlation IDs for distributed tracing across logs.
-/// Supports both client-provided correlation IDs and server-generated fallbacks.
-/// </summary>
-/// <remarks>
-/// Order of precedence for correlation ID:
-/// 1. X-Correlation-ID header (client-provided)
-/// 2. Activity.Current?.Id (OpenTelemetry trace ID)
-/// 3. Generated Guid (fallback)
-///
-/// The correlation ID is:
-/// - Added to the response X-Correlation-ID header
-/// - Pushed to Serilog LogContext for all log entries
-/// - Available via HttpContext.TraceIdentifier for framework integration
-/// - Set as a tag on the current Activity for distributed tracing
-/// </remarks>
 internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<CorrelationIdMiddleware> logger)
 {
     private const string CorrelationIdHeader = "X-Correlation-ID";
@@ -75,9 +59,6 @@ internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<Corr
         }
     }
 
-    /// <summary>
-    /// Enriches the current Activity with correlation ID and baggage for distributed tracing.
-    /// </summary>
     private static void EnrichActivityWithCorrelationId(string correlationId)
     {
         var activity = Activity.Current;
@@ -91,9 +72,6 @@ internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<Corr
         activity.SetBaggage("correlation.id", correlationId);
     }
 
-    /// <summary>
-    /// Enriches the current Activity with request metadata for distributed tracing.
-    /// </summary>
     private static void EnrichActivityWithRequestContext(HttpContext context)
     {
         var activity = Activity.Current;
@@ -165,21 +143,7 @@ internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<Corr
         }
     }
 
-    /// <summary>
-    /// Records the GIS-aware serving-plane latency histogram for the completed request. Requests
-    /// that do not classify to a Honua protocol are skipped, which keeps label cardinality bounded.
-    /// <para>
-    /// Health probes and the metrics scrape are ALSO skipped, even though the classifier does give
-    /// them a protocol (<see cref="HonuaTelemetry.Protocols.Health"/> /
-    /// <see cref="HonuaTelemetry.Protocols.Monitoring"/>). They are infrastructure traffic, not
-    /// serving-plane requests, and their volume dwarfs real traffic: a candidate idling for 24h with
-    /// 10s liveness+readiness probes and a 15s Prometheus scrape accrues ~23k samples. Because
-    /// <c>honua_serving_request_duration_ms_count</c> is the SLO denominator, including them would
-    /// dilute a real error rate by two orders of magnitude and let an error-budget gate pass a
-    /// badly broken release — fail-open, which is worse than the no-signal state it replaced
-    /// (honua-release#5). It also skews the latency quantiles this histogram exists to report.
-    /// </para>
-    /// </summary>
+    // Health probes and the metrics scrape are excluded from the serving histogram, because their volume would dilute the error-budget denominator.
     private static void RecordServingRequestMetric(HttpContext context, long startTimestamp)
     {
         var protocol = RequestTelemetryClassifier.ResolveProtocol(context.Request.Path);
@@ -220,12 +184,6 @@ internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<Corr
         return false;
     }
 
-    /// <summary>
-    /// Determines correlation ID using order of precedence:
-    /// 1. X-Correlation-ID header (client-provided)
-    /// 2. Activity.Current?.Id (OpenTelemetry trace ID)
-    /// 3. Generated Guid (fallback)
-    /// </summary>
     private static string GetOrGenerateCorrelationId(HttpContext context)
     {
         // 1. Check for client-provided correlation ID header.
@@ -274,31 +232,14 @@ internal sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<Corr
 
 }
 
-/// <summary>
-/// Extension methods for registering CorrelationIdMiddleware
-/// </summary>
 public static class CorrelationIdMiddlewareExtensions
 {
-    /// <summary>
-    /// Adds correlation ID middleware to the application pipeline.
-    /// Should be registered early in the pipeline to ensure all subsequent operations have correlation context.
-    /// </summary>
-    /// <param name="app">The application builder</param>
-    /// <returns>The application builder for method chaining</returns>
     public static IApplicationBuilder UseCorrelationId(this IApplicationBuilder app)
     {
         ArgumentNullException.ThrowIfNull(app);
         return app.UseMiddleware<CorrelationIdMiddleware>();
     }
 
-    /// <summary>
-    /// Captures each gRPC call's <c>grpc-status</c> for the serving-latency sample that
-    /// <see cref="UseCorrelationId"/> records. Register immediately after <c>UseGrpcWeb</c>: gRPC-Web
-    /// writes its trailers into the response body and detaches them before control returns to
-    /// the outer middleware, so only a middleware inside it can still read the status (#5473).
-    /// </summary>
-    /// <param name="app">The application builder</param>
-    /// <returns>The application builder for method chaining</returns>
     public static IApplicationBuilder UseGrpcServingStatusCapture(this IApplicationBuilder app)
     {
         ArgumentNullException.ThrowIfNull(app);

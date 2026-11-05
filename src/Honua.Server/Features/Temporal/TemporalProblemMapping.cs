@@ -6,20 +6,9 @@ using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Temporal;
 
-/// <summary>
-/// Shared exception-to-problem mapping for the temporal history endpoints (honua-server#1166). Maps
-/// temporal domain exceptions to RFC 7807 problem responses without leaking provider internals, used by
-/// both the slice-1 and slice 2-5 endpoint groups so error mapping stays consistent.
-/// </summary>
+// The problem mapping does not include provider internals.
 internal static class TemporalProblemMapping
 {
-    /// <summary>
-    /// Attempts to map a temporal domain exception to a problem result.
-    /// </summary>
-    /// <param name="ex">The exception to map.</param>
-    /// <param name="context">The current HTTP context.</param>
-    /// <param name="problem">The mapped problem result when the exception is a known temporal failure.</param>
-    /// <returns>True when the exception was mapped; false to let the caller emit a generic 500.</returns>
     public static bool TryMap(Exception ex, HttpContext context, out IResult problem)
     {
         switch (ex)

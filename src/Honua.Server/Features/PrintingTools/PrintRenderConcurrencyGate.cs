@@ -3,15 +3,6 @@
 
 namespace Honua.Server.Features.PrintingTools;
 
-/// <summary>
-/// Limits concurrent synchronous print render operations to prevent unbounded
-/// Skia surface memory allocation.  Async jobs are already bounded by the
-/// <see cref="System.Threading.Channels.Channel{T}"/> queue depth.
-/// </summary>
-/// <remarks>
-/// Modelled after <c>MapServer.Rendering.RasterRenderCapacityLimiter</c> but
-/// intentionally self-contained to preserve vertical-slice isolation.
-/// </remarks>
 internal sealed class PrintRenderConcurrencyGate : IDisposable
 {
     internal const string CapacityExceededMessage =
@@ -23,9 +14,6 @@ internal sealed class PrintRenderConcurrencyGate : IDisposable
 
     private readonly SemaphoreSlim _gate = new(MaxConcurrentSyncRenders, MaxConcurrentSyncRenders);
 
-    /// <summary>
-    /// Attempts a non-blocking acquire. Returns a disposable lease on success, null when at capacity.
-    /// </summary>
     public async ValueTask<Lease?> TryAcquireAsync(CancellationToken cancellationToken)
     {
         if (!await _gate.WaitAsync(0, cancellationToken).ConfigureAwait(false))

@@ -11,18 +11,6 @@ using Microsoft.Extensions.Options;
 #if !HONUA_EXCLUDE_AZURE
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Azure Batch execution adapter. Maps the canonical <see cref="ExecutionJobRecord"/>
-/// lifecycle onto Azure Batch jobs, tasks, and pools while preserving claim, heartbeat,
-/// retry, cancellation, and artifact-publication semantics provided by the shared
-/// worker substrate.
-/// </summary>
-/// <remarks>
-/// Azure Batch is an optional backend: the baseline lightweight runtime remains valid
-/// without this adapter registered. Heavyweight (GDAL-class) workloads opt in by
-/// pointing a workload at a heavy-image pool through the <c>azure.batch.pool_id</c>
-/// parameter and an appropriate <c>azure.batch.container_image</c>.
-/// </remarks>
 internal sealed partial class AzureBatchComputeBackend(
     IAzureBatchClient batchClient,
     IOptions<ControlPlaneOptions> options,

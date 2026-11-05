@@ -228,13 +228,6 @@ internal static class StyleJsonUtilities
         return true;
     }
 
-    /// <summary>
-    /// Splits a CSS color function body on either commas (legacy syntax) or
-    /// whitespace + an optional `/` alpha separator (CSS Color Module Level 4
-    /// modern syntax).  Mirrors the admin-write normalizer's
-    /// <c>SplitCssFunctionArguments</c> helper so the parser accepts every
-    /// form the normalizer admits.
-    /// </summary>
     private static bool TryExtractFunctionArguments(string text, out string[] parts)
     {
         parts = Array.Empty<string>();

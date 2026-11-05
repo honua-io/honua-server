@@ -8,42 +8,15 @@ using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.Servic
 
 namespace Honua.Server.Features.Geoprocessing;
 
-/// <summary>
-/// Ensures a fresh/default instance exposes at least one GeoServices <c>GPServer</c>
-/// service so the geoprocessing facade is drivable out of the box (honua-server#2349).
-///
-/// The GPServer facade resolves the <c>{serviceId}</c> route segment against the
-/// Metadata v2 graph and requires the resolved <see cref="MetadataV2Service"/> to
-/// carry <see cref="ServiceProtocols.GPServer"/>; the task catalog itself always
-/// exists (the built-in process catalog). On a bare instance with no published
-/// layers and no activated snapshot the graph carries no such service, so every
-/// <c>/rest/services/{serviceId}/GPServer/...</c> request 404s and GPServer cannot
-/// be demonstrated end-to-end without a manual admin publish.
-///
-/// This seeder adds one purpose-built, layerless GP service (<c>geoprocessing</c>)
-/// only when no service already exposes GPServer. Because every published service
-/// (protocols default to all) and every V1-compat-projected service already carry
-/// GPServer, the seeder is a no-op on any instance that already has services — it
-/// only materializes the default GP entry point on a genuinely empty graph, and it
-/// merges (never replaces) so it can never wipe an existing snapshot.
-/// </summary>
+// The seeder adds the default GP service only on an empty graph, and it merges so it cannot replace an existing snapshot.
 internal sealed partial class GeoprocessingServiceSeeder(
     IMetadataV2GraphStore graphStore,
     ILogger<GeoprocessingServiceSeeder> logger)
 {
-    /// <summary>Stable graph identity of the seeded default GP service.</summary>
     internal const string ServiceId = "svc-geoprocessing";
 
-    /// <summary>
-    /// Route/name segment used to address the seeded service, i.e.
-    /// <c>/rest/services/geoprocessing/GPServer</c>.
-    /// </summary>
     internal const string ServiceName = "geoprocessing";
 
-    /// <summary>
-    /// Ensures a GPServer-capable service exists in the Metadata v2 graph. Idempotent:
-    /// a no-op when any service already exposes <see cref="ServiceProtocols.GPServer"/>.
-    /// </summary>
     public async Task EnsureSeededAsync(CancellationToken cancellationToken = default)
     {
         MetadataV2Graph baseGraph;

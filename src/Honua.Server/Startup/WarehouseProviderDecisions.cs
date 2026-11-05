@@ -13,11 +13,7 @@ internal sealed record WarehouseProviderDecision(
     bool Supported,
     bool Enabled);
 
-/// <summary>
-/// Canonical, process-lifetime warehouse enablement decisions shared by startup
-/// composition and capability discovery. Legacy experimental keys are inputs to
-/// this resolver only; consumers never re-read configuration independently.
-/// </summary>
+// Consumers use this decision and do not re-read the experimental keys.
 internal sealed class WarehouseProviderDecisions
 {
     public WarehouseProviderDecisions(IConfiguration configuration)

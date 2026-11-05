@@ -5,25 +5,10 @@ using Honua.ServiceDefaults;
 
 namespace Honua.Server.Features.Operations.Status;
 
-/// <summary>
-/// Projects the replica-local serving-latency reservoir as an explicitly non-authoritative
-/// diagnostic. A distributed platform SLO is intentionally not fabricated from this source.
-/// </summary>
-/// <remarks>
-/// The retained tail is bounded per protocol, resets with the process, and counts HTTP 5xx only. Its
-/// population and effective interval are exposed so callers can use it for node diagnosis without
-/// mistaking it for the all-request, cross-replica, in-band-aware release SLI.
-/// </remarks>
 internal static class OperateSloEvaluator
 {
     internal const string DiagnosticSource = "node-local-retained-tail(http-5xx-only)";
 
-    /// <summary>
-    /// Projects a serving-latency snapshot as a node-local retained-tail diagnostic.
-    /// </summary>
-    /// <param name="options">The SLO configuration.</param>
-    /// <param name="snapshot">The in-process serving-latency snapshot.</param>
-    /// <returns>The explicit unavailable platform SLO state plus retained-tail diagnostic.</returns>
     public static OperateSloView Evaluate(OperateSloOptions options, ServingLatencySnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(options);

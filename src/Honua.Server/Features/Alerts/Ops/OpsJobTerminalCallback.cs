@@ -9,15 +9,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Alerts.Ops;
 
-/// <summary>
-/// Ops-notification producer for execution jobs: emits an Error-severity ops
-/// notification when a job reaches the terminal <see cref="ExecutionJobStatus.Failed"/>
-/// state, carrying the operation id and workload. Best-effort and kind-agnostic (all
-/// job kinds), mirroring the other <see cref="IJobTerminalCallback"/> implementations:
-/// a throwing notification must never block the job's terminal transition. Resolves
-/// the scoped <see cref="OpsNotificationService"/> from a fresh scope because this
-/// callback is a singleton fired outside any request scope.
-/// </summary>
+// A throwing notification must not block the job's terminal transition, and the callback opens a scope because it is a singleton.
 internal sealed partial class OpsJobTerminalCallback : IJobTerminalCallback
 {
     private const string OpsSource = "job";

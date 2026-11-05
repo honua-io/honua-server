@@ -7,11 +7,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.FieldWorkflows.Review;
 
-/// <summary>
-/// Admin REST surface for back-office field data review and QA (#1159). Every
-/// route requires admin authorization and adapts to the shared
-/// <see cref="FieldReviewService"/>; all state transitions are audited.
-/// </summary>
 internal static class FieldReviewEndpoints
 {
     public static IEndpointRouteBuilder MapFieldReviewEndpoints(this IEndpointRouteBuilder endpoints)

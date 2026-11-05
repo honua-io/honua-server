@@ -15,16 +15,10 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for native/operator client-certificate trust profiles.
-/// </summary>
 internal static class ClientCertificateAdminEndpoints
 {
     internal sealed class ClientCertificateAdminEndpointsLog;
 
-    /// <summary>
-    /// Registers client-certificate trust profile management endpoints.
-    /// </summary>
     public static void MapClientCertificateAdminEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/security/client-certificates")

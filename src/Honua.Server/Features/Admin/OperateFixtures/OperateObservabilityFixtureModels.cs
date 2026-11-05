@@ -34,11 +34,6 @@ internal sealed class OperateObservabilityFixtureSeedResponse
 
 internal sealed class OperateObservabilityAlertFixtureSeed
 {
-    /// <summary>
-    /// Sentinel returned when the geofence alert stores are not registered (alerts.geofence
-    /// disabled). Zero ids and empty collections tell the Console observability page to render
-    /// the alert surface in its disabled/empty state rather than treating the seed as failed.
-    /// </summary>
     public static OperateObservabilityAlertFixtureSeed Skipped { get; } = new()
     {
         ZoneId = 0,

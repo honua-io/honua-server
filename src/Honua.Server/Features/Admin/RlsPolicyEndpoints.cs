@@ -14,9 +14,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for row-level security (RLS) policy management (#502, epic #1275).
-/// </summary>
 internal static partial class RlsPolicyEndpoints
 {
     internal sealed class RlsPolicyEndpointsLog;
@@ -37,9 +34,6 @@ internal static partial class RlsPolicyEndpoints
         public static partial void OperationFailed(ILogger logger, Exception exception);
     }
 
-    /// <summary>
-    /// Configure RLS policy management admin endpoints.
-    /// </summary>
     public static void MapRlsPolicyEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/rls-policies")

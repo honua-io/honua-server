@@ -7,11 +7,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Monitoring;
 
-/// <summary>
-/// Leased singleton loop that periodically re-evaluates deterministic ops findings
-/// against the graduated autonomy policy. The service is registered only when the
-/// durable Redis job-store path is active, so hosts without shared coordination stay inert.
-/// </summary>
 internal sealed partial class OpsFindingsAutonomyEvaluationService(
     IServiceScopeFactory scopeFactory,
     IExecutionJobStore jobStore,

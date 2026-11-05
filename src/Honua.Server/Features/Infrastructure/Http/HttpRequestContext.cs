@@ -6,9 +6,6 @@ using Microsoft.AspNetCore.Http;
 
 namespace Honua.Infrastructure.Http;
 
-/// <summary>
-/// ASP.NET Core implementation of IRequestContext that adapts HttpContext to the Core abstraction.
-/// </summary>
 public sealed class HttpRequestContext : IRequestContext
 {
     private readonly HttpContext _httpContext;
@@ -87,11 +84,6 @@ public sealed class HttpRequestContext : IRequestContext
         return Headers.TryGetValue(name, out var value) ? value : null;
     }
 
-    /// <summary>
-    /// Creates an IRequestContext from an HttpContext.
-    /// </summary>
-    /// <param name="httpContext">The HttpContext to adapt</param>
-    /// <returns>An IRequestContext implementation</returns>
     public static IRequestContext FromHttpContext(HttpContext httpContext)
     {
         return new HttpRequestContext(httpContext);

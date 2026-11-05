@@ -8,18 +8,12 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.ControlPlane;
 
-/// <summary>Client the serving process uses. Implementations must not talk to Docker themselves.</summary>
+// This client must not talk to Docker.
 internal interface IComposeExecutorClient
 {
-    /// <summary>Sends one request and reads one response.</summary>
     Task<ComposeExecutorResponse> ExecuteAsync(ComposeExecutorRequest request, CancellationToken cancellationToken);
 }
 
-/// <summary>
-/// Unix-socket client. One request per connection, ten-minute ceiling. A missing socket or a
-/// truncated response throws <see cref="IOException"/> so rollback can surface the failure instead
-/// of reporting success.
-/// </summary>
 internal sealed partial class ComposeSocketClient(
     IOptions<ComposeExecutorOptions> options,
     ILogger<ComposeSocketClient> logger) : IComposeExecutorClient
@@ -28,7 +22,6 @@ internal sealed partial class ComposeSocketClient(
 
     internal TimeSpan Timeout { get; init; } = RequestTimeout;
 
-    /// <inheritdoc />
     public async Task<ComposeExecutorResponse> ExecuteAsync(
         ComposeExecutorRequest request,
         CancellationToken cancellationToken = default)

@@ -30,11 +30,6 @@ using System.Text.Json.Serialization.Metadata;
 
 namespace Honua.Server.Startup;
 
-/// <summary>
-/// Registers import job managers, the export job pipeline, the migration-evidence store, and
-/// the tile-operations job service (cache warming + reseed). These all share a common
-/// progress-store + distributed-cache backbone, so they live together in one registration.
-/// </summary>
 internal static class ImportExportTileOperationsRegistration
 {
     public static IServiceCollection AddHonuaImportExportAndTileOperations(
