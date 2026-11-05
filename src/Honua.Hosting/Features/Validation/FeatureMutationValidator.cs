@@ -47,7 +47,7 @@ internal sealed class FeatureMutationValidator
             cancellationToken);
     }
 
-    // Geometry type None is valid only when the request did not supply geometry, such as a property-only update that carries the existing geometry.
+    // None does not constrain the submitted geometry's shape.
     public Task<GeometryMutationResult> ValidateGeometryAsync(
         byte[]? geometry,
         MetadataV2GeometryType layerGeometryType,

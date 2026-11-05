@@ -15,7 +15,7 @@ using SkiaSharp;
 
 namespace Honua.Infrastructure.Rendering;
 
-// A request for a format Skia cannot encode returns empty rather than mislabeled bytes.
+// The vector fallback skips formats Skia cannot encode, preserving the raster renderer's result rather than returning mislabeled bytes.
 internal sealed class VectorAwareRasterMapRenderer : IRasterMapRenderer
 {
     private readonly IRasterMapRenderer _inner;
