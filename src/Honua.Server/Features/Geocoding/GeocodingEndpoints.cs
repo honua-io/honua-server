@@ -1,7 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 //
-// Read-only Esri-compatible GeocodeServer surface; anonymous by design. The
+// Read-only GeoServices REST GeocodeServer surface; anonymous by design. The
 // POST variants of every operation mirror the GET form and only carry query
 // parameters in the body — they perform no server-side mutation. Each POST
 // route opts into AllowAnonymous explicitly so authorization-policy tooling

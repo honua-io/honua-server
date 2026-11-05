@@ -304,6 +304,21 @@ internal sealed class McpStudioSetLayerStyleArgument
     /// <summary>Style reference (catalog styleId or inline style key). Omit/null clears the binding.</summary>
     [JsonPropertyName("styleRef")]
     public string? StyleRef { get; set; }
+
+    [JsonPropertyName("styleBody")]
+    public JsonElement StyleBody { get; set; }
+}
+
+internal sealed class McpStudioSetMapStyleArgument
+{
+    [JsonPropertyName("draftId")]
+    public Guid? DraftId { get; set; }
+
+    [JsonPropertyName("generation")]
+    public long? Generation { get; set; }
+
+    [JsonPropertyName("mapSpec")]
+    public JsonElement MapSpec { get; set; }
 }
 
 // -----------------------------------------------------------------------

@@ -91,7 +91,7 @@ public sealed class StudioMcpToolContractTests
     public void CompositionTools_AdvertiseDashboardEligibility()
     {
         var tools = BuildAllTools().OfType<StudioCompositionToolBase>().Cast<IMcpTool>().ToArray();
-        tools.Should().HaveCount(11);
+        tools.Should().HaveCount(12);
         // codeql[cs/linq/missed-select]: asserts each tool descriptor mentions dashboard
         foreach (var tool in tools)
         {
@@ -755,33 +755,8 @@ public sealed class StudioMcpToolContractTests
             McpTestFactory.AddAllowingStudioAuthorization(services);
         });
 
-    private static IReadOnlyList<IMcpTool> BuildAllTools()
-    {
-        var jobService = Substitute.For<IGeoprocessingJobService>();
-        return
-        [
-            new CreateStudioDraftTool(jobService, NullLogger<CreateStudioDraftTool>.Instance),
-            new GetStudioDraftTool(jobService, NullLogger<GetStudioDraftTool>.Instance),
-            new UpdateStudioDraftTool(jobService, NullLogger<UpdateStudioDraftTool>.Instance),
-            new ValidateStudioDraftTool(jobService, NullLogger<ValidateStudioDraftTool>.Instance),
-            new PreviewStudioDraftTool(jobService, NullLogger<PreviewStudioDraftTool>.Instance),
-            new SaveStudioVersionTool(jobService, NullLogger<SaveStudioVersionTool>.Instance),
-            new GetStudioVersionTool(jobService, NullLogger<GetStudioVersionTool>.Instance),
-            new ReopenStudioVersionTool(jobService, NullLogger<ReopenStudioVersionTool>.Instance),
-            new AddStudioLayerTool(jobService, NullLogger<AddStudioLayerTool>.Instance),
-            new RemoveStudioLayerTool(jobService, NullLogger<RemoveStudioLayerTool>.Instance),
-            new SetStudioLayerStyleTool(jobService, NullLogger<SetStudioLayerStyleTool>.Instance),
-            new SetStudioLayerVisibilityTool(jobService, NullLogger<SetStudioLayerVisibilityTool>.Instance),
-            new SetStudioViewTool(jobService, NullLogger<SetStudioViewTool>.Instance),
-            new AddStudioWidgetTool(jobService, NullLogger<AddStudioWidgetTool>.Instance),
-            new RemoveStudioWidgetTool(jobService, NullLogger<RemoveStudioWidgetTool>.Instance),
-            new BindStudioInteractionTool(jobService, NullLogger<BindStudioInteractionTool>.Instance),
-            new RemoveStudioInteractionTool(jobService, NullLogger<RemoveStudioInteractionTool>.Instance),
-            new AddStudioControlTool(jobService, NullLogger<AddStudioControlTool>.Instance),
-            new RemoveStudioControlTool(jobService, NullLogger<RemoveStudioControlTool>.Instance),
-            new ProposeStudioPublicationTool(jobService, NullLogger<ProposeStudioPublicationTool>.Instance),
-        ];
-    }
+    private static IMcpTool[] BuildAllTools() =>
+        McpToolRoster.Studio(Substitute.For<IGeoprocessingJobService>());
 
     private static StudioPackageDraft BuildDraft(StudioPackageFamily family, long generation)
     {

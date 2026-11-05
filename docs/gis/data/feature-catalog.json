@@ -6213,6 +6213,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Mcp.StudioLayerVisibilityMcpToolTests.SetLayerVisibility_AfterToolCall_SurvivesADraftSyncReadBack",
+        "Honua.Server.Tests.Features.Protocols.Mcp.StudioMapStyleMcpToolTests.SetMapStyle_AfterToolCall_SurvivesADraftSyncReadBack",
         "Honua.Server.Tests.Features.Protocols.Mcp.StudioMcpOwnershipParityIntegrationTests.RestAndMcp_ApplyTheSameOwnerAndCrossUserDenialRules",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.EndUserAuthorization_FlagOff_NonAdminScopedKeyDenied",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.EndUserAuthorization_FlagOn_OwnerCrudSucceeds_CrossUserDenied_ElevatedGatedOnGrant",
@@ -20312,6 +20313,8 @@
         "Honua.Server.Tests.Features.Protocols.Mcp.StudioLayerVisibilityMcpToolTests.SetLayerVisibility_WhenGenerationIsStale_SurfacesFailedPreconditionLikeSiblingCompositionTools",
         "Honua.Server.Tests.Features.Protocols.Mcp.StudioLayerVisibilityMcpToolTests.SetLayerVisibility_WithUnknownLayerOrMissingVisible_SurfacesTypedToolErrors",
         "Honua.Server.Tests.Features.Protocols.Mcp.StudioLayerVisibilityMcpToolTests.SetVisibilityInteraction_BoundToADraft_DispatchesThroughTheServerToolEndToEnd",
+        "Honua.Server.Tests.Features.Protocols.Mcp.StudioMapStyleMcpToolTests.SetMapStyle_AfterToolCall_SurvivesADraftSyncReadBack",
+        "Honua.Server.Tests.Features.Protocols.Mcp.StudioMapStyleMcpToolTests.SetView_WithABearingOutOfBounds_SurfacesAnOutOfBoundsViolationWithoutWriting",
         "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.PostChat_SuppliedSession_BindsToVerifiedOwnerBeforeAdmissionOrSse",
         "Honua.Server.Tests.Features.StudioAi.StudioAiProxyEndpointsTests.StudioAiProxy_FlagOn_SameNonAdminBearerReachesProxyAndMcpDiscovery",
         "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.AdminEndpoint_OidcEnabled_DistributedCacheWithoutRedis_FallsBackToMemoryReplayProtection",

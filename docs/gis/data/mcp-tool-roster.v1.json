@@ -62,6 +62,7 @@
     "honua_studio_save_version",
     "honua_studio_set_layer_style",
     "honua_studio_set_layer_visibility",
+    "honua_studio_set_map_style",
     "honua_studio_set_view",
     "honua_studio_update_draft",
     "honua_studio_validate_draft",

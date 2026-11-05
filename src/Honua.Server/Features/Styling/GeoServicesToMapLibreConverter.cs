@@ -1,9 +1,9 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Globalization;
 using System.Linq;
 using System.Text.Json;
+using Honua.Core.Features.Shared.Services;
 using Honua.Core.Features.Styling.Domain;
 using GeometryType = Honua.Core.Features.Metadata.Domain.V2.MetadataV2GeometryType;
 
@@ -1325,115 +1325,11 @@ internal static class GeoServicesToMapLibreConverter
         {
             JsonValueKind.String => element.GetString() ?? string.Empty,
             JsonValueKind.Number when element.TryGetDouble(out var numberValue) =>
-                FormatNumberAsEcmaScriptString(numberValue),
+                EcmaScriptNumberFormatter.Format(numberValue),
             JsonValueKind.True => "true",
             JsonValueKind.False => "false",
             _ => element.ToString() ?? string.Empty
         };
-    }
-
-    /// <summary>
-    /// Formats a double exactly as ECMAScript's <c>Number::toString</c> (and therefore
-    /// MapLibre's <c>to-string</c> coercion) would, so a numeric GeoServices category
-    /// emits the same token the style runtime derives from a tile attribute.
-    /// </summary>
-    /// <remarks>
-    /// .NET's <c>"G"</c>/<c>"R"</c> formats disagree with ECMAScript on exponent casing
-    /// and padding (<c>1E-07</c> versus <c>1e-7</c>) and on the thresholds at which
-    /// exponential notation is used (<c>1e-6</c> is <c>0.000001</c> and <c>1e20</c> is
-    /// <c>100000000000000000000</c> in ECMAScript). A stop formatted the .NET way can
-    /// never be selected, so the feature silently falls through to the default color or
-    /// icon. This implements ECMAScript 2024 section 6.1.6.1.20 on top of .NET's
-    /// shortest round-trippable digits.
-    /// </remarks>
-    private static string FormatNumberAsEcmaScriptString(double value)
-    {
-        if (double.IsNaN(value))
-        {
-            return "NaN";
-        }
-
-        if (double.IsPositiveInfinity(value))
-        {
-            return "Infinity";
-        }
-
-        if (double.IsNegativeInfinity(value))
-        {
-            return "-Infinity";
-        }
-
-        // codeql[cs/equality-on-floats]: exact zero, including negative zero, is the ECMAScript "0" spelling; a tolerance would collapse tiny stops
-        if (value == 0d)
-        {
-            // Covers negative zero, which ECMAScript renders as "0".
-            return "0";
-        }
-
-        if (value < 0d)
-        {
-            return "-" + FormatNumberAsEcmaScriptString(-value);
-        }
-
-        // "R" yields the shortest round-trippable digits on .NET Core 3.0+, which is the
-        // same digit sequence ECMAScript's algorithm selects.
-        var roundTrip = value.ToString("R", CultureInfo.InvariantCulture);
-
-        var exponent = 0;
-        var exponentIndex = roundTrip.IndexOf('E');
-        if (exponentIndex >= 0)
-        {
-            exponent = int.Parse(
-                roundTrip.AsSpan(exponentIndex + 1),
-                NumberStyles.Integer,
-                CultureInfo.InvariantCulture);
-            roundTrip = roundTrip[..exponentIndex];
-        }
-
-        var pointIndex = roundTrip.IndexOf('.');
-        var digits = pointIndex >= 0 ? roundTrip.Remove(pointIndex, 1) : roundTrip;
-
-        // n is the position of the decimal point relative to the digit sequence, as in
-        // the spec: value == 0.<digits> * 10^n.
-        var n = (pointIndex >= 0 ? pointIndex : roundTrip.Length) + exponent;
-
-        var leadingZeros = 0;
-        while (leadingZeros < digits.Length - 1 && digits[leadingZeros] == '0')
-        {
-            leadingZeros++;
-            n--;
-        }
-
-        digits = digits[leadingZeros..].TrimEnd('0');
-        if (digits.Length == 0)
-        {
-            return "0";
-        }
-
-        var k = digits.Length;
-
-        if (k <= n && n <= 21)
-        {
-            return digits + new string('0', n - k);
-        }
-
-        if (n > 0 && n <= 21)
-        {
-            return string.Concat(digits[..n], ".", digits[n..]);
-        }
-
-        if (n > -6 && n <= 0)
-        {
-            return string.Concat("0.", new string('0', -n), digits);
-        }
-
-        var mantissa = k == 1 ? digits : string.Concat(digits[..1], ".", digits[1..]);
-        var scientificExponent = n - 1;
-        return string.Concat(
-            mantissa,
-            "e",
-            scientificExponent >= 0 ? "+" : "-",
-            Math.Abs(scientificExponent).ToString(CultureInfo.InvariantCulture));
     }
 }
 

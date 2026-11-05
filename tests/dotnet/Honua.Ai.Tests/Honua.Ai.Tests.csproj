@@ -76,6 +76,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="../Shared/ProtocolUnits/Ai/McpTaxonomyAlignmentTests.Shared.cs" Link="Shared/McpTaxonomyAlignmentTests.Shared.cs" />
+    <Compile Include="../Shared/ProtocolUnits/Ai/McpToolRoster.cs" Link="Shared/McpToolRoster.cs" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="../Shared/ProtocolUnits/Ai/McpSessionSharedStoreTests.Shared.cs" Link="Shared/McpSessionSharedStoreTests.Shared.cs" />

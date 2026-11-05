@@ -123,11 +123,8 @@ internal static class SavedMapOperationDraftApplier
     private static StudioPackageEnvelope ApplyBody(
         StudioPackageEnvelope envelope,
         SavedMapOperationEnvelope operation,
-        Func<StudioCompositionBody, SavedMapOperationEnvelope, StudioCompositionBody> apply)
-    {
-        var body = StudioCompositionBodyEditor.ReadBody(envelope);
-        return StudioCompositionBodyEditor.WriteBody(envelope, apply(body, operation));
-    }
+        Func<StudioCompositionBody, SavedMapOperationEnvelope, StudioCompositionBody> apply) =>
+        StudioCompositionBodyEditor.EditBody(envelope, body => apply(body, operation));
 
     private static StudioCompositionBody ApplySetViewport(
         StudioCompositionBody body,

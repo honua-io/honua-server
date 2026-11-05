@@ -14,7 +14,7 @@ namespace Honua.Protocols.GeoServices.Sharing;
 internal sealed record SharingInfoResponse
 {
     // No ArcGIS Portal version (currentVersion/fullVersion) is advertised. Honua is an
-    // independent, Esri-compatible server and must not impersonate a specific ArcGIS
+    // independent GeoServices REST server and must not impersonate a specific ArcGIS
     // Portal/Server release. Do NOT add a currentVersion/fullVersion field
     // (guarded by NoGeoServicesServerVersionTests).
 
