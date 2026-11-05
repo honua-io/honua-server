@@ -151,7 +151,7 @@ public sealed class ImageServerServiceInfo
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public TileInfo? TileInfo { get; init; }
 
-    // ImageServiceRaster.LoadAsync requires nested storageInfo with both block dimensions and fails with "Failed to read configuration data" when it is absent.
+    // Dynamic services omit storageInfo because the native ImageServiceRaster configuration parser rejects tile-cache metadata for a non-fused service.
     [JsonPropertyName("storageInfo")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ImageServerStorageInfo? StorageInfo { get; init; }
