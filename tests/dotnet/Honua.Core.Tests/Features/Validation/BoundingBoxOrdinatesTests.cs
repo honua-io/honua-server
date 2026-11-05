@@ -42,4 +42,11 @@ public sealed class BoundingBoxOrdinatesTests
     [UnitTest]
     public void Horizontal_FourOrdinates_ReturnsThemInOrder()
         => BoundingBoxOrdinates.Horizontal([1, 2, 3, 4]).Should().Be((1d, 2d, 3d, 4d));
+
+    [UnitTest]
+    public void Horizontal_AnyOtherCount_IsRejected()
+    {
+        var read = () => BoundingBoxOrdinates.Horizontal([1, 2, 3]);
+        read.Should().Throw<ArgumentOutOfRangeException>();
+    }
 }
