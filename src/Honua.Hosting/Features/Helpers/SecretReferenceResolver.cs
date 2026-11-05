@@ -3,9 +3,6 @@
 
 namespace Honua.Infrastructure.Helpers;
 
-/// <summary>
-/// Resolves simple secret references from environment variables.
-/// </summary>
 internal static class SecretReferenceResolver
 {
     private const string EnvPrefix = "env:";

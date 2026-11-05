@@ -11,9 +11,6 @@ using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Events;
 
-/// <summary>
-/// Background dispatcher that delivers persisted feature-change events to configured webhook subscribers.
-/// </summary>
 internal sealed partial class FeatureChangeWebhookDispatcher(
     IFeatureChangeEventStore store,
     IDistributedCache? distributedCache,

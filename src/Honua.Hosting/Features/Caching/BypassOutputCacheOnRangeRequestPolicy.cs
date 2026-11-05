@@ -6,14 +6,7 @@ using Microsoft.Net.Http.Headers;
 
 namespace Honua.Infrastructure.Caching;
 
-/// <summary>
-/// Output cache policy that disables both lookup and storage when the inbound
-/// request includes a <c>Range</c> header. Output caching does not produce
-/// <c>206 Partial Content</c> / <c>Content-Range</c> responses; ASP.NET Core's
-/// static-file pipeline does. Bypassing the cache for range requests prevents
-/// a previously cached full <c>200</c> response from satisfying a later range
-/// GET as a full body.
-/// </summary>
+// Output caching does not produce 206 or Content-Range; the static-file pipeline does, so range requests bypass cached full responses.
 internal sealed class BypassOutputCacheOnRangeRequestPolicy : IOutputCachePolicy
 {
     public ValueTask CacheRequestAsync(OutputCacheContext context, CancellationToken cancellationToken)

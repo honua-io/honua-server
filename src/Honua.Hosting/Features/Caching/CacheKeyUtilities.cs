@@ -3,15 +3,8 @@
 
 namespace Honua.Infrastructure.Caching;
 
-/// <summary>
-/// Shared cache-key classification utilities used by both the cache service
-/// and the background refresh coordinator for metrics tagging.
-/// </summary>
 internal static class CacheKeyUtilities
 {
-    /// <summary>
-    /// Classifies a cache key into a family name for performance-metric tagging.
-    /// </summary>
     internal static string GetCacheKeyFamily(string key)
     {
         if (string.IsNullOrWhiteSpace(key))

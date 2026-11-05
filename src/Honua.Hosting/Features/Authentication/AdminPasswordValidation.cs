@@ -3,9 +3,6 @@
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Shared production validation for directly configured, bootstrap-resolved, and refreshed admin passwords.
-/// </summary>
 internal static class AdminPasswordValidation
 {
     public static void ValidateProductionPassword(string adminPassword)

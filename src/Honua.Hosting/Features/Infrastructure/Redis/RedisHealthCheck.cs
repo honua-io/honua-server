@@ -6,9 +6,6 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace Honua.Infrastructure.Redis;
 
-/// <summary>
-/// Health check for Redis connectivity and standardized Redis services.
-/// </summary>
 internal sealed class RedisHealthCheck : IHealthCheck
 {
     private readonly IRedisHealthMonitor _healthMonitor;

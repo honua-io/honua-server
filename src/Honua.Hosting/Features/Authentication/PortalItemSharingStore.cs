@@ -5,72 +5,33 @@ using System.Collections.Concurrent;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// In-memory Portal item-sharing overlay (#1868). Records the explicit ArcGIS
-/// sharing state of a portal item — shared to <c>everyone</c> (public), to the
-/// <c>org</c> (any authenticated user), and/or to a set of community groups —
-/// driven by the <c>content/items/{id}/share</c> and <c>/unshare</c> endpoints.
-/// </summary>
-/// <remarks>
-/// <para>
-/// This is an <em>additive overlay</em>, not a replacement for RBAC. The shared
-/// query/edit pipeline and the <c>IPortalItemProjector</c> remain the authority for
-/// whether a principal may read the underlying service (ADR-0049/#1375). Explicit
-/// group audiences provide an alternative service read grant through that shared
-/// authority; resource policy, tenant isolation and credential scopes still apply.
-/// Everyone/org do not confer authority. The Postgres profile persists group
-/// audiences; non-Postgres profiles use the process-local implementation below.
-/// </para>
-/// </remarks>
+// Sharing is additive to RBAC: an explicit group audience is an alternative service read grant, and an everyone or org audience confers no authority.
 internal interface IPortalItemSharingStore
 {
-    /// <summary>Reads the current share state without blocking asynchronous I/O.</summary>
     PortalItemShareState Get(string itemId);
 
-    /// <summary>Gets the current share state of an item (default: shared with no one).</summary>
     Task<PortalItemShareState> GetAsync(string itemId, CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Returns the recorded sharing owner of an item (the first principal to share
-    /// it), or <see langword="null"/> when the item has never been shared. Used to
-    /// authorize subsequent share/unshare to the owner (or an admin).
-    /// </summary>
+    // The recorded owner is the first principal to share the item and is who may later change that share, along with an admin.
     Task<string?> GetOwnerAsync(string itemId, CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Applies a share request to an item, unioning the requested audiences with the
-    /// existing share state. The first principal to share an item is recorded as its
-    /// sharing owner. Returns the resulting state.
-    /// </summary>
     Task<PortalItemShareState> ShareAsync(string itemId, string owner, PortalItemShareRequest request, CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Removes the requested audiences from an item's share state. Returns the
-    /// resulting state.
-    /// </summary>
     Task<PortalItemShareState> UnshareAsync(string itemId, PortalItemShareRequest request, CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Returns whether <paramref name="state"/> makes the item visible to a principal
-    /// who is authenticated (<paramref name="isAuthenticated"/>) and a member of
-    /// <paramref name="memberGroupIds"/>.
-    /// </summary>
     bool IsVisibleTo(PortalItemShareState state, bool isAuthenticated, IReadOnlyCollection<string> memberGroupIds);
 }
 
-/// <summary>A share/unshare audience request.</summary>
 internal sealed record PortalItemShareRequest(
     bool Everyone,
     bool Org,
     IReadOnlyList<string> GroupIds);
 
-/// <summary>The recorded share state of a portal item.</summary>
 internal sealed record PortalItemShareState(
     bool Everyone,
     bool Org,
     IReadOnlyList<string> GroupIds)
 {
-    /// <summary>The default state: shared with no audience.</summary>
     public static PortalItemShareState None { get; } = new(false, false, []);
 }
 

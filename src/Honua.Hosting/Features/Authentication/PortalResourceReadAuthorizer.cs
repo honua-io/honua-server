@@ -11,7 +11,6 @@ using Honua.Infrastructure.Validation;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>Connects Portal discovery to canonical service/resource read authorization.</summary>
 internal sealed class PortalResourceReadAuthorizer(
     IPortalGroupStore groups,
     IPortalItemSharingStore sharing,

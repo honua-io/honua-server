@@ -5,14 +5,8 @@ using Honua.Core.Features.Alerts.Domain;
 
 namespace Honua.Alerts;
 
-/// <summary>
-/// Shared metadata builder for alert delivery message attributes.
-/// </summary>
 internal static class AlertDeliveryMetadata
 {
-    /// <summary>
-    /// Builds the standard set of string message attributes for cloud providers (SNS, SQS).
-    /// </summary>
     public static Dictionary<string, string> BuildStringAttributes(AlertEventEnvelope alertEvent)
     {
         return new Dictionary<string, string>
@@ -24,9 +18,6 @@ internal static class AlertDeliveryMetadata
         };
     }
 
-    /// <summary>
-    /// Builds extended metadata properties including incident status (for Event Hub, etc.).
-    /// </summary>
     public static Dictionary<string, object> BuildObjectProperties(AlertEventEnvelope alertEvent)
     {
         return new Dictionary<string, object>

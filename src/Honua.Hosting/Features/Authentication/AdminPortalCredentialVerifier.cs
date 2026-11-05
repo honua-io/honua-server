@@ -12,10 +12,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Default <see cref="IPortalCredentialVerifier"/> bridging to the local admin
-/// password and admin API-key store. Used when no custom verifier is registered.
-/// </summary>
 internal sealed class AdminPortalCredentialVerifier(
     IOptions<ApiKeyAuthenticationOptions> apiKeyOptions,
     IConnectionSecretResolver? secretResolver = null,
@@ -32,7 +28,6 @@ internal sealed class AdminPortalCredentialVerifier(
     private readonly ITenantContext? _tenantContext = tenantContext;
     private readonly ILogger<AdminPortalCredentialVerifier>? _logger = logger;
 
-    /// <inheritdoc />
     public async Task<PortalCredentialPrincipal?> VerifyAsync(
         string username,
         string password,

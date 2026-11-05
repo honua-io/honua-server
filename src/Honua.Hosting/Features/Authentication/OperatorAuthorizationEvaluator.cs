@@ -9,16 +9,6 @@ using AccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Evaluates operator-scoped resource authorization using convention mapping from
-/// the existing <see cref="IRoleStore"/> permission grants.
-/// </summary>
-/// <remarks>
-/// Registered as a singleton. <see cref="IRoleStore"/> is resolved per call via
-/// <see cref="IServiceScopeFactory"/> so that a scoped store implementation
-/// (e.g. PostgresRoleStore, which captures a scoped
-/// <c>IDatabaseConnectionProvider</c>) works correctly once durable RBAC lands.
-/// </remarks>
 internal sealed class OperatorAuthorizationEvaluator(
     IServiceScopeFactory scopeFactory,
     IOptions<RbacOptions> rbacOptions,
@@ -152,19 +142,7 @@ internal sealed class OperatorAuthorizationEvaluator(
             $"No matching operator permission for {request.ResourceType}.{request.Operation}.");
     }
 
-    /// <summary>
-    /// Resolves the subject id used for role-store grant lookup and workspace ownership
-    /// comparison: <see cref="ClaimTypes.NameIdentifier"/>, then <c>sub</c>, then
-    /// <c>api_key_id</c>, then <c>api_key_name</c>.
-    /// </summary>
-    /// <remarks>
-    /// The API-key fallbacks mirror <c>StudioAuthorizationService.ResolveCallerId</c> so that
-    /// the id a caller owns content under is the same id an operator provisions grants
-    /// against. API-key principals carry neither <see cref="ClaimTypes.NameIdentifier"/> nor
-    /// <c>sub</c> (ApiKeyAuthenticationHandler stamps <c>api_key_id</c>/<c>api_key_name</c>
-    /// instead), so without these fallbacks every API-key caller collapsed onto the same
-    /// empty subject id and per-key grants could never match (#3023 review).
-    /// </remarks>
+    // An API-key principal has neither NameIdentifier nor sub, so the subject falls through the key id and then the key name; otherwise every key shares one empty subject.
     private static string? ResolveGrantSubjectId(ClaimsPrincipal principal)
     {
         var candidate = principal.FindFirstValue(ClaimTypes.NameIdentifier);

@@ -22,11 +22,7 @@ internal interface IAdminApiKeyStore
         string? createdBy,
         CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Mints a key with optional request restrictions. Restrictions are stored with the key in
-    /// the same write, so the key never exists unrestricted; null or empty lists leave it
-    /// unrestricted.
-    /// </summary>
+    // Restrictions are stored in the same write as the key so it never exists unrestricted; null or empty lists leave it unrestricted.
     Task<AdminApiKeyCreateResult> CreateAsync(
         string name,
         IReadOnlyList<string> permissions,
@@ -41,11 +37,7 @@ internal interface IAdminApiKeyStore
 
     Task<AdminApiKeyRecord?> RevokeAsync(Guid id, CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Replaces referrer and IP restrictions. Null or empty lists remove that restriction.
-    /// Key material is unchanged. Returns null when the key does not exist or is an
-    /// approved-operation credential.
-    /// </summary>
+    // An approved-operation credential is not a managed key, so a restriction update returns null and leaves its material unchanged.
     Task<AdminApiKeyRecord?> UpdateRestrictionsAsync(
         Guid id,
         AdminApiKeyRestrictions restrictions,
@@ -73,17 +65,10 @@ internal sealed record AdminApiKeyRecord(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? AllowedReferrers = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? AllowedIpRanges = null);
 
-/// <summary>
-/// Optional request restrictions for a managed API key, already validated and canonicalized
-/// by <see cref="ApiKeyRequestRestrictions"/>. See that type for the matching rules.
-/// </summary>
-/// <param name="AllowedReferrers">Origin patterns the request's Origin/Referer must match.</param>
-/// <param name="AllowedIpRanges">CIDR ranges the client address must fall in.</param>
 internal sealed record AdminApiKeyRestrictions(
     IReadOnlyList<string>? AllowedReferrers,
     IReadOnlyList<string>? AllowedIpRanges)
 {
-    /// <summary>Null for an empty list, so "no entries" and "not set" are stored alike.</summary>
     internal static IReadOnlyList<string>? Normalize(IReadOnlyList<string>? values)
         => values is { Count: > 0 } ? values.ToArray() : null;
 }
@@ -305,11 +290,7 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
         return normalized.Length == 0 ? ["admin:*"] : normalized;
     }
 
-    /// <summary>
-    /// Stores caller-supplied key material. Tests use this to present a fixed credential
-    /// whose bytes trip content heuristics (for example "--" or "/*"). Issuance stays on
-    /// <see cref="CreateAsync(string, IReadOnlyList{string}, DateTimeOffset?, string?, AdminApiKeyRestrictions?, CancellationToken)"/>.
-    /// </summary>
+    // This stores caller-supplied key material so a test can present bytes that trip content heuristics; issuance does not use it.
     internal AdminApiKeyCreateResult RegisterKnownMaterial(
         string keyMaterial,
         string name,
@@ -368,7 +349,6 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
     private static byte[] HashKey(string keyMaterial) => SHA256.HashData(Encoding.UTF8.GetBytes(keyMaterial));
 }
 
-/// <summary>Redis-backed admin-key registry shared by all server instances.</summary>
 internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimeProvider? timeProvider = null) : IAdminApiKeyStore
 {
     private const string Prefix = "honua:auth:admin-api-key:";
@@ -516,7 +496,6 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
         throw new InvalidOperationException($"Admin API key {id:D} changed on every restriction update.");
     }
 
-    /// <summary>Writes <paramref name="updated"/> only if the stored bytes still equal <paramref name="snapshot"/>.</summary>
     private async Task<bool> TryReplaceAsync(Guid id, RedisValue snapshot, AdminApiKeyRecord updated)
     {
         var key = BuildKey(id);
@@ -599,12 +578,7 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
         (latest.AllowedReferrers ?? []).SequenceEqual(compared.AllowedReferrers ?? [], StringComparer.Ordinal) &&
         (latest.AllowedIpRanges ?? []).SequenceEqual(compared.AllowedIpRanges ?? [], StringComparer.Ordinal);
 
-    /// <summary>
-    /// Builds <c>hash → id</c> entries for registry ids no instance has indexed yet: a record
-    /// written before this index existed, one written by an old instance mid-rollout, or one
-    /// restored directly. Runs on a timer, never on the authentication path.
-    /// </summary>
-    /// <param name="cancellationToken">Cancellation token.</param>
+    // Hash-to-id entries are backfilled off the authentication path for records stored without that index.
     internal async Task ReconcileHashIndexAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -670,8 +644,6 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
     private static AdminApiKeyRecord? Read(RedisValue value) => value.HasValue ? JsonSerializer.Deserialize((string)value!, AdminApiKeyStoreJsonContext.Default.AdminApiKeyRecord) : null;
     private static string BuildKey(Guid id) => $"{Prefix}{id:D}";
 
-    /// <summary>Redis key for <c>honua:auth:admin-api-key:hash:{sha256}</c> → key id.</summary>
-    /// <param name="hash">SHA-256 of the presented or stored key material.</param>
     internal static RedisKey HashIndexKey(byte[] hash)
     {
         ArgumentNullException.ThrowIfNull(hash);
@@ -714,10 +686,6 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
     }
 }
 
-/// <summary>
-/// Backfills the admin API-key hash index off the request path. Authentication reads one
-/// hash entry; this loop is what catches records written before that index existed.
-/// </summary>
 internal sealed partial class RedisAdminApiKeyIndexMaintenance : BackgroundService
 {
     private static readonly TimeSpan DefaultInterval = TimeSpan.FromMinutes(1);
@@ -725,11 +693,6 @@ internal sealed partial class RedisAdminApiKeyIndexMaintenance : BackgroundServi
     private readonly ILogger<RedisAdminApiKeyIndexMaintenance> _logger;
     private readonly TimeSpan _interval;
 
-    /// <summary>
-    /// Creates the maintenance loop.
-    /// </summary>
-    /// <param name="store">The registered admin API-key store.</param>
-    /// <param name="logger">Logger for failed backfill ticks.</param>
     public RedisAdminApiKeyIndexMaintenance(IAdminApiKeyStore store, ILogger<RedisAdminApiKeyIndexMaintenance> logger)
         : this(store, logger, DefaultInterval)
     {
@@ -745,7 +708,6 @@ internal sealed partial class RedisAdminApiKeyIndexMaintenance : BackgroundServi
         _interval = interval;
     }
 
-    /// <inheritdoc />
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (_store is not RedisAdminApiKeyStore redis)

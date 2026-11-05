@@ -3,9 +3,6 @@
 
 namespace Honua.Infrastructure.Caching;
 
-/// <summary>
-/// Helpers for applying schema-aware cache key scoping consistently.
-/// </summary>
 internal static class CacheScopeKeys
 {
     private const string DefaultScopePrefix = "scope:default:";

@@ -9,61 +9,37 @@ using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// First-class OAuth2 client registry (ADR-0053 Increment 2, #1888). Unlike
-/// Increment 1 — which reused the Admin API-key store as the
-/// <c>client_credentials</c> secret — this is a real per-application client
-/// identity: a distinct <c>client_id</c>/<c>client_secret</c> pair with
-/// client-type metadata, allowed grant types, redirect URIs, and the subset of
-/// the scope catalogue the client may request.
-/// </summary>
-/// <remarks>
-/// The secret is never stored in plaintext: it is SHA-256 hashed at rest and
-/// compared with <see cref="CryptographicOperations.FixedTimeEquals"/>, exactly
-/// like the Admin API-key store. Validation honours expiry and revocation. The
-/// store is in-memory to mirror the established <see cref="IAdminApiKeyStore"/>
-/// pattern (no parallel durable token store per ADR-0049); a future increment may
-/// back it with the durable store without changing this contract.
-/// </remarks>
+// The client secret is stored as a SHA-256 hash and compared in constant time.
 internal interface IOAuthClientStore
 {
-    /// <summary>Lists all registered clients (secrets never returned).</summary>
+    // List results omit the secret.
     Task<IReadOnlyList<OAuthClientRecord>> ListAsync(CancellationToken cancellationToken);
 
-    /// <summary>Registers a new client and returns its one-time plaintext secret.</summary>
+    // The plaintext secret is returned only from registration.
     Task<OAuthClientCreateResult> CreateAsync(
         OAuthClientRegistration registration,
         CancellationToken cancellationToken);
 
-    /// <summary>Fetches a client by id (secret never returned).</summary>
+    // A fetched client omits the secret.
     Task<OAuthClientRecord?> GetAsync(Guid id, CancellationToken cancellationToken);
 
-    /// <summary>Deletes a registered client. Returns the removed record, or null.</summary>
     Task<OAuthClientRecord?> DeleteAsync(Guid id, CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Validates a presented <c>client_id</c>/<c>client_secret</c> pair. Returns the
-    /// client record when the secret matches and the client is neither revoked nor
-    /// expired; otherwise <see langword="null"/> (callers must not distinguish
-    /// unknown-client from bad-secret — RFC 6749 §5.2 <c>invalid_client</c>).
-    /// </summary>
+    // Callers must not distinguish an unknown client from a bad secret.
     Task<OAuthClientRecord?> ValidateSecretAsync(
         string clientId,
         string clientSecret,
         CancellationToken cancellationToken);
 }
 
-/// <summary>OAuth2 client type (RFC 6749 §2.1).</summary>
 internal enum OAuthClientType
 {
-    /// <summary>Holds a secret securely (server-side service). The default.</summary>
     Confidential = 0,
 
-    /// <summary>Cannot keep a secret (native/SPA). No secret is minted/required.</summary>
+    // A public client cannot hold a secret, so none is minted.
     Public = 1,
 }
 
-/// <summary>Inputs to register a first-class OAuth2 client.</summary>
 internal sealed record OAuthClientRegistration(
     string Name,
     OAuthClientType ClientType,
@@ -73,7 +49,6 @@ internal sealed record OAuthClientRegistration(
     DateTimeOffset? ExpiresAt,
     string? CreatedBy);
 
-/// <summary>A registered OAuth2 client (no plaintext secret).</summary>
 internal sealed record OAuthClientRecord(
     Guid Id,
     string ClientId,
@@ -91,7 +66,7 @@ internal sealed record OAuthClientRecord(
     DateTimeOffset? RevokedAt,
     string? CreatedBy);
 
-/// <summary>Create result carrying the one-time plaintext secret (confidential only).</summary>
+// The plaintext secret is one-time and only for a confidential client.
 internal sealed record OAuthClientCreateResult(OAuthClientRecord Record, string? Secret);
 
 internal sealed class InMemoryOAuthClientStore(TimeProvider? timeProvider = null) : IOAuthClientStore
@@ -256,7 +231,6 @@ internal sealed class InMemoryOAuthClientStore(TimeProvider? timeProvider = null
     private static byte[] HashSecret(string secret) => SHA256.HashData(Encoding.UTF8.GetBytes(secret));
 }
 
-/// <summary>Redis-backed OAuth client registry shared by all server instances.</summary>
 internal sealed class RedisOAuthClientStore(IConnectionMultiplexer redis, TimeProvider? timeProvider = null) : IOAuthClientStore
 {
     private const string Prefix = "honua:auth:oauth-client:";

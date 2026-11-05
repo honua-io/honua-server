@@ -8,9 +8,6 @@ using Honua.Core.Features.Infrastructure.Backpressure;
 
 namespace Honua.Infrastructure.Models;
 
-/// <summary>
-/// Writes retryable throttling and saturation failures in the request protocol's native envelope.
-/// </summary>
 internal static class BackpressureResponseWriter
 {
     private const int JsonRpcServerError = -32000;
@@ -411,9 +408,6 @@ internal static class BackpressureResponseWriter
     private sealed record McpRequestInspection(bool IsBatch, IReadOnlyList<JsonElement?> Ids);
 }
 
-/// <summary>
-/// The transient server condition represented by a native backpressure response.
-/// </summary>
 internal enum BackpressureKind
 {
     Throttled,

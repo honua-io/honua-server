@@ -3,18 +3,9 @@
 
 namespace Honua.Infrastructure.Validation;
 
-/// <summary>
-/// Defines the scope of access required for a layer or service operation.
-/// </summary>
 public enum AccessScope
 {
-    /// <summary>
-    /// Read-only access is required.
-    /// </summary>
     Read = 0,
 
-    /// <summary>
-    /// Write access is required (includes read permissions).
-    /// </summary>
     Write = 1
 }

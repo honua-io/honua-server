@@ -17,24 +17,7 @@ internal static class ConnectionStringResolutionHelper
             secretResolver,
             cancellationToken);
 
-    /// <summary>
-    /// Resolves a raw connection-string value through the same env:-reference-then-secret-resolver-chain
-    /// mechanism <see cref="ResolveDefaultConnectionStringAsync"/> uses for
-    /// <c>ConnectionStrings:DefaultConnection</c>, generalized so other connection strings that must go
-    /// through the identical resolution order (currently Redis — honua-server#3011) can reuse it instead
-    /// of duplicating it: an <c>env:VARIABLE_NAME</c> reference is substituted first, then the remaining
-    /// value is handed to <paramref name="secretResolver"/> (e.g. the AWS Secrets Manager / Azure Key
-    /// Vault-backed <c>IConnectionSecretResolver</c> chain) only if it reports it can resolve the value;
-    /// a plain value, or a resolver-less caller, passes the value through unchanged.
-    /// </summary>
-    /// <param name="connectionString">The raw configured value (may be null/empty, an <c>env:</c>
-    /// reference, a resolver-backed reference such as <c>aws:secretsmanager:&lt;arn&gt;</c>, or a plain
-    /// connection string).</param>
-    /// <param name="settingName">The configuration key, used only in the error message if an <c>env:</c>
-    /// reference names a variable that is not set.</param>
-    /// <param name="secretResolver">The resolver chain to try for non-<c>env:</c> references, or
-    /// <see langword="null"/> to skip resolver-backed resolution entirely.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
+    // An env: reference is substituted before the secret resolver, and a plain value passes through when no resolver claims it.
     public static async Task<string?> ResolveConnectionStringValueAsync(
         string? connectionString,
         string settingName,

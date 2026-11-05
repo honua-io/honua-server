@@ -5,17 +5,9 @@ using Honua.Core.Features.Identity.Domain;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Revokes portal OAuth refresh tokens for a managed user. Deletion removes the user, so a
-/// later membership lookup cannot see them; the revocation marker still rejects refresh
-/// tokens issued before the deprovision.
-/// </summary>
+// Deleting a user removes the membership lookup, so the revocation marker still rejects a refresh token issued before that deletion.
 internal static class PortalOAuthRefreshRevoker
 {
-    /// <summary>
-    /// Revokes refresh tokens for the user's id, external subject, and federated reference.
-    /// A null store or user is a no-op so hosts without the OAuth bridge still deprovision.
-    /// </summary>
     public static async Task RevokeManagedUserAsync(
         PortalOAuthStore? store,
         ManagedUser? user,

@@ -10,7 +10,6 @@ namespace Honua.Infrastructure.Authentication;
 
 internal sealed partial class RowLevelSecurityFilterSource
 {
-    /// <inheritdoc />
     public bool CanResolveWith(IFieldMaskSource fieldSource)
         => _httpContextAccessor.HttpContext is not null
            && fieldSource is FieldMaskSource masks
@@ -18,7 +17,6 @@ internal sealed partial class RowLevelSecurityFilterSource
            && _policyStore is ICombinedReadPolicyStore combined
            && combined.CanResolveWith(masks.PolicyStore);
 
-    /// <inheritdoc />
     public async Task<ReadSecurityResolution> ResolveCombinedAsync(
         MetadataV2Resource resource,
         IFieldMaskSource fieldSource,

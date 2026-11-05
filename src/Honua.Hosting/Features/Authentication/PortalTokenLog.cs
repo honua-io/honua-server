@@ -3,12 +3,7 @@
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Source-generated log messages for the portal-token issuer and authentication
-/// handler. Tokens are never written verbatim; an 8-character SHA-256 prefix is
-/// emitted instead so support can correlate issuance and validation events without
-/// the value leaking to log sinks.
-/// </summary>
+// Tokens are never logged verbatim; an eight-character SHA-256 prefix is emitted instead.
 internal static partial class PortalTokenLog
 {
     [LoggerMessage(EventId = 7001, Level = LogLevel.Information,
@@ -47,49 +42,24 @@ internal static partial class PortalTokenLog
         Message = "Portal token store could not remove distributed cache entry {KeyHash}.")]
     public static partial void DistributedCacheRemoveFailed(ILogger logger, string keyHash, Exception exception);
 
-    /// <summary>
-    /// Emitted when a <c>generateToken</c> request carries credentials via the URL query
-    /// string rather than a POST form body. The password value is never included in the
-    /// log line; this entry is an audit signal for operators monitoring for insecure
-    /// credential transmission patterns.
-    /// </summary>
+    // This query-string credential warning never includes the password.
     [LoggerMessage(EventId = 7007, Level = LogLevel.Warning,
         Message = "Portal token request received credentials via URL query string; " +
                   "POST with a form-encoded body is preferred to avoid credential exposure " +
                   "in HTTP-layer logs.")]
     public static partial void CredentialsFromQueryString(ILogger logger);
 
-    /// <summary>
-    /// Emitted when an otherwise-valid token is refused because its tenant was synthesized by
-    /// a claims-mapping entry whose Enterprise entitlement is no longer active. Distinct from
-    /// <see cref="BindingMismatch"/> on purpose: this is a licensing/provenance refusal, not a
-    /// referer/IP mismatch, and conflating them sends an operator diagnosing a sudden 401 wave
-    /// after a licence lapse to entirely the wrong place (honua-server#2997 review).
-    /// </summary>
     [LoggerMessage(EventId = 7008, Level = LogLevel.Warning,
         Message = "Portal token {TokenHash} refused: its tenant was derived from claims mapping " +
                   "and the identity.claims-mapping entitlement is no longer active.")]
     public static partial void ClaimsMappingTenantNoLongerEntitled(ILogger logger, string tokenHash);
 
-    /// <summary>
-    /// Emitted when an otherwise-valid token is refused because the credential it was minted
-    /// from is no longer the live one — revoked, expired, rotated, or of unknown provenance
-    /// because the record predates the binding (SEC-9). Kept distinct from
-    /// <see cref="BindingMismatch"/> and <see cref="ClaimsMappingTenantNoLongerEntitled"/> so an
-    /// operator diagnosing a wave of refusals after a key revocation or a password rotation is
-    /// pointed at the credential rather than at the referer binding or the licence.
-    /// </summary>
     [LoggerMessage(EventId = 7009, Level = LogLevel.Warning,
         Message = "Portal token {TokenHash} refused: the credential it was issued from is no " +
                   "longer valid, or its provenance could not be confirmed.")]
     public static partial void SourceCredentialNoLongerValid(ILogger logger, string tokenHash);
 
-    /// <summary>
-    /// Emitted when a valid API key carrying administrative authority is presented in the
-    /// <c>token</c> query parameter. Query-string API keys are accepted wherever portal tokens
-    /// are, but admin-bearing keys must use a header transport because URLs leak into browser
-    /// history, proxy logs and <c>Referer</c> headers; the value is not logged.
-    /// </summary>
+    // An administrative API key in the query string is refused and its value is not logged.
     [LoggerMessage(EventId = 7011, Level = LogLevel.Warning,
         Message = "API key with administrative authority refused: it was presented in the token " +
                   "query parameter. Send administrative keys in the X-API-Key header.")]

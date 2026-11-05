@@ -12,170 +12,68 @@ using Honua.Core.Features.Infrastructure.Monitoring;
 
 namespace Honua.Infrastructure.Caching;
 
-/// <summary>
-/// Advanced query result caching with intelligent cache warming,
-/// performance monitoring, and adaptive cache policies.
-/// </summary>
 public interface IQueryResultCacheManager
 {
-    /// <summary>
-    /// Gets a cached query result or executes the query if not cached.
-    /// </summary>
-    /// <typeparam name="T">Type of the query result</typeparam>
-    /// <param name="cacheKey">Cache key for the query</param>
-    /// <param name="queryExecutor">Function to execute the query if not cached</param>
-    /// <param name="options">Caching options</param>
-    /// <returns>Query result</returns>
     Task<T> GetOrExecuteAsync<T>(
         string cacheKey,
         Func<Task<T>> queryExecutor,
         QueryCacheOptions? options = null);
 
-    /// <summary>
-    /// Gets a cached query result or executes the query with context tracking.
-    /// </summary>
-    /// <typeparam name="T">Type of the query result</typeparam>
-    /// <param name="cacheKey">Cache key for the query</param>
-    /// <param name="queryExecutor">Function to execute the query with context</param>
-    /// <param name="context">Query execution context</param>
-    /// <param name="options">Caching options</param>
-    /// <returns>Query result</returns>
     Task<T> GetOrExecuteAsync<T>(
         string cacheKey,
         Func<QueryExecutionContext, Task<T>> queryExecutor,
         QueryExecutionContext context,
         QueryCacheOptions? options = null);
 
-    /// <summary>
-    /// Invalidates cache entries by pattern or tags.
-    /// </summary>
-    /// <param name="pattern">Pattern to match cache keys (supports wildcards)</param>
-    /// <param name="tags">Tags to match for invalidation</param>
-    /// <returns>Number of entries invalidated</returns>
     Task<int> InvalidateAsync(string? pattern = null, IEnumerable<string>? tags = null);
 
-    /// <summary>
-    /// Gets cache performance statistics.
-    /// </summary>
     QueryCacheStatistics GetStatistics();
 
-    /// <summary>
-    /// Gets cache effectiveness metrics for optimization.
-    /// </summary>
     CacheEffectivenessMetrics GetEffectivenessMetrics();
 }
 
-/// <summary>
-/// Options for query result caching.
-/// </summary>
 public sealed class QueryCacheOptions
 {
-    /// <summary>
-    /// Cache expiration time. If null, uses default from configuration.
-    /// </summary>
     public TimeSpan? Expiration { get; set; }
 
-    /// <summary>
-    /// Sliding expiration time - resets expiration on cache hit.
-    /// </summary>
     public TimeSpan? SlidingExpiration { get; set; }
 
-    /// <summary>
-    /// Priority for cache eviction.
-    /// </summary>
     public CacheItemPriority Priority { get; set; } = CacheItemPriority.Normal;
 
-    /// <summary>
-    /// Tags for cache invalidation grouping.
-    /// </summary>
     public IEnumerable<string>? Tags { get; set; }
 
-    /// <summary>
-    /// Maximum size of the cached result in bytes.
-    /// </summary>
     public long? MaxSizeBytes { get; set; }
 
-    /// <summary>
-    /// Whether to compress the cached result.
-    /// </summary>
     public bool Compress { get; set; } = true;
 
-    /// <summary>
-    /// Whether to cache null/empty results.
-    /// </summary>
     public bool CacheEmptyResults { get; set; }
 
-    /// <summary>
-    /// Custom cache key suffix for versioning.
-    /// </summary>
     public string? KeySuffix { get; set; }
 }
 
-/// <summary>
-/// Configuration for query result caching.
-/// </summary>
 public sealed class QueryResultCacheOptions
 {
-    /// <summary>
-    /// Whether generic query-result caching is enabled. Defaults off so deployments do not
-    /// retain high-cardinality feature query results unless explicitly opted in.
-    /// </summary>
+    // Generic query-result caching defaults off so high-cardinality feature queries are not retained unless a deployment opts in.
     public bool Enabled { get; set; }
 
-    /// <summary>
-    /// Default cache expiration time.
-    /// </summary>
     public TimeSpan DefaultExpiration { get; set; } = TimeSpan.FromMinutes(10);
 
-    /// <summary>
-    /// Maximum cache size in bytes.
-    /// </summary>
-    /// <remarks>
-    /// Not enforced when <see cref="QueryResultCacheManager"/> uses the shared
-    /// <see cref="Microsoft.Extensions.Caching.Memory.IMemoryCache"/> (the default DI
-    /// registration).  To enforce this limit, register a dedicated
-    /// <see cref="Microsoft.Extensions.Caching.Memory.MemoryCache"/> with
-    /// <c>SizeLimit = MaxCacheSizeBytes</c> and supply it to the manager constructor.
-    /// </remarks>
+    // Not enforced when the manager uses the shared IMemoryCache, which is the default registration.
     public long MaxCacheSizeBytes { get; set; } = 100 * 1024 * 1024; // 100 MB
 
-    /// <summary>
-    /// Maximum number of cached items.
-    /// </summary>
-    /// <remarks>
-    /// Not enforced when <see cref="QueryResultCacheManager"/> uses the shared
-    /// <see cref="Microsoft.Extensions.Caching.Memory.IMemoryCache"/>; entries are
-    /// bounded only by TTL and the underlying <see cref="Microsoft.Extensions.Caching.Memory.IMemoryCache"/>
-    /// compaction policy.
-    /// </remarks>
+    // Not enforced when the manager uses the shared IMemoryCache, which is the default registration.
     public int MaxCachedItems { get; set; } = 10000;
 
-    /// <summary>
-    /// Whether to enable cache compression.
-    /// </summary>
-    /// <remarks>Not implemented; entries are stored as-is.</remarks>
+    // EnableCompression and CompressionThresholdBytes do not compress; entries are stored as-is.
     public bool EnableCompression { get; set; } = true;
 
-    /// <summary>
-    /// Minimum size for compression in bytes.
-    /// </summary>
-    /// <remarks>Not implemented; see <see cref="EnableCompression"/>.</remarks>
     public int CompressionThresholdBytes { get; set; } = 1024;
 
-    /// <summary>
-    /// Whether to enable cache warming on startup.
-    /// </summary>
     public bool EnableWarmup { get; set; } = true;
 
-    /// <summary>
-    /// Whether to track detailed cache metrics.
-    /// </summary>
     public bool EnableDetailedMetrics { get; set; } = true;
 }
 
-/// <summary>
-/// Production implementation of query result cache manager.
-/// </summary>
 internal sealed partial class QueryResultCacheManager : IQueryResultCacheManager, IDisposable
 {
     private readonly IMemoryCache _cache;

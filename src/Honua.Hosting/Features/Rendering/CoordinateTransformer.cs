@@ -6,10 +6,6 @@ using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Infrastructure.Rendering;
 
-/// <summary>
-/// Handles coordinate transformations between common spatial reference systems.
-/// Supports WGS84 (EPSG:4326) and Web Mercator aliases for in-memory transforms.
-/// </summary>
 internal static class CoordinateTransformer
 {
     private const double EarthRadius = SpatialConstants.EarthRadius;
@@ -18,9 +14,6 @@ internal static class CoordinateTransformer
     private static readonly double WebMercatorWorldHalfWidth = Math.PI * EarthRadius;
     private static readonly double WebMercatorWorldWidth = WebMercatorWorldHalfWidth * 2.0;
 
-    /// <summary>
-    /// Converts a bounding box from one SRID to another.
-    /// </summary>
     public static SkiaMapRenderer.RenderExtent TransformExtent(
         SkiaMapRenderer.RenderExtent extent,
         int fromSrid,
@@ -48,9 +41,6 @@ internal static class CoordinateTransformer
             $"In-memory coordinate transform from SRID {fromSrid} to {toSrid} is not supported.");
     }
 
-    /// <summary>
-    /// Converts a shared render extent from one SRID to another.
-    /// </summary>
     public static global::Honua.Infrastructure.Rendering.RenderExtent TransformExtent(
         global::Honua.Infrastructure.Rendering.RenderExtent extent,
         int fromSrid,
@@ -60,9 +50,6 @@ internal static class CoordinateTransformer
         return ToSharedExtent(transformed);
     }
 
-    /// <summary>
-    /// Converts a single point from one SRID to another.
-    /// </summary>
     public static (double X, double Y) TransformPoint(double x, double y, int fromSrid, int toSrid)
     {
         if (fromSrid == toSrid ||
@@ -258,26 +245,12 @@ internal static class CoordinateTransformer
         yield return ((minX + maxX) / 2.0, (minY + maxY) / 2.0);
     }
 
-    /// <summary>
-    /// Converts longitude/latitude (EPSG:4326) to Web Mercator (EPSG:3857).
-    /// </summary>
     public static (double X, double Y) LonLatToWebMercator(double longitude, double latitude)
         => WebMercatorMath.LonLatToWebMercator(longitude, latitude);
 
-    /// <summary>
-    /// Converts Web Mercator (EPSG:3857) to longitude/latitude (EPSG:4326).
-    /// </summary>
     public static (double Lon, double Lat) WebMercatorToLonLat(double x, double y)
         => WebMercatorMath.WebMercatorToLonLat(x, y);
 
-    /// <summary>
-    /// Adjusts an extent to match a requested scale denominator, keeping the center point fixed.
-    /// This is the inverse of <see cref="CalculateScaleDenominator(SkiaMapRenderer.RenderExtent, int, int, int, double?)"/>: given a target scale,
-    /// it computes the extent width/height in map units that corresponds to that scale
-    /// at the given output dimensions and DPI. <paramref name="linearUnitFactor"/> is the
-    /// registry unit: metres per native unit for a projected CRS, radians per native
-    /// angular unit for a geographic CRS. Null uses the static SRID fallback.
-    /// </summary>
     public static SkiaMapRenderer.RenderExtent AdjustExtentForScale(
         SkiaMapRenderer.RenderExtent extent,
         double scaleDenominator,
@@ -326,9 +299,6 @@ internal static class CoordinateTransformer
             : adjusted;
     }
 
-    /// <summary>
-    /// Adjusts a shared render extent to match a requested scale denominator.
-    /// </summary>
     public static global::Honua.Infrastructure.Rendering.RenderExtent AdjustExtentForScale(
         global::Honua.Infrastructure.Rendering.RenderExtent extent,
         double scaleDenominator,
@@ -343,9 +313,6 @@ internal static class CoordinateTransformer
         return ToSharedExtent(adjusted);
     }
 
-    /// <summary>
-    /// Calculates the approximate scale denominator for a given extent and image size.
-    /// </summary>
     public static double CalculateScaleDenominator(
         SkiaMapRenderer.RenderExtent extent,
         int imageWidth,
@@ -381,9 +348,6 @@ internal static class CoordinateTransformer
         return metersPerPixel * pixelsPerMeter;
     }
 
-    /// <summary>
-    /// Calculates the approximate scale denominator for a shared render extent.
-    /// </summary>
     public static double CalculateScaleDenominator(
         global::Honua.Infrastructure.Rendering.RenderExtent extent,
         int imageWidth,
@@ -392,10 +356,6 @@ internal static class CoordinateTransformer
         double? linearUnitFactor = null)
         => CalculateScaleDenominator(ToRendererExtent(extent), imageWidth, dpi, srid, linearUnitFactor);
 
-    /// <summary>
-    /// Reads <see cref="CrsDefinition.LinearUnitFactor"/> when the registry has a definition.
-    /// Returns null when the caller should use <see cref="LinearUnitToMeters"/>.
-    /// </summary>
     public static async ValueTask<double?> TryResolveLinearUnitFactorAsync(
         ICrsRegistry? registry,
         int srid,
@@ -415,9 +375,6 @@ internal static class CoordinateTransformer
         return null;
     }
 
-    /// <summary>
-    /// Converts a pixel tolerance to map units for identify operations.
-    /// </summary>
     public static double PixelToMapUnits(
         int pixelTolerance,
         SkiaMapRenderer.RenderExtent mapExtent,
@@ -431,25 +388,12 @@ internal static class CoordinateTransformer
         return pixelTolerance * GetEffectiveWidth(mapExtent) / imageWidth;
     }
 
-    /// <summary>
-    /// Converts a pixel tolerance to map units for identify operations on a shared render extent.
-    /// </summary>
     public static double PixelToMapUnits(
         int pixelTolerance,
         global::Honua.Infrastructure.Rendering.RenderExtent mapExtent,
         int imageWidth)
         => PixelToMapUnits(pixelTolerance, ToRendererExtent(mapExtent), imageWidth);
 
-    /// <summary>
-    /// Returns the meters-per-linear-unit factor for common projected CRS codes.
-    /// Falls back to 1.0 (meters) for unrecognized SRIDs.
-    /// </summary>
-    /// <remarks>
-    /// No-registry fallback only. Callers that resolved a <see cref="CrsDefinition"/> pass
-    /// <see cref="CrsDefinition.LinearUnitFactor"/> into the scale methods instead. Foot
-    /// zones outside this table, including NAD83(HARN) codes such as EPSG:2866, stay at
-    /// 1.0 here and are corrected by the registry factor.
-    /// </remarks>
     internal static double LinearUnitToMeters(int srid)
     {
         // US Survey Foot = 1200/3937 meters (used by NAD83 State Plane zones)

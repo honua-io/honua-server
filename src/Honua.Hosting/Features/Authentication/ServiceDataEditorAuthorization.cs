@@ -16,9 +16,6 @@ using AccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Service-scoped RBAC helpers for write operations.
-/// </summary>
 internal static class ServiceDataEditorAuthorization
 {
     public static async Task<IResult?> RequireServiceDataEditorAsync(
@@ -75,18 +72,6 @@ internal static class ServiceDataEditorAuthorization
         return await RequireResourceDataEditorCoreAsync(context, resource, service, specificOperation: null, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Per-edit-type variant of <see cref="RequireResourceDataEditorAsync(HttpContext, MetadataV2Resource, MetadataV2Service?, CancellationToken)"/>
-    /// (BH3-001/BH3-014). The RBAC data-editor gate bypass is narrowed to the
-    /// specified <paramref name="operation"/> so a caller with only an Insert grant
-    /// is denied an Update-only payload and vice-versa.
-    /// </summary>
-    /// <param name="context">The request context.</param>
-    /// <param name="resource">The target resource.</param>
-    /// <param name="service">The owning service, or <see langword="null"/>.</param>
-    /// <param name="operation">The specific write operation being authorized.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>An error result when denied; otherwise <see langword="null"/>.</returns>
     public static async Task<IResult?> RequireResourceDataEditorAsync(
         HttpContext context,
         MetadataV2Resource resource,
@@ -109,27 +94,6 @@ internal static class ServiceDataEditorAuthorization
         return CreateDecisionResult(context, decision);
     }
 
-    /// <summary>
-    /// Decision-shaped core of the per-layer data-editor write gate, shared by the
-    /// HTTP <see cref="IResult"/> wrappers above and by any non-HTTP-result adapter
-    /// that surfaces denials through its own error contract. (The MCP surface
-    /// exposes no feature-mutation tool per ADR-0028 — AI operational data editing
-    /// is not supported — so this core currently backs only the human-facing HTTP
-    /// edit adapters and gRPC <c>FeatureService.ApplyEdits</c>.) Semantics are
-    /// identical to the HTTP path:
-    /// layer-scoped write keys (#1637) are authoritative for scoped principals; an
-    /// explicit <see cref="AccessPolicy"/> write restriction stays authoritative;
-    /// otherwise a per-operation RBAC write grant (#1376) on the
-    /// <c>(service, layer)</c> authorizes the mutation (narrowed to
-    /// <paramref name="specificOperation"/> when set — BH3-001/BH3-014), falling
-    /// back to the coarse admin/data-editor/service-scoped role gate.
-    /// </summary>
-    /// <param name="context">The request context.</param>
-    /// <param name="resource">The target resource (layer).</param>
-    /// <param name="service">The owning service, or <see langword="null"/>.</param>
-    /// <param name="specificOperation">The specific write operation being authorized, or <see langword="null"/> for any-write.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The access decision.</returns>
     internal static async Task<AccessDecision> EvaluateResourceDataEditorAsync(
         HttpContext context,
         MetadataV2Resource resource,
@@ -206,12 +170,6 @@ internal static class ServiceDataEditorAuthorization
         return await EvaluateServiceAccessAsync(context, service.Metadata.Name, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Evaluates a layer-scoped write key (#1637) for non-HTTP adapters (such as
-    /// gRPC) that consume an <see cref="AccessDecision"/> rather than an
-    /// <see cref="IResult"/>. Returns an allowed decision only when a grant covers
-    /// the target <c>(service, layer)</c>; otherwise forbidden.
-    /// </summary>
     internal static AccessDecision EvaluateScopedWriteKeyDecision(
         HttpContext context,
         string? serviceName,
@@ -226,14 +184,7 @@ internal static class ServiceDataEditorAuthorization
         return AccessDecision.Forbidden("The supplied write key is not scoped to this resource.");
     }
 
-    /// <summary>
-    /// Authorizes a tenant-wide configuration mutation that is not tied to one
-    /// service id. Admins and global data-editor roles are allowed. A
-    /// service-scoped editor role is not, because the mutation is shared by
-    /// every service in the tenant.
-    /// </summary>
-    /// <param name="context">The request context.</param>
-    /// <returns>The access decision.</returns>
+    // A service-scoped editor cannot authorize a tenant-wide mutation, because that mutation is shared by every service.
     internal static AccessDecision EvaluateGlobalDataEditor(HttpContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -288,14 +239,7 @@ internal static class ServiceDataEditorAuthorization
         return Task.FromResult(AccessDecision.Forbidden("User does not have the required data editor role."));
     }
 
-    /// <summary>
-    /// Authorizes a layer-scoped write key (#1637) against the target
-    /// <c>(service, layer)</c>. Returns <see langword="null"/> when a grant
-    /// authorizes the write; otherwise returns a 403 (the principal is already
-    /// authenticated, so a denial is never a 401). Scoped keys are write-only and
-    /// confer no admin or read authority, so they are never widened by the coarse
-    /// role checks used for ordinary principals.
-    /// </summary>
+    // A layer-scoped write key is never widened by the coarse role checks, and a denial is 403 because the principal is already authenticated.
     private static IResult? EvaluateScopedWriteKey(
         HttpContext context,
         string? serviceName,
@@ -315,15 +259,6 @@ internal static class ServiceDataEditorAuthorization
     private static IResult? CreateDecisionResult(HttpContext context, AccessDecision decision)
         => AccessPolicyHelpers.CreateAccessDeniedResult(context, decision);
 
-    /// <summary>
-    /// Consults the canonical per-operation permission resolver (#1376) for any
-    /// write-class grant (insert/update/delete) over the supplied
-    /// <c>(service, layer)</c>. Returns <see langword="true"/> when an explicit
-    /// grant authorizes a mutation, letting the write gate honor per-operation
-    /// grants. When no resolver is registered, no roles are present, or no grant
-    /// matches, returns <see langword="false"/> so the coarse data-editor gate
-    /// applies unchanged.
-    /// </summary>
     private static async Task<bool> HasWriteGrantAsync(
         HttpContext context,
         string serviceName,
@@ -412,13 +347,6 @@ internal static class ServiceDataEditorAuthorization
             policy.AllowedWriteRoles is { Length: > 0 } ||
             policy.AllowedRoles is { Length: > 0 });
 
-    /// <summary>
-    /// Resolves whether the request's principal holds the administrative override role.
-    /// Used by the shared edit pipeline to let admins bypass owner-based edit policies
-    /// (ownership-based access control, #2132).
-    /// </summary>
-    /// <param name="context">The current HTTP context carrying the authenticated principal.</param>
-    /// <returns>True when the principal is an administrator.</returns>
     internal static bool IsAdminPrincipal(HttpContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -431,12 +359,6 @@ internal static class ServiceDataEditorAuthorization
         return IsAdmin(context.User, options, context.RequestServices);
     }
 
-    /// <summary>
-    /// Returns <see cref="ClaimTypes.NameIdentifier"/>, then <c>sub</c>, then <c>api_key_id</c>,
-    /// and only then <see cref="ClaimsIdentity.Name"/> when none of those exist.
-    /// </summary>
-    /// <param name="principal">The caller, or <c>null</c>.</param>
-    /// <returns>The owner subject, or <c>null</c> when none is present.</returns>
     internal static string? ResolveOwnerSubject(ClaimsPrincipal? principal)
     {
         if (principal is null)
@@ -466,12 +388,6 @@ internal static class ServiceDataEditorAuthorization
         return string.IsNullOrWhiteSpace(subject) ? null : subject;
     }
 
-    /// <summary>
-    /// Resolves the edit principal for an owner-based policy. A null or unauthenticated
-    /// context is <see cref="EditPrincipal.Anonymous"/>.
-    /// </summary>
-    /// <param name="httpContext">The request context, or <c>null</c> when the caller has none.</param>
-    /// <returns>The principal the shared owner policy evaluates.</returns>
     internal static EditPrincipal ResolveEditPrincipal(HttpContext? httpContext)
     {
         if (httpContext?.User?.Identity?.IsAuthenticated != true)

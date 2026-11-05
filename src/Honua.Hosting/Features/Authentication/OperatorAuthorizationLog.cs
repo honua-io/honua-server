@@ -2,9 +2,6 @@ using Honua.Core.Features.Authorization.Domain;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Source-generated structured logging for operator authorization decisions.
-/// </summary>
 internal static partial class OperatorAuthorizationLog
 {
     [LoggerMessage(

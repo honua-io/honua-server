@@ -3,9 +3,6 @@
 
 namespace Honua.Infrastructure.Rendering;
 
-/// <summary>
-/// Limits concurrent raster render work and total reserved surface memory.
-/// </summary>
 internal class RasterRenderCapacityLimiter : IDisposable
 {
     internal const string CapacityExceededMessage = "Raster rendering capacity is currently exhausted. Retry later.";

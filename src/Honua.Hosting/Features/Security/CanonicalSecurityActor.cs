@@ -7,11 +7,7 @@ using Honua.Infrastructure.Authentication;
 
 namespace Honua.Infrastructure.Security;
 
-/// <summary>
-/// Resolves immutable, scheme-qualified actor identity and the request binding
-/// components used by deferred authorization, audit, cache isolation, and MCP.
-/// Display names are deliberately never identifiers.
-/// </summary>
+// A display name is never an identifier.
 internal static class CanonicalSecurityActor
 {
     private const string ApiKeyIdClaim = "api_key_id";
@@ -44,20 +40,10 @@ internal static class CanonicalSecurityActor
         "portal_token_binding",
     };
 
-    /// <summary>
-    /// Whether <paramref name="claimType"/> names a framework-owned authority claim that
-    /// only this process may populate (see <see cref="RemoveUnstampedAuthorityClaims"/>).
-    /// </summary>
     internal static bool IsFrameworkAuthorityClaimType(string? claimType)
         => claimType is not null && FrameworkAuthorityClaimTypes.Contains(claimType);
 
-    /// <summary>
-    /// Removes every copy of a framework-owned authority claim that does not carry
-    /// in-memory framework provenance, across every identity on the principal. A
-    /// credential minted in this process keeps its claims because the minting handler
-    /// stamped them; a value that arrived inside an externally issued token, assertion,
-    /// or session record does not survive.
-    /// </summary>
+    // An authority claim that arrived in an external token is removed; a claim minted in this process and stamped with provenance is kept.
     internal static void RemoveUnstampedAuthorityClaims(ClaimsPrincipal principal)
     {
         ArgumentNullException.ThrowIfNull(principal);
@@ -75,12 +61,7 @@ internal static class CanonicalSecurityActor
         }
     }
 
-    /// <summary>
-    /// Marks the framework-owned authority claims an in-process handler just minted on
-    /// <paramref name="identity"/> so they survive <see cref="RemoveUnstampedAuthorityClaims"/>.
-    /// Call this only where the claim values come from a server-side credential record,
-    /// never from a token, assertion, or header the caller supplied.
-    /// </summary>
+    // Stamp provenance only when the values come from a server-side credential record, never from a caller-supplied token, assertion, or header.
     internal static void StampAuthorityClaims(ClaimsIdentity identity)
     {
         ArgumentNullException.ThrowIfNull(identity);
@@ -92,7 +73,6 @@ internal static class CanonicalSecurityActor
         }
     }
 
-    /// <summary>Creates a framework-stamped claim of <paramref name="type"/>.</summary>
     internal static Claim CreateStampedClaim(string type, string value)
     {
         var claim = new Claim(type, value);
@@ -156,15 +136,7 @@ internal static class CanonicalSecurityActor
         return $"{actor.ActorId}:tenant:{Encode(tenant)}:scope:{Encode(scopeCeiling)}:authority:{Encode(authority)}";
     }
 
-    /// <summary>
-    /// One-way fingerprint of every authority-bearing claim on a validated principal
-    /// (roles, groups, permissions, workspace scopes, interactive-session evidence and
-    /// any future claim-based grant). Claims that only identify one issuance of a token
-    /// are excluded, so a refreshed access token with identical authority yields the same
-    /// fingerprint while any change to what the caller may do yields a different one
-    /// (honua-server#4909). Request-binding projections stamped after authentication are
-    /// excluded because their dimensions are bound separately.
-    /// </summary>
+    // Issuance-only claims and request-binding projections are excluded so a refresh with the same authority keeps the same fingerprint.
     internal static string ResolveAuthorityFingerprint(ClaimsPrincipal principal)
     {
         ArgumentNullException.ThrowIfNull(principal);
@@ -187,11 +159,6 @@ internal static class CanonicalSecurityActor
         return $"sha256:{Convert.ToHexStringLower(digest)}";
     }
 
-    /// <summary>
-    /// Whether a claim is a framework-owned request-binding projection (canonical actor,
-    /// effective tenant, scope ceiling, scheme, issuer) added after authentication rather
-    /// than a claim the validated credential carried.
-    /// </summary>
     internal static bool IsRequestBindingProjection(Claim claim) =>
         IsFrameworkOwnedClaim(claim)
         && claim.Type is CanonicalActorClaim or EffectiveTenantClaim or ScopeCeilingClaim
@@ -225,10 +192,7 @@ internal static class CanonicalSecurityActor
         Replace(identity, ScopeCeilingClaim, ResolveScopeCeiling(principal));
     }
 
-    /// <summary>
-    /// Reads a request-binding value only when it carries in-memory framework
-    /// provenance that cannot be supplied by an OIDC token payload.
-    /// </summary>
+    // A request-binding value is read only when it carries in-memory provenance an external token cannot supply.
     internal static string? FindStampedValue(ClaimsPrincipal principal, string claimType) =>
         principal.FindAll(claimType)
             .FirstOrDefault(IsFrameworkOwnedClaim)?.Value;
@@ -240,10 +204,7 @@ internal static class CanonicalSecurityActor
     internal static void StampFrameworkClaim(ClaimsIdentity identity, string type, string? value) =>
         Replace(identity, type, value);
 
-    /// <summary>
-    /// Returns whether the principal was authenticated by one of the framework-owned
-    /// bearer handlers. Issuer-supplied claims are deliberately not consulted.
-    /// </summary>
+    // Whether the principal came from a framework bearer handler is not decided from issuer-supplied claims.
     internal static bool IsBearerPrincipal(ClaimsPrincipal? principal) =>
         principal is not null
         && principal.Identities.Any(static identity => identity.IsAuthenticated)

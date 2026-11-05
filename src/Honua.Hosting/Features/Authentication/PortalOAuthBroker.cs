@@ -12,20 +12,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Brokers the ArcGIS OAuth2 named-user flow (#1242) onto the shared OIDC core
-/// (ADR-0049). Honua acts as the OAuth2 authorization server that ArcGIS clients
-/// (Pro "Add Portal", Field Maps) talk to, while delegating <em>identity</em> to
-/// the operator's configured OIDC provider via the existing auth-code+PKCE
-/// machinery (<see cref="OidcProviderCatalog"/> + discovery +
-/// <see cref="OidcPortalCredentialVerifier"/>). The callback validates the IdP
-/// token with that verifier whenever the bridge is configured.
-/// <c>Authentication:PortalCredentialVerifier:UseOidc</c> still selects OIDC only
-/// for password and <c>generateToken</c> checks. No parallel user store, token store,
-/// or group→role mapping is introduced: the verified principal is the same one a
-/// direct OIDC session yields, and access tokens are minted through
-/// <see cref="Honua.Core.Features.Authorization.Abstractions.IPortalTokenIssuer"/>.
-/// </summary>
 internal sealed class PortalOAuthBroker(
     IOptions<OidcAuthenticationOptions> oidcOptions,
     OidcPortalCredentialVerifier oidcCredentialVerifier,
@@ -34,7 +20,6 @@ internal sealed class PortalOAuthBroker(
     ILogger<PortalOAuthBroker> logger,
     IOidcRuntimeProviderSource? runtimeProviders = null)
 {
-    /// <summary>Named HTTP client used for IdP discovery/token/JWKS calls.</summary>
     internal const string HttpClientName = "PortalOAuthOidc";
 
     private static readonly TimeSpan BrokerSessionLifetime = TimeSpan.FromMinutes(15);
@@ -46,18 +31,10 @@ internal sealed class PortalOAuthBroker(
     private readonly IHttpClientFactory _httpClientFactory = httpClientFactory;
     private readonly ILogger<PortalOAuthBroker> _logger = logger;
 
-    /// <summary>Whether the OIDC core is enabled and at least one valid provider exists.</summary>
     public bool IsConfigured =>
         _oidcOptions.Enabled &&
         OidcProviderCatalog.GetProviders(_oidcOptions, runtimeProviders).Any(static p => p.IsValid);
 
-    /// <summary>
-    /// Starts the authorization-code flow: resolves the OIDC provider, persists a
-    /// broker session pinning the ArcGIS client's parameters, and returns the IdP
-    /// authorize URL the browser should be redirected to.
-    /// </summary>
-    /// <returns>The provider IdP authorize URL, or <see langword="null"/> when no
-    /// provider could be resolved or the IdP is unavailable.</returns>
     public async Task<string?> BeginAuthorizeAsync(
         PortalOAuthAuthorizeRequest request,
         Func<string, string> callbackUriFactory,
@@ -133,11 +110,6 @@ internal sealed class PortalOAuthBroker(
         return BuildAuthorizeUrl(discovery.AuthorizationEndpoint, provider, callbackUri, combinedState, idpChallenge);
     }
 
-    /// <summary>
-    /// Completes the IdP leg: exchanges the IdP authorization code, validates the
-    /// ID token, projects the verified principal, and mints a Honua ArcGIS
-    /// authorization code bound to the ArcGIS client's PKCE challenge.
-    /// </summary>
     public async Task<PortalOAuthCallbackResult> CompleteCallbackAsync(
         string? combinedState,
         string? idpCode,
@@ -259,11 +231,7 @@ internal sealed class PortalOAuthBroker(
         return PortalOAuthCallbackResult.Success(redirect);
     }
 
-    /// <summary>
-    /// Delivers an IdP <c>error</c> callback to the client redirect stored in the
-    /// broker session. The session is consumed only when its state matches, so a
-    /// forged error cannot choose the redirect target.
-    /// </summary>
+    // The broker session is consumed only when its state matches, so an IdP error cannot choose the client redirect.
     public async Task<PortalOAuthCallbackResult> RedirectIdpErrorAsync(
         string? combinedState,
         string? idpError,
@@ -297,10 +265,6 @@ internal sealed class PortalOAuthBroker(
             "Authentication failed with the identity provider.");
     }
 
-    /// <summary>
-    /// Restricts a reflected IdP error to the OAuth2 error set. Anything else
-    /// becomes <c>access_denied</c>.
-    /// </summary>
     private static string NormalizeIdpError(string? idpError)
         => idpError switch
         {
@@ -309,10 +273,6 @@ internal sealed class PortalOAuthBroker(
             _ => "access_denied",
         };
 
-    /// <summary>
-    /// Sends an OAuth error to the allow-listed client redirect. The session
-    /// redirect was validated at authorize time, so this is not an open redirect.
-    /// </summary>
     private static PortalOAuthCallbackResult ClientRedirectFailure(
         PortalOAuthBrokerSession session,
         string error,
@@ -445,26 +405,20 @@ internal sealed class PortalOAuthBroker(
 
 }
 
-/// <summary>Subset of the OIDC discovery document the bridge consumes.</summary>
 internal sealed class OidcDiscoveryDocument
 {
-    /// <summary>The provider authorization endpoint.</summary>
     [JsonPropertyName("authorization_endpoint")]
     public string AuthorizationEndpoint { get; init; } = string.Empty;
 
-    /// <summary>The provider token endpoint.</summary>
     [JsonPropertyName("token_endpoint")]
     public string TokenEndpoint { get; init; } = string.Empty;
 }
 
-/// <summary>Subset of the IdP token response the bridge consumes.</summary>
 internal sealed class OidcIdpTokenResponse
 {
-    /// <summary>The IdP-issued access token.</summary>
     [JsonPropertyName("access_token")]
     public string? AccessToken { get; init; }
 
-    /// <summary>The IdP-issued ID token.</summary>
     [JsonPropertyName("id_token")]
     public string? IdToken { get; init; }
 }
@@ -475,7 +429,6 @@ internal sealed partial class PortalOAuthBrokerJsonContext : JsonSerializerConte
 {
 }
 
-/// <summary>Inputs parsed from <c>GET /sharing/rest/oauth2/authorize</c>.</summary>
 internal sealed record PortalOAuthAuthorizeRequest(
     string ClientId,
     string RedirectUri,
@@ -485,37 +438,28 @@ internal sealed record PortalOAuthAuthorizeRequest(
     string? ProviderKey,
     int? ExpirationMinutes);
 
-/// <summary>Outcome of completing the IdP callback leg.</summary>
 internal sealed record PortalOAuthCallbackResult(
     bool Succeeded,
     string? RedirectUri,
     string? Error,
     string? ErrorDescription)
 {
-    /// <summary>Builds a success result carrying the ArcGIS client redirect URL.</summary>
     public static PortalOAuthCallbackResult Success(string redirectUri)
         => new(true, redirectUri, null, null);
 
-    /// <summary>Builds a failure result carrying an OAuth2 error code/description.</summary>
     public static PortalOAuthCallbackResult Failure(string error, string description)
         => new(false, null, error, description);
 }
 
-/// <summary>Canonical route paths for the ArcGIS OAuth2 bridge.</summary>
 internal static class PortalOAuthRoutes
 {
-    /// <summary>The authorize entrypoint ArcGIS clients redirect the browser to.</summary>
     public const string AuthorizePath = "/sharing/rest/oauth2/authorize";
 
-    /// <summary>The IdP return endpoint Honua registers with the OIDC provider.</summary>
     public const string CallbackPath = "/sharing/rest/oauth2/callback";
 
-    /// <summary>The token endpoint ArcGIS clients exchange the code at.</summary>
     public const string TokenPath = "/sharing/rest/oauth2/token";
 
-    /// <summary>The RFC 7662 token introspection endpoint (ADR-0068, #1890).</summary>
     public const string IntrospectPath = "/sharing/rest/oauth2/introspect";
 
-    /// <summary>The RFC 7009 per-token revocation endpoint (#2155).</summary>
     public const string RevokePath = "/sharing/rest/oauth2/revoke";
 }

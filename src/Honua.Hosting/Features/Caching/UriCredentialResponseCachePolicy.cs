@@ -5,20 +5,7 @@ using Microsoft.Net.Http.Headers;
 
 namespace Honua.Infrastructure.Caching;
 
-/// <summary>
-/// Marks responses to requests that authenticated with a credential carried in the request
-/// URI (the GeoServices <c>token</c> query parameter) as <c>Cache-Control: private</c>, as
-/// RFC 6750 §2.3 requires, so no shared cache stores a response keyed by a URL that contains
-/// the credential.
-/// </summary>
-/// <remarks>
-/// The directive is merged, never downgraded: a response that is already <c>no-store</c> or
-/// <c>private</c> is left alone, <c>public</c> is replaced by <c>private</c> (dropping
-/// <c>s-maxage</c>, which only shared caches honour), and any other policy gains
-/// <c>private</c>. <see cref="AuthenticationResponseCachePolicy"/> still runs afterwards and
-/// adds <c>no-store</c> for credentialed identities; this policy keeps the RFC 6750
-/// directive explicit and covers hosts or responses that policy does not reach.
-/// </remarks>
+// A response authenticated by a URI credential is marked private, and an existing no-store or private directive is never weakened.
 internal static class UriCredentialResponseCachePolicy
 {
     internal static void Apply(HttpResponse response)

@@ -9,42 +9,17 @@ using SkiaSharp;
 
 namespace Honua.Infrastructure.Rendering;
 
-/// <summary>
-/// Renders features to a raster image using SkiaSharp with MapLibre style translation.
-/// </summary>
 internal sealed class SkiaMapRenderer : IDisposable
 {
     private bool _disposed;
 
-    /// <summary>
-    /// Bounding box for the map render.
-    /// </summary>
     internal readonly record struct RenderExtent(double MinX, double MinY, double MaxX, double MaxY)
     {
-        /// <summary>
-        /// Width in map units.
-        /// </summary>
         public double Width => MaxX - MinX;
 
-        /// <summary>
-        /// Height in map units.
-        /// </summary>
         public double Height => MaxY - MinY;
     }
 
-    /// <summary>
-    /// Renders features to a PNG image.
-    /// </summary>
-    /// <param name="features">Features to render</param>
-    /// <param name="styleLayers">MapLibre style layers for rendering</param>
-    /// <param name="extent">Map extent in map coordinates</param>
-    /// <param name="imageWidth">Output image width in pixels</param>
-    /// <param name="imageHeight">Output image height in pixels</param>
-    /// <param name="transparent">Whether background should be transparent</param>
-    /// <param name="backgroundColor">Background color (when not transparent)</param>
-    /// <param name="geometryType">Geometry type of the layer</param>
-    /// <param name="zoom">MapLibre zoom level for evaluating layer minzoom/maxzoom gates</param>
-    /// <returns>PNG image bytes</returns>
     internal byte[] RenderMap(
         IReadOnlyList<Feature> features,
         MapLibreStyleLayer[] styleLayers,
@@ -94,10 +69,6 @@ internal sealed class SkiaMapRenderer : IDisposable
         return EncodeSurface(surface);
     }
 
-    /// <summary>
-    /// Renders features directly onto an existing canvas without creating an intermediate surface or encoding.
-    /// Used by the print compositor to avoid per-layer PNG round-trips.
-    /// </summary>
     internal void RenderFeaturesOnCanvas(
         SKCanvas canvas,
         IReadOnlyList<Feature> features,
@@ -127,9 +98,6 @@ internal sealed class SkiaMapRenderer : IDisposable
         }
     }
 
-    /// <summary>
-    /// Renders a single legend swatch for a style layer.
-    /// </summary>
     internal static byte[] RenderLegendSwatch(
         MapLibreStyleLayer styleLayer,
         MetadataV2GeometryType geometryType,
@@ -149,16 +117,6 @@ internal sealed class SkiaMapRenderer : IDisposable
         return EncodeSurface(surface);
     }
 
-    /// <summary>
-    /// Draws a legend swatch for a style layer onto an existing canvas, in the
-    /// rectangle from the canvas origin to <paramref name="width"/> x <paramref name="height"/>.
-    /// Callers composing multi-entry legends translate the canvas per entry.
-    ///
-    /// <paramref name="properties"/> are the feature attributes the style layer is
-    /// resolved against. Passing the attributes that select a data-driven branch
-    /// (see <see cref="LegendClassifier"/>) is what keeps a swatch identical to the
-    /// paint GetMap would apply to a feature carrying those attributes.
-    /// </summary>
     internal static void DrawLegendSwatch(
         SKCanvas canvas,
         MapLibreStyleLayer styleLayer,
@@ -366,11 +324,6 @@ internal sealed class SkiaMapRenderer : IDisposable
         return result is bool b && b;
     }
 
-    /// <summary>
-    /// Builds a coordinate transform function from map coordinates to pixel coordinates.
-    /// For geographic coordinates (EPSG:4326), Y axis is flipped (lat increases upward but pixels go downward).
-    /// For projected coordinates (e.g., EPSG:3857), Y axis is also flipped.
-    /// </summary>
     internal static Func<double, double, SKPoint> BuildTransform(RenderExtent extent, int imageWidth, int imageHeight)
     {
         var extentWidth = CoordinateTransformer.GetEffectiveWidth(extent);
@@ -406,9 +359,6 @@ internal sealed class SkiaMapRenderer : IDisposable
             ?? throw new InvalidOperationException("Skia failed to encode the rendered PNG image.");
     }
 
-    /// <summary>
-    /// Encodes surface to the specified format.
-    /// </summary>
     internal static byte[] EncodeSurface(SKSurface surface, string format)
     {
         using var image = surface.Snapshot();
@@ -441,9 +391,6 @@ internal sealed class SkiaMapRenderer : IDisposable
         }
     }
 
-    /// <summary>
-    /// Gets the MIME type for an image format string.
-    /// </summary>
     internal static string GetContentType(string format)
     {
         return format.ToLowerInvariant() switch
@@ -456,7 +403,6 @@ internal sealed class SkiaMapRenderer : IDisposable
         };
     }
 
-    /// <inheritdoc />
     public void Dispose()
     {
         if (!_disposed)

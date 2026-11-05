@@ -13,30 +13,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Records the authentication / authorization outcome for every policy evaluated by the
-/// authorization middleware, and preserves the domain-specific RFC 7807 responses that some
-/// policies require while delegating every other response to ASP.NET's default result handler.
-/// </summary>
-/// <remarks>
-/// <para>
-/// A policy denial is written by <see cref="AuthorizationMiddleware"/>, which short-circuits
-/// the pipeline: nothing registered after <c>UseAuthorization</c> — including the shared audit
-/// middleware — ever runs for a challenged or forbidden request. This handler is therefore the
-/// only seam that observes those outcomes, so it is where they are recorded.
-/// </para>
-/// <para>
-/// Recording here rather than reordering the pipeline keeps every other middleware's position
-/// relative to the audit layer unchanged, and gives the record the policy context (challenge vs
-/// forbid, and the failure reason a domain handler supplied) that a status code alone does not
-/// carry.
-/// </para>
-/// <para>
-/// A denial is recorded exactly once. Policies whose denial a domain seam already classifies
-/// (the Studio lifecycle family) keep their own richer event with its stable code and are not
-/// also recorded as a generic transport-level denial.
-/// </para>
-/// </remarks>
+// A policy denial short-circuits before audit middleware, so this handler records it, except a Studio lifecycle denial that already emits its own event.
 internal sealed class HonuaAuthorizationMiddlewareResultHandler : IAuthorizationMiddlewareResultHandler
 {
     private const string StudioProblemType = "https://honua.io/problems/studio";
@@ -49,7 +26,6 @@ internal sealed class HonuaAuthorizationMiddlewareResultHandler : IAuthorization
     private const int MaxDenialCodeLength = 128;
     private readonly AuthorizationMiddlewareResultHandler _fallback = new();
 
-    /// <inheritdoc />
     public async Task HandleAsync(
         RequestDelegate next,
         HttpContext context,
@@ -180,11 +156,6 @@ internal sealed class HonuaAuthorizationMiddlewareResultHandler : IAuthorization
         return auditLog.RecordAsync(auditEvent, context.RequestAborted);
     }
 
-    /// <summary>
-    /// Records the transport-level outcome for every other policy: a challenge as
-    /// <c>auth.failure</c> and a forbid as <c>auth.denied</c>, through the same factory the
-    /// audit middleware uses so the rows are indistinguishable by shape.
-    /// </summary>
     private static async Task RecordAuthorizationOutcomeAsync(
         HttpContext context,
         PolicyAuthorizationResult authorizeResult)

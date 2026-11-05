@@ -14,21 +14,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Request-scoped <see cref="IRowLevelSecurityFilterSource"/> (#502). Resolves the
-/// current principal's roles/claims and the layer's <see cref="RlsPolicy"/> set into a
-/// single parameterized SQL predicate. The predicate is built as a filter-expression
-/// AST (<c>attribute IN (claim values)</c>) and translated through the shared
-/// <see cref="IFilterExpressionService"/>, so the layer attribute is validated against
-/// the resource schema and every claim value is bound as a query parameter — the
-/// predicate can never inject SQL regardless of claim contents.
-/// </summary>
-/// <remarks>
-/// Returning <see langword="null"/> means "no RLS policy applies" (query is
-/// unconstrained by RLS). When a matching policy exists but the principal carries no
-/// value for the referenced claim, the translated predicate is <c>FALSE</c> — RLS is
-/// fail-secure, so a missing claim hides every row rather than revealing them.
-/// </remarks>
+// Claim values are bound as parameters so the predicate cannot inject SQL, and a matching policy with no claim value becomes false rather than showing every row.
 internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFilterSource, ICombinedReadSecuritySource
 {
     private readonly IServiceProvider? _backgroundServices;
@@ -57,7 +43,6 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
         _logger = logger;
     }
 
-    /// <inheritdoc />
     public async Task<SqlFragment?> ResolveAsync(MetadataV2Resource resource, CancellationToken cancellationToken = default)
     {
         var predicates = await ResolvePredicatesAsync(resource, cancellationToken).ConfigureAwait(false);
@@ -70,7 +55,6 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
         return combined;
     }
 
-    /// <inheritdoc />
     public async Task<IReadOnlyList<FilterExpression>> ResolveExpressionsAsync(
         MetadataV2Resource resource, CancellationToken cancellationToken = default)
         => (await ResolvePredicatesAsync(resource, cancellationToken).ConfigureAwait(false))
@@ -171,12 +155,6 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
         }
     }
 
-    /// <summary>
-    /// Builds the parameterized predicate for a single policy by comparing the
-    /// policy attribute against the principal's claim value(s). Returns both the
-    /// normalized event predicate and SQL translation; translation failures throw.
-    /// An empty claim set yields a FALSE predicate (fail-secure, no rows).
-    /// </summary>
     private (FilterExpression Expression, SqlFragment Sql) BuildPredicate(RlsPolicy policy, ClaimsPrincipal principal, MetadataV2Resource resource)
     {
         var values = principal
@@ -225,11 +203,6 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
 
     private static Literal ToLiteral(string value) => new(value, LiteralType.Text);
 
-    /// <summary>
-    /// AND-combines two already-parameterized fragments, renumbering the right-hand
-    /// fragment's <c>@pN</c> placeholders so the merged parameter list stays
-    /// positionally consistent for the provider that re-numbers to <c>$N</c>.
-    /// </summary>
     private static SqlFragment AndFragments(SqlFragment left, SqlFragment right)
     {
         var offset = left.Parameters.Count;
@@ -264,17 +237,7 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
         public static partial void ServiceResolutionFailed(ILogger logger, string layer, Exception exception);
     }
 
-    /// <summary>
-    /// Resolves the principal RLS is evaluated against: the live request user when one exists,
-    /// otherwise the submitter snapshot pinned on the executing background job
-    /// (honua-server#3068). Returns <see langword="null"/> only when there is neither — a
-    /// server-internal read with no caller to constrain.
-    /// </summary>
-    /// <exception cref="UnauthorizedAccessException">
-    /// Thrown when a job-execution scope is active but carries no submitter snapshot. The read
-    /// cannot be constrained to the submitting caller, so it is refused rather than silently
-    /// returning every row.
-    /// </exception>
+    // A job-execution scope with no submitter snapshot refuses the read instead of returning every row.
     private ClaimsPrincipal? ResolvePrincipal()
     {
         var requestPrincipal = _httpContextAccessor.HttpContext?.User;

@@ -7,17 +7,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Events;
 
-/// <summary>
-/// Confluent-backed <see cref="IKafkaEventProducer"/> that owns all
-/// idempotent-producer configuration (#357).
-/// </summary>
-/// <remarks>
-/// This is the only type that references the Confluent client. It is constructed
-/// once as a singleton; the underlying <see cref="IProducer{TKey,TValue}"/> is
-/// thread-safe and shared across all publishes. When idempotence is enabled the
-/// client enforces <c>acks=all</c>, a bounded in-flight window, and infinite
-/// retries, giving producer-side exactly-once delivery (no duplicates on retry).
-/// </remarks>
 internal sealed class ConfluentKafkaEventProducer : IKafkaEventProducer
 {
     private static readonly TimeSpan FlushTimeout = TimeSpan.FromSeconds(10);
@@ -64,7 +53,6 @@ internal sealed class ConfluentKafkaEventProducer : IKafkaEventProducer
         _producer = new ProducerBuilder<string, byte[]>(config).Build();
     }
 
-    /// <inheritdoc />
     public async Task ProduceAsync(
         string topic,
         string key,
@@ -96,7 +84,6 @@ internal sealed class ConfluentKafkaEventProducer : IKafkaEventProducer
         return kafkaHeaders;
     }
 
-    /// <inheritdoc />
     public ValueTask DisposeAsync()
     {
         // Flush in-flight messages so no acknowledged-but-unsent records are lost

@@ -179,7 +179,7 @@ public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime
         var (storedGlobalId, storedCreator) = await ReadTrackedAttributesAsync(objectId);
         storedGlobalId.Should().Be(added.GlobalId);
         // The Test host authenticates through the dev bypass, whose api_key_id is the
-        // subject EditOwnerSubject prefers over the display name "admin".
+        // subject ResolveOwnerSubject prefers over the display name "admin".
         storedCreator.Should().Be("00000000-0000-0000-0000-000000000001");
 
         using var metadataResponse = await _fixture.Client.GetAsync(

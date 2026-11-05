@@ -3,29 +3,9 @@
 
 namespace Honua.Infrastructure.Services;
 
-/// <summary>
-/// Thrown when GeoParquet (<c>f=parquet</c>) output is requested but the native
-/// ParquetSharp Arrow runtime (<c>ParquetSharpNative</c>) cannot be loaded on the current
-/// runtime image. The ParquetSharp NuGet package ships a glibc-only (<c>linux-x64</c>)
-/// native binary that depends on <c>ld-linux-x86-64.so.2</c> / <c>libatomic.so.1</c>;
-/// those dependencies are unavailable on Alpine/musl and may be absent from an
-/// incomplete glibc image, so the
-/// <see cref="GeoParquetFeatureWriter"/> encoder throws <see cref="DllNotFoundException"/>
-/// (or a wrapping <see cref="TypeInitializationException"/>) the first time it constructs a
-/// native Arrow writer (honua-server#1942).
-/// </summary>
-/// <remarks>
-/// Protocol adapters catch this and return a clean capability response (HTTP 501) rather
-/// than letting the native-load failure surface as an unhandled HTTP 500. The managed
-/// GeoParquet encoding itself is spec-correct; only the runtime image is incapable of
-/// loading the native encoder.
-/// </remarks>
+// The managed encoding is fine; this means the image cannot load the native encoder, and adapters should answer 501 instead of 500.
 public sealed class ParquetRuntimeUnavailableException : Exception
 {
-    /// <summary>
-    /// Human-readable capability message returned to clients when the native Parquet
-    /// runtime is unavailable on the deployed image.
-    /// </summary>
     public const string CapabilityMessage =
         "GeoParquet (f=parquet) output is unavailable on this runtime image: the native "
         + "ParquetSharp Arrow encoder (ParquetSharpNative) could not be loaded. The "
@@ -52,13 +32,6 @@ public sealed class ParquetRuntimeUnavailableException : Exception
     {
     }
 
-    /// <summary>
-    /// Determines whether <paramref name="exception"/> represents a failure to load the
-    /// native ParquetSharp runtime (directly, or wrapped in a
-    /// <see cref="TypeInitializationException"/> raised by the first touch of a ParquetSharp
-    /// type). Used by the encoder to translate the raw native-load failure into a clean
-    /// <see cref="ParquetRuntimeUnavailableException"/>.
-    /// </summary>
     public static bool IsNativeLoadFailure(Exception? exception)
     {
         for (var current = exception; current is not null; current = current.InnerException)

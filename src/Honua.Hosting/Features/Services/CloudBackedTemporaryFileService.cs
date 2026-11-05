@@ -16,10 +16,6 @@ using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Services;
 
-/// <summary>
-/// Uses shared cloud file storage for temporary files when the configured file-storage
-/// provider is remote, and falls back to node-local storage for local-only deployments.
-/// </summary>
 internal sealed class CloudBackedTemporaryFileService : ITemporaryFileService, IDisposable
 {
     private const string TemporaryFolder = "temporary-files";

@@ -21,58 +21,28 @@ using Honua.Infrastructure.Authentication.ClientCertificates;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Extension methods for configuring OIDC authentication services.
-/// </summary>
 public static partial class OidcAuthenticationExtensions
 {
     private static readonly ConcurrentDictionary<string, ReplayLockState> TokenReplayLocks = new(StringComparer.Ordinal);
 
     private static readonly string[] GoogleIssuers = { "https://accounts.google.com" };
 
-    /// <summary>
-    /// Authentication scheme name for Azure AD.
-    /// </summary>
     public const string AzureAdScheme = "AzureAd";
 
-    /// <summary>
-    /// Authentication scheme name for Google.
-    /// </summary>
     public const string GoogleScheme = "Google";
 
-    /// <summary>
-    /// Authentication scheme name for generic OIDC provider.
-    /// </summary>
     public const string OidcScheme = "Oidc";
 
-    /// <summary>
-    /// Authentication scheme name for Okta.
-    /// </summary>
     public const string OktaScheme = "Okta";
 
-    /// <summary>
-    /// Authentication scheme name for Auth0.
-    /// </summary>
     public const string Auth0Scheme = "Auth0";
 
-    /// <summary>
-    /// Authentication scheme name for JWT Bearer (for API access with tokens).
-    /// </summary>
     public const string JwtBearerScheme = JwtBearerDefaults.AuthenticationScheme;
 
-    /// <summary>
-    /// Composite scheme name for OIDC + API key authentication.
-    /// </summary>
     public const string CompositeScheme = "Composite";
 
-    /// <summary>
-    /// Authentication scheme name for the server-managed admin session cookie.
-    /// </summary>
     public const string AdminSessionScheme = "AdminSession";
 
-    /// <summary>
-    /// Authentication scheme name for the console-consumable operator bearer (#2258).
-    /// </summary>
     public const string OperatorBearerScheme = "OperatorBearer";
 
     // ConfigurationBinder appends to initialized arrays. Explicit deployment values
@@ -98,12 +68,6 @@ public static partial class OidcAuthenticationExtensions
         }
     }
 
-    /// <summary>
-    /// Adds OIDC authentication services with multi-provider support.
-    /// </summary>
-    /// <param name="services">The service collection.</param>
-    /// <param name="configuration">The configuration.</param>
-    /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddOidcAuthentication(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -261,12 +225,6 @@ public static partial class OidcAuthenticationExtensions
         return services;
     }
 
-    /// <summary>
-    /// Updates authorization policies to include OIDC schemes.
-    /// </summary>
-    /// <param name="services">The service collection.</param>
-    /// <param name="configuration">The configuration.</param>
-    /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddOidcAuthorization(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -1050,13 +1008,6 @@ public static partial class OidcAuthenticationExtensions
         return null;
     }
 
-    /// <summary>
-    /// Produces a stable, collision-resistant component for the replay key from the
-    /// token's validated issuer. The issuer reaches this method only after the Bearer
-    /// pipeline has validated it against the configured <c>ValidIssuers</c>, so it is a
-    /// trusted value. It is hashed to keep the cache key bounded and free of characters
-    /// that backing stores (e.g. Redis) treat specially.
-    /// </summary>
     private static string NormalizeReplayIssuer(string? issuer)
     {
         if (string.IsNullOrWhiteSpace(issuer))
@@ -1102,29 +1053,15 @@ public static partial class OidcAuthenticationExtensions
         ReplayDetected,
         Skipped,
 
-        /// <summary>
-        /// The token was reused on the server-issued continuation it is bound to
-        /// (honua-server#4909).
-        /// </summary>
         Continued,
 
-        /// <summary>
-        /// The token was reused within its lifetime on the HTTP API it was first admitted on
-        /// (honua-server#4899).
-        /// </summary>
         Reused,
 
-        /// <summary>
-        /// Replay protection could not be enforced and
-        /// <see cref="TokenValidationOptions.ReplayProtectionFailClosed"/> requires
-        /// the token to be rejected.
-        /// </summary>
         Unavailable
     }
 
     private sealed class ReplayLockState
     {
-        /// <summary>Reference-count value marking a state removed by the release path.</summary>
         public const int Tombstone = -1;
 
         public SemaphoreSlim Semaphore { get; } = new(1, 1);

@@ -9,10 +9,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Infrastructure.Helpers;
 
-/// <summary>
-/// Shared helpers for creating spatial filters from bounding box extents.
-/// Used by MapServer (export, tile, WMS) and OGC Tiles endpoints.
-/// </summary>
 internal static class SpatialFilterHelpers
 {
     private static readonly GeometryFactory _wgs84Factory = NtsGeometryServices.Instance.CreateGeometryFactory(srid: 4326);
@@ -22,9 +18,6 @@ internal static class SpatialFilterHelpers
 
     private static WKBWriter GetWkbWriter() => _wkbWriter ??= new WKBWriter();
 
-    /// <summary>
-    /// Creates a spatial intersect filter from a bounding box.
-    /// </summary>
     public static SpatialFilter CreateBboxSpatialFilter(
         double minX, double minY, double maxX, double maxY, int srid)
     {
@@ -41,9 +34,6 @@ internal static class SpatialFilterHelpers
             envelopeMaxY: minX <= maxX ? maxY : null);
     }
 
-    /// <summary>
-    /// Creates a WKB polygon representing a bounding box envelope.
-    /// </summary>
     public static byte[] CreateEnvelopeWkb(double minX, double minY, double maxX, double maxY)
     {
         var geometry = CreateEnvelopeGeometry(minX, minY, maxX, maxY);

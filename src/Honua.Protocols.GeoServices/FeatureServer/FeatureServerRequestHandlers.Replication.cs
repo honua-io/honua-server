@@ -357,7 +357,7 @@ internal static partial class FeatureServerEndpoints
             return syncCapabilityError;
         }
 
-        if (string.IsNullOrWhiteSpace(EditOwnerSubject.Resolve(context.User)))
+        if (string.IsNullOrWhiteSpace(ServiceDataEditorAuthorization.ResolveOwnerSubject(context.User)))
         {
             return StandardErrorHelpers.CreateForbidden(
                 context,
@@ -2575,14 +2575,14 @@ internal static partial class FeatureServerEndpoints
     };
 
     private static string ResolveReplicaOwner(HttpContext context)
-        => EditOwnerSubject.Resolve(context.User) is { Length: > 0 } owner
+        => ServiceDataEditorAuthorization.ResolveOwnerSubject(context.User) is { Length: > 0 } owner
             ? owner
             : throw new InvalidOperationException("An authenticated identity is required to create a replica.");
 
     private static bool IsReplicaOwnerOrAdmin(HttpContext context, string? ownerId)
         => ReplicaSecurity.CanAccess(
             ownerId,
-            EditOwnerSubject.Resolve(context.User),
+            ServiceDataEditorAuthorization.ResolveOwnerSubject(context.User),
             ServiceDataEditorAuthorization.IsAdminPrincipal(context));
 
     // Per-operation authorization (BH3-001/BH3-014) does NOT cleanly apply to replica write

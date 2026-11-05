@@ -6,11 +6,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Services;
 
-/// <summary>
-/// Adapts the temporary-file cleanup to the control-plane scheduled-tick dispatcher so EventBridge
-/// Scheduler can drive one cleanup under <c>TriggerMode=Event</c> without hosting the in-process
-/// timer. Deletes expired temp files via a fresh scope, so a single invocation is safe.
-/// </summary>
 internal sealed class TemporaryFileCleanupScheduledTickHandler(TemporaryFileCleanupService service)
     : Honua.Core.Features.ControlPlane.Abstractions.IScheduledTickHandler
 {
@@ -21,9 +16,6 @@ internal sealed class TemporaryFileCleanupScheduledTickHandler(TemporaryFileClea
         => service.PerformCleanupAsync(cancellationToken);
 }
 
-/// <summary>
-/// Background service that periodically cleans up expired temporary files.
-/// </summary>
 internal sealed class TemporaryFileCleanupService : BackgroundService
 {
     private readonly IServiceScopeFactory _serviceScopeFactory;
