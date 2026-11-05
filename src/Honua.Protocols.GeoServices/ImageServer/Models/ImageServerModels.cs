@@ -12,7 +12,7 @@ namespace Honua.Protocols.GeoServices.ImageServer.Models;
 public sealed class ImageServerServiceInfo
 {
     // No ArcGIS Server version (currentVersion/fullVersion) is advertised. Honua is an
-    // independent, Esri-compatible server and must not impersonate a specific ArcGIS Server
+    // independent GeoServices REST server and must not impersonate a specific ArcGIS Server
     // release. Do NOT add a currentVersion/fullVersion field (guarded by NoGeoServicesServerVersionTests).
 
     [JsonPropertyName("serviceDescription")]
@@ -254,9 +254,6 @@ public sealed class ImageServerServiceInfo
     public ImageServerMultidimensionalInfo? MultidimensionalInfo { get; init; }
 }
 
-/// <summary>
-/// Esri-compatible time info for an Image Server layer.
-/// </summary>
 public sealed class ImageServerTimeInfo
 {
     /// <summary>
@@ -314,9 +311,6 @@ public sealed class ImageServerTimeInfo
     public bool HasLiveData { get; init; }
 }
 
-/// <summary>
-/// Esri-compatible time reference describing the timezone semantics of a temporal layer.
-/// </summary>
 public sealed class ImageServerTimeReference
 {
     /// <summary>
@@ -332,11 +326,7 @@ public sealed class ImageServerTimeReference
     public bool RespectsDaylightSaving { get; init; }
 }
 
-/// <summary>
-/// Esri-compatible <c>multidimensionalInfo</c> document describing the variables
-/// and dimensional axes of a multidimensional raster (cube). Mirrors the shape
-/// the ArcGIS Maps SDK reads via <c>ImageryLayer.multidimensional_info</c>.
-/// </summary>
+// Shape the ArcGIS Maps SDK reads from ImageryLayer.multidimensionalInfo.
 public sealed class ImageServerMultidimensionalInfo
 {
     /// <summary>

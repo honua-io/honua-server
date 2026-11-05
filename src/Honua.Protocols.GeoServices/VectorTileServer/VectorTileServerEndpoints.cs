@@ -1,7 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 //
-// Read-only Esri-compatible VectorTileServer surface; anonymous by design. The
+// Read-only GeoServices REST VectorTileServer surface; anonymous by design. The
 // service-name route resolves the GeoServices service by NAME (not a numeric layer
 // id) via ValidateServiceV2Async, mirroring MapServer. GET + POST share the metadata
 // handler because Esri clients hydrate service metadata by POSTing {"f":"json"}.
@@ -54,7 +54,7 @@ internal static partial class VectorTileServerEndpoints
             .WithDisplayName("Get VectorTileServer Service Metadata")
             .WithName("GetVectorTileServerMetadata")
             .WithSummary("Get VectorTileServer service metadata")
-            .WithDescription("Returns Esri-compatible VectorTileServer service metadata including the WebMercatorQuad tileInfo descriptor")
+            .WithDescription("Returns GeoServices REST VectorTileServer service metadata including the WebMercatorQuad tileInfo descriptor")
             .WithTags("VectorTileServer")
             .AllowAnonymous()
             .CacheOutput("ServiceMetadata");
@@ -67,7 +67,7 @@ internal static partial class VectorTileServerEndpoints
             .WithDisplayName("Get VectorTileServer Service Metadata (POST)")
             .WithName("GetVectorTileServerMetadataPost")
             .WithSummary("Get VectorTileServer service metadata using POST")
-            .WithDescription("Returns Esri-compatible VectorTileServer service metadata including the WebMercatorQuad tileInfo descriptor")
+            .WithDescription("Returns GeoServices REST VectorTileServer service metadata including the WebMercatorQuad tileInfo descriptor")
             .WithTags("VectorTileServer")
             .AllowAnonymous();
 

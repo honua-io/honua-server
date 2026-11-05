@@ -7,7 +7,7 @@ namespace Honua.Protocols.GeoServices.Catalog;
 
 internal sealed record ServicesDirectoryResponse
 {
-    // No ArcGIS Server version is advertised. Honua is an independent, Esri-compatible
+    // No ArcGIS Server version is advertised. Honua is an independent GeoServices REST
     // server and must not impersonate a specific ArcGIS Server release. Do NOT add a
     // currentVersion/fullVersion field (guarded by NoGeoServicesServerVersionTests).
 

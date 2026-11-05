@@ -8,7 +8,7 @@ tracked by honua-io/honua-esri-assess#33).
 ## Context
 
 `honua-io/honua-server#1265` / `#1266` introduce a Network Analyst routing
-capability for the GeoServices REST surface: an Esri-compatible `NAServer`
+capability for the GeoServices REST surface: a `NAServer`
 exposing route (point-to-point) and service-area (drive-time / drive-distance
 polygon) solves. Esri clients reach this surface through the
 `NAServer/Route/solve` and `NAServer/ServiceArea/solveServiceArea` operations,

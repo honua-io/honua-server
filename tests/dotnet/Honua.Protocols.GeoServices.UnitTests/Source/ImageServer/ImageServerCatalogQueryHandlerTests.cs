@@ -25,11 +25,7 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Tests for <see cref="ImageServerCatalogQueryHandler"/>. The handler exposes
-/// the raster catalog as Esri-compatible features through the <c>query</c>
-/// endpoint, mirroring the FeatureServer envelope.
-/// </summary>
+// Catalog query returns features in the FeatureServer envelope.
 [Protocol(TestProtocols.ImageServer)]
 public class ImageServerCatalogQueryHandlerTests
 {

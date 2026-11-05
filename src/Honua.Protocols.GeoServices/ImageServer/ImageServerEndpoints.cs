@@ -1,7 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 //
-// Read-only Esri-compatible ImageServer surface; anonymous by design. POST
+// Read-only GeoServices REST ImageServer surface; anonymous by design. POST
 // variants of exportImage/identify/query/computeStatistics mirror the GET form
 // and perform no server-side mutation. Each route group opts into
 // AllowAnonymous explicitly so authorization-policy tooling can see the intent
@@ -161,7 +161,7 @@ internal static class ImageServerEndpoints
             .WithDisplayName("Query Image Catalog (GET)")
             .WithName("QueryImageCatalogGet")
             .WithSummary("Query the raster catalog with where/objectIds filters")
-            .WithDescription("Returns Esri-compatible raster catalog features for the layer with optional WHERE filtering and pagination")
+            .WithDescription("Returns GeoServices REST raster catalog features for the layer with optional WHERE filtering and pagination")
             .Produces<CatalogQueryResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(400)
             .Produces(404);
@@ -543,7 +543,7 @@ internal static class ImageServerEndpoints
             .WithDisplayName("Get Image Server Legend")
             .WithName("GetImageServerLegend")
             .WithSummary("Get raster legend swatches")
-            .WithDescription("Returns Esri-compatible legend swatches or a composed PNG with f=png for the layer's primary raster")
+            .WithDescription("Returns GeoServices REST legend swatches or a composed PNG with f=png for the layer's primary raster")
             .Produces<LegendResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(StatusCodes.Status200OK, contentType: "image/png")
             .Produces(400)

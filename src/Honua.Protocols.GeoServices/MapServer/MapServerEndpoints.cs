@@ -1,7 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 //
-// Read-only Esri-compatible MapServer surface; anonymous by design. The POST
+// Read-only GeoServices REST MapServer surface; anonymous by design. The POST
 // variants of export/generateKml/identify/find/query operations mirror the GET
 // form (the Esri REST API accepts the same parameters in either an URL query
 // string or a request body) and perform no server-side mutation. Each POST
