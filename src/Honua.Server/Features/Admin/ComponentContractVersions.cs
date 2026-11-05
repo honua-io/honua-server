@@ -15,13 +15,7 @@ using Proto = Geospatial.V1;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// The contract and schema versions this build declares in <c>release/component-versions.json</c>,
-/// embedded into the server assembly at build (honua-server#5378). The honua-release resolver reads
-/// the same file at the selected commit, and <c>GET /api/v1/admin/capabilities</c> advertises it,
-/// so the declaration the release lock carries and the advertisement the release-train gate reads
-/// (ruling R27) come from one file and cannot drift.
-/// </summary>
+// The embedded component-versions file is the same declaration the release lock and the capabilities advertisement read, so those copies cannot drift.
 internal sealed class ComponentVersionsDeclaration
 {
     internal const string ResourceName = "Honua.Server.release.component-versions.json";
@@ -38,20 +32,12 @@ internal sealed class ComponentVersionsDeclaration
         SchemaVersions = schemaVersions;
     }
 
-    /// <summary>The declaration embedded from <c>release/component-versions.json</c>.</summary>
     public static ComponentVersionsDeclaration Embedded => EmbeddedDeclaration.Value;
 
-    /// <summary>Contract name to exact version, ordered by name.</summary>
     public IReadOnlyDictionary<string, string> ContractVersions { get; }
 
-    /// <summary>Schema name to exact version, ordered by name. <c>database</c> is derived by the release resolver, not declared.</summary>
     public IReadOnlyDictionary<string, string> SchemaVersions { get; }
 
-    /// <summary>
-    /// Parses a <c>honua.component-versions/v1</c> document for <c>honua-server</c>, refusing the same
-    /// shapes the release resolver refuses (wrong format or component, unknown or duplicate fields,
-    /// non-string or blank versions, a declared <c>schemaVersions.database</c>).
-    /// </summary>
     internal static ComponentVersionsDeclaration Parse(string json)
     {
         ArgumentNullException.ThrowIfNull(json);
@@ -155,12 +141,6 @@ internal sealed class ComponentVersionsDeclaration
         => new($"release/component-versions.json is invalid: {reason}.");
 }
 
-/// <summary>
-/// The contract versions the running server actually serves, read from the constants each surface
-/// already owns: the admin API major, the metadata API version, the rolled-up GeoServices / OGC /
-/// STAC contract versions the capability manifest advertises per transport, and the major of the
-/// proto package every mapped gRPC service belongs to.
-/// </summary>
 internal static class ServedContractVersions
 {
 #if !HONUA_EXCLUDE_GRPC
@@ -176,7 +156,6 @@ internal static class ServedContractVersions
     ];
 #endif
 
-    /// <summary>Contract name (the keys of <c>release/component-versions.json</c>) to served version.</summary>
     public static IReadOnlyDictionary<string, string> Current { get; } = new SortedDictionary<string, string>(StringComparer.Ordinal)
     {
         ["admin"] = AdminInfoEndpoints.AdminApiMajor,
@@ -195,11 +174,6 @@ internal static class ServedContractVersions
 #endif
     };
 
-    /// <summary>
-    /// The version segment of the proto package the services share (<c>geospatial.v1</c> → <c>v1</c>).
-    /// Throws when the services span more than one package, since one declared <c>grpc</c> version
-    /// could not then describe them all.
-    /// </summary>
     internal static string GrpcPackageMajor(IReadOnlyList<GrpcServiceDescriptor> services)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -225,15 +199,8 @@ internal static class ServedContractVersions
     }
 }
 
-/// <summary>
-/// Refuses startup when <c>release/component-versions.json</c> does not match what this server
-/// serves (honua-server#5378): a declared contract the server does not serve, a served contract
-/// that is not declared, or a different version. A stale declaration is then caught at build and
-/// boot rather than only by the release-train contract-live gate.
-/// </summary>
 internal static class ContractVersionsStartupCheck
 {
-    /// <summary>Throws when the declared and served contract-version maps differ.</summary>
     internal static void Validate(
         IReadOnlyDictionary<string, string> declared,
         IReadOnlyDictionary<string, string> served,

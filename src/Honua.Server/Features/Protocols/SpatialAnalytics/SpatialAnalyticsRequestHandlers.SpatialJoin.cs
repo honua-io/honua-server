@@ -22,12 +22,6 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Server.Features.Protocols.SpatialAnalytics;
 
-/// <summary>
-/// Spatial join handler. REST entry:
-/// <c>POST /rest/services/{serviceId}/FeatureServer/{layerId}/spatialJoin</c>.
-/// OGC mirror: <c>POST /ogc/features/collections/{collectionId}/spatial-join</c>.
-/// Both entries delegate to <see cref="HandleSpatialJoinCoreAsync"/>.
-/// </summary>
 internal static partial class SpatialAnalyticsRequestHandlers
 {
     private const string SpatialJoinOperation = "spatial-join";

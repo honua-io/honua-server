@@ -17,16 +17,7 @@ using StackExchange.Redis;
 
 namespace Honua.Server.Startup;
 
-/// <summary>
-/// Registers feature-change event plumbing (event store, retry queue, webhook dispatcher,
-/// transactional outbox, stream session manager, and the streaming publisher). The boolean
-/// flag forwards the host-level decision about whether silent in-memory fallback is tolerated
-/// (Development / Test) or strictly forbidden (Production / Staging). The strict durability
-/// requirement only applies when Redis is actually configured: with no Redis at all the
-/// deployment is a supported single-node/serverless topology (#1618), so the event store runs
-/// in explicit in-memory single-node mode (with a startup warning) instead of reporting
-/// permanently unhealthy — unconfigured is not unhealthy; unreachable is.
-/// </summary>
+// With no Redis the event store is explicit in-memory; an unconfigured store is not unhealthy, and an unreachable store is.
 internal static partial class FeatureEventsAndStreamingRegistration
 {
     public static IServiceCollection AddHonuaFeatureEventsAndStreaming(

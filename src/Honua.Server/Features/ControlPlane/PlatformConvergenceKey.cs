@@ -5,7 +5,6 @@ using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.ControlPlane;
 
-/// <summary>Builds the shared automatic convergence identity for REST and MCP.</summary>
 internal static class PlatformConvergenceKey
 {
     internal static async Task<string?> ResolveAsync(

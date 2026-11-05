@@ -7,9 +7,6 @@ using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Admin.Models;
 
-/// <summary>
-/// JSON source generation context for the layer authoring admin APIs (relationships, popup-info, drawing-info).
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

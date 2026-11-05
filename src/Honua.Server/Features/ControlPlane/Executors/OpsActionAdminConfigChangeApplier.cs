@@ -12,14 +12,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.ControlPlane.Executors;
 
-/// <summary>
-/// Real <see cref="IAdminConfigChangeApplier"/>: a payload-discriminated ops-action
-/// registry. It parses the <c>{action, target, params}</c> execution payload, dispatches
-/// to the matching self-healing actuator, and audits an operate-timeline event. Each
-/// action is idempotent and validated <em>before</em> any side effect, so a malformed or
-/// unknown payload fails closed (throws <see cref="OpsActionException"/>) and never
-/// partially applies. Replaces the previous logging stub that applied nothing (#2561).
-/// </summary>
+// Each action is validated before any side effect, so a malformed or unknown payload fails closed and never partially applies.
 internal sealed partial class OpsActionAdminConfigChangeApplier(
     IServiceScopeFactory scopeFactory,
     TimeProvider timeProvider,

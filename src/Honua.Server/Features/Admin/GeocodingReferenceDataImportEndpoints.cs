@@ -13,24 +13,12 @@ using Microsoft.AspNetCore.Http.Features;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoint for importing CSV reference data into the local PostGIS geocoder. The endpoint
-/// is a thin adapter: column mapping, validation, and loading live in the shared
-/// <see cref="IGeocoderReferenceDataImportService"/> so other surfaces can reuse them. Once
-/// imported (and the <c>local</c> provider is enabled), the records are served through the
-/// standard GeocodeServer operations (findAddressCandidates, reverseGeocode, suggest,
-/// geocodeAddresses).
-/// </summary>
 internal static class GeocodingReferenceDataImportEndpoints
 {
     internal sealed class GeocodingReferenceDataImportLog;
 
-    /// <summary>Upper bound on the uploaded reference data CSV size (256 MiB).</summary>
     private const long MaxReferenceBytes = 256L * 1024 * 1024;
 
-    /// <summary>
-    /// Maps the geocoder reference data import endpoint under the admin geocoding surface.
-    /// </summary>
     public static void MapGeocodingReferenceDataImportEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/geocoding")

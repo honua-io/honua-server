@@ -11,24 +11,12 @@ using Honua.Core.Features.Operations.Domain;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Server-side control-plane service that constructs and submits additive metadata-release
-/// layer-evolution operations. This is the create path that produces
-/// <see cref="WorkflowOperationKind.MetadataRelease"/> records for
-/// <see cref="MetadataReleaseReconciler"/> to advance. Mirrors <see cref="DeployWorkflowService"/>
-/// conventions: durable store, deterministic operation id, idempotent create.
-/// </summary>
 internal sealed partial class MetadataReleaseControlService(
     IEnumerable<IWorkflowOperationStore> workflowStores)
 {
     private static readonly Regex UnsafeOperationIdCharacters = new("[^a-z0-9]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private readonly IWorkflowOperationStore? _workflowStore = workflowStores.FirstOrDefault();
 
-    /// <summary>
-    /// Creates and submits an additive metadata-release operation. The operation is persisted in the
-    /// <see cref="WorkflowOperationStatus.Submitted"/> state so the metadata-release reconciler walks
-    /// the additive stages on its next cycle.
-    /// </summary>
     public async Task<WorkflowOperationRecord> CreateAsync(
         MetadataReleaseExecutionPlan plan,
         string? requestedBy,
@@ -115,12 +103,6 @@ internal sealed partial class MetadataReleaseControlService(
             $"Idempotency key '{existing.Audit.IdempotencyKey}' is already associated with a different metadata-release request.");
     }
 
-    /// <summary>
-    /// Computes a stable fingerprint of the behavior-changing inputs of a metadata-release request
-    /// (package, environment, resource, new field, optional data-populate workload, and the
-    /// executable script shape). Mirrors the deploy workflow so a replay that reuses an idempotency
-    /// key for a different intent is detected rather than silently skipped.
-    /// </summary>
     private static string CreateRequestFingerprint(MetadataReleaseExecutionPlan plan, string? rootProvisioningOperationId)
     {
         var builder = new StringBuilder();

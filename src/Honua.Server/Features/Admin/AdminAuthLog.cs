@@ -3,14 +3,8 @@
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Source-generated logger for Admin auth features (AOT compatible).
-/// </summary>
 internal static partial class AdminAuthLog
 {
-    /// <summary>
-    /// Logs when the auth config endpoint serves provider metadata.
-    /// </summary>
     [LoggerMessage(
         EventId = 4006,
         Level = LogLevel.Debug,

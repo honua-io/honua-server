@@ -7,10 +7,6 @@ using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Operations;
 
-/// <summary>
-/// Source-generated JSON context for the Operations Toolset endpoints. Keeps the surface
-/// AOT-safe (the published image disables reflection-based serialization).
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
@@ -32,45 +28,24 @@ internal sealed partial class OperationsJsonContext : JsonSerializerContext
 {
 }
 
-/// <summary>
-/// Request body for the validate and submit operation endpoints. Mirrors the
-/// <c>OperationRequest</c> domain shape with a JSON-friendly surface.
-/// </summary>
 public sealed record OperationInvokeRequest
 {
-    /// <summary>
-    /// Caller-supplied parameter values keyed by parameter name.
-    /// </summary>
     public IReadOnlyDictionary<string, string?> Parameters { get; init; } =
         new Dictionary<string, string?>(StringComparer.Ordinal);
 
-    /// <summary>
-    /// Connection identifier the operation targets.
-    /// </summary>
     public string? ConnectionId { get; init; }
 
-    /// <summary>
-    /// Service name the operation targets.
-    /// </summary>
     public string? ServiceName { get; init; }
 
-    /// <summary>
-    /// Attribute fields to act on, when the operation targets a subset of columns.
-    /// </summary>
     public IReadOnlyList<string> Fields { get; init; } = [];
 
-    /// <summary>
-    /// Whether the caller requested a dry-run/preview.
-    /// </summary>
     public bool DryRun { get; init; }
 }
 
-/// <summary>One-time secret returned by the authenticated operation secret channel.</summary>
 public sealed record OperationSecretValueResponse
 {
-    /// <summary>Logical secret field name.</summary>
     public required string Name { get; init; }
 
-    /// <summary>Plaintext secret. This response is never cached and is not persisted.</summary>
+    // The plaintext secret is never cached and is not persisted.
     public required string Value { get; init; }
 }

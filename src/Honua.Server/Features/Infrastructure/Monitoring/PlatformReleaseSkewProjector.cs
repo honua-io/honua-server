@@ -6,18 +6,8 @@ using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.Infrastructure.Monitoring;
 
-/// <summary>
-/// Projects the configured control-plane deploy targets and execution workloads against the declared
-/// platform release into a co-versioning skew snapshot. Shared by the ops-health composer and the
-/// ops-findings platform-release-skew rule so both derive skew identically from configuration.
-/// </summary>
 internal static class PlatformReleaseSkewProjector
 {
-    /// <summary>
-    /// Builds the platform-release skew snapshot from the current control-plane options.
-    /// </summary>
-    /// <param name="options">The control-plane options carrying the release, deploy targets, and workloads.</param>
-    /// <returns>The skew snapshot (release version, co-versioning flag, and skewed plane ids).</returns>
     public static PlatformReleaseSkewSnapshot Build(ControlPlaneOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);

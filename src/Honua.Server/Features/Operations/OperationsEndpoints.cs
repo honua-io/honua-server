@@ -22,11 +22,6 @@ using Honua.Infrastructure.Security;
 
 namespace Honua.Server.Features.Operations;
 
-/// <summary>
-/// HTTP surface for the Honua Operations Toolset (deterministic, no AI): list the grounding
-/// catalog, validate and submit operations through the policy-gated dispatcher, and read a
-/// submitted handle's status. Admin-authorized.
-/// </summary>
 internal static class OperationsEndpoints
 {
     private const string IdempotencyKeyHeader = "Idempotency-Key";
@@ -34,9 +29,6 @@ internal static class OperationsEndpoints
 
     internal sealed class OperationsEndpointsLog;
 
-    /// <summary>
-    /// Only a queued or running <c>service.publish</c> is 202. Every other submit stays 200.
-    /// </summary>
     internal static int SubmissionStatusCode(OperationHandle handle)
         => handle.OperationId == ServicePublishOperation.OperationId
             && handle.Status is OperationHandleStatus.Queued or OperationHandleStatus.Running

@@ -11,20 +11,8 @@ using StackExchange.Redis;
 
 namespace Honua.Server.Features.Identity;
 
-/// <summary>
-/// Registration for the enterprise identity slice: SCIM 2.0 provisioning (#510) and the
-/// SAML 2.0 Service Provider SSO bridge (#508). Both adapt into the existing identity/role
-/// model rather than introducing a parallel one — SCIM provisions users and maps groups to
-/// roles over the shared user store, and SAML validates an assertion and establishes the same
-/// session/claims model as OIDC.
-/// </summary>
 public static class IdentityServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers SCIM and SAML options and the SAML assertion validator. The SCIM/SAML stores
-    /// themselves are projected onto the shared in-memory IAM defaults
-    /// (see <c>ControlPlaneIamDefaults</c>).
-    /// </summary>
     public static IServiceCollection AddEnterpriseIdentity(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);

@@ -8,9 +8,6 @@ using StackExchange.Redis;
 
 namespace Honua.Server.Features.Orchestration;
 
-/// <summary>
-/// Redis-backed durable store for workflow definitions.
-/// </summary>
 internal sealed class RedisWorkflowDefinitionStore(IConnectionMultiplexer redis) : IWorkflowDefinitionStore
 {
     private const string DefinitionKeyPrefix = "orchestration:def:";
@@ -133,10 +130,8 @@ internal sealed class RedisWorkflowDefinitionStore(IConnectionMultiplexer redis)
         return removed;
     }
 
-    /// <summary>Cursor kind discriminator for the change-feed trigger.</summary>
     internal const string ChangeFeedCursorKind = "change-feed";
 
-    /// <summary>Cursor kind discriminator for the object-store trigger.</summary>
     internal const string ObjectStoreCursorKind = "object-store";
 
     public async Task<IReadOnlyList<WorkflowDefinition>> ListEventTriggeredAsync(CancellationToken cancellationToken = default)

@@ -8,20 +8,10 @@ using Honua.Core.Features.MultiTenancy.Abstractions;
 
 namespace Honua.Infrastructure.MultiTenancy;
 
-/// <summary>
-/// Process-local, thread-safe <see cref="ITenantUsageMeter"/> backing the usage-metering
-/// counter hook (issue #346). Registered as a singleton so counts accumulate across requests.
-/// </summary>
-/// <remarks>
-/// This is the instrumentation seam, not a durable billing ledger: counts reset on process
-/// restart and are not aggregated across scaled nodes. Persistence, storage/bandwidth
-/// dimensions, and billing export are deferred (Refs #346).
-/// </remarks>
 internal sealed class InMemoryTenantUsageMeter : ITenantUsageMeter
 {
     private readonly ConcurrentDictionary<string, long> _counts = new();
 
-    /// <inheritdoc />
     public long RecordRequest(string tenantId)
     {
         if (string.IsNullOrWhiteSpace(tenantId))
@@ -33,7 +23,6 @@ internal sealed class InMemoryTenantUsageMeter : ITenantUsageMeter
         return _counts.AddOrUpdate(tenantId, 1, static (_, current) => current + 1);
     }
 
-    /// <inheritdoc />
     public IReadOnlyList<TenantUsageSnapshot> Snapshot()
     {
         // Snapshot the dictionary into a stable, ordered list for deterministic responses.

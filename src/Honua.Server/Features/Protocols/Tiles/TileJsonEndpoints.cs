@@ -106,10 +106,6 @@ internal static class TileJsonEndpoints
         return Results.Json(response, TileJsonContext.Default.TileJsonResponse, contentType: JsonContentType);
     }
 
-    /// <summary>
-    /// Storage-layer id passed to <see cref="IFeatureReader.GetExtentAsync"/>.
-    /// Prefers the snapshot binding over the service-local publication index.
-    /// </summary>
     internal static int ResolveExtentStorageLayerId(
         MetadataV2GraphSnapshot? snapshot,
         MetadataV2Publication publication,
@@ -120,9 +116,6 @@ internal static class TileJsonEndpoints
         return storageLayerId ?? publication.LayerIndex ?? routeLayerId;
     }
 
-    /// <summary>
-    /// Layer id embedded in public TileJSON URLs. Stays the service-local index.
-    /// </summary>
     internal static int ResolvePublicTileLayerId(MetadataV2Publication publication, int routeLayerId)
         => publication.LayerIndex ?? routeLayerId;
 

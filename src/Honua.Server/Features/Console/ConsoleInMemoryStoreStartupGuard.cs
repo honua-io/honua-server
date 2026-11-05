@@ -6,10 +6,6 @@ using Honua.Core.Features.Console.Domain;
 
 namespace Honua.Server.Features.Console;
 
-/// <summary>
-/// Logs when Console content, share, and open-data stores are process-local,
-/// and refuses to start when more than one replica is configured for them.
-/// </summary>
 internal sealed class ConsoleInMemoryStoreStartupGuard : IHostedService
 {
     private readonly ILogger<ConsoleInMemoryStoreStartupGuard> _logger;

@@ -13,9 +13,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin.TileOperations;
 
-/// <summary>
-/// Admin endpoints for asynchronous tile cache lifecycle operations.
-/// </summary>
 internal static class TileOperationsEndpoints
 {
     public static void MapTileOperationsEndpoints(this WebApplication app)
@@ -405,41 +402,27 @@ internal static class TileOperationsEndpoints
     }
 }
 
-/// <summary>
-/// Read-only inventory of the generated tile cache (#2661): tracked entry count, total bytes, and
-/// per-zoom coverage, optionally scoped to a service and/or gridset.
-/// </summary>
 internal sealed record TileCacheInventoryResponse
 {
-    /// <summary>Whether a live tile-key index was available; <c>false</c> means nothing is tracked.</summary>
     public required bool Enabled { get; init; }
 
-    /// <summary>The service filter applied, or <c>null</c> when the inventory spans all services.</summary>
     public string? ServiceId { get; init; }
 
-    /// <summary>The gridset filter applied, or <c>null</c> when the inventory spans all gridsets.</summary>
     public string? Gridset { get; init; }
 
-    /// <summary>The number of tracked generated tiles that fall inside the requested bound.</summary>
     public required int EntryCount { get; init; }
 
-    /// <summary>The total stored bytes of the tracked tiles inside the requested bound.</summary>
     public required long TotalBytes { get; init; }
 
-    /// <summary>Per-zoom coverage inside the requested bound, ascending by zoom.</summary>
     public required IReadOnlyList<TileCacheZoomCoverage> PerZoom { get; init; }
 }
 
-/// <summary>Coverage of the generated tile cache at a single zoom level.</summary>
 internal sealed record TileCacheZoomCoverage
 {
-    /// <summary>The zoom level.</summary>
     public required int Zoom { get; init; }
 
-    /// <summary>The number of tracked tiles at this zoom.</summary>
     public required int Count { get; init; }
 
-    /// <summary>The total stored bytes of the tracked tiles at this zoom.</summary>
     public required long Bytes { get; init; }
 }
 
@@ -470,21 +453,14 @@ internal sealed record TileOperationListResponse
     public required int TotalCount { get; init; }
 }
 
-/// <summary>
-/// Response for an on-demand tile-cache eviction sweep (#1917).
-/// </summary>
 internal sealed record TileCacheEvictionResponse
 {
-    /// <summary>Whether eviction was enabled and a live tile-key index was available.</summary>
     public required bool Enabled { get; init; }
 
-    /// <summary>The number of tracked tile entries scanned at the start of the sweep.</summary>
     public required int Scanned { get; init; }
 
-    /// <summary>The number of least-recently-used tiles evicted from the cache store and index.</summary>
     public required int Evicted { get; init; }
 
-    /// <summary>A human-readable summary of the sweep outcome.</summary>
     public required string Message { get; init; }
 }
 

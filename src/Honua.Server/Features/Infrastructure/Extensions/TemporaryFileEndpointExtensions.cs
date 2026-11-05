@@ -5,14 +5,8 @@ using Honua.Infrastructure.Services;
 
 namespace Honua.Infrastructure.Extensions;
 
-/// <summary>
-/// Extension methods for configuring temporary file endpoints.
-/// </summary>
 public static class TemporaryFileEndpointExtensions
 {
-    /// <summary>
-    /// Maps temporary file serving endpoints.
-    /// </summary>
     public static IEndpointRouteBuilder MapTemporaryFileEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/temp")

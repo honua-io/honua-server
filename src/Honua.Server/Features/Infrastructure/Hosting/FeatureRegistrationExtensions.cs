@@ -96,14 +96,8 @@ using Honua.Core.Features.Capabilities;
 
 namespace Honua.Infrastructure.Hosting;
 
-/// <summary>
-/// Feature registration helpers for the Honua composition root.
-/// </summary>
 internal static class FeatureRegistrationExtensions
 {
-    /// <summary>
-    /// Registers feature services in a single, auditable block.
-    /// </summary>
     public static IServiceCollection AddServerFeatures(
         this IServiceCollection services,
         IConfiguration configuration,
@@ -308,9 +302,6 @@ internal static class FeatureRegistrationExtensions
         return services;
     }
 
-    /// <summary>
-    /// Maps feature endpoints in a single, auditable block.
-    /// </summary>
     public static IEndpointRouteBuilder MapServerFeatureEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
@@ -447,22 +438,7 @@ internal static class FeatureRegistrationExtensions
         return endpoints;
     }
 
-    /// <summary>
-    /// Discovers every <see cref="IHonuaProtocolModule"/> implementation in the
-    /// currently-loaded assemblies and invokes its <c>ConfigureServices</c>. The
-    /// optional <paramref name="enabledNames"/> filter (typically bound from
-    /// <c>Protocols:Enabled</c> in configuration) restricts which modules run;
-    /// when null or empty, every discovered module runs.
-    /// </summary>
-    /// <remarks>
-    /// This entry point is additive — it sits alongside
-    /// <see cref="AddServerFeatures"/>, which still owns the canonical direct
-    /// <c>AddXxx</c> wiring. A follow-up PR will migrate the per-protocol
-    /// registrations into modules and remove the duplicated direct calls.
-    /// Today calling this method <em>and</em> <c>AddServerFeatures</c> would
-    /// register the wrapped protocol services twice; callers must pick one
-    /// path until the migration completes.
-    /// </remarks>
+    // Calling module discovery and the direct feature registration registers the same services twice, so a host must pick one.
     public static IServiceCollection AddDiscoveredProtocolModules(
         this IServiceCollection services,
         Microsoft.Extensions.Configuration.IConfiguration configuration,
@@ -479,15 +455,6 @@ internal static class FeatureRegistrationExtensions
         return services;
     }
 
-    /// <summary>
-    /// Discovers every <see cref="IHonuaProtocolModule"/> implementation and
-    /// invokes its <c>MapEndpoints</c>. Sequencing mirrors
-    /// <see cref="AddDiscoveredProtocolModules"/>: when the optional filter
-    /// is null or empty, every discovered module runs.
-    /// </summary>
-    /// <remarks>
-    /// This entry point is additive (see <see cref="AddDiscoveredProtocolModules"/>).
-    /// </remarks>
     public static IEndpointRouteBuilder MapDiscoveredProtocolModules(
         this IEndpointRouteBuilder endpoints,
         IReadOnlyCollection<string>? enabledNames = null)

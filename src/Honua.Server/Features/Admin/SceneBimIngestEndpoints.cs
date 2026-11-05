@@ -17,30 +17,13 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoint for CityGML/BIM scene ingest (#1207). Parses an uploaded
-/// CityGML document into a Building Scene Layer 3D Tiles tileset, registers it,
-/// and returns the servable tileset URL. Enterprise-gated.
-/// </summary>
-/// <remarks>
-/// The endpoint is mapped only when the CityGML ingest executor is registered
-/// (Postgres profiles), mirroring the feature-layer scene generation surface.
-/// Admin authentication is enforced by the group policy; the Enterprise
-/// entitlement is enforced inside the handler so an authenticated non-Enterprise
-/// operator receives a 402 with an upgrade message rather than a silent 404.
-/// </remarks>
 internal static partial class SceneBimIngestEndpoints
 {
     private const string TagAdmin = "Admin";
     private const string TagScenes = "Scene Ingest";
 
-    /// <summary>Upper bound on the uploaded CityGML document size (64 MiB) for the admin surface.</summary>
     private const long MaxUploadBytes = 64L * 1024 * 1024;
 
-    /// <summary>
-    /// Maps the admin CityGML ingest endpoint. No-op when the executor is not
-    /// registered (non-Postgres profiles).
-    /// </summary>
     public static IEndpointRouteBuilder MapSceneBimIngestEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
@@ -266,9 +249,6 @@ internal static partial class SceneBimIngestEndpoints
         }
     }
 
-    /// <summary>
-    /// Log category marker used by <see cref="ILogger{TCategoryName}"/> bindings.
-    /// </summary>
     internal sealed class SceneBimIngestEndpointsLogCategory;
 
     internal static partial class SceneBimIngestLog

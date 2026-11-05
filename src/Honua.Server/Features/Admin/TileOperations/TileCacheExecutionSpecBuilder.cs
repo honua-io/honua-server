@@ -6,32 +6,16 @@ using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.Server.Features.Admin.TileOperations;
 
-/// <summary>
-/// Translates a <see cref="TileOperationStartRequest"/> into a durable
-/// <see cref="ExecutionJobSpec"/> of kind <see cref="ExecutionJobKind.TileCache"/>
-/// and back, keeping the encode/decode contract in one place so the admin
-/// submission path and the worker-side <see cref="TileCacheJobExecutor"/> stay in
-/// agreement. Pure and allocation-light; no infrastructure dependencies so it is
-/// directly unit-testable.
-/// </summary>
 internal static class TileCacheExecutionSpecBuilder
 {
     private const string DefaultTileMatrixSetId = "WebMercatorQuad";
 
-    /// <summary>
-    /// Builds the execution-job spec for <paramref name="request"/>, encoding every
-    /// behavior-changing tile parameter onto <see cref="ExecutionJobSpec.Parameters"/>.
-    /// </summary>
     public static ExecutionJobSpec Build(
         TileOperationStartRequest request,
         string? schemaName,
         TileCacheBatchOptions options)
         => Build(request, schemaName, tenantScope: null, options);
 
-    /// <summary>
-    /// Builds a durable execution spec and captures the tile-cache ownership scope separately
-    /// from the optional routed database schema.
-    /// </summary>
     public static ExecutionJobSpec Build(
         TileOperationStartRequest request,
         string? schemaName,
@@ -135,12 +119,6 @@ internal static class TileCacheExecutionSpecBuilder
         };
     }
 
-    /// <summary>
-    /// Reconstructs a <see cref="TileOperationStartRequest"/> from a tile-cache
-    /// execution job's spec parameters. Returns <c>false</c> when the required
-    /// operation key is absent or malformed so the worker can fail the job with a
-    /// clean classification instead of throwing.
-    /// </summary>
     public static bool TryParse(
         IReadOnlyDictionary<string, string> parameters,
         out TileOperationStartRequest request,
@@ -148,9 +126,6 @@ internal static class TileCacheExecutionSpecBuilder
         out string error)
         => TryParse(parameters, out request, out schemaName, out _, out error);
 
-    /// <summary>
-    /// Reconstructs a tile operation together with its routed schema and persisted cache scope.
-    /// </summary>
     public static bool TryParse(
         IReadOnlyDictionary<string, string> parameters,
         out TileOperationStartRequest request,
@@ -293,9 +268,6 @@ internal static class TileCacheExecutionSpecBuilder
         return true;
     }
 
-    /// <summary>
-    /// Canonicalizes the request shape shared by in-process and durable execution paths.
-    /// </summary>
     public static TileOperationStartRequest NormalizeRequest(TileOperationStartRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -330,13 +302,7 @@ internal static class TileCacheExecutionSpecBuilder
         return normalized;
     }
 
-    /// <summary>
-    /// Builds the replica-safety partition key for a tile-cache generation window (issue #2661).
-    /// All resolved layer sets for the same gridset/style use one coarse partition. A composite
-    /// service target and any single-layer subset therefore overlap under the same exclusive lease,
-    /// preventing a service delete from racing a layer seed while unrelated grid/style windows can
-    /// still execute concurrently.
-    /// </summary>
+    // Resolved layer sets for one grid and style share a coarse partition and exclusive lease so a service delete cannot race a layer seed.
     public static string BuildPartitionKey(
         TileOperationStartRequest request,
         IReadOnlyList<int>? resolvedLayerIds = null)

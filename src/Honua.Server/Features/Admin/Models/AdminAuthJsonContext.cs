@@ -5,9 +5,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Server.Features.Admin.Models;
 
-/// <summary>
-/// JSON source generation context for admin auth config API models (AOT compatible).
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

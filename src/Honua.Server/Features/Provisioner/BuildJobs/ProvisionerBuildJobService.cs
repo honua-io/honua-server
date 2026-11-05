@@ -10,18 +10,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Provisioner.BuildJobs;
 
-/// <summary>
-/// Submits per-area geocoder/router build operations as durable
-/// <see cref="ExecutionJobKind.GeocoderBuild"/> / <see cref="ExecutionJobKind.RouterBuild"/>
-/// execution jobs and dispatches them to a configured <see cref="IBatchComputeBackend"/>.
-/// Structurally identical to <c>TileCacheJobService</c> (issue #1697): build an
-/// <see cref="ExecutionJobSpec"/>, create the <see cref="ExecutionJobRecord"/> in
-/// <see cref="IExecutionJobStore"/>, seed a <see cref="GeoprocessingProgress"/> so the
-/// shared job-status surface observes the submission, enqueue for the in-process worker
-/// when the backend is <c>local</c>, then submit to the remote backend (GP-on-Batch /
-/// Fargate Spot) otherwise. Progress, retry, heartbeat, and cancellation flow through the
-/// shared <c>ExecutionJobReconciler</c> and <see cref="IUniversalProgressStore"/>.
-/// </summary>
 internal sealed partial class ProvisionerBuildJobService : IProvisionerBuildJobService
 {
     private readonly IExecutionJobStore _jobStore;
@@ -49,10 +37,8 @@ internal sealed partial class ProvisionerBuildJobService : IProvisionerBuildJobS
         _jobQueue = jobQueue;
     }
 
-    /// <inheritdoc />
     public bool IsEnabled => _options.CurrentValue.Enabled;
 
-    /// <inheritdoc />
     public Task<string> SubmitGeocoderBuildAsync(
         GeocoderBuildRequest request,
         CancellationToken cancellationToken = default)
@@ -62,7 +48,6 @@ internal sealed partial class ProvisionerBuildJobService : IProvisionerBuildJobS
         return SubmitAsync("geocoder-build", "geo", spec, cancellationToken);
     }
 
-    /// <inheritdoc />
     public Task<string> SubmitRouterBuildAsync(
         RouterBuildRequest request,
         CancellationToken cancellationToken = default)
@@ -134,7 +119,6 @@ internal sealed partial class ProvisionerBuildJobService : IProvisionerBuildJobS
         return jobId;
     }
 
-    /// <inheritdoc />
     public async Task<bool> CancelAsync(string jobId, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(jobId))
@@ -215,32 +199,13 @@ internal sealed partial class ProvisionerBuildJobService : IProvisionerBuildJobS
     }
 }
 
-/// <summary>
-/// Submission/cancellation surface for batch-dispatched per-area geocoder/router build
-/// execution jobs.
-/// </summary>
 internal interface IProvisionerBuildJobService
 {
-    /// <summary>Whether config-driven batch dispatch is currently enabled.</summary>
     bool IsEnabled { get; }
 
-    /// <summary>
-    /// Submits a per-area geocoder/locator build as a
-    /// <see cref="ExecutionJobKind.GeocoderBuild"/> execution job and returns the durable
-    /// job identifier.
-    /// </summary>
     Task<string> SubmitGeocoderBuildAsync(GeocoderBuildRequest request, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Submits a per-area routing-graph build as a
-    /// <see cref="ExecutionJobKind.RouterBuild"/> execution job and returns the durable job
-    /// identifier.
-    /// </summary>
     Task<string> SubmitRouterBuildAsync(RouterBuildRequest request, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Requests cancellation of a batch-dispatched build job. Returns <c>false</c> when the
-    /// job is unknown, already terminal, or its backend is unavailable.
-    /// </summary>
     Task<bool> CancelAsync(string jobId, CancellationToken cancellationToken = default);
 }

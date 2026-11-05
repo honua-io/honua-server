@@ -7,9 +7,6 @@ using Honua.ServiceDefaults;
 
 namespace Honua.Infrastructure.Monitoring;
 
-/// <summary>
-/// Collects comprehensive production metrics for monitoring and alerting.
-/// </summary>
 internal sealed class ProductionMetricsCollector : IDisposable
 {
     private readonly Meter _meter;
@@ -25,15 +22,6 @@ internal sealed class ProductionMetricsCollector : IDisposable
     private readonly ObservableGauge<double> _cacheHitRatio;
     private readonly ObservableGauge<int> _uploadQueueDepth;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="ProductionMetricsCollector"/> class.
-    /// </summary>
-    /// <param name="connectionPoolMetrics">Connection pool metrics.</param>
-    /// <param name="connectionTracker">Connection tracker.</param>
-    /// <param name="cacheMetricsSnapshotProvider">Live cache metrics snapshot provider.</param>
-    /// <param name="httpRequestMetricsSnapshotProvider">Live HTTP request metrics snapshot provider.</param>
-    /// <param name="logger">Logger instance.</param>
-    /// <param name="serviceProvider">Service provider for accessing upload service.</param>
     public ProductionMetricsCollector(
         ConnectionPoolMetrics connectionPoolMetrics,
         IActiveDbConnectionTracker connectionTracker,
@@ -67,10 +55,6 @@ internal sealed class ProductionMetricsCollector : IDisposable
             description: "Current upload queue depth");
     }
 
-    /// <summary>
-    /// Gets production health metrics for alerting.
-    /// </summary>
-    /// <returns>Health metrics snapshot.</returns>
     public ProductionHealthMetrics GetHealthMetrics()
     {
         var memoryUsage = GC.GetTotalMemory(false);
@@ -101,10 +85,6 @@ internal sealed class ProductionMetricsCollector : IDisposable
         };
     }
 
-    /// <summary>
-    /// Calculates the current cache hit ratio.
-    /// </summary>
-    /// <returns>Cache hit ratio (0.0-1.0).</returns>
     private double CalculateCacheHitRatio()
     {
         var snapshot = _cacheMetricsSnapshotProvider.GetCacheMetricsSnapshot();
@@ -115,12 +95,6 @@ internal sealed class ProductionMetricsCollector : IDisposable
         return total > 0 ? (double)hits / total : 0.0;
     }
 
-    /// <summary>
-    /// Computes the server-error rate over the rolling serving-latency window (#2809), aggregated across all
-    /// observed protocols. Windowed so the signal reflects a current error spike rather than a lifetime ratio
-    /// that decays toward zero as cumulative traffic grows.
-    /// </summary>
-    /// <returns>Windowed error rate (0.0-1.0).</returns>
     private static double CalculateWindowedErrorRate()
     {
         var serving = HonuaTelemetry.GetServingLatencySnapshot();
@@ -135,10 +109,6 @@ internal sealed class ProductionMetricsCollector : IDisposable
         return windowRequests > 0 ? (double)windowErrors / windowRequests : 0.0;
     }
 
-    /// <summary>
-    /// Gets the current upload queue depth.
-    /// </summary>
-    /// <returns>Upload queue depth.</returns>
     private int GetUploadQueueDepth()
     {
         try
@@ -160,11 +130,6 @@ internal sealed class ProductionMetricsCollector : IDisposable
         return 0;
     }
 
-    /// <summary>
-    /// Gets memory pressure level for alerting.
-    /// </summary>
-    /// <param name="memoryUsage">Current memory usage.</param>
-    /// <returns>Memory pressure level.</returns>
     private static string GetMemoryPressureLevel(long memoryUsage)
     {
         var memoryMB = memoryUsage / (1024 * 1024);
@@ -178,89 +143,40 @@ internal sealed class ProductionMetricsCollector : IDisposable
         };
     }
 
-    /// <summary>
-    /// Disposes the metrics collector.
-    /// </summary>
     public void Dispose()
     {
         _meter.Dispose();
     }
 }
 
-/// <summary>
-/// Production health metrics for monitoring and alerting.
-/// </summary>
 public sealed class ProductionHealthMetrics
 {
-    /// <summary>
-    /// Gets or sets current memory usage in bytes.
-    /// </summary>
     public required long MemoryUsageBytes { get; set; }
 
-    /// <summary>
-    /// Gets or sets memory pressure level.
-    /// </summary>
     public required string MemoryPressureLevel { get; set; }
 
-    /// <summary>
-    /// Gets or sets database connection pool utilization ratio.
-    /// </summary>
     public required double DatabaseConnectionPoolUtilization { get; set; }
 
-    /// <summary>
-    /// Gets or sets a value indicating whether database connection pool utilization is available.
-    /// </summary>
     public required bool HasDatabaseConnectionPoolUtilization { get; set; }
 
-    /// <summary>
-    /// Gets or sets cache hit ratio.
-    /// </summary>
     public required double CacheHitRatio { get; set; }
 
-    /// <summary>
-    /// Gets or sets total number of live HTTP requests processed.
-    /// </summary>
     public required long TotalQueries { get; set; }
 
-    /// <summary>
-    /// Gets or sets total number of live HTTP server errors.
-    /// </summary>
     public required long TotalErrors { get; set; }
 
-    /// <summary>
-    /// Gets or sets the live HTTP server error rate.
-    /// </summary>
     public required double ErrorRate { get; set; }
 
-    /// <summary>
-    /// Gets or sets number of active database connections.
-    /// </summary>
     public required int ActiveConnections { get; set; }
 
-    /// <summary>
-    /// Gets or sets connection acquisition timeouts.
-    /// </summary>
     public required long ConnectionAcquisitionTimeouts { get; set; }
 
-    /// <summary>
-    /// Gets or sets connection acquisition failures.
-    /// </summary>
     public required long ConnectionAcquisitionFailures { get; set; }
 
-    /// <summary>
-    /// Gets or sets rate limit violations.
-    /// </summary>
     public required long RateLimitViolations { get; set; }
 
-    /// <summary>
-    /// Gets or sets timestamp of the metrics snapshot.
-    /// </summary>
     public required DateTimeOffset Timestamp { get; set; }
 
-    /// <summary>
-    /// Determines if the system is healthy based on configured thresholds.
-    /// </summary>
-    /// <returns>True if healthy, false otherwise.</returns>
     public bool IsHealthy()
     {
         return CacheHitRatio >= 0.8 &&
@@ -269,10 +185,6 @@ public sealed class ProductionHealthMetrics
                MemoryPressureLevel != "critical";
     }
 
-    /// <summary>
-    /// Gets alert conditions that are currently triggered.
-    /// </summary>
-    /// <returns>List of alert conditions.</returns>
     public List<string> GetAlertConditions()
     {
         var alerts = new List<string>();

@@ -12,24 +12,12 @@ using Honua.Infrastructure.MultiTenancy;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Create path for coordinated platform-upgrade releases (Demo C). Builds and submits the parent
-/// <see cref="WorkflowOperationKind.CoordinatedRelease"/> record — including the ordered step ledger
-/// with the container-swap and data-affecting approval gates — for
-/// <see cref="CoordinatedReleaseReconciler"/> to conduct. Also exposes the operator gate-approval and
-/// coordinated-rollback actions the console drives. Mirrors <see cref="MetadataReleaseControlService"/>
-/// conventions: durable store, deterministic operation id, idempotent create.
-/// </summary>
 internal sealed partial class CoordinatedReleaseControlService(
     IEnumerable<IWorkflowOperationStore> workflowStores)
 {
     private static readonly Regex UnsafeOperationIdCharacters = new("[^a-z0-9]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private readonly IWorkflowOperationStore? _workflowStore = workflowStores.FirstOrDefault();
 
-    /// <summary>
-    /// Creates and submits a coordinated release. The operation is persisted in
-    /// <see cref="WorkflowOperationStatus.Submitted"/> so the conductor advances on its next cycle.
-    /// </summary>
     public async Task<WorkflowOperationRecord> CreateAsync(
         CoordinatedReleaseContainerSpec container,
         MetadataReleaseExecutionPlan metadataPlan,
@@ -107,10 +95,6 @@ internal sealed partial class CoordinatedReleaseControlService(
         return operation;
     }
 
-    /// <summary>
-    /// Approves one of the coordinated release gates (container-swap or data-affecting) so the
-    /// conductor can advance past the awaiting-approval step on its next cycle.
-    /// </summary>
     public async Task<WorkflowOperationRecord?> ApproveGateAsync(
         string operationId,
         CoordinatedReleaseStep gate,
@@ -163,10 +147,6 @@ internal sealed partial class CoordinatedReleaseControlService(
         return updated;
     }
 
-    /// <summary>
-    /// Requests the coordinated rollback. Flips the operation into RollbackRequested so the conductor
-    /// unwinds the completed reversible steps in reverse order on its next cycle.
-    /// </summary>
     public async Task<WorkflowOperationRecord?> RequestRollbackAsync(
         string operationId,
         string? requestedBy,

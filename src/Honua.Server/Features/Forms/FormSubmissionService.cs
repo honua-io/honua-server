@@ -1094,11 +1094,7 @@ internal sealed class FormSubmissionService
     private static string GetEffectiveFileName(FormSubmissionAttachmentDescriptor descriptor, IFormFile file)
         => string.IsNullOrWhiteSpace(descriptor.Filename) ? file.FileName : descriptor.Filename!;
 
-    /// <summary>
-    /// The content type that is persisted for an attachment: the client-declared descriptor value
-    /// when present, otherwise the multipart part's content type. Validation and upload must agree
-    /// on this value so the allowlist checks cover what is actually stored.
-    /// </summary>
+    // Validation and upload must agree on the stored content type so the allowlist covers what is actually stored.
     private static string GetEffectiveContentType(FormSubmissionAttachmentDescriptor descriptor, IFormFile file)
         => string.IsNullOrWhiteSpace(descriptor.ContentType) ? file.ContentType : descriptor.ContentType!;
 

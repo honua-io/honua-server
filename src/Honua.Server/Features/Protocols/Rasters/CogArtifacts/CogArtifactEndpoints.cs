@@ -10,10 +10,6 @@ using Microsoft.Net.Http.Headers;
 
 namespace Honua.Server.Features.Protocols.Rasters.CogArtifacts;
 
-/// <summary>
-/// Admin publish of a layer's raster as a Cloud Optimized GeoTIFF, and the source-policy-aware
-/// byte-range proxy desktop clients read it through (<c>GET</c>/<c>HEAD</c> with <c>Range</c>).
-/// </summary>
 internal static class CogArtifactEndpoints
 {
     public static IEndpointRouteBuilder MapCogArtifactEndpoints(this IEndpointRouteBuilder endpoints)

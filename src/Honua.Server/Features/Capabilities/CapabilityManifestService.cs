@@ -340,15 +340,6 @@ internal sealed class CapabilityManifestService(
         };
     }
 
-    /// <summary>
-    /// The #2335 (B3) registry-derived <c>Packages</c> block: the <c>Families[]</c> are
-    /// derived by iterating the <c>packages</c>-category descriptors of the unified
-    /// capability registry through the gate resolver. The wire family id/kind come from
-    /// <see cref="PackageWireById"/> and the schema version from the descriptor's
-    /// <see cref="CapabilityDescriptor.PackageSchemaVersion"/> (the null seam B1 left);
-    /// an experimental-disabled family is omitted (wire-compatible). The schema-version,
-    /// storage-family and publication-family lists are identical to the legacy path.
-    /// </summary>
     private CapabilityManifestPackages BuildPackagesFromRegistry(CapabilityGateContext gateContext)
     {
         var families = new List<CapabilityManifestPackageFamily>();
@@ -408,11 +399,6 @@ internal sealed class CapabilityManifestService(
             .Order(StringComparer.Ordinal)
             .ToArray();
 
-    /// <summary>
-    /// Maps each <c>packages</c>-category registry descriptor id to the wire family
-    /// id/kind the <c>honua.capability_manifest.v1</c> surface advertises. The iteration
-    /// order of <see cref="ICapabilityRegistry.All"/> preserves the legacy family order.
-    /// </summary>
     private static readonly Dictionary<string, (string Id, string Kind)> PackageWireById =
         new Dictionary<string, (string Id, string Kind)>(StringComparer.Ordinal)
         {
@@ -564,18 +550,6 @@ internal sealed class CapabilityManifestService(
         ];
     }
 
-    /// <summary>
-    /// The #2335 (B3) registry-derived <c>Capabilities[]</c>. Instead of the
-    /// hand-curated roster in <see cref="BuildCapabilities"/>, this iterates the unified
-    /// capability registry's manifest descriptors (in their frozen order), resolves each
-    /// through the shared <see cref="CapabilityGateResolver"/>, and omits any descriptor
-    /// the gate turns off as experimental-and-flag-off (wire-compatible — the entry is
-    /// simply absent). The per-capability config knobs the registry does not carry
-    /// (supported/configured/requires*/policy/composite entitlement keys) come from
-    /// <see cref="BuildManifestCapabilitySpecs"/>; the availability computation is the
-    /// same <see cref="Capability"/> factory, so while every descriptor stays
-    /// <see cref="CapabilityMaturity.Implemented"/> the wire document is unchanged.
-    /// </summary>
     private CapabilityManifestCapability[] BuildCapabilitiesFromRegistry(
         CapabilityPolicyContext context,
         CapabilityGateContext gateContext,
@@ -668,12 +642,6 @@ internal sealed class CapabilityManifestService(
                 configured: IsWarehouseProviderRegistered(decision)))
             .ToArray();
 
-    /// <summary>
-    /// The per-capability config knobs the registry descriptor does not carry, keyed by
-    /// descriptor id. Ids absent from the map use <see cref="ManifestCapabilitySpec.Default"/>.
-    /// Mirrors the hand-curated arguments in <see cref="BuildCapabilities"/> exactly so the
-    /// two composition paths stay wire-identical.
-    /// </summary>
     private Dictionary<string, ManifestCapabilitySpec> BuildManifestCapabilitySpecs(
         OperationCapabilitySummary operationCapabilities)
     {
@@ -791,11 +759,6 @@ internal sealed class CapabilityManifestService(
             ExperimentalFlags = options.ExperimentalCapabilityFlags,
         };
 
-    /// <summary>
-    /// A registry descriptor participates in the #1186 manifest <c>Capabilities[]</c>
-    /// when it is neither an <c>/mcp</c> tool/resource nor a data-format descriptor —
-    /// those roster kinds project onto other surfaces, not the manifest.
-    /// </summary>
     private static bool IsManifestCapability(CapabilityDescriptor descriptor)
         => !descriptor.Id.StartsWith(CapabilityRegistry.McpToolIdPrefix, StringComparison.Ordinal)
             && !descriptor.Id.StartsWith(CapabilityRegistry.McpResourceIdPrefix, StringComparison.Ordinal)
@@ -1368,12 +1331,6 @@ internal sealed class CapabilityManifestService(
         return false;
     }
 
-    /// <summary>
-    /// <c>import.background</c> (honua-server#5916): whether this host accepts a background file
-    /// import and which runner executes it (<c>batch</c>, <c>in-process</c> or
-    /// <c>unavailable</c>, with the cause in <c>reasonCode</c>). <c>upload.file</c> covers only
-    /// the synchronous path.
-    /// </summary>
     private CapabilityManifestCapability BuildBackgroundImportCapability(CapabilityPolicyContext context)
     {
         var runner = options.BackgroundImportRunner;
@@ -1395,11 +1352,6 @@ internal sealed class CapabilityManifestService(
         };
     }
 
-    /// <summary>
-    /// <c>import.objectStore</c> (honua-server#5888): <c>s3://</c> imports that use the host
-    /// identity. Disabled until at least one bucket is allow-listed. <c>schemes</c> stays
-    /// <c>["s3"]</c> either way so callers can see the supported scheme before it is enabled.
-    /// </summary>
     private CapabilityManifestCapability BuildObjectStoreImportCapability(CapabilityPolicyContext context)
     {
         var capability = Capability(
@@ -1604,10 +1556,6 @@ internal sealed class CapabilityManifestService(
             _ => mode.ToString()
         };
 
-    /// <summary>
-    /// The manifest-specific config knobs a registry descriptor does not carry, layered
-    /// onto the registry roster by <see cref="BuildCapabilitiesFromRegistry"/> (#2335 / B3).
-    /// </summary>
     private sealed record ManifestCapabilitySpec
     {
         public static ManifestCapabilitySpec Default { get; } = new();
@@ -1628,10 +1576,6 @@ internal sealed class CapabilityManifestService(
 
         public bool RequiresWorkspace { get; init; }
 
-        /// <summary>
-        /// Whether the capability needs the Redis-backed durable job store that is only
-        /// composed when Redis is configured (honua-release#202).
-        /// </summary>
         public bool RequiresDurableJobStore { get; init; }
     }
 
@@ -1648,10 +1592,6 @@ internal sealed class CapabilityManifestService(
         bool SupportsCancellation,
         bool SupportsProgressPolling);
 
-    /// <summary>
-    /// Manifest id (and Community capability key) for the governed proposal/approval control
-    /// plane. Unavailable wherever the Redis-backed durable store is not composed.
-    /// </summary>
     internal const string OperationsProposalsCapabilityId = CapabilityUnavailableCodes.ControlPlaneProposalsCapability;
 
     private const string RollbackExecutable = "rollback.executable";
@@ -1680,11 +1620,6 @@ internal static class CapabilityReasonCodes
     public const string Unsupported = "unsupported";
     public const string DisabledByConfiguration = "disabled-by-configuration";
 
-    /// <summary>
-    /// The capability maps to a route the configured deployment profile does not enable,
-    /// so that route returns 404. Distinct from <see cref="DisabledByConfiguration"/>, which
-    /// is a host switch other than the deployment-profile allowlist.
-    /// </summary>
     public const string DeploymentProfileExcluded = "deployment-profile-excluded";
     public const string LicenseRequired = "license-required";
     public const string EntitlementInactive = "entitlement-inactive";
@@ -1692,13 +1627,7 @@ internal static class CapabilityReasonCodes
     public const string EnvironmentUnavailable = "environment-unavailable";
     public const string WorkspaceScopeRequired = "workspace-scope-required";
 
-    /// <summary>
-    /// The capability is supported and configured, but an infrastructure dependency the install
-    /// never composed makes it unusable (honua-release#202). Today the only such dependency is
-    /// the Redis-backed durable store behind <c>jobs.runner</c> and <c>operations.proposals</c>: Redis is optional for a
-    /// local install, so its absence must read as an honest degraded posture, not as an
-    /// available capability whose every operation 503s.
-    /// </summary>
+    // A missing optional Redis reads as degraded, not as an available capability whose operations return 503.
     public const string DependencyUnavailable = Core.Features.Capabilities.CapabilityUnavailableCodes.ErrorCode;
 }
 

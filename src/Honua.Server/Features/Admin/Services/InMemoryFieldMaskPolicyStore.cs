@@ -7,12 +7,6 @@ using Honua.Core.Features.Authorization.Domain;
 
 namespace Honua.Server.Features.Admin.Services;
 
-/// <summary>
-/// In-memory <see cref="IFieldMaskPolicyStore"/> default (#1940). Registered via TryAdd so a
-/// durable provider implementation (e.g. <c>PostgresFieldMaskPolicyStore</c>) wins when
-/// present; keeps non-Postgres deployments and tests functional without persistence.
-/// Mirrors <see cref="InMemoryRlsPolicyStore"/>.
-/// </summary>
 internal sealed class InMemoryFieldMaskPolicyStore : IFieldMaskPolicyStore
 {
     private readonly ConcurrentDictionary<Guid, FieldMaskPolicy> _policies = new();

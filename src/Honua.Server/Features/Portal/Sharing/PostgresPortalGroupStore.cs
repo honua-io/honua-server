@@ -8,7 +8,6 @@ using Npgsql;
 
 namespace Honua.Server.Features.Portal.Sharing;
 
-/// <summary>Shared, restart-safe Portal community groups. Membership updates lock the group row.</summary>
 internal sealed class PostgresPortalGroupStore(
     NpgsqlDataSource dataSource,
     TimeProvider timeProvider,

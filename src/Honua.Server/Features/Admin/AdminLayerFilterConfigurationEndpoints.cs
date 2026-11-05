@@ -15,16 +15,10 @@ using PermanentFilterLanguages = Honua.Core.Features.Metadata.Domain.V2.Metadata
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for persisted layer permanent filter configuration.
-/// </summary>
 internal static class AdminLayerFilterConfigurationEndpoints
 {
     private const int MaxFilterExpressionLength = 4096;
 
-    /// <summary>
-    /// Maps layer permanent filter configuration endpoints to the admin metadata API group.
-    /// </summary>
     public static void MapAdminLayerFilterConfigurationEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/metadata/layers")

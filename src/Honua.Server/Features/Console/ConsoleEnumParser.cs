@@ -6,18 +6,9 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Server.Features.Console;
 
-/// <summary>
-/// AOT-safe wire-name parsers and value whitelist checks for Console enum
-/// query and body parameters. Switch-based to stay reflection-free under
-/// trimming/Native AOT.
-/// </summary>
+// Parsers are switch-based so they stay reflection-free under trimming and Native AOT.
 internal static class ConsoleEnumParser
 {
-    /// <summary>
-    /// Returns true when the value is a defined member of the enum. Used to
-    /// reject undefined numeric values (e.g. <c>itemType: 999</c>) that the
-    /// default <c>JsonStringEnumConverter</c> would otherwise accept.
-    /// </summary>
     public static bool IsDefined(ConsoleContentItemType value) => value switch
     {
         ConsoleContentItemType.Service
@@ -30,7 +21,6 @@ internal static class ConsoleEnumParser
         _ => false,
     };
 
-    /// <inheritdoc cref="IsDefined(ConsoleContentItemType)" />
     public static bool IsDefined(ConsoleVisibility value) => value switch
     {
         ConsoleVisibility.Personal
@@ -40,7 +30,6 @@ internal static class ConsoleEnumParser
         _ => false,
     };
 
-    /// <inheritdoc cref="IsDefined(ConsoleContentItemType)" />
     public static bool IsDefined(ConsoleContentAction value) => value switch
     {
         ConsoleContentAction.View
@@ -53,7 +42,6 @@ internal static class ConsoleEnumParser
         _ => false,
     };
 
-    /// <inheritdoc cref="IsDefined(ConsoleContentItemType)" />
     public static bool IsDefined(ConsoleShareAccessTier value) => value switch
     {
         ConsoleShareAccessTier.Private
@@ -63,14 +51,12 @@ internal static class ConsoleEnumParser
         _ => false,
     };
 
-    /// <inheritdoc cref="IsDefined(ConsoleContentItemType)" />
     public static bool IsDefined(ConsoleEmbedAudience value) => value switch
     {
         ConsoleEmbedAudience.Map or ConsoleEmbedAudience.Content => true,
         _ => false,
     };
 
-    /// <inheritdoc cref="IsDefined(ConsoleContentItemType)" />
     public static bool IsDefined(MetadataV2LifecycleStatus value) => value switch
     {
         MetadataV2LifecycleStatus.Draft
@@ -81,7 +67,6 @@ internal static class ConsoleEnumParser
         _ => false,
     };
 
-    /// <inheritdoc cref="IsDefined(ConsoleContentItemType)" />
     public static bool IsDefined(MetadataV2OperationalState value) => value switch
     {
         MetadataV2OperationalState.Unknown

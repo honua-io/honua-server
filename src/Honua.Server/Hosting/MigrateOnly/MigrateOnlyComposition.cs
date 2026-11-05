@@ -11,20 +11,9 @@ using Microsoft.Extensions.Logging.Console;
 
 namespace Honua.Server.Hosting.MigrateOnly;
 
-/// <summary>
-/// The service graph a migrate-only run composes (honua-server#6470): logging to standard error,
-/// the connection-string secret resolver chain, and the PostgreSQL schema guard, migration runner,
-/// migration-safety options and PostGIS preflight, registered by the same
-/// <c>AddPostgresMigrationServices</c> call the serving composition makes. It deliberately has no
-/// web host, Kestrel server, hosted or background services, Redis, licensing, admin credential,
-/// encryption key or data providers, so none of them can start or be required.
-/// </summary>
+// The migrate-only graph has no web host, so those services cannot start and are not required.
 internal static class MigrateOnlyComposition
 {
-    /// <summary>Registers the migrate-only services on <paramref name="services"/>.</summary>
-    /// <param name="services">An empty service collection.</param>
-    /// <param name="configuration">The process configuration.</param>
-    /// <returns>The same collection.</returns>
     internal static IServiceCollection Register(IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -48,27 +37,17 @@ internal static class MigrateOnlyComposition
         return services;
     }
 
-    /// <summary>Builds the migrate-only service provider, validating every registration.</summary>
-    /// <param name="configuration">The process configuration.</param>
-    /// <returns>A provider the caller disposes.</returns>
     internal static ServiceProvider Build(IConfiguration configuration)
         => Register(new ServiceCollection(), configuration)
             .BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
 }
 
-/// <summary>
-/// Keeps the backup-hook outcomes of a migrate-only run for its summary. The serving host records
-/// them to the audit log, which needs the audit store; a migrate-only run reports them on standard
-/// output instead.
-/// </summary>
 internal sealed class MigrateOnlyBackupHookRecorder : IDatabaseMigrationBackupHookRecorder
 {
     private readonly ConcurrentQueue<DatabaseMigrationBackupHookResult> _results = new();
 
-    /// <summary>Outcomes recorded so far, oldest first.</summary>
     public IReadOnlyList<DatabaseMigrationBackupHookResult> Results => _results.ToArray();
 
-    /// <inheritdoc />
     public Task RecordAsync(DatabaseMigrationBackupHookResult result, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(result);

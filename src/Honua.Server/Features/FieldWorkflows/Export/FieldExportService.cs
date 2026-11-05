@@ -12,13 +12,6 @@ using Honua.ServiceDefaults;
 
 namespace Honua.Server.Features.FieldWorkflows.Export;
 
-/// <summary>
-/// Back-office field export package service (#1160). Adapts admin requests into the
-/// shared <see cref="IFieldExportStore"/>, serializes the selected record set with
-/// <see cref="FieldExportSerializer"/>, audits every export, and maps failures
-/// through shared problem helpers. Authorization is enforced at the route group via
-/// <c>RequireAdminAuthorization</c>.
-/// </summary>
 internal sealed class FieldExportService
 {
     private const int MaxListLimit = 500;
@@ -116,11 +109,6 @@ internal sealed class FieldExportService
         return Results.Json(result, FieldExportJsonContext.Default.FieldExportRecordListResult);
     }
 
-    /// <summary>
-    /// Reads the export request. A zero-length body is an empty filter. A missing
-    /// Content-Length (chunked) is still read. Invalid JSON and JSON null return
-    /// null so the caller can answer 400 instead of exporting every submission.
-    /// </summary>
     private static async Task<FieldExportRequest?> ReadRequestAsync(HttpContext context)
     {
         if (context.Request.ContentLength == 0)

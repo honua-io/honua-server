@@ -6,7 +6,6 @@ using Honua.Core.Features.Operations.Domain;
 
 namespace Honua.Server.Features.Operations;
 
-/// <summary>Process-local consume-once secret channel for development and tests.</summary>
 public sealed class VolatileOperationSecretStore : IOperationSecretStore
 {
     private readonly object _gate = new();

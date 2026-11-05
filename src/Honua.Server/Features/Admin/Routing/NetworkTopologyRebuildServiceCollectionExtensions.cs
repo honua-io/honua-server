@@ -9,28 +9,12 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Features.Admin.Routing;
 
-/// <summary>
-/// Registers the durable shadow-topology rebuild worker (#2718) and its self-healing
-/// reconciler (#2720). Self-gates on the routing rebuild store and the shared execution-job
-/// store both being registered, mirroring <c>ProvisionerServiceCollectionExtensions</c>: on
-/// a non-Postgres data provider or a Redis-less profile, this is a no-op rather than an
-/// unconditional worker that can never claim anything.
-/// </summary>
+// A missing rebuild store skips registration; a missing job store registers submission, which returns 503, and skips reconciliation.
 internal static class NetworkTopologyRebuildServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers the <see cref="NetworkTopologyRebuildJobExecutor"/> worker, the
-    /// <see cref="NetworkTopologyRebuildSubmissionService"/> submission surface, and the
-    /// <see cref="NetworkTopologyRebuildReconciler"/> self-healing background service.
-    /// </summary>
     public static IServiceCollection AddNetworkTopologyRebuildJobs(this IServiceCollection services)
         => services.AddNetworkTopologyRebuildJobs(configuration: null);
 
-    /// <summary>
-    /// Registers the rebuild worker. When <paramref name="configuration"/> is an event-handler
-    /// Lambda, the reconciler loop is not hosted; EventBridge invokes that work and the pool
-    /// is released at the end of the invocation.
-    /// </summary>
     public static IServiceCollection AddNetworkTopologyRebuildJobs(
         this IServiceCollection services,
         IConfiguration? configuration)

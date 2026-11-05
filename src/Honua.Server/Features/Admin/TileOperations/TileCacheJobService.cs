@@ -13,31 +13,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin.TileOperations;
 
-/// <summary>
-/// Submits tile-cache / PMTiles operations as durable
-/// <see cref="ExecutionJobKind.TileCache"/> execution jobs and dispatches them to a
-/// configured <see cref="IBatchComputeBackend"/> (issue #1697). Mirrors the
-/// geoprocessing submission flow: build an <see cref="ExecutionJobSpec"/>, create the
-/// <see cref="ExecutionJobRecord"/> in <see cref="IExecutionJobStore"/>, enqueue for
-/// the in-process worker when the backend is <c>local</c>, then submit to the remote
-/// backend otherwise. Progress, retry, heartbeat, and cancellation flow through the
-/// shared <c>ExecutionJobReconciler</c> and <see cref="IUniversalProgressStore"/>, and
-/// a <see cref="TileOperationProgress"/> is seeded so the existing admin job-status API
-/// observes batch jobs through the same endpoints as in-process jobs.
-/// <para>
-/// This service is only registered and consulted when <see cref="TileCacheBatchOptions.Enabled"/>
-/// is set and the execution-job substrate (Redis-backed store/queue) is present; the
-/// legacy in-process channel remains the zero-config default fallback otherwise.
-/// </para>
-/// <para>
-/// The service is a singleton, so it resolves the request-lifetime
-/// <see cref="IMetadataV2GraphProvider"/> from a per-submission
-/// <see cref="IServiceScopeFactory"/> scope rather than capturing it in the constructor.
-/// The production provider (Postgres) is scoped over a scoped database connection provider,
-/// and injecting it directly fails <c>ValidateOnBuild</c>/<c>ValidateScopes</c> at host startup.
-/// This mirrors <c>MapTileExportProducer</c>, which does the same for the same reason.
-/// </para>
-/// </summary>
+// This singleton resolves the scoped database provider inside a per-submission scope so host startup validation does not fail.
 internal sealed partial class TileCacheJobService : ITileCacheJobService
 {
     private readonly IExecutionJobStore _jobStore;
@@ -68,9 +44,6 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
         _jobQueue = jobQueue;
     }
 
-    /// <summary>
-    /// Whether batch dispatch is currently enabled by configuration.
-    /// </summary>
     public bool IsEnabled => _options.CurrentValue.Enabled;
 
     public async Task<string> SubmitAsync(
@@ -224,12 +197,6 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
             cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Resolves the tile-cache target layer indices for a submission through a fresh DI scope.
-    /// <see cref="IMetadataV2GraphProvider"/> is request-lifetime in the production (Postgres)
-    /// wiring, so this singleton must not hold one; a per-submission scope owns the provider and
-    /// its underlying database connection for exactly the duration of the resolve.
-    /// </summary>
     private async Task<IReadOnlyList<int>> ResolveTargetLayerIdsAsync(
         TileOperationStartRequest request,
         CancellationToken cancellationToken)
@@ -263,30 +230,15 @@ internal sealed partial class TileCacheJobService : ITileCacheJobService
     }
 }
 
-/// <summary>
-/// Submission/cancellation surface for batch-dispatched tile-cache execution jobs.
-/// </summary>
 internal interface ITileCacheJobService
 {
-    /// <summary>
-    /// Whether config-driven batch dispatch is currently enabled.
-    /// </summary>
     bool IsEnabled { get; }
 
-    /// <summary>
-    /// Submits a tile operation as a <see cref="ExecutionJobKind.TileCache"/> execution
-    /// job and returns the durable job identifier.
-    /// </summary>
     Task<string> SubmitAsync(
         TileOperationStartRequest request,
         string? schemaName,
         string? tenantScope = null,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Requests cancellation of a batch-dispatched tile-cache job. Returns
-    /// <c>false</c> when the job is unknown, already terminal, or its backend is
-    /// unavailable.
-    /// </summary>
     Task<bool> CancelAsync(string jobId, CancellationToken cancellationToken = default);
 }

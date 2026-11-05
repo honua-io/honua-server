@@ -8,10 +8,7 @@ using Honua.Server.Features.Admin.Models;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Durable spec for a large layer publish. The connection string is resolved at execution
-/// from <see cref="ConnectionId"/> or <see cref="ConnectionKey"/>; it is not stored on the job.
-/// </summary>
+// The connection string is resolved at execution and is not stored on the job.
 internal sealed class LayerPublishJobPayload
 {
     internal const string ParameterName = "payload";
@@ -30,12 +27,8 @@ internal sealed class LayerPublishJobPayload
 
     public string? CurrentSchema { get; init; }
 
-    /// <summary>
-    /// Endpoint fingerprint captured when the sink committed. Kept off the HTTP request body.
-    /// </summary>
     public string? ConnectionEndpointFingerprint { get; init; }
 
-    /// <summary>Bounded source identity claims revalidated from the durable job on execution.</summary>
     public VerifiedCommittedSinkPublication? CommittedSinkPublication { get; init; }
 
     internal string ToJson()

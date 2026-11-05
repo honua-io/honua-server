@@ -11,11 +11,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Console Operate audit log query endpoint (#1168) plus the SIEM export and
-/// tamper-evidence surfaces (#350, #509). All routes are operator-gated via
-/// <c>RequireAdminAuthorization</c>.
-/// </summary>
 internal static class ObservabilityAuditEndpoints
 {
     private const string JsonLinesContentType = "application/x-ndjson";

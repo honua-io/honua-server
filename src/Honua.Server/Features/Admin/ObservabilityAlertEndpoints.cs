@@ -13,17 +13,12 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Console Operate alert endpoints (#1168) — query, get, acknowledge, suppress, resolve.
-/// </summary>
 internal static class ObservabilityAlertEndpoints
 {
     private const int MaxNoteLength = 1024;
 
-    /// <summary>Optional operator-supplied retry identity for a lifecycle mutation.</summary>
     private const string IdempotencyKeyHeader = "Idempotency-Key";
 
-    /// <summary>Bound on the caller-controlled portion of the retry identity.</summary>
     private const int MaxIdempotencyKeyLength = 128;
 
     public static void MapObservabilityAlertEndpoints(this IEndpointRouteBuilder endpoints)
@@ -176,18 +171,7 @@ internal static class ObservabilityAlertEndpoints
             cancellationToken);
     }
 
-    /// <summary>
-    /// Applies one operator lifecycle mutation.
-    /// </summary>
-    /// <remarks>
-    /// The mutation and its domain audit INTENT are committed in a single store
-    /// transaction, then the audit record is written and the intent completed. A
-    /// fault or a process death anywhere after the commit leaves the mutation with
-    /// a pending intent, which <c>AlertAuditOutboxReconciler</c> completes
-    /// deterministically on restart — so a lifecycle mutation is never externally
-    /// observable without either its domain audit record or a durable
-    /// reconciliation record that produces it (#3865).
-    /// </remarks>
+    // A lifecycle mutation is not observable unless its domain audit record or a durable reconciliation intent exists.
     private static async Task<IResult> PerformLifecycleAsync(
         long eventId,
         AlertLifecycleAction action,
@@ -256,12 +240,7 @@ internal static class ObservabilityAlertEndpoints
             ObservabilityJsonContext.Default.ObservabilityAlertEventResponse);
     }
 
-    /// <summary>
-    /// Resolves the operator retry identity: an explicit <c>Idempotency-Key</c>
-    /// header when the caller supplies one, otherwise the request's own
-    /// correlation identity scoped to the event and action. Retrying with the same
-    /// identity yields one logical transition and one domain audit action.
-    /// </summary>
+    // The same retry identity yields one logical transition and one domain audit action.
     private static string ResolveIdempotencyKey(
         string supplied, long eventId, AlertLifecycleAction action, string correlationId)
     {

@@ -3,11 +3,7 @@
 
 namespace Honua.Server.Features.Identity.Saml;
 
-/// <summary>
-/// Source-generated structured logging for the SAML 2.0 SP endpoints (#508). Logs the subject
-/// identifier and a coarse failure reason for audit; it never logs the assertion body, the
-/// signature, or attribute values.
-/// </summary>
+// The log records the subject and a coarse failure reason, and it never logs the assertion body, the signature, or attribute values.
 internal static partial class SamlLog
 {
     [LoggerMessage(EventId = 4620, Level = LogLevel.Warning,

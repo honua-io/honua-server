@@ -8,7 +8,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Monitoring;
 
-/// <summary>Reads the registered Compose stack through the product executor, never through local manager health.</summary>
+// The observer reads the stack through the product executor, never through local manager health.
 internal interface IManagedComposeObserver
 {
     Task<IReadOnlyList<OpsManagedTargetHealthView>> ReadAsync(CancellationToken cancellationToken);

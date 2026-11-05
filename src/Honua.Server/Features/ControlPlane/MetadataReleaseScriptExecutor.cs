@@ -7,15 +7,6 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Default script executor for the additive layer-evolution path. The Metadata v2 graph is the
-/// canonical source of truth for a resource's field set (<see cref="MetadataV2Resource.SchemaFields"/>),
-/// so the forward change adds a nullable field to the target resource and the inverse drops exactly
-/// the fields the release owns. Both directions are pure graph transforms: the reconciler stages the
-/// result as an immutable candidate (forward) or commits it conditionally (inverse), so preparing a
-/// change never touches the active revision. Storage-side backfill, when needed, is dispatched
-/// separately through the data-populate (ETL) job stage.
-/// </summary>
 internal sealed partial class MetadataReleaseScriptExecutor(
     ILogger<MetadataReleaseScriptExecutor> logger) : IMetadataReleaseScriptExecutor
 {

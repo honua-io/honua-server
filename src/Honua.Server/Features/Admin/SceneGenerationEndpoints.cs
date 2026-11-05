@@ -15,26 +15,11 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for the v1 3D Tiles generation pipeline (#842).
-/// </summary>
-/// <remarks>
-/// The endpoint creates an in-memory <see cref="PublishIntent"/>, dispatches
-/// it through <see cref="SceneTilesPublishExecutor"/>, and returns the
-/// generated scene's discoverable URL once the synchronous generation job
-/// completes. Asynchronous job tracking via a durable
-/// <c>IPublishIntentStore</c> is intentionally deferred — small/medium
-/// datasets are well within an admin-request timeout budget.
-/// </remarks>
 internal static partial class SceneGenerationEndpoints
 {
     private const string TagAdmin = "Admin";
     private const string TagScenes = "Scene Generation";
 
-    /// <summary>
-    /// Maps the admin scene-generation endpoints into the request pipeline.
-    /// No-op when the executor is not registered (non-Postgres profiles).
-    /// </summary>
     public static IEndpointRouteBuilder MapSceneGenerationEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
@@ -239,9 +224,6 @@ internal static partial class SceneGenerationEndpoints
         }
     }
 
-    /// <summary>
-    /// Log category marker used by <see cref="ILogger{TCategoryName}"/> bindings.
-    /// </summary>
     internal sealed class SceneGenerationEndpointsLogCategory;
 
     internal static partial class SceneGenerationEndpointsLog

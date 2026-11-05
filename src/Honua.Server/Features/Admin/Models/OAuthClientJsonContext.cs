@@ -6,10 +6,6 @@ using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Admin.Models;
 
-/// <summary>
-/// JSON source generation context for OAuth2 client registration and scope
-/// catalogue admin models (ADR-0053 Increment 2, #1888).
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

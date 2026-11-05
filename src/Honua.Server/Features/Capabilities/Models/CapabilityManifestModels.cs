@@ -79,26 +79,12 @@ internal sealed record CapabilityManifestServerInfo
 
     public required string DeploymentEnvironment { get; init; }
 
-    /// <summary>
-    /// Immutable identity of the deployed code/image: a 40-character commit SHA or a
-    /// <c>sha256:&lt;64 hex&gt;</c> image digest. Null when the deployment carries no
-    /// verifiable revision; consumers that bind evidence to a deployment must fail closed
-    /// rather than substituting <c>serverVersion</c>, which is mutable across builds.
-    /// </summary>
+    // Consumers that bind evidence to a deployment fail closed when the revision is absent rather than substituting the mutable server version.
     public string? DeploymentRevision { get; init; }
 
-    /// <summary>
-    /// How <see cref="DeploymentRevision"/> was resolved (<c>image-digest</c>,
-    /// <c>commit-sha</c>, or <c>assembly-metadata</c>). Null when no revision resolved.
-    /// </summary>
     public string? DeploymentRevisionSource { get; init; }
 
-    /// <summary>
-    /// The same immutable revision as <see cref="DeploymentRevision"/>, published under the
-    /// field name realtime and evidence clients read. Both names are emitted on purpose: a
-    /// manifest that advertises the revision only under a name no client reads is
-    /// indistinguishable, to that client, from a deployment that has none (#3038).
-    /// </summary>
+    // ServerRevision duplicates DeploymentRevision because existing evidence and realtime clients read that name.
     public string? ServerRevision { get; init; }
 }
 
@@ -163,40 +149,19 @@ internal sealed record CapabilityManifestCapability
 
     public string? MessageKey { get; init; }
 
-    /// <summary>
-    /// Per-target rollback claims. Present only on <c>deploy.rollback</c>, and only for an
-    /// authenticated caller holding <c>deploy.rollback</c> or <c>admin.rbac.write</c>.
-    /// Other callers receive the capability flags without target identifiers. A global
-    /// <see cref="Available"/> value does not apply to every target; each entry says
-    /// whether that target can execute a rollback and why.
-    /// </summary>
     public CapabilityManifestRollbackTarget[]? RollbackTargets { get; init; }
 
-    /// <summary>
-    /// Background-import runner: <c>batch</c>, <c>in-process</c> or <c>unavailable</c>. Present
-    /// only on <c>import.background</c> (honua-server#5916).
-    /// </summary>
     public string? Runner { get; init; }
 
-    /// <summary>
-    /// Object-store URI schemes this host can import. Present on <c>import.objectStore</c>.
-    /// </summary>
     public string[]? Schemes { get; init; }
 }
 
-/// <summary>
-/// One deploy target's rollback claim inside <c>deploy.rollback</c>.
-/// </summary>
 internal sealed record CapabilityManifestRollbackTarget
 {
     public required string TargetId { get; init; }
 
     public required string Backend { get; init; }
 
-    /// <summary>
-    /// <c>executable</c>, <c>handoff</c>, <c>missing-backend</c>, <c>probe-failed</c>,
-    /// or <c>no-prior-revision</c>.
-    /// </summary>
     public required string State { get; init; }
 
     public required bool Executable { get; init; }
@@ -225,14 +190,6 @@ internal sealed record CapabilityManifestTransportState
 
     public string? MessageKey { get; init; }
 
-    /// <summary>
-    /// The rolled-up wire-contract version advertised for this surface (for example the
-    /// GeoServices REST, OGC API, or STAC API contract version), or <c>null</c> for
-    /// transports that carry no versioned wire contract of their own. ADR-0058: the
-    /// protocol surface owns the constant (<c>GeoServicesContract</c>/<c>OgcContract</c>/
-    /// <c>StacContract</c>) and the manifest projects it so the surface advertises a real
-    /// contract version instead of nothing.
-    /// </summary>
     public string? ContractVersion { get; init; }
 }
 
@@ -331,42 +288,18 @@ internal sealed record CapabilityManifestJobLimits
 
     public required bool SupportsProgressPolling { get; init; }
 
-    /// <summary>
-    /// Whether the complete durable (Redis-backed) job substrate — store <em>and</em> runnable
-    /// queue — was composed at startup (honua-release#202). A compute backend is always
-    /// registered, so the backend count alone does not tell a client whether a job can be
-    /// submitted <em>and drained</em>. When this is <c>false</c> every submission is refused with
-    /// a capability-unavailable receipt; the capability entry's <c>reasonCode</c> distinguishes a
-    /// missing dependency from an unentitled licence.
-    /// </summary>
     public required bool DurableJobRuntimeAvailable { get; init; }
 
-    /// <summary>
-    /// The startup Redis durability attestation outcome, published as information (owner ruling
-    /// 2026-10-10). It never withholds <c>jobs.runner</c> or <c>operations.proposals</c>: a
-    /// connected Redis enables both, and durability is an operator property of the Redis
-    /// deployment. Omitted when no attestation ran against a connected Redis.
-    /// </summary>
+    // The Redis durability attestation never withholds jobs.runner or operations.proposals.
     public CapabilityManifestRedisDurability? RedisDurability { get; init; }
 }
 
-/// <summary>
-/// Informational Redis durability outcome on the capability manifest
-/// (<c>limits.job.redisDurability</c>).
-/// </summary>
 internal sealed record CapabilityManifestRedisDurability
 {
-    /// <summary>
-    /// <c>attested</c> (AOF on, <c>appendfsync</c> everysec/always, <c>noeviction</c>),
-    /// <c>unverified</c> (policy unreadable, e.g. <c>CONFIG</c> blocked on AWS ElastiCache or
-    /// MemoryDB), or <c>not-durable</c> (policy read and not durable).
-    /// </summary>
     public required string Status { get; init; }
 
-    /// <summary>The typed attestation outcome cause; omitted when attested.</summary>
     public string? Cause { get; init; }
 
-    /// <summary>Operator guidance for the outcome; omitted when attested.</summary>
     public string? Remediation { get; init; }
 }
 

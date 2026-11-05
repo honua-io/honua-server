@@ -7,9 +7,6 @@ using Honua.Infrastructure.Licensing;
 
 namespace Honua.Server.Features.HealthCheck;
 
-/// <summary>
-/// JSON serialization context for health metrics with AOT support.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower,
     WriteIndented = true)]

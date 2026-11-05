@@ -6,9 +6,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Server.Features.Styling;
 
-/// <summary>
-/// JSON serialization context for style payloads.
-/// </summary>
 [JsonSerializable(typeof(Dictionary<string, object?>), TypeInfoPropertyName = "DictionaryStringObject")]
 [JsonSerializable(typeof(Dictionary<string, object>))]
 [JsonSerializable(typeof(List<Dictionary<string, object?>>))]

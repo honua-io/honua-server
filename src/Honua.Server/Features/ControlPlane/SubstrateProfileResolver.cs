@@ -5,14 +5,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Resolves the effective deployment substrate profile from the declared
-/// <see cref="SubstrateOptions"/> plus environment auto-detection. The explicit declared profile
-/// always wins when it is at least as restrictive as what auto-detection would report; auto-detection
-/// only ever escalates a <see cref="BatchComputeSubstrateProfile.SingleHost"/> declaration to
-/// <see cref="BatchComputeSubstrateProfile.Serverless"/> when a well-known serverless runtime is
-/// present, so an operator can never accidentally under-declare a serverless host.
-/// </summary>
+// Auto-detection only escalates a declaration to serverless, so an operator cannot under-declare a serverless host.
 internal static class SubstrateProfileResolver
 {
     // Well-known environment markers for serverless runtimes:
@@ -26,12 +19,6 @@ internal static class SubstrateProfileResolver
         "K_SERVICE",
     ];
 
-    /// <summary>
-    /// Resolves the effective substrate profile, escalating a single-host declaration to serverless
-    /// when auto-detection is enabled and a serverless runtime marker is present.
-    /// </summary>
-    /// <param name="options">The declared substrate options.</param>
-    /// <param name="environmentAccessor">Reads an environment variable by name (injected for tests).</param>
     public static BatchComputeSubstrateProfile ResolveEffectiveProfile(
         SubstrateOptions options,
         Func<string, string?> environmentAccessor)
@@ -49,9 +36,6 @@ internal static class SubstrateProfileResolver
         return options.Profile;
     }
 
-    /// <summary>
-    /// Whether a well-known serverless runtime marker is present in the environment.
-    /// </summary>
     public static bool IsServerlessEnvironment(Func<string, string?> environmentAccessor)
     {
         ArgumentNullException.ThrowIfNull(environmentAccessor);
@@ -59,6 +43,5 @@ internal static class SubstrateProfileResolver
         return ServerlessEnvironmentMarkers.Any(marker => !string.IsNullOrWhiteSpace(environmentAccessor(marker)));
     }
 
-    /// <summary>Default environment accessor reading process environment variables.</summary>
     public static string? ReadEnvironment(string name) => Environment.GetEnvironmentVariable(name);
 }

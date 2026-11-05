@@ -9,11 +9,6 @@ using Honua.Core.Features.AuditLog.Export;
 
 namespace Honua.Server.Features.Infrastructure.AuditLog.Export;
 
-/// <summary>
-/// Audit sink that forwards events to a Splunk HTTP Event Collector (HEC). Each
-/// event is POSTed as a HEC envelope to <c>{Endpoint}/services/collector/event</c>
-/// with an <c>Authorization: Splunk &lt;token&gt;</c> header (#2157).
-/// </summary>
 internal sealed class SplunkHecAuditSink : IAuditSink
 {
     private const string Path = "/services/collector/event";
@@ -21,17 +16,7 @@ internal sealed class SplunkHecAuditSink : IAuditSink
     private readonly string _httpClientName;
     private readonly SplunkHecSinkOptions _options;
 
-    /// <summary>
-    /// Initializes a new Splunk HEC sink.
-    /// </summary>
-    /// <param name="httpClientFactory">
-    /// Factory used to resolve a fresh named <see cref="HttpClient"/> per send. A sink that
-    /// captured a single <see cref="HttpClient"/> at construction (a singleton) would never
-    /// observe <see cref="IHttpClientFactory"/>'s primary-handler rotation, so a DNS change
-    /// or a broken pooled connection would wedge this sink for the life of the process.
-    /// </param>
-    /// <param name="httpClientName">The named client to resolve on each send.</param>
-    /// <param name="options">Splunk HEC configuration.</param>
+    // A fresh client is resolved per send so a captured handler cannot wedge the sink after rotation.
     public SplunkHecAuditSink(IHttpClientFactory httpClientFactory, string httpClientName, SplunkHecSinkOptions options)
     {
         ArgumentNullException.ThrowIfNull(httpClientFactory);
@@ -42,13 +27,10 @@ internal sealed class SplunkHecAuditSink : IAuditSink
         _options = options;
     }
 
-    /// <inheritdoc />
     public string SinkType => "splunk-hec";
 
-    /// <inheritdoc />
     public string? Region => _options.Region;
 
-    /// <inheritdoc />
     public async Task<AuditSinkResult> SendAsync(IReadOnlyList<AuditEvent> events, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(events);

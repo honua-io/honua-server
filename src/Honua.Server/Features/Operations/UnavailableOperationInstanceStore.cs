@@ -8,11 +8,6 @@ using Honua.Core.Features.Operations.Domain;
 
 namespace Honua.Server.Features.Operations;
 
-/// <summary>
-/// Fail-closed operation store used when Production is composed without Redis.
-/// It keeps DI resolution healthy and turns use of the durable surface into a
-/// controlled 503 instead of an unhandled missing-service exception (#60).
-/// </summary>
 internal sealed class UnavailableOperationInstanceStore : IOperationInstanceStore
 {
     private static CapabilityUnavailableException Unavailable()

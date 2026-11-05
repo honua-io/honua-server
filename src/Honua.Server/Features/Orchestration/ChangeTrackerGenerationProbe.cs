@@ -7,12 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Orchestration;
 
-/// <summary>
-/// Adapts the scoped <see cref="IChangeTracker"/> into the singleton-friendly
-/// <see cref="IChangeFeedGenerationProbe"/> the event-trigger background service consumes.
-/// Resolves a fresh <see cref="IChangeTracker"/> per probe from a request-style scope so the
-/// background loop never captures a scoped service on the root provider.
-/// </summary>
+// Each probe opens a scope so the background loop never captures a scoped service.
 internal sealed class ChangeTrackerGenerationProbe(IServiceScopeFactory scopeFactory) : IChangeFeedGenerationProbe
 {
     public async Task<long?> GetLatestGenerationAsync(

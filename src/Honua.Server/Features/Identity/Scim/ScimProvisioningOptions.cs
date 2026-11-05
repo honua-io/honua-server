@@ -3,27 +3,13 @@
 
 namespace Honua.Server.Features.Identity.Scim;
 
-/// <summary>
-/// Configuration for the SCIM 2.0 provisioning surface (#510). An identity provider (Okta,
-/// Microsoft Entra, etc.) authenticates to the SCIM endpoints with a long-lived bearer token
-/// it is configured with out-of-band; the token is compared in constant time.
-/// </summary>
 public sealed class ScimProvisioningOptions
 {
-    /// <summary>Configuration section name.</summary>
     public const string SectionName = "Scim";
 
-    /// <summary>
-    /// The bearer token the identity provider must present in the <c>Authorization</c> header.
-    /// When null/empty the SCIM endpoints reject all requests (provisioning is disabled by
-    /// default — there is no implicit anonymous access).
-    /// </summary>
+    // An empty token rejects every request, so provisioning has no anonymous access.
     public string? BearerToken { get; set; }
 
-    /// <summary>
-    /// Validated OIDC issuer whose subjects are provisioned as SCIM <c>externalId</c>
-    /// values. Configure this when SCIM-provisioned users authenticate through OIDC so
-    /// identical subjects from different issuers cannot share membership.
-    /// </summary>
+    // Identical subjects from different issuers cannot share membership when this issuer is configured.
     public string? OidcIssuer { get; set; }
 }

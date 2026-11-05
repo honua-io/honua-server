@@ -8,18 +8,7 @@ using Microsoft.Extensions.Hosting;
 
 namespace Honua.Server.Features.Orchestration;
 
-/// <summary>
-/// Background worker that evaluates event/CDC-triggered workflow definitions and creates runs
-/// when a watched source advances:
-/// <list type="bullet">
-///   <item>change-feed (<see cref="WorkflowTriggerKind.ChangeFeed"/>): a watched layer's
-///   <c>feature_changes</c> generation advances past the durable change-feed cursor;</item>
-///   <item>object-store (<see cref="WorkflowTriggerKind.ObjectStore"/>): a new object lands under
-///   a watched prefix, advancing the object marker past the durable object-store cursor.</item>
-/// </list>
-/// HA safety mirrors the cron scheduler: the firing marker is atomically claimed via the durable
-/// fire-claim before a run is created, so replicas and restarts never double-fire a given marker.
-/// </summary>
+// The firing marker is claimed before a run is created, so replicas cannot double-fire one marker.
 internal sealed class WorkflowEventTriggerBackgroundService(
     IWorkflowDefinitionStore definitionStore,
     WorkflowOrchestrationEngine engine,
@@ -234,12 +223,6 @@ internal sealed class WorkflowEventTriggerBackgroundService(
         }
     }
 
-    /// <summary>
-    /// Atomically claims the firing marker, creates the run, and advances the durable cursor.
-    /// Returns true only when this caller created the run. A lost claim (another replica won) or a
-    /// not-advanced marker yields false. Transient run-creation failures release the claim and leave
-    /// the cursor untouched so the next tick retries the same marker.
-    /// </summary>
     private async Task<bool> FireAsync(
         WorkflowDefinition definition,
         string cursorKind,

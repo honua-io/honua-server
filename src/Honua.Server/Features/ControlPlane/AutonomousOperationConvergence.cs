@@ -5,10 +5,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Post-action observation state for an autonomous operation. Execution and convergence are
-/// deliberately separate: invoking an actuator is never sufficient evidence of self-healing.
-/// </summary>
+// Invoking an actuator is not evidence that the operation converged.
 internal enum AutonomousVerificationState
 {
     Converged = 0,
@@ -16,12 +13,10 @@ internal enum AutonomousVerificationState
     Indeterminate = 2,
 }
 
-/// <summary>Sanitized convergence evidence recorded after an autonomous actuator returns.</summary>
 internal sealed record AutonomousVerificationResult(
     AutonomousVerificationState State,
     string Message);
 
-/// <summary>Result of attempting to compensate a non-converged autonomous operation.</summary>
 internal enum AutonomousCompensationState
 {
     NotSupported = 0,
@@ -30,31 +25,22 @@ internal enum AutonomousCompensationState
     Indeterminate = 3,
 }
 
-/// <summary>Sanitized compensation evidence retained with the final autonomy outcome.</summary>
 internal sealed record AutonomousCompensationResult(
     AutonomousCompensationState State,
     string Message);
 
-/// <summary>
-/// Action-specific convergence and compensation contract used only by the autonomous gateway
-/// path. Implementations must make verification read live state and must fail closed when the
-/// state cannot be determined.
-/// </summary>
+// Verification reads live state and fails closed when that state cannot be determined.
 internal interface IAutonomousOperationConvergence
 {
-    /// <summary>Returns true when this implementation owns verification for the request.</summary>
     bool CanHandle(OperationGatewayRequest request);
 
-    /// <summary>Returns true when this action has a safe, bounded compensation operation.</summary>
     bool SupportsCompensation(OperationGatewayRequest request);
 
-    /// <summary>Observes the post-action state and determines whether the fault converged.</summary>
     Task<AutonomousVerificationResult> VerifyAsync(
         OperationGatewayRequest request,
         string? executionOperationId,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Attempts the supported compensation operation after convergence fails.</summary>
     Task<AutonomousCompensationResult> CompensateAsync(
         OperationGatewayRequest request,
         string? executionOperationId,

@@ -16,17 +16,8 @@ using Honua.Protocols.Ogc.Common;
 
 namespace Honua.Server.Features.Streaming;
 
-/// <summary>
-/// Subscription filter parsing and validation for feature-stream query parameters
-/// (layers, bbox, attribute filter, temporal datetime) plus the shared layer
-/// authorization helpers used by both query-string and WebSocket control paths.
-/// </summary>
 internal static partial class FeatureStreamEndpoints
 {
-    /// <summary>
-    /// Parsed subscription intent for a stream request: the admission filter, whether an
-    /// explicit subscription scope was supplied, and the requested delivery mode.
-    /// </summary>
     private readonly record struct SubscriptionParseResult(
         IStreamSubscriptionFilter? Filter,
         bool HasSubscription,
@@ -338,11 +329,6 @@ internal static partial class FeatureStreamEndpoints
         return new SubscriptionParseResult(filter, true, mode, null);
     }
 
-    /// <summary>
-    /// Resolves the subscriber's layer access, row-level security and field masks for the
-    /// connect-time snapshot and attaches a refresh source, so the session manager can
-    /// re-resolve them on its periodic tick while the subscription stays open (honua-server#6105).
-    /// </summary>
     private static async Task<StreamSubscriberSecurity> ResolveSubscriberSecurityAsync(
         HttpContext context,
         MetadataV2GraphSnapshot snapshot,
@@ -685,11 +671,6 @@ internal static partial class FeatureStreamEndpoints
         MetadataV2Service? service)
         => AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
 
-    /// <summary>
-    /// Resolves a service by public name or catalog id. Internal rather than private so the
-    /// controlled-conformance workflow in this slice resolves its dedicated source through the
-    /// same catalog lookup the subscription path uses, instead of a second one that could drift.
-    /// </summary>
     internal static MetadataV2Service? ResolveStreamService(
         MetadataV2GraphSnapshot snapshot,
         string serviceId)
@@ -709,10 +690,6 @@ internal static partial class FeatureStreamEndpoints
             string.Equals(candidate.Metadata.Name, serviceId, StringComparison.OrdinalIgnoreCase));
     }
 
-    /// <summary>
-    /// Resolves one layer of a service (or of the whole catalog). Internal for the same reason
-    /// as <see cref="ResolveStreamService"/>.
-    /// </summary>
     internal static StreamLayerDescriptor? ResolveStreamLayer(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service? service,
@@ -810,11 +787,6 @@ internal static partial class FeatureStreamEndpoints
                 StringComparer.OrdinalIgnoreCase)
             .FirstOrDefault();
 
-    /// <summary>
-    /// Catalog projection of one streamable layer: the canonical resource, its owning service
-    /// and publication, the storage-layer handle reads and writes address, and the public layer
-    /// index clients use.
-    /// </summary>
     internal sealed record StreamLayerDescriptor(
         MetadataV2Resource Resource,
         MetadataV2Service? Service,

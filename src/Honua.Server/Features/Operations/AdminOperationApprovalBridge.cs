@@ -12,9 +12,6 @@ using Honua.Core.Features.Guardrails.Domain;
 
 namespace Honua.Server.Features.Operations;
 
-/// <summary>
-/// Fail-closed adapter from typed operation policy decisions to the durable proposal gateway.
-/// </summary>
 internal sealed partial class AdminOperationApprovalBridge(
     IServiceProvider services,
     IEnumerable<IOperationApprovalRequestMapper> requestMappers,

@@ -17,56 +17,14 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin/operator endpoints for inspecting named disconnected-sync replicas and reviewing and
-/// resolving disconnected-sync conflicts (#1167).
-/// </summary>
-/// <remarks>
-/// <para>
-/// This is the operator-facing management surface that mirrors the Esri offline/disconnected
-/// editing shape: clients create named replicas via the GeoServices FeatureServer
-/// <c>createReplica</c>/<c>synchronizeReplica</c> REST endpoints, and operators review the
-/// active replicas (name, owner-supplied metadata, layers, sync model, last sync time, derived
-/// status, and the server generation cursor) here. It reads durable replica state from
-/// <see cref="IReplicaRepository"/> and durable conflict records from
-/// <see cref="IReplicaConflictRepository"/>; it does not create, mutate, or synchronize replicas.
-/// </para>
-/// <para>
-/// Conflict review (slice 2, #1167) adds: list conflicts for a replica, conflict detail with
-/// base/client/server feature states, and a resolution endpoint that applies an operator-selected
-/// resolution, records audit evidence, and reports whether a new committed server state was
-/// produced. Providers that cannot support manual conflict review (read-only analytics providers)
-/// report <see cref="IReplicaConflictRepository.SupportsConflictReview"/> as <c>false</c>, in which
-/// case the conflict endpoints return a not-supported denial rather than an empty result.
-/// </para>
-/// <para>
-/// Resolution is not bookkeeping (#2430): the endpoint delegates to
-/// <see cref="ReplicaConflictResolutionService"/>, which plans the feature-store effect from the
-/// conflict's classification and whether the client edit was committed at sync time, writes the
-/// resolved state through the shared edit pipeline, and only then records the durable resolution. A
-/// resolution that cannot be committed leaves the conflict pending rather than reporting a state that
-/// never landed.
-/// </para>
-/// <para>
-/// The group is gated by <c>RequireAdminAuthorization</c> (replica/conflict-review entitlement),
-/// which is the distinct authorization surface separate from the per-layer data-editor checks
-/// used by the protocol replication endpoints.
-/// </para>
-/// </remarks>
+// A resolution that cannot be committed leaves the conflict pending, and a provider that cannot review conflicts returns not-supported rather than an empty list.
 internal static class ReplicaManagementEndpoints
 {
-    /// <summary>
-    /// Staleness window after which a replica's last successful sync is considered expired. Beyond
-    /// this window the derived replica status is reported as <c>expired</c>.
-    /// </summary>
     private static readonly TimeSpan ReplicaStaleAfter = TimeSpan.FromDays(7);
 
     private const string StatusActive = "active";
     private const string StatusExpired = "expired";
 
-    /// <summary>
-    /// Maps the admin replica-management endpoints onto the admin services API group.
-    /// </summary>
     public static void MapReplicaManagementEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/services/{serviceId}/replicas")
@@ -163,11 +121,6 @@ internal static class ReplicaManagementEndpoints
             ReplicaManagementJsonContext.Default.ApiResponseReplicaManagementDetail);
     }
 
-    /// <summary>
-    /// Enforces the Pro <c>fieldops.offline-sync</c> entitlement on the replica/conflict-review
-    /// surface. Kept explicit rather than relying on the admin policy, which checks roles and
-    /// permissions but not edition (#2430).
-    /// </summary>
     private static IResult? RequireOfflineSyncEntitlement(HttpContext context)
         => LicenseGate.RequireEntitlement(
             context,
@@ -388,12 +341,7 @@ internal static class ReplicaManagementEndpoints
             ReplicaManagementJsonContext.Default.ApiResponseReplicaConflictResolutionResponse);
     }
 
-    /// <summary>
-    /// Maps a non-applied resolution outcome onto its HTTP problem response. Malformed operator inputs
-    /// are 400, an action that does not apply to the conflict's recorded state is 409, a resolution
-    /// this deployment cannot commit is 501, an indeterminate commit is 503 with the resolution left
-    /// claimed and retryable, and a failed commit is 502 with the conflict left pending.
-    /// </summary>
+    // Malformed input is 400, an inapplicable action is 409, an uncommittable resolution is 501, an indeterminate commit is 503 and stays claimed, and a failed commit is 502 and stays pending.
     private static IResult CreateResolutionProblem(
         HttpContext context,
         ReplicaConflictResolutionResult result,
@@ -436,11 +384,6 @@ internal static class ReplicaManagementEndpoints
         return ProblemDetailsHelpers.CreateAdminProblem(context, statusCode, message);
     }
 
-    /// <summary>
-    /// Validates the service, enforces the conflict-review capability, and resolves the replica
-    /// (scoped to the service). Returns the replica on success, or a ProblemDetails result on
-    /// failure (service invalid/not found, conflict review unsupported, or replica not found).
-    /// </summary>
     private static async Task<(ReplicaRecord Replica, IResult? Problem)> ResolveReplicaAsync(
         string serviceId,
         string replicaId,

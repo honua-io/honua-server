@@ -7,10 +7,6 @@ using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Server.Features.Protocols.Zarr;
 
-/// <summary>
-/// MVP in-memory catalog for Zarr registrations. Persistent storage is deferred
-/// until a follow-on PR introduces a Postgres-backed catalog.
-/// </summary>
 internal sealed class InMemoryZarrStore : IZarrStore
 {
     private readonly ConcurrentDictionary<long, ZarrRegistration> _registrations = new();

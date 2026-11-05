@@ -9,10 +9,7 @@ using Honua.Infrastructure.MultiTenancy;
 
 namespace Honua.Server.Features.Operations;
 
-/// <summary>
-/// Leased authority that polls durable backend jobs and advances canonical queued envelopes.
-/// Backend callbacks never own operation-instance transitions.
-/// </summary>
+// Backend callbacks never own operation-instance transitions.
 internal sealed partial class QueuedOperationReconciler(
     IOperationInstanceStore instanceStore,
     IServiceScopeFactory scopeFactory,

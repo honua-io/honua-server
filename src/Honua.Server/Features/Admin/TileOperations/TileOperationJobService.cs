@@ -738,25 +738,10 @@ internal sealed record TileOperationStartRequest
     public double[]? Bbox { get; init; }
     public int? MaxTiles { get; init; }
 
-    /// <summary>
-    /// Style identifier the cached tiles were rendered with. Optional; defaults to <c>default</c>
-    /// during normalization so existing callers are unchanged. Used by the bounded expire/delete
-    /// lifecycle operations (issue #2661) to scope the target key window to one style.
-    /// </summary>
     public string? Style { get; init; }
 
-    /// <summary>
-    /// Output format (for example <c>png</c>, <c>jpg</c>, <c>pbf</c>) the cached tiles were written
-    /// as. Optional; when absent the bounded expire/delete lifecycle operations match every format
-    /// in the requested window.
-    /// </summary>
     public string? Format { get; init; }
 
-    /// <summary>
-    /// Stable generation identifier for a resumable seed/warm/expire/delete run (issue #2661).
-    /// Optional so all existing seed/warm/invalidate/purge/archive/publish callers are unchanged;
-    /// when absent the in-process submission path stamps one, and a retry forwards it so the
-    /// generation resumes rather than restarting from zero.
-    /// </summary>
+    // A retry forwards the generation id so the run resumes rather than starting over.
     public string? GenerationId { get; init; }
 }

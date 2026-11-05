@@ -14,9 +14,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for the feature overview page showing edition-gated features.
-/// </summary>
 internal static class FeatureOverviewEndpoints
 {
     internal sealed class FeatureOverviewEndpointsLog;
@@ -90,18 +87,6 @@ internal static class FeatureOverviewEndpoints
             FeatureOverviewJsonContext.Default.ApiResponseFeatureOverviewResponse);
     }
 
-    /// <summary>
-    /// Projects the unified capability roster into the admin read model, resolving
-    /// each descriptor's enabled/reason state through the T2
-    /// <see cref="CapabilityGateResolver"/> for the given context. Extracted as a
-    /// pure function so the resolution projection (including the experimental-disabled
-    /// reason) is unit-testable without spinning up the endpoint.
-    /// </summary>
-    /// <param name="descriptors">The capability descriptors to project.</param>
-    /// <param name="context">The edition/environment/flag context to resolve against.</param>
-    /// <param name="publishedOperations">
-    /// Options controlling which operation descriptors are published onto the live MCP tool surface.
-    /// </param>
     internal static CapabilityOverviewItem[] ProjectCapabilities(
         IEnumerable<CapabilityDescriptor> descriptors,
         CapabilityGateContext context,

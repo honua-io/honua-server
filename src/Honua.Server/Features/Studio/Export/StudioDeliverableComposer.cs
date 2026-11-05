@@ -9,29 +9,6 @@ using SkiaSharp;
 
 namespace Honua.Server.Features.Studio.Export;
 
-/// <summary>
-/// Composes a Studio content version (map, dashboard, or report) into a shareable raster (PNG)
-/// or document (PDF) deliverable.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Rendering reuses SkiaSharp — the same raster surface, font, and encoding primitives that back the
-/// raster map render pipeline (the Lambda fontconfig/freetype surface fixed in #1728) — so the
-/// composer works headless inside the AOT Lambda image without an additional render engine.
-/// </para>
-/// <para>
-/// PDF composition uses <see cref="SKDocument.CreatePdf(System.IO.Stream)"/>, drawing the same
-/// page layout onto a PDF canvas. This keeps the dependency surface to the already-referenced
-/// SkiaSharp package (no new PDF library) and produces a vector-text PDF rather than a raster wrapper.
-/// </para>
-/// <para>
-/// Every family — including <see cref="StudioPackageFamily.Map"/> — renders a text summary of the
-/// package body (title, metadata, and, for a map, its layer/basemap listing via
-/// <see cref="AppendMapSummary"/>); this deliverable never draws the map's layers or features onto
-/// the page (honua-server#4908). A rendered map preview, if one is needed, belongs on a separate
-/// route backed by the raster map render pipeline, not this text-summary deliverable.
-/// </para>
-/// </remarks>
 public static class StudioDeliverableComposer
 {
     private const float PageWidth = 1240f; // A4 @ ~150 DPI portrait
@@ -42,20 +19,9 @@ public static class StudioDeliverableComposer
     private static readonly SKColor MutedColor = new(0x5C, 0x66, 0x70);
     private static readonly SKColor RuleColor = new(0xD5, 0xDC, 0xE1);
 
-    /// <summary>
-    /// Composes the supplied content version into a deliverable artifact in the requested format.
-    /// </summary>
-    /// <param name="version">Immutable Studio content version to render.</param>
-    /// <param name="format">Output format.</param>
-    /// <returns>The encoded deliverable artifact.</returns>
     public static StudioDeliverableArtifact Compose(StudioContentVersion version, StudioDeliverableFormat format)
         => Compose(version, format, RenderingTypeface.Default);
 
-    /// <summary>
-    /// Test seam for <see cref="Compose(StudioContentVersion, StudioDeliverableFormat)"/> that
-    /// takes the rendering typeface explicitly instead of resolving it from the process-wide
-    /// <see cref="RenderingTypeface"/> singleton.
-    /// </summary>
     internal static StudioDeliverableArtifact Compose(StudioContentVersion version, StudioDeliverableFormat format, SKTypeface? typeface)
     {
         ArgumentNullException.ThrowIfNull(version);
@@ -111,12 +77,7 @@ public static class StudioDeliverableComposer
         return stream.ToArray();
     }
 
-    /// <summary>
-    /// Guards against the silent-blank-export defect (honua-server#4908): a typeface that
-    /// resolves but carries no glyphs draws nothing, yet <see cref="SKCanvas.DrawText(string, float, float, SKFont, SKPaint)"/>
-    /// never reports that failure, so the composer must check it before drawing rather than
-    /// let the caller ship a 200 response over a blank page.
-    /// </summary>
+    // The composer checks that the typeface has glyphs before drawing, so a blank page is not returned as success.
     private static void EnsureRenderable(SKTypeface? typeface)
     {
         if (!HasRenderableGlyphs(typeface?.GlyphCount))
@@ -128,7 +89,6 @@ public static class StudioDeliverableComposer
         }
     }
 
-    /// <summary>Pure predicate behind <see cref="EnsureRenderable"/>, exposed for unit testing.</summary>
     internal static bool HasRenderableGlyphs(int? glyphCount) => glyphCount is > 0;
 
     private static void DrawPage(SKCanvas canvas, DeliverableLayout layout, SKTypeface? typeface)

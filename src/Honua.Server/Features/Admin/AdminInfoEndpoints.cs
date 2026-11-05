@@ -12,11 +12,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Generic admin info endpoints (version + capabilities). Replaces the version+capabilities
-/// pair that previously lived inside the deleted AdminMetadataEndpoints, decoupled from the
-/// v1 metadata-resource workflow.
-/// </summary>
 internal static class AdminInfoEndpoints
 {
     public static void MapAdminInfoEndpoints(this IEndpointRouteBuilder endpoints)
@@ -138,12 +133,6 @@ internal static class AdminInfoEndpoints
     private const int AdminApiMajorNumber = 1;
     private const string AdminApiBasePath = "/api/v1/admin";
 
-    /// <summary>
-    /// Derives the SDK <c>releaseChannel</c> from the server's build-version metadata, per
-    /// docs/developer/SDK_COMPATIBILITY_METADATA.md ("Release Channel Values"). A version with no
-    /// pre-release label is <c>stable</c>; recognized pre-release labels map to their channel; any
-    /// other pre-release falls back to <c>dev</c>. SemVer build metadata (after <c>+</c>) is ignored.
-    /// </summary>
     private static string DeriveReleaseChannel(string version)
     {
         var buildMetadata = version.IndexOf('+', StringComparison.Ordinal);
@@ -192,9 +181,6 @@ internal static class AdminInfoEndpoints
     }
 }
 
-/// <summary>
-/// Version metadata returned by the admin version endpoint.
-/// </summary>
 public sealed record AdminVersionResponse
 {
     [JsonPropertyName("version")]
@@ -209,39 +195,22 @@ public sealed record AdminVersionResponse
     [JsonPropertyName("serverTime")]
     public DateTimeOffset ServerTime { get; init; }
 
-    /// <summary>
-    /// Identity of the server instance that answered; <c>id</c> equals the
-    /// <c>Honua-Instance</c> response header.
-    /// </summary>
     [JsonPropertyName("instance")]
     public AdminServerInstance? Instance { get; init; }
 }
 
-/// <summary>
-/// Per-instance identity of the answering server process, used to prove which replica behind a
-/// load balancer or Lambda alias served a request.
-/// </summary>
 public sealed record AdminServerInstance
 {
-    /// <summary>Stable instance id for the life of the process.</summary>
     [JsonPropertyName("id")]
     public string Id { get; init; } = string.Empty;
 
-    /// <summary>
-    /// Source of <see cref="Id"/>: <c>configuration</c>, <c>aws-lambda</c>, <c>aws-ecs-task</c>,
-    /// <c>aws-ecs-container</c>, <c>hostname</c>, <c>machine-name</c>, or <c>generated</c>.
-    /// </summary>
     [JsonPropertyName("source")]
     public string Source { get; init; } = string.Empty;
 
-    /// <summary>When the instance resolved its identity (process start, UTC).</summary>
     [JsonPropertyName("startedAt")]
     public DateTimeOffset StartedAt { get; init; }
 }
 
-/// <summary>
-/// Capability and SDK-compatibility metadata returned by the admin capabilities endpoint.
-/// </summary>
 public sealed record AdminCapabilitiesResponse
 {
     [JsonPropertyName("metadataApiVersion")]
@@ -253,11 +222,9 @@ public sealed record AdminCapabilitiesResponse
     [JsonPropertyName("serverVersion")]
     public string ServerVersion { get; init; } = string.Empty;
 
-    /// <summary>Contract name to version, as declared in release/component-versions.json.</summary>
     [JsonPropertyName("contractVersions")]
     public IReadOnlyDictionary<string, string> ContractVersions { get; init; } = new Dictionary<string, string>();
 
-    /// <summary>Schema name to version, as declared in release/component-versions.json.</summary>
     [JsonPropertyName("schemaVersions")]
     public IReadOnlyDictionary<string, string> SchemaVersions { get; init; } = new Dictionary<string, string>();
 
@@ -265,28 +232,20 @@ public sealed record AdminCapabilitiesResponse
     public AdminCompatibility Compatibility { get; init; } = new();
 }
 
-/// <summary>
-/// Compatibility contract consumed by the generated admin SDKs to confirm they can talk to this
-/// server. Mirrors <c>data.compatibility</c> in docs/developer/SDK_COMPATIBILITY_METADATA.md.
-/// </summary>
 public sealed record AdminCompatibility
 {
     [JsonPropertyName("serverVersion")]
     public string ServerVersion { get; init; } = string.Empty;
 
-    /// <summary>Rollout channel derived from build-version metadata (stable, lts, preview, alpha, ...).</summary>
     [JsonPropertyName("releaseChannel")]
     public string ReleaseChannel { get; init; } = string.Empty;
 
-    /// <summary>Control-plane (admin) API major/base-path/deprecation the SDK gates on first.</summary>
     [JsonPropertyName("controlPlaneApi")]
     public AdminControlPlaneApi ControlPlaneApi { get; init; } = new();
 
-    /// <summary>Supported metadata schema versions, newest non-deprecated first.</summary>
     [JsonPropertyName("metadataSchemas")]
     public IReadOnlyList<AdminMetadataSchema> MetadataSchemas { get; init; } = [];
 
-    /// <summary>Coarse feature switches so SDKs branch without probing endpoints.</summary>
     [JsonPropertyName("features")]
     public AdminCompatibilityFeatures Features { get; init; } = new();
 
@@ -300,20 +259,14 @@ public sealed record AdminCompatibility
     [JsonPropertyName("metadataSchemaVersion")]
     public string MetadataSchemaVersion { get; init; } = string.Empty;
 
-    /// <summary>
-    /// Every contract this server serves, name to version, keyed like release/component-versions.json
-    /// (admin, metadata, geoservices, ogc, stac, grpc). Startup refuses a declaration that differs
-    /// from the served versions, so this map is the whole advertised contract set.
-    /// </summary>
+    // Startup refuses a contract-version declaration that differs from the versions this server serves, so this map is the whole advertised set.
     [JsonPropertyName("contractVersions")]
     public IReadOnlyDictionary<string, string> ContractVersions { get; init; } = new Dictionary<string, string>();
 
-    /// <summary>Schema name to version, as declared in release/component-versions.json.</summary>
     [JsonPropertyName("schemaVersions")]
     public IReadOnlyDictionary<string, string> SchemaVersions { get; init; } = new Dictionary<string, string>();
 }
 
-/// <summary>Control-plane (admin) API identity the SDK gates on before constructing admin paths.</summary>
 public sealed record AdminControlPlaneApi
 {
     [JsonPropertyName("major")]
@@ -326,7 +279,6 @@ public sealed record AdminControlPlaneApi
     public bool Deprecated { get; init; }
 }
 
-/// <summary>A supported metadata schema version and whether it is deprecated.</summary>
 public sealed record AdminMetadataSchema
 {
     [JsonPropertyName("version")]
@@ -336,7 +288,6 @@ public sealed record AdminMetadataSchema
     public bool Deprecated { get; init; }
 }
 
-/// <summary>Coarse server-owned feature switches advertised in the compatibility handshake.</summary>
 public sealed record AdminCompatibilityFeatures
 {
     [JsonPropertyName("metadataResources")]

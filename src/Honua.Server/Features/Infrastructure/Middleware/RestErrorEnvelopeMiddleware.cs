@@ -5,16 +5,7 @@ using Honua.Infrastructure.Models;
 
 namespace Honua.Infrastructure.Middleware;
 
-/// <summary>
-/// Emits the GeoServices/Esri error envelope for responses that terminate with a
-/// bodyless 404/405/406/415/501 under the GeoServices REST surface. ASP.NET routing
-/// short-circuits unmatched routes (404) and method mismatches (405) with an empty
-/// body before any endpoint runs, so <see cref="GlobalExceptionMiddleware"/> (which
-/// only catches thrown exceptions) never shapes them. This middleware re-shapes those
-/// status-only responses into the Esri contract
-/// (<c>{"error":{"code":...,"message":...,"details":[...]}}</c>) while preserving the
-/// status code and any routing-set headers (e.g. <c>Allow</c> for 405).
-/// </summary>
+// Routing answers unmatched routes with an empty body, so this middleware shapes those statuses into the GeoServices error envelope.
 internal sealed class RestErrorEnvelopeMiddleware(RequestDelegate next)
 {
     private readonly RequestDelegate _next = next ?? throw new ArgumentNullException(nameof(next));
@@ -67,9 +58,6 @@ internal sealed class RestErrorEnvelopeMiddleware(RequestDelegate next)
     }
 }
 
-/// <summary>
-/// Registration extension for <see cref="RestErrorEnvelopeMiddleware"/>.
-/// </summary>
 internal static class RestErrorEnvelopeMiddlewareExtensions
 {
     public static IApplicationBuilder UseRestErrorEnvelope(this IApplicationBuilder app)

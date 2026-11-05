@@ -6,25 +6,15 @@ using Honua.Core.Features.EnrichmentCatalog.Domain;
 
 namespace Honua.Server.Features.DataEnrichment;
 
-/// <summary>
-/// Adapts the composing <see cref="EnrichmentDatasetCatalogService"/> onto the
-/// neutral <see cref="IEnrichmentDatasetResolver"/> abstraction (#2283) so the
-/// <c>enrichment.enrich</c> geoprocessing job executor resolves datasets through
-/// the same merged managed/configuration catalog as the synchronous
-/// <c>POST /api/enrich</c> endpoint, without depending on this server slice.
-/// </summary>
 internal sealed class EnrichmentDatasetResolver : IEnrichmentDatasetResolver
 {
     private readonly EnrichmentDatasetCatalogService _catalog;
 
-    /// <summary>Initializes a new instance of the <see cref="EnrichmentDatasetResolver"/> class.</summary>
-    /// <param name="catalog">The composing enrichment-dataset catalog service.</param>
     public EnrichmentDatasetResolver(EnrichmentDatasetCatalogService catalog)
     {
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
     }
 
-    /// <inheritdoc />
     public async Task<EnrichmentDatasetDefinition?> ResolveAsync(
         string idOrKey,
         CancellationToken cancellationToken)

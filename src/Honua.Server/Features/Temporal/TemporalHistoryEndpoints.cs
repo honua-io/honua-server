@@ -13,22 +13,10 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Temporal;
 
-/// <summary>
-/// Admin endpoint group for slice 1 of the temporal data history API (honua-server#1166):
-/// capability discovery and as-of reads. These are thin adapters — they parse, authorize
-/// (temporal-history read), delegate to <see cref="ITemporalHistoryService"/>, and format results.
-/// </summary>
-/// <remarks>
-/// Diff, per-feature timeline, attribution, and governed rollback are deferred to later slices.
-/// The group uses a distinct <see cref="AuthenticationExtensions.TemporalHistoryReadPolicy"/> so the
-/// history-read surface is authorized separately from current reads and admin mutations.
-/// </remarks>
 internal static partial class TemporalHistoryEndpoints
 {
-    /// <summary>Log category for temporal history endpoints.</summary>
     internal sealed class TemporalHistoryEndpointsLog;
 
-    /// <summary>Maps the temporal history admin endpoints.</summary>
     public static IEndpointRouteBuilder MapTemporalHistoryEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);

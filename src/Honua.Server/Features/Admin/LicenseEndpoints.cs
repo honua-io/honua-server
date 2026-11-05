@@ -14,19 +14,10 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for license management.
-/// </summary>
 internal static partial class LicenseEndpoints
 {
-    /// <summary>
-    /// Log category for license endpoints.
-    /// </summary>
     internal sealed class LicenseEndpointsLog;
 
-    /// <summary>
-    /// Source-generated logging methods for license endpoints.
-    /// </summary>
     internal static partial class LicenseLog
     {
         [LoggerMessage(EventId = 4550, Level = LogLevel.Information,
@@ -46,9 +37,6 @@ internal static partial class LicenseEndpoints
         public static partial void EntitlementsQueried(ILogger logger, int count);
     }
 
-    /// <summary>
-    /// Configure license admin endpoints with formal API versioning.
-    /// </summary>
     public static void MapLicenseEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/license")

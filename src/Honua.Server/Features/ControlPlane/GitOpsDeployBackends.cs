@@ -6,9 +6,6 @@ using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Built-in GitOps deploy backend for Kubernetes targets managed by Honua.
-/// </summary>
 internal sealed class KubernetesGitOpsDeployBackend(ILogger<KubernetesGitOpsDeployBackend> logger)
     : GitOpsDeployBackendBase(logger)
 {
@@ -17,9 +14,6 @@ internal sealed class KubernetesGitOpsDeployBackend(ILogger<KubernetesGitOpsDepl
     public override DeployTargetKind TargetKind => DeployTargetKind.Kubernetes;
 }
 
-/// <summary>
-/// Built-in GitOps deploy backend for AWS ECS targets managed by Honua.
-/// </summary>
 internal sealed class AwsEcsGitOpsDeployBackend(ILogger<AwsEcsGitOpsDeployBackend> logger)
     : GitOpsDeployBackendBase(logger)
 {
@@ -28,9 +22,6 @@ internal sealed class AwsEcsGitOpsDeployBackend(ILogger<AwsEcsGitOpsDeployBacken
     public override DeployTargetKind TargetKind => DeployTargetKind.AwsEcs;
 }
 
-/// <summary>
-/// Built-in GitOps deploy backend for Azure Container Apps targets managed by Honua.
-/// </summary>
 internal sealed class AzureContainerAppsGitOpsDeployBackend(ILogger<AzureContainerAppsGitOpsDeployBackend> logger)
     : GitOpsDeployBackendBase(logger)
 {
@@ -40,10 +31,6 @@ internal sealed class AzureContainerAppsGitOpsDeployBackend(ILogger<AzureContain
 }
 
 #if !HONUA_EXCLUDE_AZURE
-/// <summary>
-/// Direct Azure Container Apps revision traffic backend that manages revision traffic splitting
-/// through the ARM REST API without requiring an external GitOps controller.
-/// </summary>
 internal sealed partial class AzureContainerAppsRevisionDeployBackend(
     IAzureContainerAppsRevisionClient revisionClient,
     ILogger<AzureContainerAppsRevisionDeployBackend> logger,
@@ -503,9 +490,6 @@ internal sealed partial class AzureContainerAppsRevisionDeployBackend(
 #endif
 
 #if !HONUA_EXCLUDE_AZURE
-/// <summary>
-/// Built-in GitOps deploy backend for Azure Functions targets managed by Honua.
-/// </summary>
 internal sealed partial class AzureFunctionsGitOpsDeployBackend(
     IAzureFunctionsSlotClient slotClient,
     ILogger<AzureFunctionsGitOpsDeployBackend> logger,
@@ -958,14 +942,8 @@ internal sealed partial class AzureFunctionsGitOpsDeployBackend(
 }
 #endif
 
-/// <summary>
-/// Shared Azure resource ID parser for ARM-based deploy backends.
-/// </summary>
 internal static class AzureResourceIdParser
 {
-    /// <summary>
-    /// Extracts subscription ID and resource group name from an ARM resource ID path.
-    /// </summary>
     public static (string? SubscriptionId, string? ResourceGroupName) Parse(string? resourceId)
     {
         if (string.IsNullOrWhiteSpace(resourceId))

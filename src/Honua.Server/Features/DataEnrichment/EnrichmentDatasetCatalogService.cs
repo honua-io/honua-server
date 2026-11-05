@@ -12,22 +12,6 @@ using Honua.Server.Features.DataEnrichment.Models;
 
 namespace Honua.Server.Features.DataEnrichment;
 
-/// <summary>
-/// Composes the managed enrichment-dataset catalog (#2280): merges the Postgres
-/// registry (<see cref="IEnrichmentDatasetCatalogStore"/>) with the
-/// configuration-driven datasets (<see cref="EnrichmentCatalog"/>), applies edition
-/// filtering, and caches the registry read-through the shared
-/// <see cref="CatalogCacheKeys"/> generation-stamped scope (#2284) so register /
-/// update / deregister bump a single generation marker to invalidate every cached
-/// catalog entry.
-/// </summary>
-/// <remarks>
-/// The store is Postgres-only and therefore optional; on non-Postgres profiles the
-/// catalog falls back to configuration-driven datasets exclusively. Edition
-/// filtering hides datasets whose <see cref="EnrichmentDatasetRecord.MinimumEdition"/>
-/// exceeds the caller's edition; per-dataset RBAC (layer read access) is re-checked
-/// on the enrichment compute path.
-/// </remarks>
 internal sealed class EnrichmentDatasetCatalogService
 {
     private const string DatasetsCacheKey = "enrich:datasets:all";
@@ -38,13 +22,6 @@ internal sealed class EnrichmentDatasetCatalogService
     private readonly ICacheService? _cache;
     private readonly ISchemaContext? _schemaContext;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="EnrichmentDatasetCatalogService"/> class.
-    /// </summary>
-    /// <param name="store">The managed registry store (null on non-Postgres profiles).</param>
-    /// <param name="configCatalog">The configuration-driven dataset catalog.</param>
-    /// <param name="cache">The shared cache service (null when caching is unavailable).</param>
-    /// <param name="schemaContext">The current schema context for cache scoping.</param>
     public EnrichmentDatasetCatalogService(
         IEnrichmentDatasetCatalogStore? store,
         EnrichmentCatalog configCatalog,
@@ -57,18 +34,8 @@ internal sealed class EnrichmentDatasetCatalogService
         _schemaContext = schemaContext;
     }
 
-    /// <summary>
-    /// Whether the managed (admin-mutable) registry store is available.
-    /// </summary>
     public bool HasManagedStore => _store is not null;
 
-    /// <summary>
-    /// Lists the enrichment datasets visible to a caller of the given edition,
-    /// merging managed and configuration entries.
-    /// </summary>
-    /// <param name="edition">The caller's edition.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Edition-filtered dataset metadata, ordered by id.</returns>
     public async Task<IReadOnlyList<EnrichmentDatasetMetadata>> ListMetadataAsync(
         HonuaEdition edition,
         CancellationToken cancellationToken)
@@ -80,13 +47,6 @@ internal sealed class EnrichmentDatasetCatalogService
             .ToArray();
     }
 
-    /// <summary>
-    /// Resolves a single dataset's metadata by id, applying edition filtering.
-    /// </summary>
-    /// <param name="id">Dataset id or configuration key.</param>
-    /// <param name="edition">The caller's edition.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The dataset metadata, or null when missing or hidden by edition.</returns>
     public async Task<EnrichmentDatasetMetadata?> GetMetadataAsync(
         string id,
         HonuaEdition edition,
@@ -107,14 +67,6 @@ internal sealed class EnrichmentDatasetCatalogService
         return match;
     }
 
-    /// <summary>
-    /// Resolves a dataset for the enrichment compute path by managed id first, then
-    /// by configuration key. Edition is NOT applied here; the caller enforces the
-    /// minimum-edition gate.
-    /// </summary>
-    /// <param name="idOrKey">Managed dataset id or configuration key.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The resolved dataset, or null when no dataset matches.</returns>
     public async Task<ResolvedEnrichmentDataset?> ResolveAsync(string? idOrKey, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(idOrKey))
@@ -135,11 +87,6 @@ internal sealed class EnrichmentDatasetCatalogService
         return configDataset is null ? null : ToResolved(configDataset);
     }
 
-    /// <summary>
-    /// Invalidates the cached catalog by bumping the shared generation marker. Called
-    /// after a register / update / deregister mutation.
-    /// </summary>
-    /// <param name="cancellationToken">Cancellation token.</param>
     public async Task InvalidateAsync(CancellationToken cancellationToken)
     {
         if (_cache is null)
@@ -277,21 +224,6 @@ internal sealed class EnrichmentDatasetCatalogService
         => Enum.TryParse<HonuaEdition>(value, ignoreCase: true, out var edition) ? edition : HonuaEdition.Pro;
 }
 
-/// <summary>
-/// A dataset resolved for the enrichment compute path (#2282): the backing layer
-/// plus the effective default join behavior and the gating/attribution metadata the
-/// handler echoes and enforces.
-/// </summary>
-/// <param name="Id">Resolved dataset id or key.</param>
-/// <param name="Title">Display title.</param>
-/// <param name="Category">Dataset category.</param>
-/// <param name="LayerId">Backing managed layer id.</param>
-/// <param name="DefaultPredicate">Default spatial predicate.</param>
-/// <param name="DistanceMeters">Default dwithin distance, when configured.</param>
-/// <param name="Attributes">Default carried attributes.</param>
-/// <param name="Attribution">Attribution string echoed in responses.</param>
-/// <param name="MinimumEdition">Minimum edition required to use the dataset.</param>
-/// <param name="Source">Origin: <c>managed</c> or <c>config</c>.</param>
 internal sealed record ResolvedEnrichmentDataset(
     string Id,
     string? Title,

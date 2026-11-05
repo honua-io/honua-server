@@ -15,23 +15,9 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Collaboration.Checkpoints;
 
-/// <summary>
-/// Persistence bridge from a live collaboration session to the Studio package lifecycle
-/// (honua-server#2999, REQ-003/AC-2): checkpoints replay the retained saved-map operation log
-/// onto the target Studio draft's composition body and save the result as an immutable
-/// <c>StudioContentVersion</c> via the canonical lifecycle service. Callable at any time during a
-/// session — session end simply calls the same endpoint. Authorization mirrors the Studio
-/// version-save path: <c>CreateVersion</c> against both the draft owner and the parent content
-/// item owner, audited through the shared <see cref="StudioEndpointAuthorization"/> seam.
-/// </summary>
 internal static class CollaborationCheckpointEndpoints
 {
-    /// <summary>
-    /// Maximum length of a checkpoint change note, matching the
-    /// <c>[StringLength(1000)]</c> the canonical <c>SaveStudioContentVersionRequest.ChangeNote</c>
-    /// declares. Both write the field into the same immutable version storage, so the two
-    /// admission paths must agree.
-    /// </summary>
+    // Checkpoint notes share the 1000-character limit of the canonical save path because both write the same immutable field.
     internal const int MaxChangeNoteLength = 1000;
 
     public static void MapCollaborationCheckpointEndpoints(this IEndpointRouteBuilder endpoints)
@@ -461,10 +447,8 @@ internal static class CollaborationCheckpointEndpoints
     }
 }
 
-/// <summary>Logger category marker for the collaboration checkpoint endpoints.</summary>
 internal sealed class CollaborationCheckpointEndpointsMarker;
 
-/// <summary>Source-generated logging for the collaboration checkpoint surface.</summary>
 internal static partial class CollaborationCheckpointLog
 {
     [LoggerMessage(
@@ -474,88 +458,49 @@ internal static partial class CollaborationCheckpointLog
     public static partial void CheckpointConflict(ILogger logger, string mapId, Exception exception);
 }
 
-/// <summary>
-/// Request body for a live-session checkpoint. The replay window is server-derived (always the
-/// full retained log): a client-supplied replay-start cursor is deliberately NOT accepted, because
-/// trusting one could silently drop accepted operations from the immutable version. The optional
-/// reconciliation cursor does not change the window; it can acknowledge only a typed conflict the
-/// server reproduces at that exact operation (honua-server#2999, honua-server#3047).
-/// </summary>
+// The replay window is the full retained log; a client cursor is not accepted because it could drop accepted operations, and a reconciliation cursor only acknowledges the typed conflict at that operation.
 internal sealed record CollaborationCheckpointRequest
 {
-    /// <summary>
-    /// Optional change note recorded on the immutable version. Bounded by the same
-    /// 1000-character limit the canonical
-    /// <see cref="Honua.Server.Features.Studio.Models.SaveStudioContentVersionRequest.ChangeNote"/>
-    /// declares, since both end up in the same immutable version storage. The attribute
-    /// documents the contract for the generated OpenAPI; the handler enforces it, because
-    /// minimal APIs do not run data annotations on a bound body by themselves.
-    /// </summary>
+    // The handler enforces the note limit because minimal APIs do not run data annotations on a bound body.
     [StringLength(CollaborationCheckpointEndpoints.MaxChangeNoteLength)]
     public string? ChangeNote { get; init; }
 
-    /// <summary>
-    /// Exact server cursor from a typed checkpoint conflict response that the authorized owner
-    /// explicitly chooses to supersede. The cursor is skipped only when replay proves that same
-    /// operation still targets missing composition state; a valid operation cannot be discarded.
-    /// </summary>
+    // The conflict cursor is skipped only when replay proves that same operation still targets missing state; a valid operation cannot be discarded.
     public long? SupersedeConflictingOperationCursor { get; init; }
 }
 
-/// <summary>
-/// Response for a live-session checkpoint: the immutable Studio content version produced plus the
-/// op-log window that was applied.
-/// </summary>
 internal sealed record CollaborationCheckpointResponse
 {
-    /// <summary>Saved map (Studio draft) that was checkpointed.</summary>
     public required string MapId { get; init; }
 
-    /// <summary>Parent Studio content item.</summary>
     public required Guid ItemId { get; init; }
 
-    /// <summary>Immutable content version produced by the checkpoint.</summary>
     public required Guid VersionId { get; init; }
 
-    /// <summary>Monotonic version number within the item.</summary>
     public required int VersionNumber { get; init; }
 
-    /// <summary>Content hash of the immutable envelope.</summary>
     public required string ContentHash { get; init; }
 
-    /// <summary>Version creation timestamp.</summary>
     public required DateTimeOffset CreatedAt { get; init; }
 
-    /// <summary>Number of op-log operations applied to the draft before saving.</summary>
     public required int AppliedOperationCount { get; init; }
 
-    /// <summary>Op-log head cursor captured by this checkpoint.</summary>
     public required long HeadCursor { get; init; }
 
-    /// <summary>
-    /// Accepted operations the owner explicitly superseded while resolving this checkpoint.
-    /// Empty for ordinary checkpoints.
-    /// </summary>
     public IReadOnlyList<CollaborationCheckpointSupersededOperationResponse> SupersededOperations { get; init; } = [];
 }
 
-/// <summary>Wire record of one explicitly superseded collaboration operation.</summary>
 internal sealed record CollaborationCheckpointSupersededOperationResponse
 {
-    /// <summary>Client-generated identity of the superseded operation.</summary>
     public required string OperationId { get; init; }
 
-    /// <summary>Operation family that could not be replayed.</summary>
     public required SavedMapOperationKind Kind { get; init; }
 
-    /// <summary>Server cursor the owner acknowledged.</summary>
     public required long ServerCursor { get; init; }
 
-    /// <summary>State conflict that required reconciliation.</summary>
     public required string Reason { get; init; }
 }
 
-/// <summary>Source-generated JSON context for the collaboration checkpoint surface.</summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

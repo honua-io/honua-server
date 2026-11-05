@@ -14,51 +14,16 @@ using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Streaming;
 
-/// <summary>
-/// Snapshot-then-delta support: baseline capture, replacement-snapshot detection, and the
-/// transport-neutral snapshot emitter shared by the SSE and WebSocket transports (#3038).
-/// </summary>
-/// <remarks>
-/// <para><b>Consistency boundary.</b> The baseline cursor is captured from the durable
-/// event store <i>before</i> the baseline read begins, and deltas are replayed from that
-/// cursor once the snapshot has been written. Because a feature-change event is appended
-/// only after its mutation has committed, every event with a cursor at or below the
-/// baseline cursor is already visible to the baseline read — so nothing can be lost between
-/// the two. A mutation that commits before the read but whose event is appended after the
-/// baseline cursor appears in both the baseline and the delta stream, which makes the
-/// handoff at-least-once rather than exactly-once at the boundary. Delta envelopes carry
-/// the full post-mutation attribute snapshot, so applying them over the baseline in
-/// sequence order is idempotent and convergent.</para>
-/// <para><b>Admission parity.</b> Baseline features are admitted through the same
-/// <see cref="StreamSubscriptionFilter"/> instance the delta path uses, evaluated against
-/// the same enrichment representation (geometry envelope plus properties JSON). A feature
-/// is therefore in the baseline if and only if a delta describing it would be admitted,
-/// which is what makes the subscription-local sequence meaningful across the boundary.</para>
-/// <para><b>Bounds.</b> Snapshots require an explicit layer scope and are bounded by
-/// <see cref="FeatureStreamOptions.MaxSnapshotScanRows"/>,
-/// <see cref="FeatureStreamOptions.MaxSnapshotFeatures"/>, and
-/// <see cref="FeatureStreamOptions.MaxSnapshotBytes"/>. Hitting any bound ends the snapshot
-/// with <c>complete: false</c> rather than silently truncating.</para>
-/// </remarks>
+// The baseline cursor is captured before the read, a bound ends the snapshot incomplete, and the handoff is at-least-once.
 internal static partial class FeatureStreamEndpoints
 {
     private const string SnapshotModeValue = "snapshot";
     private const string SnapshotThenDeltaModeValue = "snapshot-then-delta";
     private const string DeltaModeValue = "delta";
 
-    /// <summary>
-    /// True for both snapshot framings. Every baseline decision — scope validation,
-    /// replacement-snapshot detection, delta resumption from the boundary cursor — is
-    /// identical between them; only the frame layout differs.
-    /// </summary>
     private static bool IsSnapshotMode(FeatureStreamSubscriptionMode mode)
         => mode is FeatureStreamSubscriptionMode.Snapshot or FeatureStreamSubscriptionMode.SnapshotThenDelta;
 
-    /// <summary>
-    /// Client-safe descriptions of why a baseline ended incomplete. They name the bound that was
-    /// hit — every one of them is advertised on the capability document — without exposing
-    /// provider internals, SQL, or exception text.
-    /// </summary>
     private static class SnapshotIncompleteReasons
     {
         public const string FeatureCap =
@@ -77,44 +42,22 @@ internal static partial class FeatureStreamEndpoints
             "the replay window was trimmed past the baseline cursor";
     }
 
-    /// <summary>
-    /// Result of emitting one baseline snapshot. <paramref name="IncompleteReason"/> is null when
-    /// the baseline is whole and otherwise carries a client-safe description of the bound that
-    /// truncated it, so the terminating frame can name the condition instead of closing silently.
-    /// </summary>
     private readonly record struct SnapshotEmitResult(
         long BaselineCursor,
         long FeatureCount,
         bool Complete,
         string? IncompleteReason = null);
 
-    /// <summary>
-    /// Transport-neutral sink for snapshot frames. Keeps the baseline emitter free of any
-    /// SSE/WebSocket framing detail so both transports expose identical semantics.
-    /// </summary>
     private abstract class FeatureStreamSnapshotSink
     {
-        /// <summary>
-        /// True when the sink emits the whole baseline as one frame. Sequence allocation is
-        /// framing-aware because of this: a batched baseline must consume exactly ONE
-        /// subscription-local sequence, or the numbers allocated to buffered frames that are
-        /// never written would be burned and the first delta would land at a gap.
-        /// </summary>
+        // A batched baseline consumes one sequence, or the first delta lands on a gap.
         public virtual bool BatchesFrames => false;
 
-        /// <summary>
-        /// Returns a conservative encoded-byte count for the mandatory baseline envelope. The
-        /// count includes JSON and transport framing; streamed sinks reserve an end sequence at
-        /// its maximum width so the emitted value can never exceed the budget later.
-        /// </summary>
+        // Streamed sinks reserve the end sequence at its maximum width so the emitted value cannot exceed the budget.
         public abstract int MeasureFixedBytes(
             FeatureStreamSnapshotBeginFrame begin,
             FeatureStreamSnapshotEndFrame end);
 
-        /// <summary>
-        /// Returns the encoded-byte increment for one admitted feature, including transport
-        /// framing and any feature-count/comma growth in a batched frame.
-        /// </summary>
         public abstract int MeasureFeatureBytes(FeatureStreamSnapshotFeatureFrame frame, long featureCount);
 
         public abstract Task WriteBeginAsync(FeatureStreamSnapshotBeginFrame frame, CancellationToken cancellationToken);
@@ -124,12 +67,7 @@ internal static partial class FeatureStreamEndpoints
         public abstract Task WriteEndAsync(FeatureStreamSnapshotEndFrame frame, CancellationToken cancellationToken);
     }
 
-    /// <summary>
-    /// Buffers the streamed frames a baseline produces and writes them as a single
-    /// <c>snapshot</c> frame once the baseline is whole. Buffering is bounded by the same
-    /// <see cref="FeatureStreamOptions.MaxSnapshotFeatures"/> cap that bounds the streamed
-    /// framing, so a batched baseline can never buffer more than a streamed one reads.
-    /// </summary>
+    // A batched baseline cannot buffer more than a streamed baseline reads.
     private abstract class BatchedSnapshotSink : FeatureStreamSnapshotSink
     {
         private readonly List<FeatureStreamSnapshotFeature> _features = [];
@@ -225,16 +163,6 @@ internal static partial class FeatureStreamEndpoints
         protected abstract Task WriteSnapshotAsync(FeatureStreamSnapshotFrame frame, CancellationToken cancellationToken);
     }
 
-    /// <summary>
-    /// Writes a batched baseline as one SSE <c>snapshot</c> event.
-    /// </summary>
-    /// <remarks>
-    /// A batched baseline is atomic on the wire — the client either parses the whole frame
-    /// or none of it — so, unlike the streamed framing, there is no partial-baseline state a
-    /// reconnect could resume from. The complete baseline still checkpoints only when it is
-    /// whole: a truncated baseline omits features no later delta will mention, so resuming
-    /// from its cursor would leave the client permanently missing them.
-    /// </remarks>
     private sealed class BatchedSseSnapshotSink(HttpResponse response) : BatchedSnapshotSink
     {
         public override int MeasureFixedBytes(
@@ -259,9 +187,6 @@ internal static partial class FeatureStreamEndpoints
         }
     }
 
-    /// <summary>
-    /// Writes a batched baseline as one WebSocket <c>snapshot</c> frame.
-    /// </summary>
     private sealed class BatchedWebSocketSnapshotSink(WebSocket webSocket, SemaphoreSlim writeLock) : BatchedSnapshotSink
     {
         public override int MeasureFixedBytes(
@@ -283,9 +208,6 @@ internal static partial class FeatureStreamEndpoints
                 cancellationToken);
     }
 
-    /// <summary>
-    /// Selects the SSE baseline sink for the requested framing.
-    /// </summary>
     private static FeatureStreamSnapshotSink CreateSseSnapshotSink(
         FeatureStreamSubscriptionMode mode,
         HttpResponse response)
@@ -293,9 +215,6 @@ internal static partial class FeatureStreamEndpoints
             ? new BatchedSseSnapshotSink(response)
             : new SseSnapshotSink(response);
 
-    /// <summary>
-    /// Selects the WebSocket baseline sink for the requested framing.
-    /// </summary>
     private static FeatureStreamSnapshotSink CreateWebSocketSnapshotSink(
         FeatureStreamSubscriptionMode mode,
         WebSocket webSocket,
@@ -304,21 +223,7 @@ internal static partial class FeatureStreamEndpoints
             ? new BatchedWebSocketSnapshotSink(webSocket, writeLock)
             : new WebSocketSnapshotSink(webSocket, writeLock);
 
-    /// <summary>
-    /// Writes snapshot frames as SSE events.
-    /// </summary>
-    /// <remarks>
-    /// Only a COMPLETE <c>snapshot-end</c> carries an SSE <c>id:</c>. A baseline is resumable
-    /// as a delta cursor only once it is whole in both senses — every frame delivered AND
-    /// nothing truncated by the feature/scan bounds. If the connection drops after
-    /// <c>snapshot-begin</c> or a <c>snapshot-feature</c>, the browser reconnects with the
-    /// last id it saw, and publishing the baseline cursor early would make that reconnect
-    /// look like a replayable delta resume — the client would never receive the rest of its
-    /// baseline yet would treat the partial state as current. Leaving those frames
-    /// id-less keeps <c>Last-Event-ID</c> at its pre-snapshot value (absent on a fresh
-    /// connection, or the same stale cursor that triggered the replacement snapshot), so an
-    /// interrupted baseline reconnects into another snapshot rather than a delta tail.
-    /// </remarks>
+    // Only a complete snapshot-end carries an event id, so an interrupted baseline reconnects into another snapshot.
     private sealed class SseSnapshotSink(HttpResponse response) : FeatureStreamSnapshotSink
     {
         public override int MeasureFixedBytes(
@@ -464,11 +369,7 @@ internal static partial class FeatureStreamEndpoints
         return Encoding.UTF8.GetByteCount(frame);
     }
 
-    /// <summary>
-    /// Parses the requested subscription mode. Returns false with a client-safe message for
-    /// unrecognized values so an unsupported mode can never be silently downgraded to
-    /// change-only delivery.
-    /// </summary>
+    // An unrecognized mode is rejected and is never downgraded to change-only delivery.
     private static bool TryParseSubscriptionMode(
         string? value,
         out FeatureStreamSubscriptionMode mode,
@@ -498,10 +399,6 @@ internal static partial class FeatureStreamEndpoints
         return false;
     }
 
-    /// <summary>
-    /// Validates that a snapshot-then-delta subscription carries the explicit layer scope a
-    /// bounded baseline read requires. Returns null when the filter is acceptable.
-    /// </summary>
     private static string? ValidateSnapshotScope(
         FeatureStreamSubscriptionMode mode,
         IStreamSubscriptionFilter? filter)
@@ -530,22 +427,7 @@ internal static partial class FeatureStreamEndpoints
             : null;
     }
 
-    /// <summary>
-    /// Verifies, BEFORE the response is started, that every layer in a snapshot subscription can
-    /// actually produce a baseline. Returns null when the subscription is servable, or a typed
-    /// RFC 7807 problem naming the condition.
-    /// </summary>
-    /// <remarks>
-    /// A stream cannot report a failure as a problem document once its first frame has been
-    /// written — the status line is already committed, so a baseline that dies mid-emission
-    /// reaches the client as a truncated body or, behind a buffering gateway, as that gateway's
-    /// own untyped 500 (honua-server#3181 REQ-002). The only place a typed response is still
-    /// possible is ahead of the handshake, so the two failure modes that are cheap to detect —
-    /// a layer that has left the catalog, and a backing store that will not accept the baseline
-    /// read at all — are detected here with one bounded probe per layer rather than discovered
-    /// halfway through the emission. Failures raised by the probe are logged with their
-    /// exception and reported to the client as a condition only, never as provider text.
-    /// </remarks>
+    // The baseline is probed before the response starts, and the client is told the condition rather than provider text.
     private static async Task<IResult?> ValidateSnapshotServabilityAsync(
         FeatureStreamDependencies deps,
         ILogger logger,
@@ -639,19 +521,7 @@ internal static partial class FeatureStreamEndpoints
         return null;
     }
 
-    /// <summary>
-    /// Decides whether a client-supplied resume cursor can still be served with deltas.
-    /// Returns null when replay is safe, or the reason a replacement snapshot must be
-    /// emitted instead: the cursor is ahead of the store's current position, or the events
-    /// between the cursor and the retained window have been trimmed or expired.
-    /// </summary>
-    /// <remarks>
-    /// Only the <i>absence</i> of a cursor selects the initial-snapshot path; the callers
-    /// own that distinction. An explicit <c>cursor=0</c> is a real request to resume from
-    /// the beginning of the stream and is validated against the retained window like any
-    /// other value — once cursor 1 has been trimmed or expired, resuming at 0 with deltas
-    /// alone would leave the client permanently missing the trimmed history.
-    /// </remarks>
+    // An explicit cursor of zero is a real resume, and a trimmed window cannot be served as deltas alone.
     private static async Task<string?> ResolveResnapshotReasonAsync(
         IFeatureChangeEventStore eventStore,
         long cursor,
@@ -678,11 +548,6 @@ internal static partial class FeatureStreamEndpoints
             : null;
     }
 
-    /// <summary>
-    /// Captures the baseline cursor, reads the matching features through the shared feature
-    /// reader, and writes <c>snapshot-begin</c>, <c>snapshot-feature</c>, and
-    /// <c>snapshot-end</c> frames with contiguous subscription-local sequence numbers.
-    /// </summary>
     private static async Task<SnapshotEmitResult> EmitSnapshotAsync(
         FeatureStreamDependencies deps,
         ILogger logger,
@@ -942,11 +807,6 @@ internal static partial class FeatureStreamEndpoints
         return new SnapshotEmitResult(baselineCursor, emitted, complete, complete ? null : incompleteReason);
     }
 
-    /// <summary>
-    /// One admitted baseline feature, projected and measured but not yet sequenced. Keeping the
-    /// sequence out of the projection is what lets the caller weigh the frame against the
-    /// payload budget before committing a subscription-local sequence number to it.
-    /// </summary>
     private readonly record struct SnapshotFeatureProjection(
         string SnapshotId,
         string SubscriptionId,
@@ -976,11 +836,6 @@ internal static partial class FeatureStreamEndpoints
             };
     }
 
-    /// <summary>
-    /// Projects one stored feature into a measured snapshot-frame payload, applying the
-    /// subscription's own admission predicate so the baseline and the delta stream agree on
-    /// membership. Returns null when the feature is not admitted by the subscription.
-    /// </summary>
     private static SnapshotFeatureProjection? ProjectSnapshotFeature(
         Feature feature,
         string serviceId,
@@ -1034,11 +889,6 @@ internal static partial class FeatureStreamEndpoints
             FeatureStreamPublisher.ParseAttributes(enrichment.PropertiesJson));
     }
 
-    /// <summary>
-    /// Allocates the next subscription-local sequence, falling back to a non-negative value
-    /// when the subscription has already been torn down (the frame is about to fail to
-    /// write anyway; the contract forbids emitting a negative sequence).
-    /// </summary>
     private static long NextSequence(
         FeatureStreamSessionManager sessionManager,
         Guid sessionId,

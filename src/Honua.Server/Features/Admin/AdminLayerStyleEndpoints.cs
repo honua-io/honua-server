@@ -12,22 +12,9 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for layer style metadata management.
-/// </summary>
-/// <remarks>
-/// The <c>…/layers/{layerId}/style</c> GET/PUT routes are <b>deprecated</b>
-/// layerId-keyed aliases. The canonical style identifier is <c>styleId</c> via
-/// the OGC API – Styles surface (<c>GET/PUT /ogc/styles/{styleId}</c>,
-/// ADR-0048). These admin aliases remain working for back-compat and emit
-/// advisory <c>Deprecation</c>/<c>Sunset</c> response headers; per ADR-0048
-/// they are retired only after the cross-repo styleId rollout (Phase 3).
-/// </remarks>
+// The layerId style routes are deprecated aliases of the styleId OGC Styles surface and stay so existing clients keep working.
 internal static class AdminLayerStyleEndpoints
 {
-    /// <summary>
-    /// Maps layer style endpoints to the admin metadata API group.
-    /// </summary>
     public static void MapAdminLayerStyleEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/metadata/layers")

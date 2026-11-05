@@ -8,11 +8,6 @@ using Honua.Core.Features.Validation.Contracts;
 
 namespace Honua.PackageReview;
 
-/// <summary>
-/// Reads a map package publish request the way the installed clients send it (honua-server#4906):
-/// a <c>honua_map_package.v1</c> document whose <c>status</c> and <c>createdAt</c> are optional,
-/// with every refusal reported as a field-level error naming the JSON member.
-/// </summary>
 internal static class MapPackagePublishRequestReader
 {
     private const string PackageMember = "package";
@@ -21,7 +16,6 @@ internal static class MapPackagePublishRequestReader
     {
         public PackageReviewEndpoints.MapPackagePublishRequest? Request { get; init; }
 
-        /// <summary>True when <c>package</c> or <c>package.mapPackageId</c> is absent.</summary>
         public bool MissingPackage { get; init; }
 
         public IReadOnlyList<FieldValidationError> Errors { get; init; } = [];

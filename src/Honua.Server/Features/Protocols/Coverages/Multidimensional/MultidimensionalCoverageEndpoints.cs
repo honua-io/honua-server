@@ -17,15 +17,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Protocols.Coverages.Multidimensional;
 
-/// <summary>
-/// Log category for multidimensional coverage admin endpoints.
-/// </summary>
 internal sealed class MultidimensionalCoverageEndpointsLog;
 
-/// <summary>
-/// Admin endpoints for cloud-optimized HDF5 / NetCDF4 coverage registration.
-/// See ADR-0039 for the reader strategy.
-/// </summary>
 internal static class MultidimensionalCoverageEndpoints
 {
     private const string DuplicateRegistrationMessage =
@@ -39,9 +32,6 @@ internal static class MultidimensionalCoverageEndpoints
         "The execution-job substrate (Redis-backed store/queue) is not available, so the GDAL " +
         "metadata scan cannot be dispatched. Configure the job substrate to enable coverage scans.";
 
-    /// <summary>
-    /// Maps multidimensional coverage admin endpoints.
-    /// </summary>
     public static void MapMultidimensionalCoverageEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/multidim-coverages")
@@ -304,12 +294,6 @@ internal static class MultidimensionalCoverageEndpoints
         return Results.Json(response, MultidimensionalCoverageJsonContext.Default.MultidimensionalCoverageScanJobResponse);
     }
 
-    /// <summary>
-    /// Best-effort registration of the worker's derived Zarr store as a Zarr
-    /// coverage so OGC Coverages serves pixel slices through the existing reader.
-    /// The job substrate and Zarr services are resolved optionally so the metadata
-    /// path still succeeds where they are absent.
-    /// </summary>
     private static async Task TryRegisterDerivedZarrAsync(
         HttpContext context,
         MultidimensionalCoverageRegistration registration,
@@ -355,10 +339,6 @@ internal static class MultidimensionalCoverageEndpoints
         _ => status.ToString().ToLowerInvariant(),
     };
 
-    /// <summary>
-    /// Returns true when the Metadata v2 graph contains any publication whose service-local layer
-    /// index matches the supplied id.
-    /// </summary>
     private static async Task<bool> LayerPublicationExistsAsync(
         IMetadataV2GraphProvider graphProvider,
         int layerId,

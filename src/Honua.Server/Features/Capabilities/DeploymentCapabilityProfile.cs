@@ -9,11 +9,7 @@ using Microsoft.AspNetCore.Routing.Template;
 
 namespace Honua.Server.Features.Capabilities;
 
-/// <summary>
-/// Immutable, validated deployment-profile selection. An absent profile preserves the
-/// historical full-surface behavior; a configured profile is an allowlist only and never
-/// grants license entitlements.
-/// </summary>
+// An absent profile keeps the full surface; a configured profile is an allowlist and never grants license entitlements.
 internal sealed class DeploymentCapabilityProfile
 {
     internal const string EnabledCapabilitiesKey = "DeploymentProfile:EnabledCapabilities";
@@ -103,7 +99,6 @@ internal sealed class DeploymentCapabilityProfile
     public bool IsEnabled(string capability) => _enabled.Contains(capability);
 }
 
-/// <summary>Resolves routed HTTP endpoints to canonical capability keys.</summary>
 internal sealed class DeploymentCapabilityRouteCatalog
 {
     private const string CatalogResourceName = "Honua.Server.DeploymentProfiles.feature-catalog.json";
@@ -144,7 +139,6 @@ internal sealed class DeploymentCapabilityRouteCatalog
         RoutedCapabilities = routed;
     }
 
-    /// <summary>Capability keys that own at least one catalogued HTTP route.</summary>
     public IReadOnlySet<string> RoutedCapabilities { get; }
 
     public RouteResolution Resolve(HttpContext context)
@@ -192,10 +186,6 @@ internal sealed class DeploymentCapabilityRouteCatalog
     }
 }
 
-/// <summary>
-/// Joins manifest capability ids to the deployment-profile key that owns their routes.
-/// A capability with no catalogued route is absent, so availability leaves it unchanged.
-/// </summary>
 internal sealed class ManifestRoutedCapabilityIndex
 {
     private const string CrosswalkResourceName = "Honua.Server.DeploymentProfiles.capability-manifest-crosswalk.v1.json";
@@ -210,10 +200,6 @@ internal sealed class ManifestRoutedCapabilityIndex
         _byManifestId = LoadCrosswalk();
     }
 
-    /// <summary>
-    /// Resolves the deployment-profile key whose routes this manifest id advertises.
-    /// Returns false when the id has no mapped route.
-    /// </summary>
     public bool TryGetRoutedCapability(string manifestId, out string capability)
     {
         if (_byManifestId.TryGetValue(manifestId, out var mapped))

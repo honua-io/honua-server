@@ -6,7 +6,6 @@ using Honua.Core.Features.Infrastructure.Domain;
 
 namespace Honua.Server.Features.Protocols.Cog;
 
-/// <summary>Ensures all metadata reads use the object identity captured before the scan.</summary>
 internal sealed class CogPinnedRangeReader(ICloudRangeReader inner, string expectedETag) : ICloudRangeReader
 {
     public CloudStorageProvider Provider => inner.Provider;

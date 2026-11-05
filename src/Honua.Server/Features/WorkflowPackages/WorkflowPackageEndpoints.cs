@@ -454,21 +454,7 @@ internal static class WorkflowPackageEndpoints
         }
     }
 
-    /// <summary>
-    /// Projects the workflow-publication refusal (#3585) as the canonical capability-unavailable
-    /// <c>503</c>, classified by why the durable workflow substrate is actually missing.
-    /// </summary>
-    /// <remarks>
-    /// <c>IWorkflowDefinitionStore</c> is composed only alongside <c>IConnectionMultiplexer</c>,
-    /// whose registration needs BOTH a Redis connection string and the Pro <c>caching.redis</c>
-    /// entitlement. Telling an operator to "configure Redis" on a host that already runs Redis and
-    /// only lacks the licence is remediation that cannot work — the failure mode
-    /// honua-release#202 exists to prevent — and the default quickstart lands on exactly that
-    /// path. The classification is read from the same <see cref="DurableJobSubstrateOptions"/> the
-    /// capability manifest uses, so the refusal's <c>code</c> matches the manifest's
-    /// <c>reasonCode</c> for <c>jobs.runner</c> on the same host. Mirrors
-    /// <c>ProposalEndpoints.ControlPlaneUnavailable</c>.
-    /// </remarks>
+    // A present but unentitled Redis is not reported as a missing connection.
     private static IResult WorkflowPublicationUnavailable(HttpContext context)
     {
         var substrate = context.RequestServices.GetService<IOptions<DurableJobSubstrateOptions>>()?.Value

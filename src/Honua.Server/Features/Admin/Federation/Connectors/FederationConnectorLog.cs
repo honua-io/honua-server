@@ -5,9 +5,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Features.Admin.Federation.Connectors;
 
-/// <summary>
-/// Source-generated structured logging for the HTTP federated-source connectors (issue #341).
-/// </summary>
 internal static partial class FederationConnectorLog
 {
     [LoggerMessage(EventId = 4520, Level = LogLevel.Warning,

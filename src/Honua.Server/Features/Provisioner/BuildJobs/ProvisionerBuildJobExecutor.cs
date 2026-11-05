@@ -8,23 +8,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 
 namespace Honua.Server.Features.Provisioner.BuildJobs;
 
-/// <summary>
-/// Worker-side <see cref="IJobExecutor"/> for per-area
-/// <see cref="ExecutionJobKind.GeocoderBuild"/> / <see cref="ExecutionJobKind.RouterBuild"/>
-/// jobs. Without this, the advertised zero-config <c>local</c> backend would enqueue build
-/// jobs that <c>JobExecutionService</c> never claims (no executor for the kind), leaving them
-/// <c>Queued</c> forever. Registered once per kind so the in-process queue can claim and run
-/// both, mirroring how <c>TileCacheJobExecutor</c> backs <see cref="ExecutionJobKind.TileCache"/>.
-/// <para>
-/// The executor decodes and validates the build spec the submission service stamped onto the
-/// execution-job record (failing the job cleanly on a malformed spec rather than wedging the
-/// queue), bridges a terminal <see cref="GeoprocessingProgress"/> into the
-/// <see cref="IUniversalProgressStore"/> the <c>LocalBatchComputeBackend</c> observes, and
-/// publishes the produced artifact key. The heavyweight feedstock clip + artifact emission runs
-/// on the remote GP-on-Batch backend (<c>provision_area.py</c>); the in-process path makes the
-/// zero-config local backend run the build to a terminal, observable state.
-/// </para>
-/// </summary>
+// A malformed spec fails the job instead of leaving it queued with no executor.
 internal sealed partial class ProvisionerBuildJobExecutor : IJobExecutor
 {
     private static readonly TimeSpan ProgressRetention = TimeSpan.FromHours(24);
@@ -43,22 +27,18 @@ internal sealed partial class ProvisionerBuildJobExecutor : IJobExecutor
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>Creates the executor that claims <see cref="ExecutionJobKind.GeocoderBuild"/> jobs.</summary>
     public static ProvisionerBuildJobExecutor ForGeocoder(
         IUniversalProgressStore progressStore,
         ILogger<ProvisionerBuildJobExecutor> logger)
         => new(ExecutionJobKind.GeocoderBuild, progressStore, logger);
 
-    /// <summary>Creates the executor that claims <see cref="ExecutionJobKind.RouterBuild"/> jobs.</summary>
     public static ProvisionerBuildJobExecutor ForRouter(
         IUniversalProgressStore progressStore,
         ILogger<ProvisionerBuildJobExecutor> logger)
         => new(ExecutionJobKind.RouterBuild, progressStore, logger);
 
-    /// <inheritdoc />
     public ExecutionJobKind Kind => _kind;
 
-    /// <inheritdoc />
     public async Task<JobExecutionResult> ExecuteAsync(
         ExecutionJobRecord job,
         IJobExecutionContext context,

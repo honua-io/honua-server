@@ -6,9 +6,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Server.Features.Protocols.SpatialAnalytics.Models;
 
-/// <summary>
-/// AOT-compatible JSON serialization context for the spatial analytics endpoints.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]

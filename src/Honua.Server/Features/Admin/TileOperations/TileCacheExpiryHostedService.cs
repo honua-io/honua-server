@@ -5,11 +5,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin.TileOperations;
 
-/// <summary>
-/// Adapts the scheduled tile-cache expiry sweep to the control-plane scheduled-tick dispatcher so
-/// EventBridge Scheduler can drive one sweep under <c>TriggerMode=Event</c> without hosting the
-/// in-process timer. The sweep re-queues invalidate jobs whose own pipeline is idempotent.
-/// </summary>
 internal sealed class TileCacheExpiryScheduledTickHandler(TileCacheExpiryHostedService service)
     : Honua.Core.Features.ControlPlane.Abstractions.IScheduledTickHandler
 {
@@ -20,23 +15,12 @@ internal sealed class TileCacheExpiryScheduledTickHandler(TileCacheExpiryHostedS
         => service.SweepAsync(cancellationToken);
 }
 
-/// <summary>
-/// Scheduled tile-cache expiry/invalidation service (#1837). On a configured cadence it dispatches
-/// an <c>invalidate</c> tile operation for each configured target, so cached tiles for a tileset are
-/// periodically refreshed. This is the time-based complement to the per-tileset <c>Cache-Control</c>
-/// TTL shipped in #1794; it reuses the same <see cref="ITileOperationJobService" /> queue as the
-/// startup <see cref="TileCacheWarmingHostedService" /> rather than introducing a parallel path.
-/// </summary>
 internal sealed partial class TileCacheExpiryHostedService(
     ITileOperationJobService jobService,
     IOptions<TileCacheExpiryOptions> options,
     ILogger<TileCacheExpiryHostedService> logger,
     TimeProvider? timeProvider = null) : BackgroundService
 {
-    /// <summary>
-    /// Minimum sweep interval. Sweeps queue invalidation jobs against the serving pod, so a too-low
-    /// interval is clamped up to avoid self-inflicted invalidation storms.
-    /// </summary>
     internal const int MinIntervalSeconds = 60;
 
     private readonly ITileOperationJobService _jobService = jobService ?? throw new ArgumentNullException(nameof(jobService));
@@ -44,7 +28,6 @@ internal sealed partial class TileCacheExpiryHostedService(
     private readonly ILogger<TileCacheExpiryHostedService> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
-    /// <inheritdoc />
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!_options.Enabled || _options.Targets.Count == 0)
@@ -80,10 +63,6 @@ internal sealed partial class TileCacheExpiryHostedService(
         }
     }
 
-    /// <summary>
-    /// Runs a single expiry sweep: queues an <c>invalidate</c> tile operation for every configured
-    /// target. Exposed internally so the behavior can be unit-tested without driving the timer.
-    /// </summary>
     internal async Task SweepAsync(CancellationToken cancellationToken)
     {
         foreach (var target in _options.Targets)

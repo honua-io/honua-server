@@ -11,20 +11,8 @@ using Microsoft.Extensions.Hosting;
 
 namespace Honua.FileStorage;
 
-/// <summary>
-/// Composition-root wiring that selects the file-storage backend (local disk
-/// from Honua.Io, S3 from Honua.Aws, Azure Blob from Honua.Azure) and registers
-/// the upload-progress store and retention cleanup. Lives in Server because it
-/// is the only assembly that references all three backends.
-/// </summary>
 public static class FileStorageServiceCollectionExtensions
 {
-    /// <summary>
-    /// Adds cloud file storage services to the dependency injection container
-    /// </summary>
-    /// <param name="services">Service collection</param>
-    /// <param name="configuration">Configuration for binding options</param>
-    /// <returns>Service collection for chaining</returns>
     public static IServiceCollection AddCloudFileStorage(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -108,14 +96,6 @@ public static class FileStorageServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Registers the file-storage cleanup as a PERIODIC control-plane tick (bucket-b). The cleanup
-    /// deletes already-expired files via a fresh scope and is idempotent, so the scheduled-tick
-    /// handler is registered in BOTH trigger modes; the in-process timer is hosted only when
-    /// <paramref name="hostInProcessTimer"/> is set (TriggerMode=Poll, default/on-prem), keeping that
-    /// path byte-for-byte unchanged. On AWS this tick can alternatively be replaced by an S3 lifecycle
-    /// policy (cheaper); the tick is kept for on-prem/portability.
-    /// </summary>
     private static void RegisterFileStorageCleanup(
         IServiceCollection services,
         bool enableCleanup,
@@ -136,12 +116,6 @@ public static class FileStorageServiceCollectionExtensions
         }
     }
 
-    /// <summary>
-    /// Adds cloud file storage services with a specific provider
-    /// </summary>
-    /// <param name="services">Service collection</param>
-    /// <param name="configure">Configuration action for options</param>
-    /// <returns>Service collection for chaining</returns>
     public static IServiceCollection AddCloudFileStorage(
         this IServiceCollection services,
         Action<CloudStorageOptions> configure)

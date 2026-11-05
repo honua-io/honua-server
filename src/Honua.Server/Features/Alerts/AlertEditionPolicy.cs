@@ -9,14 +9,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Alerts;
 
-/// <summary>
-/// License-derived alert edition policy (#2998). Allowed triggers and delivery channels come
-/// from the active <see cref="ILicenseEntitlementService"/> entitlement keys
-/// (<c>alerts.*</c>/<c>channels.*</c>, see <see cref="AlertEntitlementMap"/>). The standalone
-/// <c>Alerts:Edition</c> option is a downward-only operational cap: when set, features above
-/// the configured tier are blocked even if the license grants them; it never unlocks features
-/// the license does not include.
-/// </summary>
+// Alerts:Edition only caps the license and never grants features the license does not include.
 internal sealed class AlertEditionPolicy : IAlertEditionPolicy
 {
     private readonly AlertOptions _options;
@@ -33,24 +26,7 @@ internal sealed class AlertEditionPolicy : IAlertEditionPolicy
         _entitlements = entitlements ?? throw new ArgumentNullException(nameof(entitlements));
     }
 
-    /// <summary>
-    /// The effective alert edition: the edition the active license itself declares (Enterprise,
-    /// Pro, or null when the snapshot is not a valid paid license), capped by
-    /// <see cref="AlertOptions.Edition"/> when configured.
-    /// </summary>
-    /// <remarks>
-    /// The tier comes from the license's declared edition, not from probing individual
-    /// entitlement keys. Using unrelated keys as tier proxies (previously
-    /// <c>alerts.dwell</c> ⇒ Enterprise, <c>alerts.enter-exit</c> ⇒ Pro) misreads a signed
-    /// license, because signed payloads enumerate entitlement keys independently: an Enterprise
-    /// license granting <c>alerts.threshold</c> but not <c>alerts.dwell</c> resolved to Pro, so
-    /// <see cref="IsRuleAllowed"/> rejected its fully entitled threshold rule. Per-key
-    /// entitlement is still enforced by <see cref="IsEntitled"/>; this property only supplies the
-    /// tier that the <c>Alerts:Edition</c> cap, a rule's self-declared
-    /// <see cref="AlertRuleDefinition.EditionRequired"/>, and the keyless WebSocket channel
-    /// compare against. An expired or otherwise invalid snapshot reports Community/not-valid and
-    /// so degrades to null here.
-    /// </remarks>
+    // The tier comes from the license's declared edition, not from unrelated entitlement keys.
     private AlertEdition? EffectiveEdition
     {
         get
@@ -65,11 +41,6 @@ internal sealed class AlertEditionPolicy : IAlertEditionPolicy
         }
     }
 
-    /// <summary>
-    /// The alert tier the active license snapshot declares, before the <c>Alerts:Edition</c> cap
-    /// is applied. Kept separate from <see cref="EffectiveEdition"/> so a denial can be attributed
-    /// to the cap rather than to the license (see <see cref="GetChannelDenialReason"/>).
-    /// </summary>
     private AlertEdition? LicenseDerivedEdition => _entitlements.GetSnapshot() switch
     {
         { IsValid: true, Edition: HonuaEdition.Enterprise } => AlertEdition.Enterprise,
@@ -77,10 +48,6 @@ internal sealed class AlertEditionPolicy : IAlertEditionPolicy
         _ => null,
     };
 
-    /// <summary>
-    /// True when the entitlement key is active on the license AND not excluded by the
-    /// downward-only <c>Alerts:Edition</c> cap.
-    /// </summary>
     private bool IsEntitled(string entitlementKey)
         => GetEntitlementDenialReason(entitlementKey) == AlertEditionDenialReason.None;
 

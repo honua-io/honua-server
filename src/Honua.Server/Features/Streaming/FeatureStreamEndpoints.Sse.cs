@@ -9,11 +9,6 @@ using Honua.Infrastructure.Events;
 
 namespace Honua.Server.Features.Streaming;
 
-/// <summary>
-/// Server-Sent Events transport for feature-change streaming: writes SSE event
-/// frames, handles replay/handoff, deadline-based cross-node polling, and the
-/// channel-drain loop for SSE clients.
-/// </summary>
 internal static partial class FeatureStreamEndpoints
 {
     private static async Task WriteSseEventAsync<T>(
@@ -39,10 +34,6 @@ internal static partial class FeatureStreamEndpoints
             cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Writes a terminal <c>status: error</c> frame naming why the stream is ending. Best effort:
-    /// the client may already be gone, and the caller is closing the stream either way.
-    /// </summary>
     private static async Task WriteSseTerminalErrorAsync(
         HttpResponse response,
         Guid sessionId,

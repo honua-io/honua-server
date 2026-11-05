@@ -13,21 +13,8 @@
 
 namespace Honua.Server;
 
-/// <summary>
-/// Registry of all public HTTP endpoints exposed by Honua.Server.
-/// Keep this list in sync with endpoint mappings to enforce API surface coverage.
-/// </summary>
 public static partial class EndpointRegistry
 {
-    /// <summary>
-    /// All endpoints that require integration test coverage.
-    /// </summary>
-    /// <remarks>
-    /// The catalogue is decomposed into per-feature <c>EndpointRegistry.&lt;Area&gt;.cs</c>
-    /// partial-class fragments so unrelated features no longer contend on a single file.
-    /// <see cref="All"/> concatenates those per-area fragments in a fixed order; the
-    /// resulting route inventory is identical to the previous single-file list.
-    /// </remarks>
     public static IReadOnlyList<EndpointDefinition> All { get; } =
     [
         .. PlatformEndpoints,
@@ -64,9 +51,4 @@ public static partial class EndpointRegistry
     ];
 }
 
-/// <summary>
-/// Describes an HTTP endpoint by method and route pattern.
-/// </summary>
-/// <param name="Method">HTTP method (GET, POST, etc.).</param>
-/// <param name="Path">Route pattern starting with '/'.</param>
 public sealed record EndpointDefinition(string Method, string Path);

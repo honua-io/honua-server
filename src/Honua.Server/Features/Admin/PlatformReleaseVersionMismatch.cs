@@ -3,17 +3,9 @@
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Typed rejection for a platform-release convergence whose requested <c>targetVersion</c> does not
-/// name the release declared in <c>ControlPlane:PlatformRelease</c> (rc.3 fix unit S3, ruling R13).
-/// The server never resolves a version to an artifact itself: version-to-digest resolution lives in the
-/// signed release lock, which the provisioning executor writes into <c>ControlPlane__PlatformRelease__*</c>.
-/// Surfaced identically by the MCP proposal tool (<c>outcome: rejected</c>) and the REST converge route
-/// (409 problem).
-/// </summary>
+// The server never resolves a release version to an artifact; a requested version that is not the configured release is rejected.
 internal static class PlatformReleaseVersionMismatch
 {
-    /// <summary>Stable machine-readable rejection code surfaced by REST and MCP.</summary>
     internal const string Code = "platform_release_version_mismatch";
 
     internal const string Title = "Platform release version mismatch";

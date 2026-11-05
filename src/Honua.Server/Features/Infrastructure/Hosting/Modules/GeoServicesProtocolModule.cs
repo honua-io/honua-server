@@ -14,22 +14,10 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Infrastructure.Hosting.Modules;
 
-/// <summary>
-/// Esri GeoServices protocol module (FeatureServer / MapServer / ImageServer
-/// and the GPServer / NAServer family). Wraps the existing
-/// <c>MapFeatureServerEndpoints</c> / <c>MapMapServerEndpoints</c> /
-/// <c>MapImageServerEndpoints</c> registration calls behind the
-/// <see cref="IHonuaProtocolModule"/> contract. Service registration is
-/// spread across multiple <c>AddXxx</c> calls in
-/// <c>FeatureRegistrationExtensions</c>; this module wraps the canonical
-/// endpoint mapping set.
-/// </summary>
 public sealed class GeoServicesProtocolModule : IHonuaProtocolModule
 {
-    /// <inheritdoc />
     public string Name => "GeoServices";
 
-    /// <inheritdoc />
     public void ConfigureServices(IServiceCollection services, IConfiguration configuration)
     {
         // FeatureServer, MapServer, ImageServer, GPServer, NAServer are
@@ -39,7 +27,6 @@ public sealed class GeoServicesProtocolModule : IHonuaProtocolModule
         ArgumentNullException.ThrowIfNull(services);
     }
 
-    /// <inheritdoc />
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);

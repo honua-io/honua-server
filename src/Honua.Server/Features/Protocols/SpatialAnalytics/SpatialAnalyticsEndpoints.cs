@@ -11,19 +11,8 @@
 
 namespace Honua.Server.Features.Protocols.SpatialAnalytics;
 
-/// <summary>
-/// Maps the Pro-tier spatial analytics endpoints onto the REST FeatureServer
-/// and OGC API Features route families. Both families delegate to the same
-/// handler implementations in <see cref="SpatialAnalyticsRequestHandlers"/> so
-/// clients get identical semantics (and identical payloads) regardless of
-/// whether they call the Esri-style or OGC-style route.
-/// </summary>
 internal static class SpatialAnalyticsEndpoints
 {
-    /// <summary>
-    /// Registers the four spatial analytics REST endpoints under the
-    /// <c>/rest/services/{serviceId}/FeatureServer/{layerId}</c> prefix.
-    /// </summary>
     public static IEndpointRouteBuilder MapSpatialAnalyticsRestEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
@@ -87,10 +76,6 @@ internal static class SpatialAnalyticsEndpoints
         return endpoints;
     }
 
-    /// <summary>
-    /// Registers the four spatial analytics OGC API Features mirror endpoints
-    /// under the <c>/ogc/features/collections/{collectionId}</c> prefix.
-    /// </summary>
     public static IEndpointRouteBuilder MapSpatialAnalyticsOgcEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);

@@ -18,38 +18,13 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoint for LAS/LAZ/COPC point-cloud scene ingest (#1201). Decodes an
-/// uploaded LAS point cloud into a deterministic 3D Tiles point tileset (a
-/// quadtree of <c>.pnts</c> tiles + <c>tileset.json</c>), registers it, and
-/// returns the servable tileset URL. Enterprise-gated.
-/// </summary>
-/// <remarks>
-/// The endpoint is mapped only when the point-cloud ingest executor is
-/// registered (Postgres profiles), mirroring the CityGML/BIM and feature-layer
-/// scene generation surfaces. Admin authentication is enforced by the group
-/// policy; the Enterprise entitlement is enforced inside the handler so an
-/// authenticated non-Enterprise operator receives a 402 with an upgrade message
-/// rather than a silent 404. The heavy LAS → 3D Tiles conversion is pure-managed
-/// (no native PDAL/py3dtiles dependency), so the tileset is materialised inline.
-/// Compressed LAZ/COPC uploads — and uncompressed LAS in a projected source CRS —
-/// are auto-dispatched to the out-of-tree <c>pcloud.translate</c> worker (#1854),
-/// which returns uncompressed geographic (EPSG:4979) LAS that the managed tiler
-/// then ingests inline; when no decompressor is registered such input is rejected
-/// with a 400 problem-detail as before.
-/// </remarks>
 internal static partial class ScenePointCloudIngestEndpoints
 {
     private const string TagAdmin = "Admin";
     private const string TagScenes = "Scene Ingest";
 
-    /// <summary>Upper bound on the uploaded LAS document size (256 MiB) for the admin surface.</summary>
     private const long MaxUploadBytes = 256L * 1024 * 1024;
 
-    /// <summary>
-    /// Maps the admin point-cloud ingest endpoint. No-op when the executor is not
-    /// registered (non-Postgres profiles).
-    /// </summary>
     public static IEndpointRouteBuilder MapScenePointCloudIngestEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
@@ -281,23 +256,9 @@ internal static partial class ScenePointCloudIngestEndpoints
         }
     }
 
-    /// <summary>
-    /// Geographic WGS-84/NAD83 CRS tokens the managed tiler already accepts as a
-    /// pass-through; declaring one of these as the source needs no reprojection.
-    /// Mirrors the worker's <c>IsGeographicSrs</c> guard.
-    /// </summary>
     private static readonly HashSet<string> GeographicSrsTokens =
         new(StringComparer.OrdinalIgnoreCase) { "EPSG:4326", "EPSG:4979", "OGC:CRS84", "EPSG:4269" };
 
-    /// <summary>
-    /// Parses the optional <c>sourceEpsg</c> form field — the source point cloud's
-    /// CRS (#1854). A projected/unknown CRS is normalised to an <c>EPSG:&lt;code&gt;</c>
-    /// (or validated <c>AUTHORITY:CODE</c>) token and returned so the ingest path
-    /// reprojects to geographic EPSG:4979 via the worker. A geographic source (or
-    /// an omitted field) returns a <see langword="null"/> token (no reprojection).
-    /// The accepted shape mirrors the worker's conservative CRS-token guard so a
-    /// shell-influencing value is rejected at the HTTP boundary.
-    /// </summary>
     private static bool TryParseSourceEpsg(IFormCollection form, out string? value, out string? error)
     {
         value = null;
@@ -403,9 +364,6 @@ internal static partial class ScenePointCloudIngestEndpoints
         }
     }
 
-    /// <summary>
-    /// Log category marker used by <see cref="ILogger{TCategoryName}"/> bindings.
-    /// </summary>
     internal sealed class ScenePointCloudIngestEndpointsLogCategory;
 
     internal static partial class ScenePointCloudIngestLog
