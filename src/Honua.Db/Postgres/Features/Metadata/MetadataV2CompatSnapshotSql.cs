@@ -60,7 +60,7 @@ internal static class MetadataV2CompatSnapshotSql
                     'Elevation'
                 ]::text[]) AS value
             ),
-            layer_rows AS (
+            legacy_layer_rows AS (
                 SELECT
                     -- Anchor on layers (LEFT JOIN service_layers) so a bare layer with no
                     -- service publication still becomes a collection. Pre-cutover OGC API
@@ -124,10 +124,12 @@ internal static class MetadataV2CompatSnapshotSql
                         ELSE NULL
                     END AS layer_temporal,
                     l.srid,
-                    ST_XMin(l.extent)::double precision AS west,
-                    ST_YMin(l.extent)::double precision AS south,
-                    ST_XMax(l.extent)::double precision AS east,
-                    ST_YMax(l.extent)::double precision AS north,
+                    CASE WHEN l.extent IS NOT NULL THEN jsonb_build_object(
+                        'west', ST_XMin(l.extent)::double precision,
+                        'south', ST_YMin(l.extent)::double precision,
+                        'east', ST_XMax(l.extent)::double precision,
+                        'north', ST_YMax(l.extent)::double precision
+                    ) END AS bbox,
                     COALESCE(
                         NULLIF(trim(both '-' from regexp_replace(lower(sl.service_name), '[^a-z0-9]+', '-', 'g')), ''),
                         'layer-' || l.layer_id::text
@@ -136,6 +138,36 @@ internal static class MetadataV2CompatSnapshotSql
                 FROM __CATALOG_SCHEMA__.layers l
                 LEFT JOIN __CATALOG_SCHEMA__.service_layers sl ON sl.layer_id = l.layer_id
                 LEFT JOIN __CATALOG_SCHEMA__.services s ON s.service_name = sl.service_name
+            ),
+            layer_rows AS (
+                SELECT
+                    legacy_layer_rows.*,
+                    jsonb_build_object(
+                        'spatialReference', jsonb_build_object(
+                            'srid', srid,
+                            'crs', 'EPSG:' || srid::text,
+                            'isGeographic', srid = 4326
+                        ),
+                        'geometryType', CASE regexp_replace(lower(COALESCE(geometry_type, '')), '[^a-z0-9]+', '', 'g')
+                            WHEN '' THEN 'none'
+                            WHEN 'none' THEN 'none'
+                            WHEN 'point' THEN 'point'
+                            WHEN 'multipoint' THEN 'multipoint'
+                            WHEN 'line' THEN 'linestring'
+                            WHEN 'linestring' THEN 'linestring'
+                            WHEN 'polyline' THEN 'linestring'
+                            WHEN 'multiline' THEN 'multilinestring'
+                            WHEN 'multilinestring' THEN 'multilinestring'
+                            WHEN 'polygon' THEN 'polygon'
+                            WHEN 'multipolygon' THEN 'multipolygon'
+                            WHEN 'geometrycollection' THEN 'geometrycollection'
+                            WHEN 'geometry' THEN 'mixed'
+                            WHEN 'mixed' THEN 'mixed'
+                            ELSE 'mixed'
+                        END,
+                        'bbox', bbox
+                    ) AS spatial
+                FROM legacy_layer_rows
             ),
             resource_rows AS (
                 SELECT
@@ -206,36 +238,7 @@ internal static class MetadataV2CompatSnapshotSql
                         ), '[]'::jsonb),
                         'relationships', '[]'::jsonb,
                         'styleResourceIds', '[]'::jsonb,
-                        'spatial', jsonb_build_object(
-                            'spatialReference', jsonb_build_object(
-                                'srid', srid,
-                                'crs', 'EPSG:' || srid::text,
-                                'isGeographic', srid = 4326
-                            ),
-                            'geometryType', CASE regexp_replace(lower(COALESCE(geometry_type, '')), '[^a-z0-9]+', '', 'g')
-                                WHEN '' THEN 'none'
-                                WHEN 'none' THEN 'none'
-                                WHEN 'point' THEN 'point'
-                                WHEN 'multipoint' THEN 'multipoint'
-                                WHEN 'line' THEN 'linestring'
-                                WHEN 'linestring' THEN 'linestring'
-                                WHEN 'polyline' THEN 'linestring'
-                                WHEN 'multiline' THEN 'multilinestring'
-                                WHEN 'multilinestring' THEN 'multilinestring'
-                                WHEN 'polygon' THEN 'polygon'
-                                WHEN 'multipolygon' THEN 'multipolygon'
-                                WHEN 'geometrycollection' THEN 'geometrycollection'
-                                WHEN 'geometry' THEN 'mixed'
-                                WHEN 'mixed' THEN 'mixed'
-                                ELSE 'mixed'
-                            END,
-                            'bbox', jsonb_build_object(
-                                'west', west,
-                                'south', south,
-                                'east', east,
-                                'north', north
-                            )
-                        ),
+                        'spatial', spatial,
                         'accessPolicy', layer_access_policy,
                         'status', (SELECT value FROM status_doc),
                         'extensions', '{}'::jsonb
@@ -271,36 +274,7 @@ internal static class MetadataV2CompatSnapshotSql
                         'schemaFields', '[]'::jsonb,
                         'relationships', '[]'::jsonb,
                         'styleResourceIds', '[]'::jsonb,
-                        'spatial', jsonb_build_object(
-                            'spatialReference', jsonb_build_object(
-                                'srid', srid,
-                                'crs', 'EPSG:' || srid::text,
-                                'isGeographic', srid = 4326
-                            ),
-                            'geometryType', CASE regexp_replace(lower(COALESCE(geometry_type, '')), '[^a-z0-9]+', '', 'g')
-                                WHEN '' THEN 'none'
-                                WHEN 'none' THEN 'none'
-                                WHEN 'point' THEN 'point'
-                                WHEN 'multipoint' THEN 'multipoint'
-                                WHEN 'line' THEN 'linestring'
-                                WHEN 'linestring' THEN 'linestring'
-                                WHEN 'polyline' THEN 'linestring'
-                                WHEN 'multiline' THEN 'multilinestring'
-                                WHEN 'multilinestring' THEN 'multilinestring'
-                                WHEN 'polygon' THEN 'polygon'
-                                WHEN 'multipolygon' THEN 'multipolygon'
-                                WHEN 'geometrycollection' THEN 'geometrycollection'
-                                WHEN 'geometry' THEN 'mixed'
-                                WHEN 'mixed' THEN 'mixed'
-                                ELSE 'mixed'
-                            END,
-                            'bbox', jsonb_build_object(
-                                'west', west,
-                                'south', south,
-                                'east', east,
-                                'north', north
-                            )
-                        ),
+                        'spatial', spatial,
                         'accessPolicy', layer_access_policy,
                         'status', (SELECT value FROM status_doc),
                         'extensions', '{}'::jsonb
