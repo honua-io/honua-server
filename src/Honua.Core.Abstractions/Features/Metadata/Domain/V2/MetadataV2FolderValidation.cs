@@ -41,13 +41,13 @@ public static class MetadataV2FolderValidation
                 errors.Add("Public service names must be unreserved ASCII identifiers of at most 64 characters.");
             if (service.FolderId is not null && !graph.Folders.Any(f => !f.Deleted &&
                 f.Metadata.Id == service.FolderId &&
-                MetadataV2ServicePaths.NormalizeTenant(f.Metadata.Tenant) == MetadataV2ServicePaths.NormalizeTenant(service.Metadata.Tenant)))
+                MetadataV2ServicePaths.SameTenant(f.Metadata.Tenant, service.Metadata.Tenant)))
                 errors.Add("Service membership must reference a live folder in the same tenant scope.");
             var siblings = graph.Services.Where(s => string.Equals(s.Metadata.Name, service.Metadata.Name,
                 StringComparison.OrdinalIgnoreCase));
             if (siblings.Any(s => s.FolderId != service.FolderId ||
                 s.EffectivePublicName != service.EffectivePublicName ||
-                MetadataV2ServicePaths.NormalizeTenant(s.Metadata.Tenant) != MetadataV2ServicePaths.NormalizeTenant(service.Metadata.Tenant)))
+                !MetadataV2ServicePaths.SameTenant(s.Metadata.Tenant, service.Metadata.Tenant)))
                 errors.Add("All logical service facets must agree on folder, public name and tenant.");
         }
     }
@@ -82,7 +82,7 @@ public static class MetadataV2FolderValidation
         {
             var targets = graph.Services.Where(s => alias.TargetFacetIds.Contains(s.Metadata.Id, StringComparer.Ordinal)).ToArray();
             if (targets.Select(s => s.Metadata.Name).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1 ||
-                targets.Any(s => MetadataV2ServicePaths.NormalizeTenant(s.Metadata.Tenant) != MetadataV2ServicePaths.NormalizeTenant(alias.Tenant)))
+                targets.Any(s => !MetadataV2ServicePaths.SameTenant(s.Metadata.Tenant, alias.Tenant)))
                 errors.Add("Path reservation targets must belong to one logical service in the same tenant scope.");
             if (alias.TargetFacetIds.Count == 0 || alias.TargetFacetIds.Distinct(StringComparer.Ordinal).Count() != alias.TargetFacetIds.Count)
                 errors.Add("Path reservations require distinct original facet ids.");

@@ -61,7 +61,7 @@ public static class MetadataV2PathReservations
             var replacement = candidate.Services.FirstOrDefault(s => s.Metadata.Id == service.Metadata.Id);
             if (replacement is not null && (replacement.EffectivePublicName != service.EffectivePublicName ||
                 replacement.Metadata.Name != service.Metadata.Name ||
-                MetadataV2ServicePaths.NormalizeTenant(replacement.Metadata.Tenant) != MetadataV2ServicePaths.NormalizeTenant(service.Metadata.Tenant)))
+                !MetadataV2ServicePaths.SameTenant(replacement.Metadata.Tenant, service.Metadata.Tenant)))
                 throw new InvalidOperationException("Service public names, logical identities and tenants are immutable.");
         }
     }

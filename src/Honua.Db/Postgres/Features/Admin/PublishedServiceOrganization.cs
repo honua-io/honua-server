@@ -42,7 +42,8 @@ internal static class PublishedServiceOrganization
             throw new LayerPublishingException(LayerPublishingErrorKind.NotFound, "The folder must exist in the service tenant scope.");
         var published = service with
         {
-            FolderId = folderId, PublicName = request.PublicName,
+            FolderId = folderId,
+            PublicName = request.PublicName,
             Metadata = PublicDisplayDefaults(service.Metadata, leaf)
         };
         try

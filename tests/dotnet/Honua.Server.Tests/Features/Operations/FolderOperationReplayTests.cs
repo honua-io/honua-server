@@ -23,7 +23,8 @@ public sealed class FolderOperationReplayTests
         var executor = CreateExecutor("service.move", client);
         var request = new OperationRequest
         {
-            OperationId = executor.OperationId, ServiceName = "test",
+            OperationId = executor.OperationId,
+            ServiceName = "test",
             Parameters = new Dictionary<string, string?> { ["folderId"] = null, ["namespace"] = "workspace", ["If-Match"] = "\"current\"" }
         };
         (await executor.ValidateAsync(request)).IsValid.Should().BeTrue();
@@ -46,6 +47,18 @@ public sealed class FolderOperationReplayTests
         result.Result!.Details["etag"].Should().Be("\"updated\"");
         AdminApiOperationCatalog.Descriptors.Single(d => d.OperationId == executor.OperationId)
             .OutputSchema.Should().Contain(parameter => parameter.Name == "etag");
+    }
+
+    [UnitTest]
+    public async Task FolderCreate_WithoutName_FailsCanonicalValidation()
+    {
+        using var client = new HttpClient();
+        var executor = CreateExecutor("folder.create", client);
+        var parameters = new Dictionary<string, string?> { ["If-Match"] = "\"current\"" };
+        var request = new OperationRequest { OperationId = executor.OperationId, Parameters = parameters };
+        (await executor.ValidateAsync(request)).IsValid.Should().BeFalse();
+        parameters["name"] = "Survey";
+        (await executor.ValidateAsync(request)).IsValid.Should().BeTrue();
     }
 
     private static AdminApiOperationExecutor CreateExecutor(string operationId, HttpClient client)

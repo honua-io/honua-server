@@ -90,7 +90,10 @@ public sealed class PublishedServiceOrganizationTests
 
     private static LayerPublishRequest Request(string? folder, string leaf) => new()
     {
-        Schema = "public", Table = "parcels", LayerName = "Parcels",
-        FolderId = new(folder), PublicName = leaf
+        Schema = "public",
+        Table = "parcels",
+        LayerName = "Parcels",
+        FolderId = new(folder),
+        PublicName = leaf
     };
 }

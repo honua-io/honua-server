@@ -47,8 +47,10 @@ internal static class FolderEndpoints
             {
                 Metadata = new MetadataV2ObjectMetadata
                 {
-                    Id = Guid.NewGuid().ToString("N"), Name = request.Name ?? string.Empty,
-                    Title = request.Title, Tenant = Tenant(context)
+                    Id = Guid.NewGuid().ToString("N"),
+                    Name = request.Name ?? string.Empty,
+                    Title = request.Title,
+                    Tenant = Tenant(context)
                 }
             };
             return new(MetadataV2FolderMutations.Create(graph, folder), folder, StatusCodes.Status201Created);

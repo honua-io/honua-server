@@ -18,11 +18,17 @@ public sealed class FolderPublishPayloadTests
         {
             var payload = new LayerPublishJobPayload
             {
-                ConnectionId = Guid.NewGuid(), ConnectionKey = "test", RowCount = 1,
+                ConnectionId = Guid.NewGuid(),
+                ConnectionKey = "test",
+                RowCount = 1,
                 Request = new PublishLayerRequest
                 {
-                    Schema = "public", Table = "parcels", LayerName = "Parcels",
-                    ServiceName = "internal-parcels", PublicName = "Parcels", FolderId = selection
+                    Schema = "public",
+                    Table = "parcels",
+                    LayerName = "Parcels",
+                    ServiceName = "internal-parcels",
+                    PublicName = "Parcels",
+                    FolderId = selection
                 }
             };
             var parameters = new Dictionary<string, string> { [LayerPublishJobPayload.ParameterName] = payload.ToJson() };

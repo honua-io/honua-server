@@ -21643,7 +21643,20 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/FolderRequest"
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "title": {
+                    "type": "string",
+                    "nullable": true
+                  }
+                },
+                "required": [
+                  "name"
+                ]
               }
             }
           }
