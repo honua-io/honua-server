@@ -13,9 +13,6 @@ namespace Honua.Protocols.GeoServices.MapServer;
 
 internal static partial class MapServerEndpoints
 {
-    /// <summary>
-    /// Handle MapServer layer query (GET) using FeatureServer query logic.
-    /// </summary>
     private static async Task<IResult> HandleLayerQueryGet(string serviceId, int layerId, HttpContext context)
     {
         var serviceError = await TryValidateMapServerServiceAsync(serviceId, context);
@@ -50,9 +47,6 @@ internal static partial class MapServerEndpoints
             cancellationToken);
     }
 
-    /// <summary>
-    /// Handle MapServer layer query (POST) using FeatureServer query logic.
-    /// </summary>
     private static async Task<IResult> HandleLayerQueryPost(string serviceId, int layerId, HttpContext context)
     {
         var serviceError = await TryValidateMapServerServiceAsync(serviceId, context);
@@ -115,9 +109,6 @@ internal static partial class MapServerEndpoints
             cancellationToken);
     }
 
-    /// <summary>
-    /// Handle MapServer service query (GET) by routing to a concrete layer query.
-    /// </summary>
     private static async Task<IResult> HandleServiceQueryGet(string serviceId, HttpContext context)
     {
         var serviceError = await TryValidateMapServerServiceAsync(serviceId, context);
@@ -166,9 +157,6 @@ internal static partial class MapServerEndpoints
             cancellationToken);
     }
 
-    /// <summary>
-    /// Handle MapServer service query (POST) by routing to a concrete layer query.
-    /// </summary>
     private static async Task<IResult> HandleServiceQueryPost(string serviceId, HttpContext context)
     {
         var serviceError = await TryValidateMapServerServiceAsync(serviceId, context);

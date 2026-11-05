@@ -998,15 +998,7 @@ internal sealed partial class LicenseCapacityMeter : BackgroundService, ILicense
     private static TimeSpan NormalizePositive(TimeSpan value, TimeSpan fallback)
         => value > TimeSpan.Zero ? value : fallback;
 
-    /// <summary>
-    /// Classifies a failure raised inside one of this meter's Redis boundaries as a coordinated-meter
-    /// outage. Besides the StackExchange.Redis exception family, a connection torn down under a pending
-    /// command (for example during a timeout window) surfaces from the client's socket pipe as
-    /// <see cref="InvalidOperationException"/> ("Reading is not allowed after reader was completed"),
-    /// <see cref="ObjectDisposedException"/> or <see cref="IOException"/> (honua-server#4815). The guarded
-    /// blocks contain only Redis I/O and non-throwing payload parsing, so these can only come from the
-    /// connection and must fail open to local metering like any other Redis error.
-    /// </summary>
+    // A completed-reader pipe fault inside these Redis boundaries fails open to local metering, the same as any other Redis error.
     private static bool IsRedisException(Exception ex)
         => ex is RedisException or RedisConnectionException or RedisTimeoutException or RedisServerException
             or InvalidOperationException or ObjectDisposedException or IOException;

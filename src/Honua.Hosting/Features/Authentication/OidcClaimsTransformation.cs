@@ -11,15 +11,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Claims transformation service for OIDC-authenticated users.
-/// Normalizes claims from different providers and adds application-specific claims.
-/// Custom claims mapping (<c>ClaimsMapping:CustomMappings</c> /
-/// <c>ClaimsMapping:AdditionalRoleClaimTypes</c>) is an Enterprise entitlement
-/// (identity.claims-mapping, #2997): when it is not active, those configured mappings are
-/// skipped (soft-degrade to default claims normalization) rather than failing authentication —
-/// the token-validation pipeline itself is never gated by edition.
-/// </summary>
+// Custom claims mapping is skipped, and is not an authentication failure, when the identity.claims-mapping entitlement is inactive.
 internal sealed class OidcClaimsTransformation(
     IOptions<OidcAuthenticationOptions> oidcOptions,
     ILogger<OidcClaimsTransformation> logger,
@@ -28,35 +20,13 @@ internal sealed class OidcClaimsTransformation(
 {
     private readonly OidcAuthenticationOptions _options = oidcOptions.Value;
 
-    /// <summary>
-    /// Marker claim recording that this principal's roles were produced with the Enterprise
-    /// <c>identity.claims-mapping</c> entitlement active. Surfaces to anything that PERSISTS
-    /// the transformed roles — the ArcGIS portal token exchange — so the restore path can
-    /// revalidate them against the live entitlement rather than trusting a snapshot taken while
-    /// the license was valid (honua-server#2997 review).
-    /// </summary>
     internal const string RolesFromClaimsMappingClaimType = "honua_roles_from_claims_mapping";
 
-    /// <summary>
-    /// Repeated marker claim carrying each role that remains valid when
-    /// <c>identity.claims-mapping</c> is inactive. Emitted only when the full role set depends
-    /// on claims mapping, so portal-token persistence can soft-degrade mixed direct/mapped role
-    /// sets instead of dropping every role together.
-    /// </summary>
     internal const string RolesWithoutClaimsMappingClaimType = "honua_roles_without_claims_mapping";
 
-    /// <summary>
-    /// Provenance marker for a TENANT claim synthesized by <c>ClaimsMapping:CustomMappings</c>.
-    /// Persisted alongside the roles marker so the portal-token restore can revalidate a
-    /// mapping-derived tenant against the live entitlement (honua-server#2997 review).
-    /// </summary>
     internal const string TenantFromClaimsMappingClaimType = "honua_tenant_from_claims_mapping";
 
-    /// <summary>
-    /// Claim types a custom mapping can populate to decide the tenant scope: the canonical
-    /// <c>tenant_id</c> and the Azure <c>tid</c> that the portal credential verifier falls
-    /// back to. Kept in sync with <c>OidcPortalCredentialVerifier</c>.
-    /// </summary>
+    // These tenant claim types stay aligned with the portal credential verifier.
     private static readonly string[] TenantClaimTypes = ["tenant_id", "tid"];
 
     private static readonly HashSet<string> ReservedProvenanceClaimTypes =
@@ -66,20 +36,12 @@ internal sealed class OidcClaimsTransformation(
         TenantFromClaimsMappingClaimType,
     ];
 
-    /// <summary>
-    /// Returns whether <paramref name="claimType"/> is framework-owned authorization
-    /// provenance that an issuer or custom mapping must not populate.
-    /// </summary>
+    // An issuer or a custom mapping must not populate framework-owned authorization provenance.
     internal static bool IsReservedProvenanceClaimType(string? claimType)
         => claimType is not null
            && (ReservedProvenanceClaimTypes.Contains(claimType)
                || CanonicalSecurityActor.IsFrameworkAuthorityClaimType(claimType));
 
-    /// <summary>
-    /// Transforms claims from OIDC providers to normalized application claims.
-    /// </summary>
-    /// <param name="principal">The claims principal from authentication.</param>
-    /// <returns>The transformed claims principal.</returns>
     public async Task<ClaimsPrincipal> TransformAsync(ClaimsPrincipal principal)
     {
         if (principal.Identity is not ClaimsIdentity identity || !identity.IsAuthenticated)

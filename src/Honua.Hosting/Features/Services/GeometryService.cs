@@ -12,24 +12,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Infrastructure.Services;
 
-/// <summary>
-/// Unified geometry service providing consistent format conversion and Z/M detection
-/// across all protocols (GeoServices REST, OGC API Features, OData, MVT).
-/// </summary>
-/// <remarks>
-/// <para>
-/// This implementation consolidates geometry operations that were previously scattered across
-/// multiple implementations with divergent behavior. Z/M detection uses a consistent algorithm
-/// that checks coordinate sequences for non-NaN values, ensuring identical results regardless
-/// of which protocol is being used.
-/// </para>
-/// <para>
-/// Behavior reference: Consolidates logic from:
-/// - ../Features/Protocols/Ogc/Api/Features/FeaturesEndpoints.cs (GetHasZandM method)
-/// - ../Features/Protocols/GeoServices/GeoServicesGeometryConverter.cs (GetHasZandM, HasOrdinateValues methods)
-/// - ../Features/Protocols/GeoServices/FeatureServer/Services/GeometryValidator.cs (HasZ/HasM detection in ValidateWkb)
-/// </para>
-/// </remarks>
 internal sealed class GeometryService : IGeometryService
 {
     // WKBReader, WKTReader, GeoJsonReader, and GeoJsonWriter are NOT thread-safe —
@@ -51,7 +33,6 @@ internal sealed class GeometryService : IGeometryService
         _validationOptions = limitsOptions?.Value?.Validation ?? new GeometryValidationOptions();
     }
 
-    /// <inheritdoc />
     public (bool HasZ, bool HasM) DetectZM(byte[]? wkb)
     {
         if (wkb == null || wkb.Length == 0)
@@ -73,7 +54,6 @@ internal sealed class GeometryService : IGeometryService
         }
     }
 
-    /// <inheritdoc />
     public (bool HasZ, bool HasM) DetectZM(Memory<byte> wkb)
     {
         if (wkb.Length == 0)
@@ -84,7 +64,6 @@ internal sealed class GeometryService : IGeometryService
         return DetectZM(wkb.ToArray());
     }
 
-    /// <inheritdoc />
     public string? ConvertWkbToGeoJson(byte[]? wkb)
     {
         if (wkb == null || wkb.Length == 0)
@@ -109,7 +88,6 @@ internal sealed class GeometryService : IGeometryService
         }
     }
 
-    /// <inheritdoc />
     public string? ConvertWkbToGeoJson(Memory<byte> wkb)
     {
         if (wkb.Length == 0)
@@ -120,11 +98,9 @@ internal sealed class GeometryService : IGeometryService
         return ConvertWkbToGeoJson(wkb.ToArray());
     }
 
-    /// <inheritdoc />
     public byte[]? ConvertGeoJsonToWkb(string? geoJson, int? srid = null)
         => ConvertGeoJsonToWkb(geoJson, srid, allowContainers: false);
 
-    /// <inheritdoc />
     public byte[]? ConvertGeoJsonToWkb(string? geoJson, int? srid, bool allowContainers)
     {
         if (string.IsNullOrWhiteSpace(geoJson))
@@ -225,7 +201,6 @@ internal sealed class GeometryService : IGeometryService
         return factory.CreateGeometryCollection(geometries);
     }
 
-    /// <inheritdoc />
     public byte[]? ConvertWktToWkb(string? wkt, int? srid = null)
     {
         if (string.IsNullOrWhiteSpace(wkt))
@@ -264,7 +239,6 @@ internal sealed class GeometryService : IGeometryService
         }
     }
 
-    /// <inheritdoc />
     public GeometryInfo? GetGeometryInfo(byte[]? wkb)
     {
         if (wkb == null || wkb.Length == 0)
@@ -302,16 +276,6 @@ internal sealed class GeometryService : IGeometryService
         }
     }
 
-    /// <summary>
-    /// Detects Z and M coordinates from a NetTopologySuite geometry.
-    /// Uses consistent detection by checking coordinate sequences for non-NaN values.
-    /// </summary>
-    /// <remarks>
-    /// This method provides unified Z/M detection logic. It examines coordinate sequences
-    /// (not just the first coordinate) to determine if Z or M values are present.
-    /// This approach handles cases where geometries have mixed coordinates or where
-    /// NaN is used as a placeholder for missing dimensions.
-    /// </remarks>
     internal static (bool HasZ, bool HasM) DetectZMFromGeometry(Geometry? geometry)
     {
         if (geometry == null || geometry.IsEmpty)
@@ -451,9 +415,6 @@ internal sealed class GeometryService : IGeometryService
         return candidates.Count == 0 ? 0 : candidates.Min();
     }
 
-    /// <summary>
-    /// Counts the total number of rings in polygon geometries.
-    /// </summary>
     private static int CountRings(Geometry geometry)
     {
         return geometry switch

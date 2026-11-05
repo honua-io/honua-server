@@ -21,16 +21,6 @@ using MeasureSpace = Honua.Protocols.GeoServices.ImageServer.Services.ImageServe
 
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
-/// <summary>
-/// Handler for Basic ImageServer mensuration. Distance, perimeter, area, and azimuth are
-/// returned as ground quantities: coordinates are normalized to lon/lat (exact inverse Web
-/// Mercator for EPSG:3857 and its aliases, identity for geographic SRIDs, or an authoritative
-/// PostGIS transform for other projected SRIDs when a transform service is available) and then
-/// measured geodesically. Projected SRIDs without an in-process inverse or reachable transform
-/// service fall back to planar math with the CRS linear unit converted to meters via the shared
-/// linear-unit lookup (covers US survey-foot State Plane zones; other CRSes are assumed metric)
-/// (#2734).
-/// </summary>
 internal sealed class ImageServerMeasureHandler
 {
     private readonly record struct MeasurePoint(double X, double Y, double? Z, int? Srid);
@@ -60,13 +50,6 @@ internal sealed class ImageServerMeasureHandler
         _geographicSridClassifier = geographicSridClassifier;
     }
 
-    /// <summary>
-    /// Resolves whether <paramref name="srid"/> measures as geographic (lon/lat degrees) for the
-    /// offline mensuration path, preferring the registry-backed
-    /// <see cref="IGeographicSridClassifier"/> (#2794) and falling back to the static
-    /// <see cref="ImageServerMensurationMath.IsGeographicSrid(int)"/> heuristic when no classifier
-    /// is injected (e.g. read-only providers without a CRS registry).
-    /// </summary>
     private async ValueTask<bool> ResolveSridIsGeographicAsync(int srid, CancellationToken cancellationToken)
     {
         if (_geographicSridClassifier is not null)
@@ -79,9 +62,6 @@ internal sealed class ImageServerMeasureHandler
         return ImageServerMensurationMath.IsGeographicSrid(srid);
     }
 
-    /// <summary>
-    /// Performs Basic ImageServer measure operations in map space.
-    /// </summary>
     public async Task<IResult> MeasureAsync(
         HttpContext context,
         int layerId,
@@ -418,12 +398,6 @@ internal sealed class ImageServerMeasureHandler
         };
     }
 
-    /// <summary>
-    /// Measures the ground distance (meters) and true azimuth (degrees) between two measure points,
-    /// normalizing each to lon/lat and measuring geodesically when possible, else falling back to
-    /// planar meters with the CRS linear-unit conversion. Shared by the distance-and-angle response
-    /// and the shadow-height path (which needs the shadow length only).
-    /// </summary>
     private async ValueTask<(double DistanceMeters, double AzimuthDegrees)> ComputeGroundDistanceAndAzimuthAsync(
         MeasurePoint from,
         MeasurePoint to,
@@ -451,15 +425,6 @@ internal sealed class ImageServerMeasureHandler
         return (planarDistance, planarAzimuth);
     }
 
-    /// <summary>
-    /// Shadow-based height mensuration (ADR-0065). Reads the sun elevation from the raster's
-    /// exterior-orientation metadata, measures the ground shadow length between the two supplied
-    /// points using the same geodesic/planar path as distance mensuration, and returns
-    /// <c>height = shadowLength · tan(sunElevation)</c>. Returns an honest 501 when no sun geometry
-    /// is modeled for the raster (rather than a fabricated height), mirroring the DEM-height 501
-    /// discipline. Backs <c>esriMensurationHeightFromBaseAndTopShadow</c> and
-    /// <c>*HeightFromTopAndTopShadow</c> — both use the measured shadow length and sun elevation.
-    /// </summary>
     private async Task<IResult> MeasureShadowHeightAsync(
         HttpContext context,
         int layerId,
@@ -534,14 +499,7 @@ internal sealed class ImageServerMeasureHandler
         };
     }
 
-    /// <summary>
-    /// DEM-backed height mensuration (#1879). Resolves the raster's associated DEM layer from
-    /// <c>raster_sensor_metadata.dem_source</c>, samples the ground elevation at the base and top
-    /// points, and returns their difference as the measured height. Returns 501 when no DEM is
-    /// modeled for the raster, when the DEM source is not a resolvable layer id, when no elevation
-    /// service is configured, or when either point falls outside the DEM coverage — never a faked
-    /// value.
-    /// </summary>
+    // Height is the DEM elevation difference between the base and top, and a missing or uncovered DEM returns 501 rather than a fabricated height.
     private async Task<IResult> MeasureDemHeightAsync(
         HttpContext context,
         int layerId,
@@ -612,13 +570,6 @@ internal sealed class ImageServerMeasureHandler
         return Results.Json(response, ImageServerJsonContext.Default.ImageServerMeasureResponse);
     }
 
-    /// <summary>
-    /// Identifies mensuration operations that still require sensor/orientation metadata Honua does
-    /// not model and therefore honestly return 501. The DEM-backed height
-    /// (<c>heightFromBaseAndTop</c>) and shadow-based height (<c>*Shadow</c>) operations are handled
-    /// before this gate (#1879, #2667), so only the pure-3D operations (<c>*3d</c>, which need full
-    /// exterior orientation / a stereo model) remain unsupported.
-    /// </summary>
     private static bool IsSensorDependentOperation(string operation)
         => operation.ToLowerInvariant().Contains("3d", StringComparison.Ordinal);
 
@@ -653,10 +604,6 @@ internal sealed class ImageServerMeasureHandler
         return total;
     }
 
-    /// <summary>
-    /// Meters-per-linear-unit factor for a projected SRID in the planar fallback, via the shared
-    /// static lookup (US survey-foot State Plane zones; 1.0 for metric/unknown CRSes) (#2734).
-    /// </summary>
     private async ValueTask<double> ResolveMetersPerUnitAsync(int? srid, CancellationToken cancellationToken)
     {
         if (srid is not int wkid)
@@ -690,12 +637,6 @@ internal sealed class ImageServerMeasureHandler
         return total;
     }
 
-    /// <summary>
-    /// Normalizes a single measure point to a measurement coordinate: lon/lat degrees with
-    /// <see cref="MeasureSpace.Geodesic"/> when the SRID is Web Mercator, geographic, or
-    /// transformable to WGS 84; otherwise the original projected meters with
-    /// <see cref="MeasureSpace.PlanarMeters"/>.
-    /// </summary>
     private async ValueTask<(double X, double Y, MeasureSpace Space)> NormalizePointAsync(
         MeasurePoint point,
         CancellationToken cancellationToken)
@@ -723,11 +664,6 @@ internal sealed class ImageServerMeasureHandler
         return (point.X, point.Y, MeasureSpace.PlanarMeters);
     }
 
-    /// <summary>
-    /// Normalizes a ring to measurement coordinates, preferring the exact in-process lon/lat
-    /// conversion, then an authoritative batch transform to WGS 84 when a transform service is
-    /// available, and finally the honest planar-meter fallback for other projected SRIDs.
-    /// </summary>
     private async ValueTask<((double X, double Y)[] Coordinates, MeasureSpace Space)> NormalizeRingAsync(
         MeasureGeometry geometry,
         CancellationToken cancellationToken)

@@ -15,18 +15,10 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
-/// <summary>
-/// Computes ImageServer <c>computeStatisticsHistograms</c>/<c>computeHistograms</c>.
-/// Analyses the whole selected raster(s) by default. A polygon AOI is clipped to
-/// that polygon; an envelope or point AOI is clipped to its envelope. Raster
-/// selection still uses the AOI bounding envelope.
-/// </summary>
 internal sealed class ImageServerStatisticsHistogramsHandler
 {
-    /// <summary>Maximum bin count accepted from clients; matches the store-side clamp.</summary>
     private const int MaxBinCount = 1024;
 
-    /// <summary>Default histogram bin count when the caller does not specify one.</summary>
     private const int DefaultBinCount = 256;
 
     private readonly IMetadataV2GraphProvider _graphProvider;
@@ -43,9 +35,6 @@ internal sealed class ImageServerStatisticsHistogramsHandler
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// Computes statistics and histograms for the layer's primary raster.
-    /// </summary>
     public Task<IResult> ComputeAsync(
         HttpContext context,
         int layerId,
@@ -53,10 +42,6 @@ internal sealed class ImageServerStatisticsHistogramsHandler
         CancellationToken cancellationToken)
         => ComputeCoreAsync(context, layerId, values, histogramsOnly: false, cancellationToken);
 
-    /// <summary>
-    /// Computes histograms only for the layer's primary raster (<c>computeHistograms</c>).
-    /// Reuses the same raster selection / store path as <see cref="ComputeAsync"/>.
-    /// </summary>
     public Task<IResult> ComputeHistogramsAsync(
         HttpContext context,
         int layerId,
@@ -321,12 +306,6 @@ internal sealed class ImageServerStatisticsHistogramsHandler
         }
     }
 
-    /// <summary>
-    /// Appends band statistics and histograms in a canonical, mutually-aligned order so the
-    /// response's parallel arrays describe the same band at each index. Order preference:
-    /// (1) the caller-supplied band list, (2) the statistics order, then any remaining
-    /// histogram-only bands. Bands missing from one side are zero-filled on that side.
-    /// </summary>
     private static void AppendAlignedBandResults(
         List<BandStatistic> statisticsList,
         List<BandHistogram> histogramsList,

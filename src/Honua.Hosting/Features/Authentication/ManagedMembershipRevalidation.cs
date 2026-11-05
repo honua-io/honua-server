@@ -7,18 +7,9 @@ using Microsoft.AspNetCore.Authentication;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Replaces token and session roles with the managed-user store on each request.
-/// A deprovisioned or demoted principal must not keep the roles captured at sign-in.
-/// </summary>
+// Roles are replaced from the managed-user store on each request so a deprovisioned principal does not keep its sign-in roles.
 internal static class ManagedMembershipRevalidation
 {
-    /// <summary>
-    /// Applies live membership to <paramref name="principal"/>.
-    /// Unmanaged principals (the source returns null) are unchanged.
-    /// Inactive principals and source failures become unauthenticated.
-    /// API keys, frozen job capabilities, the bootstrap admin, and client certificates are left alone.
-    /// </summary>
     public static async Task<ClaimsPrincipal> ApplyAsync(
         ClaimsPrincipal principal,
         IPrincipalMembershipSource? source,
@@ -99,14 +90,9 @@ internal static class ManagedMembershipRevalidation
     }
 }
 
-/// <summary>
-/// Claims transformation used when OIDC is off, so managed-user deprovision and role edits
-/// still apply to portal tokens and admin sessions.
-/// </summary>
 internal sealed class ManagedMembershipClaimsTransformation(IPrincipalMembershipSource? membershipSource = null)
     : IClaimsTransformation
 {
-    /// <inheritdoc />
     public Task<ClaimsPrincipal> TransformAsync(ClaimsPrincipal principal)
         => ManagedMembershipRevalidation.ApplyAsync(principal, membershipSource);
 }

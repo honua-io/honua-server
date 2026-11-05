@@ -3,12 +3,7 @@
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Source-generated log messages for the ArcGIS OAuth2 named-user bridge (#1242).
-/// Codes and tokens are never written verbatim; an 8-character SHA-256 prefix is
-/// emitted for cache keys instead so support can correlate events without the
-/// value leaking to log sinks.
-/// </summary>
+// Codes and tokens are never logged verbatim; an eight-character SHA-256 prefix is emitted instead.
 internal static partial class PortalOAuthLog
 {
     [LoggerMessage(EventId = 7101, Level = LogLevel.Warning,

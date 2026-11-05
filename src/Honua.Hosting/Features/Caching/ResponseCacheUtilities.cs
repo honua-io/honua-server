@@ -91,10 +91,6 @@ internal static class ResponseCacheUtilities
     internal static string BuildFeatureServerLayerPattern(string serviceId, int layerId)
         => $"{FeatureServerPrefix}{NormalizeKeyPart(serviceId)}:layer:{layerId}:*";
 
-    /// <summary>
-    /// Collection id used in an OGC query-response cache key. Prefers the publication
-    /// id resolved after validation so every alias of that publication shares one prefix.
-    /// </summary>
     internal static string CanonicalOgcCollectionId(string? publicationId, string? advertisedCollectionId)
     {
         if (!string.IsNullOrWhiteSpace(publicationId))
@@ -126,11 +122,7 @@ internal static class ResponseCacheUtilities
     internal static string BuildODataPattern()
         => $"{ODataPrefix}*";
 
-    /// <summary>
-    /// Bumps the FeatureServer, OGC, and OData query-response namespaces when an
-    /// invalidator is registered. The bump is not tied to the request lifetime:
-    /// a cancelled request must not skip it. A missing registration leaves the cache unchanged.
-    /// </summary>
+    // A cancelled request must not skip the namespace bump.
     internal static async Task InvalidateSharedQueryResponsesAsync(HttpContext context)
     {
         if (!TryGetRequestServices(context, out var services))

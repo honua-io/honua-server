@@ -35,12 +35,6 @@ internal static partial class VectorTileServerEndpoints
     // conventionally use "esri"; clients bind layers to this source.
     private const string StyleSourceId = "esri";
 
-    /// <summary>
-    /// Maps the VectorTileServer resources routes (default styles, sprites, glyphs). The
-    /// service descriptor advertises <c>resources/styles</c> as <c>defaultStyles</c>.
-    /// Implemented by honua-server#1779; <c>resources/styles</c> and
-    /// <c>resources/styles/root.json</c> return the composed GL style, other sub-resources 404.
-    /// </summary>
     private static void MapResourcesEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/rest/services/{serviceId}/VectorTileServer/resources/styles",
@@ -92,16 +86,9 @@ internal static partial class VectorTileServerEndpoints
             .Produces(404);
     }
 
-    /// <summary>
-    /// Serves the default style document at <c>resources/styles</c>.
-    /// </summary>
     private static Task<IResult> HandleGetDefaultStyles(HttpContext context)
         => ComposeRootStyleAsync(context);
 
-    /// <summary>
-    /// Serves style sub-resources. Only <c>root.json</c> (and the bare path) is served; sprite
-    /// and glyph sub-resources are not produced yet (honua-server#1780) and return 404.
-    /// </summary>
     private static Task<IResult> HandleGetStyleResource(HttpContext context, string resourcePath)
     {
         var normalized = (resourcePath ?? string.Empty).Trim('/');
@@ -116,11 +103,6 @@ internal static partial class VectorTileServerEndpoints
             $"Style resource '{resourcePath}' is not available."));
     }
 
-    /// <summary>
-    /// Resolves the service and its primary vector tile publication, composes the Mapbox GL v8
-    /// style document (canonical MapLibre style rewritten onto this service's tile route, or a
-    /// deterministic default when the layer has no stored style), and returns it as JSON.
-    /// </summary>
     private static async Task<IResult> ComposeRootStyleAsync(HttpContext context)
     {
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
@@ -261,11 +243,6 @@ internal static partial class VectorTileServerEndpoints
         return candidateIndex < currentIndex;
     }
 
-    /// <summary>
-    /// Reads the canonical MapLibre style stored for the service's primary layer via the shared
-    /// OGC style projection. Returns <see langword="null"/> when no style is stored so the
-    /// composer falls back to a deterministic default.
-    /// </summary>
     private static async Task<string?> ResolveStoredMapLibreStyleAsync(
         HttpContext context,
         string styleId,
@@ -289,11 +266,6 @@ internal static partial class VectorTileServerEndpoints
         return stylesheet?.Content;
     }
 
-    /// <summary>
-    /// Builds the absolute service descriptor URL, for example
-    /// <c>https://host/rest/services/{name}/VectorTileServer</c>. The style source carries it
-    /// so clients read the service's fullExtent and tile map from the descriptor (#5534).
-    /// </summary>
     private static string BuildServiceUrl(HttpContext context, string serviceName)
     {
         var baseUrl = BaseUrlResolver.GetBaseUrl(context).TrimEnd('/');
@@ -301,10 +273,6 @@ internal static partial class VectorTileServerEndpoints
         return $"{baseUrl}/rest/services/{encodedService}/VectorTileServer";
     }
 
-    /// <summary>
-    /// Builds the absolute tile template for the service, for example
-    /// <c>https://host/rest/services/{name}/VectorTileServer/tile/{z}/{y}/{x}.pbf</c>.
-    /// </summary>
     private static string BuildTileTemplateUrl(HttpContext context, string serviceName)
     {
         var baseUrl = BaseUrlResolver.GetBaseUrl(context).TrimEnd('/');
@@ -312,11 +280,6 @@ internal static partial class VectorTileServerEndpoints
         return $"{baseUrl}/rest/services/{encodedService}/VectorTileServer/tile/{{z}}/{{y}}/{{x}}.pbf";
     }
 
-    /// <summary>
-    /// Builds the absolute sprite base reference for the service (no extension), for example
-    /// <c>https://host/rest/services/{name}/VectorTileServer/resources/sprites/sprite</c>. Clients
-    /// append <c>.json</c>/<c>.png</c>/<c>@2x.*</c> as needed.
-    /// </summary>
     private static string BuildSpriteBaseUrl(HttpContext context, string serviceName)
     {
         var baseUrl = BaseUrlResolver.GetBaseUrl(context).TrimEnd('/');
@@ -324,10 +287,6 @@ internal static partial class VectorTileServerEndpoints
         return $"{baseUrl}/rest/services/{encodedService}/VectorTileServer/resources/sprites/sprite";
     }
 
-    /// <summary>
-    /// Builds the absolute glyphs template for the service, for example
-    /// <c>https://host/rest/services/{name}/VectorTileServer/resources/fonts/{fontstack}/{range}.pbf</c>.
-    /// </summary>
     private static string BuildGlyphsTemplateUrl(HttpContext context, string serviceName)
     {
         var baseUrl = BaseUrlResolver.GetBaseUrl(context).TrimEnd('/');
@@ -335,11 +294,6 @@ internal static partial class VectorTileServerEndpoints
         return $"{baseUrl}/rest/services/{encodedService}/VectorTileServer/resources/fonts/{{fontstack}}/{{range}}.pbf";
     }
 
-    /// <summary>
-    /// Serves the scoped-minimal sprite resources. Resolves the service (404 for unknown
-    /// services) then returns the empty sprite index (<c>sprite.json</c> / <c>sprite@2x.json</c>)
-    /// or 1×1 transparent PNG (<c>sprite.png</c> / <c>sprite@2x.png</c>). Any other resource 404s.
-    /// </summary>
     private static async Task<IResult> HandleGetSpriteResource(HttpContext context, string spriteResource)
     {
         var serviceError = await ValidateVectorTileServiceAsync(context);
@@ -369,12 +323,7 @@ internal static partial class VectorTileServerEndpoints
         }
     }
 
-    /// <summary>
-    /// Serves a glyph range PBF. Resolves the service (404 for unknown services) then returns
-    /// the bundled face's glyphs for the range, labelled with the requested fontstack (#5535).
-    /// A fontstack with no served font, or a range that is not bundled, answers not-found —
-    /// never an empty glyph stack.
-    /// </summary>
+    // A font stack with no served font, or a range that is not bundled, is not-found rather than an empty glyph stack.
     private static async Task<IResult> HandleGetGlyphRange(HttpContext context, string fontstack, string range)
     {
         var serviceError = await ValidateVectorTileServiceAsync(context);
@@ -393,12 +342,6 @@ internal static partial class VectorTileServerEndpoints
         return Results.Bytes(glyphPbf, VectorTileEmbeddedAssets.GlyphPbfContentType);
     }
 
-    /// <summary>
-    /// Validates that the route's service id resolves to an accessible VectorTileServer service.
-    /// Returns the error <see cref="IResult"/> (400/404) when validation fails, or
-    /// <see langword="null"/> when the service exists. Static sprite/glyph payloads do not depend
-    /// on layer state, so this only gates on service existence — mirroring the other resource routes.
-    /// </summary>
     private static async Task<IResult?> ValidateVectorTileServiceAsync(HttpContext context)
     {
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);

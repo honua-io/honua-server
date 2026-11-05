@@ -24,75 +24,28 @@ using SkiaSharp;
 
 namespace Honua.Infrastructure.Rendering;
 
-/// <summary>
-/// Identifies the tile matrix set (gridset) a raster tile render targets. Controls how the
-/// tile envelope coordinates and tile CRS are computed by the shared rendering pipeline.
-/// </summary>
 internal enum TileGridKind
 {
-    /// <summary>
-    /// OGC WebMercatorQuad gridset (EPSG:3857). One tile covers the world at zoom 0.
-    /// </summary>
     WebMercatorQuad = 0,
 
-    /// <summary>
-    /// OGC WorldCRS84Quad gridset (CRS84 / EPSG:4326). Two columns by one row at zoom 0.
-    /// </summary>
     WorldCrs84Quad = 1
 }
 
-/// <summary>
-/// An honest, protocol-neutral representation of a requested vertical (elevation)
-/// selection on a tile request. Carries the resolved numeric value(s) together with
-/// the verbatim token the client sent so adapters can record / telemetry-tag the
-/// selection.
-/// </summary>
-/// <remarks>
-/// <para>This value type is shared by the WMTS (<c>elevation=</c>) and OGC API Tiles
-/// (<c>subset=Z(...)</c> / <c>subset=elevation(...)</c>) adapters via
-/// <c>OgcVerticalSelectionParser</c> so the parse, validation, and recording behavior
-/// live in one place (AGENTS.md DRY rule). It is defined here, in the rendering layer,
-/// because <see cref="RasterMapRenderingPipeline.RenderLayerDescriptor"/> carries it and
-/// the protocol-shared assembly already depends on this assembly (defining it the other
-/// way round would introduce a project-reference cycle).</para>
-/// <para>An instant selection (single value) sets both <see cref="Min"/> and
-/// <see cref="Max"/> to the same value. An interval selection sets them to the
-/// low/high bounds. This mirrors the (start, end) shape of the temporal filter so
-/// downstream code can treat the two dimensions uniformly.</para>
-/// <para>Shape A (#1792) records the selection only — it is not yet bound to a Zarr
-/// datacube slice render. That binding is the deferred Shape B follow-up after #1790.</para>
-/// </remarks>
+// An instant selection sets both bounds to the same value, and the selection is recorded only; it is not yet a datacube slice.
 internal readonly record struct VerticalSelection(double Min, double Max, string RawValue)
 {
-    /// <summary>
-    /// <see langword="true"/> when the selection is a single value (an instant on the
-    /// vertical axis) rather than an interval.
-    /// </summary>
     public bool IsInstant => Min.Equals(Max);
 
-    /// <summary>
-    /// Creates a single-value (instant) vertical selection from a resolved numeric value.
-    /// The <paramref name="rawValue"/> is the verbatim client token, retained for telemetry.
-    /// </summary>
     public static VerticalSelection FromValue(double value, string rawValue)
         => new(value, value, rawValue);
 }
 
-/// <summary>
-/// Thrown by the transport-neutral render core when the shared render capacity limiter is
-/// saturated. HTTP callers translate this to a 503 with a <c>Retry-After</c>; the durable
-/// tile-export producer lets it fail the job for retry.
-/// </summary>
 internal sealed class RasterRenderCapacityExceededException(string message, int retryAfterSeconds)
     : Exception(message)
 {
     public int RetryAfterSeconds { get; } = retryAfterSeconds;
 }
 
-/// <summary>
-/// Thrown by the transport-neutral render core when a Skia render surface cannot be allocated.
-/// HTTP callers translate this to a 500; the durable tile-export producer fails the job.
-/// </summary>
 internal sealed class RasterRenderSurfaceException(string message) : Exception(message);
 
 internal static class RasterMapRenderingPipeline
@@ -126,17 +79,6 @@ internal static class RasterMapRenderingPipeline
     private const string InvalidSpatialReferenceMessage = "Invalid spatial reference.";
     private static readonly ConcurrentDictionary<int, CachedRasterStylePlan> _rasterStylePlanCache = new();
 
-    /// <summary>
-    /// Lightweight descriptor used by <see cref="RenderRasterTileCoreAsync"/> for one render layer.
-    /// </summary>
-    /// <remarks>
-    /// <see cref="VerticalSelection"/> carries an optional elevation/vertical selection
-    /// resolved from the WMTS <c>elevation=</c> dimension or the OGC API Tiles
-    /// <c>subset=Z(...)</c> axis. In Shape A (#1792) it is recorded/telemetry-only — the
-    /// raster pipeline does not yet bind it to a Zarr datacube Z-slice render (that is the
-    /// deferred Shape B follow-up after #1790). It is threaded here so the value flows to a
-    /// single, honest recording point rather than being silently dropped at the adapter.
-    /// </remarks>
     internal readonly record struct RenderLayerDescriptor(
         int LayerId,
         bool HasGeometry,
@@ -155,10 +97,6 @@ internal static class RasterMapRenderingPipeline
         MetadataV2FieldType? stableOrderFieldType = null)
         => new(layerId, hasGeometry, geometryType, verticalSelection, stableOrderField, stableOrderFieldType);
 
-    /// <summary>
-    /// Renders a raster tile from v2 resource render descriptors using the default
-    /// Web Mercator (EPSG:3857, WebMercatorQuad) tile matrix set.
-    /// </summary>
     internal static Task<RasterTileRenderResult> RenderRasterTileV2Async(
         HttpContext context,
         int serviceSrid,
@@ -179,14 +117,6 @@ internal static class RasterMapRenderingPipeline
             cancellationToken,
             layerTemporalFilters);
 
-    /// <summary>
-    /// Renders a raster tile from v2 resource render descriptors for an explicit tile matrix
-    /// set / gridset. Tile envelope coordinates are computed in the gridset's CRS (Web Mercator
-    /// for <see cref="TileGridKind.WebMercatorQuad"/>, geographic degrees for
-    /// <see cref="TileGridKind.WorldCrs84Quad"/>) and the canonical query pipeline reprojects
-    /// into the storage CRS as needed. This is the gridset-aware counterpart to the default
-    /// Web Mercator <see cref="RenderRasterTileV2Async(HttpContext, int, IReadOnlyList{RenderLayerDescriptor}, int, int, int, int, CancellationToken, IReadOnlyList{TemporalFilter?})"/>.
-    /// </summary>
     internal static Task<RasterTileRenderResult> RenderRasterTileForGridAsync(
         HttpContext context,
         int serviceSrid,
@@ -215,14 +145,7 @@ internal static class RasterMapRenderingPipeline
             layerTemporalFilters);
     }
 
-    /// <summary>
-    /// Renders a raster tile for an operator-defined custom tile matrix set described by a
-    /// <see cref="GridGeometry"/>. The tile envelope is computed from the grid origin / cell size
-    /// (in the gridset CRS) and the canonical query pipeline reprojects from the storage CRS as
-    /// needed. The two built-in gridsets continue to flow through the <see cref="TileGridKind"/>
-    /// overload so their output stays byte-identical; this overload exists because the enum cannot
-    /// represent operator-defined gridsets.
-    /// </summary>
+    // Built-in gridsets stay on the other overload so their bytes do not change; this overload exists because the enum cannot name an operator-defined gridset.
     internal static Task<RasterTileRenderResult> RenderRasterTileForGridAsync(
         HttpContext context,
         int serviceSrid,
@@ -407,12 +330,6 @@ internal static class RasterMapRenderingPipeline
         return RasterTileRenderResult.Success(imageBytes, totalFeatureCount);
     }
 
-    /// <summary>
-    /// HTTP-facing wrapper over the service-provider render core. Preserves the exact
-    /// <see cref="RasterTileRenderResult.Failure"/> envelopes (503 capacity, 500 surface) the
-    /// tile/WMTS/OGC endpoints returned before the core was made transport-neutral, so their
-    /// success bytes and error responses are unchanged.
-    /// </summary>
 #pragma warning disable CA1068 // matches the core: cancellation precedes optional temporal filters
     private static async Task<RasterTileRenderResult> RenderRasterTileCoreForHttpAsync(
         HttpContext context,
@@ -449,13 +366,6 @@ internal static class RasterMapRenderingPipeline
         }
     }
 
-    /// <summary>
-    /// Renders a WebMercatorQuad raster tile from resolved v2 render descriptors without an
-    /// <see cref="HttpContext"/>, for the durable tile-export producer. Shares the exact render
-    /// core the synchronous MapServer tile path uses, so a queued export produces the same bytes as
-    /// a live request. Capacity/surface failures surface as exceptions the caller maps to a failed
-    /// export job rather than an HTTP result.
-    /// </summary>
     internal static async Task<byte[]> RenderRasterTileForExportAsync(
         IServiceProvider services,
         int serviceSrid,
@@ -479,9 +389,6 @@ internal static class RasterMapRenderingPipeline
         return result.ImageBytes;
     }
 
-    /// <summary>
-    /// Result of a single-collection vector render through the Skia pipeline.
-    /// </summary>
     internal readonly record struct VectorCollectionRenderResult(
         bool IsSuccess,
         byte[] ImageBytes,
@@ -495,29 +402,6 @@ internal static class RasterMapRenderingPipeline
             => new(false, [], 0, error);
     }
 
-    /// <summary>
-    /// Renders a single vector collection to an encoded image using the shared Skia
-    /// pipeline and an explicit MapLibre style document. This is the vector counterpart
-    /// to the raster-coverage renderer used by OGC API Maps styled-map requests: the
-    /// caller resolves the style (e.g. from a styleId-keyed projection) and supplies the
-    /// already-validated request extent. Reprojection, capacity limiting, feature
-    /// querying, and drawing all reuse the same helpers WMS GetMap and MapServer export
-    /// invoke, so no rendering or geodesy logic is duplicated.
-    /// </summary>
-    /// <param name="context">The current HTTP context (used to resolve request-scoped services).</param>
-    /// <param name="layerId">Storage layer identifier for the collection.</param>
-    /// <param name="geometryType">Geometry type used to drive default styling and the point fast-path.</param>
-    /// <param name="serviceSrid">Storage CRS the feature geometries are stored in.</param>
-    /// <param name="mapLibreStyleJson">Resolved MapLibre style JSON to apply, or <c>null</c> for default styling.</param>
-    /// <param name="requestExtent">Requested map extent in <paramref name="requestSrid"/>.</param>
-    /// <param name="requestSrid">CRS the requested extent (and output image) is expressed in.</param>
-    /// <param name="imageWidth">Output image width in pixels.</param>
-    /// <param name="imageHeight">Output image height in pixels.</param>
-    /// <param name="format">Output image format string (e.g. <c>png</c>, <c>jpeg</c>).</param>
-    /// <param name="transparent">Whether the background should be transparent.</param>
-    /// <param name="backgroundColor">Background fill used when not transparent (defaults to white).</param>
-    /// <param name="temporalFilter">Optional temporal filter for time-enabled collections.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     internal static async Task<VectorCollectionRenderResult> RenderVectorCollectionAsync(
         HttpContext context,
         int layerId,
@@ -631,13 +515,6 @@ internal static class RasterMapRenderingPipeline
         return VectorCollectionRenderResult.Success(imageBytes, totalFeatureCount);
     }
 
-    /// <summary>
-    /// Describes one vector layer to composite through
-    /// <see cref="RenderBoundStyleVectorLayersAsync"/>. When
-    /// <see cref="ExplicitMapLibreStyleJson"/> is <c>null</c> the layer's bound style is
-    /// resolved from the shared <see cref="ILayerStyleCatalog"/>; otherwise the supplied
-    /// MapLibre document overrides it (the styleId-resolved path).
-    /// </summary>
     internal readonly record struct BoundStyleVectorLayer(
         int LayerId,
         MetadataV2GeometryType GeometryType,
@@ -645,17 +522,6 @@ internal static class RasterMapRenderingPipeline
         string? ExplicitMapLibreStyleJson,
         TemporalFilter? TemporalFilter = null);
 
-    /// <summary>
-    /// Composites one or more vector layers onto a single raster image, applying each
-    /// layer's bound MapLibre/drawingInfo style (fill/stroke/width/opacity for
-    /// polygon/line/point) through the shared Skia draw path — the same
-    /// <see cref="StyleTranslator"/> / <see cref="RenderLayerToCanvas"/> primitives WMS
-    /// GetMap, MapServer export, and OGC API Maps use. This is the canonical styled
-    /// vector→raster helper the vector-aware <see cref="Honua.Core.Features.Raster.Abstractions.IRasterMapRenderer"/>
-    /// composite drives so the MCP <c>honua_render_map</c> tool and the OGC/MapServer
-    /// surfaces reflect a bound style identically, with no protocol-local rasterization.
-    /// Layers draw bottom-to-top in the supplied order.
-    /// </summary>
     internal static async Task<byte[]> RenderBoundStyleVectorLayersAsync(
         IFeatureReader featureReader,
         ILayerStyleCatalog styleCatalog,
@@ -826,12 +692,6 @@ internal static class RasterMapRenderingPipeline
     private static RasterStylePlan BuildRasterStylePlan(LayerStyleDefinition? style)
         => BuildRasterStylePlanFromJson(style?.MapLibreStyleJson);
 
-    /// <summary>
-    /// Builds a render-time style plan directly from an explicit MapLibre style JSON
-    /// document, bypassing the per-layer style catalog. Used by callers (such as OGC API
-    /// Maps styled-map rendering) that resolve the style from an external source — e.g. a
-    /// styleId-keyed projection — rather than the layer's stored default style.
-    /// </summary>
     internal static RasterStylePlan BuildRasterStylePlanFromJson(string? mapLibreStyleJson)
     {
         var styleLayers = StyleTranslator.ParseStyleLayers(mapLibreStyleJson);
@@ -845,25 +705,7 @@ internal static class RasterMapRenderingPipeline
         };
     }
 
-    /// <summary>
-    /// Pre-resolves the circle style for the single-layer point fast path, or returns
-    /// <see langword="null"/> when the style is not eligible for it.
-    /// </summary>
-    /// <remarks>
-    /// <para>This runs while building a <see cref="RasterStylePlan"/>, which is cached per layer and
-    /// reused across every subsequent request for that layer — at any extent, image size, and
-    /// therefore any zoom. A zoom-dependent style must not be pre-resolved here: the first request to
-    /// build the plan would bake its own zoom into a value every later request then reuses, so a
-    /// zoom ramp would freeze at whichever zoom happened to be rendered first. Such styles are
-    /// declared ineligible and fall back to the per-render path, where
-    /// <see cref="StyleTranslator.ResolveCircleStyle"/> is called with the request's real
-    /// <see cref="RenderZoom"/>.</para>
-    /// <para>Because the zoom check above has already excluded every style that could read
-    /// <c>["zoom"]</c>, the <see cref="RenderZoom.NotDerivable"/> passed here is unreachable by
-    /// construction. It is passed rather than a placeholder level so that if that invariant is ever
-    /// broken, the result is a loud <see cref="StyleExpressionEvaluationException"/> naming this
-    /// path — not a silently stale radius.</para>
-    /// </remarks>
+    // A zoom-dependent circle style is not baked into the cached plan, or the first request's zoom would freeze the radius for every later request.
     private static ResolvedCircleStyle? TryResolveSimpleCircleStyle(
         MapLibreStyleLayer[] styleLayers,
         string[] referencedFields)
@@ -1203,12 +1045,6 @@ internal static class RasterMapRenderingPipeline
         }
     }
 
-    /// <summary>
-    /// Derives the MapLibre <see cref="RenderZoom"/> for a request extent, resolving CRSs that have
-    /// no in-process Web Mercator mapping through the same shared transform services the render
-    /// paths already use for reprojection. The result is recorded on the current activity, so a
-    /// render that ends up ungated is traceable rather than silently unfiltered.
-    /// </summary>
     internal static async Task<RenderZoom> DeriveRenderZoomAsync(
         HttpContext context,
         SkiaMapRenderer.RenderExtent extent,

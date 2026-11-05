@@ -11,13 +11,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Middleware;
 
-/// <summary>
-/// Middleware that collects performance metrics for HTTP requests and tracks system resource usage.
-/// </summary>
-/// <remarks>
-/// This middleware measures request duration, tracks active requests, monitors memory usage,
-/// and provides comprehensive performance telemetry for operational monitoring.
-/// </remarks>
 internal sealed partial class PerformanceMonitoringMiddleware
 {
     private const string UnmatchedEndpointMetricTag = "/{unmatched}";
@@ -137,9 +130,6 @@ internal sealed partial class PerformanceMonitoringMiddleware
         }
     }
 
-    /// <summary>
-    /// Records HTTP request performance metrics.
-    /// </summary>
     private void RecordRequestMetrics(HttpContext context, string endpoint, TimeSpan duration)
     {
         var method = context.Request.Method;
@@ -165,9 +155,6 @@ internal sealed partial class PerformanceMonitoringMiddleware
         }
     }
 
-    /// <summary>
-    /// Records current memory usage metrics.
-    /// </summary>
     private void RecordMemoryMetrics()
     {
         try
@@ -204,9 +191,6 @@ internal sealed partial class PerformanceMonitoringMiddleware
         }
     }
 
-    /// <summary>
-    /// Normalizes endpoint paths to reduce cardinality in metrics.
-    /// </summary>
     private static string GetNormalizedEndpoint(HttpContext context)
     {
         var endpoint = context.GetEndpoint();
@@ -280,9 +264,6 @@ internal sealed partial class PerformanceMonitoringMiddleware
         return pathValue;
     }
 
-    /// <summary>
-    /// Determines if memory should be sampled based on configuration.
-    /// </summary>
     private bool ShouldSampleMemory()
     {
         // Simple sampling: sample every N requests (thread-safe approximation)
@@ -305,27 +286,13 @@ internal sealed partial class PerformanceMonitoringMiddleware
     private static partial Regex GuidRegex();
 }
 
-/// <summary>
-/// Extension methods for registering performance monitoring middleware.
-/// </summary>
 internal static class PerformanceMonitoringMiddlewareExtensions
 {
-    /// <summary>
-    /// Adds performance monitoring middleware to the application pipeline.
-    /// </summary>
-    /// <param name="app">The application builder</param>
-    /// <returns>The application builder for chaining</returns>
     internal static IApplicationBuilder UsePerformanceMonitoring(this IApplicationBuilder app)
     {
         return app.UseMiddleware<PerformanceMonitoringMiddleware>();
     }
 
-    /// <summary>
-    /// Adds performance monitoring services to the service collection.
-    /// </summary>
-    /// <param name="services">The service collection</param>
-    /// <param name="configure">Optional configuration action</param>
-    /// <returns>The service collection for chaining</returns>
     internal static IServiceCollection AddPerformanceMonitoring(
         this IServiceCollection services,
         Action<PerformanceMonitoringOptions>? configure = null)

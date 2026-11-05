@@ -11,11 +11,6 @@ using Honua.Protocols.GeoServices.GPServer.Models;
 
 namespace Honua.Protocols.GeoServices.GPServer;
 
-/// <summary>
-/// Complex SOAP GPValues (Esri RecordSet, GPMultiValue and GDSData references). Inputs become
-/// the Esri JSON values the REST adapter already accepts, and outputs re-encode the REST result
-/// value, so validation, authorization and execution stay in the shared GP handlers.
-/// </summary>
 internal static partial class GPServerSoapExecution
 {
     private static readonly XNamespace Xsd = "http://www.w3.org/2001/XMLSchema";

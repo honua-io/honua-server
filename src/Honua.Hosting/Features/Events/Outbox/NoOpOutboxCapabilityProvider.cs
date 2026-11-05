@@ -5,12 +5,6 @@ using Honua.Core.Features.Infrastructure.Events.Outbox;
 
 namespace Honua.Infrastructure.Events.Outbox;
 
-/// <summary>
-/// Default capability provider used when no backing-store extension has registered one
-/// (e.g. test hosts that bypass <c>RegisterInfrastructureServices</c>). Reports the
-/// outbox as unsupported so the dispatcher exits cleanly and protocol handlers fall
-/// back to the post-commit publish + retry queue path.
-/// </summary>
 internal sealed class NoOpOutboxCapabilityProvider : IOutboxCapabilityProvider
 {
     public bool SupportsTransactionalOutbox => false;

@@ -8,49 +8,15 @@ using StackExchange.Redis;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// Serializes the execution-admission check-and-create window across every server node that
-/// shares the durable job substrate (#3853).
-/// </summary>
-/// <remarks>
-/// <para>
-/// Admission reads the active-job set, decides, and only then does the caller create the durable
-/// job record. Two evaluations that overlap in that window both observe the same snapshot and can
-/// together exceed the global, per-partition, and cost denominators. A process-local semaphore
-/// closes the window on one node only; with several nodes behind a load balancer each node grants
-/// the full budget.
-/// </para>
-/// <para>
-/// When a Redis multiplexer is composed — the same Redis that holds the durable job records and
-/// their active-set index — the window is fenced by a shared lease: a Redis lock with a bounded
-/// TTL, taken before evaluation, re-validated immediately before the record is created, and
-/// released as soon as the record exists. The durable active set stays the only source of truth
-/// for counts, so there is no separate reservation ledger that could leak on restart, submission
-/// failure, or terminal transition: a created job is counted until it turns terminal, a rolled-back
-/// job leaves the active set with its terminal transition, and a node that dies holding the lease
-/// stops blocking the others once the TTL expires.
-/// </para>
-/// <para>
-/// The shared lease fails closed. When Redis is composed but unreachable, or the lease cannot be
-/// taken within the bounded wait, or it expired before the record could be created, the submission
-/// is rejected with a backpressure <see cref="ExecutionAdmissionLeaseException"/> carrying
-/// Retry-After — never admitted against per-node state. Without a multiplexer (single-node
-/// deployments) only the local gate applies, which is exact for a single node. Callers translate
-/// that exception at their own boundary.
-/// </para>
-/// </remarks>
+// The shared lease fails closed when Redis is composed but unreachable, and there is no separate reservation ledger because the durable active set is the only count.
 internal sealed class ExecutionAdmissionCoordinator
 {
-    /// <summary>Redis key of the cluster-wide admission lease.</summary>
     internal const string SharedLeaseKey = "honua:execution-admission:submission-lease";
 
-    /// <summary>Policy reference when the shared admission state cannot be reached.</summary>
     internal const string UnavailablePolicyRef = "backpressure:admission-coordination:unavailable";
 
-    /// <summary>Policy reference when the shared lease was not obtained within the bounded wait.</summary>
     internal const string ContendedPolicyRef = "backpressure:admission-coordination:contended";
 
-    /// <summary>Policy reference when the lease expired before the job record was created.</summary>
     internal const string LeaseLostPolicyRef = "backpressure:admission-coordination:lease-lost";
 
     private static readonly TimeSpan InitialRetryDelay = TimeSpan.FromMilliseconds(5);
@@ -66,10 +32,6 @@ internal sealed class ExecutionAdmissionCoordinator
     private readonly IDatabase? _redis;
     private readonly TimeProvider _timeProvider;
 
-    /// <summary>
-    /// Creates the coordinator. <paramref name="multiplexer"/> is optional: when present every
-    /// admission window is fenced by the shared lease; when absent only the node-local gate applies.
-    /// </summary>
     public ExecutionAdmissionCoordinator(
         IOptionsMonitor<ExecutionAdmissionOptions> options,
         ILogger<ExecutionAdmissionCoordinator> logger,
@@ -93,20 +55,9 @@ internal sealed class ExecutionAdmissionCoordinator
         _timeProvider = timeProvider;
     }
 
-    /// <summary>
-    /// Node-local coordinator used when none is composed. Serializes through one process-wide gate.
-    /// </summary>
     public static ExecutionAdmissionCoordinator ProcessLocal { get; } =
         new(ProcessGate, options: null, NullLogger.Instance, redis: null, TimeProvider.System);
 
-    /// <summary>
-    /// Enters the admission window. Dispose the returned lease as soon as the job record has been
-    /// created (or the submission has been rejected).
-    /// </summary>
-    /// <exception cref="ExecutionAdmissionLeaseException">
-    /// The shared lease could not be obtained: Redis is unreachable or the lease stayed contended
-    /// beyond <see cref="ExecutionAdmissionOptions.SharedLeaseAcquireTimeoutMilliseconds"/>.
-    /// </exception>
     public async Task<Lease> AcquireAsync(CancellationToken cancellationToken)
     {
         await _localGate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -179,9 +130,6 @@ internal sealed class ExecutionAdmissionCoordinator
             reason,
             retryAfterSeconds);
 
-    /// <summary>
-    /// Holds the admission window. Disposal releases the shared lease (when held) and the local gate.
-    /// </summary>
     internal sealed class Lease : IAsyncDisposable
     {
         private readonly ExecutionAdmissionCoordinator _owner;
@@ -198,16 +146,9 @@ internal sealed class ExecutionAdmissionCoordinator
             _retryAfterSeconds = retryAfterSeconds;
         }
 
-        /// <summary>
-        /// Whether the window is fenced cluster-wide (true) or on this node only (false).
-        /// </summary>
         public bool IsShared => _token is not null;
 
-        /// <summary>
-        /// Re-validates the shared lease immediately before the job record is created, extending it
-        /// by a full TTL. Throws a backpressure rejection when the lease already expired — another
-        /// node may be admitting against the same snapshot — so no record is created.
-        /// </summary>
+        // Re-validate the shared lease immediately before the job record is created; an expired lease throws because another node may be admitting against the same snapshot.
         public async Task EnsureHeldAsync()
         {
             if (_token is null)

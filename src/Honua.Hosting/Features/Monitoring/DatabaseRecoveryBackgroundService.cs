@@ -13,13 +13,6 @@ using Microsoft.Extensions.Hosting;
 
 namespace Honua.Infrastructure.Monitoring;
 
-/// <summary>
-/// Background loop that restores database access after the host started in degraded mode because the
-/// database was unavailable at boot (issue #1632). It retries the PostGIS preflight check and pending
-/// migrations with bounded exponential backoff, marking <see cref="MigrationState"/> ready once the
-/// database is reachable so <c>/healthz/ready</c> flips to ready. The loop is inert (no-op) when the
-/// host started normally, so it adds nothing to the steady-state path.
-/// </summary>
 internal sealed class DatabaseRecoveryBackgroundService : BackgroundService
 {
     private readonly DegradedStartupContext _context;
@@ -61,20 +54,7 @@ internal sealed class DatabaseRecoveryBackgroundService : BackgroundService
         }
     }
 
-    /// <summary>
-    /// Whether a readiness probe should drive a recovery attempt itself instead of only reporting
-    /// the background loop's state: true on AWS Lambda, where this loop runs only while an
-    /// invocation is executing.
-    /// </summary>
-    /// <remarks>
-    /// While degraded, <c>/healthz/ready</c> answers 503 in milliseconds without touching the
-    /// database, so each invocation ends before a background connect through RDS Proxy (TCP, TLS,
-    /// SCRAM) can finish; the environment is frozen between probes and the connect's wall-clock
-    /// timeout expires while it is frozen. The instance then never leaves degraded mode even after
-    /// the migration task ran (honua-release run 40746787170: a pre-migration cold start served
-    /// schema-floor for 15 minutes while every background connect timed out). Running one bounded
-    /// attempt inside the probe keeps the invocation alive for the whole handshake.
-    /// </remarks>
+    // On Lambda a readiness probe runs one recovery attempt, because the background loop cannot finish while the sandbox is frozen between invocations.
     internal bool RecoversOnReadinessProbe { get; }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -138,14 +118,6 @@ internal sealed class DatabaseRecoveryBackgroundService : BackgroundService
         }
     }
 
-    /// <summary>
-    /// Runs one recovery attempt inside a readiness probe, bounded by <paramref name="budget"/>, when
-    /// <see cref="RecoversOnReadinessProbe"/> holds and the host is still awaiting the database.
-    /// Never throws for a failed attempt: the probe reads the outcome from the degraded-start state.
-    /// </summary>
-    /// <param name="budget">Upper bound on the attempt, including waiting for an attempt in flight.</param>
-    /// <param name="cancellationToken">The probe's cancellation token.</param>
-    /// <returns>True when the host is no longer awaiting the database.</returns>
     internal async Task<bool> TryRecoverOnReadinessProbeAsync(TimeSpan budget, CancellationToken cancellationToken)
     {
         if (!RecoversOnReadinessProbe || !_context.IsAwaitingDatabase || _context.RecoveryFailure is not null)
@@ -167,10 +139,6 @@ internal sealed class DatabaseRecoveryBackgroundService : BackgroundService
         return !_context.IsAwaitingDatabase;
     }
 
-    /// <summary>
-    /// Runs one single-flight recovery attempt, marks the host recovered on success, and classifies
-    /// a failure. Returns null when the host is no longer awaiting the database.
-    /// </summary>
     private async Task<Exception?> RunAttemptAsync(CancellationToken cancellationToken)
     {
         await _attemptGate.WaitAsync(cancellationToken);
@@ -224,7 +192,6 @@ internal sealed class DatabaseRecoveryBackgroundService : BackgroundService
         }
     }
 
-    /// <inheritdoc />
     public override void Dispose()
     {
         _attemptGate.Dispose();
@@ -309,11 +276,7 @@ internal sealed class DatabaseRecoveryBackgroundService : BackgroundService
         _migrationState.MarkSucceeded("Database recovered; migrations are up to date.");
     }
 
-    /// <summary>
-    /// Whether <paramref name="exception"/> says the schema is behind this binary: a required
-    /// numbered migration is not journaled as applied. A schema that diverges from its journal, or a
-    /// database newer than this binary (<see cref="DatabaseSchemaCompatibilityException"/>), is not.
-    /// </summary>
+    // A schema newer than this binary, or a schema that diverges from its journal, is not treated as a missing migration.
     internal static bool IsSchemaBehindBinary(Exception exception, out string reason)
     {
         if (exception is DatabaseSchemaFloorException
@@ -329,7 +292,6 @@ internal sealed class DatabaseRecoveryBackgroundService : BackgroundService
         return false;
     }
 
-    /// <summary>Sanitized schema-floor reason (the migration script name only).</summary>
     internal static string BuildSchemaFloorReason(string migrationScript)
         => "schema guard: migration '" + migrationScript + "' not applied";
 
@@ -345,13 +307,11 @@ internal sealed class DatabaseRecoveryBackgroundService : BackgroundService
             _ => StartupDatabaseResilience.DescribeFailureClass(exception),
         };
 
-    /// <summary>The compatibility probe still could not reach the database.</summary>
     private sealed class TransientRecoveryFailureException(string failureClass, Exception? innerException)
         : Exception("Database still unavailable: " + failureClass + ".", innerException)
     {
         public string FailureClass { get; } = failureClass;
     }
 
-    /// <summary>The database is reachable but failed the compatibility check.</summary>
     private sealed class IncompatibleDatabaseException(string message) : InvalidOperationException(message);
 }

@@ -8,7 +8,6 @@ using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Infrastructure.Services;
 
-/// <summary>Encoding admission and output-buffer bounds for the shared GeoParquet writer.</summary>
 public static partial class GeoParquetFeatureWriter
 {
     private static void ValidateEncodingLimits(GeoParquetLimits limits)

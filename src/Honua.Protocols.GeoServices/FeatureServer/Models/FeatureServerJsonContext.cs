@@ -8,9 +8,6 @@ using Honua.Infrastructure.Models;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Models;
 
-/// <summary>
-/// JSON serialization context for FeatureServer API models with source generation for AOT compatibility.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     PropertyNameCaseInsensitive = true,

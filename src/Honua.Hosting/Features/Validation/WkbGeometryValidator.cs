@@ -12,10 +12,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Infrastructure.Validation;
 
-/// <summary>
-/// Shared binary geometry validation, topology and repair pipeline.
-/// Protocol adapters retain ownership of their input-format validation.
-/// </summary>
 internal sealed partial class WkbGeometryValidator : IGeometryValidator
 {
     private readonly GeometryValidationOptions _options;
@@ -36,13 +32,11 @@ internal sealed partial class WkbGeometryValidator : IGeometryValidator
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <inheritdoc />
     public GeometryValidationResult ValidateEsriJson(object? geometry) => geometry is null
         ? GeometryValidationResult.NullGeometry(_options.AllowNullGeometry)
         : GeometryValidationResult.Failure(ValidationErrorCode.InvalidJsonStructure,
             "Geometry must be a valid GeoServices JSON object");
 
-    /// <inheritdoc />
     public GeometryValidationResult ValidateWkb(byte[]? wkb)
     {
         if (wkb == null || wkb.Length == 0)
@@ -111,7 +105,6 @@ internal sealed partial class WkbGeometryValidator : IGeometryValidator
         }
     }
 
-    /// <inheritdoc />
     public async Task<GeometryValidationResult> ValidateTopologyAsync(byte[] wkb, CancellationToken cancellationToken = default)
     {
         if (!_options.EnableTopologyValidation)
@@ -144,7 +137,6 @@ internal sealed partial class WkbGeometryValidator : IGeometryValidator
         }
     }
 
-    /// <inheritdoc />
     public async Task<GeometryRepairResult> RepairAsync(byte[] wkb, CancellationToken cancellationToken = default)
     {
         if (!_options.EnableAutoRepair)
@@ -179,7 +171,6 @@ internal sealed partial class WkbGeometryValidator : IGeometryValidator
         }
     }
 
-    /// <inheritdoc />
     public async Task<GeometryValidationResult> ValidateCompleteAsync(byte[] wkb, CancellationToken cancellationToken = default)
     {
         // Layer 2: WKB validation

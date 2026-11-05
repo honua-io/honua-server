@@ -12,19 +12,7 @@ using Honua.ServiceDefaults;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Layer-level FeatureServer operations that Honua exposes as thin, spec-shaped
-/// protocol adapters even though the underlying data model is not yet implemented:
-/// layer asset storage (<c>hasAssets</c>, <c>queryAssets</c>, <c>cleanupAssets</c>,
-/// <c>uploadAssets</c>), 3D geometry (<c>convert3D</c>, <c>query3D</c>), and
-/// layer-metadata document updates (<c>metadata/update</c>).
-///
-/// Each handler resolves the (service, layer) pair through the shared validation
-/// pipeline and enforces the appropriate access scope, then returns the Esri
-/// specification's response shape with honest, empty content. Operations that would
-/// require a store Honua does not have (asset upload, 3D conversion/query, metadata
-/// persistence) return spec-compliant errors rather than fabricating success.
-/// </summary>
+// Asset, 3D, and metadata-update operations return the Esri response shape with an honest error when Honua has no store for them, rather than a fabricated success.
 internal static partial class FeatureServerEndpoints
 {
     private static async Task<IResult> HandleHasAssets(
@@ -183,12 +171,6 @@ internal static partial class FeatureServerEndpoints
             ["Layer metadata is authored through the Honua Admin API; the FeatureServer metadata/update operation is read-through only."]);
     }
 
-    /// <summary>
-    /// Resolves the (service, layer) pair through the shared V2 validation pipeline and
-    /// enforces read access. Returns the validation result plus an error
-    /// <see cref="IResult"/> when resolution or access fails (the validation result is
-    /// then <see langword="default"/>).
-    /// </summary>
     private static async Task<(FeatureServerResourceValidationHelpers.ServiceLayerValidationV2Result Validation, IResult? Error)>
         ResolveLayerForReadAsync(
             string serviceId,

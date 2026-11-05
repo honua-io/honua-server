@@ -6,10 +6,6 @@ using System.Text.Json;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Models;
 
-/// <summary>
-/// JSON serialization context for Image Server models.
-/// Enables AOT-compatible JSON serialization for Image Server endpoints.
-/// </summary>
 // Esri omits null-valued fields from ImageServer documents (descriptor /
 // conf.json). The ArcGIS Maps SDK for .NET native runtime reads these with a
 // strict parser that rejects nulls where it expects a string/array/object, so

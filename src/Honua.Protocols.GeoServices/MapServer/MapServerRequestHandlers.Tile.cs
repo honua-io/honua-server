@@ -31,9 +31,6 @@ internal static partial class MapServerEndpoints
         int StorageLayerId,
         MetadataV2Resource Resource);
 
-    /// <summary>
-    /// Handle MapServer tile requests for cached raster PNG tiles.
-    /// </summary>
     private static async Task<IResult> HandleTile(HttpContext context)
     {
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
@@ -304,16 +301,7 @@ internal static partial class MapServerEndpoints
                (display?.MaxScale is not > 0 || scale >= display.MaxScale.Value);
     }
 
-    /// <summary>
-    /// Builds a stable fingerprint of the effective row-level-security predicate for the
-    /// current principal across the tile's render layers. The fingerprint partitions the
-    /// cloud tile cache so a tile rendered from one principal's RLS-visible rows is never
-    /// served to a principal with different RLS visibility (#2067). The fingerprint folds
-    /// in both the parameterized predicate SQL and its bound claim values, since two
-    /// principals can share a policy shape but bind different claim values (different rows).
-    /// A layer with no applicable policy contributes an empty marker so the unconstrained
-    /// case stays distinct from any constrained one.
-    /// </summary>
+    // The tile-cache key includes the row-level-security predicate and its bound claim values, so one principal's tile is never served to a principal with different visibility.
     private static async Task<string> BuildTileRlsFingerprintAsync(
         IRowLevelSecurityFilterSource? rlsFilterSource,
         TileLayerDescriptor[] renderResources,
@@ -384,11 +372,6 @@ internal static partial class MapServerEndpoints
         return (GeoServicesCloudTileCache.Hash(string.Join('|', parts)), [.. renderLayers]);
     }
 
-    /// <summary>
-    /// How long a tile request may reuse the last observed change-log generation.
-    /// Editors are visible on the next observation. Holding the value briefly keeps a
-    /// cache hit off the feature database, including while that database is down.
-    /// </summary>
     private static readonly TimeSpan TileGenerationFreshness = TimeSpan.FromSeconds(2);
 
     private static readonly object TileGenerationGate = new();
@@ -409,12 +392,7 @@ internal static partial class MapServerEndpoints
         }
     }
 
-    /// <summary>
-    /// Generation folded into the cloud tile key. Returns 0 without touching
-    /// <paramref name="changeTracker"/> when cloud caching cannot store or serve a tile.
-    /// A recent observation is reused. A failed read keeps the last observation, or 0
-    /// when this process has never seen one, and does not fail the tile request.
-    /// </summary>
+    // A failed generation read keeps the last observation, or zero when this process has never seen one, and does not fail the tile request.
     internal static async Task<long> ResolveTileCacheGenerationAsync(
         ICloudFileStorage? storage,
         CloudStorageOptions? storageOptions,

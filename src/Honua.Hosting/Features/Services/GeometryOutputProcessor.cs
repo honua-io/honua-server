@@ -7,11 +7,7 @@ using NetTopologySuite.Simplify;
 
 namespace Honua.Infrastructure.Services;
 
-/// <summary>
-/// Applies geometry output limits such as precision and simplification.
-/// Simplification tolerance is interpreted in meters for supported output SRIDs
-/// (WGS84 and Web Mercator families) and skipped for unsupported CRS units.
-/// </summary>
+// Simplification tolerance is meters for WGS84 and Web Mercator and is skipped for any other unit.
 internal static class GeometryOutputProcessor
 {
     private const double EarthRadiusMeters = 6_378_137d;

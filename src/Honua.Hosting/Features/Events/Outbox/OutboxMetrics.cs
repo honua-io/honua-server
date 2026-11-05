@@ -6,20 +6,6 @@ using Honua.ServiceDefaults;
 
 namespace Honua.Infrastructure.Events.Outbox;
 
-/// <summary>
-/// Metrics emitted by the feature-change transactional outbox dispatcher.
-/// Backlog/age gauges are observable so the dispatcher can update them under its
-/// own cadence without competing with mutation hot paths.
-///
-/// <para>
-/// Instruments are created from the injected <see cref="IMeterFactory"/> on a meter named
-/// <see cref="HonuaTelemetry.ServiceName"/> ("Honua"), which is already on the exporter
-/// allow-list, so no meter-registration change is required. The type is a DI singleton that
-/// owns its instruments and gauge state on the instance (not process-global statics), so tests
-/// can construct an isolated instance with its own <see cref="IMeterFactory"/> and observe it
-/// without cross-test interference (#2802).
-/// </para>
-/// </summary>
 internal sealed class OutboxMetrics
 {
     private readonly Meter _meter;
@@ -32,14 +18,10 @@ internal sealed class OutboxMetrics
     private long _deadLetteredCount;
     private double _oldestPendingAgeSeconds;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="OutboxMetrics"/> class, creating its
-    /// instruments on a "Honua" meter obtained from <paramref name="meterFactory"/>.
-    /// </summary>
-    /// <param name="meterFactory">The DI meter factory used to create the shared "Honua" meter.</param>
     public OutboxMetrics(IMeterFactory meterFactory)
     {
         ArgumentNullException.ThrowIfNull(meterFactory);
+        // Instruments use the shared Honua meter because a differently named meter needs exporter registration.
         _meter = meterFactory.Create(HonuaTelemetry.ServiceName, HonuaTelemetry.ServiceVersion);
 
         // `unit: null` on the instruments below is deliberate, not an oversight. The OpenTelemetry
@@ -94,22 +76,14 @@ internal sealed class OutboxMetrics
             description: "Age in seconds of the oldest backlog row (pending, failed, or claimed).");
     }
 
-    /// <summary>
-    /// The "Honua" meter that owns this instance's instruments. Exposed so unit tests can filter a
-    /// <see cref="MeterListener"/> to this exact meter instance for full parallel isolation.
-    /// </summary>
     public Meter Meter => _meter;
 
-    /// <summary>Records one outbox row successfully dispatched to the canonical event publisher.</summary>
     public void RecordDispatched() => _dispatched.Add(1);
 
-    /// <summary>Records one outbox row whose dispatch attempt failed (still retriable).</summary>
     public void RecordFailed() => _failed.Add(1);
 
-    /// <summary>Records one outbox row that exhausted retries and was dead-lettered.</summary>
     public void RecordDeadLettered() => _deadLettered.Add(1);
 
-    /// <summary>Records outbox claim leases reset by the recovery loop after a worker exit.</summary>
     public void RecordRecoveredClaims(long count)
     {
         if (count > 0)
@@ -118,7 +92,6 @@ internal sealed class OutboxMetrics
         }
     }
 
-    /// <summary>Refreshes the cached backlog snapshot read by the observable gauges.</summary>
     public void RecordBacklog(long pending, long deadLettered, double oldestPendingAgeSeconds)
     {
         Interlocked.Exchange(ref _pendingCount, pending);

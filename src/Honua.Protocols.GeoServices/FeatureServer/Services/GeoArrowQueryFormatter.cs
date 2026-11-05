@@ -15,9 +15,6 @@ using Honua.Infrastructure.Services;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
-/// <summary>
-/// Formats query results as Arrow IPC Stream with GeoArrow metadata.
-/// </summary>
 internal sealed class GeoArrowQueryFormatter
 {
     private const string GeometryColumnName = "geometry";
@@ -26,9 +23,6 @@ internal sealed class GeoArrowQueryFormatter
     private const string ArrowExtensionMetadataKey = "ARROW:extension:metadata";
     private const string GeoMetadataKey = "geo";
 
-    /// <summary>
-    /// Formats query result as Arrow IPC Stream with GeoArrow metadata using Metadata v2 resource metadata.
-    /// </summary>
     public static async Task<(byte[] response, string contentType)> FormatAsGeoArrowAsync(
         QueryResult<Feature> result,
         MetadataV2Resource resource,

@@ -8,27 +8,14 @@ using System.Text.Json;
 
 namespace Honua.Infrastructure.Tiles;
 
-/// <summary>
-/// Admission limits for uncompressed CompactV2 bundle and package data.
-/// </summary>
-/// <param name="MaximumBundleBytes">Maximum bytes retained by one in-memory bundle.</param>
-/// <param name="MaximumPackageBytes">Maximum aggregate uncompressed bundle bytes admitted to one package.</param>
 internal readonly record struct CompactTilePackageLimits(long MaximumBundleBytes, long MaximumPackageBytes)
 {
-    /// <summary>Default limits suitable for synchronous packaging.</summary>
     public static CompactTilePackageLimits Default { get; } = new(
         MaximumBundleBytes: 64L * 1024L * 1024L,
         MaximumPackageBytes: 1024L * 1024L * 1024L);
 }
 
-/// <summary>
-/// Writes Esri TPKX 1.0 packages containing Compact Cache V2 bundles.
-/// </summary>
-/// <remarks>
-/// Input is streamed one 128-by-128 bundle at a time. Tiles must therefore be
-/// ordered by level, bundle row, and bundle column; order within a bundle is
-/// unrestricted.
-/// </remarks>
+// Tiles must arrive ordered by level, bundle row, and bundle column because each bundle is written in one pass.
 internal static class CompactTilePackageWriter
 {
     private const int PacketSize = 128;
@@ -47,9 +34,6 @@ internal static class CompactTilePackageWriter
     private static readonly byte[] ThumbnailBytes = Convert.FromBase64String(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
 
-    /// <summary>
-    /// Writes tiles to a deterministic TPKX archive and returns the tile count.
-    /// </summary>
     public static async Task<int> WriteAsync(
         Stream destination,
         string cacheName,

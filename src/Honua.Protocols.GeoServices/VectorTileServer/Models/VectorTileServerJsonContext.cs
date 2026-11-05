@@ -5,9 +5,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Protocols.GeoServices.VectorTileServer.Models;
 
-/// <summary>
-/// AOT-compatible source-generated JSON serialization context for VectorTileServer models.
-/// </summary>
 [JsonSerializable(typeof(VectorTileServerMetadataResponse))]
 [JsonSerializable(typeof(VectorTileInfo))]
 [JsonSerializable(typeof(VectorTileOrigin))]

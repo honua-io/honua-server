@@ -41,9 +41,6 @@ internal static partial class VectorTileServerEndpoints
     private const string VectorTileServerProtocolName = "VectorTileServer";
     private const string MvtContentType = "application/vnd.mapbox-vector-tile";
 
-    /// <summary>
-    /// Maps the VectorTileServer vector tile data route (<c>tile/{z}/{y}/{x}.pbf</c>).
-    /// </summary>
     private static void MapTileEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/rest/services/{serviceId}/VectorTileServer/tile/{z:int}/{y:int}/{x:int}.pbf",
@@ -63,12 +60,6 @@ internal static partial class VectorTileServerEndpoints
             .Produces(501);
     }
 
-    /// <summary>
-    /// Handle a VectorTileServer tile request. Resolves the service by name, resolves its
-    /// primary tiled publication to a storage layer id, and renders the tile through the
-    /// shared vector-tile execution path. Esri <c>{z}/{y}/{x}</c> maps directly onto the
-    /// canonical <c>(x, y, z)</c> tuple (shared top-left WebMercatorQuad origin).
-    /// </summary>
     private static async Task<IResult> HandleGetTile(HttpContext context, int z, int y, int x, CancellationToken cancellationToken)
     {
         var serviceError = RouteValidationHelpers.ValidateServiceId(context, out var serviceId);

@@ -6,147 +6,54 @@ using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
-/// <summary>
-/// The Esri <c>mosaicMethod</c> that an ImageServer <c>mosaicRule</c> selects, normalized to
-/// the subset this service understands. <see cref="Unsupported"/> covers recognized-but-not-yet
-/// implemented methods (for example <c>esriMosaicCenter</c>, or an <c>esriMosaicAttribute</c>
-/// over a non-acquisition, non-allowlisted field) which must surface a clean 501 when more than
-/// one raster would be composited.
-/// </summary>
+// A recognized mosaic method this service cannot composite yet must return 501 when more than one raster would be drawn, rather than a silent default.
 public enum MosaicMethod
 {
-    /// <summary>No mosaic method was requested (<c>esriMosaicNone</c> or an absent rule).</summary>
     None = 0,
 
-    /// <summary>
-    /// <c>esriMosaicAttribute</c> over an allowlisted NON-date raster attribute — composites by
-    /// the named attribute value (ascending or descending). The resolved physical column is
-    /// carried on <see cref="ImageServerMosaicRule.AttributeSortColumn"/>.
-    /// </summary>
     Attribute = 1,
 
-    /// <summary>
-    /// <c>esriMosaicAttribute</c> over a date field, or <c>esriMosaicAttribute</c> resolved to
-    /// an acquisition ordering. Equivalent to <see cref="Attribute"/> for ordering purposes.
-    /// </summary>
     ByDate = 2,
 
-    /// <summary>
-    /// <c>esriMosaicLockRaster</c> — composites only the caller-pinned raster ids in
-    /// <see cref="ImageServerMosaicRule.LockRasterIds"/>.
-    /// </summary>
     LockRaster = 3,
 
-    /// <summary>
-    /// <c>esriMosaicNorthwest</c> — the upper-left-most raster wins each contested pixel.
-    /// </summary>
     Northwest = 4,
 
-    /// <summary>
-    /// <c>esriMosaicSeamline</c> — each raster is clipped to its persisted seamline (cutline)
-    /// before the union, so a contested pixel is resolved by the per-raster seamline geometry
-    /// rather than by raster ordering alone (#1804).
-    /// </summary>
     Seamline = 5,
 
-    /// <summary>
-    /// <c>esriMosaicNadir</c> — the raster acquired closest to straight-down wins a contested
-    /// pixel, ranked by the per-raster off-nadir angle from the sensor/orientation metadata
-    /// (#1870, now that #1907 models that metadata). Rasters without a recorded off-nadir angle
-    /// rank last.
-    /// </summary>
     Nadir = 7,
 
-    /// <summary>
-    /// A recognized Esri mosaic method this service does not yet implement (center,
-    /// viewpoint, arbitrary non-date attribute sort). Surfaces a 501 when it would affect
-    /// multi-raster pixel selection.
-    /// </summary>
     Unsupported = 6
 }
 
-/// <summary>
-/// A parsed ImageServer <c>mosaicRule</c>. Consolidates the JSON validation and the
-/// merge-strategy token resolution that the export handler previously performed inline, so
-/// the handler can map a single parsed value to a <see cref="RasterMergeStrategy"/> and a
-/// <see cref="RasterMosaicOrdering"/>.
-/// </summary>
 public readonly record struct ImageServerMosaicRule
 {
-    /// <summary>
-    /// The <c>allowedMosaicMethods</c> the service advertises (#4063): the unprefixed Esri
-    /// vocabulary (<c>None,Center,NorthWest,LockRaster,ByAttribute,Nadir,Viewpoint,Seamline</c>)
-    /// narrowed to the methods <see cref="TryParse"/> classifies as executable. <c>Center</c> and
-    /// <c>Viewpoint</c> classify as <see cref="MosaicMethod.Unsupported"/> (501 on a multi-raster
-    /// request), so they are not advertised. REST and SOAP service metadata share this value.
-    /// </summary>
     public const string AllowedMosaicMethods = "None,NorthWest,LockRaster,ByAttribute,Nadir,Seamline";
 
-    /// <summary>
-    /// The <c>defaultMosaicMethod</c> the service advertises (#4063). A request without a
-    /// <c>mosaicRule</c> composites newest acquisition first (<see cref="ToOrdering"/> falls back to
-    /// <see cref="RasterMosaicOrdering.AcquisitionNewest"/>), which in Esri terms is a
-    /// <c>ByAttribute</c> mosaic over <see cref="DefaultSortField"/>, not <c>NorthWest</c>.
-    /// </summary>
     public const string DefaultMosaicMethod = "ByAttribute";
 
-    /// <summary>
-    /// Wire <c>mosaicMethod</c> for an advertised short name. <c>ByAttribute</c> is
-    /// <c>esriMosaicAttribute</c>; the other advertised names take an <c>esriMosaic</c> prefix.
-    /// </summary>
     public static string ToMosaicMethodWireValue(string shortName) =>
         string.Equals(shortName, DefaultMosaicMethod, StringComparison.OrdinalIgnoreCase)
             ? "esriMosaicAttribute"
             : "esriMosaic" + shortName;
 
-    /// <summary>
-    /// The raster-catalog date field the default <see cref="DefaultMosaicMethod"/> sorts on. It is
-    /// the catalog attribute field name, and <see cref="TryParse"/> resolves it to the
-    /// acquisition ordering.
-    /// </summary>
     public const string DefaultSortField = "AcquisitionDate";
 
-    /// <summary>The normalized mosaic method requested by the rule.</summary>
     public MosaicMethod Method { get; init; }
 
-    /// <summary>
-    /// The raster ids pinned by an <c>esriMosaicLockRaster</c> rule, or <c>null</c> when the
-    /// method is not <see cref="MosaicMethod.LockRaster"/>.
-    /// </summary>
     public long[]? LockRasterIds { get; init; }
 
-    /// <summary>
-    /// Whether an attribute/date sort is ascending (oldest first). Defaults to <c>false</c>
-    /// (descending, newest first) to match the Esri default acquisition sort.
-    /// </summary>
     public bool Ascending { get; init; }
 
-    /// <summary>The <c>sortField</c> declared by an attribute rule, if any.</summary>
     public string? SortField { get; init; }
 
-    /// <summary>The <c>sortValue</c> declared by an attribute rule, if any.</summary>
     public string? SortValue { get; init; }
 
-    /// <summary>
-    /// The allowlisted physical raster-catalog column an <c>esriMosaicAttribute</c> rule sorts
-    /// on when <see cref="Method"/> is <see cref="MosaicMethod.Attribute"/> over a non-date
-    /// field; <c>null</c> for date-attribute and all other methods. Always a vetted physical
-    /// column name (never the caller's raw <see cref="SortField"/>), so it is safe to thread into
-    /// the mosaic ORDER BY.
-    /// </summary>
+    // An attribute mosaic sorts on an allowlisted physical column, never the caller's raw field text, so the name is safe to place in ORDER BY.
     public string? AttributeSortColumn { get; init; }
 
-    /// <summary>
-    /// The pixel-resolution merge strategy resolved from the rule's
-    /// <c>mergeStrategy</c>/<c>operation</c> token, or <c>null</c> when the rule carries no such
-    /// token (the caller then falls back to the resource/default strategy).
-    /// </summary>
     public RasterMergeStrategy? Operation { get; init; }
 
-    /// <summary>
-    /// Maps the parsed method to the mosaic ordering passed to the raster store. Falls back to
-    /// the default newest-first ordering for methods that do not constrain ordering.
-    /// </summary>
     public RasterMosaicOrdering ToOrdering() => Method switch
     {
         MosaicMethod.Northwest => RasterMosaicOrdering.Northwest,
@@ -159,21 +66,11 @@ public readonly record struct ImageServerMosaicRule
         _ => RasterMosaicOrdering.AcquisitionNewest
     };
 
-    /// <summary>
-    /// Builds the non-date attribute ordering passed to the raster store when this rule is an
-    /// <c>esriMosaicAttribute</c> over an allowlisted non-date column; <c>null</c> otherwise.
-    /// </summary>
     public RasterMosaicAttributeSort? ToAttributeSort()
         => Method == MosaicMethod.Attribute && !string.IsNullOrEmpty(AttributeSortColumn)
             ? new RasterMosaicAttributeSort(AttributeSortColumn, Ascending)
             : null;
 
-    /// <summary>
-    /// Keeps only rasters named by a lock-raster rule, in caller-pinned
-    /// <see cref="LockRasterIds"/> order. Other methods return the selection unchanged.
-    /// </summary>
-    /// <param name="rasters">Rasters already selected by geometry and time.</param>
-    /// <returns>The rasters the rule allows, in lock order when the method is lock-raster.</returns>
     public RasterInfo[] RestrictToLockedRasters(IReadOnlyList<RasterInfo> rasters)
     {
         ArgumentNullException.ThrowIfNull(rasters);
@@ -199,17 +96,6 @@ public readonly record struct ImageServerMosaicRule
             .ToArray();
     }
 
-    /// <summary>
-    /// Parses an ImageServer <c>mosaicRule</c> request string.
-    /// </summary>
-    /// <param name="mosaicRule">The raw <c>mosaicRule</c> query value (Esri JSON or empty).</param>
-    /// <param name="rule">The parsed rule when this returns <c>true</c>.</param>
-    /// <param name="error">A client-facing error message when this returns <c>false</c>.</param>
-    /// <param name="isNotImplemented">
-    /// When this returns <c>false</c>, indicates whether the failure is a recognized but
-    /// unimplemented method (501) rather than malformed input (400).
-    /// </param>
-    /// <returns><c>true</c> when the rule parsed (including the empty/no-rule case).</returns>
     public static bool TryParse(
         string? mosaicRule,
         out ImageServerMosaicRule rule,

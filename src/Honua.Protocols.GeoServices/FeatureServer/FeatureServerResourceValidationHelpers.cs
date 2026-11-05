@@ -11,17 +11,11 @@ internal static class FeatureServerResourceValidationHelpers
 {
     private const string FeatureServerProtocol = "FeatureServer";
 
-    /// <summary>
-    /// Result of resolving a feature service through the Metadata v2 graph.
-    /// </summary>
     internal readonly record struct ServiceValidationV2Result(
         bool IsValid,
         MetadataV2Service? Service,
         IResult? ErrorResult);
 
-    /// <summary>
-    /// Result of resolving a feature service layer through the Metadata v2 graph.
-    /// </summary>
     internal readonly record struct ServiceLayerValidationV2Result(
         bool IsValid,
         MetadataV2Service? Service,

@@ -9,54 +9,15 @@ using Honua.ServiceDefaults;
 
 namespace Honua.Infrastructure.Models;
 
-/// <summary>
-/// Provides protocol-specific formatting for StandardErrorResponse instances.
-/// Supports GeoServices, OGC API, OData (via delegate registration), and
-/// generic Problem Details formats.
-/// </summary>
-/// <remarks>
-/// Audit-A1: this type lives in <c>Honua.Infrastructure.Models</c>
-/// and must not take a using-clause dependency on any protocol assembly so the
-/// Honua.Infrastructure.Models sub-area can extract into a <c>Honua.Hosting.Models</c>
-/// assembly without a back-edge. Protocol-specific formatters that need a
-/// payload shape only the protocol owns (today only OData's
-/// <c>ODataError</c> JSON envelope) plug in via
-/// <see cref="ODataErrorFormatterOverride"/>. The OData wiring sets the
-/// override during <c>ODataServiceCollectionExtensions.AddOData</c>.
-/// </remarks>
+// This formatter must not reference a protocol assembly; a protocol that owns its envelope plugs in through a delegate.
 internal static class StandardErrorResponseFormatter
 {
     internal const string WfsRequestVersionItemKey = "Honua.Wfs.RequestVersion";
 
-    /// <summary>
-    /// Optional OData error formatter. When set, requests classified as OData
-    /// (<see cref="ProtocolRequestClassifier.IsOData"/>) are formatted via the
-    /// delegate. When null, OData requests fall through to the generic Problem
-    /// Details path. The OData protocol's service-registration entry point
-    /// (<c>AddOData</c>) installs the delegate at startup.
-    /// </summary>
     internal static Func<HttpContext, StandardErrorResponse, ErrorResponseFormatterOptions, IResult>? ODataErrorFormatterOverride { get; set; }
 
-    /// <summary>
-    /// Optional sink for recording errors into the server-side
-    /// <c>RecentErrorBuffer</c>. When set, every formatted error is also
-    /// recorded via the delegate. The buffer lives in
-    /// <c>Honua.Infrastructure.Monitoring</c> (a Server-side
-    /// sub-area that has not been carved into <c>Honua.Hosting</c>); the
-    /// observability service-registration entry point in Server installs the
-    /// delegate at startup. Mirrors the
-    /// <see cref="ODataErrorFormatterOverride"/> pattern for the
-    /// audit-A1 Hosting-vs-Server boundary.
-    /// </summary>
     internal static Action<HttpContext, StandardErrorResponse>? RecentErrorBufferRecordOverride { get; set; }
 
-    /// <summary>
-    /// Formats a StandardErrorResponse into an appropriate IResult based on the request protocol.
-    /// </summary>
-    /// <param name="context">The HTTP context for protocol detection.</param>
-    /// <param name="errorResponse">The standard error response to format.</param>
-    /// <param name="options">Optional formatting options.</param>
-    /// <returns>An IResult formatted for the detected protocol.</returns>
     internal static IResult FormatError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions? options = null)
     {
         options ??= new ErrorResponseFormatterOptions();
@@ -139,24 +100,12 @@ internal static class StandardErrorResponseFormatter
         return FormatGenericError(context, errorResponse, options);
     }
 
-    /// <summary>
-    /// Writes a StandardErrorResponse directly to the HTTP response using protocol-specific formatting.
-    /// </summary>
-    /// <param name="context">The HTTP context for protocol detection.</param>
-    /// <param name="errorResponse">The standard error response to write.</param>
-    /// <param name="options">Optional formatting options.</param>
-    /// <returns>A Task representing the asynchronous write operation.</returns>
     internal static Task WriteErrorAsync(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions? options = null)
     {
         var result = FormatError(context, errorResponse, options);
         return result.ExecuteAsync(context);
     }
 
-    /// <summary>
-    /// Formats error for OData v4 protocol via the registered override
-    /// delegate, or falls back to generic Problem Details when no OData
-    /// formatter has been wired (e.g. OData is disabled by configuration).
-    /// </summary>
     private static IResult FormatODataError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
     {
         var formatter = ODataErrorFormatterOverride;
@@ -168,18 +117,12 @@ internal static class StandardErrorResponseFormatter
         return formatter(context, errorResponse, options);
     }
 
-    /// <summary>
-    /// Formats error for OGC API Features protocol.
-    /// </summary>
     private static IResult FormatOgcError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
     {
         AddResponseHeaders(context, options);
         return FormatProblem(context, "about:blank", errorResponse, options);
     }
 
-    /// <summary>
-    /// Formats error for WFS 2.0 protocol.
-    /// </summary>
     private static IResult FormatWfsError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
     {
         AddResponseHeaders(context, options);
@@ -247,9 +190,6 @@ internal static class StandardErrorResponseFormatter
             errorResponse.StatusCode);
     }
 
-    /// <summary>
-    /// Formats errors for WCS 2.0 aliases using the OWS 2.0 exception contract.
-    /// </summary>
     private static IResult FormatWcsError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
     {
         AddResponseHeaders(context, options);
@@ -278,9 +218,6 @@ internal static class StandardErrorResponseFormatter
             errorResponse.StatusCode);
     }
 
-    /// <summary>
-    /// Formats WMTS errors using the OWS 1.1 exception contract required by WMTS 1.0.0.
-    /// </summary>
     private static IResult FormatWmtsError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
     {
         AddResponseHeaders(context, options);
@@ -313,15 +250,7 @@ internal static class StandardErrorResponseFormatter
             errorResponse.StatusCode);
     }
 
-    /// <summary>
-    /// Formats infrastructure errors on WMS alias paths (/ogc/services/{id}/wms,
-    /// /rest/services/{id}/MapServer/wms) as a WMS ServiceExceptionReport with HTTP 200,
-    /// matching the WMS 1.3.0 § 7.3.3.4 requirement. Authentication and authorization
-    /// failures without an explicit protocol code are the exception: they reproduce the WMS
-    /// handler's own AccessDenied response (HTTP 401/403, WMS 1.1.1 DTD or 1.3.0 envelope
-    /// and media type per the request), so an invalid or expired token rejected by
-    /// middleware is indistinguishable from the handler's missing-credential refusal.
-    /// </summary>
+    // A WMS alias infrastructure error is an HTTP 200 service-exception report, except an authentication failure, which stays 401 or 403 so it matches the handler.
     private static IResult FormatWmsAliasError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
     {
         AddResponseHeaders(context, options);
@@ -361,18 +290,12 @@ internal static class StandardErrorResponseFormatter
         };
     }
 
-    /// <summary>
-    /// Formats error for Admin API protocol.
-    /// </summary>
     private static IResult FormatAdminError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
     {
         AddResponseHeaders(context, options);
         return FormatProblem(context, "https://honua.io/problems/admin", errorResponse, options);
     }
 
-    /// <summary>
-    /// Formats error for GeoServices protocol.
-    /// </summary>
     private static IResult FormatGeoServicesError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
     {
         var details = BuildGeoServicesDetails(context, errorResponse, options);
@@ -424,9 +347,6 @@ internal static class StandardErrorResponseFormatter
                 : StatusCodes.Status200OK);
     }
 
-    /// <summary>
-    /// Formats error using generic Problem Details format.
-    /// </summary>
     private static IResult FormatGenericError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
     {
         AddResponseHeaders(context, options);
@@ -458,9 +378,6 @@ internal static class StandardErrorResponseFormatter
                 options.RetryAfterSeconds);
     }
 
-    /// <summary>
-    /// Builds GeoServices error details array.
-    /// </summary>
     private static string[]? BuildGeoServicesDetails(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
     {
         var detailsList = new List<string>();
@@ -499,9 +416,6 @@ internal static class StandardErrorResponseFormatter
         return detailsList.Count > 0 ? [.. detailsList] : null;
     }
 
-    /// <summary>
-    /// Builds combined detail message with extras for Problem Details.
-    /// </summary>
     private static string BuildDetailWithExtras(StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
     {
         var detailParts = new List<string>();
@@ -561,9 +475,6 @@ internal static class StandardErrorResponseFormatter
         return SecurityElement.Escape(value) ?? string.Empty;
     }
 
-    /// <summary>
-    /// Adds additional headers if specified in options.
-    /// </summary>
     private static void AddResponseHeaders(HttpContext context, ErrorResponseFormatterOptions options)
     {
         if (options.AdditionalHeaders is { Count: > 0 })
@@ -587,18 +498,6 @@ internal static class StandardErrorResponseFormatter
     private static void TryRecordRecentError(HttpContext context, StandardErrorResponse errorResponse)
         => RecentErrorBufferRecordOverride?.Invoke(context, errorResponse);
 
-    /// <summary>
-    /// Emits the keystone error-rate telemetry (#2243) for a produced error
-    /// envelope. Every error-envelope construction path funnels here — both the
-    /// central <see cref="FormatError"/> dispatch and the GeoServices builders in
-    /// <c>ValidationErrorHelpers</c> that bypass this formatter — so the platform
-    /// can aggregate and alert on its own compat error rate. Classifies the
-    /// surface from the request path and delegates to
-    /// <see cref="HonuaTelemetry.RecordErrorEnvelope(string, string, int, bool, int)"/>.
-    /// </summary>
-    /// <param name="context">The HTTP context for protocol/operation classification.</param>
-    /// <param name="statusCode">The logical error code carried by the error envelope.</param>
-    /// <param name="httpStatusCode">Actual HTTP response status, when different from the logical error code.</param>
     internal static void RecordErrorTelemetry(HttpContext context, int statusCode, int? httpStatusCode = null)
     {
         var path = context.Request.Path;
@@ -700,10 +599,6 @@ internal static class StandardErrorResponseFormatter
         return GeoServicesOperations.Contains(last) ? last.ToLowerInvariant() : "unknown";
     }
 
-    /// <summary>
-    /// Fixed GeoServices REST operation terminals across Feature/Map/Image/GP/NA/Geocode/
-    /// VectorTile servers that are safe to emit as the bounded <c>operation</c> metric label.
-    /// </summary>
     private static readonly HashSet<string> GeoServicesOperations = new(StringComparer.OrdinalIgnoreCase)
     {
         // FeatureServer / layer

@@ -6,25 +6,9 @@ using Microsoft.AspNetCore.Http;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Authorization requirement that enforces a scoped admin API key's persisted
-/// permission grants on the general request path (#1985).
-/// </summary>
-/// <remarks>
-/// The <c>Admin</c> family of policies previously required only the <c>admin</c>
-/// role, which every authenticated admin key received regardless of its scope.
-/// This requirement is added alongside that role check so a key minted as
-/// read-only (<c>admin:read</c>) can satisfy safe (GET/HEAD/OPTIONS) admin reads
-/// but is denied mutating (POST/PUT/PATCH/DELETE) admin operations. Full-admin
-/// principals (<c>admin:*</c>, the bootstrap password, client certificates, and
-/// the Test dev-bypass) are unaffected.
-/// </remarks>
+// admin:read may use safe methods only; a full-admin principal is unaffected.
 internal sealed class AdminPermissionRequirement : IAuthorizationRequirement;
 
-/// <summary>
-/// Evaluates <see cref="AdminPermissionRequirement"/> against the principal's
-/// admin permission grants and the current request's HTTP method.
-/// </summary>
 internal sealed class AdminPermissionAuthorizationHandler(
     IHttpContextAccessor httpContextAccessor,
     ILogger<AdminPermissionAuthorizationHandler> logger)
@@ -33,7 +17,6 @@ internal sealed class AdminPermissionAuthorizationHandler(
     private readonly IHttpContextAccessor _httpContextAccessor = httpContextAccessor;
     private readonly ILogger<AdminPermissionAuthorizationHandler> _logger = logger;
 
-    /// <inheritdoc />
     protected override Task HandleRequirementAsync(
         AuthorizationHandlerContext context,
         AdminPermissionRequirement requirement)

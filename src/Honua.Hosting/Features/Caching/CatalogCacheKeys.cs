@@ -6,11 +6,6 @@ using Honua.Core.Features.Caching.Abstractions;
 
 namespace Honua.Infrastructure.Caching;
 
-/// <summary>
-/// Cache-key constants and schema-scoped key helpers for catalog/output cache entries.
-/// The generation-stamped scope prefix lets <see cref="OutputCacheInvalidationService"/>
-/// invalidate every catalog-derived cache entry by bumping a single generation marker.
-/// </summary>
 internal static class CatalogCacheKeys
 {
     public const string LayerKeyPrefix = "layer:";

@@ -5,7 +5,6 @@ using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
-/// <summary>Frames canonical planar samples as uncompressed Esri BSQ with a packed pixel mask.</summary>
 internal static class ImageServerBsqEncoder
 {
     internal static RasterResult Encode(RasterResult raster, bool requireAllBandsValid = false)

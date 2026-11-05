@@ -5,10 +5,6 @@ using SkiaSharp;
 
 namespace Honua.Infrastructure.Rendering;
 
-/// <summary>
-/// Converts WKB (Well-Known Binary) geometry to SkiaSharp paths in pixel coordinates.
-/// Handles coordinate transformation from geographic/projected coordinates to pixel space.
-/// </summary>
 internal static class WkbToSkiaConverter
 {
     // WKB geometry types
@@ -20,50 +16,21 @@ internal static class WkbToSkiaConverter
     private const int WkbMultiPolygon = 6;
     private const int WkbGeometryCollection = 7;
 
-    /// <summary>
-    /// Maximum nesting depth for multi-geometries / geometry collections. Guards against
-    /// hostile WKB payloads that drive unbounded recursion during tile rendering.
-    /// </summary>
     private const int MaxGeometryNestingDepth = 32;
 
-    /// <summary>
-    /// Minimum encoded size of a nested point geometry (byte order + type + x + y).
-    /// Used to clamp list preallocation from untrusted element counts.
-    /// </summary>
     private const int MinNestedPointBytes = 21;
 
-    /// <summary>
-    /// Result of WKB geometry conversion, containing paths and/or point locations.
-    /// </summary>
     internal readonly struct GeometryConversionResult
     {
-        /// <summary>
-        /// SkiaSharp path for lines and polygons.
-        /// </summary>
         public SKPath? Path { get; init; }
 
-        /// <summary>
-        /// Point locations for point geometries (rendered as circles).
-        /// </summary>
         public SKPoint[]? Points { get; init; }
 
-        /// <summary>
-        /// Whether this is a point geometry.
-        /// </summary>
         public bool IsPoint { get; init; }
 
-        /// <summary>
-        /// Whether this is a polygon geometry (needs fill + stroke).
-        /// </summary>
         public bool IsPolygon { get; init; }
     }
 
-    /// <summary>
-    /// Converts WKB geometry to SkiaSharp drawing primitives using the given coordinate transform.
-    /// </summary>
-    /// <param name="wkb">WKB geometry bytes</param>
-    /// <param name="transform">Coordinate-to-pixel transform function</param>
-    /// <returns>Conversion result with paths and/or points</returns>
     public static GeometryConversionResult Convert(byte[] wkb, Func<double, double, SKPoint> transform)
     {
         if (wkb == null || wkb.Length < 5)
@@ -82,10 +49,6 @@ internal static class WkbToSkiaConverter
         }
     }
 
-    /// <summary>
-    /// Fast path for simple point geometries used by dense point-layer raster rendering.
-    /// Returns false for non-point or malformed geometries.
-    /// </summary>
     public static bool TryConvertPoint(byte[]? wkb, Func<double, double, SKPoint> transform, out SKPoint point)
     {
         point = default;
@@ -209,11 +172,7 @@ internal static class WkbToSkiaConverter
         };
     }
 
-    /// <summary>
-    /// Reads an element count, rejecting negative values from corrupted or hostile payloads.
-    /// Oversized counts are caught later by the reader's bounds checks; preallocation from
-    /// counts must be clamped separately (see <see cref="ReadMultiPoint"/>).
-    /// </summary>
+    // A negative element count is rejected; an oversized count is left to the later bounds check, and a preallocation must be clamped on its own.
     private static int ReadElementCount(WkbReader reader)
     {
         var count = reader.ReadInt32();
@@ -471,9 +430,6 @@ internal static class WkbToSkiaConverter
         }
     }
 
-    /// <summary>
-    /// Binary reader for WKB that handles byte order.
-    /// </summary>
     internal sealed class WkbReader
     {
         private readonly byte[] _data;
@@ -481,9 +437,6 @@ internal static class WkbToSkiaConverter
 
         public bool IsLittleEndian { get; set; }
 
-        /// <summary>
-        /// Bytes remaining in the buffer from the current read position.
-        /// </summary>
         public int RemainingBytes => _data.Length - _position;
 
         public WkbReader(byte[] data)

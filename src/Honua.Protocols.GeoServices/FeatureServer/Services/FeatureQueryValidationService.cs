@@ -5,9 +5,6 @@ using Honua.Protocols.GeoServices.FeatureServer.Models;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
-/// <summary>
-/// Result of query parameter validation
-/// </summary>
 public sealed record QueryValidationResult
 {
     public bool IsValid { get; init; }
@@ -21,9 +18,6 @@ public sealed record QueryValidationResult
         new() { IsValid = false, ErrorMessage = errorMessage };
 }
 
-/// <summary>
-/// Result of related records validation
-/// </summary>
 public sealed record RelatedRecordsValidationResult
 {
     public bool IsValid { get; init; }

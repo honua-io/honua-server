@@ -7,26 +7,8 @@ using System.Text.Json;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
-/// <summary>
-/// Parses the Esri GeoServices <c>datumTransformation</c> query parameter into a
-/// neutral request the catalog can resolve. The parameter is either a bare WKID
-/// (for example <c>datumTransformation=1241</c>) or a composite JSON object
-/// (<c>{"geoTransforms":[{"wkid":1241,"transformForward":false}]}</c>).
-/// </summary>
 internal static class DatumTransformationParser
 {
-    /// <summary>
-    /// Attempts to parse the <c>datumTransformation</c> parameter value.
-    /// </summary>
-    /// <param name="value">Raw parameter value (may be null/empty).</param>
-    /// <param name="request">The parsed request when successful.</param>
-    /// <param name="errorMessage">An Esri-style error message when parsing fails.</param>
-    /// <returns>
-    /// <see langword="true"/> when the value is absent (no transformation requested,
-    /// <paramref name="request"/> is <see langword="null"/>) or parses cleanly.
-    /// <see langword="false"/> with <paramref name="errorMessage"/> set when the value
-    /// is malformed.
-    /// </returns>
     public static bool TryParse(string? value, out DatumTransformationRequest? request, [NotNullWhen(false)] out string? errorMessage)
     {
         request = null;
@@ -136,12 +118,6 @@ internal static class DatumTransformationParser
     }
 }
 
-/// <summary>
-/// A neutral, parsed representation of a client-requested datum transformation.
-/// </summary>
-/// <param name="Wkid">The Esri geotransformation WKID requested by the client.</param>
-/// <param name="TransformForward">Whether the transformation applies in its forward direction.</param>
-/// <param name="TransformForwardSpecified">Whether the client explicitly supplied the direction.</param>
 internal readonly record struct DatumTransformationRequest(
     int Wkid,
     bool TransformForward,

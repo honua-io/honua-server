@@ -33,11 +33,6 @@ internal static partial class MapServerEndpoints
 {
     private const string CompactV2StorageMode = "esriMapCacheStorageModeCompactV2";
 
-    /// <summary>
-    /// Detects an explicit Compact Cache V2 negotiation via the official
-    /// <c>storageFormatType=esriMapCacheStorageModeCompactV2</c> parameter or the documented
-    /// compatible TPKX aliases on <c>storageFormat</c>/<c>exportBy</c>.
-    /// </summary>
     private static bool IsCompactV2Requested(Dictionary<string, StringValues> values)
     {
         var storageFormatType = GetValue(values, "storageFormatType");
@@ -51,11 +46,6 @@ internal static partial class MapServerEndpoints
         return storageFormat?.Trim().ToLowerInvariant() is "tpkx" or "compact" or "compactv2";
     }
 
-    /// <summary>
-    /// Builds and submits a durable tile-export job for a Compact Cache V2 request, returning the
-    /// ArcGIS <c>{ jobId, jobStatus: "esriJobSubmitted" }</c> envelope. Validation, ownership,
-    /// admission, and store-availability failures surface through the shared sanitized mapping.
-    /// </summary>
     private static async Task<IResult> SubmitDurableExportAsync(
         HttpContext context,
         Dictionary<string, StringValues> values,
@@ -86,7 +76,6 @@ internal static partial class MapServerEndpoints
         }
     }
 
-    /// <summary>Projects a durable tile-export job's status onto the ArcGIS Map Service status envelope.</summary>
     private static async Task<IResult> HandleExportTilesJobStatus(HttpContext context, string serviceId, string jobId)
     {
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
@@ -116,7 +105,6 @@ internal static partial class MapServerEndpoints
         }
     }
 
-    /// <summary>Cancels a durable tile-export job scoped to the submitting principal and this map service.</summary>
     private static async Task<IResult> HandleExportTilesJobCancel(HttpContext context, string serviceId, string jobId)
     {
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
@@ -146,7 +134,6 @@ internal static partial class MapServerEndpoints
         }
     }
 
-    /// <summary>Returns the ArcGIS <c>results/out_service_url</c> for a completed durable tile-export job.</summary>
     private static async Task<IResult> HandleExportTilesJobResult(HttpContext context, string serviceId, string jobId)
     {
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
@@ -191,11 +178,6 @@ internal static partial class MapServerEndpoints
                 ? [new ExportTilesJobMessage { Type = "esriJobMessageTypeError", Description = job.ErrorMessage }]
                 : [];
 
-    /// <summary>
-    /// Mirrors the synchronous <c>TryBuildExportTilesPlanAsync</c> parsing (service validation,
-    /// access gate, levels/maxTiles/extent) but produces a durable <see cref="TileExportJobPlan"/>
-    /// bound to the geometry-bearing published layers by their public layer index.
-    /// </summary>
     private static async Task<(TileExportJobPlan? Plan, IResult? Error)> TryBuildDurableMapExportPlanAsync(
         HttpContext context,
         Dictionary<string, StringValues> values,

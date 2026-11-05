@@ -15,12 +15,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
-/// <summary>
-/// Handler for the Esri ImageServer <c>multidimensionalInfo</c> operation.
-/// Surfaces the dimensions/variables of a multidimensional raster coverage so
-/// ArcGIS clients (<c>ImageryLayer.multidimensional_info</c>) can drive
-/// time/depth sliders and variable pickers.
-/// </summary>
 internal sealed class ImageServerMultidimensionalInfoHandler
 {
     private readonly IMetadataV2GraphProvider _graphProvider;
@@ -37,12 +31,7 @@ internal sealed class ImageServerMultidimensionalInfoHandler
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// Returns the Esri <c>multidimensionalInfo</c> document for a layer. When the
-    /// backing layer is not a multidimensional coverage (or has no scanned
-    /// metadata), a spec-correct empty document (<c>{ "variables": [] }</c>) is
-    /// returned rather than a 404, matching ArcGIS behaviour for non-cube rasters.
-    /// </summary>
+    // A layer that is not a multidimensional coverage returns an empty variables document rather than 404.
     public async Task<IResult> GetMultidimensionalInfoAsync(
         HttpContext context,
         int layerId,

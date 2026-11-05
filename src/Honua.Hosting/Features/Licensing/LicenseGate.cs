@@ -41,14 +41,7 @@ internal static class LicenseGate
     internal static bool IsEntitlementActive(IServiceProvider services, string entitlementKey)
         => CheckEntitlement(services, entitlementKey).IsActive;
 
-    /// <summary>
-    /// Allocation-free live entitlement probe for per-request middleware predicates. Reads the
-    /// current <see cref="ILicenseEntitlementService"/> snapshot directly — including the lazy
-    /// expiration transition <c>FileBackedLicenseService.GetSnapshot</c> performs — so a license
-    /// applied or expired after startup takes effect on the next request. Unlike
-    /// <see cref="CheckEntitlement"/> it never composes the operator-facing upgrade message,
-    /// which would allocate a string on every request of an unentitled deployment.
-    /// </summary>
+    // The probe reads the live snapshot, including a lazy expiry, and does not build the upgrade message on the unentitled path.
     internal static bool HasLiveEntitlement(IServiceProvider services, string entitlementKey)
     {
         var entitlementService = services.GetService<ILicenseEntitlementService>();

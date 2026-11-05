@@ -3,7 +3,6 @@
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>Loads one fresh, statement-consistent grant view after authentication and tenant resolution.</summary>
 internal interface IPortalAudienceSnapshotProvider
 {
     Task<IReadOnlySet<string>> GetServiceIdsAsync(

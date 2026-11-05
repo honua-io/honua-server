@@ -20,11 +20,6 @@ namespace Honua.Protocols.GeoServices.MapServer;
 
 internal static partial class MapServerEndpoints
 {
-    /// <summary>
-    /// MapServer service-level <c>.../MapServer/generateRenderer</c> (GET/POST).
-    /// Resolves the target layer from <c>layer</c> or <c>layerId</c>, then reuses
-    /// the FeatureServer generateRenderer pipeline.
-    /// </summary>
     private static async Task<IResult> HandleMapServerServiceGenerateRenderer(string serviceId, HttpContext context)
     {
         var cancellationToken = GeoServicesRequestValueHelpers.GetTimeoutAwareCancellationToken(context);
@@ -70,17 +65,9 @@ internal static partial class MapServerEndpoints
             layerId).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// MapServer <c>.../MapServer/{layerId}/generateRenderer</c> (GET/POST).
-    /// Reuses the FeatureServer generateRenderer handler verbatim.
-    /// </summary>
     private static Task<IResult> HandleMapServerGenerateRenderer(string serviceId, int layerId, HttpContext context)
         => FeatureServerEndpoints.HandleGenerateRendererForMapServer(context);
 
-    /// <summary>
-    /// MapServer <c>.../MapServer/{layerId}/queryRelatedRecords</c> (GET).
-    /// Reuses the FeatureServer queryRelatedRecords GET handler verbatim.
-    /// </summary>
     private static Task<IResult> HandleMapServerQueryRelatedRecordsGet(
         string serviceId,
         int layerId,
@@ -88,10 +75,6 @@ internal static partial class MapServerEndpoints
         FeatureServerRelatedRecordsHandler relatedRecordsHandler)
         => FeatureServerEndpoints.HandleQueryRelatedRecordsGetForMapServer(serviceId, layerId, context, relatedRecordsHandler);
 
-    /// <summary>
-    /// MapServer <c>.../MapServer/{layerId}/queryRelatedRecords</c> (POST).
-    /// Reuses the FeatureServer queryRelatedRecords POST handler verbatim.
-    /// </summary>
     private static Task<IResult> HandleMapServerQueryRelatedRecordsPost(
         string serviceId,
         int layerId,
@@ -99,10 +82,6 @@ internal static partial class MapServerEndpoints
         FeatureServerRelatedRecordsHandler relatedRecordsHandler)
         => FeatureServerEndpoints.HandleQueryRelatedRecordsPostForMapServer(serviceId, layerId, context, relatedRecordsHandler);
 
-    /// <summary>
-    /// MapServer <c>.../MapServer/{layerId}/queryAttachments</c> (GET/POST).
-    /// Reuses the FeatureServer queryAttachments handler verbatim.
-    /// </summary>
     private static Task HandleMapServerQueryAttachments(HttpContext context)
         => AttachmentEndpoints.HandleQueryAttachmentsForMapServer(context);
 

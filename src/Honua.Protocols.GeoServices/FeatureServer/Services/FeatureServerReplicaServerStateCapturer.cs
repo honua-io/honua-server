@@ -9,19 +9,6 @@ using Honua.Core.Queries.Filters;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
-/// <summary>
-/// GeoServices-backed <see cref="IReplicaServerStateCapturer"/> that snapshots the server side of each
-/// conflicting feature as the conflict-review state envelope
-/// <c>{"attributes": {...}, "geometry": ...}</c>, with geometry in GeoServices (Esri) JSON so it is
-/// directly comparable to the uploaded client geometry (#1287).
-/// </summary>
-/// <remarks>
-/// The canonical sync service invokes this after conflict detection and before the uploaded edits
-/// apply. That is what makes the snapshot trustworthy: the adapter previously captured before the whole
-/// upload pipeline ran, so a server edit landing between the capture and detection was flagged as the
-/// conflict yet absent from the snapshot, and a later keep-server resolution restored a state that
-/// silently discarded it (#2430).
-/// </remarks>
 internal sealed class FeatureServerReplicaServerStateCapturer : IReplicaServerStateCapturer
 {
     private readonly IFeatureReader _featureReader;
@@ -69,7 +56,6 @@ internal sealed class FeatureServerReplicaServerStateCapturer : IReplicaServerSt
         return states;
     }
 
-    /// <inheritdoc />
     public async Task<IReadOnlyDictionary<long, ReplicaConflictStateTokenCapture>> CaptureTokensAsync(
         ImmutableArray<ReplicaConflictCaptureTarget> targets,
         CancellationToken cancellationToken = default)

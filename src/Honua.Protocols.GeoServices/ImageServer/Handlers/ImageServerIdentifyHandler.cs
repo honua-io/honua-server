@@ -17,10 +17,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
-/// <summary>
-/// Handler for Image Server identify operations.
-/// Provides pixel value identification at geographic points.
-/// </summary>
 internal sealed class ImageServerIdentifyHandler
 {
     private const int MaxGeometryInputLength = 1000;
@@ -45,9 +41,6 @@ internal sealed class ImageServerIdentifyHandler
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// Identifies pixel values at a specified geographic location.
-    /// </summary>
     public async Task<IResult> IdentifyAsync(
         HttpContext context,
         int layerId,
@@ -580,9 +573,6 @@ internal sealed class ImageServerIdentifyHandler
         return properties;
     }
 
-    /// <summary>
-    /// The catalog raster that solely supplied the pixel, when the mosaic operator selected one.
-    /// </summary>
     private static RasterInfo? WinningCatalogRaster(RasterInfo[] rasters, IReadOnlyList<long>? contributing)
     {
         if (contributing is not { Count: 1 })
@@ -602,12 +592,6 @@ internal sealed class ImageServerIdentifyHandler
         return null;
     }
 
-    /// <summary>
-    /// Visibility of each catalog feature, in that same order. A sole winner is fully visible
-    /// and the others are hidden. Several contributors, including an average or a sample whose
-    /// bands came from different rasters, split 1 equally. A missing report (a single-raster
-    /// identify) keeps every returned item fully visible.
-    /// </summary>
     private static double[] CatalogVisibilities(RasterInfo[] rasters, IReadOnlyList<long>? contributing)
     {
         if (contributing is null)
@@ -655,9 +639,6 @@ internal sealed class ImageServerIdentifyHandler
         };
     }
 
-    /// <summary>
-    /// Builds the Esri polygon geometry of a raster footprint from its extent.
-    /// </summary>
     private static CatalogQueryGeometry? BuildFootprint(RasterInfo raster)
     {
         if (raster.Extent is not { } extent)

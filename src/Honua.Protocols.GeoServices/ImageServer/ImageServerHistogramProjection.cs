@@ -6,7 +6,6 @@ using Honua.Protocols.GeoServices.ImageServer.Models;
 
 namespace Honua.Protocols.GeoServices.ImageServer;
 
-/// <summary>Maps stored histogram ranges to the bin-edge convention used by GeoServices.</summary>
 internal static class ImageServerHistogramProjection
 {
     public static BandHistogram Project(RasterHistogram histogram)

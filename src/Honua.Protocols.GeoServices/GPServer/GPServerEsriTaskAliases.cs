@@ -5,70 +5,9 @@ using System.Collections.Frozen;
 
 namespace Honua.Protocols.GeoServices.GPServer;
 
-/// <summary>
-/// Additive Esri-conventional task-name overlay for the GPServer protocol adapter.
-/// <para>
-/// The canonical process catalog (<c>BuiltInProcessCatalog</c>) is process-ID-based
-/// (e.g. <c>geometry.buffer</c>) per ADR-0029/ADR-0057's "one canonical engine, thin
-/// protocol adapters" design. Esri/ArcGIS clients browsing or calling a GPServer task
-/// list instead expect Esri-idiomatic tool names (e.g. <c>Buffer</c>). This lookup maps
-/// internal process IDs to their real, documented Esri GP tool-name equivalent so the
-/// GPServer <em>presentation</em> layer can publish the alias alongside a Python-safe
-/// encoded process name without changing the
-/// engine's process-ID identity.
-/// </para>
-/// <para>
-/// Only processes with an unambiguous, well-documented Esri GP tool analog are mapped.
-/// Honua-specific operations (analytics/transform/source/sink/gdal/import/pcloud
-/// pipelines, managed-runtime duplicates, and processes whose Esri semantics would
-/// require guessing) publish only their encoded name. Original process-ID routes
-/// remain available for existing callers. Where two internal
-/// processes could plausibly share the same Esri name (e.g. the single-geometry
-/// <c>geometry.*</c> primitives vs. the layer-aware <c>overlay.*</c>/<c>proximity.*</c>
-/// counterparts), the alias is assigned to whichever process's parameter contract most
-/// closely matches the real Esri tool (typically the layer/FeatureCollection-oriented
-/// one, since Esri's Analysis/Data Management tools operate on feature classes) so every
-/// alias resolves to exactly one process.
-/// </para>
-/// <para>
-/// <b>Name-level convenience only — NOT wire-contract parity.</b> An alias renames the
-/// task for discovery and addressing; it does <em>not</em> adapt the task's parameter
-/// contract to the same-named Esri tool's contract. The aliased task keeps its canonical
-/// Honua inputs and outputs, and task-info always publishes those real parameters. For
-/// example, <c>Buffer</c> resolves to <c>geometry.buffer</c>, which expects a
-/// base64-encoded WKB geometry (<c>wkb</c>), an SRID (<c>srid</c>), and a numeric
-/// <c>distance</c> — not Esri Buffer's feature-record-set input, linear-unit distance, or
-/// dissolve options. Clients (including unmodified ArcGIS clients, which read task-info
-/// before invoking) must drive invocation from the published parameter metadata, not from
-/// the parameter signature the Esri tool of the same name would have. Building a full
-/// Esri wire-contract adapter is an explicit non-goal of this overlay (#2788).
-/// </para>
-/// <para>
-/// <b>Collision policy (deterministic):</b> a real catalog process ID always wins over an
-/// alias. The GPServer adapter suppresses an alias from the published task list, and skips
-/// alias resolution, whenever any catalog process ID matches the name case-insensitively
-/// (matching the case-insensitive alias lookup). Aliases therefore only ever resolve when
-/// no real process owns the name — a process registered as <c>Buffer</c> deterministically
-/// shadows the <c>geometry.buffer</c> alias in every casing. Enforced by
-/// <c>GPServerEndpoints.BuildPublishedTaskNames</c> /
-/// <c>GPServerEndpoints.ResolveTaskDefinition</c>.
-/// </para>
-/// <para>
-/// <b>Publication invariant (#4781):</b> an alias may only be mapped for a process that
-/// GPServer actually publishes — one whose catalog classification declares the Job entry
-/// point. Protocol-only and workflow-only operations are reached through a different entry
-/// point and are deliberately absent from the task list (#4409), so an alias for one would
-/// advertise a task that can never be discovered, described or submitted. The contract, the
-/// parity alias claim that counts it, and the published task list therefore always agree;
-/// <c>GPServerEsriTaskAliasesTests</c> and <c>GPServerEsriTaskAliasEndpointTests</c> pin it.
-/// </para>
-/// </summary>
+// An alias only renames a published Job process for discovery and does not adapt its parameter contract to the same-named Esri tool, and a real catalog process id always wins over an alias.
 internal static class GPServerEsriTaskAliases
 {
-    /// <summary>
-    /// Internal process ID -&gt; Esri-conventional task name, for processes with an
-    /// obvious, documented Esri GP tool equivalent.
-    /// </summary>
     private static readonly FrozenDictionary<string, string> AliasByProcessId = new Dictionary<string, string>(StringComparer.Ordinal)
     {
         // Geometry
@@ -143,39 +82,16 @@ internal static class GPServerEsriTaskAliases
         ["routing.location-allocation"] = "SolveLocationAllocation",
     }.ToFrozenDictionary(StringComparer.Ordinal);
 
-    /// <summary>
-    /// The whole alias contract: internal process ID -&gt; published Esri-conventional task
-    /// name. Exposed so conformance tests assert the published <c>/GPServer?f=json</c> task
-    /// list against the real contract instead of a hand-maintained copy that can silently
-    /// drift from it (#4781).
-    /// </summary>
     public static IReadOnlyDictionary<string, string> Contract => AliasByProcessId;
 
-    /// <summary>
-    /// Esri-conventional task name -&gt; internal process ID (the inverse of
-    /// <see cref="AliasByProcessId"/>), for resolving task-info/submitJob/execute
-    /// requests addressed by their Esri alias. Lookups are case-insensitive since
-    /// ArcGIS client tooling is not always consistent about task-name casing.
-    /// </summary>
     private static readonly FrozenDictionary<string, string> ProcessIdByAlias =
         AliasByProcessId
             .ToDictionary(pair => pair.Value, pair => pair.Key, StringComparer.OrdinalIgnoreCase)
             .ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Returns the Esri-conventional alias for the given internal process ID, or
-    /// <see langword="null"/> when the process has no documented Esri GP tool
-    /// equivalent (in which case only the internal-ID name is published).
-    /// </summary>
     public static string? GetAlias(string processId)
         => AliasByProcessId.GetValueOrDefault(processId);
 
-    /// <summary>
-    /// Resolves an Esri-conventional task name back to its internal process ID.
-    /// Returns <see langword="false"/> when <paramref name="taskName"/> is not a
-    /// known alias (it may still be a valid internal process ID, resolved
-    /// separately by <c>IProcessCatalog.GetProcess</c>).
-    /// </summary>
     public static bool TryResolveProcessId(string taskName, out string processId)
         => ProcessIdByAlias.TryGetValue(taskName, out processId!);
 }

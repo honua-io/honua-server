@@ -7,10 +7,6 @@ using Honua.Core.Features.Licensing.Domain;
 
 namespace Honua.Infrastructure.Licensing;
 
-/// <summary>
-/// Supported unlicensed runtime for 2026.1. Owns no files, secrets, timers or background work.
-/// Runtime feature opt-ins and authorization remain the responsibility of their existing gates.
-/// </summary>
 internal sealed class DisabledLicenseService : ILicenseEntitlementService, ILicenseStatusProvider,
     ILicenseManager, ILicenseOperationPolicy
 {

@@ -17,18 +17,7 @@ using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Caching;
 
-/// <summary>
-/// Redis-based cache service with in-memory fallback for layer metadata.
-/// </summary>
-/// <remarks>
-/// Uses IDistributedCache (provided by Aspire's Redis integration) for primary caching.
-/// Falls back to in-memory caching when Redis is unavailable to maintain availability.
-/// Tracks cache metrics (hits/misses) using <see cref="IPerformanceMonitor"/>.
-///
-/// PERFORMANCE NOTE: DistributedLock class uses IAsyncDisposable pattern to avoid
-/// blocking operations in disposal. Always use 'await using' syntax to ensure
-/// proper async cleanup and prevent thread pool starvation.
-/// </remarks>
+// Dispose the distributed lock with await using; a blocking dispose starves the thread pool.
 internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChecker, ICacheStorageMetricsProvider, IDisposable, IAsyncDisposable
 {
     private const string CacheType = "layer-catalog";
@@ -133,10 +122,8 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         }
     }
 
-    /// <inheritdoc />
     public bool IsUsingFallback => _isUsingFallback;
 
-    /// <inheritdoc />
     public bool IsProcessLocal => _distributedCache is null or MemoryDistributedCache || _isUsingFallback;
 
     public async Task<CacheStorageMetrics> GetStorageMetricsAsync(CancellationToken cancellationToken = default)
@@ -200,7 +187,6 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         };
     }
 
-    /// <inheritdoc />
     public async Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken = default) where T : class
     {
         if (!_options.Enabled)
@@ -296,13 +282,11 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         return null;
     }
 
-    /// <inheritdoc />
     public Task SetAsync<T>(string key, T value, CancellationToken cancellationToken = default) where T : class
     {
         return SetAsync(key, value, _options.GetDefaultTtlWithJitter(), cancellationToken);
     }
 
-    /// <inheritdoc />
     public async Task SetAsync<T>(string key, T value, TimeSpan ttl, CancellationToken cancellationToken = default) where T : class
     {
         if (!_options.Enabled)
@@ -370,7 +354,6 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         }
     }
 
-    /// <inheritdoc />
     public async Task RemoveAsync(string key, CancellationToken cancellationToken = default)
     {
         string prefixedKey = GetPrefixedKey(key);
@@ -425,7 +408,6 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         RecordCacheEviction();
     }
 
-    /// <inheritdoc />
     public async Task RemoveByPatternAsync(string pattern, CancellationToken cancellationToken = default)
     {
         string prefixedPattern = GetPrefixedKey(pattern);
@@ -532,7 +514,6 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         return;
     }
 
-    /// <inheritdoc />
     public async Task<T?> GetOrSetAsync<T>(
         string key,
         Func<CancellationToken, Task<T?>> factory,
@@ -541,7 +522,6 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         return await GetOrSetAsync(key, factory, _options.GetDefaultTtlWithJitter(), cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<T?> GetOrSetAsync<T>(
         string key,
         Func<CancellationToken, Task<T?>> factory,
@@ -617,7 +597,6 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         }
     }
 
-    /// <inheritdoc />
     public async Task<CacheEntryMetadata<T>> GetWithMetadataAsync<T>(string key, CancellationToken cancellationToken = default) where T : class
     {
         if (!_options.Enabled)
@@ -716,7 +695,6 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         return CacheEntryMetadata<T>.Miss();
     }
 
-    /// <inheritdoc />
     public Task<bool> IsCacheHealthyAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -819,11 +797,6 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         }
     }
 
-    /// <summary>
-    /// Efficiently evicts cache entries when at or near capacity to prevent memory leaks.
-    /// Uses a two-pass approach: first remove expired entries, then remove oldest entries
-    /// without expensive sorting operations.
-    /// </summary>
     private void EvictEntriesIfNeeded()
     {
         // Fast path: if well under capacity, no eviction needed
@@ -1281,18 +1254,6 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
 
     internal static string GetCacheKeyFamily(string key) => CacheKeyUtilities.GetCacheKeyFamily(key);
 
-    /// <summary>
-    /// Resolves the remaining TTL for a cached entry, preferring the lightweight in-memory
-    /// write metadata over a Redis multiplexer TTL command. This avoids an extra Redis round
-    /// trip on the hot path and works even when <see cref="_redis"/> is null (e.g., startup
-    /// connection failure where <see cref="IDistributedCache"/> recovered independently).
-    /// Falls back to <c>KeyTimeToLiveAsync</c> only for entries written by another node in
-    /// multi-node deployments; the resolved TTL is then cached locally so the next read
-    /// for the same key uses the fast path without another multiplexer round trip.
-    /// When neither write metadata nor a multiplexer is available, returns
-    /// <see cref="TimeSpan.Zero"/> so the entry is treated as near-expiry and a single
-    /// background refresh populates write metadata for subsequent reads.
-    /// </summary>
     private async Task<TimeSpan> ResolveRemainingTtlAsync(string prefixedKey)
     {
         // Fast path: entry was written (or TTL previously resolved) by this node.
@@ -1554,11 +1515,6 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
 
     private sealed record CacheEntry(byte[] Data, DateTime ExpiresAt);
 
-    /// <summary>
-    /// Lightweight record tracking when a cache entry was written and its original TTL.
-    /// Used by <see cref="GetWithMetadataAsync{T}"/> to compute remaining TTL without
-    /// a separate Redis TTL command, and without requiring an <see cref="IConnectionMultiplexer"/>.
-    /// </summary>
     private readonly record struct CacheWriteInfo(long WrittenAtTicks, long TtlTicks);
 
     private static partial class RedisCacheServiceLog

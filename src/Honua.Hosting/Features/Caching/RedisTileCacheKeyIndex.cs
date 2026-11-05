@@ -9,21 +9,7 @@ using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Caching;
 
-/// <summary>
-/// Redis-backed <see cref="ITileCacheKeyIndex" /> that maintains a live last-access index for the
-/// tile cache so the size-quota / LRU evictor can drop the least-recently-used tiles on the hot
-/// serve path (#1917). Two Redis structures keyed off a shared prefix back the index:
-/// <list type="bullet">
-///   <item><description>a sorted set whose score is the last-access Unix-millisecond timestamp,
-///   giving cheap LRU-ordered range scans; and</description></item>
-///   <item><description>a hash of <c>key → sizeBytes</c> so the evictor can honor the configured
-///   byte-size quota without re-reading every tile.</description></item>
-/// </list>
-/// Access-only index updates are best-effort bookkeeping, so eviction accounting cannot fail a tile
-/// request. Write updates also advance lifecycle state and therefore surface Redis failures to the
-/// cache-write boundary. This is the canonical binding that replaces relying solely on the Redis
-/// server <c>maxmemory-policy allkeys-lru</c> setting.
-/// </summary>
+// An access-only index update is best-effort and must not fail a tile request; a write surfaces a Redis failure.
 internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITileCacheMutationCoordinator
 {
     private const string LastAccessSetKey = "honua:tile-cache:lru";
@@ -208,10 +194,8 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
         _mutationLeaseRenewalInterval = mutationLeaseRenewalInterval;
     }
 
-    /// <inheritdoc />
     public bool IsEnabled => true;
 
-    /// <inheritdoc />
     public async Task RecordAccessAsync(
         string key,
         long sizeBytes,
@@ -228,7 +212,6 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
             requireMatchingWriteVersion: false,
             cancellationToken).ConfigureAwait(false);
 
-    /// <inheritdoc />
     public async Task RecordAccessIfCurrentAsync(
         string key,
         long sizeBytes,
@@ -246,7 +229,6 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
             requireMatchingWriteVersion: true,
             cancellationToken).ConfigureAwait(false);
 
-    /// <inheritdoc />
     public async Task RecordWriteAsync(
         string key,
         long sizeBytes,
@@ -358,7 +340,6 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
         }
     }
 
-    /// <inheritdoc />
     public async Task<bool> IsExpiredAsync(string key, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(key))
@@ -381,7 +362,6 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
         }
     }
 
-    /// <inheritdoc />
     public async Task<bool> MarkExpiredAsync(string key, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(key))
@@ -402,11 +382,9 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
         }
     }
 
-    /// <inheritdoc />
     public async Task<IReadOnlyList<TileCacheEntry>> SnapshotAsync(CancellationToken cancellationToken = default)
         => (await SnapshotWithStatusAsync(cancellationToken).ConfigureAwait(false)).Entries;
 
-    /// <inheritdoc />
     public async Task<TileCacheIndexSnapshot> SnapshotWithStatusAsync(
         CancellationToken cancellationToken = default)
     {
@@ -424,7 +402,6 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
         return new TileCacheIndexSnapshot(entries, IsAvailable: true);
     }
 
-    /// <inheritdoc />
     public async IAsyncEnumerable<TileCacheIndexPage> ReadPagesAsync(
         int pageSize,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
@@ -688,7 +665,6 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
             cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task RemoveAsync(string key, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(key))
@@ -717,7 +693,6 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
         }
     }
 
-    /// <inheritdoc />
     public async Task<bool> TryRemoveAsync(
         TileCacheEntry entry,
         CancellationToken cancellationToken = default)
@@ -752,7 +727,6 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
         }
     }
 
-    /// <inheritdoc />
     public async Task ExecuteSerializedAsync(
         string key,
         Func<TileCacheMutationContext, Task> mutation,
@@ -907,7 +881,6 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
         }
     }
 
-    /// <inheritdoc />
     public async Task<bool> IsCurrentAsync(
         TileCacheEntry entry,
         CancellationToken cancellationToken = default)
@@ -931,7 +904,6 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
             : string.Equals((string?)currentVersion, entry.WriteVersion, StringComparison.Ordinal);
     }
 
-    /// <inheritdoc />
     public async Task<TileCacheExpirationMarkResult> TryMarkExpiredIfCurrentAsync(
         TileCacheEntry entry,
         CancellationToken cancellationToken = default)

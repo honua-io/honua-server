@@ -7,27 +7,12 @@ using NetTopologySuite.IO;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
-/// <summary>
-/// Parses the ImageServer <c>calculateVolume</c> <c>geometries</c> request parameter into the
-/// area-of-interest clip geometries the volume integration consumes. Each area of interest is an
-/// Esri polygon (rings) or envelope, converted to a WKB clip for the shared raster analytics path
-/// (the same clip primitive <c>computeClassStatistics</c> / <c>computeStatisticsHistograms</c>
-/// use). See ADR-0065.
-/// </summary>
 internal static class ImageServerVolumeGeometries
 {
     private static readonly WKBWriter WkbWriter = new();
 
-    /// <summary>A parsed area-of-interest: its clip geometry (WKB) and optional spatial reference.</summary>
     internal readonly record struct ParsedAoi(byte[] ClipGeometry, int? ClipSrid);
 
-    /// <summary>
-    /// Parses the <c>geometries</c> parameter. The value may be a JSON array of geometry objects
-    /// (<c>[ { ... }, { ... } ]</c>) or a wrapper object carrying a <c>geometries</c> array
-    /// (<c>{ "geometryType": "...", "geometries": [ ... ] }</c>). <paramref name="geometryType"/>
-    /// must be <c>esriGeometryPolygon</c> or <c>esriGeometryEnvelope</c>. Each geometry's optional
-    /// <c>spatialReference.wkid</c> wins over <paramref name="defaultSrid"/>.
-    /// </summary>
     internal static bool TryParse(
         string? geometriesJson,
         string? geometryType,

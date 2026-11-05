@@ -5,10 +5,6 @@ using Honua.Infrastructure.Helpers;
 
 namespace Honua.Protocols.GeoServices;
 
-/// <summary>
-/// Resolves the same public portal identity for Sharing and federated server discovery.
-/// The optional SOAP instance alias is not a separate owning portal.
-/// </summary>
 internal static class GeoServicesPortalUrlResolver
 {
     internal static string GetBaseUrl(HttpContext context)

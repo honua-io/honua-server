@@ -6,10 +6,6 @@ using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Caching;
 
-/// <summary>
-/// Reclaims index members whose payload expired, including indexes left by earlier processes.
-/// Owns one serialized cursor traversal; cache writes retain their existing atomic transaction.
-/// </summary>
 internal sealed partial class RedisCacheIndexMaintenance : IAsyncDisposable
 {
     private const int PageSize = 128;

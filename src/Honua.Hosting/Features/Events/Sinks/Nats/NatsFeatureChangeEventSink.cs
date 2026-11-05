@@ -7,21 +7,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Events;
 
-/// <summary>
-/// Concrete <see cref="IFeatureChangeEventSink"/> that publishes committed
-/// feature-change events to NATS JetStream (#357).
-/// </summary>
-/// <remarks>
-/// Events are serialized as JSON and published to a single JetStream subject so
-/// per-subject ordering preserves commit order. When deduplication is enabled the
-/// message carries a <c>Nats-Msg-Id</c> equal to the event id, so JetStream
-/// rejects a duplicate within the stream's dedup window (publish-side
-/// exactly-once: no duplicate stored on retry). When a delivery still fails, the
-/// event is routed to the configured dead-letter subject with diagnostic headers;
-/// if dead-lettering is disabled or itself fails, the failure surfaces to the
-/// broadcaster, which isolates and meters it without affecting durable storage or
-/// sibling sinks.
-/// </remarks>
 internal sealed partial class NatsFeatureChangeEventSink : IFeatureChangeEventSink
 {
     private const string ContentType = "application/json";
@@ -40,10 +25,8 @@ internal sealed partial class NatsFeatureChangeEventSink : IFeatureChangeEventSi
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <inheritdoc />
     public string Name => "nats";
 
-    /// <inheritdoc />
     public async Task PublishAsync(FeatureChangeEvent featureEvent, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(featureEvent);

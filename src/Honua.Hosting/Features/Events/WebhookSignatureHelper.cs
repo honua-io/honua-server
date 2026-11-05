@@ -6,14 +6,8 @@ using System.Text;
 
 namespace Honua.Infrastructure.Events;
 
-/// <summary>
-/// Shared HMAC-SHA256 signature computation for outbound webhook delivery.
-/// </summary>
 internal static class WebhookSignatureHelper
 {
-    /// <summary>
-    /// Computes a hex-encoded HMAC-SHA256 signature over <c>{timestamp}.{payload}</c>.
-    /// </summary>
     public static string ComputeSignature(string secret, string timestamp, string payload)
     {
         var message = $"{timestamp}.{payload}";

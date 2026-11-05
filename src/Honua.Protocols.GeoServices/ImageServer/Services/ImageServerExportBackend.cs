@@ -7,9 +7,6 @@ using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
-/// <summary>
-/// Cohesive raster backend used by ImageServer export orchestration.
-/// </summary>
 internal sealed class ImageServerExportBackend(
     IRasterStore rasterStore,
     IZarrRasterSliceReader zarrRasterSliceReader)
@@ -39,9 +36,6 @@ internal sealed class ImageServerExportBackend(
                 attributeSort,
                 cancellationToken);
 
-    /// <summary>
-    /// Renders the all-NoData canvas for an export whose extent selected no raster.
-    /// </summary>
     public Task<RasterResult> ExportEmptyExtentAsync(
         int layerId,
         RasterQuery query,

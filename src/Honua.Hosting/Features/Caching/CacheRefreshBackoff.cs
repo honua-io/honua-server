@@ -3,9 +3,6 @@
 
 namespace Honua.Infrastructure.Caching;
 
-/// <summary>
-/// Retains failed refresh keys only for their retry window and the next idle cleanup tick.
-/// </summary>
 internal sealed class CacheRefreshBackoff(TimeProvider timeProvider) : IDisposable
 {
     private static readonly TimeSpan FailureBackoff = TimeSpan.FromSeconds(1);
@@ -64,9 +61,6 @@ internal sealed class CacheRefreshBackoff(TimeProvider timeProvider) : IDisposab
         }
     }
 
-    /// <summary>
-    /// Starts cleanup independently of queue traffic. The worker owns the returned lifetime.
-    /// </summary>
     internal CacheRefreshBackoff StartCleanup()
     {
         lock (_sync)
@@ -79,7 +73,6 @@ internal sealed class CacheRefreshBackoff(TimeProvider timeProvider) : IDisposab
         }
     }
 
-    /// <inheritdoc />
     public void Dispose()
     {
         ITimer? timer;

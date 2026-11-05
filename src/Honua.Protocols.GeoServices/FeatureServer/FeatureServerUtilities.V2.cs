@@ -17,38 +17,8 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// V2 overloads of the response-builder helpers on
-/// <see cref="FeatureServerEndpoints"/> (issue #1035, FeatureServer cutover 91/N).
-/// These build GeoServices metadata directly from Metadata V2 graph objects:
-/// <list type="bullet">
-///   <item><c>layer.Fields</c>            → <c>resource.SchemaFields</c></item>
-///   <item><c>layer.AttributeFields</c>   → <c>resource.SchemaFields.Where(f => f.Type is not (Geometry or Geography))</c></item>
-///   <item><c>layer.Name</c>              → <c>resource.Metadata.Name</c></item>
-///   <item><c>layer.Id</c>                → <c>publication.LayerIndex ?? snapshot.ResolveStorageLayerId(resource) ?? -1</c></item>
-///   <item><c>layer.GeometryType</c>      → <c>resource.Spatial?.GeometryType</c></item>
-///   <item><c>layer.SpatialReference.Srid</c> → <c>resource.ReadSrid()</c></item>
-///   <item><c>service.Layers</c>          → iterate <c>snapshot.Index.PublicationsByService[serviceId]</c></item>
-///   <item><c>service.SpatialReference</c> → <c>service.SpatialReference?.ResolveSrid()</c></item>
-/// </list>
-/// </summary>
 internal static partial class FeatureServerEndpoints
 {
-    /// <summary>
-    /// Builds a GeoServices FeatureServer response from a Metadata V2 service and its publications.
-    /// </summary>
-    /// <param name="service">V2 service backing the FeatureServer route.</param>
-    /// <param name="publications">Resolved (publication, resource) tuples for the service in
-    /// service-local-id order. Callers typically materialize this from
-    /// <c>snapshot.PublicationsForService(serviceId)</c> + <c>snapshot.ResolveResource(pub)</c>.</param>
-    /// <param name="snapshot">Graph snapshot used to resolve storage layer ids.</param>
-    /// <param name="queryLimits">Query limits for the service.</param>
-    /// <param name="supportsGeobufOutput">Whether the runtime supports geobuf output.</param>
-    /// <param name="supportsAttachmentUploads">Whether attachment uploads are wired up.</param>
-    /// <param name="branchVersioningEnabled">Whether branch versioning is available (Postgres + Pro entitlement).</param>
-    /// <param name="versionManagementEnabled">Whether the experimental VMS lifecycle surface is enabled.</param>
-    /// <param name="offlineSyncEnabled">Whether disconnected-sync routes are enabled by lifecycle configuration.</param>
-    /// <param name="pathBase">Application mount path retained in relative service links.</param>
     internal static FeatureServerResponse MapServiceToResponseV2(
         MetadataV2Service service,
         IReadOnlyList<(MetadataV2Publication Publication, MetadataV2Resource Resource)> publications,
@@ -128,9 +98,6 @@ internal static partial class FeatureServerEndpoints
         };
     }
 
-    /// <summary>
-    /// Builds a GeoServices layer response from a Metadata V2 resource publication.
-    /// </summary>
     internal static LayerResponse MapLayerToResponseV2(
         MetadataV2Service service,
         MetadataV2Resource resource,
@@ -282,10 +249,6 @@ internal static partial class FeatureServerEndpoints
         };
     }
 
-    /// <summary>
-    /// Builds the lightweight service-listing entry (id/name/geometry-type) for a
-    /// Metadata V2 resource publication.
-    /// </summary>
     private static LayerInfo MapLayerInfoV2(
         MetadataV2Resource resource,
         MetadataV2Publication publication,
@@ -312,12 +275,6 @@ internal static partial class FeatureServerEndpoints
         };
     }
 
-    /// <summary>
-    /// Maps a canonical <see cref="MetadataV2Field"/> to the Esri-style GeoServices
-    /// field info shape. The layer's object-id field is forced to
-    /// <c>esriFieldTypeOID</c> regardless of its SQL type so that Esri clients can
-    /// locate the OID field by type (see issue #1299).
-    /// </summary>
     internal static GeoServicesFieldInfo MapFieldInfoV2(MetadataV2Field field, string objectIdFieldName, string? globalIdFieldName = null)
     {
         ArgumentNullException.ThrowIfNull(field);
@@ -349,14 +306,6 @@ internal static partial class FeatureServerEndpoints
         };
     }
 
-    /// <summary>
-    /// Reads capabilities from the service's <c>Options["capabilities"]</c> JsonElement when
-    /// present; otherwise defaults to <c>"Query"</c>. Emits each of <c>Create</c>,
-    /// <c>Update</c>, and <c>Delete</c> only when that operation is declared, and emits
-    /// <c>Editing</c> when at least one edit operation is declared. It emits <c>Uploads</c> when any
-    /// publication's backing resource declares attachment support and the runtime has
-    /// attachment uploads enabled.
-    /// </summary>
     internal static string BuildServiceCapabilitiesV2(MetadataV2Service service)
         => BuildServiceCapabilitiesV2(service, [], supportsAttachmentUploads: false, offlineSyncEnabled: true);
 
@@ -410,9 +359,6 @@ internal static partial class FeatureServerEndpoints
         return string.Join(',', capabilities.Distinct(StringComparer.OrdinalIgnoreCase));
     }
 
-    /// <summary>
-    /// Builds the GeoServices capabilities string for one Metadata V2 resource.
-    /// </summary>
     private static string BuildLayerCapabilitiesV2(
         MetadataV2Service service,
         MetadataV2Resource resource,
@@ -454,11 +400,6 @@ internal static partial class FeatureServerEndpoints
         return string.Join(',', capabilities.Distinct(StringComparer.OrdinalIgnoreCase));
     }
 
-    /// <summary>
-    /// Aggregates the per-resource object-id field across all publications on the service
-    /// and returns the single shared name when all resources agree; otherwise falls back to
-    /// the default <see cref="FieldNames.ObjectId"/> constant.
-    /// </summary>
     private static string ResolveServiceObjectIdFieldV2(
         MetadataV2Service service,
         MetadataV2GraphSnapshot snapshot)
@@ -478,9 +419,6 @@ internal static partial class FeatureServerEndpoints
         return candidates.Length == 1 ? candidates[0] : FieldNames.ObjectId;
     }
 
-    /// <summary>
-    /// Builds a GeoServices extent from the v2 resource bbox.
-    /// </summary>
     private static ExtentInfo? ResolveLayerExtentV2(MetadataV2Resource resource, int fallbackSrid)
     {
         ArgumentNullException.ThrowIfNull(resource);
@@ -495,9 +433,6 @@ internal static partial class FeatureServerEndpoints
         return FeatureExtent.Create(bbox.West, bbox.South, bbox.East, bbox.North, srid).ToExtentInfo();
     }
 
-    /// <summary>
-    /// Builds the service extent by unioning v2 resource bboxes.
-    /// </summary>
     private static ExtentInfo? ResolveServiceExtentV2(
         IReadOnlyList<(MetadataV2Publication Publication, MetadataV2Resource Resource)> publications,
         int fallbackSrid)
@@ -526,11 +461,6 @@ internal static partial class FeatureServerEndpoints
             : null;
     }
 
-    /// <summary>
-    /// Resolves the FeatureServer display field. Prefers <c>resource.Display.DisplayField</c>
-    /// when it matches a visible attribute (matching MapServer/KML behaviour), then a field
-    /// named "name", then the first string-type field, then <paramref name="objectIdField"/>.
-    /// </summary>
     private static string ResolveDisplayFieldFromResource(MetadataV2Resource resource, string objectIdField)
     {
         ArgumentNullException.ThrowIfNull(resource);
@@ -560,18 +490,12 @@ internal static partial class FeatureServerEndpoints
         return firstStringField?.Name ?? objectIdField;
     }
 
-    /// <summary>
-    /// V2 overload of <c>layer.VisibleFields</c>.
-    /// </summary>
     private static IEnumerable<MetadataV2Field> ResolveVisibleFieldsV2(MetadataV2Resource resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
         return resource.SchemaFields.Where(static field => !field.Hidden);
     }
 
-    /// <summary>
-    /// V2 overload of <c>layer.VisibleAttributeFields</c>. Excludes geometry/geography fields.
-    /// </summary>
     private static IEnumerable<MetadataV2Field> ResolveVisibleAttributeFieldsV2(MetadataV2Resource resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
@@ -580,11 +504,6 @@ internal static partial class FeatureServerEndpoints
             field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography));
     }
 
-    /// <summary>
-    /// Reads the temporal field configuration from <see cref="MetadataV2Resource.Temporal"/>
-    /// and probes the feature store for the range. Returns null when the resource does not
-    /// declare opt-in temporal fields.
-    /// </summary>
     internal static async Task<FeatureServerTimeInfo?> BuildTimeInfoV2Async(
         MetadataV2Resource resource,
         MetadataV2Publication publication,
@@ -634,11 +553,6 @@ internal static partial class FeatureServerEndpoints
         };
     }
 
-    /// <summary>
-    /// Parses <c>layerId</c>/<c>layers</c> query parameters and returns the matching
-    /// (publication, resource) tuples on the service. <c>selectorSpecified</c> is true when
-    /// either parameter was supplied.
-    /// </summary>
     internal static bool TryResolveRequestedServiceLayersV2(
         MetadataV2Service service,
         MetadataV2GraphSnapshot snapshot,
@@ -716,11 +630,6 @@ internal static partial class FeatureServerEndpoints
         return true;
     }
 
-    /// <summary>
-    /// Drops (publication, resource) pairs the caller is not authorised to access, using the
-    /// request's canonical per-operation decisions (grants, then resource policy composed with
-    /// service policy under deny-wins).
-    /// </summary>
     internal static (MetadataV2Publication Publication, MetadataV2Resource Resource)[] FilterAccessibleLayersV2(
         ResourceAccessSet access,
         MetadataV2GraphSnapshot snapshot,
@@ -738,13 +647,6 @@ internal static partial class FeatureServerEndpoints
         ];
     }
 
-    /// <summary>
-    /// Projects <see cref="MetadataV2Resource.Relationships"/> to the Esri-style wire shape.
-    /// The integer <c>RelatedTableId</c> is resolved by looking up the related resource's
-    /// primary publication and reading its <see cref="MetadataV2Publication.LayerIndex"/>; if
-    /// no publication exists on this service for the related resource, the relationship is
-    /// skipped (clients can't address it as an integer layer id anyway).
-    /// </summary>
     internal static LayerRelationshipInfo[] BuildRelationshipResponseV2(
         MetadataV2Resource resource,
         MetadataV2GraphSnapshot snapshot,
@@ -807,10 +709,6 @@ internal static partial class FeatureServerEndpoints
         return [.. result];
     }
 
-    /// <summary>
-    /// Maps a canonical V2 cardinality string (one-to-one / one-to-many / many-to-many)
-    /// to the Esri <c>esriRelCardinality*</c> enum value.
-    /// </summary>
     private static string MapEsriCardinality(string? cardinality)
         => (cardinality ?? string.Empty).Trim().ToLowerInvariant() switch
         {
@@ -868,10 +766,6 @@ internal static partial class FeatureServerEndpoints
         // disagree about the same field (honua-server#5197).
         => GeoServicesFieldConventions.MapSqlType(type);
 
-    /// <summary>
-    /// Reads the service's declared capability list from <c>service.Options["capabilities"]</c>.
-    /// Defaults to <c>["Query"]</c> when the option is absent or not a string array.
-    /// </summary>
     private static List<string> ReadServiceCapabilitiesV2(MetadataV2Service service)
     {
         if (service.Options is not null &&
@@ -892,9 +786,6 @@ internal static partial class FeatureServerEndpoints
         return ["Query"];
     }
 
-    /// <summary>
-    /// Reads the service's declared output formats from <c>service.Options["supportedFormats"]</c>.
-    /// </summary>
     private static string[]? ReadServiceSupportedFormatsV2(MetadataV2Service service)
     {
         if (service.Options is not null &&
@@ -980,22 +871,10 @@ internal static partial class FeatureServerEndpoints
         => ReadServiceCapabilitiesV2(service)
             .Any(capability => capability.Equals("Query", StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>
-    /// Whether the service opts into the sync/replica surface (createReplica /
-    /// synchronizeReplica / extractChanges), driven by a declared <c>Sync</c>
-    /// capability in <c>service.Options["capabilities"]</c>. The replica handlers
-    /// are served unconditionally; this flag only advertises the surface so Esri
-    /// clients enable their offline/replica workflows against the service.
-    /// </summary>
     private static bool ServiceSupportsSyncV2(MetadataV2Service service)
         => ReadServiceCapabilitiesV2(service)
             .Any(capability => capability.Equals("Sync", StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>
-    /// Projects declared editor-tracking fields onto the GeoServices <c>editFieldsInfo</c>
-    /// block. Returns null when the resource declares none, so layers without tracking
-    /// stay byte-stable (#6134).
-    /// </summary>
     internal static EditFieldsInfo? ResolveEditFieldsInfo(MetadataV2Resource resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
@@ -1021,17 +900,10 @@ internal static partial class FeatureServerEndpoints
     private static string? BlankToNull(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value;
 
-    /// <summary>
-    /// Resolves only declared, visible UUID fields as the public GlobalID binding.
-    /// </summary>
     internal static string? ResolveGlobalIdFieldV2(MetadataV2Resource resource)
         => resource.SchemaFields.FirstOrDefault(field => !field.Hidden && field.Type == MetadataV2FieldType.Uuid &&
             field.Name.Equals(resource.Editing?.GlobalIdField, StringComparison.OrdinalIgnoreCase))?.Name;
 
-    /// <summary>
-    /// Reads canonical attachment support. Legacy annotations remain a fallback for
-    /// resources predating the canonical Editing object.
-    /// </summary>
     internal static bool ResourceSupportsAttachmentsV2(MetadataV2Resource resource)
     {
         return resource.Editing?.SupportsAttachments ??

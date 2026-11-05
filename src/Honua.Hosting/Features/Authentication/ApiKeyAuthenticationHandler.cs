@@ -16,12 +16,6 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// API Key authentication handler with development bypass mode support
-/// </summary>
-/// <remarks>
-/// Initializes a new instance of the ApiKeyAuthenticationHandler
-/// </remarks>
 internal sealed class ApiKeyAuthenticationHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> options,
     ILoggerFactory logger,
@@ -42,9 +36,6 @@ internal sealed class ApiKeyAuthenticationHandler(
     private readonly ApiKeyAuthenticationDependencies _dependencies = dependencies ?? throw new ArgumentNullException(nameof(dependencies));
     private readonly ApiKeyAuthenticationOptions _authOptions = dependencies.Options;
 
-    /// <summary>
-    /// Handles API key authentication with development bypass support
-    /// </summary>
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         if (ScopedJobAuthentication.HasCandidate(Context))
@@ -112,16 +103,7 @@ internal sealed class ApiKeyAuthenticationHandler(
         }
     }
 
-    /// <summary>
-    /// Validates a presented API key against the managed key store and the bootstrap
-    /// admin credential, and projects the key's own authority onto a principal.
-    /// </summary>
-    /// <remarks>
-    /// Shared with <see cref="PortalTokenAuthenticationHandler"/> so a key presented through
-    /// a GeoServices token transport (#5492) yields exactly the principal the
-    /// <c>X-API-Key</c> header yields: same roles, permission claims and credential kind.
-    /// Rejections are returned rather than logged so each caller reports its own transport.
-    /// </remarks>
+    // The GeoServices token transport shares this path so the same key yields the same principal, and a rejection is returned instead of logged so the caller reports it.
     internal static Task<ApiKeyValidation> ValidateApiKeyAsync(
         string providedApiKey,
         string schemeName,
@@ -131,16 +113,6 @@ internal sealed class ApiKeyAuthenticationHandler(
         // No request context: a key with referrer or IP restrictions fails closed.
         => ValidateApiKeyAsync(providedApiKey, schemeName, dependencies, request: null, logger, cancellationToken);
 
-    /// <summary>
-    /// Validates a presented API key and enforces the managed key's optional referrer and IP
-    /// restrictions against <paramref name="request"/>.
-    /// </summary>
-    /// <remarks>
-    /// Restrictions apply only to managed keys that configure them; the bootstrap
-    /// <c>HONUA_ADMIN_PASSWORD</c> key has none. A key whose restrictions the request does
-    /// not satisfy is refused with <see cref="ApiKeyRejection.RequestNotPermitted"/> and does
-    /// not fall through to the bootstrap comparison.
-    /// </remarks>
     internal static async Task<ApiKeyValidation> ValidateApiKeyAsync(
         string providedApiKey,
         string schemeName,
@@ -325,25 +297,6 @@ internal sealed class ApiKeyAuthenticationHandler(
         return Request.IsHttps;
     }
 
-    /// <summary>
-    /// Determines if development authentication bypass is enabled.
-    /// </summary>
-    /// <remarks>
-    /// SECURITY: The bypass is gated by three independent conditions and is only
-    /// active when all three are satisfied. Any deployment that does not match
-    /// every condition - including Staging, QA, Production, or any other custom
-    /// environment - falls through to normal API-key authentication.
-    /// <list type="number">
-    ///   <item>Resolved ASPNETCORE_ENVIRONMENT is exactly "Test" (the only
-    ///   environment where the in-process test host runs unauthenticated).
-    ///   We deliberately do NOT honour the bypass in "Development" because
-    ///   developers should exercise the same API-key path as production.</item>
-    ///   <item><c>HONUA_DEV_AUTH=true</c> is supplied.</item>
-    ///   <item><c>HONUA_DEV_AUTH_ALLOW_BYPASS=true</c> is supplied as an
-    ///   independent operator acknowledgement so an accidentally-leaked
-    ///   HONUA_DEV_AUTH cannot, on its own, disable authentication.</item>
-    /// </list>
-    /// </remarks>
     private bool IsDevelopmentBypassEnabled()
     {
         // SECURITY: Never allow bypass in production or any non-Test environment.
@@ -394,14 +347,10 @@ internal sealed class ApiKeyAuthenticationHandler(
 
     private static bool IsAllowedBypassEnvironment(string? environmentName)
     {
-        // Only "Test" is allowed - Development, Staging, QA, Production, and any
-        // other custom environment fall through to standard API-key auth.
+        // Only "Test" is allowed. Development is not honored so developers exercise the same API-key path as production.
         return string.Equals(environmentName, "Test", StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Performs constant-time comparison of API keys to prevent timing attacks
-    /// </summary>
     private static bool IsApiKeyValid(string providedKey, string configuredKey)
     {
         byte[] providedBytes = Encoding.UTF8.GetBytes(providedKey);
@@ -441,9 +390,6 @@ internal sealed class ApiKeyAuthenticationHandler(
         return matches && providedBytes.Length == configuredBytes.Length;
     }
 
-    /// <summary>
-    /// Creates a successful authentication result with admin claims
-    /// </summary>
     private static AuthenticateResult CreateSuccessfulAuthenticationResult(
         string schemeName,
         string authenticationType,
@@ -591,9 +537,6 @@ internal sealed class ApiKeyAuthenticationHandler(
         return resolvedPassword;
     }
 
-    /// <summary>
-    /// Handles authentication challenges by returning 401 Unauthorized
-    /// </summary>
     protected override Task HandleChallengeAsync(AuthenticationProperties properties)
     {
         Response.Headers.Append("WWW-Authenticate", $"ApiKey realm=\"{AuthRealm}\", header=\"{ApiKeyHeader}\"");
@@ -617,37 +560,21 @@ internal sealed class ApiKeyAuthenticationHandler(
     }
 }
 
-/// <summary>
-/// Why <c>ApiKeyAuthenticationHandler.ValidateApiKeyAsync</c> refused a presented key.
-/// </summary>
 internal enum ApiKeyRejection
 {
-    /// <summary>The key was accepted.</summary>
     None,
 
-    /// <summary>The key matched no managed key and the bootstrap admin credential.</summary>
     InvalidKey,
 
-    /// <summary>The key matched no managed key and no bootstrap admin credential is configured.</summary>
     AdminPasswordNotConfigured,
 
-    /// <summary>The key matched no managed key and the bootstrap admin credential could not be resolved.</summary>
     AdminPasswordUnavailable,
 
-    /// <summary>
-    /// The managed key store could not be reached and the bootstrap admin credential did not match.
-    /// Callers fail the request; they must not treat this as an invalid key or an unhandled error.
-    /// </summary>
+    // A store outage together with a bootstrap mismatch fails the request; it is neither an invalid key nor an unhandled error.
     CredentialStoreUnavailable,
 
-    /// <summary>
-    /// The key is valid but its referrer or IP restrictions do not admit this request.
-    /// </summary>
+    // A valid key is still refused when its referrer or IP restriction misses the request.
     RequestNotPermitted,
 }
 
-/// <summary>
-/// Outcome of <c>ApiKeyAuthenticationHandler.ValidateApiKeyAsync</c>: the success
-/// result carrying the key's own principal, or the reason it was refused.
-/// </summary>
 internal readonly record struct ApiKeyValidation(AuthenticateResult? Success, ApiKeyRejection Rejection);

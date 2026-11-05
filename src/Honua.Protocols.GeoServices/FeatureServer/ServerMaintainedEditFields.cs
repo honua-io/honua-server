@@ -8,16 +8,8 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Server-owned GlobalID and editor-tracking values for GeoServices edits (#6134).
-/// Client values for those fields, and for other non-editable fields on insert, are
-/// dropped before validation. The handler then stamps the values that are stored.
-/// </summary>
 internal static class ServerMaintainedEditFields
 {
-    /// <summary>
-    /// Returns <paramref name="attributes"/> without client values the server owns.
-    /// </summary>
     internal static IReadOnlyDictionary<string, object?> OmitClientValues(
         MetadataV2Resource resource,
         IReadOnlyDictionary<string, object?> attributes,
@@ -84,9 +76,6 @@ internal static class ServerMaintainedEditFields
         return kept;
     }
 
-    /// <summary>
-    /// Writes server-owned GlobalID and editor-tracking values into <paramref name="attributes"/>.
-    /// </summary>
     internal static void Stamp(
         MetadataV2Resource resource,
         IDictionary<string, object?> attributes,

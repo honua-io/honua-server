@@ -10,22 +10,6 @@ using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
-/// <summary>
-/// GeoServices-backed <see cref="IReplicaEditApplier"/> that applies resolved replica upload edits
-/// through the shared FeatureServer applyEdits pipeline (<see cref="FeatureServerEditsHandler"/>), so
-/// uploaded edits reuse the same validation, authorization, geometry conversion, telemetry, and
-/// transactional outbox behavior as ordinary edits rather than the replica path issuing its own data
-/// access (#1272).
-/// </summary>
-/// <remarks>
-/// The canonical <see cref="IReplicaSyncService"/> owns conflict detection and only passes the edits
-/// it decided to apply; this applier maps each <see cref="ReplicaUploadEdit"/> back to its GeoServices
-/// wire payload and dispatches a single <c>applyEdits</c> per layer. The synchronize adapter's
-/// <c>rollbackOnFailure</c> parameter flows through to <see cref="ApplyEditsRequest.RollbackOnFailure"/>:
-/// when true, the shared edit pipeline wraps the layer's edits in an explicit transaction so a single
-/// bad row rolls back the whole layer batch (Esri sync semantics, #2136); when false the upload is
-/// applied best-effort per row (the prior synchronize behavior).
-/// </remarks>
 internal sealed class FeatureServerReplicaEditApplier : IReplicaEditApplier
 {
     private readonly FeatureServerEditsHandler _editsHandler;
@@ -38,12 +22,6 @@ internal sealed class FeatureServerReplicaEditApplier : IReplicaEditApplier
         _editLimits = editLimits;
     }
 
-    /// <summary>
-    /// Per-layer <c>addResults</c> (server-assigned object ids and global ids) of every uploaded add this
-    /// applier dispatched, in dispatch order and index-aligned with each layer's uploaded adds. The
-    /// synchronize adapter returns them for <c>returnIdsForAdds=true</c> so a client can map its local
-    /// rows to the rows the server created (#4016).
-    /// </summary>
     public IReadOnlyList<ServiceLayerEditResult> AddResults => _addResults;
 
     public async Task<ReplicaLayerApplyResult> ApplyAsync(
@@ -139,24 +117,7 @@ internal sealed class FeatureServerReplicaEditApplier : IReplicaEditApplier
             IndeterminateEditIndexes: CollectEditIndexes(response, updateSlots, deleteSlots, committed: false));
     }
 
-    /// <summary>
-    /// Collects the request slots of the update/delete rows that definitely committed
-    /// (<paramref name="committed"/> true), or those whose commit outcome the writer could not
-    /// determine (false). With <c>rollbackOnFailure=false</c> the shared pipeline commits rows
-    /// independently, so the layer-wide failed flag cannot tell a caller whether a <em>particular</em>
-    /// uploaded edit landed; the conflict recorder needs exactly that (#2430).
-    /// </summary>
-    /// <remarks>
-    /// The two sets are disjoint, and an indeterminate row belongs to neither "committed" nor
-    /// "did not commit": treating it as a definite failure recorded the conflict as
-    /// <c>ClientEditApplied=false</c>, and a later keepServer then planned a no-op while the client
-    /// overwrite may well have been in place.
-    /// <para>
-    /// Result arrays are index-aligned with the request arrays (Esri applyEdits semantics), so each
-    /// result maps back to the slot recorded when the row was dispatched. Adds are excluded: they mint
-    /// new server-assigned ids and can never be the target of an upload conflict.
-    /// </para>
-    /// </remarks>
+    // With rollbackOnFailure=false an indeterminate row is neither committed nor failed, because recording it as unapplied makes a later keep-server skip an overwrite that may already be in place.
     private static ImmutableArray<int> CollectEditIndexes(
         ApplyEditsResponse response,
         List<int> updateSlots,

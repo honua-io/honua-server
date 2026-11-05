@@ -6,10 +6,6 @@ using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Protocols.GeoServices.GPServer;
 
-/// <summary>
-/// Projects canonical inputs to identifiers accepted by Esri's Python toolbox importer.
-/// Canonical names remain valid on incoming requests and in execution plans.
-/// </summary>
 internal static class GPServerParameterNames
 {
     // Python keywords plus the arguments appended by ArcGIS API for Python.

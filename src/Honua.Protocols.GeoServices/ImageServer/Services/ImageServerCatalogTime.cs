@@ -7,27 +7,9 @@ using Honua.Protocols.GeoServices.ImageServer.Models;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
-/// <summary>
-/// Resolves the attribute-time fields an Image Server may advertise. REST
-/// <c>timeInfo</c> and SOAP <c>GetServiceInfo</c> both read this so they can
-/// only name fields that exist in the advertised raster-catalog field list.
-/// </summary>
-/// <remarks>
-/// A V2 resource's <c>temporal</c> hints are authored for the vector/table surface
-/// (for example <c>timestamp</c>/<c>event_date</c>). An Image Server exposes the
-/// raster catalog instead, so a hint naming a column absent from that catalog is
-/// dropped: Esri clients that trust <c>StartTimeFieldName</c> otherwise fail to
-/// open the catalog. Multidimensional <c>StdTime</c> support is separate.
-/// </remarks>
+// A temporal hint that names a column absent from the raster catalog is dropped, because Esri clients that trust StartTimeFieldName fail to open the catalog.
 internal static class ImageServerCatalogTime
 {
-    /// <summary>
-    /// Returns the advertised attribute-time fields and extent, or <c>null</c>
-    /// when no catalog date field can serve as the (required) start time field.
-    /// </summary>
-    /// <param name="hints">The resource's declared temporal field hints.</param>
-    /// <param name="rasters">The service rasters, for the acquisition-date fallback and extent.</param>
-    /// <param name="maskedFields">Caller field masks; masked fields are never advertised.</param>
     public static ImageServerCatalogTimeFields? Resolve(
         (string? StartTimeField, string? EndTimeField, string? TrackIdField) hints,
         IReadOnlyList<RasterInfo> rasters,
@@ -70,9 +52,6 @@ internal static class ImageServerCatalogTime
     }
 }
 
-/// <summary>
-/// Attribute-time fields advertised by an Image Server; every name is a catalog field.
-/// </summary>
 internal sealed record ImageServerCatalogTimeFields(
     string StartTimeField,
     string? EndTimeField,

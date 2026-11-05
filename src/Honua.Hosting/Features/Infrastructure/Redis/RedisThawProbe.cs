@@ -9,27 +9,12 @@ using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Redis;
 
-/// <summary>
-/// Re-validates every Redis connection before the first request after an idle gap, so a torn
-/// pipe fails a probe instead of the request (honua-server#6753).
-/// </summary>
-/// <remarks>
-/// AWS Lambda freezes the sandbox between invocations. After a long freeze the first Redis
-/// command on a StackExchange.Redis multiplexer can find its socket dead; the client tears the
-/// connection down and every command in flight at that moment fails, most of them with the
-/// completed-reader <see cref="InvalidOperationException"/> (<see cref="RedisClientFault"/>).
-/// One read on each connection, retried once, absorbs that teardown: the retry waits in the
-/// multiplexer backlog for the reconnect (<c>AbortOnConnectFail</c> is false), so the request
-/// that follows runs on a live connection. This covers every Redis read path at once, including
-/// the ones that latch a local failure state on a single fault. A probe never fails the request:
-/// a connection that is still down is left to the caller's own error handling.
-/// </remarks>
+// The probe never fails the request; it absorbs a torn pipe so the following command runs on a live connection.
 internal sealed partial class RedisThawProbe
 {
-    /// <summary>Idle time after which the next request re-validates the connections.</summary>
     internal static readonly TimeSpan DefaultIdleThreshold = TimeSpan.FromSeconds(5);
 
-    /// <summary>Key read through the distributed cache; it is never written.</summary>
+    // The probe key is only read, never written.
     internal const string CacheProbeKey = "redis-thaw-probe";
 
     private const int MaxAttempts = 2;
@@ -55,21 +40,11 @@ internal sealed partial class RedisThawProbe
         _lastActivityUtcTicks = _timeProvider.GetUtcNow().UtcTicks;
     }
 
-    /// <summary>A named Redis read that proves one connection is live.</summary>
-    /// <param name="Name">Connection name for logs.</param>
-    /// <param name="Probe">The read.</param>
     internal sealed record ProbeTarget(string Name, Func<CancellationToken, Task> Probe);
 
-    /// <summary>Whether there is any Redis connection to probe.</summary>
     internal bool HasTargets => _targets.Count > 0;
 
-    /// <summary>
-    /// Builds the probe over the infrastructure multiplexer and the Redis distributed cache,
-    /// whichever are registered. The cache keeps its own multiplexer, so it is probed through
-    /// <see cref="IDistributedCache"/>.
-    /// </summary>
-    /// <param name="services">Root service provider.</param>
-    /// <returns>The probe.</returns>
+    // The cache keeps its own multiplexer, so probing the infrastructure multiplexer is not enough; probe through IDistributedCache.
     internal static RedisThawProbe Create(IServiceProvider services)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -95,19 +70,12 @@ internal sealed partial class RedisThawProbe
             services.GetRequiredService<ILoggerFactory>().CreateLogger<RedisThawProbe>());
     }
 
-    /// <summary>Records request activity; the idle gap is measured from the last call.</summary>
     internal void MarkActive()
     {
         Interlocked.Exchange(ref _lastActivityTimestamp, _timeProvider.GetTimestamp());
         Interlocked.Exchange(ref _lastActivityUtcTicks, _timeProvider.GetUtcNow().UtcTicks);
     }
 
-    /// <summary>
-    /// Probes every connection when the host was idle for at least the threshold, then marks
-    /// the host active. Only the request that observes the gap probes.
-    /// </summary>
-    /// <param name="cancellationToken">The request's abort token.</param>
-    /// <returns><see langword="true"/> when a probe ran.</returns>
     internal async Task<bool> ProbeIfIdleAsync(CancellationToken cancellationToken)
     {
         var nowTimestamp = _timeProvider.GetTimestamp();
@@ -169,10 +137,6 @@ internal sealed partial class RedisThawProbe
     private static partial void LogProbeFailed(ILogger logger, string connection, Exception exception);
 }
 
-/// <summary>
-/// Runs <see cref="RedisThawProbe"/> ahead of the rest of the pipeline and marks the host active
-/// once the request finishes, so the idle gap is the time the sandbox could have been frozen.
-/// </summary>
 internal sealed class RedisThawProbeMiddleware
 {
     private readonly RequestDelegate _next;
@@ -198,12 +162,8 @@ internal sealed class RedisThawProbeMiddleware
     }
 }
 
-/// <summary>Registration for <see cref="RedisThawProbe"/>.</summary>
 internal static class RedisThawProbeExtensions
 {
-    /// <summary>Registers the probe. Call only on hosts that are frozen between requests.</summary>
-    /// <param name="services">Service collection.</param>
-    /// <returns>The service collection.</returns>
     internal static IServiceCollection AddRedisThawProbe(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -211,12 +171,6 @@ internal static class RedisThawProbeExtensions
         return services;
     }
 
-    /// <summary>
-    /// Adds <see cref="RedisThawProbeMiddleware"/> when the probe is registered and there is a
-    /// Redis connection to probe; otherwise leaves the pipeline untouched.
-    /// </summary>
-    /// <param name="app">Application builder.</param>
-    /// <returns>The application builder.</returns>
     internal static IApplicationBuilder UseRedisThawProbe(this IApplicationBuilder app)
     {
         ArgumentNullException.ThrowIfNull(app);

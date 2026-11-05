@@ -3,9 +3,6 @@
 
 namespace Honua.Infrastructure.Events;
 
-/// <summary>
-/// Persists normalized feature-change notifications for replay and webhook delivery.
-/// </summary>
 internal sealed partial class FeatureChangeEventPublisher(
     IFeatureChangeEventStore store,
     ILogger<FeatureChangeEventPublisher> logger) : IFeatureChangeEventPublisher

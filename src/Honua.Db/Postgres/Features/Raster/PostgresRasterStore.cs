@@ -1328,8 +1328,7 @@ internal sealed class PostgresRasterStore : IRasterStore
             return rasterToken;
         }
 
-        // Tile ground resolution: world span / (256 px * 2^level) metres-per-pixel.
-        var metresPerPixel = WebMercatorWorldSpanMeters / (256.0 * Math.Pow(2, level));
+        var metresPerPixel = TileGroundResolutionMeters(level);
         var mpp = metresPerPixel.ToString("G17", CultureInfo.InvariantCulture);
 
         // Reduce only a source already in the tile CRS. Transforming another CRS here would
@@ -1347,73 +1346,6 @@ internal sealed class PostgresRasterStore : IRasterStore
     /// </summary>
     internal static double TileGroundResolutionMeters(int level)
         => WebMercatorWorldSpanMeters / (256.0 * Math.Pow(2, level));
-
-    /// <summary>
-    /// Resolves the best persisted overview row id for a raster at the requested tile zoom, or
-    /// <c>null</c> when no persisted overview is coarser-or-equal to the tile resolution (or the
-    /// overview table is not provisioned). The selection reuses the shared
-    /// <see cref="OverviewLevelSelector"/> scoring so the persisted-pyramid read path ranks levels
-    /// the same way the COG read path does (#1836). Persisted overviews are already in EPSG:3857,
-    /// so reading one skips both the full-resolution scan and the on-the-fly reduction.
-    /// </summary>
-    private async Task<long?> ResolveBestOverviewIdAsync(
-        DbConnection connection,
-        long rasterId,
-        int level,
-        CancellationToken cancellationToken)
-    {
-        // Native/finer zoom reads full resolution: never substitute an overview.
-        if (level >= OverviewMaxZoom)
-        {
-            return null;
-        }
-
-        var tileResolution = TileGroundResolutionMeters(level);
-
-        var candidates = new List<(long Id, double Resolution)>();
-        try
-        {
-            await using var command = connection.CreateCommand();
-            command.CommandText = $"""
-                SELECT id, ground_resolution
-                FROM {_rasterOverviewsTable}
-                WHERE raster_data_id = @rasterId
-                ORDER BY ground_resolution
-                """;
-            AddParameter(command, "@rasterId", rasterId);
-
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-            {
-                candidates.Add((reader.GetInt64(0), reader.GetDouble(1)));
-            }
-        }
-        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedTable)
-        {
-            // Schema predates migration 061: fall back to the on-the-fly reduction.
-            return null;
-        }
-
-        if (candidates.Count == 0)
-        {
-            return null;
-        }
-
-        // Only consider overviews that do not over-coarsen relative to the tile (resolution
-        // <= tile resolution), so a tile never reads a level coarser than it needs and loses
-        // detail. Among those, pick the closest match via the shared selector. A 256x256 tile
-        // spans 256 * tileResolution metres on each axis.
-        var usable = candidates.Where(c => c.Resolution <= tileResolution * (1 + 1e-9)).ToList();
-        if (usable.Count == 0)
-        {
-            return null;
-        }
-
-        var tileSpan = 256.0 * tileResolution;
-        var resolutions = usable.Select(c => (c.Resolution, c.Resolution)).ToList();
-        var bestIndex = OverviewLevelSelector.SelectBestIndex(tileSpan, tileSpan, 256, 256, resolutions);
-        return bestIndex >= 0 ? usable[bestIndex].Id : null;
-    }
 
     private static string ResolveResamplingAlgorithm(ResamplingAlgorithm resamplingAlgorithm)
     {

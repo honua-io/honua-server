@@ -6,18 +6,8 @@ using System.Net.Sockets;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// The request attributes a managed API key's referrer and IP restrictions are checked against.
-/// </summary>
-/// <param name="Origin">The <c>Origin</c> request header, when present.</param>
-/// <param name="Referer">The <c>Referer</c> request header, when present.</param>
-/// <param name="ClientIp">
-/// The client address as the pipeline resolved it: <see cref="ConnectionInfo.RemoteIpAddress"/>
-/// after the trusted-proxy <c>ForwardedHeaders</c> middleware has run.
-/// </param>
 internal sealed record ApiKeyRequestContext(string? Origin, string? Referer, IPAddress? ClientIp)
 {
-    /// <summary>Captures the restriction inputs from <paramref name="context"/>.</summary>
     public static ApiKeyRequestContext From(HttpContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -28,59 +18,30 @@ internal sealed record ApiKeyRequestContext(string? Origin, string? Referer, IPA
     }
 }
 
-/// <summary>Which restriction refused a key.</summary>
 internal enum ApiKeyRestrictionViolation
 {
-    /// <summary>The request satisfies every restriction on the key.</summary>
     None,
 
-    /// <summary>The request origin is absent or not on the key's referrer allow-list.</summary>
     Referrer,
 
-    /// <summary>The client address is unknown or outside the key's IP allow-list.</summary>
     IpRange,
 }
 
-/// <summary>
-/// Optional per-key restrictions for managed API keys: a referrer (origin) allow-list and a
-/// client IP allow-list. A key with neither list is unrestricted, as every key was before
-/// restrictions existed. Restrictions mirror the referrer/IP binding of issued portal tokens
-/// (<see cref="PortalTokenIssuer"/>) and the key restrictions browser map platforms offer.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Referrer patterns are origins: <c>scheme://host[:port]</c>, with an optional leading
-/// <c>*.</c> label that matches any subdomain (but not the bare parent domain). A request
-/// matches on its <c>Origin</c> header, or its <c>Referer</c> reduced to an origin when no
-/// usable <c>Origin</c> was sent. A key with a referrer list refuses a request that carries
-/// neither header.
-/// </para>
-/// <para>
-/// Referrer restrictions limit where a browser will use a key; any non-browser client can
-/// set these headers, so they are not a substitute for IP restrictions or key secrecy.
-/// </para>
-/// </remarks>
+// A referrer list refuses a request with neither Origin nor Referer, a leading *. matches only a subdomain, and those headers are not a secrecy control because any client can set them.
 internal static class ApiKeyRequestRestrictions
 {
-    /// <summary>Upper bound on entries per list, enforced when a key is created.</summary>
     internal const int MaxEntries = 50;
 
-    /// <summary>Upper bound on a single entry's length, enforced when a key is created.</summary>
     internal const int MaxEntryLength = 255;
 
     private const string WildcardLabel = "*.";
 
-    /// <summary>Whether the key carries any request restriction.</summary>
     public static bool IsRestricted(AdminApiKeyRecord record)
     {
         ArgumentNullException.ThrowIfNull(record);
         return record.AllowedReferrers is { Count: > 0 } || record.AllowedIpRanges is { Count: > 0 };
     }
 
-    /// <summary>
-    /// Checks <paramref name="request"/> against the key's restrictions. A missing request
-    /// context satisfies only an unrestricted key.
-    /// </summary>
     public static ApiKeyRestrictionViolation Evaluate(AdminApiKeyRecord record, ApiKeyRequestContext? request)
     {
         ArgumentNullException.ThrowIfNull(record);
@@ -99,10 +60,6 @@ internal static class ApiKeyRequestRestrictions
         return ApiKeyRestrictionViolation.None;
     }
 
-    /// <summary>
-    /// Whether the request origin (from <paramref name="origin"/>, else <paramref name="referer"/>)
-    /// matches one of <paramref name="patterns"/>. An empty pattern list allows every request.
-    /// </summary>
     public static bool IsReferrerAllowed(IReadOnlyList<string>? patterns, string? origin, string? referer)
     {
         if (patterns is not { Count: > 0 })
@@ -127,10 +84,6 @@ internal static class ApiKeyRequestRestrictions
         return false;
     }
 
-    /// <summary>
-    /// Whether <paramref name="clientIp"/> falls in one of <paramref name="ranges"/>. An empty
-    /// range list allows every request; an unknown client address satisfies no range.
-    /// </summary>
     public static bool IsIpAllowed(IReadOnlyList<string>? ranges, IPAddress? clientIp)
     {
         if (ranges is not { Count: > 0 })
@@ -158,10 +111,6 @@ internal static class ApiKeyRequestRestrictions
         return false;
     }
 
-    /// <summary>
-    /// Validates and canonicalizes a referrer pattern for storage: lowercase
-    /// <c>scheme://host[:port]</c> with the default port dropped.
-    /// </summary>
     public static bool TryNormalizeReferrerPattern(string? value, out string normalized)
     {
         normalized = string.Empty;
@@ -174,12 +123,7 @@ internal static class ApiKeyRequestRestrictions
         return true;
     }
 
-    /// <summary>
-    /// Validates and canonicalizes an IP range for storage. Accepts CIDR notation
-    /// (<c>203.0.113.0/24</c>, <c>2001:db8::/32</c>) or a single address, stored as a
-    /// host-length prefix. A CIDR whose address has bits set past the prefix is refused, so
-    /// a typo cannot silently widen or shift the range.
-    /// </summary>
+    // A CIDR whose address has bits past the prefix is refused so a typo cannot widen the range.
     public static bool TryNormalizeIpRange(string? value, out string normalized)
     {
         normalized = string.Empty;

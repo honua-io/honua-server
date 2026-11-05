@@ -12,15 +12,8 @@ using Honua.Infrastructure.Security;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Handler for FeatureServer attachment operations.
-/// Provides static methods for attachment CRUD operations.
-/// </summary>
 internal static partial class AttachmentHandler
 {
-    /// <summary>
-    /// Queries attachments for a specific feature
-    /// </summary>
     public static async Task<IResult> QueryAttachmentsAsync(
         int layerId,
         long featureId,
@@ -38,11 +31,6 @@ internal static partial class AttachmentHandler
             context,
             cancellationToken);
 
-    /// <summary>
-    /// Queries attachments for one or more features, optionally narrowing the
-    /// per-feature attachment list with the Esri <c>attachmentTypes</c>,
-    /// <c>keywords</c>, and <c>size</c> facets carried by <paramref name="filter"/>.
-    /// </summary>
     public static async Task<IResult> QueryAttachmentsAsync(
         int layerId,
         IReadOnlyList<long> featureIds,
@@ -121,9 +109,6 @@ internal static partial class AttachmentHandler
         }
     }
 
-    /// <summary>
-    /// Returns the canonical per-feature attachment infos resource.
-    /// </summary>
     public static async Task<IResult> GetAttachmentInfosAsync(
         HttpContext context,
         int layerId,
@@ -161,9 +146,6 @@ internal static partial class AttachmentHandler
         }
     }
 
-    /// <summary>
-    /// Adds an attachment to a feature with comprehensive security validation.
-    /// </summary>
     public static async Task<IResult> AddAttachmentAsync(
         HttpContext context,
         int layerId,
@@ -279,9 +261,6 @@ internal static partial class AttachmentHandler
         }
     }
 
-    /// <summary>
-    /// Updates an attachment's metadata and optionally replaces its file content.
-    /// </summary>
     public static async Task<IResult> UpdateAttachmentAsync(
         HttpContext context,
         int layerId,
@@ -401,9 +380,6 @@ internal static partial class AttachmentHandler
         }
     }
 
-    /// <summary>
-    /// Deletes attachments from a feature
-    /// </summary>
     public static async Task<IResult> DeleteAttachmentsAsync(
         HttpContext context,
         int layerId,
@@ -485,9 +461,6 @@ internal static partial class AttachmentHandler
         }
     }
 
-    /// <summary>
-    /// Downloads attachment content
-    /// </summary>
     public static async Task<IResult> DownloadAttachmentAsync(
         HttpContext context,
         int layerId,
@@ -541,9 +514,6 @@ internal static partial class AttachmentHandler
         }
     }
 
-    /// <summary>
-    /// Validates if a MIME type is allowed based on configured allowed types
-    /// </summary>
     private static bool IsAllowedMimeType(string? contentType, string allowedMimeTypes)
     {
         if (string.IsNullOrEmpty(contentType) || string.IsNullOrEmpty(allowedMimeTypes))

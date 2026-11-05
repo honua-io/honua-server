@@ -18,16 +18,8 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
-/// <summary>
-/// Handler for the read-only Image Server raster metadata child resources:
-/// <c>statistics</c>, <c>histograms</c>, <c>rasterAttributeTable</c>, and
-/// <c>rasterFunctionInfos</c>. Each resource is a thin Esri-shaped adapter over the
-/// shared raster store metadata (and, for raster functions, the shared raster-function
-/// planner) so the surface stays consistent with the rest of the ImageServer pipeline.
-/// </summary>
 internal sealed class ImageServerRasterMetadataHandler
 {
-    /// <summary>Default histogram bin count, matching the store-side default.</summary>
     private const int DefaultBinCount = 256;
 
     private readonly IMetadataV2GraphProvider _graphProvider;
@@ -44,10 +36,6 @@ internal sealed class ImageServerRasterMetadataHandler
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// Returns per-band statistics for the layer's primary raster (or resolved mosaic)
-    /// in the Esri <c>statistics</c> child-resource shape.
-    /// </summary>
     public Task<IResult> GetStatisticsAsync(HttpContext context, int layerId, CancellationToken cancellationToken)
         => ExecuteAsync(context, layerId, "statistics", async resolved =>
         {
@@ -98,10 +86,6 @@ internal sealed class ImageServerRasterMetadataHandler
                 ImageServerJsonContext.Default.StatisticsResourceResponse), entries.Length);
         });
 
-    /// <summary>
-    /// Returns per-band histograms for the layer's primary raster (or resolved mosaic)
-    /// in the Esri <c>histograms</c> child-resource shape.
-    /// </summary>
     public Task<IResult> GetHistogramsAsync(HttpContext context, int layerId, CancellationToken cancellationToken)
         => ExecuteAsync(context, layerId, "histograms", async resolved =>
         {
@@ -160,11 +144,6 @@ internal sealed class ImageServerRasterMetadataHandler
         return entries;
     }
 
-    /// <summary>
-    /// Returns the raster functions the service can apply, in the Esri
-    /// <c>rasterFunctionInfos</c> child-resource shape. The list mirrors the functions
-    /// the shared raster-function planner accepts through <c>renderingRule</c>.
-    /// </summary>
     public Task<IResult> GetRasterFunctionInfosAsync(HttpContext context, int layerId, CancellationToken cancellationToken)
         => ExecuteAsync(context, layerId, "raster-function-infos", _ =>
         {
@@ -224,12 +203,6 @@ internal sealed class ImageServerRasterMetadataHandler
             return Task.FromResult<(IResult, int)>((result, entries.Length));
         });
 
-    /// <summary>
-    /// Returns the raster attribute table in the Esri feature-set shape. Honua rasters are
-    /// continuous (non-thematic) and carry no value/attribute table, so the canonical column
-    /// schema is returned with an empty <c>features</c> array rather than a 404 — matching the
-    /// document shape ArcGIS clients parse.
-    /// </summary>
     public Task<IResult> GetRasterAttributeTableAsync(HttpContext context, int layerId, CancellationToken cancellationToken)
         => ExecuteAsync(context, layerId, "raster-attribute-table", async _ =>
         {
@@ -255,15 +228,6 @@ internal sealed class ImageServerRasterMetadataHandler
             return (Results.Json(response, ImageServerJsonContext.Default.RasterAttributeTableResponse), 0);
         });
 
-    /// <summary>
-    /// Returns the read-only Esri <c>colormap</c> resource. Honua rasters are continuous and carry
-    /// no intrinsic source colormap, so the resource reflects the active renderer: when the request
-    /// supplies a <paramref name="renderingRule"/> whose Colormap function (explicit stops, a named
-    /// <c>ColorrampName</c>, or an inline <c>Colorramp</c> object) resolves a colormap, that
-    /// colormap is returned as <c>[value, r, g, b]</c> stops. A malformed/unsupported renderingRule
-    /// surfaces its reason; otherwise the Esri not-available response is returned. This reuses the
-    /// shared raster-function planner so the colormap matches what exportImage/legend render.
-    /// </summary>
     public Task<IResult> GetColormapAsync(
         HttpContext context,
         int layerId,

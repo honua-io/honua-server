@@ -7,20 +7,12 @@ using Honua.Infrastructure.Models;
 
 namespace Honua.Infrastructure.Middleware;
 
-/// <summary>
-/// Validates request Host headers against an allowlist to reduce DNS rebinding risk.
-/// </summary>
 internal sealed class HostValidationMiddleware(
     RequestDelegate next,
     IConfiguration configuration,
     IHostEnvironment environment,
     ILogger<HostValidationMiddleware> logger)
 {
-    /// <summary>
-    /// Set only on the control-plane event-handler Lambdas (reconcile, backstop, scheduled tick).
-    /// Their one client is the AWS Lambda Web Adapter in the same sandbox, which posts each
-    /// EventBridge invocation to <c>http://127.0.0.1:{port}/events</c>; there is no public ingress.
-    /// </summary>
     internal const string ControlPlaneLambdaHandlerKey = "HONUA_CONTROL_PLANE_LAMBDA_HANDLER";
 
     private readonly RequestDelegate _next = next ?? throw new ArgumentNullException(nameof(next));
@@ -58,12 +50,7 @@ internal sealed class HostValidationMiddleware(
     private static bool IsControlPlaneEventHandler(IConfiguration configuration)
         => !string.IsNullOrWhiteSpace(configuration[ControlPlaneLambdaHandlerKey]);
 
-    /// <summary>
-    /// The web adapter's own request on an event-handler Lambda: a loopback Host header on a
-    /// connection that is loopback at both ends. The configured allowlist names the public hosts,
-    /// which an EventBridge invocation never carries, so without this the adapter is rejected and
-    /// the function does no work. A request that arrived from anywhere else is still validated.
-    /// </summary>
+    // The Lambda web adapter's loopback-to-loopback request is allowed because an event invocation never carries a public Host, and any other source is still validated.
     private static bool IsLambdaAdapterLoopbackRequest(HttpContext context)
     {
         if (!IsLoopbackConnection(context.Connection.RemoteIpAddress) ||

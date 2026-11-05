@@ -5,19 +5,9 @@ using System.Text.Json;
 
 namespace Honua.Infrastructure.Helpers;
 
-/// <summary>
-/// Normalizes feature attribute values for protocol wire formats that represent booleans as small integers.
-/// </summary>
 internal static class FeatureAttributeValueNormalizer
 {
-    /// <summary>
-    /// Converts booleans to small-integer values and JSON objects or arrays to text.
-    /// </summary>
-    /// <remarks>
-    /// A JSONB value advertised as <c>esriFieldTypeString</c> must be a JSON string.
-    /// ArcGIS Pro drops the entire cursor result when that field arrives as a JSON
-    /// object or array.
-    /// </remarks>
+    // A value advertised as a string must be a JSON string, because ArcGIS Pro drops the whole cursor when that field arrives as an object or array.
     public static object? Normalize(object? value)
         => value switch
         {
@@ -37,9 +27,6 @@ internal static class FeatureAttributeValueNormalizer
             _ => element.GetRawText()
         };
 
-    /// <summary>
-    /// Creates a normalized copy of an attribute dictionary.
-    /// </summary>
     public static Dictionary<string, object?> NormalizeAttributes(IReadOnlyDictionary<string, object?> attributes)
     {
         var normalized = new Dictionary<string, object?>(attributes.Count, StringComparer.OrdinalIgnoreCase);

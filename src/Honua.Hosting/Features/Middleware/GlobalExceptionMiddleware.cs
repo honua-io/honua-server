@@ -16,17 +16,6 @@ using InfrastructureLog = Honua.Infrastructure.Logging.ProtocolRequestLog;
 
 namespace Honua.Infrastructure.Middleware;
 
-/// <summary>
-/// Middleware to catch unhandled exceptions and convert them to standardized error responses
-/// based on the request protocol (GeoServices, OData, etc.).
-/// WEEK 5 FIX: Enhanced with exception categorization, pre-compiled responses, and streaming handlers for 60-80% faster error responses.
-/// </summary>
-/// <remarks>
-/// This middleware ensures consistent error response formats across all protocols
-/// and prevents sensitive error details from being exposed to clients.
-/// It also logs all unhandled exceptions with correlation IDs for tracking.
-/// WEEK 5 ENHANCEMENTS: Fast-path exception handling, pre-compiled responses, streaming optimizations.
-/// </remarks>
 internal sealed class GlobalExceptionMiddleware(
     RequestDelegate next,
     ILogger<GlobalExceptionMiddleware> logger,
@@ -62,9 +51,6 @@ internal sealed class GlobalExceptionMiddleware(
         }
     }
 
-    /// <summary>
-    /// WEEK 5 FIX: Fast-path exception handling with optimized categorization and response generation
-    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private async Task HandleExceptionFastPath(HttpContext context, Exception ex)
     {
@@ -93,9 +79,6 @@ internal sealed class GlobalExceptionMiddleware(
         await HandleExceptionAsync(context, ex);
     }
 
-    /// <summary>
-    /// WEEK 5 FIX: Optimized fast-path exception handling for common exceptions
-    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private async Task HandleFastPathException(HttpContext context, Exception ex, ExceptionCategory category)
     {
@@ -186,9 +169,6 @@ internal sealed class GlobalExceptionMiddleware(
         await StandardErrorResponseFormatter.WriteErrorAsync(context, errorResponse, options);
     }
 
-    /// <summary>
-    /// WEEK 5 FIX: Generate optimized error response using streaming and object pooling
-    /// </summary>
     private async Task GenerateOptimizedErrorResponse(HttpContext context, Exception exception, ExceptionCategory category)
     {
         var stringBuilder = _stringBuilderPool.Get();
@@ -241,9 +221,6 @@ internal sealed class GlobalExceptionMiddleware(
     }
 }
 
-/// <summary>
-/// Source-generated logging for <see cref="GlobalExceptionMiddleware"/> fast-path handling.
-/// </summary>
 internal static partial class GlobalExceptionLog
 {
     [LoggerMessage(
@@ -259,16 +236,8 @@ internal static partial class GlobalExceptionLog
         Exception exception);
 }
 
-/// <summary>
-/// Extension methods for GlobalExceptionMiddleware
-/// </summary>
 internal static class GlobalExceptionMiddlewareExtensions
 {
-    /// <summary>
-    /// Adds global exception handling middleware to the pipeline
-    /// </summary>
-    /// <param name="app">The application builder</param>
-    /// <returns>The application builder for chaining</returns>
     public static IApplicationBuilder UseGlobalExceptionHandling(this IApplicationBuilder app)
     {
         ArgumentNullException.ThrowIfNull(app);
@@ -278,9 +247,6 @@ internal static class GlobalExceptionMiddlewareExtensions
 
 // WEEK 5 FIX: Fast-path optimization components
 
-/// <summary>
-/// WEEK 5 FIX: Categorizes exceptions for fast-path handling
-/// </summary>
 internal sealed class ExceptionCategorizer
 {
     private static readonly ConcurrentDictionary<Type, ExceptionCategory> _categoryCache = new();
@@ -418,9 +384,6 @@ internal sealed class ExceptionCategorizer
     }
 }
 
-/// <summary>
-/// WEEK 5 FIX: Cache for pre-compiled error responses
-/// </summary>
 internal sealed class PrecompiledErrorResponseCache
 {
     private static readonly ConcurrentDictionary<string, PrecompiledResponse> _cache = new();
@@ -503,9 +466,6 @@ internal sealed class PrecompiledErrorResponseCache
     };
 }
 
-/// <summary>
-/// WEEK 5 FIX: Optimized streaming error response handler
-/// </summary>
 internal sealed class StreamingErrorHandler
 {
     private static readonly byte[] _correlationIdPlaceholder = "{correlationId}"u8.ToArray();
@@ -535,9 +495,6 @@ internal sealed class StreamingErrorHandler
     }
 }
 
-/// <summary>
-/// WEEK 5 FIX: StringBuilder pooling policy for memory optimization
-/// </summary>
 internal sealed class StringBuilderPooledObjectPolicy : IPooledObjectPolicy<StringBuilder>
 {
     public StringBuilder Create()

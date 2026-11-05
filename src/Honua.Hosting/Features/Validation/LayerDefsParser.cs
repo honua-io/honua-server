@@ -7,9 +7,6 @@ using Honua.Core.Features.Validation.Abstractions;
 
 namespace Honua.Infrastructure.Validation;
 
-/// <summary>
-/// Shared parser for ArcGIS REST layerDefs values.
-/// </summary>
 internal static class LayerDefsParser
 {
     private const string InvalidLayerDefsJsonMessage = "layerDefs contains invalid JSON.";

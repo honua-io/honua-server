@@ -11,30 +11,15 @@ namespace Honua.Protocols.GeoServices.FeatureServer;
 
 internal static partial class FeatureServerEndpoints
 {
-    /// <summary>
-    /// MapServer adapter entry point that reuses the FeatureServer
-    /// generateRenderer handler verbatim. The MapServer route supplies the same
-    /// route values (serviceId/layerId) the FeatureServer handler reads.
-    /// </summary>
     internal static Task<IResult> HandleGenerateRendererForMapServer(HttpContext context)
         => HandleGenerateRenderer(context);
 
-    /// <summary>
-    /// MapServer service-level adapter entry point for <c>generateRenderer</c>.
-    /// The MapServer wrapper resolves the target layer from request parameters,
-    /// then forwards the remaining renderer parameters into the FeatureServer
-    /// implementation.
-    /// </summary>
     internal static Task<IResult> HandleGenerateRendererForMapServer(
         HttpContext context,
         IReadOnlyDictionary<string, Microsoft.Extensions.Primitives.StringValues> values,
         int layerId)
         => HandleGenerateRenderer(context, values, layerId);
 
-    /// <summary>
-    /// MapServer adapter entry point that reuses the FeatureServer
-    /// queryRelatedRecords (GET) handler verbatim.
-    /// </summary>
     internal static Task<IResult> HandleQueryRelatedRecordsGetForMapServer(
         string serviceId,
         int layerId,
@@ -42,10 +27,6 @@ internal static partial class FeatureServerEndpoints
         FeatureServerRelatedRecordsHandler relatedRecordsHandler)
         => HandleQueryRelatedRecordsGetCore(serviceId, layerId, context, relatedRecordsHandler, "MapServer");
 
-    /// <summary>
-    /// MapServer adapter entry point that reuses the FeatureServer
-    /// queryRelatedRecords (POST) handler verbatim.
-    /// </summary>
     internal static Task<IResult> HandleQueryRelatedRecordsPostForMapServer(
         string serviceId,
         int layerId,

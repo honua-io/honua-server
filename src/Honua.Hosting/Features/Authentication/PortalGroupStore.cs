@@ -6,56 +6,33 @@ using System.Security.Cryptography;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// In-memory Portal community-group store (#1868). Backs the ArcGIS
-/// <c>community/createGroup</c> / <c>groups/{id}</c> / <c>addUsers</c> /
-/// <c>removeUsers</c> surface so org/portal estates can model group membership and
-/// share content to groups.
-/// </summary>
-/// <remarks>
-/// The Postgres profile uses durable storage; non-Postgres profiles use the
-/// process-local implementation below. Identity is consumed from the shared
-/// principal/role model; this store owns only group membership, not RBAC roles.
-/// </remarks>
 internal interface IPortalGroupStore
 {
-    /// <summary>Reads current membership without caching or blocking asynchronous I/O.</summary>
     IReadOnlyList<string> GetGroupIdsForUser(string username, string? tenantId = null);
 
-    /// <summary>Lists every group (used by group search / admin surfaces).</summary>
     Task<IReadOnlyList<PortalGroupRecord>> ListAsync(CancellationToken cancellationToken);
 
-    /// <summary>Fetches a group by id, or <see langword="null"/>.</summary>
     Task<PortalGroupRecord?> GetAsync(string groupId, CancellationToken cancellationToken);
 
-    /// <summary>Creates a group owned by <paramref name="owner"/>; the owner is the first member.</summary>
     Task<PortalGroupRecord> CreateAsync(PortalGroupRegistration registration, string owner, CancellationToken cancellationToken);
 
-    /// <summary>Deletes a group. Returns the removed record, or <see langword="null"/>.</summary>
     Task<PortalGroupRecord?> DeleteAsync(string groupId, CancellationToken cancellationToken);
 
-    /// <summary>Adds users to a group (idempotent). Returns the updated record, or null when absent.</summary>
     Task<PortalGroupRecord?> AddUsersAsync(string groupId, IReadOnlyList<string> usernames, CancellationToken cancellationToken);
 
-    /// <summary>Removes users from a group (idempotent). Returns the updated record, or null when absent.</summary>
     Task<PortalGroupRecord?> RemoveUsersAsync(string groupId, IReadOnlyList<string> usernames, CancellationToken cancellationToken);
 
 }
 
-/// <summary>Group access tiers (ArcGIS community group <c>access</c>).</summary>
 internal static class PortalGroupAccess
 {
-    /// <summary>Only members can see the group and its shared content.</summary>
     public const string Private = "private";
 
-    /// <summary>Any authenticated org user can see the group.</summary>
     public const string Org = "org";
 
-    /// <summary>Anyone can see the group.</summary>
     public const string Public = "public";
 }
 
-/// <summary>Inputs to create a community group.</summary>
 internal sealed record PortalGroupRegistration(
     string Title,
     string? Description,
@@ -63,7 +40,6 @@ internal sealed record PortalGroupRegistration(
     IReadOnlyList<string> Tags,
     string? TenantId = null);
 
-/// <summary>A community group and its membership.</summary>
 internal sealed record PortalGroupRecord(
     string Id,
     string Title,

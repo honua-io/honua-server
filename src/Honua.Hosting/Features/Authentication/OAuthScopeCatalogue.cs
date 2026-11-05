@@ -5,54 +5,28 @@ using System.Collections.Concurrent;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// OAuth2 scope catalogue (ADR-0053 Increment 2, #1888). Increment 1 only let a
-/// requested <c>scope</c> <em>narrow</em> to roles the credential already held.
-/// This catalogue defines named scopes and maps each to the set of RBAC
-/// permissions it grants, so a token minted for a client carries exactly the
-/// permissions of the granted scopes — bounded by the scopes the client is
-/// allowed to request and by the per-request <c>scope</c> narrowing.
-/// </summary>
-/// <remarks>
-/// In-memory to mirror the established auth store pattern (ADR-0049 — no parallel
-/// durable store). Scope narrowing/escalation is enforced here: a permission is
-/// only ever granted through a defined scope the client is allowed to request.
-/// </remarks>
 internal interface IOAuthScopeCatalogue
 {
-    /// <summary>Lists every defined scope.</summary>
     Task<IReadOnlyList<OAuthScopeDefinition>> ListAsync(CancellationToken cancellationToken);
 
-    /// <summary>Fetches a scope by its canonical name, or null.</summary>
     Task<OAuthScopeDefinition?> GetAsync(string scope, CancellationToken cancellationToken);
 
-    /// <summary>Defines (or replaces) a scope and its permission mapping.</summary>
     Task<OAuthScopeDefinition> DefineAsync(OAuthScopeDefinition definition, CancellationToken cancellationToken);
 
-    /// <summary>Removes a scope from the catalogue. Returns the removed definition, or null.</summary>
     Task<OAuthScopeDefinition?> DeleteAsync(string scope, CancellationToken cancellationToken);
 
-    /// <summary>
-    /// Resolves a space-delimited requested-scope string into the flattened set of
-    /// granted RBAC permissions. A requested scope is only honoured when (1) it is
-    /// defined in the catalogue and (2) it is in <paramref name="allowedScopes"/>
-    /// (the client's registered scopes). Unknown or disallowed scopes are dropped,
-    /// never escalated. Returns the granted permissions and the scopes actually
-    /// granted (for the token response).
-    /// </summary>
+    // A requested scope is kept only when it is in the catalogue and in the client's registered scopes; anything else is dropped and never escalated.
     Task<OAuthScopeGrant> ResolveGrantAsync(
         string? requestedScope,
         IReadOnlyList<string> allowedScopes,
         CancellationToken cancellationToken);
 }
 
-/// <summary>A named OAuth2 scope and the RBAC permissions it grants.</summary>
 internal sealed record OAuthScopeDefinition(
     string Scope,
     string Description,
     IReadOnlyList<string> Permissions);
 
-/// <summary>The outcome of resolving a requested scope against the catalogue.</summary>
 internal sealed record OAuthScopeGrant(
     IReadOnlyList<string> GrantedScopes,
     IReadOnlyList<string> GrantedPermissions);

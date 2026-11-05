@@ -8,28 +8,14 @@ using NetTopologySuite.Operation.Union;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
-/// <summary>
-/// Parses the ImageServer <c>computeClassStatistics</c> <c>classDescriptions</c> document into
-/// the training AOIs the class-statistics pipeline consumes. Each class carries an identity plus a
-/// training geometry (an Esri polygon or envelope, or an array of them unioned into one AOI),
-/// which is converted to a WKB clip geometry for the shared raster analytics path.
-/// </summary>
 internal static class ImageServerClassDescriptions
 {
     private static readonly WKBWriter WkbWriter = new();
     private static readonly string[] ClassIdPropertyNames = ["classId", "classValue", "id", "value"];
     private static readonly string[] ClassNamePropertyNames = ["name", "classname", "className"];
 
-    /// <summary>A parsed class description: identity plus its training AOI clip geometry (WKB).</summary>
     internal readonly record struct ParsedClass(int ClassId, string? Name, byte[] ClipGeometry, int? ClipSrid);
 
-    /// <summary>
-    /// Parses the <c>classDescriptions</c> JSON (already shape-validated to a
-    /// <c>{ "classes": [ ... ] }</c> object). Each class must supply a polygon/envelope training
-    /// geometry via <c>geometry</c> or a <c>geometries</c> array. The class id is read from
-    /// <c>classId</c>/<c>classValue</c>/<c>id</c> (falling back to the 1-based ordinal). The
-    /// optional per-geometry <c>spatialReference.wkid</c> wins over <paramref name="defaultSrid"/>.
-    /// </summary>
     internal static bool TryParse(
         string classDescriptionsJson,
         int? defaultSrid,
