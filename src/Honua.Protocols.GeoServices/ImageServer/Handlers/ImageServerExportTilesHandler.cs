@@ -15,6 +15,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Validation;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
@@ -714,14 +715,14 @@ internal sealed class ImageServerExportTilesHandler
     private static bool TryParseBbox(string value, out SkiaMapRenderer.RenderExtent extent)
     {
         extent = default;
-        var parts = value.Split(',', StringSplitOptions.TrimEntries);
-        if (parts.Length != 4 ||
-            !double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var xmin) ||
-            !double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var ymin) ||
-            !double.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var xmax) ||
-            !double.TryParse(parts[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var ymax) ||
-            ymin >= ymax ||
-            xmin >= xmax)
+        var parsed = BoundingBoxOrdinates.Parse(value);
+        if (!parsed.Succeeded || parsed.Ordinates.Length != 4)
+        {
+            return false;
+        }
+
+        var (xmin, ymin, xmax, ymax) = BoundingBoxOrdinates.Horizontal(parsed.Ordinates);
+        if (ymin >= ymax || xmin >= xmax)
         {
             return false;
         }

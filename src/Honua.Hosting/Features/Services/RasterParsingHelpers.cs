@@ -4,6 +4,7 @@
 using System.Globalization;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Validation;
 
 namespace Honua.Infrastructure.Services;
 
@@ -50,30 +51,18 @@ internal static class RasterParsingHelpers
     {
         minX = minY = maxX = maxY = 0;
 
-        if (string.IsNullOrWhiteSpace(bbox))
+        if (bbox is null || bbox.Length > MaxBboxLength)
         {
             return false;
         }
 
-        if (bbox.Length > MaxBboxLength)
+        var parsed = BoundingBoxOrdinates.Parse(bbox);
+        if (!parsed.Succeeded || parsed.Ordinates.Length != 4)
         {
             return false;
         }
 
-        var parts = bbox.Split(',');
-        if (parts.Length != 4)
-        {
-            return false;
-        }
-
-        if (!double.TryParse(parts[0].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var first) ||
-            !double.TryParse(parts[1].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var second) ||
-            !double.TryParse(parts[2].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var third) ||
-            !double.TryParse(parts[3].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var fourth))
-        {
-            return false;
-        }
-
+        var (first, second, third, fourth) = BoundingBoxOrdinates.Horizontal(parsed.Ordinates);
         if (axisOrder == AxisOrder.NorthEast)
         {
             minX = second;
