@@ -127,41 +127,25 @@ public sealed class CommonQueryValidator : ICommonQueryValidator
             return ValidationResult<BoundingBox>.Success(null);
         }
 
-        ReadOnlySpan<char> bboxSpan = bboxValue.AsSpan();
-        Span<double> coords = stackalloc double[6];
-        var count = 0;
-        var ranges = bboxSpan.Split(',');
-        while (ranges.MoveNext())
-        {
-            // Do not skip empty tokens: an empty token (e.g. "1,,2,3,4") is a malformed
-            // coordinate, not an absent value. Count every comma-separated token so the
-            // exactly-4-values check below rejects the malformed input.
-            var token = bboxSpan[ranges.Current].Trim();
-
-            if (count >= coords.Length)
-            {
-                return ValidationResult<BoundingBox>.Failure(
-                    "Bounding box must contain exactly 4 comma-separated values: minx,miny,maxx,maxy");
-            }
-
-            if (!double.TryParse(token, NumberStyles.Float, CultureInfo.InvariantCulture, out coords[count]))
-            {
-                return ValidationResult<BoundingBox>.Failure(
-                    "Bounding box coordinates must be valid numbers");
-            }
-
-            count++;
-        }
-
-        if (count == 6)
-        {
-            return ValidationResult<BoundingBox>.Failure("3D bounding boxes are not supported.");
-        }
-
-        if (count != 4)
+        var tokens = bboxValue.Split(',', StringSplitOptions.TrimEntries);
+        if (tokens.Length is not (4 or 6))
         {
             return ValidationResult<BoundingBox>.Failure(
                 "Bounding box must contain exactly 4 comma-separated values: minx,miny,maxx,maxy");
+        }
+
+        var parsed = BoundingBoxOrdinates.Parse(tokens);
+        if (!parsed.Succeeded)
+        {
+            return ValidationResult<BoundingBox>.Failure(
+                "Bounding box coordinates must be valid numbers");
+        }
+
+        var coords = parsed.Ordinates;
+
+        if (coords.Length == 6)
+        {
+            return ValidationResult<BoundingBox>.Failure("3D bounding boxes are not supported.");
         }
 
         var isGeographic = SpatialReference.Create(targetSrid).IsGeographic;

@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Validation;
 using Honua.Infrastructure.Services;
 using Honua.Protocols.Ogc.Common;
 
@@ -58,16 +59,14 @@ internal static class OgcParameterValidator
             _ => 0,
         };
 
-        var coords = new double[numericCount];
-        for (var i = 0; i < numericCount; i++)
+        var parsed = BoundingBoxOrdinates.Parse(parts[..numericCount]);
+        if (!parsed.Succeeded)
         {
-            if (!double.TryParse(parts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out coords[i]) ||
-                !double.IsFinite(coords[i]))
-            {
-                error = "BBOX coordinates must be finite numeric values.";
-                return false;
-            }
+            error = "BBOX coordinates must be finite numeric values.";
+            return false;
         }
+
+        var coords = parsed.Ordinates;
 
         string? crsToken = null;
         if (parts.Length == numericCount + 1)
