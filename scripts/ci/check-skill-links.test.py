@@ -70,6 +70,34 @@ class SkillLinkCheckerTests(unittest.TestCase):
         errors = checker.check_skill_tree(checker.REPO / "skills", checker.REPO, checker.fetch_page)
         self.assertEqual([], errors)
 
+    def test_repo_root_link_and_titles_resolve(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            (root / "README.md").write_text("# Readme\n", encoding="utf-8")
+            skill = root / "skills" / "example"
+            (skill / "references").mkdir(parents=True)
+            (skill / "references" / "steps.md").write_text("# Steps\n", encoding="utf-8")
+            (skill / "SKILL.md").write_text(
+                "# Skill\n[Readme](/README.md)\n"
+                "[Steps](references/steps.md \"Steps\")\n"
+                "[Again](references/steps.md\tSteps)\n",
+                encoding="utf-8")
+            errors = checker.check_skill_tree(skill.parent, root, pages({}))
+        self.assertEqual([], errors)
+        self.assertEqual(
+            ["#skill", "references/steps.md"],
+            list(checker.DOC_LINKS.link_targets(
+                '[Self](#skill "title")\n[Steps](references/steps.md\ttitle)\n')))
+
+    def test_directory_link_fails(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            skill = root / "skills"
+            (skill / "references").mkdir(parents=True)
+            (skill / "SKILL.md").write_text("# Skill\n[Dir](references)\n", encoding="utf-8")
+            errors = checker.check_skill_tree(skill, root, pages({}))
+        self.assertTrue(any("file not found" in error for error in errors), errors)
+
     def test_blank_destination_does_not_crash(self):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
@@ -118,11 +146,17 @@ class SkillLinkCheckerTests(unittest.TestCase):
                 HOME: (500, ""),
                 "https://example.test/layer": (200, "Published layer | honuaio"),
             }))
-            untitled = checker.check_skill_tree(skill, root, pages({
+            empty_home = checker.check_skill_tree(skill, root, pages({
                 HOME: (200, ""),
+                "https://example.test/layer": (200, "Published layer | honuaio"),
+            }))
+            untitled = checker.check_skill_tree(skill, root, pages({
+                HOME: (200, HOME_TITLE),
                 "https://example.test/layer": (200, ""),
             }))
         self.assertTrue(any("was not readable" in error for error in home_down), home_down)
+        self.assertTrue(any("was not readable" in error for error in empty_home), empty_home)
+        self.assertFalse(any("no page title" in error for error in empty_home), empty_home)
         self.assertTrue(any("no page title" in error for error in untitled), untitled)
 
     def test_page_title_normalizes_markup(self):
@@ -163,7 +197,7 @@ class SkillLinkCheckerTests(unittest.TestCase):
 
     def test_cli_returns_failure_when_links_fail(self):
         probe = (
-            "import importlib.util, pathlib, sys\n"
+            "import importlib.util, sys\n"
             "spec = importlib.util.spec_from_file_location('check_skill_links', sys.argv[1])\n"
             "module = importlib.util.module_from_spec(spec)\n"
             "spec.loader.exec_module(module)\n"

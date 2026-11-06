@@ -162,14 +162,31 @@ def markdown_outside_fences(text):
     return "".join(lines)
 
 
+def link_destination(raw):
+    """Link destination without an optional title or angle brackets."""
+    target = raw.strip()
+    if target.startswith("<"):
+        end = target.find(">")
+        if end != -1:
+            return target[1:end].strip()
+    if not target:
+        return ""
+    return target.split(None, 1)[0]
+
+
 def link_targets(text):
     """Markdown link targets outside fenced code, without a title suffix."""
     for raw in LINK_RE.findall(markdown_outside_fences(text)):
-        target = raw.strip().strip("<>")
-        if not target.startswith("#") and " " in target:
-            target = target.split(" ", 1)[0].strip("<>")
+        target = link_destination(raw)
         if target:
             yield target
+
+
+def resolve_repo_path(base_dir, path_part, repo_root):
+    """Resolve a Markdown path. A leading slash is the repository root."""
+    if os.path.isabs(path_part):
+        return os.path.normpath(os.path.join(repo_root, path_part.lstrip("/")))
+    return os.path.normpath(os.path.join(base_dir, path_part))
 
 
 def inside_repo(candidate, repo_root):
@@ -350,8 +367,11 @@ class RelativeLinkReport:
         self.errors.append(detail)
 
 
-def check_relative_links(docs_root, repo_root, allowlist_entries):
-    """Port of the geospatial-mcp relative-link/anchor check, with the ratchet."""
+def check_relative_links(docs_root, repo_root, allowlist_entries, regular_files_only=False):
+    """Port of the geospatial-mcp relative-link/anchor check, with the ratchet.
+
+    Documentation links may name a directory. Skill links must name a file.
+    """
     anchor_cache = {}
     report = RelativeLinkReport()
 
@@ -371,11 +391,12 @@ def check_relative_links(docs_root, repo_root, allowlist_entries):
             if path_part == "":
                 resolved = md  # same-file anchor
             else:
-                resolved = os.path.normpath(os.path.join(base_dir, path_part))
+                resolved = resolve_repo_path(base_dir, path_part, repo_root)
                 if not inside_repo(resolved, repo_root):
                     report.record(key, f"{source} -> {target} (escapes the repository)", allowlist_entries)
                     continue
-                if not os.path.exists(resolved):
+                present = os.path.isfile(resolved) if regular_files_only else os.path.exists(resolved)
+                if not present:
                     report.record(key, f"{source} -> {target} (file not found)", allowlist_entries)
                     continue
 
