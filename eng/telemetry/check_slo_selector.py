@@ -13,7 +13,7 @@ def main():
     parser.add_argument("--promtool", default="promtool", help="Path to promtool")
     args = parser.parse_args()
     contract = json.loads(
-        (Path(__file__).resolve().parents[3] / "eng/telemetry/slo-metric-contract.v1.json").read_text()
+        Path(__file__).with_name("slo-metric-contract.v1.json").read_text()
     )
     numerator = contract["slo_ratios"]["platform_fault_rate"]["numerator"]
     cases = [

@@ -36,7 +36,6 @@ on:
       - 'scripts/ci/check-skill-links.test.py'
       - 'src/**'
       - 'docker/**'
-      - 'eng/telemetry/**'
       - 'eng/**'
       - 'scripts/ci/check-doc-links.py'
       - 'scripts/ci/check-doc-links.test.py'

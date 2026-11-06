@@ -8,7 +8,6 @@
     "roots": [
       "src",
       "docker",
-      "observability",
       "eng",
       "docs/guides/deploy/examples"
     ],

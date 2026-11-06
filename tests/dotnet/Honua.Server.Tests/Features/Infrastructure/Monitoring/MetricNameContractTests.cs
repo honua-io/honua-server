@@ -15,6 +15,9 @@ using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
+// Prometheus appends unit and counter suffixes, so a renamed series can silently empty alerts.
+// Validate all three: source instruments match the inventory, inventory names remain unmangled,
+// and real exposition exports those names. Agreement between only two can preserve the same error.
 [Protocol(TestProtocols.TestQuality)]
 [Collection("Performance")]
 public sealed class MetricNameContractTests : IClassFixture<TestWebApplicationFactory>
