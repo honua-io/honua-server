@@ -60,5 +60,5 @@ Connect to Honua from desktop GIS applications and consume geospatial services.
 - [Public Interface Proof Ledger](../../gis/data/public-interface-proof.json) — Machine-readable inventory of every shipped public surface, proof classes, CI lanes, and evidence locations
 - [Certification Matrix](../../gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md) — Cross-client interop test results
 - [Certification Evidence](../../gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md) — Final `.cert.json` envelope plus the Windows client smoke-artifact contract
-- [Cross-Client Certification Gap Report](../../gis/gap-report.md) — Latest real-client interop baseline comparison from `client-interop-nightly.yml`
-- [Cross-Server Consume Gap Report](../../internal/compatibility/cross-server-consume-gap-report.md) — Honua-as-client WMS/WFS/WMTS reads against reference GeoServer and MapServer sources (refreshed by the nightly `cross-server-consume-nightly.yml` workflow)
+- [workflow gap-report artifacts](https://github.com/honua-io/honua-server/actions/workflows/client-interop-nightly.yml) — Latest real-client interop baseline comparison from `client-interop-nightly.yml`
+- [workflow gap-report artifacts](https://github.com/honua-io/honua-server/actions/workflows/cross-server-consume-nightly.yml) — Honua-as-client WMS/WFS/WMTS reads against reference GeoServer and MapServer sources (refreshed by the nightly `cross-server-consume-nightly.yml` workflow)

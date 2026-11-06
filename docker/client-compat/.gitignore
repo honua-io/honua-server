@@ -1,3 +1,0 @@
-# Generated cert envelopes — committed baselines live in tests/baselines/client-compat.
-output/*/
-!output/.gitkeep

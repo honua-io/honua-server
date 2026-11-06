@@ -45,7 +45,7 @@ docker compose -f docker/client-compat/compose.yml run --rm cesium
 ```
 
 The compose file mounts the repo's `tests/` directory read-only and a
-`./output` directory read/write so each lane writes `.cert.json` envelopes back
+`artifacts/client-compat` directory read/write so each lane writes `.cert.json` envelopes back
 to the host for the baseline-diff step.
 
 ## Run the entire matrix
@@ -71,7 +71,7 @@ compose by hand.
 ## Output layout
 
 ```
-docker/client-compat/output/
+artifacts/client-compat/
   cesium/
     <run-id>-js-cesium-wms.cert.json
     <run-id>-js-cesium-wmts.cert.json
@@ -159,7 +159,7 @@ docker compose -f docker/client-compat/compose.yml --profile multidim-fixture do
    - Dependencies on `honua: service_healthy` and
      `seed: service_completed_successfully`.
    - `HONUA_BASE_URL=http://honua:5000`
-   - `volumes: [ ../../tests:/workspace/tests:ro, ./output/<lane>:/output ]`
+   - `volumes: [ ../../tests:/workspace/tests:ro, ../../artifacts/client-compat/<lane>:/output ]`
 3. Wire the lane into `.github/workflows/client-interop-nightly.yml` — three
    places in the `prepare` job must stay in sync or the workflow will
    reject the matrix at dispatch time:

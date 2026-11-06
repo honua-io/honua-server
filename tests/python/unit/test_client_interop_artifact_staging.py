@@ -190,7 +190,7 @@ class SingleArtifactLayoutTests(unittest.TestCase):
         mappings = dict(re.findall(r'\[([\w-]+)\]="([\w-]+)"', workflow))
         self.assertEqual(mappings, module.LANES)
         self.assertIn('EXPECTED_LANES: ${{ join(fromJSON(needs.prepare.outputs.lanes), \',\') }}', workflow)
-        self.assertIn('output "$EXPECTED_LANES"', workflow)
+        self.assertIn('artifacts/client-compat "$EXPECTED_LANES"', workflow)
 
 
 if __name__ == "__main__":

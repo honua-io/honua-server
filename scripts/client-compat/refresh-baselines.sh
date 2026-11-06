@@ -11,7 +11,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 COMPOSE_FILE="${ROOT_DIR}/docker/client-compat/compose.yml"
-OUTPUT_DIR="${ROOT_DIR}/docker/client-compat/output"
+OUTPUT_DIR="${ROOT_DIR}/artifacts/client-compat"
 BASELINE_DIR="${ROOT_DIR}/tests/baselines/client-compat"
 SERVER_COMMIT="$(git -C "$ROOT_DIR" rev-parse HEAD)"
 export HONUA_SERVER_COMMIT="$SERVER_COMMIT"

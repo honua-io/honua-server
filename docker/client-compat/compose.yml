@@ -11,7 +11,7 @@
 #     evidence. Use scripts/client-compat/refresh-baselines.sh, which iterates
 #     the lanes sequentially, when you need every envelope captured.
 #
-# Output `.cert.json` envelopes are written to ./output/<lane>/ on the host so
+# Output `.cert.json` envelopes are written to ../../artifacts/client-compat/<lane>/ on the host so
 # the baseline-diff step can compare them against tests/baselines/client-compat.
 
 services:
@@ -283,7 +283,7 @@ services:
       # envelopes. Mounting only the client-compat helpers (not the whole
       # scripts/ tree) keeps the surface area tight.
       - ../../scripts/client-compat:/workspace/scripts/client-compat:ro
-      - ./output/gdal:/output
+      - ../../artifacts/client-compat/gdal:/output
 
   pyqgis:
     profiles: ["matrix", "pyqgis"]
@@ -305,7 +305,7 @@ services:
       - compat
     volumes:
       - ../../tests:/workspace/tests:ro
-      - ./output/pyqgis:/output
+      - ../../artifacts/client-compat/pyqgis:/output
 
   openlayers:
     profiles: ["matrix", "openlayers"]
@@ -327,7 +327,7 @@ services:
       - compat
     volumes:
       - ../../tests:/workspace/tests:rw
-      - ./output/openlayers:/output
+      - ../../artifacts/client-compat/openlayers:/output
 
   cesium:
     profiles: ["matrix", "cesium"]
@@ -346,7 +346,7 @@ services:
       - compat
     volumes:
       - ../../tests:/workspace/tests:rw
-      - ./output/cesium:/output
+      - ../../artifacts/client-compat/cesium:/output
 
   geoservices-rest-stub:
     profiles: ["matrix", "geoservices-rest-stub"]
@@ -371,7 +371,7 @@ services:
     networks:
       - compat
     volumes:
-      - ./output/geoservices-rest-stub:/output
+      - ../../artifacts/client-compat/geoservices-rest-stub:/output
 
   # ---------------------------------------------------------------------
   # Canonical analyst-client lanes (#3392, parent #3389).
@@ -381,7 +381,7 @@ services:
   # certification denominator covers the notebook/analyst access paths
   # customers actually script against — not just GIS desktops and browsers.
   # Every lane writes `{run_id}-{client_lane}-{protocol}.cert.json` into its
-  # own ./output/<lane> directory; refresh-baselines.sh strips the run_id
+  # own ../../artifacts/client-compat/<lane> directory; refresh-baselines.sh strips the run_id
   # prefix when it promotes an envelope to tests/baselines/client-compat.
   # ---------------------------------------------------------------------
 
@@ -415,7 +415,7 @@ services:
       - compat
     volumes:
       - ../../tests:/workspace/tests:ro
-      - ./output/geopandas:/output
+      - ../../artifacts/client-compat/geopandas:/output
 
   owslib:
     profiles: ["matrix", "owslib"]
@@ -454,7 +454,7 @@ services:
       - compat
     volumes:
       - ../../tests:/workspace/tests:ro
-      - ./output/owslib:/output
+      - ../../artifacts/client-compat/owslib:/output
 
   duckdb:
     profiles: ["matrix", "duckdb"]
@@ -481,7 +481,7 @@ services:
       - compat
     volumes:
       - ../../tests:/workspace/tests:ro
-      - ./output/duckdb:/output
+      - ../../artifacts/client-compat/duckdb:/output
 
   r-sf:
     profiles: ["matrix", "r-sf"]
@@ -508,7 +508,7 @@ services:
       - compat
     volumes:
       - ../../tests:/workspace/tests:ro
-      - ./output/r-sf:/output
+      - ../../artifacts/client-compat/r-sf:/output
 
   pystac:
     profiles: ["matrix", "pystac"]
@@ -538,7 +538,7 @@ services:
       - compat
     volumes:
       - ../../tests:/workspace/tests:ro
-      - ./output/pystac:/output
+      - ../../artifacts/client-compat/pystac:/output
 
 networks:
   compat:

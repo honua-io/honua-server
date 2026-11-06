@@ -5,7 +5,7 @@
 #
 # Compose mounts (docker/client-compat/compose.yml):
 #   ../../tests:/workspace/tests:ro   - the suite, read-only
-#   ./output/pystac:/output           - envelope destination
+#   ../../artifacts/client-compat/pystac:/output           - envelope destination
 #
 # Deliberately NOT `set -e` around pytest: a failing certification case must
 # still leave an envelope behind, because a missing envelope reads as "the lane

@@ -12,7 +12,7 @@
 # Compose must provide two mounts (see docker/client-compat/compose.yml):
 #   ../../tests:/workspace/tests:ro   - the suite; read-only, so nothing is
 #                                       ever written back into the repo
-#   ./output/pystac:/output           - where the .cert.json envelope lands
+#   ../../artifacts/client-compat/pystac:/output           - where the .cert.json envelope lands
 
 FROM python:3.12-slim-bookworm@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254
 

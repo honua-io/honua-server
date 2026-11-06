@@ -3,7 +3,7 @@
 `.cert.json` envelopes that represent the expected pass/fail/skip status for
 each `(client_lane, protocol)` pair the `client-interop-nightly` workflow
 exercises. Each nightly run compares the current envelopes from
-`docker/client-compat/output/` against these baselines via
+`artifacts/client-compat/` against these baselines via
 `scripts/client-compat/diff-baselines.py` and fails the workflow on any
 **regression** — a baseline `pass` that does not stay `pass` in the current
 run (including `pass`→`skip` and `pass`→`not-applicable`, which would

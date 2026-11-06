@@ -57,7 +57,7 @@ Against an already-running server, using the lane image directly:
 docker build -f docker/client-compat/r-sf/Dockerfile -t honua-clientcompat-r-sf:dev .
 docker run --rm --network client-compat_compat \
   -v "$PWD/tests:/workspace/tests:ro" \
-  -v "$PWD/docker/client-compat/output/r-sf:/output" \
+  -v "$PWD/artifacts/client-compat/r-sf:/output" \
   -e HONUA_BASE_URL=http://honua:5000 \
   honua-clientcompat-r-sf:dev
 ```

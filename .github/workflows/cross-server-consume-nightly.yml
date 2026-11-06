@@ -11,9 +11,8 @@ env:
   DOTNET_NOLOGO: true
 
 permissions:
-  contents: write
+  contents: read
   packages: read
-  pull-requests: write
 
 concurrency:
   group: cross-server-consume-nightly-${{ github.ref }}
@@ -45,7 +44,7 @@ jobs:
         env:
           HONUA_TEST_CROSS_SERVER_CONSUME: '1'
         run: |
-          mkdir -p tests/TestResults
+          mkdir -p artifacts/test-results
           dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
             --no-build \
             --no-restore \
@@ -53,50 +52,18 @@ jobs:
             --filter "FullyQualifiedName~CrossServerConsume" \
             --logger "trx;LogFileName=cross-server-consume.trx" \
             --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults
+            --results-directory ./artifacts/test-results
 
       - name: Generate gap report
-        if: always() && hashFiles('tests/TestResults/cross-server-consume.trx') != ''
+        if: always() && hashFiles('artifacts/test-results/cross-server-consume.trx') != ''
         run: |
           bash scripts/ci/generate-cross-server-gap-report.sh \
-            tests/TestResults/cross-server-consume.trx \
-            docs/internal/compatibility/cross-server-consume-gap-report.md
+            artifacts/test-results/cross-server-consume.trx \
+            artifacts/client-compat/cross-server-gap-report.md
 
       - name: Write gap report summary
-        if: always() && hashFiles('docs/internal/compatibility/cross-server-consume-gap-report.md') != ''
-        run: cat docs/internal/compatibility/cross-server-consume-gap-report.md >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Commit refreshed gap report
-        if: always() && hashFiles('docs/internal/compatibility/cross-server-consume-gap-report.md') != ''
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if git diff --quiet -- docs/internal/compatibility/cross-server-consume-gap-report.md; then
-            echo "Gap report unchanged."
-            exit 0
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs/internal/compatibility/cross-server-consume-gap-report.md
-          git commit -m "docs: refresh cross-server consume gap report"
-          # One automation-owned branch/PR prevents a failed create from leaving
-          # a new orphan on every nightly run. Force-with-lease is confined to
-          # this bot-owned branch and can never target trunk.
-          branch="automation/cross-server-gap-report"
-          git fetch origin "refs/heads/${branch}:refs/remotes/origin/${branch}" || true
-          if git push --force-with-lease origin HEAD:refs/heads/automation/cross-server-gap-report; then
-            existing="$(gh pr list --state open --head "${branch}" --base trunk --json number --jq '.[0].number // empty')"
-            if [[ -n "${existing}" ]]; then
-              echo "Updated existing gap-report PR #${existing}."
-            elif ! gh pr create --base trunk --head "${branch}" \
-              --title "docs: refresh cross-server consume gap report" \
-              --body "Automated nightly refresh. Merge through the sole merge train authority."; then
-              echo "::warning::Branch updated but PR creation failed; the next run will reuse the same branch."
-            fi
-          else
-            echo "::warning::Could not update the fixed gap-report branch; no new orphan branch was created."
-          fi
+        if: always() && hashFiles('artifacts/client-compat/cross-server-gap-report.md') != ''
+        run: cat artifacts/client-compat/cross-server-gap-report.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload consume artifacts
         if: always()
@@ -104,8 +71,8 @@ jobs:
         with:
           name: cross-server-consume-${{ github.run_id }}
           path: |
-            tests/TestResults/cross-server-consume.trx
-            docs/internal/compatibility/cross-server-consume-gap-report.md
+            artifacts/test-results/cross-server-consume.trx
+            artifacts/client-compat/cross-server-gap-report.md
 
       - name: Fail on consume test failure
         if: steps.consume-tests.outcome == 'failure'
