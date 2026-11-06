@@ -57,22 +57,6 @@ public sealed partial class PostgresStorageMappedFeatureReaderVersionIntegration
         (await reader.GetAsync(1, 91)).Should().NotBeNull();
     }
 
-    [Theory]
-    [InlineData(1, 2)]
-    [InlineData(2, 0)]
-    public async Task QueryAndCount_VirtualLayerPredicate_PreservesBoundPartition(int requestedLayerId, int expectedCount)
-    {
-        await AddForeignPartitionRowAsync();
-        var reader = CreateReader();
-        var query = new FeatureQuery { Where = $"layer_id = {requestedLayerId} AND count >= 2" };
-
-        var result = await reader.QueryAsync(1, query);
-
-        result.Items.Should().HaveCount(expectedCount);
-        result.Items.Should().OnlyContain(feature => feature.Id == 2 || feature.Id == 3);
-        (await reader.CountAsync(1, query)).Should().Be(expectedCount);
-    }
-
     private FeatureStorageMapping PartitionMapping()
         => new("features", SchemaName: _schema, GeometryColumn: "geometry", AttributesColumn: "attributes",
             LayerDiscriminatorColumn: "layer_id", LayerDiscriminatorValue: 1,

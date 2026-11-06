@@ -139,7 +139,7 @@ internal sealed partial class ODataSearchService
             select,
             expand,
             count,
-            cancellationToken: cancellationToken).ConfigureAwait(false);
+            cancellationToken: cancellationToken, publicLayerId: resolvedLayer.PublicLayerId).ConfigureAwait(false);
         if (queryError != null)
         {
             throw new ArgumentException(queryError);
@@ -301,7 +301,7 @@ internal sealed partial class ODataSearchService
             applyExpression,
             filter,
             baseUrl,
-            cancellationToken);
+            cancellationToken, publicLayerId: resolvedLayer.PublicLayerId);
     }
 
     private static void ValidateAggregationFields(ParsedAggregation aggregation, MetadataV2Resource resource)

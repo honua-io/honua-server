@@ -486,7 +486,7 @@ internal sealed partial class ODataStreamingQueryHandler(
                 compute,
                 format,
                 bboxFilter,
-                effectiveToken);
+                effectiveToken, publicLayerId: publicLayerId);
 
             if (queryError != null)
             {
@@ -1108,7 +1108,7 @@ internal sealed partial class ODataStreamingQueryHandler(
                 null,
                 null,
                 resource,
-                cancellationToken: effectiveToken);
+                cancellationToken: effectiveToken, publicLayerId: publicLayerId);
             if (queryError != null)
             {
                 return ODataUtilityService.CreateODataError(context, "InvalidQuery", queryError);

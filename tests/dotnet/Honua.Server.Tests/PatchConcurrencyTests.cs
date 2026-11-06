@@ -562,6 +562,33 @@ public sealed class PatchConcurrencyTests
         finally { await fixture.DisposeAsync(); }
     }
 
+    [IntegrationTest]
+    public async Task GetAsync_FeatureAndRasterShareNumericLayer_EnforcesFeatureMask()
+    {
+        var mask = new MutableFieldMask();
+        var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
+            .ReplaceService<IFieldMaskSource>(mask);
+        await fixture.InitializeAsync();
+        try
+        {
+            var graph = fixture.GetCurrentV2GraphSnapshot().Graph;
+            Assert.Contains(graph.Resources, resource => resource.Type == MetadataV2ResourceType.RasterDataset);
+            Assert.Contains(graph.StorageBindings, binding => binding.Locator == "rasters" && binding.StorageLayerId == 0);
+            Assert.Contains(graph.StorageBindings, binding => binding.Locator == "features" && binding.StorageLayerId == 0);
+            var id = await fixture.InsertFeatureAsync(0, "visible name");
+            var original = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
+            await fixture.GetService<IFeatureWriter>().UpdateAsync(0,
+                original with { Attributes = original.Attributes.SetItem("population", 12345L) });
+            mask.Fields = ImmutableArray.Create("population");
+
+            var feature = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
+
+            Assert.Equal("visible name", feature.Attributes["name"]);
+            Assert.False(feature.Attributes.ContainsKey("population"));
+        }
+        finally { await fixture.DisposeAsync(); }
+    }
+
     private static WebAppFixture CreateFixture(WriteBarrier barrier, MutableFieldMask? mask = null)
     {
         return new WebAppFixture().WithTestLicense(HonuaEdition.Pro)

@@ -33,7 +33,8 @@ internal sealed class ODataQuerySearchService
         string? compute = null,
         string? format = null,
         BoundingBox? bbox = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        int? publicLayerId = null)
     {
         return await _queryService.BuildFeatureQueryAsync(
             filter,
@@ -47,7 +48,8 @@ internal sealed class ODataQuerySearchService
             compute,
             format,
             bbox,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            publicLayerId).ConfigureAwait(false);
     }
 
     public IEnumerable<Dictionary<string, object?>> ApplyBasicFilter(

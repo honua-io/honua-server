@@ -1,10 +1,14 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.TestKit.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -33,6 +37,57 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTheory]
+    [InlineData("query", false)]
+    [InlineData("count", false)]
+    [InlineData("search", false)]
+    [InlineData("query", true)]
+    [InlineData("count", true)]
+    [InlineData("search", true)]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Features")]
+    [Endpoint("GET /odata/Features/$count")]
+    public async Task Features_PublicLayerDiffersFromStorage_FilterUsesPublicIdentity(string operation, bool conflicting)
+    {
+        const int publicLayerId = 17;
+        var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        var provider = (TestMetadataV2GraphProvider)_fixture.GetService<IMetadataV2GraphProvider>();
+        provider.SetGraph(graph with
+        {
+            Revision = graph.Revision + 1,
+            Publications = graph.Publications.Select(publication =>
+                publication.PublicationType == MetadataV2PublicationType.ODataEntitySet && publication.LayerIndex == TestLayerId
+                    ? publication with { LayerIndex = publicLayerId }
+                    : publication).ToArray()
+        }, schema: _fixture.CurrentSchema);
+        var id = await _fixture.InsertFeatureAsync(TestLayerId, "IdentityProbe");
+        var filterLayerId = conflicting ? TestLayerId : publicLayerId;
+        var filter = $"LayerId eq {filterLayerId} and ObjectId eq {id}";
+        var collection = conflicting ? $"/odata/Layers({publicLayerId})/Features" : "/odata/Features";
+        var path = operation == "count" ? $"{collection}/$count" : collection;
+        var suffix = operation == "search" ? "&$search=IdentityProbe" : "";
+
+        var response = await _fixture.Client.GetAsync($"{path}?$filter={Uri.EscapeDataString(filter)}{suffix}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        var content = await response.Content.ReadAsStringAsync();
+        if (operation == "count")
+        {
+            long.Parse(content, CultureInfo.InvariantCulture).Should().Be(conflicting ? 0 : 1);
+        }
+        else
+        {
+            using var document = JsonDocument.Parse(content);
+            var values = document.RootElement.GetProperty("value");
+            values.GetArrayLength().Should().Be(conflicting ? 0 : 1);
+            if (!conflicting)
+            {
+                values[0].GetProperty("LayerId").GetInt32().Should().Be(publicLayerId);
+                values[0].GetProperty("ObjectId").GetInt64().Should().Be(id);
+            }
+        }
+    }
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]

@@ -684,11 +684,6 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         => fieldName.Equals("objectid", StringComparison.OrdinalIgnoreCase)
             || fieldName.Equals("object_id", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Whether a field's value should be projected with the jsonb-preserving
-    /// accessor (<c>-&gt;</c>) so its declared numeric/boolean/json type survives,
-    /// rather than the text accessor (<c>-&gt;&gt;</c>) which stringifies it.
-    /// </summary>
     private static bool PreservesJsonType(MetadataV2FieldType type)
         => type is MetadataV2FieldType.Integer
             or MetadataV2FieldType.BigInteger
@@ -1456,12 +1451,6 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
     private string ResolveColumnExpression(string fieldName, SqlBuilder sql)
     {
-        if (fieldName.Equals("layer_id", StringComparison.OrdinalIgnoreCase) &&
-            _layerDiscriminatorColumn is not null)
-        {
-            return _layerDiscriminatorColumn;
-        }
-
         if (fieldName.Equals("objectid", StringComparison.OrdinalIgnoreCase) ||
             fieldName.Equals("object_id", StringComparison.OrdinalIgnoreCase))
         {

@@ -377,6 +377,7 @@ public sealed class LayerReadSecurityResolver
                 snapshot.ResolveStorageLayerId(candidate.Publication, candidate.Resource) == layerId)
             .Select(candidate => candidate.Resource!);
         return boundResources.Concat(publishedResources)
+            .Where(candidate => candidate.Type is MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table)
             .DistinctBy(candidate => candidate.Metadata.Id, StringComparer.Ordinal)
             .ToArray();
     }
