@@ -257,7 +257,7 @@ public sealed partial class OgcFeaturesOwnerEditPolicyTests
                 adapter,
                 processor,
                 Substitute.For<IQueryProcessor>(),
-                Substitute.For<IETagService>(),
+                new ETagService(),
                 validator,
                 events),
             NullLogger<OgcFeaturesCrudHandler>.Instance);
@@ -270,7 +270,7 @@ public sealed partial class OgcFeaturesOwnerEditPolicyTests
                 adapter,
                 processor,
                 Substitute.For<IQueryProcessor>(),
-                Substitute.For<IETagService>(),
+                new ETagService(),
                 validator,
                 events),
             NullLogger<OgcFeaturesTransactionHandler>.Instance);
