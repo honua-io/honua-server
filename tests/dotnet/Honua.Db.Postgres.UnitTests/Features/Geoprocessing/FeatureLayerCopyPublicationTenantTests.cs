@@ -72,7 +72,9 @@ public sealed class FeatureLayerCopyPublicationTenantTests
             .Returns(call => { _selected = call.Arg<FeatureProviderBinding>(); return reader; });
         var router = new FeatureProviderQueryRouter(Substitute.For<ISecureConnectionRegistry>(), new FeatureDataProviderRegistry([provider]));
         var metadata = Substitute.For<IMetadataV2GraphStore>();
-        metadata.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(new ValueTask<MetadataV2GraphSnapshot>(snapshot));
+#pragma warning disable CA2012 // NSubstitute records the setup call; each invocation receives a fresh ValueTask.
+        metadata.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(_ => new ValueTask<MetadataV2GraphSnapshot>(snapshot));
+#pragma warning restore CA2012
         _connections.OpenConnectionAsync(Arg.Any<CancellationToken>())
             .Returns(Task.FromException<System.Data.Common.DbConnection>(_checkpoint));
         return new PostgresFeatureLayerCopyService(router, _connections, metadata, Substitute.For<ILayerPublishingService>());
