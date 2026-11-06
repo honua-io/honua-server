@@ -70,6 +70,15 @@ issuance uses its existing identity projection.
 Scoped Portal-token authentication is therefore not available to desktop clients. See
 [authentication setup and token revocation during upgrades](../../guides/secure/authentication.md#4-issue-geoservices-rest-compatible-tokens).
 
+## Read-policy metadata availability
+
+Service-scoped row-level security and field masks require metadata identifying the
+resource's publishing services. If resolving that metadata fails, the operation
+fails instead of returning a result constrained only by wildcard-service policies.
+Retry after metadata availability is restored. A successfully resolved resource
+without publications continues to use wildcard policies. Request cancellation
+remains cancellation.
+
 ## OIDC audience identity
 
 OIDC audience values must match the configured client ID or additional audience
