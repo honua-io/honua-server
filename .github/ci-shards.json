@@ -315,7 +315,7 @@
     },
     {
       "name": "MCP and Sessions capacity split (#3204)",
-      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Mcp|FullyQualifiedName~Honua.Server.Tests.Features.AiBuilder|FullyQualifiedName~Honua.Server.Tests.Features.Reporting|FullyQualifiedName~Honua.Ai.Tests.Capabilities|FullyQualifiedName~Honua.Server.Tests.Features.Infrastructure.Rendering|FullyQualifiedName~Honua.Server.Tests.Features.StudioAiProxy)",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Mcp|FullyQualifiedName~Honua.Server.Tests.Features.AiBuilder|FullyQualifiedName~Honua.Server.Tests.Features.Reporting|FullyQualifiedName~Honua.Ai.Tests.Capabilities|FullyQualifiedName~Honua.Ai.Tests.DatabaseCollectionContractTests|FullyQualifiedName~Honua.Server.Tests.Features.Infrastructure.Rendering|FullyQualifiedName~Honua.Server.Tests.Features.StudioAiProxy)",
       "children": [
         "MCP and Sessions",
         "MCP Authentication and Governance"
@@ -2096,12 +2096,13 @@
       "upload_odata_evidence": false,
       "csproj": "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj",
       "_comment": "Round-2 offline TRX rebalance (#3770): folds the 2.1m-p90 MCP micro-shard into MCP Sessions; same Honua.Ai.Tests assembly, placement only.",
-      "filter": "((FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Mcp|FullyQualifiedName~Honua.Server.Tests.Features.AiBuilder|FullyQualifiedName~Honua.Server.Tests.Features.Reporting|FullyQualifiedName~Honua.Ai.Tests.Capabilities|FullyQualifiedName~Honua.Server.Tests.Features.StudioAiProxy)&FullyQualifiedName!~McpBearerAuthenticationTests&FullyQualifiedName!~McpProtectedResourceMetadataTests&FullyQualifiedName!~McpScopeAuthorizationTests&FullyQualifiedName!~McpAuthorizationHelperTests&FullyQualifiedName!~McpStyle&FullyQualifiedName!~ServicePublish&FullyQualifiedName!~StudioMcpOwnership)",
+      "filter": "((FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Mcp|FullyQualifiedName~Honua.Server.Tests.Features.AiBuilder|FullyQualifiedName~Honua.Server.Tests.Features.Reporting|FullyQualifiedName~Honua.Ai.Tests.Capabilities|FullyQualifiedName~Honua.Ai.Tests.DatabaseCollectionContractTests|FullyQualifiedName~Honua.Server.Tests.Features.StudioAiProxy)&FullyQualifiedName!~McpBearerAuthenticationTests&FullyQualifiedName!~McpProtectedResourceMetadataTests&FullyQualifiedName!~McpScopeAuthorizationTests&FullyQualifiedName!~McpAuthorizationHelperTests&FullyQualifiedName!~McpStyle&FullyQualifiedName!~ServicePublish&FullyQualifiedName!~StudioMcpOwnership)",
       "paths": [
         "src/Honua.Ai/",
         "src/Honua.Core/Features/Publishing/",
         "src/Honua.Core/Features/Validation/",
         "src/Honua.Db/Postgres/Features/Publishing/",
+        "tests/dotnet/Honua.Ai.Tests/DatabaseCollectionContractTests.cs",
         "tests/dotnet/Honua.Ai.Tests/ConformanceSchemas/",
         "tests/dotnet/Honua.Ai.Tests/Source/",
         "tests/dotnet/Honua.Ai.Tests/Source/McpBearerAuthenticationTests.cs",

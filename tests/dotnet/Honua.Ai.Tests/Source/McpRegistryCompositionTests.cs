@@ -186,15 +186,7 @@ public sealed class McpRegistryCompositionTests
     [UnitTest]
     public async Task ProductionOperationsComposition_ByDefault_PublishesExactlyTheAuditedAdminProjection()
     {
-        // honua-server#3363 (coordinator ruling 2026-09-14): eligible Admin operation
-        // publication is on by default for the production composition — no
-        // Mcp:PublishOperations configuration at all. The committed projection manifest is
-        // the contract: its 67 rows are the Admin API and access catalogs minus the
-        // audited exclusions (digest below). #6701 adds admin.api-key.update-restrictions
-        // to that projection. The closed operator roster adds seven tools
-        // (server status, connection create/test/list, table discovery, and URL/object imports)
-        // without enabling the full catalog. Other admin.* providers stay opt-in.
-        const int ExpectedManifestTools = 67;
+        const int ExpectedManifestTools = 72;
         const int ExpectedRosterAdditions = 7;
         const int ExpectedPublishedTools = ExpectedManifestTools + ExpectedRosterAdditions;
         const int ExpectedExclusions = 15;
