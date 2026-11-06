@@ -540,6 +540,7 @@ internal static class WebAppFixtureMetadataV2Mixin
     private static Dictionary<string, JsonElement> CreateManagedFeatureBindingOptions()
         => new()
         {
+            ["primaryKeyColumn"] = JsonSerializer.SerializeToElement("objectid"),
             ["geometryColumn"] = JsonSerializer.SerializeToElement("geometry"),
             ["attributesColumn"] = JsonSerializer.SerializeToElement("attributes"),
             ["layerDiscriminatorColumn"] = JsonSerializer.SerializeToElement("layer_id")

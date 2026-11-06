@@ -516,6 +516,7 @@ internal sealed partial class ODataQueryHandler(
                     format,
                     bbox,
                     storageLayerId.Value,
+                    publicLayerId,
                     featureReader,
                     effectiveToken);
             }
@@ -547,7 +548,7 @@ internal sealed partial class ODataQueryHandler(
                 compute,
                 format,
                 bbox,
-                effectiveToken);
+                publicLayerId: publicLayerId, cancellationToken: effectiveToken);
 
             if (queryError != null)
             {
@@ -795,6 +796,7 @@ internal sealed partial class ODataQueryHandler(
         string? format,
         BoundingBox? bbox,
         int storageLayerId,
+        int publicLayerId,
         IFeatureReader featureReader,
         CancellationToken cancellationToken)
     {
@@ -818,7 +820,7 @@ internal sealed partial class ODataQueryHandler(
                 compute,
                 format,
                 bbox,
-                cancellationToken);
+                publicLayerId: publicLayerId, cancellationToken: cancellationToken);
 
             if (queryError != null)
             {

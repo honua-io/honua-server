@@ -5,11 +5,14 @@ using System.Text.Json;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Db.MySql.Features.FeatureStore;
 using Honua.Db.MySql.Features.FeatureStore.Services;
 using Honua.Db.MySql.Features.Infrastructure;
 using Honua.TestKit.Attributes;
 using Honua.TestKit;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using MySqlConnector;
 using Testcontainers.MySql;
@@ -140,7 +143,11 @@ public sealed class MySqlFeatureStoreIntegrationTests : IAsyncLifetime
     [RequiredEnvironmentFact(TestMySqlEnvVar, "1", skipReason: "Set HONUA_TEST_MYSQL=1 to run MySQL Testcontainers integration tests.")]
     public async Task FeatureServer_BboxQuery_ThroughHttpStack_ReturnsMySqlSubset()
     {
-        var fixture = new WebAppFixture().ReplaceService<IFeatureReader>(_store);
+        var fixture = new WebAppFixture().ConfigureServices(services =>
+            services.AddScoped(provider => new FeatureProviderQueryRouter(
+                provider.GetRequiredService<ISecureConnectionRegistry>(),
+                new FeatureDataProviderRegistry([_store]),
+                DataProviderNames.MySql)));
         try
         {
             await fixture.InitializeAsync();

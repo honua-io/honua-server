@@ -326,7 +326,9 @@ public sealed class RbacTestLayerCatalog : ITestMetadataV2GraphSource
     /// optional shared alpha layer / reversed service order, with per-service and per-layer
     /// access policies seeded onto services and resources respectively).
     /// </summary>
-    public TestMetadataV2GraphProvider BuildProvider()
+    public TestMetadataV2GraphProvider BuildProvider() => new(BuildGraph());
+
+    public MetadataV2Graph BuildGraph()
     {
         var builder = new TestMetadataV2GraphBuilder();
         AddLayer(builder, ServiceRbacTestFixture.AlphaLayerId, "Alpha Layer", _alphaLayerAccessPolicy);
@@ -378,7 +380,7 @@ public sealed class RbacTestLayerCatalog : ITestMetadataV2GraphSource
             }
         }
 
-        return builder.BuildProvider();
+        return builder.Build();
     }
 
     private static void AddLayer(TestMetadataV2GraphBuilder builder, int layerId, string name, AccessPolicy? accessPolicy)
