@@ -112,6 +112,33 @@ public sealed class GeoServicesServiceRoutesTests
     }
 
     [Theory]
+    [InlineData("/rest/services", "Public/Parcels")]
+    [InlineData("/services", "Public/Parcels")]
+    [InlineData("/rest/services", "Parcels")]
+    [InlineData("/services", "Parcels")]
+    public async Task ServiceRoute_ForeignCanonicalPath_ReturnsForbidden(string root, string servicePath)
+    {
+        await using var app = CreateApp("alpha", "beta");
+        if (servicePath == "Parcels")
+        {
+            var provider = app.Services.GetRequiredService<IMetadataV2GraphProvider>();
+            var snapshot = await provider.GetCurrentAsync();
+            var graph = snapshot.Graph with
+            {
+                Services = snapshot.Graph.Services.Select(service => service with { FolderId = null }).ToArray()
+            };
+            provider.GetCurrentAsync(Arg.Any<CancellationToken>())
+                .Returns(new MetadataV2GraphSnapshot(graph, "foreign-root", DateTimeOffset.UnixEpoch));
+        }
+        app.MapGet($"{root}/{{serviceId}}/FeatureServer", () => Results.Text("must not run"));
+        await app.StartAsync();
+        using var client = app.GetTestClient();
+        using var response = await client.GetAsync($"{root}/{servicePath}/FeatureServer");
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(403);
+    }
+
+    [Theory]
     [InlineData("/rest/services/Public/Parcels/MapServer/WMS", "WMS", null, "http://localhost/mounted/rest/services/Public/Parcels/MapServer/WMS")]
     [InlineData("/rest/services/Public/Parcels/MapServer/WMTS/1.0.0/WMTSCapabilities.xml", "WMTS", null, "http://localhost/mounted/rest/services/Public/Parcels/MapServer/WMTS")]
     [InlineData("/ogc/services/internal-parcels/wmts", "WMTS", "https://public.example/external", "https://public.example/external/ogc/services/internal-parcels/wmts")]
