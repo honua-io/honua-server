@@ -161,7 +161,7 @@ internal static partial class FeatureServerEndpoints
         var snapshot = await snapshotProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
         var values = ToCaseInsensitiveDictionary(context.Request.Query);
-        if (!TryResolveRequestedServiceLayersV2(service, snapshot, context, values, out var selectedLayers, out _, out var selectionError))
+        if (!TryResolveRequestedServiceLayersV2(new(service, snapshot, context, values), out var selectedLayers, out _, out var selectionError))
         {
             return StandardErrorHelpers.CreateBadRequest(
                 context,

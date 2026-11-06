@@ -814,7 +814,7 @@ internal static class GeoservicesCatalogEndpoints
                     try
                     {
                         var probe = await GetImageServerLayerIdAsync(
-                            snapshot, service, candidate.VisibleResources, rasterStore, logger, tenantId, ct).ConfigureAwait(false);
+                            new(snapshot, service, candidate.VisibleResources, tenantId), rasterStore, logger, ct).ConfigureAwait(false);
                         if (probe.AllLookupsFailed)
                         {
                             Interlocked.Increment(ref failedImageServerProbes);
@@ -1217,15 +1217,19 @@ internal static class GeoservicesCatalogEndpoints
         return true;
     }
 
+    private readonly record struct ImageServerProbeRequest(
+        MetadataV2GraphSnapshot Snapshot,
+        MetadataV2Service Service,
+        IReadOnlyCollection<MetadataV2Resource> VisibleResources,
+        string? TenantId);
+
     private static async Task<ImageServerProbeResult> GetImageServerLayerIdAsync(
-        MetadataV2GraphSnapshot snapshot,
-        MetadataV2Service service,
-        IReadOnlyCollection<MetadataV2Resource> visibleResources,
+        ImageServerProbeRequest request,
         IRasterStore rasterStore,
         ILogger logger,
-        string? tenantId,
         CancellationToken cancellationToken)
     {
+        var (snapshot, service, visibleResources, tenantId) = request;
         var visibleResourceIds = visibleResources
             .Select(static resource => resource.Metadata.Id)
             .ToHashSet(StringComparer.Ordinal);

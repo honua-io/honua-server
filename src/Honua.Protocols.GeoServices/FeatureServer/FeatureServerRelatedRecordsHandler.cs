@@ -130,10 +130,7 @@ internal sealed class FeatureServerRelatedRecordsHandler(
 
             // Get related layer information
             if (!TryResolveRelatedResource(
-                    snapshot,
-                    service,
-                    relationship,
-                    httpContext,
+                    new(snapshot, service, relationship, httpContext),
                     out var relatedResource,
                     out var relatedPublication,
                     out var relatedLayerId))
@@ -399,15 +396,19 @@ internal sealed class FeatureServerRelatedRecordsHandler(
     private static int ResolveRelationshipId(MetadataV2Relationship relationship)
         => relationship.EsriRelationshipId ?? FeatureServerEndpoints.StableStringHash(relationship.Id);
 
+    private readonly record struct RelatedResourceLookup(
+        MetadataV2GraphSnapshot Snapshot,
+        MetadataV2Service Service,
+        MetadataV2Relationship Relationship,
+        HttpContext Context);
+
     private static bool TryResolveRelatedResource(
-        MetadataV2GraphSnapshot snapshot,
-        MetadataV2Service service,
-        MetadataV2Relationship relationship,
-        HttpContext httpContext,
+        RelatedResourceLookup request,
         out MetadataV2Resource? resource,
         out MetadataV2Publication? publication,
         out int layerId)
     {
+        var (snapshot, service, relationship, httpContext) = request;
         resource = null;
         publication = null;
         layerId = -1;

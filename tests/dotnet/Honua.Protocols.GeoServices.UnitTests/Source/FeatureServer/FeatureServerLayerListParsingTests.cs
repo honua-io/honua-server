@@ -127,18 +127,14 @@ public sealed class FeatureServerLayerListParsingTests
             DateTimeOffset.UtcNow);
 
         var defaultResult = FeatureServerEndpoints.TryResolveRequestedServiceLayersV2(
-            service,
-            snapshot,
-            new DefaultHttpContext(),
-            new Dictionary<string, StringValues>(),
+            new(service, snapshot, new DefaultHttpContext(),
+                new Dictionary<string, StringValues>()),
             out var defaultLayers,
             out var selectorSpecified,
             out var defaultError);
         var retiredResult = FeatureServerEndpoints.TryResolveRequestedServiceLayersV2(
-            service,
-            snapshot,
-            new DefaultHttpContext(),
-            new Dictionary<string, StringValues> { ["layerId"] = "1" },
+            new(service, snapshot, new DefaultHttpContext(),
+                new Dictionary<string, StringValues> { ["layerId"] = "1" }),
             out var retiredLayers,
             out var retiredSelectorSpecified,
             out var retiredError);
@@ -193,10 +189,8 @@ public sealed class FeatureServerLayerListParsingTests
             DateTimeOffset.UtcNow);
 
         var result = FeatureServerEndpoints.TryResolveRequestedServiceLayersV2(
-            service,
-            snapshot,
-            new DefaultHttpContext(),
-            new Dictionary<string, StringValues> { ["layers"] = "0" },
+            new(service, snapshot, new DefaultHttpContext(),
+                new Dictionary<string, StringValues> { ["layers"] = "0" }),
             out var layers,
             out var selectorSpecified,
             out var error);

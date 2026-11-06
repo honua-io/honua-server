@@ -236,7 +236,7 @@ internal static partial class FeatureServerEndpoints
         var service = serviceValidationResult.Service!;
         var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         var snapshot = await snapshotProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        if (!TryResolveRequestedServiceLayersV2(service, snapshot, context, values, out var selectedLayers, out _, out var selectionError))
+        if (!TryResolveRequestedServiceLayersV2(new(service, snapshot, context, values), out var selectedLayers, out _, out var selectionError))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid query parameters",
