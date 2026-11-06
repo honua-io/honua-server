@@ -106,7 +106,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader
                 // A caller-owned transaction cannot be rolled back/retried here.
                 // Keep its original stable JSON descriptor so external source DDL
                 // does not introduce a new prepared-result failure in that scope.
-                sql = BuildFeatureSelectCore(query, probeLimit, comparison: null, useNativeAttributes: false);
+                sql = BuildFeatureSelectCore(query, probeLimit, comparison: null, projection: FeatureSelectProjection.Json);
             }
             var useSerialPlan = allowSerialPlan && connection.Transaction is null && ShouldUseSerialSpatialPlan(query);
             for (var attempt = 0; ; attempt++)
@@ -189,7 +189,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader
                     // a caller's transaction, cancellation or an exposed feature row.
                     await session.DisposeQueryAsync().ConfigureAwait(false);
                     cancellationToken.ThrowIfCancellationRequested();
-                    sql = BuildFeatureSelectCore(query, probeLimit, comparison: null, useNativeAttributes: false);
+                    sql = BuildFeatureSelectCore(query, probeLimit, comparison: null, projection: FeatureSelectProjection.Json);
                 }
             }
         }

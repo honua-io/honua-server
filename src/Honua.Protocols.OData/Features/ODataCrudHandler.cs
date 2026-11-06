@@ -612,17 +612,11 @@ internal sealed class ODataCrudHandler(
         ODataCrudResult<Dictionary<string, object?>> result;
         using (Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(updateOutboxScopeData))
         {
-            result = await _crudService.UpdateFeatureAsync(
-                layerId,
-                objectId,
-                payload,
-                baseUrl,
-                ifMatch,
-                ifNoneMatch,
-                updateStorageLayerId!.Value,
-                replace,
-                layerValidation.Resource,
-                effectiveToken);
+            var reader = await ResolveMutationReaderAsync(
+                new AuthorizedReadBinding(context, layerValidation, updateStorageLayerId!.Value), effectiveToken).ConfigureAwait(false);
+            result = await _crudService.UpdateFeatureAsync(new ODataUpdateRequest(
+                layerId, objectId, payload, baseUrl, ifMatch, ifNoneMatch, updateStorageLayerId.Value,
+                replace, layerValidation.Resource, reader), effectiveToken);
         }
         if (result.IsSuccess)
         {
@@ -751,8 +745,11 @@ internal sealed class ODataCrudHandler(
         ODataCrudResult<object> result;
         using (Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(deleteOutboxScopeData))
         {
-            result = await _crudService.DeleteFeatureAsync(
-                layerId, objectId, ifMatch, ifNoneMatch, deleteStorageLayerId!.Value, layerValidation.Resource, effectiveToken);
+            var reader = await ResolveMutationReaderAsync(
+                new AuthorizedReadBinding(context, layerValidation, deleteStorageLayerId!.Value), effectiveToken).ConfigureAwait(false);
+            result = await _crudService.DeleteFeatureAsync(new ODataDeleteRequest(
+                layerId, objectId, ifMatch, ifNoneMatch, deleteStorageLayerId.Value,
+                layerValidation.Resource, reader), effectiveToken);
         }
         if (result.IsSuccess)
         {
@@ -932,6 +929,16 @@ internal sealed class ODataCrudHandler(
             LayerValidationHelpers.ValidationProtocol.OData,
             ODataProtocolConstants.ProtocolName,
             operation,
+            cancellationToken);
+
+    private sealed record AuthorizedReadBinding(HttpContext Context,
+        LayerValidationHelpers.MetadataV2ValidationResult Validation, int StorageLayerId);
+
+    private static Task<IFeatureReader> ResolveMutationReaderAsync(
+        AuthorizedReadBinding binding, CancellationToken cancellationToken)
+        => binding.Context.RequestServices.GetRequiredService<ODataFeatureProviderResolver>().ResolveReaderAsync(
+            binding.Validation.Snapshot!, binding.Validation.Service, binding.Validation.Resource!,
+            binding.Validation.Publication, binding.StorageLayerId, FeatureProviderReadOperation.Query,
             cancellationToken);
 
     // A lease on a row the caller cannot see falls through to the normal 404, because a 423 would reveal that the hidden row exists and who holds it.

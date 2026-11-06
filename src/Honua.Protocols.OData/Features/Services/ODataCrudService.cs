@@ -287,7 +287,7 @@ internal sealed partial class ODataCrudService
         CancellationToken cancellationToken = default)
         => UpdateFeatureAsync(layerId, objectId, payload, baseUrl, ifMatch, ifNoneMatch, storageLayerId, replace, null, cancellationToken);
 
-    public async Task<ODataCrudResult<Dictionary<string, object?>>> UpdateFeatureAsync(
+    public Task<ODataCrudResult<Dictionary<string, object?>>> UpdateFeatureAsync(
         int layerId,
         long objectId,
         ParsedFeaturePayload payload,
@@ -298,7 +298,14 @@ internal sealed partial class ODataCrudService
         bool replace,
         MetadataV2Resource? resolvedResource,
         CancellationToken cancellationToken = default)
+        => UpdateFeatureAsync(new ODataUpdateRequest(layerId, objectId, payload, baseUrl, ifMatch,
+            ifNoneMatch, storageLayerId, replace, resolvedResource, _featureReader), cancellationToken);
+
+    public async Task<ODataCrudResult<Dictionary<string, object?>>> UpdateFeatureAsync(
+        ODataUpdateRequest request, CancellationToken cancellationToken = default)
     {
+        var (layerId, objectId, payload, baseUrl, ifMatch, ifNoneMatch, storageLayerId,
+            replace, resolvedResource, reader) = request;
         try
         {
             // HTTP callers already resolved and authorized the OData publication. Keep
@@ -316,7 +323,7 @@ internal sealed partial class ODataCrudService
             var srid = resource.ReadSrid() ?? 4326;
 
             // Get existing feature to merge with update
-            var existingFeature = await _featureReader.GetAsync(storageLayerId, objectId, cancellationToken);
+            var existingFeature = await reader.GetAsync(storageLayerId, objectId, cancellationToken);
             if (existingFeature == null)
             {
                 return ODataCrudResult<Dictionary<string, object?>>.NotFound($"Feature {objectId} not found in layer {layerId}");
@@ -447,7 +454,7 @@ internal sealed partial class ODataCrudService
                     "The feature changed during the update. Read the current resource and retry the update.");
             }
 
-            var result = await _featureReader.GetAsync(storageLayerId, objectId, cancellationToken);
+            var result = await reader.GetAsync(storageLayerId, objectId, cancellationToken);
             if (!result.HasValue)
             {
                 return ODataCrudResult<Dictionary<string, object?>>.NotFound($"Feature {objectId} not found in layer {layerId}");
@@ -497,7 +504,7 @@ internal sealed partial class ODataCrudService
         CancellationToken cancellationToken = default)
         => DeleteFeatureAsync(layerId, objectId, ifMatch, ifNoneMatch, storageLayerId, null, cancellationToken);
 
-    public async Task<ODataCrudResult<object>> DeleteFeatureAsync(
+    public Task<ODataCrudResult<object>> DeleteFeatureAsync(
         int layerId,
         long objectId,
         string? ifMatch,
@@ -505,7 +512,13 @@ internal sealed partial class ODataCrudService
         int storageLayerId,
         MetadataV2Resource? resolvedResource,
         CancellationToken cancellationToken = default)
+        => DeleteFeatureAsync(new ODataDeleteRequest(layerId, objectId, ifMatch, ifNoneMatch,
+            storageLayerId, resolvedResource, _featureReader), cancellationToken);
+
+    public async Task<ODataCrudResult<object>> DeleteFeatureAsync(
+        ODataDeleteRequest request, CancellationToken cancellationToken = default)
     {
+        var (layerId, objectId, ifMatch, ifNoneMatch, storageLayerId, resolvedResource, reader) = request;
         try
         {
             // HTTP callers already resolved and authorized the OData publication. Keep
@@ -522,7 +535,7 @@ internal sealed partial class ODataCrudService
             var resource = layerResult.Resource!;
             var srid = resource.ReadSrid() ?? 4326;
 
-            var existingFeature = await _featureReader.GetAsync(storageLayerId, objectId, cancellationToken);
+            var existingFeature = await reader.GetAsync(storageLayerId, objectId, cancellationToken);
             if (!existingFeature.HasValue)
             {
                 return ODataCrudResult<object>.NotFound($"Feature {objectId} not found in layer {layerId}");
@@ -556,7 +569,7 @@ internal sealed partial class ODataCrudService
             // transaction (closes the check-then-delete TOCTOU window).
             var expectedStateToken = string.IsNullOrWhiteSpace(ifMatch)
                 ? null
-                : FeatureStateToken.Compute(existingFeature.Value);
+                : FeatureStateToken.FromReadSnapshot(existingFeature.Value);
 
             var editResult = await ExecuteEditAsync(
                 storageLayerId,
