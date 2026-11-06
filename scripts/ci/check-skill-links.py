@@ -74,8 +74,7 @@ def published_page_errors(skill_root, repo_root, fetch):
 
 def check_skill_tree(skill_root, repo_root, fetch):
     """Errors for relative links and for pages that are absent or the home page."""
-    _, relative_errors, _ = DOC_LINKS.check_relative_links(
-        str(skill_root), str(repo_root), set(), regular_files_only=True)
+    _, relative_errors, _ = DOC_LINKS.check_relative_files(str(skill_root), str(repo_root), set())
     return relative_errors + published_page_errors(skill_root, repo_root, fetch)
 
 

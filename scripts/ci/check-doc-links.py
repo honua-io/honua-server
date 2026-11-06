@@ -367,11 +367,17 @@ class RelativeLinkReport:
         self.errors.append(detail)
 
 
-def check_relative_links(docs_root, repo_root, allowlist_entries, regular_files_only=False):
-    """Port of the geospatial-mcp relative-link/anchor check, with the ratchet.
+def check_relative_links(docs_root, repo_root, allowlist_entries):
+    """Port of the geospatial-mcp relative-link/anchor check, with the ratchet."""
+    return _relative_links(docs_root, repo_root, allowlist_entries, os.path.exists)
 
-    Documentation links may name a directory. Skill links must name a file.
-    """
+
+def check_relative_files(docs_root, repo_root, allowlist_entries):
+    """Relative links that must name a regular file. A directory is not one."""
+    return _relative_links(docs_root, repo_root, allowlist_entries, os.path.isfile)
+
+
+def _relative_links(docs_root, repo_root, allowlist_entries, present):
     anchor_cache = {}
     report = RelativeLinkReport()
 
@@ -395,8 +401,7 @@ def check_relative_links(docs_root, repo_root, allowlist_entries, regular_files_
                 if not inside_repo(resolved, repo_root):
                     report.record(key, f"{source} -> {target} (escapes the repository)", allowlist_entries)
                     continue
-                present = os.path.isfile(resolved) if regular_files_only else os.path.exists(resolved)
-                if not present:
+                if not present(resolved):
                     report.record(key, f"{source} -> {target} (file not found)", allowlist_entries)
                     continue
 
