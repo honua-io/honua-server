@@ -131,14 +131,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                     // geometry column; the schema field is named 'shape' (the V2
                     // logical name). FeatureStorageMapping reads geometryColumn
                     // from binding options to bridge the two, so add it here.
-                    options: new Dictionary<string, JsonElement>
-                    {
-                        ["geometryColumn"] = JsonSerializer.SerializeToElement("geometry"),
-                        ["attributesColumn"] = JsonSerializer.SerializeToElement("attributes"),
-                        // Match the production compatibility snapshot: each resource
-                        // owns only its layer_id partition of the shared features table.
-                        ["layerDiscriminatorColumn"] = JsonSerializer.SerializeToElement("layer_id")
-                    });
+                    options: CreateManagedFeatureBindingOptions());
 
             if (defaultServiceLayerIndices.Contains(layerIndex))
             {
@@ -530,7 +523,8 @@ internal static class WebAppFixtureMetadataV2Mixin
                     bindingId,
                     resourceId,
                     "features",
-                    storageLayerId: layerIndex)
+                    storageLayerId: layerIndex,
+                    options: CreateManagedFeatureBindingOptions())
                 .AddPublication(
                     id: $"pub-admin-sample-feature-{layerIndex}",
                     serviceId: "svc-admin-sample-feature",
@@ -542,6 +536,14 @@ internal static class WebAppFixtureMetadataV2Mixin
 
         return builder.Build();
     }
+
+    private static Dictionary<string, JsonElement> CreateManagedFeatureBindingOptions()
+        => new()
+        {
+            ["geometryColumn"] = JsonSerializer.SerializeToElement("geometry"),
+            ["attributesColumn"] = JsonSerializer.SerializeToElement("attributes"),
+            ["layerDiscriminatorColumn"] = JsonSerializer.SerializeToElement("layer_id")
+        };
 
     private static void AddODataSeedLayer(
         Honua.TestKit.Infrastructure.TestMetadataV2GraphBuilder builder,
@@ -561,12 +563,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                 resourceId,
                 "features",
                 storageLayerId: layerIndex,
-                options: new Dictionary<string, JsonElement>
-                {
-                    ["geometryColumn"] = JsonSerializer.SerializeToElement("geometry"),
-                    ["attributesColumn"] = JsonSerializer.SerializeToElement("attributes"),
-                    ["layerDiscriminatorColumn"] = JsonSerializer.SerializeToElement("layer_id")
-                })
+                options: CreateManagedFeatureBindingOptions())
             .AddPublication(
                 id: $"pub-layer-{layerIndex}",
                 serviceId: "svc-test",
