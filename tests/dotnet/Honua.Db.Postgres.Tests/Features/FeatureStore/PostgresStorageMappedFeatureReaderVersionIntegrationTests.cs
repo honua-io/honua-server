@@ -24,7 +24,7 @@ namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
 /// <summary>Exercises managed branch overlays through the production mapped reader (#5044).</summary>
 [Collection("Database")]
-public sealed class PostgresStorageMappedFeatureReaderVersionIntegrationTests(PostgresFixture fixture) : IAsyncLifetime
+public sealed partial class PostgresStorageMappedFeatureReaderVersionIntegrationTests(PostgresFixture fixture) : IAsyncLifetime
 {
     private readonly Guid _version = Guid.NewGuid();
     private readonly Guid _otherVersion = Guid.NewGuid();
@@ -359,6 +359,19 @@ public sealed class PostgresStorageMappedFeatureReaderVersionIntegrationTests(Po
         var parameters = implicitSql.GetType().GetProperty("Parameters")!;
         ((IEnumerable<object?>)parameters.GetValue(explicitSql)!).Should()
             .Equal((IEnumerable<object?>)parameters.GetValue(implicitSql)!);
+    }
+
+    private Task AddForeignPartitionRowAsync()
+        => fixture.ExecuteAsync($$"""
+            INSERT INTO {{_schema}}.features VALUES (2,91,NULL,'{"count":91,"tenant":"a"}');
+            """);
+
+    private PostgresStorageMappedFeatureReader CreatePartitionReader(FeatureStorageMapping mapping, string managedSchema)
+    {
+        var pool = new DefaultObjectPoolProvider().Create(
+            new Honua.Core.Features.Infrastructure.ServiceRegistration.DictionaryPooledObjectPolicy());
+        return new PostgresStorageMappedFeatureReader(new FixtureConnectionProvider(fixture.ConnectionString),
+            pool, new MetadataV2Resource(), mapping, managedFeatureSchema: managedSchema);
     }
 
     private PostgresStorageMappedFeatureReader CreateReader(bool secured = false, bool externalTable = false,

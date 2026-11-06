@@ -15,7 +15,7 @@ namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
 /// <summary>Binding capability discovery uses the same eligibility as branch reads (#5047).</summary>
 [global::Xunit.Trait("Tier", "Fast")]
-public sealed class PostgresStorageMappedFeatureReaderVersionCapabilityTests
+public sealed partial class PostgresStorageMappedFeatureReaderVersionCapabilityTests
 {
     private const string ManagedConnection = "Host=localhost;Port=5432;Database=managed;Username=capability_test";
     private static readonly FeatureStorageMapping ManagedMapping = new("features", SchemaName: "honua",

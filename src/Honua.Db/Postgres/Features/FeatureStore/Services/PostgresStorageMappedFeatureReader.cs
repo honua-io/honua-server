@@ -806,6 +806,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         FeatureQuery query,
         CancellationToken cancellationToken)
     {
+        await ValidateManagedPartitionAsync(cancellationToken).ConfigureAwait(false);
         await ValidateVersionedReadAsync(query, cancellationToken).ConfigureAwait(false);
 
         if (query.EnforcedSqlFilter is null &&

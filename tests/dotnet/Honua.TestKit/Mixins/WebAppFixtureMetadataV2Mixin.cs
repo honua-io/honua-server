@@ -564,7 +564,8 @@ internal static class WebAppFixtureMetadataV2Mixin
                 options: new Dictionary<string, JsonElement>
                 {
                     ["geometryColumn"] = JsonSerializer.SerializeToElement("geometry"),
-                    ["attributesColumn"] = JsonSerializer.SerializeToElement("attributes")
+                    ["attributesColumn"] = JsonSerializer.SerializeToElement("attributes"),
+                    ["layerDiscriminatorColumn"] = JsonSerializer.SerializeToElement("layer_id")
                 })
             .AddPublication(
                 id: $"pub-layer-{layerIndex}",
