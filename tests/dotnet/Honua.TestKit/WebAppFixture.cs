@@ -593,27 +593,35 @@ public sealed class WebAppFixture : IAsyncLifetime
         return this;
     }
 
-    /// <summary>
-    /// Wraps the registered <typeparamref name="TService"/> in a decorator instead of replacing it,
-    /// so a test can observe or perturb one method while every other call still reaches the real
-    /// production implementation (for example a real PostGIS feature writer). The original
-    /// registration's lifetime is preserved.
-    /// </summary>
-    /// <param name="decorate">Builds the decorator from the resolved inner service.</param>
     public WebAppFixture DecorateService<TService>(Func<TService, TService> decorate)
+        where TService : class
+        => DecorateRegistrations(decorate, static registrations => registrations.TakeLast(1));
+
+    public WebAppFixture DecorateEachService<TService>(Func<TService, TService> decorate)
+        where TService : class
+        => DecorateRegistrations(decorate, static registrations => registrations);
+
+    private WebAppFixture DecorateRegistrations<TService>(
+        Func<TService, TService> decorate,
+        Func<ServiceDescriptor[], IEnumerable<ServiceDescriptor>> selectRegistrations)
         where TService : class
     {
         ArgumentNullException.ThrowIfNull(decorate);
         _serviceConfigurations.Add(services =>
         {
-            var original = services.LastOrDefault(descriptor => descriptor.ServiceType == typeof(TService))
-                ?? throw new InvalidOperationException(
-                    $"No registration for {typeof(TService).Name} to decorate.");
-            services.Remove(original);
-            services.Add(ServiceDescriptor.Describe(
-                typeof(TService),
-                provider => decorate((TService)ResolveOriginal(provider, original)),
-                original.Lifetime));
+            var registrations = services.Where(descriptor => descriptor.ServiceType == typeof(TService)).ToArray();
+            if (registrations.Length == 0)
+            {
+                throw new InvalidOperationException($"No registration for {typeof(TService).Name} to decorate.");
+            }
+            foreach (var original in selectRegistrations(registrations))
+            {
+                var index = services.IndexOf(original);
+                services[index] = ServiceDescriptor.Describe(
+                    typeof(TService),
+                    provider => decorate((TService)ResolveOriginal(provider, original)),
+                    original.Lifetime);
+            }
         });
         return this;
     }

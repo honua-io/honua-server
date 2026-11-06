@@ -41,6 +41,7 @@ internal sealed partial class ODataQueryService
         string? compute = null,
         string? format = null,
         BoundingBox? bbox = null,
+        int? publicLayerId = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(resource);
@@ -66,13 +67,21 @@ internal sealed partial class ODataQueryService
             return (new FeatureQuery(), conversion.ErrorMessage ?? "Invalid OData query.");
         }
 
-        var validation = _queryProcessor.ValidateQuery(conversion.Query.Value, resource);
+        var unifiedQuery = conversion.Query.Value;
+        if (publicLayerId.HasValue && unifiedQuery.Filter is { Expression: { } expression } queryFilter)
+        {
+            unifiedQuery = unifiedQuery with
+            {
+                Filter = queryFilter with { Expression = BindPublicLayerId(expression, publicLayerId.Value) }
+            };
+        }
+        var validation = _queryProcessor.ValidateQuery(unifiedQuery, resource);
         if (!validation.IsValid)
         {
             return (new FeatureQuery(), validation.ErrorMessage ?? "Invalid OData query.");
         }
 
-        var optimized = _queryProcessor.OptimizeQuery(conversion.Query.Value, resource);
+        var optimized = _queryProcessor.OptimizeQuery(unifiedQuery, resource);
         var featureQuery = _queryProcessor.ToFeatureQuery(optimized, resource);
 
         // bbox shorthand: attach an envelope spatial filter through the shared spatial-filter
@@ -152,7 +161,7 @@ internal sealed partial class ODataQueryService
         }).ToArray();
     }
 
-    public SqlFragment? ConvertODataFilterToSqlFragment(string? odataFilter, MetadataV2Resource resource)
+    public SqlFragment? ConvertODataFilterToSqlFragment(string? odataFilter, MetadataV2Resource resource, int? publicLayerId = null)
     {
         ArgumentNullException.ThrowIfNull(resource);
         if (string.IsNullOrWhiteSpace(odataFilter))
@@ -160,7 +169,7 @@ internal sealed partial class ODataQueryService
             return null;
         }
 
-        var parseResult = _filterExpressionService.Parse(FilterLanguage.OData, odataFilter);
+        var parseResult = _filterExpressionService.ParseAndNormalize(FilterLanguage.OData, odataFilter, resource);
         if (!parseResult.IsSuccess)
         {
             throw new ArgumentException(parseResult.ErrorMessage ?? "Invalid OData filter.");
@@ -171,7 +180,10 @@ internal sealed partial class ODataQueryService
             return null;
         }
 
-        var translationResult = _filterExpressionService.Translate(parseResult.Expression, resource);
+        var expression = publicLayerId.HasValue
+            ? BindPublicLayerId(parseResult.Expression, publicLayerId.Value)
+            : parseResult.Expression;
+        var translationResult = _filterExpressionService.Translate(expression, resource);
         if (!translationResult.IsSuccess)
         {
             throw new ArgumentException(translationResult.ErrorMessage ?? "Invalid OData filter.");
@@ -180,6 +192,12 @@ internal sealed partial class ODataQueryService
         return translationResult.SqlFilter;
     }
 
+
+    private static FilterExpression BindPublicLayerId(FilterExpression expression, int publicLayerId)
+        => FilterExpressionHelpers.RewriteProperties(expression, property =>
+            property.PropertyName.Equals("LayerId", StringComparison.OrdinalIgnoreCase)
+                ? new Literal(publicLayerId, LiteralType.Number)
+                : property);
 
     private static bool EvaluateLayerPayloadFilter(
         FilterExpression expression,

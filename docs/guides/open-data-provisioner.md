@@ -15,7 +15,7 @@ Sales and onboarding repeatedly need the same thing: pick a county / state /
 city, load it with high-value open government data, and have it served by Honua
 in minutes -- without a GeoServices REST data credit in sight. This slice delivers:
 
-1. A **structured source catalog** (`data/open-data-catalog/catalog.json`,
+1. A **structured source catalog** (`scripts/provisioner/catalog/catalog.json`,
    validated by `schema.json`) -- config-as-data, so adding a source is a data
    edit, not a code change.
 2. **One end-to-end area-import** (`scripts/provisioner/provision_area.py`):
@@ -221,9 +221,9 @@ kind rather than a redesign. Cross-refs: geocoding compat epic #1263, GP porting
 
 ## Files
 
-- `data/open-data-catalog/catalog.json` -- the curated catalog.
-- `data/open-data-catalog/schema.json` -- JSON Schema for the catalog.
-- `data/open-data-catalog/README.md` -- catalog-dir orientation.
+- `scripts/provisioner/catalog/catalog.json` -- the curated catalog.
+- `scripts/provisioner/catalog/schema.json` -- JSON Schema for the catalog.
+- `scripts/provisioner/catalog/README.md` -- catalog-dir orientation.
 - `scripts/provisioner/provision_area.py` -- the area-import orchestrator.
 - `src/Honua.Server/Features/Provisioner/BuildJobs/` -- the per-area
   geocoder/router GP-on-Batch build jobs (spec builders, area selector,

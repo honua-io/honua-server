@@ -63,7 +63,7 @@ public sealed class FeatureServerApplyEditsUpdateConflictTests : IAsyncLifetime
     {
         _fixture = new WebAppFixture()
             .WithTestLicense(HonuaEdition.Pro)
-            .DecorateService<IFeatureReader>(inner => new PinnedSnapshotFeatureReader(inner, _pin));
+            .DecorateFeatureReaders(inner => new PinnedSnapshotFeatureReader(inner, _pin));
     }
 
     public async Task InitializeAsync()
