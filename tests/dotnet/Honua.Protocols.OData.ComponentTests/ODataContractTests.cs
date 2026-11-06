@@ -162,7 +162,7 @@ public sealed class ODataContractTests(ODataComponentFixture fixture) : IClassFi
     {
         using var current = await fixture.Client.GetAsync(path);
         current.StatusCode.Should().Be(HttpStatusCode.OK);
-        var currentEtag = current.Headers.ETag?.ToString();
+        var currentEtag = Assert.IsType<string>(current.Headers.ETag?.ToString());
         currentEtag.Should().NotBeNullOrEmpty();
         using var delete = new HttpRequestMessage(HttpMethod.Delete, path);
         delete.Headers.TryAddWithoutValidation("If-Match", currentEtag);
@@ -173,10 +173,10 @@ public sealed class ODataContractTests(ODataComponentFixture fixture) : IClassFi
     private async Task AssertConditionalBatchUpdateAsync(string path)
     {
         using var current = await fixture.Client.GetAsync(path);
-        var etag = current.Headers.ETag?.ToString();
+        var etag = Assert.IsType<string>(current.Headers.ETag?.ToString());
         etag.Should().NotBeNullOrEmpty();
-        (await BatchUpdateAsync(path, etag!, 98765)).Should().BeInRange(200, 299);
-        (await BatchUpdateAsync(path, etag!, 1)).Should().Be(412);
+        (await BatchUpdateAsync(path, etag, 98765)).Should().BeInRange(200, 299);
+        (await BatchUpdateAsync(path, etag, 1)).Should().Be(412);
         using var final = await GetJsonAsync(path);
         Attributes(final.RootElement).GetProperty("population").GetInt64().Should().Be(98765);
     }

@@ -290,12 +290,7 @@ internal sealed partial class ODataBatchHandler
 
                             var updateValidation = await BuildValidatedEditBatchAsync(
                                 layer.Resource,
-                                CreateEditRequestFromFeature(
-                                    isPatch ? ODataOperation.Patch : ODataOperation.Update,
-                                    parsedFeature,
-                                    objectId.Value,
-                                    request.Headers?.GetValueOrDefault("If-Match"),
-                                    request.Headers?.GetValueOrDefault("If-None-Match")),
+                                CreateMutationEditRequest(request, parsedFeature, objectId.Value),
                                 rollbackOnFailure: true,
                                 cancellationToken);
                             if (updateValidation.ErrorMessage != null ||
