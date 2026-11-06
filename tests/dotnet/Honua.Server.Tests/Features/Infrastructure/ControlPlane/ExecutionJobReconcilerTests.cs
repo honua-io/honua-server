@@ -23,6 +23,39 @@ public sealed class ExecutionJobReconcilerTests
 {
     [Fact]
     [Trait("Tier", "Fast")]
+    public async Task ReconcileExecutionJob_LeaseRenewalThrows_CancelsObservationAndReleasesLease()
+    {
+        const string operationId = "renewal-unavailable";
+        var job = CreateJobRecord(operationId, ExecutionJobStatus.Running, "aws-batch", BatchComputeTargetKind.AwsBatch)
+            with { ProviderOperationId = "existing-batch-job" };
+        var store = Substitute.For<IExecutionJobStore>();
+        store.TryAcquireLeaseAsync(operationId, Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        store.GetAsync(operationId, Arg.Any<CancellationToken>()).Returns(job);
+        store.RenewLeaseAsync(operationId, Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<bool>(new TimeoutException("lease unavailable")));
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("aws-batch");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.ObserveAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, call.Arg<CancellationToken>());
+                return new BatchComputeObservation { Status = ExecutionJobStatus.Running };
+            });
+        using var watchdog = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var sut = new ExecutionJobReconciler(store, [backend], new InMemoryProgressStore(),
+            NullLogger<ExecutionJobReconciler>.Instance);
+
+        await sut.ReconcileExecutionJobAsync(operationId, watchdog.Token);
+
+        watchdog.IsCancellationRequested.Should().BeFalse("lease failure must cancel before the host watchdog");
+        await store.Received(1).ReleaseLeaseAsync(operationId, Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await store.DidNotReceive().TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    [Trait("Tier", "Fast")]
     public async Task ReconcileExecutionJob_HostStopsDuringObservation_PreservesJobForReplacementServer()
     {
         using var shutdown = new CancellationTokenSource();
