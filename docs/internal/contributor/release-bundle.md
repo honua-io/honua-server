@@ -67,9 +67,9 @@ Actions → Release Bundle (Compatibility Train) → Run workflow
   promote:     false   # evidence-first: build, test, generate manifest, validate — publish nothing
 ```
 
-The run produces the `release-train-evidence` artifact: the refreshed
-`artifacts/release/<id>.json` manifest and the `release-validation-bundle.json` scoreboard
-(per-surface pass/fail + the owning follow-up issue for every gap). Promotion
+The run produces the `release-train-evidence` artifact containing `<id>.json`,
+`release-validation-bundle.json`, `evidence.json` and `downloads/*.ndjson`.
+The scoreboard records per-surface pass/fail and the owning follow-up issue for every gap. Promotion
 (`promote: true`) is a separate, protected-environment step that only proceeds
 when the validator verdict is `pass`: it publishes the SDKs for real and retags
 the immutable RC native-AOT image to the selected unsuffixed channel, with a

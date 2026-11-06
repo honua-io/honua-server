@@ -4,9 +4,7 @@
 # by honua-devops' release-train validator.
 #
 # Inputs are an evidence JSON (the per-gate/lane run results collected by the
-# orchestrator) plus scalar args for the candidate identity. An optional --base
-# manifest carries forward static fields (releaseIssue, compatibilityBaseline,
-# childTickets, ...) so a refresh only updates the dynamic evidence.
+# orchestrator) plus scalar args for the candidate identity.
 #
 # Determinism: OBSERVED_AT is an input (never wall-clock) so the same evidence
 # reproduces byte-identical output — required for the smoke self-test.
@@ -32,10 +30,9 @@ Candidate identity (image is what makes candidate.image.evidenceState pass):
 
 Other:
   --observed-at <iso8601>  Timestamp recorded in the manifest (default: env OBSERVED_AT, else error)
-  --base <manifest>        Existing manifest to carry static fields forward from
   --output <path>          Output path (default: artifacts/release/<release-id>.json)
 
-Evidence JSON shape (all arrays optional; entries replace the base when present):
+Evidence JSON shape (all arrays optional):
   {
     "meta": { "releaseIssue": {...}, "sdkCompatibilityManifest": "...",
               "compatibilityBaseline": {...}, "childTickets": [...] },
@@ -75,7 +72,6 @@ IMAGE_REPOSITORY="${IMAGE_REPOSITORY:-}"
 IMAGE_TAG="${IMAGE_TAG:-}"
 IMAGE_DIGEST="${IMAGE_DIGEST:-}"
 OBSERVED_AT="${OBSERVED_AT:-}"
-BASE_MANIFEST=""
 OUTPUT=""
 
 while [[ $# -gt 0 ]]; do
@@ -89,7 +85,6 @@ while [[ $# -gt 0 ]]; do
     --image-tag) IMAGE_TAG="$2"; shift 2 ;;
     --image-digest) IMAGE_DIGEST="$2"; shift 2 ;;
     --observed-at) OBSERVED_AT="$2"; shift 2 ;;
-    --base) BASE_MANIFEST="$2"; shift 2 ;;
     --output) OUTPUT="$2"; shift 2 ;;
     -h|--help) usage ;;
     *) echo "[ERROR] Unknown argument: $1" >&2; usage ;;
@@ -105,18 +100,10 @@ jq -e . "$EVIDENCE_FILE" >/dev/null 2>&1 || { echo "[ERROR] evidence file is not
 [[ -n "$CHANNEL" ]] || { echo "[ERROR] --channel is required" >&2; usage; }
 [[ -n "$OBSERVED_AT" ]] || { echo "[ERROR] --observed-at (or OBSERVED_AT env) is required for deterministic output" >&2; usage; }
 
-base_json="{}"
-if [[ -n "$BASE_MANIFEST" ]]; then
-  [[ -f "$BASE_MANIFEST" ]] || { echo "[ERROR] base manifest not found: $BASE_MANIFEST" >&2; exit 1; }
-  jq -e . "$BASE_MANIFEST" >/dev/null 2>&1 || { echo "[ERROR] base manifest is not valid JSON: $BASE_MANIFEST" >&2; exit 1; }
-  base_json="$(cat "$BASE_MANIFEST")"
-fi
-
 OUTPUT="${OUTPUT:-artifacts/release/${RELEASE_ID}.json}"
 
 manifest="$(
   jq -n \
-    --argjson base "$base_json" \
     --slurpfile evidence "$EVIDENCE_FILE" \
     --arg releaseId "$RELEASE_ID" \
     --arg channel "$CHANNEL" \
@@ -191,16 +178,16 @@ manifest="$(
     ($imageDigest != "" and $imageTag != "") as $imageReady |
 
     {
-      "$schema": ($base["$schema"] // "https://honua.io/schemas/release-train-manifest.v1.json"),
+      "$schema": "https://honua.io/schemas/release-train-manifest.v1.json",
       schemaVersion: 1,
       releaseId: $releaseId,
       channel: $channel,
-      releaseIssue: ($ev.meta.releaseIssue // $base.releaseIssue // null),
+      releaseIssue: ($ev.meta.releaseIssue // null),
       candidate: {
-        ref: (if $serverRef != "" then $serverRef else $base.candidate.ref end),
-        refSource: (if $refSource != "" then $refSource else ($base.candidate.refSource // null) end),
+        ref: (if $serverRef != "" then $serverRef else null end),
+        refSource: (if $refSource != "" then $refSource else null end),
         image: {
-          repository: (if $imageRepo != "" then $imageRepo else ($base.candidate.image.repository // null) end),
+          repository: (if $imageRepo != "" then $imageRepo else null end),
           tag: (if $imageTag != "" then $imageTag else null end),
           digest: (if $imageDigest != "" then $imageDigest else null end),
           evidenceState: (if $imageReady then "passed" else "blocked" end),
@@ -210,24 +197,24 @@ manifest="$(
                 reason: "Release-candidate image tag and digest are not yet published." } ] end)
         }
       },
-      sdkCompatibilityManifest: ($ev.meta.sdkCompatibilityManifest // $base.sdkCompatibilityManifest // "docs/developer/sdk-compatibility-versions.json"),
-      compatibilityBaseline: ($ev.meta.compatibilityBaseline // $base.compatibilityBaseline // null),
+      sdkCompatibilityManifest: ($ev.meta.sdkCompatibilityManifest // "docs/developer/sdk-compatibility-versions.json"),
+      compatibilityBaseline: ($ev.meta.compatibilityBaseline // null),
       observedAt: $observedAt,
       releaseGates: (
         if ($ev.releaseGates != null) then [ $ev.releaseGates[] | to_record(.) ]
-        else ($base.releaseGates // []) end
+        else [] end
       ),
       repositoryLanes: (
         if ($ev.repositoryLanes != null) then [ $ev.repositoryLanes[] | to_record(.) ]
-        else ($base.repositoryLanes // []) end
+        else [] end
       ),
       releaseLaneCriteria: (
         if ($ev.releaseLaneCriteria != null) then [ $ev.releaseLaneCriteria[] | to_criterion(.) ]
-        else ($base.releaseLaneCriteria // []) end
+        else [] end
       ),
-      childTickets: ($ev.meta.childTickets // $base.childTickets // []),
-      missingBoundedChildTickets: ($ev.meta.missingBoundedChildTickets // $base.missingBoundedChildTickets // []),
-      waivers: ($ev.waivers // $base.waivers // [])
+      childTickets: ($ev.meta.childTickets // []),
+      missingBoundedChildTickets: ($ev.meta.missingBoundedChildTickets // []),
+      waivers: ($ev.waivers // [])
     }
     # Drop top-level null optionals for a clean manifest.
     | with_entries(select(.value != null))
