@@ -256,9 +256,10 @@ public static class GeoServicesServerAdminEndpoints
                 ? SelectService(leafCandidates, requestedType) : null;
         }
 
-        if (snapshot.Index.ServicesById.TryGetValue(serviceName, out var legacy) &&
-            TenantScopeHelpers.IsTenantVisible(context, null, legacy))
-            return SelectService([legacy], requestedType);
+        var identityMatch = snapshot.Index.ServicesByName.GetValueOrDefault(serviceName)
+            ?? snapshot.Index.ServicesById.GetValueOrDefault(serviceName);
+        if (identityMatch is not null && TenantScopeHelpers.IsTenantVisible(context, null, identityMatch))
+            return SelectService([identityMatch], requestedType);
         if (!int.TryParse(serviceName, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
             return null;
         var layerServices = snapshot.Graph.Publications

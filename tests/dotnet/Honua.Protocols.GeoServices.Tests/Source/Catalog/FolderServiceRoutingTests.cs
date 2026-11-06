@@ -141,6 +141,8 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services/{folderName}/{serviceId}/MapServer/WMS")]
     [Endpoint("GET /rest/services/{folderName}/{serviceId}/MapServer/WMTS")]
+    [InterfaceOperation(TestProtocols.Wms13, "GetCapabilities")]
+    [InterfaceOperation(TestProtocols.Wmts10, "GetCapabilities")]
     public async Task Capabilities_PublicFolder_AdvertisesReachableIncomingBase(string protocol, string version)
     {
         var original = _fixture.GetCurrentV2GraphSnapshot().Graph;
@@ -196,25 +198,28 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
     [Endpoint("GET /rest/services/{folderName}/{serviceId}/FeatureServer")]
     public async Task FolderAccess_HiddenService_DoesNotExposeFolderOrBypassPolicy()
     {
-        var original = _fixture.GetCurrentV2GraphSnapshot().Graph;
-        var organized = OrganizeService(original);
-        SetGraph(organized with
-        {
-            Services = organized.Services.Select(service => service.Metadata.Name == WebAppFixture.TestServiceId
-                ? service with { AccessPolicy = new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["folder-reader"] } }
-                : service).ToArray()
-        });
+        var fixture = new WebAppFixture().ConfigureWebHost(builder => builder.UseSetting("HONUA_DEV_AUTH", "false"));
+        await fixture.InitializeAsync();
         try
         {
-            using var anonymous = _fixture.CreateClient();
-            using var folder = await anonymous.GetAsync("/rest/services/Public?f=json");
+            var organized = OrganizeService(fixture.GetCurrentV2GraphSnapshot().Graph);
+            var graph = organized with
+            {
+                Services = organized.Services.Select(service => service.Metadata.Name == WebAppFixture.TestServiceId
+                    ? service with { AccessPolicy = new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["folder-reader"] } }
+                    : service).ToArray()
+            };
+            ((TestMetadataV2GraphProvider)fixture.GetService<IMetadataV2GraphProvider>())
+                .SetGraph(graph, schema: fixture.CurrentSchema);
+            using var client = fixture.CreateClient();
+            using var folder = await client.GetAsync("/rest/services/Public?f=json");
             await folder.AssertGeoServicesErrorAsync(404);
-            using var service = await anonymous.GetAsync("/rest/services/Public/Parcels/FeatureServer?f=json");
+            using var service = await client.GetAsync("/rest/services/Public/Parcels/FeatureServer?f=json");
             await service.AssertGeoServicesErrorAsync(401);
         }
         finally
         {
-            SetGraph(original);
+            await fixture.DisposeAsync();
         }
     }
 

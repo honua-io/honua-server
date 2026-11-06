@@ -184,7 +184,7 @@ internal static partial class ImageServerSoapEndpoints
                     soapNamespace,
                     operationNamespace,
                     "GetMetadataResponse",
-                    new XElement("Result", BuildMetadata(serviceId))),
+                    new XElement("Result", BuildMetadata(GeoServicesServicePath.FromRequest(context)?.PublicName ?? serviceId))),
                 "GetMultidimensionalInfo" => await HandleGetMultidimensionalInfoAsync(
                     rasterRequest,
                     cancellationToken).ConfigureAwait(false),

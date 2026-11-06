@@ -62,6 +62,7 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.ImageServer, "GetServiceInfo")]
     [Endpoint("GET /rest/services/{folderName}/{serviceId}/ImageServer")]
     [Endpoint("POST /services/{folderName}/{serviceId}/ImageServer")]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetMetadata")]
     public async Task ServiceInfo_FolderPublicName_ResolvesRestAndSoapToTheSameRaster(string publicName)
     {
         var original = _fixture.GetCurrentV2GraphSnapshot().Graph;

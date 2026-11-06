@@ -9,6 +9,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.TestKit.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Extensions;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
@@ -56,11 +57,22 @@ public sealed class DeploymentCapabilityProfileIntegrationTests
             }, schema: fixture.CurrentSchema);
             using var response = await fixture.Client.GetAsync(path + "?f=json");
             var body = await response.Content.ReadAsStringAsync();
-            response.StatusCode.Should().Be(expectedStatus, body);
-            if (expectedStatus == HttpStatusCode.OK && path.EndsWith("/FeatureServer", StringComparison.Ordinal))
+            if (expectedStatus == HttpStatusCode.NotFound && response.StatusCode == HttpStatusCode.OK)
+            {
+                await response.AssertGeoServicesErrorAsync(404);
+            }
+            else
+            {
+                response.StatusCode.Should().Be(expectedStatus, body);
+            }
+            if (expectedStatus == HttpStatusCode.OK)
             {
                 using var document = JsonDocument.Parse(body);
-                document.RootElement.GetProperty("serviceName").GetString().Should().Be("Parcels");
+                document.RootElement.TryGetProperty("error", out _).Should().BeFalse(body);
+                if (path.EndsWith("/Parcels", StringComparison.Ordinal))
+                    document.RootElement.GetProperty("services").GetArrayLength().Should().BeGreaterThan(0);
+                else
+                    document.RootElement.GetProperty("serviceName").GetString().Should().Be("Parcels");
             }
         }
         finally
