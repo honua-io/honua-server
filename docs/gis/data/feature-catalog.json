@@ -820,6 +820,7 @@
         "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.Session_SameActorWithDifferentAuthorizationCeiling_CannotPostStreamOrDelete",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Delete_TerminatesSession_AndSubsequentPostReturns404",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Delete_UnknownSession_Returns404",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpModernEndpointIntegrationTests.Request_ModernSessionVerbs_ReturnsMethodNotAllowed",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpSessionAcrossInstancesTests.SessionDeletedOnB_Returns404OnA",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpStatelessSessionAcrossInstancesTests.Delete_OnB_Answers405_BecauseAStatelessSessionCannotBeRevoked",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpStatelessSessionFallbackEnabledTests.Delete_TerminatesSession_WhenFallbackEnabled_SubsequentPostIsServedSessionless"
@@ -6233,6 +6234,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.ReplayProtectionEnabled_BearerReusedOnHttpApi_IsAdmittedWithinLifetimeAndReplaysAcrossSurfaces",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpModernBearerAuthenticationTests.ReplayProtectionEnabled_ModernBearerReuse_PreservesExistingRefusals",
         "Honua.Server.Tests.Features.Studio.StudioBridgedFamilyEndpointsTests.PackageFamilies_AdvertiseBridgedNativeFormats",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.AdminReadOnlyKey_CanReadButNotMutateStudio",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.AnonymousPolicyChallenge_IsAuditedExactlyOnceWithoutChangingTheResponse",
@@ -6687,6 +6689,7 @@
         "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.Session_ExpiredSession_CannotBeStreamedOrDeletedByItsOwner",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.Session_SameActorWithDifferentAuthorizationCeiling_CannotPostStreamOrDelete",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Get_ByDefault_Returns405WithAllowHeader",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpModernEndpointIntegrationTests.Request_ModernSessionVerbs_ReturnsMethodNotAllowed",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpServerInitiatedStreamTests.GetStreamTeardown_LeavesSessionUsable_ToolsListStill200",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpServerInitiatedStreamTests.Get_WhenEnabledWithValidSession_OpensEventStream",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpServerInitiatedStreamTests.Get_WhenEnabledWithoutEventStreamAccept_Returns405",
@@ -20302,6 +20305,9 @@
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.UnknownMethod_ReturnsMethodNotFoundJsonRpcError",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.UnknownNotification_AcceptedSilentlyWithoutBody",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.UnknownNotification_WithId_IsRejectedAsInvalidRequest",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpModernBearerAuthenticationTests.Post_InvalidModernOriginWithInvalidBearer_Returns403BeforeAuthentication",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpModernBearerAuthenticationTests.ReplayProtectionEnabled_ModernBearerReuse_PreservesExistingRefusals",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpModernEndpointIntegrationTests.Post_ModernDiscoveryWithoutInitialize_ReturnsCapabilitiesAndNoSession",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpPackageDraftIntegrationTests.ResourcesRead_AppPackageDraftUri_ResolvesWithoutADeployment",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpPackageDraftIntegrationTests.ResourcesRead_MapPackageDraftUri_ResolvesWithoutADeployment",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpPackageDraftIntegrationTests.ResourcesRead_UnknownPackageUri_StillReportsNotFound",
