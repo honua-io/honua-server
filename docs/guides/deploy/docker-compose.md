@@ -43,8 +43,9 @@ environment template, [`.env.production.example`](../../../.env.production.examp
 Use them instead of the quickstart project when you want the hardened
 single-host shape from the start: Production environment, Gate migration policy,
 a trusted proxy and hostname, and PostgreSQL, Redis and file storage on volumes.
-Run these blocks on the Linux Docker host, in a directory that holds both files
-from the release source archive. `scripts/docker/smoke-production.py` runs the
+Run these blocks on the Linux Docker host from the root of the release source
+archive. Keep `docker/compose/docker-compose.production.yml` in that subdirectory,
+with `.env.production` and `secrets/` at the archive root. `scripts/docker/smoke-production.py` runs the
 same blocks against a published image on fresh volumes.
 
 Set `HONUA_IMAGE` to the release's immutable server image (`server.image` in its
@@ -67,7 +68,7 @@ rm -f .env.production.orig
 ```
 
 Production with Redis refuses to start until a PKCS#12 certificate encrypts the
-operation key ring that Redis holds. Generate it beside the Compose file. A
+operation key ring that Redis holds. Generate it under `secrets/` at the archive root. A
 one-shot step in the Compose file sets it to owner root, group 1001 (the server's
 group), mode `0640` before the server starts; the block removes any earlier copy
 first because you cannot overwrite that root-owned file.
