@@ -96,7 +96,7 @@ The catalog copy took migrations 118 and 119 on start-up (`dbSchema` 119).
 The image advertises all 119 GPServer tasks, and
 `POST /services/desktop_ui_features/GPServer` answers 401 to an unauthenticated
 caller rather than the 404 this issue was filed on. Receipt identities are in
-[`docs/internal/evidence/gp-desktop-fixture-8862065/`](https://github.com/honua-io/honua-server/blob/213e7ef3bf243fddf30c06a4cdb4cac737b9bfc8/docs/internal/evidence/gp-desktop-fixture-8862065/README.md).
+[historical fixture receipts](https://github.com/honua-io/honua-server/blob/213e7ef3bf243fddf30c06a4cdb4cac737b9bfc8/docs/internal/evidence/gp-desktop-fixture-8862065/README.md).
 Runner and licence configuration stay with evidence id `desktop-arcgis`.
 
 | Receipt | What it establishes |

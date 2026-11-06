@@ -1,17 +1,17 @@
 ---
 type: reference
+title: "Editing parity conformance"
+description: "Supported editing behaviour, partial capabilities and executable conformance coverage."
 ---
 
-# Editing-parity conformance receipt
+# Editing parity conformance
 
-Closing acceptance artifact for the editing-parity program (epic **#1270**). It records, for
-each hardened editing capability, the expected Esri behavior, the Honua behavior, and the
+This reference records each editing capability, the expected Esri behavior, the
+Honua behavior, and the
 supported / partial / unsupported status. The supported rows are exercised by an executable
 conformance matrix so a regression fails CI.
 
 - **Executable matrix:** `tests/dotnet/Honua.Core.Tests/Features/Edit/EditingParityConformanceMatrixTests.cs`
-- **Children:** owner policies (#2132), contingent values (#2133), attribute-rule depth (#2134),
-  VersionManagementServer reconcile shapes (#2135), replica sync.
 
 ## Capability matrix
 
@@ -40,7 +40,7 @@ conformance matrix so a regression fails CI.
 
 `applyEdits` returns HTTP 200 with a per-feature `error.{code,description}` for each failed
 edit. The `code` is a **stable, machine-readable classification** (`GeoServicesEditErrorCodes`)
-so clients (honua-mobile `ConflictType`, honua-collect sync) branch deterministically rather
+so clients can branch deterministically rather
 than guessing from the description. Codes are derived from the edit pipeline's typed outcome,
 never by parsing the message.
 

@@ -9,12 +9,14 @@ judges fail-closed. Tracking issue: honua-io/honua-server#3434.
 ```bash
 certification/bounded-roster/run-roster.sh \
     --tag nightly-<sha7> --expect-digest sha256:<index digest> \
-    --evidence docs/internal/evidence/client-certification-<sha7> \
+    --evidence artifacts/client-certification-<sha7> \
     --run-root <real-disk directory for raw run output>
 ```
 
 The script refuses to run with uncommitted producer inputs, because every receipt
-names the harness commit as `producer_source_sha`.
+names the harness commit as `producer_source_sha`. Write receipts beneath gitignored
+`artifacts/` and attach retained evidence to the GitHub Release in honua-release.
+Durable receipt URL routing is part of the [output migration](https://github.com/honua-io/honua-server/issues/7064).
 
 ## What makes a cell pass
 

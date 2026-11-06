@@ -1,5 +1,7 @@
 ---
 type: reference
+title: "Datum transformation parity"
+description: "Datum and vertical transformation selection, explicit pipelines and GeoServices compatibility."
 ---
 
 # Datum / vertical transformation fidelity (Esri-default parity)
