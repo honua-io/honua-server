@@ -776,56 +776,24 @@ jobs:
             exit 1
           fi
 
-      # Runner provisioning for the real-GDAL proof below, kept out of the proof's
-      # own 10-minute budget. The Azure Ubuntu mirror stalls for minutes at a
-      # time: on 2026-10-23..26 the proof timed out 13 times with no output at all
-      # (passing runs print apt output ~8 s in and finish in ~30 s), and one run
-      # spent 9m27s silent before the first package arrived. Every network attempt
-      # is bounded by `timeout` and retried with backoff, apt itself retries and
-      # times out stalled fetches, and the install is --no-download so dpkg is
-      # never interrupted mid-download. Category=GDAL also selects the proximity
-      # proofs: gdal_proximity.py and Scripts/gdal_euclidean_allocation.py need
-      # the GDAL Python bindings, NumPy and SciPy, which `gdal-bin` does not ship,
-      # so this is the same set ci.yml's worker-gdal-tests job installs.
-      # scripts/ci/fixtures/validate-pr-gate-apt-provisioning.py holds the step
-      # timeout and the job timeout to this loop's worst case.
+      # The proof below needs the GDAL CLI, its Python bindings, NumPy and SciPy.
+      # The shared provisioner installs a cached .deb set with --no-download.
+      # It downloads only when the package index is readable and that exact
+      # version is not cached. An unreadable index installs the newest saved
+      # .deb files with dpkg, because apt cannot resolve names without lists.
+      # scripts/ci/fixtures/validate-pr-gate-apt-provisioning.py holds that split.
       - name: Provision the GDAL CLI packages for the real-GDAL proof
         id: gdal-cli-packages
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'
-        timeout-minutes: 25
-        run: |
-          set -euo pipefail
-          packages="gdal-bin python3-gdal python3-numpy python3-scipy"
-          printf '%s\n' \
-            'Acquire::Retries "3";' \
-            'Acquire::http::Timeout "30";' \
-            'Acquire::https::Timeout "30";' \
-            | sudo tee /etc/apt/apt.conf.d/80honua-ci-network >/dev/null
-          downloaded=false
-          for attempt in 1 2 3; do
-            if sudo timeout --kill-after=15s 240s sh -c \
-                "apt-get update -q && apt-get install -yq --download-only ${packages}"; then
-              downloaded=true
-              break
-            fi
-            echo "::warning::GDAL CLI package download attempt ${attempt} failed or stalled on the apt mirror"
-            if [[ "${attempt}" -lt 3 ]]; then
-              sleep $((attempt * 15))
-            fi
-          done
-          if [[ "${downloaded}" != "true" ]]; then
-            echo "::error::the GDAL CLI packages could not be downloaded from the runner's apt mirror after 3 bounded attempts"
-            exit 1
-          fi
-          # shellcheck disable=SC2086 # word-splitting the package list is intended
-          sudo timeout --kill-after=15s 600s apt-get install -yqq --no-download ${packages}
+        timeout-minutes: 30
+        uses: ./.github/actions/provision-gdal-cli
 
       - name: Prove the real-GDAL CLI cases run on the required gate
         # honua-server#4401: the five [GdalCliFact] cases emit Tier=Integration,
         # which the lean gate's Tier=Fast filter can never match, and ci.yml has no
         # pull_request trigger — so real gdaldem / ogr2ogr coverage could regress
         # without blocking a merge. Run them here on the gate runner, over the GDAL
-        # CLI the previous step apt-provisioned (the same provisioning ci.yml's
+        # CLI the previous step provisioned (the same provisioning ci.yml's
         # worker-gdal-tests job uses), with the same counts-based tripwire.
         # HONUA_REQUIRE_GDAL_CLI turns a missing tool into a failure rather than a
         # skip.
