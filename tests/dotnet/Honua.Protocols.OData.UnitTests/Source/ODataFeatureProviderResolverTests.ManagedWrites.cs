@@ -15,9 +15,11 @@ namespace Honua.Server.Tests.Features.Protocols.OData;
 public sealed partial class ODataFeatureProviderResolverTests
 {
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task CheckWriteSupportAsync_ExplicitDefaultBinding_RequiresManagedStorageProof(bool managed)
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    public async Task CheckWriteSupportAsync_DefaultBinding_RequiresManagedStorageProof(bool managed, bool explicitBinding)
     {
         var reader = Substitute.For<IFeatureReader, IManagedFeatureWriteSupport>();
         ((IManagedFeatureWriteSupport)reader).SupportsManagedWritesAsync(41, Arg.Any<CancellationToken>())
@@ -47,6 +49,10 @@ public sealed partial class ODataFeatureProviderResolverTests
             snapshot = new MetadataV2GraphSnapshot(snapshot.Graph with { StorageBindings = [binding] }, "test", DateTimeOffset.UtcNow);
         }
 
+        if (!explicitBinding)
+        {
+            publication = publication with { StorageBindingId = null };
+        }
         var resolved = await resolver.ResolveQueryReaderAsync(
             snapshot, service, resource, publication, 41, requireCount: true, CancellationToken.None);
         var support = await resolver.CheckWriteSupportAsync(
@@ -58,4 +64,45 @@ public sealed partial class ODataFeatureProviderResolverTests
         await fallbackReader.DidNotReceiveWithAnyArgs().GetAsync(default, default, default);
         await writer.DidNotReceiveWithAnyArgs().ApplyEditsAsync(default, default!, default);
     }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ExplicitInvalidBinding_DoesNotFallBackToResourcePrimary(bool wrongResource)
+    {
+        var reader = Substitute.For<IFeatureReader>();
+        var writer = Substitute.For<IFeatureWriter>();
+        var resolver = new ODataFeatureProviderResolver(reader, writer, providerQueryRouter: null);
+        var (snapshot, service, resource, publication) = ODataProviderTestData.CreateSnapshot(null);
+        if (wrongResource)
+        {
+            var binding = snapshot.Graph.StorageBindings.Single() with { ResourceId = "other-resource" };
+            snapshot = new MetadataV2GraphSnapshot(snapshot.Graph with { StorageBindings = [binding] }, "test", DateTimeOffset.UtcNow);
+        }
+        else
+        {
+            publication = publication with { StorageBindingId = "missing-explicit-binding" };
+        }
+
+        var read = () => resolver.ResolveQueryReaderAsync(
+            snapshot, service, resource, publication, 41, requireCount: true, CancellationToken.None);
+        var write = () => resolver.CheckWriteSupportAsync(
+            snapshot, service, resource, publication, 41, CancellationToken.None);
+
+        await read.Should().ThrowAsync<InvalidOperationException>().WithMessage("*invalid storage binding*");
+        await write.Should().ThrowAsync<InvalidOperationException>().WithMessage("*invalid storage binding*");
+        await reader.DidNotReceiveWithAnyArgs().GetAsync(default, default, default);
+        await writer.DidNotReceiveWithAnyArgs().ApplyEditsAsync(default, default!, default);
+    }
+
+    private static MetadataV2GraphSnapshot WithoutStorageBindings(MetadataV2GraphSnapshot snapshot)
+        => new(snapshot.Graph with
+        {
+            StorageBindings = [],
+            Resources = snapshot.Graph.Resources.Select(resource => resource with
+            {
+                StorageBindingIds = [],
+                PrimaryStorageBindingId = null
+            }).ToArray()
+        }, "test", DateTimeOffset.UtcNow);
 }

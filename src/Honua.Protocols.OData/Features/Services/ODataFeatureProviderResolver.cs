@@ -144,7 +144,17 @@ internal sealed class ODataFeatureProviderResolver(
     private static bool RequiresReadRouting(MetadataV2GraphSnapshot snapshot, MetadataV2Publication? publication)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
-        return publication is not null && !string.IsNullOrWhiteSpace(publication.StorageBindingId);
+        if (publication is null)
+        {
+            return false;
+        }
+        if (!string.IsNullOrWhiteSpace(publication.StorageBindingId) &&
+            (!snapshot.Index.StorageBindingsById.TryGetValue(publication.StorageBindingId, out var explicitBinding) ||
+             explicitBinding.ResourceId != publication.ResourceId))
+        {
+            throw new InvalidOperationException("The authorized publication references an invalid storage binding.");
+        }
+        return snapshot.ResolveStorageBinding(publication) is not null;
     }
 
     private FeatureProviderQueryRouter RequireProviderRouter(
