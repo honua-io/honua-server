@@ -163,7 +163,8 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
         var featuresFailed = 0;
         var imported = 0;
         var skipped = 0;
-        string? ownershipFailure = null;
+        string? targetFailure = null;
+        string? targetFailureCode = null;
 
         foreach (var resource in selectedResources)
         {
@@ -233,7 +234,13 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
                 Log.FeatureTypeImportFailed(_logger, resource.Name, ex);
                 if (ex is ImportTableOwnershipException)
                 {
-                    ownershipFailure = ex.Message;
+                    targetFailure = ex.Message;
+                    targetFailureCode = ImportTableOwnershipException.Code;
+                }
+                else if (ImportTargetDependencies.IsFailure(ex))
+                {
+                    targetFailure = ImportTargetDependencies.Message;
+                    targetFailureCode = ImportTargetDependencies.Code;
                 }
                 perFeatureType.Add(new OgcWfsImportedFeatureType
                 {
@@ -257,9 +264,9 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
 
         return new OgcWfsImportResult
         {
-            Success = ownershipFailure is null,
-            ErrorMessage = ownershipFailure,
-            ErrorCode = ownershipFailure is null ? null : ImportTableOwnershipException.Code,
+            Success = targetFailure is null,
+            ErrorMessage = targetFailure,
+            ErrorCode = targetFailureCode,
             WasDryRun = request.DryRun,
             SourceServiceUrl = safeSourceUrl,
             SourceVersion = version,
@@ -854,7 +861,7 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
             command.Transaction = transaction;
             var targetExists = await ImportTableOwnership.AssertOwnedAsync(connection, schemaName, targetTableName, cancellationToken).ConfigureAwait(false);
             await ImportTableOwnership.AssertExistingOwnedAsync(connection, schemaName, stagingTableName, cancellationToken).ConfigureAwait(false);
-            command.CommandText = (targetExists ? $"DROP TABLE {QuoteIdentifier(schemaName)}.{QuoteIdentifier(targetTableName)} CASCADE; " : string.Empty) +
+            command.CommandText = (targetExists ? $"DROP TABLE {QuoteIdentifier(schemaName)}.{QuoteIdentifier(targetTableName)} RESTRICT; " : string.Empty) +
                                   $"ALTER TABLE {QuoteIdentifier(schemaName)}.{QuoteIdentifier(stagingTableName)} RENAME TO {QuoteIdentifier(targetTableName)}; " +
                                   $"ALTER INDEX {QuoteIdentifier(schemaName)}.{QuoteIdentifier(BuildSpatialIndexName(stagingTableName))} RENAME TO {QuoteIdentifier(BuildSpatialIndexName(targetTableName))}";
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -1143,6 +1150,7 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
         => ex switch
         {
             ImportTableOwnershipException => ex.Message,
+            PostgresException { SqlState: PostgresErrorCodes.DependentObjectsStillExist } => ImportTargetDependencies.Message,
             HttpRequestException => "WFS endpoint could not be reached or returned an unsupported response.",
             TaskCanceledException => "WFS request timed out.",
             JsonException => "WFS response could not be parsed.",
