@@ -94,7 +94,7 @@ EOF
 #!/bin/bash
 echo "GDAL 3.8.4, released 2024/02/08"
 EOF
-  for name in gdaldem ogr2ogr gdal_translate gdal_proximity.py; do
+  for name in gdaldem ogr2ogr gdal_translate gdal_proximity.py sleep; do
     printf '#!/bin/bash\nexit 0\n' > "${bin}/${name}"
   done
   chmod +x "${bin}/"*
@@ -116,14 +116,14 @@ run_install_case() {
   printf 'deb\n' > "${fixture}/gdal-bin_3.8.4+dfsg-3ubuntu3_amd64.deb"
   printf 'gdal-bin_3.8.4+dfsg-3ubuntu3_amd64.deb\n' > "$manifest"
   : > "${root}/apt.log"
-  if [[ "$mode" == "hit" || "$mode" == "missing-tool" ]]; then
+  if [[ "$mode" == "hit" || "$mode" == "missing-tool" || "$mode" == "fallback" ]]; then
     mkdir -p "$cache"
     cp "${fixture}/gdal-bin_3.8.4+dfsg-3ubuntu3_amd64.deb" "$cache/"
   fi
   if [[ "$mode" == "missing-tool" ]]; then
     rm -f "${bin}/gdaldem"
   fi
-  if [[ "$mode" == "empty-hit" ]]; then
+  if [[ "$mode" == "empty-hit" || "$mode" == "empty-fallback" ]]; then
     rm -rf "$cache"
     mkdir -p "$cache"
   fi
@@ -142,29 +142,42 @@ run_install_case() {
     export RUNNER_TEMP="${root}/runner"
     export HONUA_GDAL_ERROR_MARK="provision-error: "
     export GDAL_DEB_CACHE_DIR="$cache"
-    if [[ "$mode" == "hit" || "$mode" == "missing-tool" || "$mode" == "empty-hit" ]]; then
-      export GDAL_DEB_CACHE_HIT=true
-    else
-      export GDAL_DEB_CACHE_HIT=false
-    fi
+    unset GDAL_DEB_CACHE_HIT
+    case "$mode" in
+      hit|missing-tool|empty-hit)
+        export GDAL_INDEX_STATE=ok
+        export GDAL_DEB_CACHE_HIT=true
+        ;;
+      miss)
+        export GDAL_INDEX_STATE=ok
+        export GDAL_DEB_CACHE_HIT=false
+        ;;
+      fallback|empty-fallback)
+        export GDAL_INDEX_STATE=unavailable
+        ;;
+    esac
     cmd_install
   )
   status=$?
   set -e
   case "$mode" in
-    hit)
-      [[ "$status" -eq 0 ]] || { echo "cache hit install failed" >&2; exit 1; }
-      grep -q -- '--no-download' "${root}/apt.log" || { echo "cache hit did not install offline" >&2; exit 1; }
+    hit|fallback)
+      [[ "$status" -eq 0 ]] || { echo "${mode} install failed" >&2; exit 1; }
+      grep -q -- '--no-download' "${root}/apt.log" || { echo "${mode} did not install offline" >&2; exit 1; }
       if grep -Eq 'update|--download-only' "${root}/apt.log"; then
-        echo "cache hit reached the apt mirror: $(cat "${root}/apt.log")" >&2
+        echo "${mode} reached the apt mirror: $(cat "${root}/apt.log")" >&2
         exit 1
       fi
       [[ -f "${archive}/gdal-bin_3.8.4+dfsg-3ubuntu3_amd64.deb" ]] || {
-        echo "cache hit did not install the saved deb" >&2
+        echo "${mode} did not install the saved deb" >&2
         exit 1
       }
-      grep -qx '/usr/bin' "$path_file" || { echo "cache hit did not publish /usr/bin" >&2; exit 1; }
-      grep -q 'Cache: hit' "$summary" || { echo "cache hit did not record the summary" >&2; exit 1; }
+      grep -qx '/usr/bin' "$path_file" || { echo "${mode} did not publish /usr/bin" >&2; exit 1; }
+      if [[ "$mode" == "hit" ]]; then
+        grep -q 'Cache: hit' "$summary" || { echo "cache hit did not record the summary" >&2; exit 1; }
+      else
+        grep -q 'Cache: saved-image' "$summary" || { echo "saved-image install did not record the summary" >&2; exit 1; }
+      fi
       ;;
     miss)
       [[ "$status" -eq 0 ]] || { echo "cache miss install failed" >&2; exit 1; }
@@ -177,7 +190,7 @@ run_install_case() {
       }
       grep -q 'Cache: miss' "$summary" || { echo "cache miss did not record the summary" >&2; exit 1; }
       ;;
-    empty-hit|missing-tool)
+    empty-hit|empty-fallback|missing-tool)
       [[ "$status" -ne 0 ]] || { echo "${mode} was accepted" >&2; exit 1; }
       ;;
     *)
@@ -188,9 +201,98 @@ run_install_case() {
   rm -rf "$root"
 }
 
+assert_resolve_unavailable() {
+  local failure=$1
+  local root bin output status updates
+  root="$(mktemp -d)"
+  bin="${root}/bin"
+  mkdir -p "$bin" "${root}/apt-conf" "${root}/runner"
+  prepare_stub_bin "$bin"
+  if [[ "$failure" == "update" ]]; then
+    cat > "${bin}/apt-get" << 'EOF'
+#!/bin/bash
+printf '%s\n' "$*" >> "${HONUA_APT_LOG:?}"
+exit 1
+EOF
+  else
+    cat > "${bin}/apt-get" << 'EOF'
+#!/bin/bash
+printf '%s\n' "$*" >> "${HONUA_APT_LOG:?}"
+if [[ "$1" == "update" ]]; then
+  exit 0
+fi
+exit 1
+EOF
+  fi
+  chmod +x "${bin}/apt-get"
+  output="${root}/github-output"
+  : > "${root}/apt.log"
+  : > "$output"
+  : > "${root}/summary"
+  set +e
+  (
+    set -euo pipefail
+    export PATH="${bin}:${PATH}"
+    export HONUA_APT_CONF_DIR="${root}/apt-conf"
+    export HONUA_APT_LOG="${root}/apt.log"
+    export GITHUB_OUTPUT="$output"
+    export GITHUB_STEP_SUMMARY="${root}/summary"
+    export RUNNER_TEMP="${root}/runner"
+    export HONUA_GDAL_ERROR_MARK="provision-error: "
+    export ImageOS="ubuntu24"
+    export ImageVersion="20251101.1.0"
+    cmd_resolve
+  )
+  status=$?
+  set -e
+  [[ "$status" -eq 0 ]] || {
+    echo "unreadable index (${failure}) failed resolve with status ${status}" >&2
+    exit 1
+  }
+  grep -qx 'index=unavailable' "$output" || {
+    echo "resolve did not report an unreadable index (${failure})" >&2
+    exit 1
+  }
+  grep -qx 'versions=unavailable' "$output" || {
+    echo "resolve built a version key without an index (${failure})" >&2
+    exit 1
+  }
+  grep -qx 'image=ubuntu24-20251101.1.0' "$output" || {
+    echo "resolve dropped the runner image (${failure})" >&2
+    exit 1
+  }
+  grep -qx 'cache-dir=.cache/gdal-cli-debs' "$output" || {
+    echo "resolve dropped the cache directory (${failure})" >&2
+    exit 1
+  }
+  if [[ "$failure" == "update" ]]; then
+    if grep -q 'print-uris' "${root}/apt.log"; then
+      echo "a failed index update still resolved package uris" >&2
+      exit 1
+    fi
+  elif ! grep -q 'print-uris' "${root}/apt.log"; then
+    echo "a failed uri listing never ran" >&2
+    exit 1
+  fi
+  updates="$(grep -c 'update -q' "${root}/apt.log" || true)"
+  if [[ "$failure" == "update" && "$updates" -ne 3 ]]; then
+    echo "index update retried ${updates} times, expected 3" >&2
+    exit 1
+  fi
+  if [[ "$failure" == "print-uris" && "$updates" -ne 1 ]]; then
+    echo "a readable index updated ${updates} times" >&2
+    exit 1
+  fi
+  rm -rf "$root"
+}
+
 assert_version_key
+assert_resolve_unavailable update
+assert_resolve_unavailable print-uris
 run_install_case hit
 run_install_case miss
 run_install_case empty-hit
+run_install_case empty-fallback
+run_install_case fallback
 run_install_case missing-tool
 echo "provision-gdal-cli-self-test=ok"

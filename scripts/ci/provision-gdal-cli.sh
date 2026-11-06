@@ -3,7 +3,8 @@
 # A cache hit copies the saved .deb set into the apt archive and installs it
 # with --no-download. A cache miss downloads from the apt mirror, then saves
 # that .deb set. The caller keys the cache on the runner image and the
-# package versions this script prints.
+# package versions this script prints. When that index cannot be read, install
+# the newest set already saved for this runner image and do not download.
 
 set -euo pipefail
 
@@ -111,8 +112,7 @@ refresh_package_index() {
     fi
   done
   if [[ "${updated}" != "true" ]]; then
-    report_error "the GDAL CLI package index could not be updated from the runner's apt mirror after 3 bounded attempts"
-    exit 1
+    return 1
   fi
 }
 
@@ -208,25 +208,45 @@ note_summary() {
   fi
 }
 
+write_resolve_outputs() {
+  local index=$1
+  local image=$2
+  local versions=$3
+  {
+    echo "index=${index}"
+    echo "image=${image}"
+    echo "versions=${versions}"
+    echo "cache-dir=.cache/gdal-cli-debs"
+  } >> "${GITHUB_OUTPUT:?github output is unset}"
+}
+
+note_index_unavailable() {
+  echo "::warning::GDAL CLI package index is unavailable; installing the newest saved .deb set for this runner image"
+  note_summary "### GDAL CLI package resolution"
+  note_summary ""
+  note_summary "- Package index: unavailable"
+}
+
 cmd_resolve() {
   local uris_file image key manifest package version
   configure_apt_timeouts
-  refresh_package_index
+  image="$(sanitize_key_part "${ImageOS:-unknown}-${ImageVersion:-unknown}")"
+  echo "GDAL CLI runner image ${image}"
+  if ! refresh_package_index; then
+    note_index_unavailable
+    write_resolve_outputs unavailable "$image" unavailable
+    return 0
+  fi
   uris_file="$(mktemp)"
   # shellcheck disable=SC2086 # word-splitting the package list is intended
   if ! sudo timeout --kill-after=15s 60s apt-get install --print-uris -yq ${packages} > "$uris_file"; then
-    report_error "could not resolve the GDAL CLI package filenames from the apt mirror"
-    exit 1
+    note_index_unavailable
+    write_resolve_outputs unavailable "$image" unavailable
+    return 0
   fi
   manifest="$(manifest_path)"
   key="$(build_version_key "$uris_file" "$manifest")"
-  image="$(sanitize_key_part "${ImageOS:-unknown}-${ImageVersion:-unknown}")"
-  {
-    echo "image=${image}"
-    echo "versions=${key}"
-    echo "cache-dir=.cache/gdal-cli-debs"
-  } >> "${GITHUB_OUTPUT:?github output is unset}"
-  echo "GDAL CLI runner image ${image}"
+  write_resolve_outputs ok "$image" "$key"
   for package in "${package_names[@]}"; do
     version="$(candidate_version "$package")"
     echo "GDAL CLI resolved ${package} ${version}"
@@ -241,8 +261,17 @@ cmd_resolve() {
 cmd_install() {
   local cache_dir="${GDAL_DEB_CACHE_DIR:?package cache directory is unset}"
   configure_apt_timeouts
+  # An unreadable index cannot build the version key. Install the newest set
+  # saved for this runner image, and do not touch the mirror again.
+  if [[ "${GDAL_INDEX_STATE:-}" == "unavailable" ]]; then
+    echo "GDAL CLI package index is unavailable; installing the newest saved .deb set with --no-download"
+    note_summary "### GDAL CLI packages"
+    note_summary ""
+    note_summary "- Cache: saved-image"
+    copy_cached_debs "$cache_dir"
+    install_offline
   # actions/cache leaves cache-hit unset on a miss. Only an exact true is a hit.
-  if [[ "${GDAL_DEB_CACHE_HIT:-}" == "true" ]]; then
+  elif [[ "${GDAL_DEB_CACHE_HIT:-}" == "true" ]]; then
     echo "GDAL CLI package cache hit; installing the saved .deb set with --no-download"
     note_summary "### GDAL CLI packages"
     note_summary ""

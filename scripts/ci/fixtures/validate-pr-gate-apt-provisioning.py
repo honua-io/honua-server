@@ -5,7 +5,9 @@ The proof step installs nothing. A shared provisioner, used by the proof and
 by ci.yml's worker GDAL job, restores a .deb cache keyed on the runner image
 and the resolved package versions. A hit installs that set with --no-download.
 A miss retries the apt mirror, bounded by timeout, then installs offline and
-saves the .deb set. The proof still fails closed when GDAL is missing.
+saves the .deb set. An unreadable index installs the newest saved set for
+this runner image and does not download. The proof still fails closed when
+GDAL is missing.
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 import yaml
 
@@ -29,6 +32,7 @@ FIDELITY_UPLOAD = "Upload import and independent vector export fidelity evidence
 PROOF_TIMEOUT_MINUTES = 10
 ACTION = "./.github/actions/provision-gdal-cli"
 CACHE_ACTION = "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9"
+RESTORE_ACTION = "actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9"
 # The slowest successful `Tests and runtime proofs` job across 2026-10-24..26
 # (65 runs) took 2454 s, about 41 minutes, with a ~30 s provisioning step.
 # Round up so the job timeout must hold that plus the full provisioning budget.
@@ -62,7 +66,7 @@ def _function_body(script: str, name: str) -> str:
 def _cache_branches(script: str) -> tuple[str, str]:
     matches = list(
         re.finditer(
-            r'if \[\[ "\$\{GDAL_DEB_CACHE_HIT:-\}" == "true" \]\]; then\n'
+            r'elif \[\[ "\$\{GDAL_DEB_CACHE_HIT:-\}" == "true" \]\]; then\n'
             r"(?P<hit>.*?)\n[ ]*else\n(?P<miss>.*?)\n[ ]*fi\n",
             script,
             re.S,
@@ -148,6 +152,7 @@ def _require_offline_hit(script: str) -> None:
     for forbidden in ("apt-get update", "--download-only"):
         if forbidden in offline:
             raise ContractError(f"the offline install must not {forbidden}")
+    _require_saved_image(script)
 
 
 def _require_cache_action(action_source: str) -> None:
@@ -190,6 +195,45 @@ def _require_cache_action(action_source: str) -> None:
     hit = str((install_steps[0].get("env") or {}).get("GDAL_DEB_CACHE_HIT") or "")
     if "steps.gdal-debs.outputs.cache-hit" not in hit:
         raise ContractError("install must follow the actions/cache hit result")
+    _require_index_fallback(steps, cache_steps[0], install_steps[0])
+
+
+def _require_saved_image(script: str) -> None:
+    match = re.search(
+        r'if \[\[ "\$\{GDAL_INDEX_STATE:-\}" == "unavailable" \]\]; then\n(?P<body>.*?)\n[ ]*elif',
+        script,
+        re.S,
+    )
+    if not match:
+        raise ContractError("an unreadable package index must install a saved .deb set")
+    body = match.group("body")
+    if "install_offline" not in body or "copy_cached_debs" not in body:
+        raise ContractError("an unreadable package index must install the saved .deb set offline")
+    for forbidden in ("download_packages", "apt-get update", "--download-only"):
+        if forbidden in body:
+            raise ContractError(f"an unreadable package index must not reach the apt mirror via {forbidden}")
+
+
+def _require_index_fallback(steps: list, exact: dict, install: dict) -> None:
+    if exact.get("if") != "steps.resolve.outputs.index == 'ok'":
+        raise ContractError("the versioned cache lookup runs only after the package index is readable")
+    index_state = str((install.get("env") or {}).get("GDAL_INDEX_STATE") or "")
+    if "steps.resolve.outputs.index" not in index_state:
+        raise ContractError("install must know whether the package index was readable")
+    matches = [step for step in steps if isinstance(step, dict) and step.get("id") == "gdal-debs-fallback"]
+    if len(matches) != 1:
+        raise ContractError("an unreadable package index must restore the newest saved .deb set")
+    fallback = matches[0]
+    if fallback.get("uses") != RESTORE_ACTION:
+        raise ContractError("the saved-image restore must not save a new cache entry")
+    if fallback.get("if") != "steps.resolve.outputs.index != 'ok'":
+        raise ContractError("the saved-image restore runs only when the package index is unreadable")
+    restore_keys = str((fallback.get("with") or {}).get("restore-keys") or "")
+    for piece in ("runner.os", "runner.arch", "steps.resolve.outputs.image"):
+        if piece not in restore_keys:
+            raise ContractError(f"the saved-image restore must be limited to this runner image ({piece})")
+    if "steps.resolve.outputs.versions" in restore_keys:
+        raise ContractError("the saved-image restore cannot require the version the index could not build")
 
 
 def _require_tripwire(proof: dict) -> None:
@@ -223,14 +267,14 @@ def _require_shared_use(document: dict, job_name: str, step_name: str) -> dict:
     return step
 
 
-def validate(workflow: str, script: str, action: str, worker_ci: str) -> None:
+def validate(sources: Sources) -> None:
+    workflow, script, action, worker_ci = sources
     for option in ("Acquire::Retries", "Acquire::http::Timeout", "Acquire::https::Timeout"):
         if option not in script:
             raise ContractError(f"the provisioner must configure apt's {option}")
     _require_offline_hit(script)
     worst_case = provisioning_worst_case_seconds(script)
     _require_cache_action(action)
-
     document = yaml.safe_load(workflow)
     job = ((document or {}).get("jobs") or {}).get(JOB)
     if not isinstance(job, dict) or not isinstance(job.get("steps"), list):
@@ -258,7 +302,6 @@ def validate(workflow: str, script: str, action: str, worker_ci: str) -> None:
             f"the {JOB!r} job timeout {job_timeout!r} minutes cannot hold its {JOB_BASELINE_SECONDS}s "
             f"observed runtime plus {step_timeout} minutes of provisioning"
         )
-
     fidelity_index, fidelity = _step(steps, FIDELITY)
     upload_index, upload = _step(steps, FIDELITY_UPLOAD)
     fidelity_id = fidelity.get("id")
@@ -285,7 +328,13 @@ def validate(workflow: str, script: str, action: str, worker_ci: str) -> None:
             raise ContractError(f"{WORKER_JOB} must not keep a second copy of the GDAL CLI install")
 
 
-Source = tuple[str, str, str, str]
+class Sources(NamedTuple):
+    workflow: str
+    script: str
+    action: str
+    worker: str
+
+
 Change = tuple[str, str, str, int]
 WORKFLOW_SOURCE = 0
 SCRIPT_SOURCE = 1
@@ -293,9 +342,9 @@ ACTION_SOURCE = 2
 WORKER_SOURCE = 3
 
 
-def _reject(sources: Source, label: str) -> None:
+def _reject(sources: Sources, label: str) -> None:
     try:
-        validate(*sources)
+        validate(sources)
     except ContractError:
         return
     raise SystemExit(f"apt provisioning failure-injection {label} was accepted")
@@ -307,11 +356,11 @@ def _changed(original: str, mutated: str, label: str) -> str:
     return mutated
 
 
-def _patch(sources: Source, index: int, change: Change) -> tuple[Source, str]:
+def _patch(sources: Sources, index: int, change: Change) -> tuple[Sources, str]:
     old, new, label, count = change
     parts = list(sources)
     parts[index] = _changed(parts[index], parts[index].replace(old, new, count), label)
-    return (parts[0], parts[1], parts[2], parts[3]), label
+    return Sources(parts[0], parts[1], parts[2], parts[3]), label
 
 
 def _workflow_breaks() -> tuple[Change, ...]:
@@ -360,6 +409,12 @@ def _script_breaks() -> tuple[Change, ...]:
         ("'Acquire::http::Timeout \"30\";'", "'Acquire::Queue-Mode \"host\";'", "no-http-timeout", 1),
         ("apt-get install -yqq --no-download", "apt-get install -yqq", "install-reaches-network", 1),
         (
+            '    echo "GDAL CLI package index is unavailable; installing the newest saved .deb set with --no-download"\n',
+            '    echo "GDAL CLI package index is unavailable"\n    download_packages\n',
+            "saved-image-downloads",
+            1,
+        ),
+        (
             '    echo "GDAL CLI package cache hit; installing the saved .deb set with --no-download"\n',
             '    echo "GDAL CLI package cache hit"\n    download_packages\n',
             "hit-downloads",
@@ -369,7 +424,16 @@ def _script_breaks() -> tuple[Change, ...]:
 
 
 def _action_breaks() -> tuple[Change, ...]:
-    return (("${{ steps.resolve.outputs.versions }}", "${{ runner.os }}", "cache-key-ignores-versions", 1),)
+    return (
+        ("${{ steps.resolve.outputs.versions }}", "${{ runner.os }}", "cache-key-ignores-versions", 1),
+        ("if: steps.resolve.outputs.index == 'ok'\n", "if: success()\n", "versioned-cache-without-index", 1),
+        (
+            "uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0\n",
+            "uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0\n",
+            "fallback-saves",
+            1,
+        ),
+    )
 
 
 def _worker_breaks() -> tuple[Change, ...]:
@@ -383,7 +447,7 @@ def _worker_breaks() -> tuple[Change, ...]:
     )
 
 
-def _injections(sources: Source) -> tuple[tuple[Source, str], ...]:
+def _injections(sources: Sources) -> tuple[tuple[Sources, str], ...]:
     groups = (
         (WORKFLOW_SOURCE, _workflow_breaks()),
         (SCRIPT_SOURCE, _script_breaks()),
@@ -407,13 +471,13 @@ def shell_self_test() -> None:
 
 
 def self_test() -> None:
-    sources = (
+    sources = Sources(
         read_text(ROOT / ".github/workflows/pr-gate.yml"),
         read_text(ROOT / "scripts/ci/provision-gdal-cli.sh"),
         read_text(ROOT / ".github/actions/provision-gdal-cli/action.yml"),
         read_text(ROOT / ".github/workflows/ci.yml"),
     )
-    validate(*sources)
+    validate(sources)
     shell_self_test()
     for mutated, label in _injections(sources):
         _reject(mutated, label)
@@ -431,10 +495,12 @@ def main() -> int:
     self_test_requested = "--self-test" in sys.argv
     try:
         validate(
-            read_text(workflow),
-            read_text(ROOT / "scripts/ci/provision-gdal-cli.sh"),
-            read_text(ROOT / ".github/actions/provision-gdal-cli/action.yml"),
-            read_text(ROOT / ".github/workflows/ci.yml"),
+            Sources(
+                read_text(workflow),
+                read_text(ROOT / "scripts/ci/provision-gdal-cli.sh"),
+                read_text(ROOT / ".github/actions/provision-gdal-cli/action.yml"),
+                read_text(ROOT / ".github/workflows/ci.yml"),
+            )
         )
     except ContractError as error:
         print(f"::error::{error}", file=sys.stderr)
