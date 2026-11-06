@@ -4,7 +4,8 @@
 # with --no-download. A cache miss downloads from the apt mirror, then saves
 # that .deb set. The caller keys the cache on the runner image and the
 # package versions this script prints. When that index cannot be read, install
-# the newest set already saved for this runner image and do not download.
+# the newest set already saved for this runner image with dpkg. Apt cannot
+# resolve package names without lists.
 
 set -euo pipefail
 
@@ -57,13 +58,11 @@ build_version_key() {
   while IFS= read -r line || [[ -n "$line" ]]; do
     if [[ "$line" =~ ^\'[^[:space:]\']+\'[[:space:]]+([^[:space:]]+\.deb)([[:space:]]|$) ]]; then
       filenames+=("${BASH_REMATCH[1]}")
+    elif [[ "$line" == *".deb"* || "$line" == *"http://"* || "$line" == *"https://"* ]]; then
+      report_error "could not read the GDAL CLI package filenames from apt" >&2
+      return 1
     fi
   done < "$uris_file"
-
-  if [[ -s "$uris_file" && ${#filenames[@]} -eq 0 ]]; then
-    report_error "could not read the GDAL CLI package filenames from apt" >&2
-    return 1
-  fi
 
   for package in "${package_names[@]}"; do
     version="$(candidate_version "$package")"
@@ -99,38 +98,31 @@ build_version_key() {
   printf '%s\n' "$key"
 }
 
-refresh_package_index() {
-  local attempt updated=false
+run_bounded_attempts() {
+  local duration=$1
+  local warning=$2
+  shift 2
+  local attempt
   for attempt in 1 2 3; do
-    if sudo timeout --kill-after=15s 60s apt-get update -q; then
-      updated=true
-      break
+    if sudo timeout --kill-after=15s "${duration}" "$@"; then
+      return 0
     fi
-    echo "::warning::GDAL CLI package index update attempt ${attempt} failed or stalled on the apt mirror"
+    echo "::warning::${warning} attempt ${attempt} failed or stalled on the apt mirror"
     if [[ "${attempt}" -lt 3 ]]; then
       sleep $((attempt * 15))
     fi
   done
-  if [[ "${updated}" != "true" ]]; then
-    return 1
-  fi
+  return 1
+}
+
+refresh_package_index() {
+  run_bounded_attempts 60s "GDAL CLI package index update" \
+    apt-get update --error-on=any -q
 }
 
 download_packages() {
-  local attempt downloaded=false
-  for attempt in 1 2 3; do
-    # shellcheck disable=SC2086 # word-splitting the package list is intended
-    if sudo timeout --kill-after=15s 240s sh -c \
-        "apt-get update -q && apt-get install -yq --download-only ${packages}"; then
-      downloaded=true
-      break
-    fi
-    echo "::warning::GDAL CLI package download attempt ${attempt} failed or stalled on the apt mirror"
-    if [[ "${attempt}" -lt 3 ]]; then
-      sleep $((attempt * 15))
-    fi
-  done
-  if [[ "${downloaded}" != "true" ]]; then
+  if ! run_bounded_attempts 240s "GDAL CLI package download" \
+      sh -c "apt-get update --error-on=any -q && apt-get install -yq --download-only ${packages}"; then
     report_error "the GDAL CLI packages could not be downloaded from the runner's apt mirror after 3 bounded attempts"
     exit 1
   fi
@@ -141,18 +133,33 @@ install_offline() {
   sudo timeout --kill-after=15s 600s apt-get install -yqq --no-download ${packages}
 }
 
-copy_cached_debs() {
+read_cached_debs() {
   local cache_dir=$1
-  local -a debs
+  local -n cached=$2
   shopt -s nullglob
-  debs=("${cache_dir}"/*.deb)
+  cached=("${cache_dir}"/*.deb)
   shopt -u nullglob
-  if [[ ${#debs[@]} -eq 0 ]]; then
+  if [[ ${#cached[@]} -eq 0 ]]; then
     report_error "the cached GDAL CLI package set is empty"
     exit 1
   fi
+}
+
+copy_cached_debs() {
+  local cache_dir=$1
+  local -a debs=()
+  read_cached_debs "$cache_dir" debs
   sudo mkdir -p "$(apt_archive_dir)/partial"
   sudo cp "${debs[@]}" "$(apt_archive_dir)/"
+}
+
+install_saved_debs() {
+  local cache_dir=$1
+  local -a debs=()
+  read_cached_debs "$cache_dir" debs
+  # Package lists are unreadable here, so apt cannot turn these names into files.
+  # sudo resets the environment, so the frontend has to travel as an argument.
+  sudo DEBIAN_FRONTEND=noninteractive timeout --kill-after=15s 600s dpkg -i "${debs[@]}"
 }
 
 stage_resolved_debs() {
@@ -186,13 +193,14 @@ stage_resolved_debs() {
 verify_gdal_cli() {
   local python_bin="${HONUA_GDAL_PYTHON:-/usr/bin/python3}"
   local tool
+  local installed_tools="/usr/bin:/bin"
   if [[ -n "${GITHUB_PATH:-}" ]]; then
     echo "/usr/bin" >> "${GITHUB_PATH}"
   fi
-  export PATH="/usr/bin:${PATH}"
   if [[ -n "${HONUA_GDAL_TOOL_PATH:-}" ]]; then
-    export PATH="${HONUA_GDAL_TOOL_PATH}:${PATH}"
+    installed_tools="${HONUA_GDAL_TOOL_PATH}:${installed_tools}"
   fi
+  export PATH="${installed_tools}"
   "${python_bin}" -c 'from osgeo import gdal; from scipy import ndimage; import numpy'
   for tool in gdaldem ogr2ogr gdal_translate gdalinfo gdal_proximity.py python3; do
     command -v "${tool}" >/dev/null \
@@ -258,35 +266,65 @@ cmd_resolve() {
   note_summary "- Version key: \`${key}\`"
 }
 
+select_cache_mode() {
+  # actions/cache leaves cache-hit unset on a miss. Only an exact true is a hit.
+  if [[ "${GDAL_INDEX_STATE:-}" == "unavailable" ]]; then
+    printf '%s' saved-image
+  elif [[ "${GDAL_DEB_CACHE_HIT:-}" == "true" ]]; then
+    printf '%s' hit
+  else
+    printf '%s' miss
+  fi
+}
+
+note_cache_mode() {
+  local mode=$1
+  case "$mode" in
+    saved-image)
+      echo "GDAL CLI package index is unavailable; installing the newest saved .deb set with dpkg"
+      ;;
+    hit)
+      echo "GDAL CLI package cache hit; installing the saved .deb set with --no-download"
+      ;;
+    miss)
+      echo "GDAL CLI package cache miss; downloading the resolved packages from the apt mirror"
+      ;;
+  esac
+  note_summary "### GDAL CLI packages"
+  note_summary ""
+  note_summary "- Cache: ${mode}"
+}
+
+install_from_mode() {
+  local mode=$1
+  local cache_dir=$2
+  case "$mode" in
+    saved-image)
+      install_saved_debs "$cache_dir"
+      ;;
+    hit)
+      copy_cached_debs "$cache_dir"
+      install_offline
+      ;;
+    miss)
+      download_packages
+      install_offline
+      stage_resolved_debs "$cache_dir" "$(manifest_path)"
+      ;;
+    *)
+      report_error "unknown GDAL CLI cache mode ${mode}"
+      exit 1
+      ;;
+  esac
+}
+
 cmd_install() {
   local cache_dir="${GDAL_DEB_CACHE_DIR:?package cache directory is unset}"
+  local mode
   configure_apt_timeouts
-  # An unreadable index cannot build the version key. Install the newest set
-  # saved for this runner image, and do not touch the mirror again.
-  if [[ "${GDAL_INDEX_STATE:-}" == "unavailable" ]]; then
-    echo "GDAL CLI package index is unavailable; installing the newest saved .deb set with --no-download"
-    note_summary "### GDAL CLI packages"
-    note_summary ""
-    note_summary "- Cache: saved-image"
-    copy_cached_debs "$cache_dir"
-    install_offline
-  # actions/cache leaves cache-hit unset on a miss. Only an exact true is a hit.
-  elif [[ "${GDAL_DEB_CACHE_HIT:-}" == "true" ]]; then
-    echo "GDAL CLI package cache hit; installing the saved .deb set with --no-download"
-    note_summary "### GDAL CLI packages"
-    note_summary ""
-    note_summary "- Cache: hit"
-    copy_cached_debs "$cache_dir"
-    install_offline
-  else
-    echo "GDAL CLI package cache miss; downloading the resolved packages from the apt mirror"
-    note_summary "### GDAL CLI packages"
-    note_summary ""
-    note_summary "- Cache: miss"
-    download_packages
-    install_offline
-    stage_resolved_debs "$cache_dir" "$(manifest_path)"
-  fi
+  mode="$(select_cache_mode)"
+  note_cache_mode "$mode"
+  install_from_mode "$mode" "$cache_dir"
   verify_gdal_cli
 }
 

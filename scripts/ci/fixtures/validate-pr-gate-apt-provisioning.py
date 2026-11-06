@@ -5,9 +5,9 @@ The proof step installs nothing. A shared provisioner, used by the proof and
 by ci.yml's worker GDAL job, restores a .deb cache keyed on the runner image
 and the resolved package versions. A hit installs that set with --no-download.
 A miss retries the apt mirror, bounded by timeout, then installs offline and
-saves the .deb set. An unreadable index installs the newest saved set for
-this runner image and does not download. The proof still fails closed when
-GDAL is missing.
+saves the .deb set. An unreadable index installs the newest saved .deb files
+with dpkg and does not ask apt to resolve package names. The proof still
+fails closed when GDAL is missing.
 """
 
 from __future__ import annotations
@@ -37,6 +37,8 @@ RESTORE_ACTION = "actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
 # (65 runs) took 2454 s, about 41 minutes, with a ~30 s provisioning step.
 # Round up so the job timeout must hold that plus the full provisioning budget.
 JOB_BASELINE_SECONDS = 45 * 60
+SHARED_RETRY_LOOPS = 1
+RETRY_CALLS = 2
 
 DURATION = r"(\d+)s?"
 
@@ -63,20 +65,12 @@ def _function_body(script: str, name: str) -> str:
     return match.group(1)
 
 
-def _cache_branches(script: str) -> tuple[str, str]:
-    matches = list(
-        re.finditer(
-            r'elif \[\[ "\$\{GDAL_DEB_CACHE_HIT:-\}" == "true" \]\]; then\n'
-            r"(?P<hit>.*?)\n[ ]*else\n(?P<miss>.*?)\n[ ]*fi\n",
-            script,
-            re.S,
-        )
-    )
-    if len(matches) != 1:
-        raise ContractError(
-            f"install must branch once on GDAL_DEB_CACHE_HIT; found {len(matches)}"
-        )
-    return matches[0].group("hit"), matches[0].group("miss")
+def _case_arm(script: str, function: str, label: str) -> str:
+    body = _function_body(script, function)
+    match = re.search(rf"[ ]*{re.escape(label)}\)\n(?P<body>.*?)\n[ ]*;;", body, re.S)
+    if not match:
+        raise ContractError(f"{function}() is missing the {label} arm")
+    return match.group("body")
 
 
 def _attempt_loops(script: str) -> list[tuple[list[int], str]]:
@@ -86,34 +80,41 @@ def _attempt_loops(script: str) -> list[tuple[list[int], str]]:
     ]
 
 
+def _retry_seconds(script: str, kind: str) -> int:
+    if kind == "update":
+        pattern = r"run_bounded_attempts (\d+)s \"[^\"]+\" \\\n[ ]+apt-get update --error-on=any -q\n"
+    else:
+        pattern = (
+            r"run_bounded_attempts (\d+)s \"[^\"]+\" \\\n"
+            r"[ ]+sh -c \"apt-get update --error-on=any -q && "
+            r"apt-get install -yq --download-only "
+        )
+    match = re.search(pattern, script)
+    if not match:
+        raise ContractError(f"the shared retry must bound the {kind} and fail a partial apt fetch")
+    return int(match.group(1))
+
+
 def provisioning_worst_case_seconds(script: str) -> int:
-    """Worst case of the index refresh, the download retries and the offline install."""
+    """Worst case of the shared retry, used for both the index and the download."""
     loops = _attempt_loops(script)
-    if len(loops) < 2:
-        raise ContractError(
-            "the provisioner needs a bounded package-index loop and a bounded download loop"
-        )
-    total = 0
-    saw_update = False
-    saw_download = False
-    for attempts, body in loops:
-        bounded = re.search(rf"timeout --kill-after={DURATION} {DURATION} ", body)
-        if not bounded:
-            raise ContractError("each provisioner attempt must run under `timeout`")
-        if "apt-get update" in body:
-            saw_update = True
-        if "--download-only" in body:
-            saw_download = True
-        per_attempt = int(bounded.group(1)) + int(bounded.group(2))
-        backoff = re.search(r"sleep \$\(\(attempt \* (\d+)\)\)", body)
-        if not backoff:
-            raise ContractError("the provisioner must back off between attempts")
-        sleeps = sum(attempt * int(backoff.group(1)) for attempt in attempts[:-1])
-        total += len(attempts) * per_attempt + sleeps
-    if not saw_update or not saw_download:
-        raise ContractError(
-            "the provisioner must bound both apt-get update and the --download-only install"
-        )
+    if len(loops) != SHARED_RETRY_LOOPS:
+        raise ContractError("the provisioner must share one bounded retry loop")
+    attempts, body = loops[0]
+    bounded = re.search(rf"timeout --kill-after={DURATION} ", body)
+    if not bounded:
+        raise ContractError("each provisioner attempt must run under `timeout`")
+    backoff = re.search(r"sleep \$\(\(attempt \* (\d+)\)\)", body)
+    if not backoff:
+        raise ContractError("the provisioner must back off between attempts")
+    if len(re.findall(r"run_bounded_attempts (\d+)s ", script)) != RETRY_CALLS:
+        raise ContractError("index refresh and package download must both use the shared retry")
+    sleeps = sum(attempt * int(backoff.group(1)) for attempt in attempts[:-1])
+    kill_after = int(bounded.group(1))
+    total = sum(
+        len(attempts) * (kill_after + _retry_seconds(script, kind)) + sleeps
+        for kind in ("update", "download")
+    )
     install = re.search(
         rf"timeout --kill-after={DURATION} {DURATION} apt-get install [^\n]*--no-download",
         script,
@@ -122,6 +123,11 @@ def provisioning_worst_case_seconds(script: str) -> int:
         raise ContractError(
             "the provisioner must finish with a bounded, offline (--no-download) apt-get install"
         )
+    saved = re.search(rf"timeout --kill-after={DURATION} {DURATION} dpkg -i", script)
+    if not saved:
+        raise ContractError("a saved .deb set must be installed with a bounded dpkg -i")
+    if (int(saved.group(1)), int(saved.group(2))) != (int(install.group(1)), int(install.group(2))):
+        raise ContractError("dpkg -i must use the same bound as the offline apt install")
     resolve = re.search(
         rf"timeout --kill-after={DURATION} {DURATION} apt-get install [^\n]*--print-uris",
         script,
@@ -138,20 +144,27 @@ def provisioning_worst_case_seconds(script: str) -> int:
 
 
 def _require_offline_hit(script: str) -> None:
-    hit, miss = _cache_branches(script)
-    if "install_offline" not in hit:
+    mode = _function_body(script, "select_cache_mode")
+    if '== "unavailable"' not in mode or '== "true"' not in mode:
+        raise ContractError("install must distinguish an unreadable index from an exact cache hit")
+    hit = _case_arm(script, "install_from_mode", "hit")
+    miss = _case_arm(script, "install_from_mode", "miss")
+    if "install_offline" not in hit or "copy_cached_debs" not in hit:
         raise ContractError("a cache hit must install the saved .deb set offline")
     for forbidden in ("download_packages", "apt-get update", "--download-only"):
         if forbidden in hit:
             raise ContractError(f"a cache hit must not reach the apt mirror via {forbidden}")
-    if "download_packages" not in miss or "install_offline" not in miss:
-        raise ContractError("a cache miss must download from the mirror and install offline")
+    if "download_packages" not in miss or "install_offline" not in miss or "stage_resolved_debs" not in miss:
+        raise ContractError("a cache miss must download from the mirror, install offline, and stage the manifest")
     offline = _function_body(script, "install_offline")
     if "--no-download" not in offline:
         raise ContractError("the offline install must pass --no-download")
     for forbidden in ("apt-get update", "--download-only"):
         if forbidden in offline:
             raise ContractError(f"the offline install must not {forbidden}")
+    verify = _function_body(script, "verify_gdal_cli")
+    if "${PATH}" in verify:
+        raise ContractError("GDAL tool lookup must ignore executables inherited from PATH")
     _require_saved_image(script)
 
 
@@ -199,19 +212,17 @@ def _require_cache_action(action_source: str) -> None:
 
 
 def _require_saved_image(script: str) -> None:
-    match = re.search(
-        r'if \[\[ "\$\{GDAL_INDEX_STATE:-\}" == "unavailable" \]\]; then\n(?P<body>.*?)\n[ ]*elif',
-        script,
-        re.S,
-    )
-    if not match:
-        raise ContractError("an unreadable package index must install a saved .deb set")
-    body = match.group("body")
-    if "install_offline" not in body or "copy_cached_debs" not in body:
-        raise ContractError("an unreadable package index must install the saved .deb set offline")
-    for forbidden in ("download_packages", "apt-get update", "--download-only"):
+    body = _case_arm(script, "install_from_mode", "saved-image")
+    if "install_saved_debs" not in body:
+        raise ContractError("an unreadable package index must install the saved .deb files")
+    for forbidden in ("download_packages", "apt-get update", "--download-only", "install_offline", "copy_cached_debs"):
         if forbidden in body:
-            raise ContractError(f"an unreadable package index must not reach the apt mirror via {forbidden}")
+            raise ContractError(f"an unreadable package index must not reach apt via {forbidden}")
+    installer = _function_body(script, "install_saved_debs")
+    if "dpkg -i" not in installer:
+        raise ContractError("a saved .deb set must be installed with dpkg, not apt package names")
+    if "apt-get" in installer:
+        raise ContractError("a saved .deb set must not ask apt to resolve package names")
 
 
 def _require_index_fallback(steps: list, exact: dict, install: dict) -> None:
@@ -398,7 +409,24 @@ def _workflow_breaks() -> tuple[Change, ...]:
 
 def _script_breaks() -> tuple[Change, ...]:
     return (
-        ("sudo timeout --kill-after=15s 240s sh -c", "sudo sh -c", "unbounded-download", 1),
+        (
+            'sudo timeout --kill-after=15s "${duration}" "$@"',
+            'sudo "$@"',
+            "unbounded-download",
+            1,
+        ),
+        (
+            "timeout --kill-after=15s 600s dpkg -i",
+            "dpkg -i",
+            "unbounded-dpkg",
+            1,
+        ),
+        (
+            "apt-get update --error-on=any -q",
+            "apt-get update -q",
+            "update-ignores-fetch-errors",
+            -1,
+        ),
         (
             "sudo timeout --kill-after=15s 60s apt-get install --print-uris",
             "sudo apt-get install --print-uris",
@@ -409,15 +437,21 @@ def _script_breaks() -> tuple[Change, ...]:
         ("'Acquire::http::Timeout \"30\";'", "'Acquire::Queue-Mode \"host\";'", "no-http-timeout", 1),
         ("apt-get install -yqq --no-download", "apt-get install -yqq", "install-reaches-network", 1),
         (
-            '    echo "GDAL CLI package index is unavailable; installing the newest saved .deb set with --no-download"\n',
-            '    echo "GDAL CLI package index is unavailable"\n    download_packages\n',
+            '    saved-image)\n      install_saved_debs "$cache_dir"\n',
+            '    saved-image)\n      download_packages\n',
             "saved-image-downloads",
             1,
         ),
         (
-            '    echo "GDAL CLI package cache hit; installing the saved .deb set with --no-download"\n',
-            '    echo "GDAL CLI package cache hit"\n    download_packages\n',
+            '    hit)\n      copy_cached_debs "$cache_dir"\n      install_offline\n',
+            '    hit)\n      download_packages\n',
             "hit-downloads",
+            1,
+        ),
+        (
+            'export PATH="${installed_tools}"',
+            'export PATH="/usr/bin:${PATH}"',
+            "lookup-uses-inherited-path",
             1,
         ),
     )
