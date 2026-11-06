@@ -16,11 +16,7 @@ internal static class LayerNamePattern
             return null;
         }
 
-        var escaped = nameQuery.Trim()
-            .Replace("\\", "\\\\", StringComparison.Ordinal)
-            .Replace("%", "\\%", StringComparison.Ordinal)
-            .Replace("_", "\\_", StringComparison.Ordinal);
-        return "%" + escaped + "%";
+        return "%" + PostgresLikeLiteral.Escape(nameQuery.Trim()) + "%";
     }
 }
 
