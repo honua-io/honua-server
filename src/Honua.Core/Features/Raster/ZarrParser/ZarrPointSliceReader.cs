@@ -8,9 +8,6 @@ using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Core.Features.Raster.ZarrParser;
 
-/// <summary>
-/// Default canonical implementation of bounded point reads from registered Zarr slices.
-/// </summary>
 public sealed class ZarrPointSliceReader : IZarrPointSliceReader
 {
     private const int MaxBatchSize = 1000;
@@ -22,7 +19,6 @@ public sealed class ZarrPointSliceReader : IZarrPointSliceReader
     private readonly IZarrSubsetReader _subsetReader;
     private readonly IReadOnlyList<ICloudRangeReader> _rangeReaders;
 
-    /// <summary>Initializes the canonical reader.</summary>
     public ZarrPointSliceReader(
         IZarrStore zarrStore,
         IZarrSubsetReader subsetReader,
@@ -34,7 +30,6 @@ public sealed class ZarrPointSliceReader : IZarrPointSliceReader
         _rangeReaders = rangeReaders.ToArray();
     }
 
-    /// <inheritdoc />
     public async Task<ZarrPointSliceReadResult> ReadAsync(
         int layerId,
         double x,
@@ -53,7 +48,6 @@ public sealed class ZarrPointSliceReader : IZarrPointSliceReader
         return results[0];
     }
 
-    /// <inheritdoc />
     public async Task<IReadOnlyList<ZarrPointSliceReadResult>> ReadBatchAsync(
         int layerId,
         IReadOnlyList<ZarrPointSliceReadRequest> requests,

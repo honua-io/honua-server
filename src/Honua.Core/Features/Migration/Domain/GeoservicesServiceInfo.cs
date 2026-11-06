@@ -13,235 +13,93 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Domain;
 
-/// <summary>
-/// Represents metadata about an ArcGIS Server service discovered from a remote URL.
-/// </summary>
 public sealed record GeoservicesServiceInfo
 {
-    /// <summary>
-    /// The URL of the ArcGIS service.
-    /// </summary>
     public required string ServiceUrl { get; init; }
 
-    /// <summary>
-    /// The name of the service.
-    /// </summary>
     public required string ServiceName { get; init; }
 
-    /// <summary>
-    /// Description of the service (if available).
-    /// </summary>
     public string? Description { get; init; }
 
-    /// <summary>
-    /// The spatial reference WKID of the service.
-    /// </summary>
     public int? SpatialReferenceWkid { get; init; }
 
-    /// <summary>
-    /// Maximum number of records the service returns per query.
-    /// </summary>
     public int? MaxRecordCount { get; init; }
 
-    /// <summary>
-    /// Capabilities supported by the service (e.g., "Query", "Create", "Update", "Delete").
-    /// </summary>
     public string[] Capabilities { get; init; } = [];
 
-    /// <summary>
-    /// Spatial layers and standalone tables available in this service.
-    /// Each resource retains its source <see cref="GeoservicesLayerInfo.Type"/>.
-    /// </summary>
     public GeoservicesLayerInfo[] Layers { get; init; } = [];
 
-    /// <summary>
-    /// The service version (e.g., "10.91", "11.0").
-    /// </summary>
     public string? Version { get; init; }
 
-    /// <summary>
-    /// Supported query formats.
-    /// </summary>
     public string[] SupportedQueryFormats { get; init; } = [];
 }
 
-/// <summary>
-/// Represents metadata about a single layer within an ArcGIS service.
-/// </summary>
 public sealed record GeoservicesLayerInfo
 {
-    /// <summary>
-    /// The layer ID within the service.
-    /// </summary>
     public required int Id { get; init; }
 
-    /// <summary>
-    /// The name of the layer.
-    /// </summary>
     public required string Name { get; init; }
 
-    /// <summary>
-    /// Description of the layer (if available).
-    /// </summary>
     public string? Description { get; init; }
 
-    /// <summary>
-    /// The geometry type (esriGeometryPoint, esriGeometryPolyline, esriGeometryPolygon, etc.).
-    /// </summary>
     public string? GeometryType { get; init; }
 
-    /// <summary>
-    /// Whether the source layer advertises Z (elevation) ordinates on its geometries. When
-    /// <c>true</c> the import preserves the Z ordinate in converted geometry and creates a
-    /// Z-aware PostGIS geometry column so 3D data is not flattened to 2D.
-    /// </summary>
     public bool HasZ { get; init; }
 
-    /// <summary>Whether the source layer advertises M (measure) ordinates.</summary>
     public bool HasM { get; init; }
 
-    /// <summary>
-    /// Whether the source supports resultOffset/resultRecordCount pagination.
-    /// A null value means the source did not advertise the capability.
-    /// </summary>
     public bool? SupportsPagination { get; init; }
 
-    /// <summary>
-    /// The spatial reference WKID of the layer.
-    /// </summary>
     public int? SpatialReferenceWkid { get; init; }
 
-    /// <summary>
-    /// Maximum number of records the layer returns per query.
-    /// </summary>
     public int? MaxRecordCount { get; init; }
 
-    /// <summary>
-    /// Fields available in the layer.
-    /// </summary>
     public GeoservicesFieldInfo[] Fields { get; init; } = [];
 
-    /// <summary>
-    /// Source relationship declarations, including incomplete records. Importing this
-    /// resource alone does not recreate these cross-resource bindings.
-    /// </summary>
     public GeoservicesRelationshipInfo?[] Relationships { get; init; } = [];
 
-    /// <summary>
-    /// The type of layer (e.g., "Feature Layer", "Table").
-    /// </summary>
     public string? Type { get; init; }
 
-    /// <summary>
-    /// Whether the layer supports attachments.
-    /// </summary>
     public bool HasAttachments { get; init; }
 
-    /// <summary>Source field declared as the edit-stable GlobalID binding, when present.</summary>
     public string? GlobalIdField { get; init; }
 
-    /// <summary>
-    /// Minimum scale at which the layer is visible.
-    /// </summary>
     public double? MinScale { get; init; }
 
-    /// <summary>
-    /// Maximum scale at which the layer is visible.
-    /// </summary>
     public double? MaxScale { get; init; }
 
-    /// <summary>
-    /// The extent of the layer's data.
-    /// </summary>
     public GeoServicesExtent? Extent { get; init; }
 
-    /// <summary>
-    /// Estimated feature count (if available from service).
-    /// </summary>
     public int? FeatureCount { get; init; }
 
-    /// <summary>
-    /// Raw GeoServices <c>drawingInfo</c> JSON payload exactly as returned by
-    /// the source service (or <c>null</c> when the layer did not advertise one).
-    /// Carried through so the auto-publish pipeline can attach the canonical
-    /// MapLibre style alongside the original Esri renderer.
-    /// </summary>
     public string? DrawingInfoJson { get; init; }
 
-    /// <summary>
-    /// Canonical Esri subtype set captured from the source layer (subtype field,
-    /// per-subtype labels, and per-subtype field defaults/domains), or <c>null</c>
-    /// when the layer declares no subtypes. Carried through the auto-publish pipeline
-    /// so the subtypes persist into the Metadata v2 graph and are served on the
-    /// FeatureServer layer metadata (<c>subtypeField</c> / <c>subtypes</c> /
-    /// <c>defaultSubtypeCode</c>).
-    /// </summary>
     public Honua.Core.Features.Metadata.Domain.V2.MetadataV2Subtypes? Subtypes { get; init; }
 
-    /// <summary>
-    /// Canonical Esri attribute rules (calculation / constraint / validation) captured
-    /// from the source layer, or <c>null</c> when the layer declares none. Carried through
-    /// the auto-publish pipeline so the rules persist into the Metadata v2 graph and fire
-    /// on the shared edit path (FeatureServer <c>applyEdits</c>).
-    /// </summary>
     public IReadOnlyList<Honua.Core.Features.Metadata.Domain.V2.MetadataV2AttributeRule>? AttributeRules { get; init; }
 }
 
-/// <summary>
-/// Represents a field definition from an ArcGIS layer, extending shared field metadata.
-/// </summary>
 public sealed record GeoservicesFieldInfo : FieldDefinitionBase
 {
-    /// <summary>
-    /// Canonical value domain (coded values or numeric range) captured from the
-    /// source field, or <c>null</c> when the field carries no domain. Carried
-    /// through the auto-publish pipeline so the domain persists into the
-    /// Metadata v2 graph and is served via the FeatureServer field <c>domain</c>
-    /// and <c>queryDomains</c> surfaces.
-    /// </summary>
     public Honua.Core.Features.Metadata.Domain.V2.MetadataV2FieldDomain? Domain { get; init; }
 
-    /// <summary>
-    /// Whether this is the ObjectID field.
-    /// </summary>
     public bool IsObjectId => Type.Equals("esriFieldTypeOID", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Determines if this field represents a string type based on Esri type
-    /// </summary>
     protected override bool IsStringType()
     {
         return Type.Equals("esriFieldTypeString", StringComparison.OrdinalIgnoreCase);
     }
 }
 
-/// <summary>
-/// Represents the spatial extent from an ArcGIS service.
-/// </summary>
 public sealed record GeoServicesExtent
 {
-    /// <summary>
-    /// Minimum X coordinate.
-    /// </summary>
     public double Xmin { get; init; }
 
-    /// <summary>
-    /// Minimum Y coordinate.
-    /// </summary>
     public double Ymin { get; init; }
 
-    /// <summary>
-    /// Maximum X coordinate.
-    /// </summary>
     public double Xmax { get; init; }
 
-    /// <summary>
-    /// Maximum Y coordinate.
-    /// </summary>
     public double Ymax { get; init; }
 
-    /// <summary>
-    /// Spatial reference WKID.
-    /// </summary>
     public int? SpatialReferenceWkid { get; init; }
 }

@@ -5,20 +5,11 @@ using System.Text.RegularExpressions;
 
 namespace Honua.Core.Features.Infrastructure.Logging;
 
-/// <summary>
-/// Redacts capability tokens that travel in URL paths. The same patterns are
-/// applied to request logs and to exported trace span attributes.
-/// </summary>
 public static partial class CredentialPathRedaction
 {
-    /// <summary>Replacement text for a redacted path segment.</summary>
     public const string Redacted = "[REDACTED]";
 
-    /// <summary>
-    /// Replaces the token segment of a public-link, embed, or WPS conformance
-    /// result path. Other text is returned unchanged. A match timeout redacts
-    /// the whole value.
-    /// </summary>
+    // A match that times out redacts the whole value.
     public static string Redact(string? value)
     {
         if (string.IsNullOrEmpty(value))

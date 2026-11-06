@@ -3,10 +3,6 @@
 
 namespace Honua.Core.Features.Raster.CogParser;
 
-/// <summary>
-/// TIFF/BigTIFF constants for COG IFD parsing.
-/// Uses only primitive types and constants — no reflection, fully AOT-safe.
-/// </summary>
 internal static class TiffConstants
 {
     // Byte order markers
@@ -80,9 +76,6 @@ internal static class TiffConstants
     public const ushort CompressionLzw = 5;
     public const ushort CompressionZstd = 50000;
 
-    /// <summary>
-    /// Gets the size in bytes of a TIFF field type value.
-    /// </summary>
     public static int GetTypeSize(ushort type) => type switch
     {
         TypeByte or TypeAscii or TypeSByte or TypeUndefined => 1,
@@ -92,9 +85,6 @@ internal static class TiffConstants
         _ => 1
     };
 
-    /// <summary>
-    /// Maps a TIFF compression code to a human-readable string.
-    /// </summary>
     public static string GetCompressionName(ushort compression) => compression switch
     {
         CompressionNone => "NONE",

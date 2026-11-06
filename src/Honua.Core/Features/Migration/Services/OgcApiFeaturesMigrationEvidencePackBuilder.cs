@@ -16,39 +16,12 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Slice 5 (capstone) of issue #1029. Aggregates the slice 1-4 artifacts emitted by a
-/// successful OGC API Features migration run into a single deterministic
-/// <see cref="OgcApiFeaturesMigrationEvidencePackArtifact"/>.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The builder is intentionally pure and side-effect free so the same inputs always
-/// produce the same output (and the same
-/// <see cref="OgcApiFeaturesMigrationEvidencePackArtifact.BundleFingerprint"/>). It performs
-/// no I/O, no logging, and no clock reads except for the caller-supplied
-/// <see cref="OgcApiFeaturesMigrationEvidencePackBuilderOptions.GeneratedAt"/> stamp, which
-/// is excluded from the fingerprint.
-/// </para>
-/// <para>
-/// Credential redaction: the source identity is sanitized by stripping userinfo, query,
-/// and fragment components from <c>BaseUrl</c> before the inventory snapshot is included
-/// in the bundle. The builder never copies raw response bodies, HTTP headers, or feature
-/// payloads — only counts, identifiers, slice-3 filter-scope records, and slice-4
-/// diagnostic messages.
-/// </para>
-/// </remarks>
+// The fingerprint excludes the caller timestamp, and the builder strips URL secrets and never copies response bodies, headers, or feature payloads.
 public static class OgcApiFeaturesMigrationEvidencePackBuilder
 {
     private const string BuilderGenerator = "honua.migration.ogc-api-features.evidence-pack-builder/1.0";
     private const string OgcApiFeaturesSourceKind = "ogc-api-features";
 
-    /// <summary>
-    /// Builds an evidence pack from the slice 1-4 inputs.
-    /// </summary>
-    /// <param name="inputs">Inventory, per-collection import, and per-collection scope inputs.</param>
-    /// <param name="options">Optional run id / generator / clock overrides.</param>
-    /// <returns>Deterministic per-source evidence pack with credentials stripped.</returns>
     public static OgcApiFeaturesMigrationEvidencePackArtifact Build(
         OgcApiFeaturesMigrationEvidencePackInputs inputs,
         OgcApiFeaturesMigrationEvidencePackBuilderOptions? options = null)
@@ -91,11 +64,6 @@ public static class OgcApiFeaturesMigrationEvidencePackBuilder
         };
     }
 
-    /// <summary>
-    /// Computes the deterministic SHA-256 fingerprint embedded in the pack via
-    /// <see cref="OgcApiFeaturesMigrationEvidencePackArtifact.BundleFingerprint"/>. Exposed
-    /// for tests and downstream verifiers.
-    /// </summary>
     public static string ComputeBundleFingerprint(OgcApiFeaturesMigrationEvidencePackBundle bundle)
     {
         ArgumentNullException.ThrowIfNull(bundle);
@@ -283,74 +251,29 @@ public static class OgcApiFeaturesMigrationEvidencePackBuilder
         => string.IsNullOrWhiteSpace(value) ? null : value;
 }
 
-/// <summary>
-/// Aggregated inputs consumed by <see cref="OgcApiFeaturesMigrationEvidencePackBuilder.Build"/>.
-/// </summary>
 public sealed record OgcApiFeaturesMigrationEvidencePackInputs
 {
-    /// <summary>
-    /// Slice-1 inventory artifact captured by the OGC API Features migration scanner.
-    /// </summary>
     public required MigrationSourceInventoryArtifact Inventory { get; init; }
 
-    /// <summary>
-    /// Slice-2/3 per-collection import results paired with the slice-3 filter/bbox/datetime
-    /// pushdown tokens that were sent to the source items endpoint. May be empty when the
-    /// scanner ran but no collection imports were attempted.
-    /// </summary>
     public IReadOnlyCollection<OgcApiFeaturesMigrationEvidencePackCollectionInput>? CollectionResults { get; init; }
 }
 
-/// <summary>
-/// One per-collection input pair (import result + pushed-down filter scope tokens) consumed
-/// by <see cref="OgcApiFeaturesMigrationEvidencePackBuilder.Build"/>.
-/// </summary>
 public sealed record OgcApiFeaturesMigrationEvidencePackCollectionInput
 {
-    /// <summary>
-    /// Slice-2/3 import result emitted by the OGC API Features import service.
-    /// </summary>
     public required OgcApiFeaturesImportResult Result { get; init; }
 
-    /// <summary>
-    /// Normalized CQL2-text filter that was supplied to the import run, or <c>null</c> when
-    /// no filter was supplied.
-    /// </summary>
     public string? Filter { get; init; }
 
-    /// <summary>
-    /// Normalized bbox token that was supplied to the import run, or <c>null</c> when no
-    /// bbox was supplied.
-    /// </summary>
     public string? Bbox { get; init; }
 
-    /// <summary>
-    /// Normalized RFC3339 instant or interval that was supplied to the import run, or
-    /// <c>null</c> when no datetime was supplied.
-    /// </summary>
     public string? Datetime { get; init; }
 }
 
-/// <summary>
-/// Override hooks for tests and the nightly workflow.
-/// </summary>
 public sealed record OgcApiFeaturesMigrationEvidencePackBuilderOptions
 {
-    /// <summary>
-    /// Run identifier embedded in the artifact. Excluded from the bundle fingerprint so the
-    /// same inputs produce the same fingerprint across nightly runs.
-    /// </summary>
     public string? RunId { get; init; }
 
-    /// <summary>
-    /// Generator label embedded in the artifact. Excluded from the bundle fingerprint.
-    /// </summary>
     public string? Generator { get; init; }
 
-    /// <summary>
-    /// Generation timestamp. Excluded from the bundle fingerprint. Defaults to
-    /// <see cref="DateTimeOffset.UnixEpoch"/> when omitted so deterministic tests do not have
-    /// to set it.
-    /// </summary>
     public DateTimeOffset? GeneratedAt { get; init; }
 }

@@ -8,11 +8,6 @@ using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Core.Features.Raster.ZarrParser;
 
-/// <summary>
-/// AOT-safe Zarr v2 subset reader. Supports the uncompressed and zlib codecs,
-/// C order, and per-dimension bounded reads. The result buffer is laid out in
-/// row-major order over the requested subset shape using the array's native dtype.
-/// </summary>
 public sealed class ZarrSubsetReader : IZarrSubsetReader
 {
     private const int MaxChunksPerRequest = 4096;
@@ -21,7 +16,6 @@ public sealed class ZarrSubsetReader : IZarrSubsetReader
     // independent from a bounded compressed-read allowance.
     private const long MaxCompressedChunkBytes = MaxBytesPerRequest + (1L * 1024L * 1024L);
 
-    /// <inheritdoc />
     public async Task<ZarrSubsetResult> ReadSubsetAsync(
         ICloudRangeReader reader,
         string bucket,
@@ -159,10 +153,6 @@ public sealed class ZarrSubsetReader : IZarrSubsetReader
             $"Zarr compressor '{compressor}' is not supported by the MVP reader. Use uncompressed, zlib, or gzip chunks.");
     }
 
-    /// <summary>
-    /// Resolves the element size in bytes for a numpy-style dtype string
-    /// (e.g. <c>&lt;f4</c>). Rejects big-endian and non-numeric dtypes.
-    /// </summary>
     internal static int ResolveElementSize(string dtype)
     {
         var span = dtype.AsSpan();

@@ -14,43 +14,14 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Drives the parity stage of the migration acceptance suite by running a small, deterministic
-/// probe set (feature count, schema field-names, axis-aligned bbox overlap) over each
-/// per-source <see cref="MigrationManifestArtifact"/> emitted by the slice-3 apply stage and the
-/// original <see cref="MigrationSourceInventoryArtifact"/> from the slice-2 scan stage.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The parity stage is intentionally light in slice 4: it does not hash geometries, sample
-/// attribute distributions, or talk to a live target. The slice composes the existing parity
-/// evidence generator (<see cref="MigrationParityEvidenceGenerator"/>) for the per-source
-/// <see cref="MigrationParityEvidenceArtifact"/> and adds the deterministic probe roll-up. Heavier
-/// probes belong in later slices once a target observation contract is wired up.
-/// </para>
-/// <para>
-/// When the upstream apply stage ran in dry-run mode the per-resource target observation is
-/// derived from the manifest itself: the manifest copies the source field set and (by
-/// construction) advertises the same feature count and bbox the source declared. Callers driving
-/// the parity stage against a real apply outcome can supply explicit per-resource
-/// <see cref="MigrationParityTargetObservation"/> values to override this fallback.
-/// </para>
-/// </remarks>
 public static class MigrationAcceptanceParityStageRunner
 {
-    /// <summary>Aggregate classification when every probe in scope passed.</summary>
     public const string PassClassification = "pass";
 
-    /// <summary>Aggregate classification when at least one probe warned but none failed.</summary>
     public const string WarnClassification = "warn";
 
-    /// <summary>Aggregate classification when at least one probe failed.</summary>
     public const string FailClassification = "fail";
 
-    /// <summary>
-    /// Aggregate classification when no automated probes were applicable because all resources
-    /// were routed to manual review or were unsupported by the apply stage.
-    /// </summary>
     public const string ManualReviewClassification = "manual-review";
 
     private const string FeatureCountProbeId = "feature-count";
@@ -67,14 +38,6 @@ public static class MigrationAcceptanceParityStageRunner
     private const string ManualReviewAction = "manual-review";
     private const string UnsupportedAction = "unsupported";
 
-    /// <summary>
-    /// Build a deterministic parity stage report from the supplied per-source apply outputs and
-    /// inventories.
-    /// </summary>
-    /// <param name="runId">Stable identifier for this acceptance parity run (e.g. fixture set name).</param>
-    /// <param name="applyRunId">Identifier of the upstream apply stage report.</param>
-    /// <param name="inputs">Per-fixture parity inputs.</param>
-    /// <returns>Aggregate report pinning the parity stage outputs.</returns>
     public static MigrationParityStageReport BuildReport(
         string runId,
         string applyRunId,
@@ -138,16 +101,6 @@ public static class MigrationAcceptanceParityStageRunner
         };
     }
 
-    /// <summary>
-    /// Build a deterministic per-source parity outcome. Exposed for callers (and tests) that
-    /// drive the parity stage one fixture at a time.
-    /// </summary>
-    /// <param name="inventory">Source inventory artifact for the fixture.</param>
-    /// <param name="manifest">Manifest artifact emitted by the apply stage for the fixture.</param>
-    /// <param name="sourceObservations">Optional per-resource source observations.</param>
-    /// <param name="targetObservations">Optional per-resource target observations.</param>
-    /// <param name="attestation">Optional operator-supplied readiness attestation forwarded to the parity evidence pack.</param>
-    /// <returns>Deterministic per-source parity outcome.</returns>
     public static MigrationParityStageOutcome BuildOutcome(
         MigrationSourceInventoryArtifact inventory,
         MigrationManifestArtifact manifest,
@@ -687,39 +640,17 @@ public static class MigrationAcceptanceParityStageRunner
     }
 }
 
-/// <summary>
-/// One per-fixture input to <see cref="MigrationAcceptanceParityStageRunner.BuildReport"/>.
-/// </summary>
 public sealed record MigrationAcceptanceParityStageInput
 {
-    /// <summary>
-    /// Stable fixture identifier (e.g. <c>arcgis-mapserver-mixed-renderers</c>).
-    /// </summary>
     public required string FixtureId { get; init; }
 
-    /// <summary>
-    /// Inventory artifact produced by the upstream scan stage for this fixture.
-    /// </summary>
     public required MigrationSourceInventoryArtifact Inventory { get; init; }
 
-    /// <summary>
-    /// Manifest artifact emitted by the upstream apply stage for this fixture (the deterministic
-    /// "applied target state" the parity stage probes against).
-    /// </summary>
     public required MigrationManifestArtifact Manifest { get; init; }
 
-    /// <summary>
-    /// Optional per-resource source observations that override values pulled from the inventory.
-    /// </summary>
     public IEnumerable<MigrationParitySourceObservation>? SourceObservations { get; init; }
 
-    /// <summary>
-    /// Optional per-resource target observations recorded after a real apply.
-    /// </summary>
     public IEnumerable<MigrationParityTargetObservation>? TargetObservations { get; init; }
 
-    /// <summary>
-    /// Optional operator-supplied readiness attestation forwarded to the parity evidence pack.
-    /// </summary>
     public MigrationReadinessAttestation? Attestation { get; init; }
 }

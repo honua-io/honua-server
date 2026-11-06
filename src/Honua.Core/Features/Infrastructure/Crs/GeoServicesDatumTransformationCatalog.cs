@@ -8,18 +8,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.Infrastructure.Crs;
 
-/// <summary>
-/// <see cref="IDatumTransformationCatalog"/> backed by an embedded, auditable table of
-/// Esri default geotransformations. Models the Esri-parity selections as data so the
-/// table can be reviewed and extended without code changes.
-/// </summary>
-/// <remarks>
-/// Reverse directions are synthesized at load time: an entry for
-/// <c>(fromSrid → toSrid)</c> also resolves <c>(toSrid → fromSrid)</c> with
-/// <see cref="DatumTransformationSelection.TransformForward"/> set to
-/// <see langword="false"/> and source/target swapped, so the runtime applies the
-/// inverse of the same authoritative pipeline.
-/// </remarks>
 public sealed class GeoServicesDatumTransformationCatalog : IDatumTransformationCatalog
 {
     private const string ResourceName =
@@ -29,9 +17,6 @@ public sealed class GeoServicesDatumTransformationCatalog : IDatumTransformation
     private readonly FrozenDictionary<(int From, int To), AreaCandidate[]> _byArea;
     private readonly FrozenDictionary<int, DatumTransformationSelection> _byWkid;
 
-    /// <summary>
-    /// Initializes the catalog from the embedded Esri-default transformation table.
-    /// </summary>
     public GeoServicesDatumTransformationCatalog()
     {
         var table = LoadTable();
@@ -74,7 +59,6 @@ public sealed class GeoServicesDatumTransformationCatalog : IDatumTransformation
         _byWkid = byWkid.ToFrozenDictionary();
     }
 
-    /// <inheritdoc />
     public bool TryGetForEnvelope(
         int fromSrid,
         int toSrid,
@@ -109,7 +93,6 @@ public sealed class GeoServicesDatumTransformationCatalog : IDatumTransformation
         return selection is not null;
     }
 
-    /// <inheritdoc />
     public bool HasAreaOfUse(int fromSrid, int toSrid)
         => _byArea.ContainsKey((fromSrid, toSrid));
 
@@ -150,7 +133,6 @@ public sealed class GeoServicesDatumTransformationCatalog : IDatumTransformation
     private static bool LongitudeInside(double longitude, double areaWest, double areaEast)
         => longitude >= areaWest || longitude <= areaEast;
 
-    /// <inheritdoc />
     public bool TryGetDefault(int fromSrid, int toSrid, [NotNullWhen(true)] out DatumTransformationSelection? selection)
     {
         if (_byPair.TryGetValue((fromSrid, toSrid), out var found))
@@ -163,7 +145,6 @@ public sealed class GeoServicesDatumTransformationCatalog : IDatumTransformation
         return false;
     }
 
-    /// <inheritdoc />
     public bool TryGetByWkid(int wkid, int fromSrid, int toSrid, [NotNullWhen(true)] out DatumTransformationSelection? selection)
     {
         if (!_byWkid.TryGetValue(wkid, out var found))
@@ -222,10 +203,6 @@ public sealed class GeoServicesDatumTransformationCatalog : IDatumTransformation
         return table.Transformations ?? [];
     }
 
-    /// <summary>
-    /// Loads a fresh catalog instance from the embedded table.
-    /// </summary>
-    /// <returns>A new <see cref="IDatumTransformationCatalog"/>.</returns>
     public static IDatumTransformationCatalog Create() => new GeoServicesDatumTransformationCatalog();
 
     private readonly record struct AreaCandidate(
@@ -236,60 +213,38 @@ public sealed class GeoServicesDatumTransformationCatalog : IDatumTransformation
         double North);
 }
 
-/// <summary>
-/// Root of the embedded Esri-default transformation table.
-/// </summary>
 internal sealed record DatumTransformationTable
 {
-    /// <summary>Transformation entries.</summary>
     public IReadOnlyList<DatumTransformationEntry>? Transformations { get; init; }
 }
 
-/// <summary>
-/// A single row of the embedded Esri-default transformation table.
-/// </summary>
 internal sealed record DatumTransformationEntry
 {
-    /// <summary>Esri geotransformation WKID.</summary>
     public int? Wkid { get; init; }
 
-    /// <summary>Transformation name.</summary>
     public string Name { get; init; } = string.Empty;
 
-    /// <summary>Source CRS SRID.</summary>
     public int FromSrid { get; init; }
 
-    /// <summary>Target CRS SRID.</summary>
     public int ToSrid { get; init; }
 
-    /// <summary>Human-readable area of use (provenance only).</summary>
     public string? AreaOfUse { get; init; }
 
-    /// <summary>West bound of the area of use, degrees. With the other bounds, enables envelope selection.</summary>
     public double? AreaWest { get; init; }
 
-    /// <summary>South bound of the area of use, degrees.</summary>
     public double? AreaSouth { get; init; }
 
-    /// <summary>East bound of the area of use, degrees. Less than <see cref="AreaWest"/> when the area crosses the antimeridian.</summary>
     public double? AreaEast { get; init; }
 
-    /// <summary>North bound of the area of use, degrees.</summary>
     public double? AreaNorth { get; init; }
 
-    /// <summary>EPSG coordinate-operation code.</summary>
     public int? EpsgOperationCode { get; init; }
 
-    /// <summary>Explicit PROJ pipeline string for 3-argument ST_Transform.</summary>
     public string? ProjPipeline { get; init; }
 
-    /// <summary>PROJ grid-shift files the pipeline depends on.</summary>
     public IReadOnlyList<string>? RequiredGrids { get; init; }
 }
 
-/// <summary>
-/// Source-generated JSON context for the embedded datum-transformation table.
-/// </summary>
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(DatumTransformationTable))]
 internal sealed partial class DatumTransformationTableJsonContext : JsonSerializerContext

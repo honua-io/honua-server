@@ -11,14 +11,7 @@ using Polly;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Thin adapter over the published <c>Honua.Sdk.GeoServices</c> FeatureServer client (#4599).
-/// The SDK owns the ArcGIS protocol: source-root addressing, query parameters, response models,
-/// HTTP-200 error envelopes and the bounded body read. The server keeps what it owns for every
-/// source request: the outbound URL/SSRF guard, the pinned-DNS no-redirect transport (the injected
-/// <see cref="HttpClient"/>), per-source credential headers, per-attempt timeouts, the retry policy
-/// (429 <c>Retry-After</c>, 5xx, transport faults) and sanitized exceptions for job state and logs.
-/// </summary>
+// The server keeps the outbound guard, pinned DNS, credentials, timeouts, and retries, and no secret is placed in the request URL.
 internal sealed partial class GeoServicesRestClient
 {
     private const string DefaultSdkEnvelopeMessage = "GeoServices returned an error.";
@@ -111,11 +104,7 @@ internal sealed partial class GeoServicesRestClient
         }
     }
 
-    /// <summary>
-    /// Creates the per-call client handed to the SDK. It forwards every SDK request through the
-    /// injected pinned-DNS client and applies this source's credentials as headers, so no secret is
-    /// ever placed in a request URL.
-    /// </summary>
+    // Credentials are applied as headers on the pinned-DNS client, so no secret is placed in the request URL.
     private HttpClient CreateSourceHttpClient(GeoservicesCredentialDescriptor? credentials)
         => new(new SourceTransportHandler(_httpClient, credentials), disposeHandler: true)
         {
@@ -160,10 +149,7 @@ internal sealed partial class GeoServicesRestClient
         _ => RedactGeoServicesTokenParameters(exception.Message)
     };
 
-    /// <summary>
-    /// Maps SDK failures onto the exceptions the import pipeline already classifies. Source response
-    /// bodies are never copied into the translated exception.
-    /// </summary>
+    // Source response bodies are never copied into the translated exception.
     private static Exception? TranslateSourceException(
         Exception exception,
         string resourceUrl,
@@ -222,11 +208,6 @@ internal sealed partial class GeoServicesRestClient
             ? property.GetBoolean()
             : null;
 
-    /// <summary>
-    /// Sends SDK-built requests through the injected server transport. A request message can only be
-    /// sent by one <see cref="HttpClient"/>, so each is re-issued as a forwarded message that shares
-    /// the SDK-owned content.
-    /// </summary>
     private sealed class SourceTransportHandler(
         HttpClient transport,
         GeoservicesCredentialDescriptor? credentials) : HttpMessageHandler

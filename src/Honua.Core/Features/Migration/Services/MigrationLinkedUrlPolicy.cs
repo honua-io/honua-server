@@ -3,12 +3,7 @@
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Host and scheme policy for URLs discovered after the operator-submitted service URL
-/// has already been validated: OGC API Features next links, redirects, and WMTS tile URLs.
-/// A null allowlist does not restrict the host. An empty allowlist rejects every host.
-/// HTTPS is required unless <see cref="AllowUnsafeLocalUrls"/> is set.
-/// </summary>
+// A null allowlist does not restrict the host, an empty allowlist rejects every host, and HTTPS is required unless the unsafe-local flag is set.
 internal readonly record struct MigrationLinkedUrlPolicy(
     bool AllowUnsafeLocalUrls,
     IReadOnlyCollection<string>? AllowedHostSuffixes)

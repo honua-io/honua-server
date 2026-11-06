@@ -6,21 +6,9 @@ using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Core.Features.Raster.CogParser;
 
-/// <summary>
-/// Turns a TIFF-JPEG tile (compression 7) into a standalone JPEG interchange stream.
-/// libtiff and GDAL (default <c>JPEGTABLESMODE=1</c>) store the quantization tables, and
-/// optionally the Huffman tables, once in the JPEGTables tag (347) and write every tile as an
-/// abbreviated stream that references them (TIFF Technical Note 2). Such a tile is undecodable
-/// on its own, so the tables are spliced in front of the tile's frame and the assembled stream
-/// must define every table its frame and scan reference before it may be served as
-/// <c>image/jpeg</c>.
-/// </summary>
+// A TIFF-JPEG tile that references shared tables is not a decodable JPEG until those tables are spliced in front of its frame.
 public static class JpegTileAssembler
 {
-    /// <summary>
-    /// Upper bound for a JPEGTables payload. Four 16-bit quantization tables and eight
-    /// Huffman tables fit in under 3 KiB, so anything larger is malformed.
-    /// </summary>
     public const int MaxJpegTablesBytes = 64 * 1024;
 
     private const byte Soi = 0xD8;
@@ -49,10 +37,6 @@ public static class JpegTileAssembler
         0x00, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00
     ];
 
-    /// <summary>
-    /// Returns true when <paramref name="tables"/> is a tables-only JPEG stream: SOI, then only
-    /// quantization, Huffman, restart-interval, comment or application segments, then EOI.
-    /// </summary>
     public static bool IsValidTables(ReadOnlySpan<byte> tables)
     {
         if (tables.Length is < 4 or > MaxJpegTablesBytes
@@ -92,13 +76,6 @@ public static class JpegTileAssembler
         }
     }
 
-    /// <summary>
-    /// Assembles a complete JPEG stream for one tile, or returns null when the tile cannot be
-    /// served as a correctly decodable <c>image/jpeg</c> for the COG's declared layout.
-    /// </summary>
-    /// <param name="tile">Raw tile bytes as stored in the TIFF.</param>
-    /// <param name="jpegTables">The tile's IFD JPEGTables payload, or null when the tiles are standalone.</param>
-    /// <param name="metadata">Parsed COG metadata supplying the tile geometry and photometric layout.</param>
     public static byte[]? Assemble(ReadOnlySpan<byte> tile, byte[]? jpegTables, CogMetadata metadata)
     {
         ArgumentNullException.ThrowIfNull(metadata);
@@ -138,11 +115,6 @@ public static class JpegTileAssembler
         return withAdobe;
     }
 
-    /// <summary>
-    /// JPEG streams carry no photometric tag: decoders infer grayscale from one component and
-    /// YCbCr from three unmarked components. Only layouts that inference (plus the injected
-    /// Adobe marker for RGB) reproduces correctly are served.
-    /// </summary>
     private static bool IsSupportedLayout(CogMetadata metadata)
         => metadata.PlanarConfiguration == 1
             && metadata.BitsPerSample == 8
@@ -150,11 +122,6 @@ public static class JpegTileAssembler
                 || (metadata.BandCount == 3
                     && metadata.PhotometricInterpretation is PhotometricRgb or PhotometricYCbCr));
 
-    /// <summary>
-    /// Walks the assembled stream up to its first scan. The frame must be baseline or extended
-    /// sequential Huffman, 8-bit, tile-sized, with one component per band, and a single
-    /// interleaved scan whose quantization and Huffman tables are all defined.
-    /// </summary>
     private static bool TryValidateFrame(ReadOnlySpan<byte> stream, CogMetadata metadata, out bool hasAdobeMarker)
     {
         hasAdobeMarker = false;

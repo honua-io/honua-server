@@ -5,10 +5,6 @@ using System.Diagnostics.Metrics;
 
 namespace Honua.Core.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Metrics for database connection pool monitoring.
-/// Provides insights into connection utilization and acquisition latency.
-/// </summary>
 public sealed class ConnectionPoolMetrics : IDisposable
 {
     private readonly Meter _meter;
@@ -25,10 +21,6 @@ public sealed class ConnectionPoolMetrics : IDisposable
     private long _acquisitionFailures;
     private long _timeouts;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="ConnectionPoolMetrics"/> class.
-    /// </summary>
-    /// <param name="connectionTracker">Connection tracker for active connection monitoring.</param>
     public ConnectionPoolMetrics(IActiveDbConnectionTracker connectionTracker)
     {
         _connectionTracker = connectionTracker;
@@ -72,48 +64,29 @@ public sealed class ConnectionPoolMetrics : IDisposable
             description: "Total number of database connection timeouts");
     }
 
-    /// <summary>
-    /// Records the latency of a database connection acquisition.
-    /// </summary>
-    /// <param name="latency">The acquisition latency.</param>
-    /// <param name="tags">Additional tags for the metric.</param>
     public void RecordConnectionAcquisitionLatency(TimeSpan latency, params KeyValuePair<string, object?>[] tags)
     {
         _connectionAcquisitionLatency.Record(latency.TotalMilliseconds, tags);
     }
 
-    /// <summary>
-    /// Records a database connection acquisition failure.
-    /// </summary>
-    /// <param name="reason">The reason for the failure.</param>
     public void RecordConnectionAcquisitionFailure(string reason)
     {
         _connectionAcquisitionFailures.Add(1, new KeyValuePair<string, object?>("reason", reason));
         Interlocked.Increment(ref _acquisitionFailures);
     }
 
-    /// <summary>
-    /// Records a database connection timeout.
-    /// </summary>
     public void RecordConnectionTimeout()
     {
         _connectionTimeouts.Add(1);
         Interlocked.Increment(ref _timeouts);
     }
 
-    /// <summary>
-    /// Updates the pool size for utilization calculation.
-    /// </summary>
-    /// <param name="poolSize">The current pool size.</param>
     public void UpdatePoolSize(int poolSize)
     {
         _currentPoolSize = Math.Max(0, poolSize);
         _hasPoolSize = _currentPoolSize > 0;
     }
 
-    /// <summary>
-    /// Increments the active connection count (delegated from tracker).
-    /// </summary>
 #pragma warning disable CA1822 // Member does not access instance data and can be marked as static
     public void Increment()
 #pragma warning restore CA1822
@@ -122,9 +95,6 @@ public sealed class ConnectionPoolMetrics : IDisposable
         // The actual tracking is done by the IActiveDbConnectionTracker
     }
 
-    /// <summary>
-    /// Decrements the active connection count (delegated from tracker).
-    /// </summary>
 #pragma warning disable CA1822 // Member does not access instance data and can be marked as static
     public void Decrement()
 #pragma warning restore CA1822
@@ -133,20 +103,11 @@ public sealed class ConnectionPoolMetrics : IDisposable
         // The actual tracking is done by the IActiveDbConnectionTracker
     }
 
-    /// <summary>
-    /// Gets the current pool utilization ratio (0.0-1.0).
-    /// </summary>
-    /// <returns>Pool utilization ratio.</returns>
     public double GetPoolUtilization()
     {
         return TryGetPoolUtilization(out var utilization) ? utilization : 0;
     }
 
-    /// <summary>
-    /// Tries to get the current pool utilization ratio when the pool size is known.
-    /// </summary>
-    /// <param name="utilization">The utilization ratio if available.</param>
-    /// <returns>True when utilization is available, otherwise false.</returns>
     public bool TryGetPoolUtilization(out double utilization)
     {
         if (_hasPoolSize && _currentPoolSize > 0)
@@ -159,27 +120,16 @@ public sealed class ConnectionPoolMetrics : IDisposable
         return false;
     }
 
-    /// <summary>
-    /// Gets the total number of connection acquisition failures.
-    /// </summary>
-    /// <returns>Total failures count.</returns>
     public long GetTotalFailures()
     {
         return Volatile.Read(ref _acquisitionFailures);
     }
 
-    /// <summary>
-    /// Gets the total number of connection timeouts.
-    /// </summary>
-    /// <returns>Total timeouts count.</returns>
     public long GetTotalTimeouts()
     {
         return Volatile.Read(ref _timeouts);
     }
 
-    /// <summary>
-    /// Disposes the metrics and underlying meter.
-    /// </summary>
     public void Dispose()
     {
         _meter.Dispose();

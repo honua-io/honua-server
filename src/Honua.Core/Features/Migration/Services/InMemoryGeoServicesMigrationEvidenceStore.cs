@@ -17,7 +17,6 @@ public sealed class InMemoryGeoServicesMigrationEvidenceStore : IGeoServicesMigr
     private readonly object _gate = new();
     private readonly Dictionary<string, StoredRun> _runs = new(StringComparer.Ordinal);
 
-    /// <inheritdoc />
     public Task SaveManifestAsync(
         GeoServicesMigrationRunRecord record,
         MigrationManifestArtifact manifest,
@@ -38,7 +37,6 @@ public sealed class InMemoryGeoServicesMigrationEvidenceStore : IGeoServicesMigr
         return Task.CompletedTask;
     }
 
-    /// <inheritdoc />
     public Task SaveParityAsync(
         string runId,
         GeoServicesMigrationParityArtifact parity,
@@ -62,7 +60,6 @@ public sealed class InMemoryGeoServicesMigrationEvidenceStore : IGeoServicesMigr
         return Task.CompletedTask;
     }
 
-    /// <inheritdoc />
     public Task<GeoServicesMigrationRunListResult> ListAsync(
         GeoServicesMigrationRunFilter filter,
         CancellationToken cancellationToken = default)
@@ -101,7 +98,6 @@ public sealed class InMemoryGeoServicesMigrationEvidenceStore : IGeoServicesMigr
         });
     }
 
-    /// <inheritdoc />
     public Task<MigrationManifestArtifact?> GetManifestAsync(
         string runId,
         CancellationToken cancellationToken = default)
@@ -115,7 +111,6 @@ public sealed class InMemoryGeoServicesMigrationEvidenceStore : IGeoServicesMigr
         }
     }
 
-    /// <inheritdoc />
     public Task<GeoServicesMigrationParityArtifact?> GetParityAsync(
         string runId,
         CancellationToken cancellationToken = default)

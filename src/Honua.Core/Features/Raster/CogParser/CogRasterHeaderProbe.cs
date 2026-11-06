@@ -7,12 +7,6 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 
 namespace Honua.Core.Features.Raster.CogParser;
 
-/// <summary>Bounded header-probe result and observable range budget.</summary>
-/// <param name="Dimensions">Trusted dimensions from the ETag-pinned object.</param>
-/// <param name="PixelScale">Trusted ground-unit pixel size from the same object version.</param>
-/// <param name="RangeCount">Number of conditional object ranges read.</param>
-/// <param name="RequestedBytes">Total bytes requested across all ranges.</param>
-/// <param name="ReceivedBytes">Total bytes returned across all ranges.</param>
 public sealed record CogRasterHeaderProbeResult(
     RasterSourceDimensions Dimensions,
     RasterSourcePixelScale PixelScale,
@@ -20,17 +14,13 @@ public sealed record CogRasterHeaderProbeResult(
     long RequestedBytes,
     long ReceivedBytes);
 
-/// <summary>
-/// Reads only the first TIFF/BigTIFF directory fields needed for raster resource admission.
-/// Every range and allocation is capped; tile-offset arrays and pixel content are never read.
-/// </summary>
+// Tile-offset arrays and pixel content are never read.
 public static class CogRasterHeaderProbe
 {
     private const int InitialReadBytes = 4 * 1024;
     private const int MaxIfdBytes = 64 * 1024;
     private const int MaxBitsPerSampleBytes = 8 * 1024;
 
-    /// <summary>Reads width, height, band count, and maximum bits per sample.</summary>
     public static async Task<CogRasterHeaderProbeResult> ReadAsync(
         ICloudRangeReader reader,
         string bucket,

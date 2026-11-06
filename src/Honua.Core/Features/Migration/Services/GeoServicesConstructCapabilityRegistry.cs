@@ -10,46 +10,28 @@ namespace Honua.Core.Features.Migration.Services;
 
 public sealed class GeoServicesConstructCapabilityRegistry : IEsriConstructCapabilityRegistry
 {
-    /// <summary>
-    /// Construct keys for ArcGIS service-level fidelity records.
-    /// </summary>
     public static class Keys
     {
-        /// <summary>Service identity and source URL.</summary>
         public const string ServiceIdentity = "service.identity";
 
-        /// <summary>Service-level capabilities advertised by the ArcGIS service root.</summary>
         public const string ServiceCapabilities = "service.capabilities";
 
-        /// <summary>Layer or table identity.</summary>
         public const string ResourceIdentity = "resource.identity";
 
-        /// <summary>Resource-level capabilities including query access.</summary>
         public const string ResourceCapabilities = "resource.capabilities";
 
-        /// <summary>Resource field metadata.</summary>
         public const string ResourceFields = "resource.fields";
 
-        /// <summary>Resource field domains (coded-value and range).</summary>
         public const string ResourceDomains = "resource.domains";
 
-        /// <summary>Resource subtype metadata.</summary>
         public const string ResourceSubtypes = "resource.subtypes";
 
-        /// <summary>Resource relationship metadata.</summary>
         public const string ResourceRelationships = "resource.relationships";
 
-        /// <summary>Resource attachment capability.</summary>
         public const string ResourceAttachments = "resource.attachments";
 
-        /// <summary>
-        /// Resource renderer / symbology. The per-style tier remains driven by
-        /// <c>MigrationInventoryStyle.Compatibility</c>; this entry advertises
-        /// the construct's capability flags and the unknown fallback.
-        /// </summary>
         public const string ResourceRenderers = "resource.renderers";
 
-        /// <summary>Resource temporal/time metadata.</summary>
         public const string ResourceTimeMetadata = "resource.time-metadata";
 
         // --- Portal-facade serve lane (#1382) -------------------------------
@@ -59,13 +41,10 @@ public sealed class GeoServicesConstructCapabilityRegistry : IEsriConstructCapab
         // facade lane resolves from the shared registry instead of a private
         // protocol→item-type table.
 
-        /// <summary>Feature service exposed through the Portal facade as a feature-service item.</summary>
         public const string FacadeFeatureService = "facade.feature-service";
 
-        /// <summary>Map service exposed through the Portal facade as a map-service item.</summary>
         public const string FacadeMapService = "facade.map-service";
 
-        /// <summary>Image service exposed through the Portal facade as an image-service item.</summary>
         public const string FacadeImageService = "facade.image-service";
 
         // --- GP-translation lane (#1382) ------------------------------------
@@ -74,31 +53,21 @@ public sealed class GeoServicesConstructCapabilityRegistry : IEsriConstructCapab
         // automation verdict so the GP lane resolves from the shared registry
         // instead of a private process-id/category table.
 
-        /// <summary>First-slice deterministic vector geoprocessing family.</summary>
         public const string GpVectorDeterministic = "gp.vector-deterministic";
 
-        /// <summary>Destructive data-management geoprocessing family (approval-gated).</summary>
         public const string GpDestructiveDataManagement = "gp.destructive-data-management";
 
-        /// <summary>Heavyweight raster/surface geoprocessing family.</summary>
         public const string GpRasterSurface = "gp.raster-surface";
 
-        /// <summary>Heavyweight raster-producing conversion geoprocessing family.</summary>
         public const string GpRasterConversion = "gp.raster-conversion";
 
-        /// <summary>Non-destructive data-management geoprocessing family.</summary>
         public const string GpDataManagement = "gp.data-management";
 
-        /// <summary>Delegated imagery/ML inference geoprocessing family (#2241).</summary>
         public const string GpImageryInference = "gp.imagery-inference";
 
-        /// <summary>Geoprocessing family not included in the first migration evidence slice.</summary>
         public const string GpUnsupported = "gp.unsupported";
     }
 
-    /// <summary>
-    /// Descriptor returned by <see cref="ResolveOrUnknown(string)"/> when a key is not registered.
-    /// </summary>
     public static GeoServicesConstructCapabilityDescriptor UnknownDescriptor { get; } = new()
     {
         ConstructKey = "unknown",
@@ -111,10 +80,6 @@ public sealed class GeoServicesConstructCapabilityRegistry : IEsriConstructCapab
         Notes = "Fallback descriptor for unregistered construct keys."
     };
 
-    /// <summary>
-    /// Built-in descriptor set seeded into the registry. Mirrors the
-    /// pre-registry classification strings emitted by <c>GeoservicesImportService.Fidelity.cs</c>.
-    /// </summary>
     public static IReadOnlyList<GeoServicesConstructCapabilityDescriptor> BuiltInDescriptors { get; } =
     [
         new GeoServicesConstructCapabilityDescriptor
@@ -404,10 +369,6 @@ public sealed class GeoServicesConstructCapabilityRegistry : IEsriConstructCapab
 
     private readonly FrozenDictionary<string, GeoServicesConstructCapabilityDescriptor> _byConstructKey;
 
-    /// <summary>
-    /// Builds a registry from the supplied descriptors. Duplicate construct
-    /// keys throw <see cref="InvalidOperationException"/> at construction time.
-    /// </summary>
     public GeoServicesConstructCapabilityRegistry(IEnumerable<GeoServicesConstructCapabilityDescriptor> descriptors)
     {
         ArgumentNullException.ThrowIfNull(descriptors);
@@ -432,7 +393,6 @@ public sealed class GeoServicesConstructCapabilityRegistry : IEsriConstructCapab
         _byConstructKey = dict.ToFrozenDictionary(StringComparer.Ordinal);
     }
 
-    /// <inheritdoc />
     public GeoServicesConstructCapabilityDescriptor ResolveOrUnknown(string constructKey)
     {
         if (!string.IsNullOrEmpty(constructKey) && _byConstructKey.TryGetValue(constructKey, out var descriptor))
@@ -443,6 +403,5 @@ public sealed class GeoServicesConstructCapabilityRegistry : IEsriConstructCapab
         return UnknownDescriptor;
     }
 
-    /// <inheritdoc />
     public IReadOnlyCollection<string> RegisteredConstructKeys => _byConstructKey.Keys;
 }

@@ -12,30 +12,15 @@ using Polly.Wrap;
 
 namespace Honua.Core.Features.Infrastructure.Resilience;
 
-/// <summary>
-/// Cached resilience policies for HTTP client operations with external services.
-/// Policies are cached per service type to maintain isolated circuit breaker state.
-/// Each service type gets its own circuit breaker to prevent cascading failures
-/// across different external dependencies.
-/// </summary>
 public static class HttpResiliencePolicies
 {
-    /// <summary>
-    /// Key used to store the retry callback in the Polly Context dictionary.
-    /// </summary>
     internal const string OnRetryCallbackKey = "OnRetryCallback";
 
-    /// <summary>
-    /// Key used to store the circuit breaker callback in the Polly Context dictionary.
-    /// </summary>
     internal const string OnCircuitBreakerCallbackKey = "OnCircuitBreakerCallback";
 
     // Per-service-type policy caches for circuit breaker isolation.
     private static readonly ConcurrentDictionary<string, IAsyncPolicy<HttpResponseMessage>> _httpPolicies = new(StringComparer.Ordinal);
 
-    /// <summary>
-    /// Standard HTTP resilience options for external services.
-    /// </summary>
     public static ResiliencePolicyOptions HttpDefaults { get; } = new()
     {
         MaxRetryAttempts = 3,
@@ -46,9 +31,6 @@ public static class HttpResiliencePolicies
         CircuitBreakDuration = TimeSpan.FromSeconds(30)
     };
 
-    /// <summary>
-    /// Resilience options optimized for fast API services (geocoding, webhooks).
-    /// </summary>
     public static ResiliencePolicyOptions FastApiDefaults { get; } = new()
     {
         MaxRetryAttempts = 2,
@@ -59,9 +41,6 @@ public static class HttpResiliencePolicies
         CircuitBreakDuration = TimeSpan.FromSeconds(15)
     };
 
-    /// <summary>
-    /// Resilience options for slow import/discovery services.
-    /// </summary>
     public static ResiliencePolicyOptions SlowServiceDefaults { get; } = new()
     {
         MaxRetryAttempts = 5,
@@ -72,13 +51,6 @@ public static class HttpResiliencePolicies
         CircuitBreakDuration = TimeSpan.FromMinutes(2)
     };
 
-    /// <summary>
-    /// Returns the HTTP resilience policy for a specific service type,
-    /// with isolated circuit breaker state per service type.
-    /// </summary>
-    /// <param name="serviceType">Service type identifier for circuit breaker isolation.</param>
-    /// <param name="options">Resilience policy options. Uses HttpDefaults if null.</param>
-    /// <returns>Cached resilience policy for the service type.</returns>
     public static IAsyncPolicy<HttpResponseMessage> GetHttpPolicy(
         string serviceType,
         ResiliencePolicyOptions? options = null)
@@ -90,12 +62,6 @@ public static class HttpResiliencePolicies
         return _httpPolicies.GetOrAdd(cacheKey, _ => BuildHttpPolicy(effectiveOptions));
     }
 
-    /// <summary>
-    /// Creates a Polly Context with optional retry and circuit breaker callbacks.
-    /// </summary>
-    /// <param name="onRetry">Optional callback for retry events.</param>
-    /// <param name="onCircuitBreaker">Optional callback for circuit breaker state changes.</param>
-    /// <returns>Context with callbacks attached.</returns>
     public static Context CreateHttpContext(
         Action<DelegateResult<HttpResponseMessage>, TimeSpan, int>? onRetry = null,
         Action<DelegateResult<HttpResponseMessage>, CircuitState, TimeSpan>? onCircuitBreaker = null)
@@ -115,11 +81,6 @@ public static class HttpResiliencePolicies
         return context;
     }
 
-    /// <summary>
-    /// Determines if an HTTP response or exception is a transient failure suitable for retry.
-    /// </summary>
-    /// <param name="result">The result of the HTTP operation.</param>
-    /// <returns>True if the failure is transient and safe to retry.</returns>
     public static bool IsTransientHttpFailure(DelegateResult<HttpResponseMessage> result)
     {
         // Handle exceptions
@@ -152,10 +113,6 @@ public static class HttpResiliencePolicies
         return false;
     }
 
-    /// <summary>
-    /// Creates a fresh HTTP resilience policy instance. Use only for testing;
-    /// production code should use the cached <see cref="GetHttpPolicy"/>.
-    /// </summary>
     internal static IAsyncPolicy<HttpResponseMessage> CreateFreshHttpPolicy(ResiliencePolicyOptions? options = null)
         => BuildHttpPolicy(options ?? HttpDefaults);
 

@@ -18,19 +18,9 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Deterministic XYZ/TMS tile cache exporter for WMTS sources whose slice-3
-/// plan entry classified the tile-set as <c>automated</c>. Fetches tiles
-/// within a bounded zoom and tile-count window and hands them to an
-/// <see cref="IOgcTileCacheSink"/>. Re-runs are idempotent because the sink
-/// reports already-present tiles instead of overwriting them.
-/// </summary>
+// Re-runs do not overwrite tiles the sink already has.
 public sealed partial class OgcTileCacheExportService : IOgcTileCacheExportService
 {
-    /// <summary>
-    /// Named <see cref="IHttpClientFactory"/> identifier for the WMTS tile
-    /// fetch client.
-    /// </summary>
     public const string HttpClientName = "ogc-tile-cache-export";
 
     private const string SourceKindOgcWmts = "ogc-wmts";
@@ -43,13 +33,6 @@ public sealed partial class OgcTileCacheExportService : IOgcTileCacheExportServi
     private readonly HttpClient _httpClient;
     private readonly ILogger<OgcTileCacheExportService> _logger;
 
-    /// <summary>
-    /// Initializes a new <see cref="OgcTileCacheExportService"/>.
-    /// </summary>
-    /// <param name="scanner">OGC service migration scanner used to resolve the manifest.</param>
-    /// <param name="sink">Tile cache sink used to persist tile bytes.</param>
-    /// <param name="httpClient">HTTP client used to fetch WMTS tiles.</param>
-    /// <param name="logger">Logger.</param>
     public OgcTileCacheExportService(
         IOgcServiceMigrationScanner scanner,
         IOgcTileCacheSink sink,
@@ -62,7 +45,6 @@ public sealed partial class OgcTileCacheExportService : IOgcTileCacheExportServi
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <inheritdoc />
     public async Task<OgcTileCacheExportResult> ExportAsync(
         OgcTileCacheExportRequest request,
         CancellationToken cancellationToken = default)

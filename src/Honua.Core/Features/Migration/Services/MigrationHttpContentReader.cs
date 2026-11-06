@@ -6,25 +6,10 @@ using System.Text;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Reads HTTP response bodies from migration sources with an explicit byte ceiling.
-/// Migration scans and discovery run against arbitrary operator-supplied services, so
-/// response sizes are source-controlled; unbounded <c>GetStringAsync</c>/<c>ReadAsStringAsync</c>
-/// buffering would let a single multi-GB capabilities/describe document drive the process
-/// toward OOM.
-/// </summary>
 internal static class MigrationHttpContentReader
 {
-    /// <summary>
-    /// Default ceiling for buffered migration documents (capabilities, DescribeFeatureType,
-    /// REST/SLD payloads). Real-world documents are at most a few tens of MB.
-    /// </summary>
     public const long DefaultMaxResponseBytes = 64L * 1024 * 1024;
 
-    /// <summary>
-    /// Reads the response content as a string, failing with <see cref="HttpRequestException"/>
-    /// when the declared or actual body size exceeds <paramref name="maxBytes"/>.
-    /// </summary>
     public static async Task<string> ReadStringWithLimitAsync(
         HttpResponseMessage response,
         long maxBytes,

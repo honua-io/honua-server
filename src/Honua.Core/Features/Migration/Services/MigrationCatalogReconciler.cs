@@ -8,23 +8,7 @@ using Honua.Core.Features.Migration.Domain;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Reconciles a published <see cref="MetadataV2Resource"/> catalog entry against the corresponding
-/// source service definition captured in a <see cref="MigrationSourceInventoryArtifact"/>. Counts
-/// can match while the schema is wrong; this pass asserts per-field name+type, geometry type,
-/// declared SRID, declared extent, ObjectID/GlobalID identifier semantic-roles, and the persistence
-/// of inventory-captured domains plus manifest-captured relationships.
-/// </summary>
-/// <remarks>
-/// <para>
-/// This service is pure and deterministic: it takes inventory + published catalog observation +
-/// optional manifest-captured relationship records and returns a
-/// <see cref="MigrationCatalogReconciliationReport"/> with stable finding codes per layer. It is
-/// separate from <see cref="MigrationAcceptanceParityStageRunner"/> (which intentionally keeps a
-/// small probe set for the dry-run acceptance suite) because the catalog reconciliation pass needs
-/// full access to the typed Metadata v2 graph entry that the apply stage persisted.
-/// </para>
-/// </remarks>
+// Counts can match while the schema is wrong, so this pass checks fields, geometry, SRID, extent, identifier roles, domains, and relationships.
 public static class MigrationCatalogReconciler
 {
     private const string IdPrimarySemanticRole = "id.primary";
@@ -34,13 +18,6 @@ public static class MigrationCatalogReconciler
 
     private static readonly string[] PreferredSridRoles = ["declared", "native", "service"];
 
-    /// <summary>
-    /// Reconcile a batch of inventory resources against their published catalog entries.
-    /// </summary>
-    /// <param name="runId">Stable identifier for this reconciliation run.</param>
-    /// <param name="sourceKind">Source kind such as <c>arcgis-geoservices-rest</c>.</param>
-    /// <param name="inputs">Per-resource reconciliation inputs.</param>
-    /// <returns>Aggregate report with deterministic per-resource outcomes.</returns>
     public static MigrationCatalogReconciliationReport BuildReport(
         string runId,
         string sourceKind,
@@ -83,10 +60,6 @@ public static class MigrationCatalogReconciler
         };
     }
 
-    /// <summary>
-    /// Reconcile a single inventory resource against its published catalog entry. Exposed for
-    /// callers (and tests) that drive the reconciler one resource at a time.
-    /// </summary>
     public static MigrationCatalogReconciliationResource ReconcileResource(
         MigrationInventoryResource resource,
         MetadataV2Resource? publishedResource,
@@ -634,14 +607,6 @@ public static class MigrationCatalogReconciler
         => string.Equals(classification, MigrationManifestRelationshipClassifications.Automated, StringComparison.Ordinal)
         || string.Equals(classification, MigrationManifestRelationshipClassifications.Assisted, StringComparison.Ordinal);
 
-    /// <summary>
-    /// Assert that a source resource advertising attachments was published with attachment support.
-    /// Trunk now imports source attachments (#1257); this collector proves the published catalog
-    /// entry declares attachment support so the imported attachments are actually reachable.
-    /// </summary>
-    /// <param name="resource">Source inventory resource.</param>
-    /// <param name="published">Published Metadata v2 catalog entry.</param>
-    /// <param name="findings">Sink for emitted findings.</param>
     internal static void CollectAttachmentFindings(
         MigrationInventoryResource resource,
         MetadataV2Resource published,
@@ -671,14 +636,6 @@ public static class MigrationCatalogReconciler
         });
     }
 
-    /// <summary>
-    /// Assert that a source-captured subtype set was persisted onto the published catalog entry.
-    /// Trunk now persists Esri subtypes (#1378); this collector proves the published resource keeps
-    /// the same subtype field and that every source subtype code is present.
-    /// </summary>
-    /// <param name="expectedSubtypes">Source-captured subtype set, or <c>null</c> to skip.</param>
-    /// <param name="published">Published Metadata v2 catalog entry.</param>
-    /// <param name="findings">Sink for emitted findings.</param>
     internal static void CollectSubtypeFindings(
         MetadataV2Subtypes? expectedSubtypes,
         MetadataV2Resource published,

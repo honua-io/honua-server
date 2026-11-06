@@ -9,11 +9,6 @@ namespace Honua.Core.Features.Migration.Services;
 
 public static class GeoServicesSubtypeParser
 {
-    /// <summary>
-    /// Maximum number of subtypes captured for a single layer. Layers that exceed this
-    /// cap are reported as truncated and not persisted, keeping the artifact bounded and
-    /// avoiding a partial subtype set that would false-fail later reconciliation.
-    /// </summary>
     public const int SubtypeCap = 100;
 
     public static GeoServicesSubtypeParseResult Parse(JsonElement layerElement)
@@ -301,24 +296,11 @@ public readonly record struct GeoServicesSubtypeParseResult(
     string? UnsupportedCode = null,
     string? UnsupportedDetail = null)
 {
-    /// <summary>
-    /// Shared result for a layer that carries no subtypes.
-    /// </summary>
     public static readonly GeoServicesSubtypeParseResult None = new(Subtypes: null, Truncated: false);
 
-    /// <summary>
-    /// Shared result for a layer whose subtype set exceeded the cap and was omitted.
-    /// </summary>
     public static readonly GeoServicesSubtypeParseResult OverCap = new(Subtypes: null, Truncated: true);
 
-    /// <summary>
-    /// Result for a layer whose source editing model uses a construct the canonical model
-    /// cannot represent. Nothing is captured; the construct is named so the import can raise
-    /// a fidelity finding against the resource instead of failing opaquely.
-    /// </summary>
-    /// <param name="code">Stable <see cref="ImportCompatibilityCodes"/> value for the construct.</param>
-    /// <param name="detail">Short operator-facing description of the offending source type.</param>
-    /// <returns>The rejecting parse result.</returns>
+    // An unrepresentable editing construct is named in a fidelity finding and nothing is captured, instead of failing without a reason.
     public static GeoServicesSubtypeParseResult Unsupported(string code, string detail)
         => new(Subtypes: null, Truncated: false, UnsupportedCode: code, UnsupportedDetail: detail);
 }

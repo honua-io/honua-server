@@ -6,12 +6,6 @@ using System.IO.Compression;
 
 namespace Honua.Core.Features.Raster.ZarrParser;
 
-/// <summary>
-/// Minimal AOT-safe PNG encoder for 8-bit RGBA images. Emits a single IDAT chunk
-/// with filter type 0 (None) per scanline, compressed with the managed zlib
-/// (<see cref="ZLibStream"/>) deflate codec. Used to render Zarr coverage slices to
-/// map tiles without taking a dependency on a native imaging library.
-/// </summary>
 internal static class PngEncoder
 {
     private static readonly byte[] Signature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
@@ -53,9 +47,6 @@ internal static class PngEncoder
         return output.ToArray();
     }
 
-    /// <summary>
-    /// Encodes an 8-bit RGBA pixel buffer (row-major, 4 bytes/pixel) to a PNG.
-    /// </summary>
     public static byte[] Encode(byte[] rgba, int width, int height)
     {
         ArgumentNullException.ThrowIfNull(rgba);
@@ -129,9 +120,6 @@ internal static class PngEncoder
         output.Write(crcBytes);
     }
 
-    /// <summary>
-    /// Standard PNG CRC-32 (IEEE 802.3) over a chunk's type and data bytes.
-    /// </summary>
     private static class Crc32
     {
         private static readonly uint[] Table = BuildTable();

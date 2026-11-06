@@ -12,35 +12,16 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Deterministic migration planner for OGC WMS sources. Given a slice-1 source
-/// inventory artifact, produces classified plan entries that tag layer metadata
-/// as <c>automated</c>, SLD/SE style references as <c>assisted</c>, and the
-/// render-only data path as <c>unsupported</c>. The planner does not perform
-/// any I/O; it operates purely on the inventory artifact and is idempotent so
-/// re-planning produces an equal output.
-/// </summary>
 public static class OgcWmsMigrationPlanner
 {
     private const string SourceKindOgcWms = "ogc-wms";
 
-    /// <summary>
-    /// Returns <c>true</c> when the inventory describes a WMS source the planner can plan.
-    /// </summary>
-    /// <param name="inventory">Source inventory artifact.</param>
-    /// <returns>Whether the inventory is a WMS source.</returns>
     public static bool CanPlan(MigrationSourceInventoryArtifact inventory)
     {
         ArgumentNullException.ThrowIfNull(inventory);
         return string.Equals(inventory.SourceKind, SourceKindOgcWms, StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Build the classified plan entries and diagnostics for the WMS service plan.
-    /// </summary>
-    /// <param name="inventory">Source inventory artifact.</param>
-    /// <param name="containerId">Service container identifier to plan for.</param>
-    /// <returns>Deterministic plan-entry and diagnostic collections.</returns>
     public static OgcRenderMigrationPlanResult Plan(
         MigrationSourceInventoryArtifact inventory,
         string containerId)
@@ -180,14 +161,6 @@ public static class OgcWmsMigrationPlanner
                 .ToArray());
     }
 
-    /// <summary>
-    /// Derive a deterministic WFS GetCapabilities URL adjacent to a WMS service base URL.
-    /// Reuses scheme, host, port, and path; replaces the query with a normalized
-    /// <c>service=WFS&amp;request=GetCapabilities</c>. Returns an empty string when the
-    /// base URL is missing or unparseable so callers can omit the hint cleanly.
-    /// </summary>
-    /// <param name="baseUrl">WMS service base URL recorded on the inventory source identity.</param>
-    /// <returns>Normalized companion WFS capabilities URL or empty string when not derivable.</returns>
     internal static string DeriveCompanionWfsCapabilitiesUrl(string baseUrl)
     {
         if (string.IsNullOrWhiteSpace(baseUrl))
@@ -242,17 +215,9 @@ public static class OgcWmsMigrationPlanner
             .OrderBy(static value => value, StringComparer.Ordinal));
 }
 
-/// <summary>
-/// Result of a render-only OGC migration planning pass.
-/// </summary>
-/// <param name="Entries">Classified plan entries.</param>
-/// <param name="Diagnostics">Plan diagnostics.</param>
 public readonly record struct OgcRenderMigrationPlanResult(
     MigrationManifestPlanEntry[] Entries,
     MigrationManifestPlanDiagnostic[] Diagnostics)
 {
-    /// <summary>
-    /// Empty plan result.
-    /// </summary>
     public static OgcRenderMigrationPlanResult Empty { get; } = new([], []);
 }

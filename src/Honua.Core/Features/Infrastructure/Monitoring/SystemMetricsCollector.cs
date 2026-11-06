@@ -10,11 +10,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Lightweight system metrics collector for adaptive sampling decisions.
-/// Provides real-time system performance data without external dependencies.
-/// Designed for self-hosted installations with minimal overhead.
-/// </summary>
 public sealed partial class SystemMetricsCollector : ISystemMetricsCollector, IDisposable
 {
     private readonly ILogger<SystemMetricsCollector> _logger;
@@ -32,9 +27,6 @@ public sealed partial class SystemMetricsCollector : ISystemMetricsCollector, ID
     private TimeSpan _lastCpuTime;
     private DateTime _lastCpuSampleTime;
 
-    /// <summary>
-    /// Initializes a new SystemMetricsCollector with 10-second collection intervals.
-    /// </summary>
     public SystemMetricsCollector(
         IOptions<AdaptiveSamplingOptions>? options = null,
         ILogger<SystemMetricsCollector>? logger = null)
@@ -45,9 +37,6 @@ public sealed partial class SystemMetricsCollector : ISystemMetricsCollector, ID
         _metricsTimer = new Timer(CollectMetrics, null, TimeSpan.Zero, TimeSpan.FromSeconds(10));
     }
 
-    /// <summary>
-    /// Gets the current system performance metrics snapshot.
-    /// </summary>
     public SystemMetrics GetCurrentMetrics()
     {
         // Do not throw when disposed: this is called from the OpenTelemetry
@@ -58,9 +47,6 @@ public sealed partial class SystemMetricsCollector : ISystemMetricsCollector, ID
         return _currentMetrics;
     }
 
-    /// <summary>
-    /// Records the start of a request for active request tracking.
-    /// </summary>
     public IDisposable TrackRequest()
     {
         ThrowIfDisposed();
@@ -68,9 +54,6 @@ public sealed partial class SystemMetricsCollector : ISystemMetricsCollector, ID
         return new RequestScope(this);
     }
 
-    /// <summary>
-    /// Records a completed request with response time and error status.
-    /// </summary>
     public void RecordRequest(TimeSpan responseTime, bool isError)
     {
         if (_disposed)
@@ -98,9 +81,6 @@ public sealed partial class SystemMetricsCollector : ISystemMetricsCollector, ID
         }
     }
 
-    /// <summary>
-    /// Calculates the current error rate over the configured error window.
-    /// </summary>
     public double GetCurrentErrorRate()
     {
         if (_disposed)
@@ -284,7 +264,6 @@ public sealed partial class SystemMetricsCollector : ISystemMetricsCollector, ID
         ObjectDisposedException.ThrowIf(_disposed, typeof(SystemMetricsCollector));
     }
 
-    /// <inheritdoc/>
     public void Dispose()
     {
         if (_disposed)
@@ -327,89 +306,41 @@ public sealed partial class SystemMetricsCollector : ISystemMetricsCollector, ID
     }
 }
 
-/// <summary>
-/// Interface for system metrics collection used by adaptive sampling.
-/// </summary>
 public interface ISystemMetricsCollector
 {
-    /// <summary>
-    /// Gets the current system performance metrics.
-    /// </summary>
     SystemMetrics GetCurrentMetrics();
 
-    /// <summary>
-    /// Tracks an active request, returning a disposable scope.
-    /// </summary>
     IDisposable TrackRequest();
 
-    /// <summary>
-    /// Records a completed request with timing and error information.
-    /// </summary>
     void RecordRequest(TimeSpan responseTime, bool isError);
 
-    /// <summary>
-    /// Gets the current error rate as a percentage.
-    /// </summary>
     double GetCurrentErrorRate();
 }
 
-/// <summary>
-/// Snapshot of current system performance metrics.
-/// </summary>
 public sealed record SystemMetrics
 {
-    /// <summary>
-    /// CPU usage percentage (0-100).
-    /// </summary>
     public double CpuUsagePercentage { get; init; }
 
-    /// <summary>
-    /// Memory usage percentage (0-100).
-    /// </summary>
     public double MemoryUsagePercentage { get; init; }
 
-    /// <summary>
-    /// Number of currently active HTTP requests.
-    /// </summary>
     public int ActiveRequests { get; init; }
 
-    /// <summary>
-    /// Average response time in milliseconds.
-    /// </summary>
     public double AverageResponseTimeMs { get; init; }
 
-    /// <summary>
-    /// Total memory usage in megabytes.
-    /// </summary>
     public double TotalMemoryMB { get; init; }
 
-    /// <summary>
-    /// Available memory in megabytes.
-    /// </summary>
     public double AvailableMemoryMB { get; init; }
 
-    /// <summary>
-    /// Garbage collection statistics.
-    /// </summary>
     public GcCollectionInfo GcCollections { get; init; } = new();
 
-    /// <summary>
-    /// Timestamp when metrics were collected.
-    /// </summary>
     public DateTime Timestamp { get; init; } = DateTime.UtcNow;
 }
 
-/// <summary>
-/// Garbage collection metrics for system monitoring.
-/// </summary>
 public sealed record GcCollectionInfo
 {
-    /// <summary>Generation 0 garbage collection count.</summary>
     public int Gen0 { get; init; }
 
-    /// <summary>Generation 1 garbage collection count.</summary>
     public int Gen1 { get; init; }
 
-    /// <summary>Generation 2 garbage collection count.</summary>
     public int Gen2 { get; init; }
 }

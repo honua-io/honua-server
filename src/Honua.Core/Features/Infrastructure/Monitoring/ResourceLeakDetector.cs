@@ -10,206 +10,86 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Detects resource leaks and tracks resource lifecycle for diagnostics in development/test environments.
-/// Provides enhanced disposal pattern monitoring and memory allocation tracking.
-/// </summary>
 public interface IResourceLeakDetector
 {
-    /// <summary>
-    /// Registers a resource for leak tracking.
-    /// </summary>
-    /// <param name="resource">The resource to track</param>
-    /// <param name="resourceType">Type/category of the resource</param>
-    /// <param name="correlationId">Correlation ID for tracking</param>
-    /// <param name="allocationContext">Context where resource was allocated</param>
     void TrackResource(object resource, string resourceType, string? correlationId = null, string? allocationContext = null);
 
-    /// <summary>
-    /// Unregisters a resource when it's properly disposed.
-    /// </summary>
-    /// <param name="resource">The resource being disposed</param>
     void UntrackResource(object resource);
 
-    /// <summary>
-    /// Gets current resource tracking statistics.
-    /// </summary>
     ResourceTrackingStatistics GetStatistics();
 
-    /// <summary>
-    /// Gets details of potentially leaked resources.
-    /// </summary>
     IReadOnlyList<ResourceLeakInfo> GetPotentialLeaks(TimeSpan? olderThan = null);
 
-    /// <summary>
-    /// Forces garbage collection and checks for leaked resources.
-    /// </summary>
     Task<ResourceLeakScanResult> ScanForLeaksAsync();
 }
 
-/// <summary>
-/// Configuration options for resource leak detection.
-/// </summary>
 public sealed class ResourceLeakDetectionOptions
 {
-    /// <summary>
-    /// Whether resource leak detection is enabled.
-    /// </summary>
     public bool Enabled { get; set; } = true;
 
-    /// <summary>
-    /// Whether to capture stack traces for resource allocations (expensive but useful for debugging).
-    /// </summary>
     public bool CaptureAllocationStackTraces { get; set; }
 
-    /// <summary>
-    /// Maximum number of stack trace frames to capture.
-    /// </summary>
     public int MaxStackTraceFrames { get; set; } = 10;
 
-    /// <summary>
-    /// Age threshold for considering resources as potentially leaked.
-    /// </summary>
     public TimeSpan LeakSuspicionThreshold { get; set; } = TimeSpan.FromMinutes(5);
 
-    /// <summary>
-    /// Maximum number of resources to track simultaneously.
-    /// </summary>
     public int MaxTrackedResources { get; set; } = 10000;
 
-    /// <summary>
-    /// Interval for automatic leak scanning.
-    /// </summary>
     public TimeSpan AutoScanInterval { get; set; } = TimeSpan.FromMinutes(2);
 
-    /// <summary>
-    /// Whether to automatically scan for leaks in background.
-    /// </summary>
     public bool EnableAutoScan { get; set; } = true;
 }
 
-/// <summary>
-/// Statistics about resource tracking.
-/// </summary>
 public sealed record ResourceTrackingStatistics
 {
-    /// <summary>
-    /// Total number of resources currently being tracked.
-    /// </summary>
     public int TrackedResources { get; init; }
 
-    /// <summary>
-    /// Number of resources that have been properly disposed.
-    /// </summary>
     public long DisposedResources { get; init; }
 
-    /// <summary>
-    /// Number of potential resource leaks detected.
-    /// </summary>
     public int PotentialLeaks { get; init; }
 
-    /// <summary>
-    /// Resources by type.
-    /// </summary>
     public IReadOnlyDictionary<string, int> ByResourceType { get; init; } =
         new Dictionary<string, int>();
 
-    /// <summary>
-    /// Age of the oldest tracked resource.
-    /// </summary>
     public TimeSpan? OldestResourceAge { get; init; }
 
-    /// <summary>
-    /// Timestamp when statistics were collected.
-    /// </summary>
     public DateTime CollectedAt { get; init; } = DateTime.UtcNow;
 }
 
-/// <summary>
-/// Information about a potentially leaked resource.
-/// </summary>
 public sealed record ResourceLeakInfo
 {
-    /// <summary>
-    /// Type/category of the resource.
-    /// </summary>
     public string ResourceType { get; init; } = string.Empty;
 
-    /// <summary>
-    /// Correlation ID associated with the resource.
-    /// </summary>
     public string? CorrelationId { get; init; }
 
-    /// <summary>
-    /// Context where the resource was allocated.
-    /// </summary>
     public string? AllocationContext { get; init; }
 
-    /// <summary>
-    /// When the resource was first tracked.
-    /// </summary>
     public DateTime TrackedAt { get; init; }
 
-    /// <summary>
-    /// Age of the resource.
-    /// </summary>
     public TimeSpan Age { get; init; }
 
-    /// <summary>
-    /// Stack trace from allocation (if captured).
-    /// </summary>
     public string? AllocationStackTrace { get; init; }
 
-    /// <summary>
-    /// Whether the resource object is still alive in memory.
-    /// </summary>
     public bool IsAlive { get; init; }
 
-    /// <summary>
-    /// Hash code of the original resource object.
-    /// </summary>
     public int ResourceHashCode { get; init; }
 }
 
-/// <summary>
-/// Result of a resource leak scan.
-/// </summary>
 public sealed record ResourceLeakScanResult
 {
-    /// <summary>
-    /// Number of resources scanned.
-    /// </summary>
     public int ResourcesScanned { get; init; }
 
-    /// <summary>
-    /// Number of leaked resources detected.
-    /// </summary>
     public int LeaksDetected { get; init; }
 
-    /// <summary>
-    /// Number of resources that were garbage collected.
-    /// </summary>
     public int ResourcesGarbageCollected { get; init; }
 
-    /// <summary>
-    /// Details of detected leaks.
-    /// </summary>
     public IReadOnlyList<ResourceLeakInfo> DetectedLeaks { get; init; } = Array.Empty<ResourceLeakInfo>();
 
-    /// <summary>
-    /// Duration of the leak scan.
-    /// </summary>
     public TimeSpan ScanDuration { get; init; }
 
-    /// <summary>
-    /// When the scan was performed.
-    /// </summary>
     public DateTime ScannedAt { get; init; } = DateTime.UtcNow;
 }
 
-/// <summary>
-/// Production implementation of resource leak detection (disabled in production, active in development/test).
-/// </summary>
 internal sealed partial class ResourceLeakDetector : IResourceLeakDetector, IHostedService, IDisposable
 {
     private readonly ILogger<ResourceLeakDetector> _logger;
@@ -510,9 +390,6 @@ internal sealed partial class ResourceLeakDetector : IResourceLeakDetector, IHos
         _trackedResources.Clear();
     }
 
-    /// <summary>
-    /// Internal data structure for tracked resources.
-    /// </summary>
     private sealed class TrackedResource
     {
         public string ResourceType { get; init; } = string.Empty;
@@ -564,9 +441,6 @@ internal sealed partial class ResourceLeakDetector : IResourceLeakDetector, IHos
     }
 }
 
-/// <summary>
-/// Null implementation for production environments where leak detection is disabled.
-/// </summary>
 internal sealed class NullResourceLeakDetector : IResourceLeakDetector
 {
     public void TrackResource(object resource, string resourceType, string? correlationId = null, string? allocationContext = null)

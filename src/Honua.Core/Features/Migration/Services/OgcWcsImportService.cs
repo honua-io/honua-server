@@ -13,20 +13,7 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Imports coverages from a legacy OGC Web Coverage Service endpoint by
-/// negotiating the requested output format and delegating the actual
-/// catalog ingestion to the slice-2 <see cref="IOgcCoverageImportService"/>.
-/// Slice 3 of issue #1030.
-/// </summary>
-/// <remarks>
-/// Format negotiation: <c>image/tiff</c> (and the GeoTIFF profile variants)
-/// flow through the GeoTIFF ingestion path; any other format — NetCDF, HDF,
-/// GML coverage, vendor-specific — is forced to the manual-review path
-/// before the underlying service is asked to download anything. This keeps
-/// the WCS service deterministic and avoids surfacing partial coverage
-/// blobs that the raster ingestion layer cannot consume.
-/// </remarks>
+// Anything other than image/tiff is forced to manual review before any bytes are downloaded.
 public sealed partial class OgcWcsImportService : IOgcWcsImportService
 {
     private const string DefaultOutputFormat = "image/tiff";
@@ -35,9 +22,6 @@ public sealed partial class OgcWcsImportService : IOgcWcsImportService
     private readonly IOgcCoverageImportService _coverageImportService;
     private readonly ILogger<OgcWcsImportService> _logger;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="OgcWcsImportService"/> class.
-    /// </summary>
     public OgcWcsImportService(
         IOgcCoverageImportService coverageImportService,
         ILogger<OgcWcsImportService> logger)
@@ -47,7 +31,6 @@ public sealed partial class OgcWcsImportService : IOgcWcsImportService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <inheritdoc />
     public async Task<OgcWcsImportResult> ImportAsync(
         OgcWcsImportRequest request,
         CancellationToken cancellationToken = default)

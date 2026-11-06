@@ -7,18 +7,10 @@ using Honua.Core.Features.Raster.Multidimensional.Domain;
 
 namespace Honua.Core.Features.Raster.Multidimensional.Services;
 
-/// <summary>
-/// Default <see cref="IMultidimensionalCoverageMetadataReader"/> registered by
-/// the MVP. Always throws <see cref="MultidimensionalCoverageReaderUnavailableException"/>.
-/// The reader strategy is documented in ADR-0039; this default keeps the
-/// registration surface live without pulling in native HDF5 dependencies.
-/// </summary>
 public sealed class NotEnabledMultidimensionalCoverageMetadataReader : IMultidimensionalCoverageMetadataReader
 {
-    /// <inheritdoc />
     public IReadOnlyList<MultidimensionalCoverageFormat> SupportedFormats => Array.Empty<MultidimensionalCoverageFormat>();
 
-    /// <inheritdoc />
     public Task<MultidimensionalCoverageMetadata> ReadMetadataAsync(
         ICloudRangeReader reader,
         MultidimensionalCoverageRegistration registration,

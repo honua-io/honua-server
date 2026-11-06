@@ -9,9 +9,6 @@ using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Core.Features.Raster.ZarrParser;
 
-/// <summary>
-/// Canonical native-CRS reader and grayscale PNG renderer for bounded 2D Zarr slices.
-/// </summary>
 public sealed class ZarrRasterSliceReader : IZarrRasterSliceReader
 {
     private const int MaxOutputDimension = 4096;
@@ -25,7 +22,6 @@ public sealed class ZarrRasterSliceReader : IZarrRasterSliceReader
     private readonly IZarrSubsetReader _subsetReader;
     private readonly IReadOnlyList<ICloudRangeReader> _rangeReaders;
 
-    /// <summary>Initializes the canonical 2D slice reader.</summary>
     public ZarrRasterSliceReader(
         IZarrStore zarrStore,
         IZarrSubsetReader subsetReader,
@@ -37,7 +33,6 @@ public sealed class ZarrRasterSliceReader : IZarrRasterSliceReader
         _rangeReaders = rangeReaders.ToArray();
     }
 
-    /// <inheritdoc />
     public async Task<ZarrRasterSliceReadResult> ReadAsync(
         int layerId,
         ZarrRasterSliceReadRequest request,

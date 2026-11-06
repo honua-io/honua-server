@@ -8,18 +8,8 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Service collection extensions for registering performance enhancement services.
-/// These optimizations are designed to push server performance from 9.1/10 toward 9.5+/10.
-/// </summary>
 public static class PerformanceEnhancementServiceExtensions
 {
-    /// <summary>
-    /// Adds comprehensive performance monitoring and optimization services.
-    /// </summary>
-    /// <param name="services">Service collection</param>
-    /// <param name="configureOptions">Optional configuration action</param>
-    /// <returns>Service collection for chaining</returns>
     public static IServiceCollection AddPerformanceEnhancements(
         this IServiceCollection services,
         Action<PerformanceEnhancementOptions>? configureOptions = null)
@@ -92,12 +82,6 @@ public static class PerformanceEnhancementServiceExtensions
         return services;
     }
 
-    /// <summary>
-    /// Adds database query performance monitoring specifically.
-    /// </summary>
-    /// <param name="services">Service collection</param>
-    /// <param name="configureOptions">Optional configuration action</param>
-    /// <returns>Service collection for chaining</returns>
     public static IServiceCollection AddDatabaseQueryPerformanceMonitoring(
         this IServiceCollection services,
         Action<QueryPerformanceMonitoringOptions>? configureOptions = null)
@@ -112,12 +96,6 @@ public static class PerformanceEnhancementServiceExtensions
         return services;
     }
 
-    /// <summary>
-    /// Adds resource leak detection services.
-    /// </summary>
-    /// <param name="services">Service collection</param>
-    /// <param name="configureOptions">Optional configuration action</param>
-    /// <returns>Service collection for chaining</returns>
     public static IServiceCollection AddResourceLeakDetection(
         this IServiceCollection services,
         Action<ResourceLeakDetectionOptions>? configureOptions = null)
@@ -146,12 +124,6 @@ public static class PerformanceEnhancementServiceExtensions
         return services;
     }
 
-    /// <summary>
-    /// Adds enhanced exception telemetry services.
-    /// </summary>
-    /// <param name="services">Service collection</param>
-    /// <param name="configureOptions">Optional configuration action</param>
-    /// <returns>Service collection for chaining</returns>
     public static IServiceCollection AddEnhancedExceptionTelemetry(
         this IServiceCollection services,
         Action<ExceptionTelemetryOptions>? configureOptions = null)
@@ -169,45 +141,21 @@ public static class PerformanceEnhancementServiceExtensions
     // Query result caching methods moved to Server level
 }
 
-/// <summary>
-/// Overall configuration options for performance enhancements.
-/// </summary>
 public sealed class PerformanceEnhancementOptions
 {
-    /// <summary>
-    /// Whether to enable database query performance monitoring.
-    /// </summary>
     public bool EnableQueryPerformanceMonitoring { get; set; } = true;
 
-    /// <summary>
-    /// Whether to enable resource leak detection (development/test only).
-    /// </summary>
     public bool EnableResourceLeakDetection { get; set; } = true;
 
-    /// <summary>
-    /// Whether to enable enhanced exception telemetry.
-    /// </summary>
     public bool EnableEnhancedExceptionTelemetry { get; set; } = true;
 
-    /// <summary>
-    /// Whether to enable query result caching (configured at Server level).
-    /// </summary>
     public bool EnableQueryResultCaching { get; set; }
 
-    /// <summary>
-    /// Whether to enable performance optimizations in development.
-    /// </summary>
     public bool EnableDevelopmentOptimizations { get; set; } = true;
 
-    /// <summary>
-    /// Whether to enable detailed performance metrics (may have slight performance impact).
-    /// </summary>
     public bool EnableDetailedMetrics { get; set; } = true;
 }
 
-/// <summary>
-/// Hosted service wrapper for resource leak detector.
-/// </summary>
 internal sealed class ResourceLeakDetectorHostedService : IHostedService
 {
     private readonly IResourceLeakDetector _detector;

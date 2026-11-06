@@ -6,53 +6,24 @@ using Honua.Core.Features.Migration.Domain;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Facts the service-level fidelity fold consumes (issue #4600). Every field is already persisted on
-/// the batch and its children, so the verdict is replayable without re-running any import.
-/// </summary>
 public sealed record MigrationBatchFidelityInput
 {
-    /// <summary>Every child layer in the batch footprint, in execution order.</summary>
     public IReadOnlyList<MigrationBatchChildRecord> Children { get; init; } = [];
 
-    /// <summary>True when the batch asked for manifest relationships to be applied.</summary>
     public bool RelationshipApplyRequested { get; init; }
 
-    /// <summary>True when relationship apply actually ran and returned outcomes.</summary>
     public bool RelationshipApplyExecuted { get; init; }
 
-    /// <summary>Why relationship apply did not run, when it was requested but did not execute.</summary>
     public string? RelationshipApplyNotExecutedReason { get; init; }
 
-    /// <summary>Relationship apply outcomes, when apply executed.</summary>
     public MigrationRelationshipApplyOutcome[] Relationships { get; init; } = [];
 
-    /// <summary>
-    /// Pre-apply accounting of the source constructs against the batch selection, or <c>null</c> when the
-    /// batch recorded none (acceptance criterion 1).
-    /// </summary>
     public MigrationConstructAccountingReport? ConstructAccounting { get; init; }
 }
 
-/// <summary>
-/// Folds a service (batch) import into one fidelity verdict (issue #4600, acceptance criteria 2 and
-/// 3). A service migration is full fidelity only when every layer completed at full fidelity and
-/// every requested relationship was persisted onto the target.
-/// </summary>
-/// <remarks>
-/// Before this fold a batch rolled up child <em>statuses</em> only: a layer that completed without
-/// its reconciliation checks counted as a success, and relationship apply could defer every
-/// relationship (or never run because the manifest did not parse) while the batch still reported
-/// <c>succeeded</c>.
-/// </remarks>
+// Full fidelity requires every layer at full fidelity and every requested relationship persisted; a completed status alone is not enough.
 public static class MigrationBatchFidelityEvaluator
 {
-    /// <summary>
-    /// Evaluates the service-level verdict. Pure and deterministic.
-    /// </summary>
-    /// <param name="input">Batch facts.</param>
-    /// <returns>The service-level verdict and its supporting differences.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="input"/> is <c>null</c>.</exception>
     public static MigrationFidelityEvaluation Evaluate(MigrationBatchFidelityInput input)
     {
         ArgumentNullException.ThrowIfNull(input);

@@ -12,11 +12,6 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Produces release-safe <see cref="MigrationRunMetricsArtifact"/> instances from a
-/// <see cref="MigrationRunMetricsRecorder"/> snapshot. URLs, credentials, query strings,
-/// and fragments are stripped before emission.
-/// </summary>
 public static class MigrationRunMetricsBuilder
 {
     private static readonly string[] OmittedFieldList =
@@ -37,9 +32,6 @@ public static class MigrationRunMetricsBuilder
         MigrationCostPerformancePhases.Import
     ];
 
-    /// <summary>
-    /// Builds a deterministic artifact from a recorder snapshot.
-    /// </summary>
     public static MigrationRunMetricsArtifact Build(
         MigrationRunMetricsRecorder recorder,
         string sourceKind,

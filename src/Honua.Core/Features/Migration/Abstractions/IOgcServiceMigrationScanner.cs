@@ -12,17 +12,8 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Abstractions;
 
-/// <summary>
-/// Scans OGC service endpoints and produces deterministic migration planning artifacts.
-/// </summary>
 public interface IOgcServiceMigrationScanner
 {
-    /// <summary>
-    /// Scan an OGC WFS, WMS, WMTS, WCS, or OGC API Coverages endpoint into the shared source inventory contract.
-    /// </summary>
-    /// <param name="request">OGC service scan request.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Normalized source inventory artifact.</returns>
     Task<MigrationSourceInventoryArtifact> ScanSourceAsync(
         OgcServiceScanRequest request,
         CancellationToken cancellationToken = default);

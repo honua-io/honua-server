@@ -8,28 +8,8 @@ using Honua.Core.Features.Raster.Multidimensional.Domain;
 
 namespace Honua.Core.Features.Raster.Multidimensional.Services;
 
-/// <summary>
-/// Enriches the structural metadata from <see cref="GdalMultidimensionalMetadataMapper"/>
-/// with the spatial extent, cell resolution, and temporal/vertical bounds that
-/// <c>gdalmdiminfo</c> cannot supply (it emits no coordinate values). The values
-/// come from a classic <c>gdalinfo -json</c> pass over the same source — the
-/// convert-time enrichment recorded in ADR-0039 "Path Selection (#1756)".
-/// </summary>
-/// <remarks>
-/// Extent and resolution are read from the GDAL geotransform / corner
-/// coordinates of the 2D view. Non-spatial axes come from either the classic
-/// NetCDF metadata (<c>NETCDF_DIM_EXTRA</c>) or, for a derived Zarr opened
-/// without the netCDF driver, per-band <c>DIM_&lt;axis&gt;_VALUE</c> /
-/// <c>DIM_&lt;axis&gt;_UNIT</c> items. An axis whose units contain "since" is
-/// temporal (decoded against the CF epoch); any other extra axis is vertical.
-/// </remarks>
 public static class GdalInfoCoverageEnricher
 {
-    /// <summary>
-    /// Returns <paramref name="baseMetadata"/> with extent, resolution, and
-    /// temporal/vertical extents merged in from a <c>gdalinfo -json</c> document.
-    /// Fields that cannot be resolved are left at their base values.
-    /// </summary>
     public static MultidimensionalCoverageMetadata Enrich(
         MultidimensionalCoverageMetadata baseMetadata,
         string gdalInfoJson)

@@ -6,26 +6,14 @@ using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Core.Features.Raster.ZarrParser;
 
-/// <summary>
-/// Decodes scalar values from a little-endian <see cref="ZarrSubsetResult"/>
-/// payload. Used by point-sampling callers (e.g. ImageServer getSamples) that
-/// read a single pinned cell and need its numeric value.
-/// </summary>
 public static class ZarrValueDecoder
 {
-    /// <summary>
-    /// Decodes the first element of a subset payload to a double. Returns false
-    /// when the payload is empty or the dtype is unsupported.
-    /// </summary>
     public static bool TryDecodeFirst(ZarrSubsetResult result, out double value)
     {
         ArgumentNullException.ThrowIfNull(result);
         return TryDecode(result.Data, result.DataType, out value);
     }
 
-    /// <summary>
-    /// Decodes the first element of a little-endian buffer of the given numpy dtype.
-    /// </summary>
     public static bool TryDecode(ReadOnlySpan<byte> data, string dataType, out double value)
     {
         value = double.NaN;
@@ -78,11 +66,6 @@ public static class ZarrValueDecoder
         }
     }
 
-    /// <summary>
-    /// Converts a typed fill value for numeric metadata surfaces. Non-finite values
-    /// and integers that cannot be represented exactly as doubles are omitted.
-    /// Binary subset synthesis preserves their original dtype and bits separately.
-    /// </summary>
     public static bool TryGetFiniteFillValue(object? fillValue, out double value)
     {
         value = double.NaN;

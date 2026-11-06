@@ -3,39 +3,15 @@
 
 namespace Honua.Core.Features.Raster.Domain;
 
-/// <summary>
-/// Resolved output grid dimensions for a WCS 2.0 Scaling extension request.
-/// </summary>
 public readonly record struct CoverageScalingResult
 {
-    /// <summary>
-    /// Output width in pixels for the x/E/Long axis.
-    /// </summary>
     public required int Width { get; init; }
 
-    /// <summary>
-    /// Output height in pixels for the y/N/Lat axis.
-    /// </summary>
     public required int Height { get; init; }
 }
 
-/// <summary>
-/// Pure arithmetic for the WCS 2.0 Scaling extension (SCALEFACTOR, SCALEAXES,
-/// SCALEEXTENT). Protocol adapters parse the request parameters and supply the
-/// base grid dimensions (the source grid after any SUBSET/BBOX trim); this
-/// resolver maps those into explicit output width/height in pixels so the shared
-/// raster export pipeline can resample consistently with SCALESIZE.
-/// </summary>
 public static class CoverageScaling
 {
-    /// <summary>
-    /// Resolves a uniform scale factor against the base grid dimensions.
-    /// </summary>
-    /// <param name="baseWidth">Base grid width in pixels (must be positive).</param>
-    /// <param name="baseHeight">Base grid height in pixels (must be positive).</param>
-    /// <param name="factor">Uniform scale factor (must be positive).</param>
-    /// <param name="result">The resolved output dimensions when successful.</param>
-    /// <returns><c>true</c> when the inputs are valid and produce a non-empty grid.</returns>
     public static bool TryResolveFactor(int baseWidth, int baseHeight, double factor, out CoverageScalingResult result)
     {
         result = default;
@@ -49,16 +25,6 @@ public static class CoverageScaling
             TryCreate(width, height, out result);
     }
 
-    /// <summary>
-    /// Resolves per-axis scale factors against the base grid dimensions. A
-    /// <c>null</c> factor leaves that axis unscaled.
-    /// </summary>
-    /// <param name="baseWidth">Base grid width in pixels (must be positive).</param>
-    /// <param name="baseHeight">Base grid height in pixels (must be positive).</param>
-    /// <param name="xFactor">Scale factor for the x/E/Long axis, or <c>null</c> to leave it unscaled.</param>
-    /// <param name="yFactor">Scale factor for the y/N/Lat axis, or <c>null</c> to leave it unscaled.</param>
-    /// <param name="result">The resolved output dimensions when successful.</param>
-    /// <returns><c>true</c> when the inputs are valid and produce a non-empty grid.</returns>
     public static bool TryResolveAxes(
         int baseWidth,
         int baseHeight,
@@ -88,16 +54,6 @@ public static class CoverageScaling
             TryCreate(width, height, out result);
     }
 
-    /// <summary>
-    /// Resolves explicit per-axis output grid sizes (SCALEEXTENT). A <c>null</c>
-    /// extent leaves that axis at its base size.
-    /// </summary>
-    /// <param name="baseWidth">Base grid width in pixels (must be positive).</param>
-    /// <param name="baseHeight">Base grid height in pixels (must be positive).</param>
-    /// <param name="xSize">Target output width for the x/E/Long axis, or <c>null</c> to keep the base width.</param>
-    /// <param name="ySize">Target output height for the y/N/Lat axis, or <c>null</c> to keep the base height.</param>
-    /// <param name="result">The resolved output dimensions when successful.</param>
-    /// <returns><c>true</c> when the inputs are valid and produce a non-empty grid.</returns>
     public static bool TryResolveExtent(
         int baseWidth,
         int baseHeight,

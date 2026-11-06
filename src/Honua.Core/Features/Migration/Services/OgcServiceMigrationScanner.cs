@@ -19,9 +19,6 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// HTTP-backed scanner for OGC service migration inventories.
-/// </summary>
 public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationScanner
 {
 
@@ -39,13 +36,6 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
         "Unable to establish a connection to the OGC service host.");
 
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="OgcServiceMigrationScanner"/> class.
-    /// </summary>
-    /// <param name="httpClient">HTTP client used for service discovery.</param>
-    /// <param name="crsRegistry">CRS registry used to normalize advertised spatial references.</param>
-    /// <param name="logger">Logger instance.</param>
-    /// <param name="hostAddressResolver">Optional host resolver used by tests.</param>
     public OgcServiceMigrationScanner(
         HttpClient httpClient,
         ICrsRegistry crsRegistry,
@@ -58,11 +48,6 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
         _hostAddressResolver = hostAddressResolver ?? ((host, ct) => Dns.GetHostAddressesAsync(host, ct));
     }
 
-    /// <summary>
-    /// Creates an HTTP handler that pins DNS resolution before connecting to an OGC source host.
-    /// </summary>
-    /// <param name="hostAddressResolver">Optional host resolver used by tests.</param>
-    /// <returns>HTTP message handler with bounded connections and pinned DNS validation.</returns>
     public static HttpMessageHandler CreatePinnedDnsHttpMessageHandler(
         Func<string, CancellationToken, Task<IPAddress[]>>? hostAddressResolver = null)
     {
@@ -77,16 +62,7 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
         };
     }
 
-    /// <summary>
-    /// Sets the ambient allow-unsafe-local-URLs flag observed by handlers created via
-    /// <see cref="CreatePinnedDnsHttpMessageHandler"/> for the current async flow.
-    /// Callers that share those handlers (tile-cache export, coverage import) must scope
-    /// their requests with this; otherwise connections to loopback/private addresses are
-    /// rejected even when the request explicitly allowed them. Dispose to restore the
-    /// previous value.
-    /// </summary>
-    /// <param name="allowUnsafeLocalUrls">Whether loopback/private addresses are permitted.</param>
-    /// <returns>Scope that restores the previous flag value on dispose.</returns>
+    // Shared handlers reject loopback and private addresses unless the caller sets this flag for the current async flow.
     public static IDisposable CreateUnsafeLocalUrlScope(bool allowUnsafeLocalUrls)
         => new UnsafeLocalUrlScope(allowUnsafeLocalUrls);
 
@@ -103,7 +79,6 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
         public void Dispose() => UnsafeLocalUrlsAllowed.Value = _previous;
     }
 
-    /// <inheritdoc />
     public async Task<MigrationSourceInventoryArtifact> ScanSourceAsync(
         OgcServiceScanRequest request,
         CancellationToken cancellationToken = default)
@@ -158,11 +133,6 @@ public sealed partial class OgcServiceMigrationScanner : IOgcServiceMigrationSca
         }
     }
 
-    /// <summary>
-    /// Fetches a remote document as a string with a response-size ceiling. Scans run against
-    /// arbitrary operator-supplied services, so an unbounded <c>GetStringAsync</c> would let a
-    /// hostile or broken source stream a multi-GB document into memory.
-    /// </summary>
     private async Task<string> GetBoundedStringAsync(
         Uri url,
         OgcServiceScanRequest request,

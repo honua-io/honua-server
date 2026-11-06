@@ -5,222 +5,78 @@ using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Core.Features.Migration.Domain;
 
-/// <summary>
-/// Per-run input to <see cref="Abstractions.ILayerReconciliationService"/>. Carries the
-/// per-layer source-side snapshot collected during apply so the service does not have to
-/// re-issue source HTTP calls (which would risk drift-induced false positives).
-/// </summary>
 public sealed record LayerReconciliationRequest
 {
-    /// <summary>
-    /// Stable identifier for the originating migration run.
-    /// </summary>
     public required string RunId { get; init; }
 
-    /// <summary>
-    /// Source kind that produced the layers being reconciled, for example
-    /// <c>geoserver-rest</c> or <c>arcgis-geoservices-rest</c>.
-    /// </summary>
     public required string SourceKind { get; init; }
 
-    /// <summary>
-    /// Per-layer reconciliation inputs. Empty when the apply produced no
-    /// successfully published layers (the artifact still records the run with no probes).
-    /// </summary>
     public IReadOnlyList<LayerReconciliationLayerInput> Layers { get; init; } = [];
 
-    /// <summary>
-    /// Tolerances and sampling options. Defaults preserve the proven
-    /// <c>reconcile.ts</c> behavior with conservative count/geometry bands.
-    /// </summary>
     public LayerReconciliationOptions Options { get; init; } = new();
 }
 
-/// <summary>
-/// Single-layer reconciliation input.
-/// </summary>
 public sealed record LayerReconciliationLayerInput
 {
-    /// <summary>
-    /// Stable source-side identifier, for example a GeoServer
-    /// <c>workspace:layer</c> id or an ArcGIS resource id. Used in the artifact
-    /// to correlate per-layer results back to source intent.
-    /// </summary>
     public required string SourceLayerId { get; init; }
 
-    /// <summary>
-    /// Human-readable source layer label. Falls back to <see cref="SourceLayerId"/>
-    /// when the upstream pipeline does not carry a separate display name.
-    /// </summary>
     public string? SourceLayerName { get; init; }
 
-    /// <summary>
-    /// Honua catalog layer id assigned by publish. Reconciliation is skipped when this is
-    /// <c>null</c> (the apply did not produce a queryable layer for this source).
-    /// </summary>
     public required int? TargetHonuaLayerId { get; init; }
 
-    /// <summary>
-    /// Source-side feature count snapshot recorded at apply time. <c>null</c> when the
-    /// source did not advertise a count; the count probe will record a <c>warn</c> with
-    /// a "no baseline" reason.
-    /// </summary>
     public long? SourceFeatureCount { get; init; }
 
-    /// <summary>
-    /// Whether the source resource declares geometry. Attribute-only tables do not require
-    /// geometry-validity or extent probes. Defaults to true for existing spatial callers.
-    /// </summary>
     public bool SourceHasGeometry { get; init; } = true;
 
-    /// <summary>
-    /// Source-side bounding box snapshot. <c>null</c> when the source did not advertise an
-    /// extent; the extent probe will record a <c>warn</c> with a "no baseline" reason.
-    /// </summary>
     public BoundingBox? SourceExtent { get; init; }
 
-    /// <summary>
-    /// Target CRS recorded in the reviewed import request. A different observed CRS is a
-    /// failure; when reprojection is planned, compare target rows back in the source CRS.
-    /// </summary>
     public int? PlannedTargetSrid { get; init; }
 
-    /// <summary>
-    /// Source-advertised field names (deduplicated). Empty when the source did not advertise
-    /// any schema; the content probe will record <c>pass</c> with a "no baseline" note.
-    /// </summary>
     public IReadOnlyList<string> SourceFieldNames { get; init; } = [];
 
-    /// <summary>
-    /// Optional secret-safe filter mirror applied at apply time (e.g. CQL or GeoServices
-    /// <c>where</c>) so the count probe can be filter-mirrored. <c>null</c> means the apply
-    /// imported all features and the probe issues an unfiltered count. For a dedicated
-    /// import target this is provenance only; see <see cref="TargetContainsOnlyImportedFeatures"/>.
-    /// </summary>
     public string? FilterMirror { get; init; }
 
-    /// <summary>
-    /// The target is a dedicated import table that holds only the selected source population.
-    /// <see cref="FilterMirror"/> is then source provenance and is not executed against the
-    /// target: source identifiers may have been remapped on insert, and a repeated filter would
-    /// hide extra target rows. Every target row is counted, extent-probed and sampled, and any
-    /// difference from <see cref="SourceFeatureCount"/> fails the count probe.
-    /// </summary>
     public bool TargetContainsOnlyImportedFeatures { get; init; }
 
-    /// <summary>
-    /// Per-feature source geometry census keyed by the target feature id the reader returns.
-    /// Null keeps the target-only validity ratio. When present, the filtered population is
-    /// compared in one CRS: a null or invalid source that is still missing or not well-formed
-    /// is an inherited source defect, a well-formed target in its place is not a successful
-    /// repair, and a present valid source that did not survive is transfer loss (#4826).
-    /// </summary>
     public SourceGeometryCensus? SourceGeometry { get; init; }
 
-    /// <summary>
-    /// Extent queried from the source features themselves (<c>returnExtentOnly</c>), independent
-    /// of <see cref="SourceExtent"/>. A disagreement beyond tolerance marks the advertised extent
-    /// stale and compares the target with this queried extent.
-    /// </summary>
     public BoundingBox? QueriedSourceExtent { get; init; }
 
-    /// <summary>
-    /// Source field name to published target field name. Applied to <see cref="FilterMirror"/>
-    /// before a shared target executes it. Parsed field references, including quoted names,
-    /// are mapped; literals and function names are preserved. Ignored for a dedicated import target.
-    /// </summary>
     public IReadOnlyDictionary<string, string>? FilterFieldMappings { get; init; }
 }
 
-/// <summary>
-/// Source geometry dispositions recorded at insert, keyed by the target feature id.
-/// </summary>
 public sealed record SourceGeometryCensus
 {
-    /// <summary>Target ids whose source feature had no geometry.</summary>
     public IReadOnlySet<long> AbsentTargetFeatureIds { get; init; } = new HashSet<long>();
 
-    /// <summary>
-    /// Target ids whose source geometry was present but could not be stored. A null or
-    /// malformed target geometry for one of these ids is transfer loss, not an inherited defect.
-    /// </summary>
     public IReadOnlySet<long> UnconvertedTargetFeatureIds { get; init; } = new HashSet<long>();
 
-    /// <summary>
-    /// Target ids whose source geometry was present and topologically invalid. A still-invalid
-    /// or missing target geometry is an inherited source defect. A well-formed target geometry
-    /// is not a successful repair of that defect (#4826).
-    /// </summary>
     public IReadOnlySet<long> InvalidTargetFeatureIds { get; init; } = new HashSet<long>();
 }
 
-/// <summary>
-/// Tunable tolerances applied across every probe. Defaults mirror the proven
-/// <c>reconcile.ts</c> bands and the ArcGIS parity runner's conservative thresholds.
-/// </summary>
 public sealed record LayerReconciliationOptions
 {
-    /// <summary>
-    /// Default sample size for the geometry-validity and content probes.
-    /// </summary>
     public const int DefaultSampleSize = 100;
 
-    /// <summary>
-    /// Default count delta-ratio at or below which the count probe records <c>pass</c>.
-    /// </summary>
     public const double DefaultCountWarnRatio = 0.05;
 
-    /// <summary>
-    /// Default count delta-ratio above which the count probe records <c>fail</c>.
-    /// </summary>
     public const double DefaultCountFailRatio = 0.20;
 
-    /// <summary>
-    /// Default geometry validity ratio at or above which the geometry probe records <c>pass</c>.
-    /// </summary>
     public const double DefaultGeometryPassRatio = 0.99;
 
-    /// <summary>
-    /// Default geometry validity ratio below the pass band but at or above which the geometry
-    /// probe records <c>warn</c> (rather than <c>fail</c>).
-    /// </summary>
     public const double DefaultGeometryWarnRatio = 0.95;
 
-    /// <summary>
-    /// Default extent dimension tolerance, expressed as a ratio of the source dimension. Allows
-    /// for sub-meter reprojection / rounding noise around an otherwise identical bbox.
-    /// </summary>
     public const double DefaultExtentTolerance = 0.001;
 
-    /// <summary>
-    /// Sample size used for geometry validity and attribute schema probes. Clamped to <c>[1, 10000]</c>.
-    /// </summary>
     public int SampleSize { get; init; } = DefaultSampleSize;
 
-    /// <summary>
-    /// Count delta-ratio at or below which the count probe records <c>pass</c>.
-    /// </summary>
     public double CountWarnRatio { get; init; } = DefaultCountWarnRatio;
 
-    /// <summary>
-    /// Count delta-ratio above which the count probe records <c>fail</c>.
-    /// </summary>
     public double CountFailRatio { get; init; } = DefaultCountFailRatio;
 
-    /// <summary>
-    /// Geometry validity ratio at or above which the geometry probe records <c>pass</c>.
-    /// </summary>
     public double GeometryPassRatio { get; init; } = DefaultGeometryPassRatio;
 
-    /// <summary>
-    /// Geometry validity ratio at or above which the geometry probe records <c>warn</c>
-    /// (when it is below <see cref="GeometryPassRatio"/>).
-    /// </summary>
     public double GeometryWarnRatio { get; init; } = DefaultGeometryWarnRatio;
 
-    /// <summary>
-    /// Extent dimension tolerance, expressed as a ratio of the source dimension. Smaller
-    /// deltas are treated as projection / rounding noise and recorded as <c>pass</c>.
-    /// </summary>
     public double ExtentTolerance { get; init; } = DefaultExtentTolerance;
 }

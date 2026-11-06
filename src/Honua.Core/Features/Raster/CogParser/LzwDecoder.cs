@@ -5,13 +5,7 @@ using System.Buffers;
 
 namespace Honua.Core.Features.Raster.CogParser;
 
-/// <summary>
-/// TIFF-flavoured LZW decoder (TIFF 6.0 section 13).
-/// Codes are packed MSB-first and the code width grows one entry earlier than
-/// textbook/GIF LZW — the Aldus "early change" — so widths step up at table
-/// entries 511, 1023, and 2047 rather than 512, 1024, and 2048.
-/// Uses only spans, primitives, and pooled scratch: no reflection, AOT-safe.
-/// </summary>
+// TIFF LZW grows the code width one entry earlier than GIF, at 511, 1023, and 2047.
 internal static class LzwDecoder
 {
     private const int ClearCode = 256;
@@ -21,15 +15,6 @@ internal static class LzwDecoder
     private const int MinBitWidth = 9;
     private const int MaxBitWidth = 12;
 
-    /// <summary>
-    /// Decodes an LZW-compressed TIFF tile/strip segment.
-    /// </summary>
-    /// <param name="input">Compressed segment bytes.</param>
-    /// <param name="maxDecompressedBytes">Decompression-bomb ceiling for the output.</param>
-    /// <param name="expectedBytes">
-    /// Expected output size when the caller knows the tile's pixel-buffer size, used to size
-    /// the initial scratch buffer; pass 0 when unknown.
-    /// </param>
     public static byte[] Decode(ReadOnlySpan<byte> input, int maxDecompressedBytes, int expectedBytes = 0)
     {
         var bytePool = ArrayPool<byte>.Shared;

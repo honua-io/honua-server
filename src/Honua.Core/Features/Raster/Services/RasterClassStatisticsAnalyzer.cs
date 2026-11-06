@@ -6,23 +6,15 @@ using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Core.Features.Raster.Services;
 
-/// <summary>
-/// Default <see cref="IRasterClassStatisticsAnalyzer"/>. For each class it reads the training-AOI
-/// pixel vectors through the shared <see cref="IRasterStore"/> and folds them into a signature via
-/// <see cref="RasterClassStatisticsCalculator"/>. Classes are analysed one at a time so at most one
-/// AOI's pixels are resident at once, keeping memory bounded by the request's per-class budget.
-/// </summary>
 public sealed class RasterClassStatisticsAnalyzer : IRasterClassStatisticsAnalyzer
 {
     private readonly IRasterStore _rasterStore;
 
-    /// <summary>Creates the analyzer over the shared raster store.</summary>
     public RasterClassStatisticsAnalyzer(IRasterStore rasterStore)
     {
         _rasterStore = rasterStore ?? throw new ArgumentNullException(nameof(rasterStore));
     }
 
-    /// <inheritdoc />
     public async Task<RasterClassStatisticsResult> ComputeAsync(
         RasterClassStatisticsRequest request,
         CancellationToken cancellationToken = default)

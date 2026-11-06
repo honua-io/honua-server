@@ -7,33 +7,16 @@ using Honua.Core.Features.Infrastructure.ServiceRegistration;
 
 namespace Honua.Core.Features.Infrastructure.Domain;
 
-/// <summary>
-/// Validates CloudStorageOptions configuration to ensure proper cloud storage setup.
-/// Enforces provider-specific validation rules and security best practices.
-/// </summary>
 public sealed class CloudStorageOptionsValidator : ConfigurationValidator<CloudStorageOptions>
 {
-    /// <summary>
-    /// AWS S3 bucket name validation pattern.
-    /// Based on AWS S3 bucket naming rules.
-    /// </summary>
     private static readonly Regex _s3BucketNamePattern = new(
         @"^[a-z0-9][a-z0-9\-]*[a-z0-9]$|^[a-z0-9]$",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    /// <summary>
-    /// Azure container name validation pattern.
-    /// Based on Azure Blob Storage container naming rules.
-    /// </summary>
     private static readonly Regex _azureContainerNamePattern = new(
         @"^[a-z0-9][a-z0-9\-]*[a-z0-9]$|^[a-z0-9]$",
         RegexOptions.Compiled);
 
-    /// <summary>
-    /// Validates the cloud storage options configuration using derived class-specific logic.
-    /// </summary>
-    /// <param name="options">The cloud storage options instance to validate</param>
-    /// <param name="errors">List to add validation errors to</param>
     protected override void PerformFeatureSpecificValidation(CloudStorageOptions options, List<string> errors)
     {
         // Complex business rule validations
@@ -42,9 +25,6 @@ public sealed class CloudStorageOptionsValidator : ConfigurationValidator<CloudS
     }
 
 
-    /// <summary>
-    /// Validates general storage settings.
-    /// </summary>
     private static void ValidateGeneralSettings(CloudStorageOptions options, List<string> errors)
     {
         // Validate DefaultTimeToLive
@@ -60,9 +40,6 @@ public sealed class CloudStorageOptionsValidator : ConfigurationValidator<CloudS
         }
     }
 
-    /// <summary>
-    /// Validates provider-specific configuration.
-    /// </summary>
     private static void ValidateProviderSpecificSettings(CloudStorageOptions options, List<string> errors)
     {
         switch (options.Provider)
@@ -82,9 +59,6 @@ public sealed class CloudStorageOptionsValidator : ConfigurationValidator<CloudS
         }
     }
 
-    /// <summary>
-    /// Validates local storage specific options.
-    /// </summary>
     private static void ValidateLocalStorageOptions(LocalStorageOptions? options, List<string> errors)
     {
         if (options == null)
@@ -101,9 +75,6 @@ public sealed class CloudStorageOptionsValidator : ConfigurationValidator<CloudS
         }
     }
 
-    /// <summary>
-    /// Validates AWS S3 specific options.
-    /// </summary>
     private static void ValidateAwsS3Options(AwsS3Options? options, List<string> errors)
     {
         if (options == null)
@@ -151,9 +122,6 @@ public sealed class CloudStorageOptionsValidator : ConfigurationValidator<CloudS
         }
     }
 
-    /// <summary>
-    /// Validates Azure Blob specific options.
-    /// </summary>
     private static void ValidateAzureBlobOptions(AzureBlobOptions? options, List<string> errors)
     {
         if (options == null)

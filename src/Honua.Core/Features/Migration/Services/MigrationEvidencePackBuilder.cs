@@ -14,37 +14,11 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Slice 4 of issue #1015. Aggregates the slice 1-3 artifacts emitted by a
-/// successful GeoServer migration run into a single deterministic
-/// <see cref="MigrationEvidencePackArtifact"/>.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The builder is intentionally pure and side-effect free so the same inputs
-/// always produce the same output (and the same
-/// <see cref="MigrationEvidencePackArtifact.BundleFingerprint"/>). It performs
-/// no I/O, no logging, and no clock reads except for the caller-supplied
-/// <see cref="MigrationEvidencePackBuilderOptions.GeneratedAt"/> stamp, which
-/// is excluded from the fingerprint.
-/// </para>
-/// <para>
-/// Credential redaction: the source identity is sanitized by stripping
-/// userinfo, query, and fragment components from <c>BaseUrl</c> before the
-/// inventory snapshot is included in the bundle. The builder never copies
-/// raw style bodies or feature payloads — only counts and slice-3 diagnostic
-/// messages.
-/// </para>
-/// </remarks>
+// The fingerprint excludes the caller timestamp, and the builder strips URL secrets and never copies style bodies or feature payloads.
 public static class MigrationEvidencePackBuilder
 {
     private const string BuilderGenerator = "honua.migration.evidence-pack-builder/1.0";
 
-    /// <summary>
-    /// Build an evidence pack from the slice 1-3 inputs.
-    /// </summary>
-    /// <param name="inputs">Inventory, manifest, apply-execution and scope inputs.</param>
-    /// <param name="options">Optional run id / generator / clock overrides.</param>
     public static MigrationEvidencePackArtifact Build(
         MigrationEvidencePackInputs inputs,
         MigrationEvidencePackBuilderOptions? options = null)
@@ -95,11 +69,6 @@ public static class MigrationEvidencePackBuilder
         };
     }
 
-    /// <summary>
-    /// Compute the deterministic SHA-256 fingerprint that is also embedded in
-    /// the pack via <see cref="MigrationEvidencePackArtifact.BundleFingerprint"/>.
-    /// Exposed for tests and downstream verifiers.
-    /// </summary>
     public static string ComputeBundleFingerprint(MigrationEvidencePackBundle bundle)
     {
         ArgumentNullException.ThrowIfNull(bundle);
@@ -271,57 +240,22 @@ public static class MigrationEvidencePackBuilder
     }
 }
 
-/// <summary>
-/// Aggregated inputs consumed by <see cref="MigrationEvidencePackBuilder.Build"/>.
-/// </summary>
 public sealed record MigrationEvidencePackInputs
 {
-    /// <summary>
-    /// Slice-1 inventory artifact captured from the source scan.
-    /// </summary>
     public required MigrationSourceInventoryArtifact Inventory { get; init; }
 
-    /// <summary>
-    /// Slice-1 manifest artifact translated from the inventory.
-    /// </summary>
     public required MigrationManifestArtifact Manifest { get; init; }
 
-    /// <summary>
-    /// Apply-execution artifact emitted by the GeoServer import service after
-    /// slice 1-3 catalog / data / style steps ran successfully.
-    /// </summary>
     public required MigrationApplyExecutionArtifact ApplyExecution { get; init; }
 
-    /// <summary>
-    /// Operator-requested workspace scope, or <c>null</c>/empty when the run
-    /// applied to all workspaces. Captured separately because the apply
-    /// execution artifact does not echo it.
-    /// </summary>
     public IReadOnlyCollection<string>? RequestedWorkspaceNames { get; init; }
 }
 
-/// <summary>
-/// Override hooks for tests and the nightly workflow.
-/// </summary>
 public sealed record MigrationEvidencePackBuilderOptions
 {
-    /// <summary>
-    /// Run identifier embedded in the artifact. Excluded from the bundle
-    /// fingerprint so the same inputs produce the same fingerprint across
-    /// nightly runs.
-    /// </summary>
     public string? RunId { get; init; }
 
-    /// <summary>
-    /// Generator label embedded in the artifact. Excluded from the bundle
-    /// fingerprint.
-    /// </summary>
     public string? Generator { get; init; }
 
-    /// <summary>
-    /// Generation timestamp. Excluded from the bundle fingerprint. Defaults to
-    /// <see cref="DateTimeOffset.UnixEpoch"/> when omitted so deterministic
-    /// tests do not have to set it.
-    /// </summary>
     public DateTimeOffset? GeneratedAt { get; init; }
 }
