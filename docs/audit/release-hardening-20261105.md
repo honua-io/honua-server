@@ -43,14 +43,14 @@ No supported P0 finding so far. Finding counts are not evidence of complete cove
 - Baseline `Honua.Architecture.SourceTests`: **121 passed, 0 failed, 0 skipped**, Release configuration, through required dotnet build-slot shim.
 - Existing Security Nightly run [41996766600](https://github.com/honua-io/honua-server/actions/runs/41996766600) passed NuGet, filesystem, notices, and AOT Alpine/JIT Debian container jobs on ancestor `f0b09c4cf765149810b0851d31b31c09f1327843`. This is not final-candidate verification.
 - Vulnerability-gate parser: **7 passed**; immutable-image receipt controls: **6 passed**. These validate gate logic, not the application dependency inventory.
-- GitHub open Dependabot inventory: two moderate action-tooling advisories, `GHSA-g3hv-75wg-m249` (minimatch) and `GHSA-3g3m-2fjr-6pw4` (glob), both in `.github/actions/managed-test-artifacts/package-lock.json`; applicability review outstanding.
+- GitHub open Dependabot inventory: two moderate action-tooling advisories, `GHSA-g3hv-75wg-m249` (minimatch) and `GHSA-3g3m-2fjr-6pw4` (glob), both in `.github/actions/managed-test-artifacts/package-lock.json`; the action passes fixed manifest/archive paths to the artifact client rather than caller-supplied glob patterns. No P0/P1 exploit path established; dependency remediation remains tracked by Dependabot.
 - Graph search timed out; findings were checked against source directly.
 - CSO helper failed snapshot capture with `SNAPSHOT_RACE`; CSO assessment/scanner assurance is **not assessed**. Conventional static security review is separately identified above.
 - Full matrix, deployment checks, cloud-provider integration, current dependency advisory inventory, and final integrated candidate review are outstanding.
 
 ## Additional investigation
 
-Published forms may use package-time field editability after current resource metadata changes; current submission validation checks package ReadOnly but not target field editability. A separate runtime-policy regression is being investigated. This is not dismissed by the replacement fix.
+Published forms use package-time field editability after current resource metadata changes; current submission validation checks package ReadOnly but not target field editability. P1 issue #6991 tracks runtime-policy regression and repair. This is not dismissed by the replacement fix.
 
 ## Exit criteria
 
