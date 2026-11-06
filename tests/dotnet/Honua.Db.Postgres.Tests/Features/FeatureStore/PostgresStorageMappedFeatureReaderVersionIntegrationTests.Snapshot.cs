@@ -4,11 +4,27 @@
 using System.Collections.Immutable;
 using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
 public sealed partial class PostgresStorageMappedFeatureReaderVersionIntegrationTests
 {
+    [Fact]
+    public async Task GetAsync_ManagedSnapshotTokenIncludesUnprojectedGeometryAndAttributes()
+    {
+        var full = await CreateReader().GetAsync(1, 1);
+        var reader = CreatePartitionReader(new FeatureStorageMapping("features", SchemaName: _schema,
+            AttributesColumn: "attributes", LayerDiscriminatorColumn: "layer_id", LayerDiscriminatorValue: 1), _schema);
+
+        var projected = await reader.GetAsync(1, 1);
+
+        projected.Should().NotBeNull();
+        projected!.Value.Geometry.Should().BeNull();
+        projected.Value.Attributes.Keys.Should().Equal("objectid");
+        projected.Value.ReadStateToken.Should().NotBeNullOrEmpty().And.Be(full!.Value.ReadStateToken);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
