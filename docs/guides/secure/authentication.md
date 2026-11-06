@@ -258,7 +258,9 @@ When `Oidc:TokenValidation:EnableTokenReplayProtection` is enabled, replay regis
 
 `Oidc:TokenValidation:TokenReplayCacheDuration` is the maximum accepted remaining validity, including clock skew. The default is 24 hours; zero selects that same bounded default. A token without an expiry or whose remaining validity plus skew exceeds the maximum is refused with 401. For example, a one-hour access token with five minutes of skew needs a maximum of at least 65 minutes. Deployments retaining an explicit earlier ten-minute setting must adjust it to cover their access-token lifetime plus skew. The maximum supported configuration is 24 hours.
 
-Redis shares replay registrations across nodes. With Redis unavailable, the default fallback is per-node memory; set `Oidc:TokenValidation:ReplayProtectionFailClosed=true` to refuse admission during a shared-store outage. Per-node memory provides isolation only on that node. Independent replicas need the same shared replay store for cross-node isolation.
+Existing cached registrations keep their original expiration. Renew access tokens after upgrading all replay-tracking nodes to obtain the full retention window for new admissions.
+
+Redis shares replay registrations across nodes. When a configured Redis connection is disconnected or faults, the default fallback is per-node memory; `Oidc:TokenValidation:ReplayProtectionFailClosed=true` refuses that fallback. Without a Redis connection, memory tracks registrations on the current node. Independent replicas need the same shared replay store for cross-node isolation.
 
 ### 4. Issue GeoServices REST-compatible tokens
 

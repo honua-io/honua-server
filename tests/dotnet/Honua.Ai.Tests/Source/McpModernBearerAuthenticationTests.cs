@@ -8,13 +8,17 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FluentAssertions;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Security;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.JsonWebTokens;
 using static Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
@@ -174,6 +178,10 @@ public sealed class McpModernBearerAuthenticationTests : IAsyncLifetime
         var changed = CreateToken("fingerprint-owner", tokenId: id,
             additionalClaims: [.. Authority, new Claim("nonce", "different-signed-content")]);
         changed.Should().NotBe(token);
+        var validationParameters = _fixture.Services.GetRequiredService<IOptionsMonitor<JwtBearerOptions>>()
+            .Get(OidcAuthenticationExtensions.JwtBearerScheme).TokenValidationParameters;
+        var validation = await new JsonWebTokenHandler().ValidateTokenAsync(changed, validationParameters);
+        validation.IsValid.Should().BeTrue();
         await AssertModernSuccessAsync("server/discover", token);
         using var request = BuildModernDiscovery(changed);
         using var response = await _fixture.Client.SendAsync(request);
