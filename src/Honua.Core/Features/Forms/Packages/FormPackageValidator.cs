@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Edit;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Microsoft.Extensions.Options;
 
@@ -681,6 +682,17 @@ public sealed class FormPackageValidator
             if (field.ReadOnly && request.Values.ContainsKey(field.FieldId!))
             {
                 AddError(issues, "readOnlyFieldSubmitted", $"Field '{field.FieldId}' is read-only.", field.FieldId);
+                continue;
+            }
+
+            if (request.Values.ContainsKey(field.FieldId!) &&
+                !string.IsNullOrWhiteSpace(field.TargetField) &&
+                targetFields.TryGetValue(field.TargetField, out var currentField) &&
+                (currentField.Hidden || !currentField.Editable ||
+                 (OperationEquals(request.Operation, FormSubmissionOperations.Update) &&
+                  AttributeMutationPolicy.IsReadOnlyOnUpdate(resource, currentField))))
+            {
+                AddError(issues, "targetFieldNotWritable", $"Target field '{currentField.Name}' is not writable.", field.FieldId);
                 continue;
             }
 

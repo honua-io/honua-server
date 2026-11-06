@@ -30,6 +30,30 @@ Desktop GeoServices REST client, QGIS (manual lane), Power BI, and Excel evidenc
 certification snapshot; the PyQGIS, MapLibre, Esri Leaflet, and Cesium lanes are
 re-certified automatically on every run.
 
+## Protected feature fields
+
+Updates reject changes or removals of fields declared non-editable and the
+resource's bound GlobalID, including null-valued merge-patch removals. Initial
+create values follow each protocol's create contract.
+
+Attribute replacement preserves omitted protected fields from the stored row,
+including fields hidden by read policies. Other omitted attributes retain their
+replacement deletion semantics. The same protection applies to DEFAULT and
+named branch versions. An OGC Features merge patch with a null properties object
+clears editable attributes while retaining protected fields.
+
+Published form packages use the target layer's current field policy on each
+submission. Marking a target field read-only or hidden prevents later form
+submissions from writing it, including explicit null values.
+
+## Row security on edits
+
+Row policies apply to both the existing row and the resulting row. A caller cannot
+update a hidden feature into a visible partition or delete a hidden feature by
+its identifier. Create operations must produce a visible row. Checks use the
+same transaction as the mutation, including named branch versions and published
+form submissions.
+
 ## Public URL and host validation
 
 Set `Public:BaseUrl` (or its `Public__BaseUrl` environment form) or

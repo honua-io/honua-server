@@ -297,6 +297,18 @@ internal sealed class ExceptionCategorizer
             };
         }
 
+        if (typeof(ResourceAccessDeniedException).IsAssignableFrom(exceptionType))
+        {
+            return new ExceptionCategory
+            {
+                Type = ExceptionType.Authorization,
+                StatusCode = 403,
+                Title = "Forbidden",
+                Message = "The operation is not permitted for this resource.",
+                IsFastPath = true
+            };
+        }
+
         if (exceptionType == typeof(UnauthorizedAccessException))
         {
             return new ExceptionCategory

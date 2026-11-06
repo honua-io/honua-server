@@ -107,50 +107,62 @@ internal sealed partial class FeatureDataAccess
     internal static bool IsGeometryNotNullViolation(PostgresException ex)
         => ex.SqlState == PostgresErrorCodes.NotNullViolation && IsGeometryColumn(ex.ColumnName);
 
-    public async Task<Feature> CreateFeatureAsync(int layerId, Feature feature, CancellationToken cancellationToken)
+    public Task<Feature> CreateFeatureAsync(int layerId, Feature feature, CancellationToken cancellationToken)
+        => CreateFeatureAsync(new FeatureWritePolicy(layerId, null), feature, cancellationToken);
+
+    public Task<Feature> UpdateFeatureAsync(int layerId, Feature feature, CancellationToken cancellationToken)
+        => UpdateFeatureAsync(new FeatureWritePolicy(layerId, null), feature, cancellationToken);
+
+    public Task<Feature> CreateFeatureAsync(FeatureWritePolicy policy, Feature feature, CancellationToken cancellationToken)
+        => ExecuteSingleFeatureWriteAsync(new(policy, feature, "create"), cancellationToken);
+
+    public Task<Feature> UpdateFeatureAsync(FeatureWritePolicy policy, Feature feature, CancellationToken cancellationToken)
+        => ExecuteSingleFeatureWriteAsync(new(policy, feature, "update"), cancellationToken);
+
+    private sealed record SingleFeatureWrite(FeatureWritePolicy Policy, Feature Feature, string Operation);
+
+    private async Task<Feature> ExecuteSingleFeatureWriteAsync(SingleFeatureWrite request, CancellationToken cancellationToken)
     {
-        // When an outbox scope is active and the provider supports transactional outbox,
-        // wrap the single-row insert in an explicit transaction so the outbox row commits
-        // atomically with the feature row. This closes the post-commit append gap that
-        // single-row autocommit paths would otherwise expose to a process crash.
-        if (TryUseTransactionalOutbox(out var outboxScope))
+        var (policy, feature, operation) = request;
+        async Task<Feature> WriteAsync(NpgsqlConnection connection, NpgsqlTransaction? transaction, CancellationToken ct)
         {
-            return await ExecuteSingleRowMutationWithOutboxAsync(
-                "create",
-                outboxScope!,
-                async (connection, transaction, ct) =>
+            if (operation == "create")
+            {
+                return await CreateCheckedAsync(policy.LayerId, feature, policy.RowFilter, connection, transaction, ct).ConfigureAwait(false);
+            }
+            await EnsureExistingRowVisibleAsync(policy.RowFilter, new RowSecurityContext(connection, transaction, new(_tableName, policy.LayerId, (null, feature.Id))), ct).ConfigureAwait(false);
+            var update = feature;
+            if (feature.PreserveOmittedMaskedAttributes || feature.PreserveOmittedGeometry || !feature.PreservedAttributeNames.IsDefaultOrEmpty)
+            {
+                var current = await ReadFeatureForUpdateAsync(policy.LayerId, feature.Id, connection, transaction!, ct).ConfigureAwait(false);
+                if (current.HasValue)
                 {
-                    var created = await CreateWithConnectionAsync(layerId, feature, connection, transaction, ct).ConfigureAwait(false);
-                    return (created.Id, (Feature?)created);
-                },
-                cancellationToken).ConfigureAwait(false);
+                    update = PreserveOmittedAttributes(feature, current.Value);
+                }
+            }
+            return await UpdateCheckedAsync(policy.LayerId, update, policy.RowFilter, connection, transaction, null, ct).ConfigureAwait(false);
         }
 
-        await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        return await CreateWithConnectionAsync(layerId, feature, connection, transaction: null, cancellationToken);
-    }
-
-    public async Task<Feature> UpdateFeatureAsync(int layerId, Feature feature, CancellationToken cancellationToken)
-    {
-        if (TryUseTransactionalOutbox(out var outboxScope))
+        if (TryUseTransactionalOutbox(out var scope))
         {
-            return await ExecuteSingleRowMutationWithOutboxAsync(
-                "update",
-                outboxScope!,
-                async (connection, transaction, ct) =>
-                {
-                    var updated = await UpdateWithConnectionAsync(layerId, feature, connection, transaction, ownerGuard: null, ct).ConfigureAwait(false);
-                    return (updated.Id, (Feature?)updated);
-                },
-                cancellationToken).ConfigureAwait(false);
+            return await ExecuteSingleRowMutationWithOutboxAsync(operation, scope!, async (connection, transaction, ct) =>
+            {
+                var written = await WriteAsync(connection, transaction, ct).ConfigureAwait(false);
+                return (written.Id, (Feature?)written);
+            }, cancellationToken).ConfigureAwait(false);
         }
-
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        return await UpdateWithConnectionAsync(layerId, feature, connection, transaction: null, ownerGuard: null, cancellationToken);
+        return await RunRowMutationAtomicallyAsync(connection, null, WriteAsync, cancellationToken,
+            requireTransaction: policy.RowFilter is not null || feature.PreserveOmittedMaskedAttributes ||
+                feature.PreserveOmittedGeometry || !feature.PreservedAttributeNames.IsDefaultOrEmpty).ConfigureAwait(false);
     }
 
-    public async Task<bool> DeleteFeatureAsync(int layerId, long featureId, CancellationToken cancellationToken)
+    public Task<bool> DeleteFeatureAsync(int layerId, long featureId, CancellationToken cancellationToken)
+        => DeleteFeatureAsync(new FeatureWritePolicy(layerId, null), featureId, cancellationToken);
+
+    public async Task<bool> DeleteFeatureAsync(FeatureWritePolicy policy, long featureId, CancellationToken cancellationToken)
     {
+        var layerId = policy.LayerId;
         if (TryUseTransactionalOutbox(out var outboxScope))
         {
             // Single-row delete path with outbox: open a transaction so the DELETE ... RETURNING
@@ -162,6 +174,7 @@ internal sealed partial class FeatureDataAccess
             var npgsql = Connection.RequireNpgsqlConnection();
             var npgsqlTransaction = (NpgsqlTransaction)Transaction;
 
+            await EnsureExistingRowVisibleAsync(policy.RowFilter, new RowSecurityContext(npgsql, npgsqlTransaction, new(_tableName, layerId, (null, featureId))), cancellationToken).ConfigureAwait(false);
             var deleted = await DeleteWithConnectionAsync(layerId, featureId, npgsql, npgsqlTransaction, ownerGuard: null, cancellationToken).ConfigureAwait(false);
             if (deleted.Deleted)
             {
@@ -188,7 +201,7 @@ internal sealed partial class FeatureDataAccess
         }
 
         await using var conn = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        if (_attachmentCleanup is null)
+        if (_attachmentCleanup is null && policy.RowFilter is null)
         {
             var simpleDelete = await DeleteWithConnectionAsync(layerId, featureId, conn, transaction: null, ownerGuard: null, cancellationToken).ConfigureAwait(false);
             return simpleDelete.Deleted;
@@ -198,6 +211,7 @@ internal sealed partial class FeatureDataAccess
         // including when this delete is the only statement in the request (#6137).
         await using var rowTransaction = await conn.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken).ConfigureAwait(false);
         var npgsqlRowTransaction = (NpgsqlTransaction)rowTransaction;
+        await EnsureExistingRowVisibleAsync(policy.RowFilter, new RowSecurityContext(conn, npgsqlRowTransaction, new(_tableName, layerId, (null, featureId))), cancellationToken).ConfigureAwait(false);
         var deletedRow = await DeleteWithConnectionAsync(layerId, featureId, conn, npgsqlRowTransaction, ownerGuard: null, cancellationToken).ConfigureAwait(false);
         if (deletedRow.Deleted)
         {
@@ -700,22 +714,26 @@ internal sealed partial class FeatureDataAccess
             update = update with { Geometry = current.Geometry };
         }
 
-        if (!update.PreserveOmittedMaskedAttributes)
+        if (!update.PreserveOmittedMaskedAttributes && update.PreservedAttributeNames.IsDefaultOrEmpty)
         {
             return update;
         }
 
+        var preserved = update.PreservedAttributeNames.IsDefaultOrEmpty
+            ? null
+            : update.PreservedAttributeNames.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var supplied = update.Attributes.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        if (!update.ExplicitAttributeRemovals.IsDefaultOrEmpty)
-        {
-            supplied.UnionWith(update.ExplicitAttributeRemovals);
-        }
+        var removals = update.ExplicitAttributeRemovals.IsDefaultOrEmpty
+            ? null
+            : update.ExplicitAttributeRemovals.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var attributes = update.Attributes.ToBuilder();
         foreach (var (name, value) in current.Attributes)
         {
             // Reads project the physical feature ID into attributes. It is not
             // an omitted JSON property to persist during a partial update.
-            if (!name.Equals("objectid", StringComparison.OrdinalIgnoreCase) && !supplied.Contains(name))
+            if (!name.Equals("objectid", StringComparison.OrdinalIgnoreCase) && !supplied.Contains(name) &&
+                (preserved?.Contains(name) == true ||
+                 (update.PreserveOmittedMaskedAttributes && removals?.Contains(name) != true)))
             {
                 attributes[name] = value;
             }
@@ -1151,12 +1169,13 @@ internal sealed partial class FeatureDataAccess
                             {
                                 var update = feature;
                                 Feature? current = null;
+                                await EnsureExistingRowVisibleAsync(writeCheck, new RowSecurityContext(conn, tx, new(_tableName, layerId, (null, feature.Id))), ct).ConfigureAwait(false);
                                 if (hasPrecondition)
                                 {
                                     // requireTransaction guarantees tx is non-null here.
                                     current = await EnsurePreconditionSatisfiedAsync(layerId, feature.Id, precondition, conn, tx!, ct).ConfigureAwait(false);
                                 }
-                                else if (feature.PreserveOmittedMaskedAttributes || feature.PreserveOmittedGeometry)
+                                else if (feature.PreserveOmittedMaskedAttributes || !feature.PreservedAttributeNames.IsDefaultOrEmpty || feature.PreserveOmittedGeometry)
                                 {
                                     current = await ReadFeatureForUpdateAsync(layerId, feature.Id, conn, tx!, ct).ConfigureAwait(false);
                                 }
@@ -1172,7 +1191,7 @@ internal sealed partial class FeatureDataAccess
                                 return u;
                             },
                             cancellationToken,
-                            requireTransaction: hasPrecondition || feature.PreserveOmittedMaskedAttributes || feature.PreserveOmittedGeometry || writeCheck is not null).ConfigureAwait(false);
+                            requireTransaction: hasPrecondition || feature.PreserveOmittedMaskedAttributes || !feature.PreservedAttributeNames.IsDefaultOrEmpty || feature.PreserveOmittedGeometry || writeCheck is not null).ConfigureAwait(false);
                         if (hasPrecondition)
                         {
                             preconditions![updated.Id] = precondition with { ExpectedStateToken = FeatureStateToken.Compute(updated) };
@@ -1212,6 +1231,7 @@ internal sealed partial class FeatureDataAccess
                             transaction,
                             async (conn, tx, ct) =>
                             {
+                                await EnsureExistingRowVisibleAsync(writeCheck, new RowSecurityContext(conn, tx, new(_tableName, layerId, (null, objectId))), ct).ConfigureAwait(false);
                                 if (hasPrecondition)
                                 {
                                     // requireTransaction guarantees tx is non-null here.
@@ -1234,7 +1254,7 @@ internal sealed partial class FeatureDataAccess
                                 return d;
                             },
                             cancellationToken,
-                            requireTransaction: hasPrecondition || _attachmentCleanup is not null).ConfigureAwait(false);
+                            requireTransaction: hasPrecondition || writeCheck is not null || _attachmentCleanup is not null).ConfigureAwait(false);
                         if (deleted.Deleted)
                         {
                             if (transaction is null)
@@ -2192,12 +2212,13 @@ internal sealed partial class FeatureDataAccess
                     {
                         var update = feature;
                         Feature? current = null;
+                        await EnsureExistingRowVisibleAsync(writeCheck, new RowSecurityContext(conn, tx, new(_tableName, layerId, (null, feature.Id))), ct).ConfigureAwait(false);
                         if (hasPrecondition)
                         {
                             // requireTransaction guarantees tx is non-null here.
                             current = await EnsurePreconditionSatisfiedAsync(layerId, feature.Id, precondition, conn, tx!, ct).ConfigureAwait(false);
                         }
-                        else if (feature.PreserveOmittedMaskedAttributes || feature.PreserveOmittedGeometry)
+                        else if (feature.PreserveOmittedMaskedAttributes || !feature.PreservedAttributeNames.IsDefaultOrEmpty || feature.PreserveOmittedGeometry)
                         {
                             current = await ReadFeatureForUpdateAsync(layerId, feature.Id, conn, tx!, ct).ConfigureAwait(false);
                         }
@@ -2213,7 +2234,7 @@ internal sealed partial class FeatureDataAccess
                         return u;
                     },
                     cancellationToken,
-                    requireTransaction: hasPrecondition || feature.PreserveOmittedMaskedAttributes || feature.PreserveOmittedGeometry || writeCheck is not null).ConfigureAwait(false);
+                    requireTransaction: hasPrecondition || feature.PreserveOmittedMaskedAttributes || !feature.PreservedAttributeNames.IsDefaultOrEmpty || feature.PreserveOmittedGeometry || writeCheck is not null).ConfigureAwait(false);
                 if (hasPrecondition)
                 {
                     // Later operations on this row in the same batch must observe our
@@ -2292,6 +2313,7 @@ internal sealed partial class FeatureDataAccess
                     transaction,
                     async (conn, tx, ct) =>
                     {
+                        await EnsureExistingRowVisibleAsync(writeCheck, new RowSecurityContext(conn, tx, new(_tableName, layerId, (null, featureId))), ct).ConfigureAwait(false);
                         if (hasPrecondition)
                         {
                             // requireTransaction guarantees tx is non-null here.
@@ -2314,7 +2336,7 @@ internal sealed partial class FeatureDataAccess
                         return d;
                     },
                     cancellationToken,
-                    requireTransaction: hasPrecondition || _attachmentCleanup is not null).ConfigureAwait(false);
+                    requireTransaction: hasPrecondition || writeCheck is not null || _attachmentCleanup is not null).ConfigureAwait(false);
                 if (deleted.Deleted)
                 {
                     if (transaction is null)

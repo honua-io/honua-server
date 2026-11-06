@@ -215,17 +215,26 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
 
     public async Task<Feature> CreateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default)
     {
-        return await _dataAccess.CreateFeatureAsync(layerId, feature, cancellationToken);
+        var filter = await _readSecurity.ResolveRowLevelSecurityFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
+        return filter is null
+            ? await _dataAccess.CreateFeatureAsync(layerId, feature, cancellationToken).ConfigureAwait(false)
+            : await _dataAccess.CreateFeatureAsync(new FeatureWritePolicy(layerId, filter), feature, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<Feature> UpdateAsync(int layerId, Feature feature, CancellationToken cancellationToken = default)
     {
-        return await _dataAccess.UpdateFeatureAsync(layerId, feature, cancellationToken);
+        var filter = await _readSecurity.ResolveRowLevelSecurityFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
+        return filter is null
+            ? await _dataAccess.UpdateFeatureAsync(layerId, feature, cancellationToken).ConfigureAwait(false)
+            : await _dataAccess.UpdateFeatureAsync(new FeatureWritePolicy(layerId, filter), feature, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<bool> DeleteAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
     {
-        return await _dataAccess.DeleteFeatureAsync(layerId, featureId, cancellationToken);
+        var filter = await _readSecurity.ResolveRowLevelSecurityFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
+        return filter is null
+            ? await _dataAccess.DeleteFeatureAsync(layerId, featureId, cancellationToken).ConfigureAwait(false)
+            : await _dataAccess.DeleteFeatureAsync(new FeatureWritePolicy(layerId, filter), featureId, cancellationToken).ConfigureAwait(false);
     }
 
     #endregion
