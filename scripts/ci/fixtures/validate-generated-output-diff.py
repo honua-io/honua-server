@@ -105,7 +105,7 @@ class GeneratedOutputAdmission(unittest.TestCase):
         with patch.object(POLICY, 'api', side_effect=self.actions):
             return POLICY.classify(self.event)
 
-    def test_actual_four_file_5725_diff_takes_cheap_path(self):
+    def test_named_output_diff_takes_cheap_path(self):
         self.assertEqual(self.git('diff', '--name-only', self.source, self.head).splitlines(), self.paths)
         self.assertTrue(self.verdict())
         # Branch/author/trailer claims are unnecessary: this commit has none.
@@ -211,26 +211,31 @@ class GeneratedOutputAdmission(unittest.TestCase):
             api.assert_not_called()
 
     def test_named_output_missing_from_base_allowlist_fails_closed(self):
-        self.git('reset', '--hard', self.source)
-        allowlist = self.repo / 'scripts/ci/generated-files.sh'
-        text = allowlist.read_text().replace('  examples/manifest.json\n', '')
-        self.assertNotIn('examples/manifest.json', text)
-        allowlist.write_text(text)
-        base = self.commit()
-        self.git('apply', str(ROOT / 'scripts/ci/fixtures/generated-output-5725.patch'))
-        head = self.commit()
-        event = copy.deepcopy(self.event)
-        event['pull_request']['base']['sha'] = base
-        event['pull_request']['head']['sha'] = head
-        event_path = self.repo / 'event.json'
-        event_path.write_text(json.dumps(event))
-        output = self.repo / 'output'
-        with patch.dict(os.environ, GITHUB_EVENT_PATH=str(event_path), GITHUB_OUTPUT=str(output)), \
-                patch.object(POLICY, 'api') as api, \
-                patch('sys.argv', ['policy', '--github-output']):
-            POLICY.main()
-        api.assert_not_called()
-        self.assertEqual(output.read_text(), 'generated_only=false\n')
+        for named in POLICY.NAMED_OUTPUTS:
+            with self.subTest(named=named):
+                self.git('reset', '--hard', self.source)
+                allowlist = self.repo / 'scripts/ci/generated-files.sh'
+                text = allowlist.read_text().replace(f'  {named}\n', '')
+                self.assertNotIn(f'  {named}\n', text)
+                allowlist.write_text(text)
+                base = self.commit()
+                with self.assertRaisesRegex(ValueError, 'not on the canonical allowlist'):
+                    POLICY.allowed_paths(base)
+                self.git('apply', str(ROOT / 'scripts/ci/fixtures/generated-output-5725.patch'))
+                head = self.commit()
+                event = copy.deepcopy(self.event)
+                event['pull_request']['base']['sha'] = base
+                event['pull_request']['head']['sha'] = head
+                event_path = self.repo / 'event.json'
+                event_path.write_text(json.dumps(event))
+                output = self.repo / 'output'
+                output.unlink(missing_ok=True)
+                with patch.dict(os.environ, GITHUB_EVENT_PATH=str(event_path), GITHUB_OUTPUT=str(output)), \
+                        patch.object(POLICY, 'api') as api, \
+                        patch('sys.argv', ['policy', '--github-output']):
+                    POLICY.main()
+                api.assert_not_called()
+                self.assertEqual(output.read_text(), 'generated_only=false\n')
 
     def test_candidate_policy_cannot_replace_workflow_invoked_base_policy(self):
         import yaml
@@ -387,7 +392,7 @@ class WorkflowCompletion(unittest.TestCase):
         self.assertIn("output_tree_sha=git('HEAD^{tree}')", text)
         self.assertNotIn('pull_request:', text)
 
-    def test_repository_codeql_filter_excludes_the_four_paths(self):
+    def test_repository_codeql_filter_excludes_named_outputs(self):
         import yaml
         import fnmatch
         doc = yaml.safe_load((ROOT / '.github/workflows/codeql.yml').read_text())

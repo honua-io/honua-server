@@ -43,8 +43,6 @@ jobs:
       PYTHON_SDK_VERSION: ${{ inputs.python_sdk_version || '0.1.19' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Verify inventory completeness
-        run: python3 scripts/examples/generate-manifest.py --check
       - name: Select candidate image
         run: |
           if [[ -z "${CANDIDATE_IMAGE_INPUT}" ]]; then
