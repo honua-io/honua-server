@@ -13,6 +13,8 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
+using Honua.TestKit.Helpers;
+using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
@@ -77,10 +79,12 @@ public sealed class RowLevelSecurityEndpointsTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     [Endpoint("POST /api/v1/admin/rls-policies")]
     [Endpoint("POST /api/v1/admin/field-mask-policies")]
+    [Endpoint("GET /odata/Features({layerId})")]
     public async Task RoutedPolicyCollision_AdminOnlyFirstResource_DoesNotOverrideAuthorizedResourcePolicy(bool fieldMask)
     {
         var original = _fixture.GetCurrentV2GraphSnapshot();
-        var (graph, resourceName) = CreateCollisionGraph(original);
+        var (baseline, graph, resourceName) = CreateCollisionGraph(original);
+        MetadataV2GraphValidator.Validate(baseline).IsValid.Should().BeTrue();
         MetadataV2GraphValidator.Validate(graph).IsValid.Should().BeTrue();
         var provider = _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>();
         provider.SetGraph(graph, schema: _fixture.MetadataGraphSchema);
@@ -97,10 +101,12 @@ public sealed class RowLevelSecurityEndpointsTests : IAsyncLifetime
             policyId = fieldMask
                 ? await CreateCollisionMaskPolicyAsync(adminClient, resourceName)
                 : await CreatePolicyAsync(adminClient, resourceName);
-            provider.SetGraph(original.Graph, schema: _fixture.MetadataGraphSchema);
+            provider.SetGraph(baseline, schema: _fixture.MetadataGraphSchema);
             await AssertCollisionPolicyResponseAsync(client, fieldMask);
+            await AssertODataCollisionPolicyResponseAsync(client, fieldMask);
             provider.SetGraph(graph, schema: _fixture.MetadataGraphSchema);
             await AssertCollisionPolicyResponseAsync(client, fieldMask);
+            await AssertODataCollisionPolicyResponseAsync(client, fieldMask);
         }
         finally
         {
@@ -112,13 +118,31 @@ public sealed class RowLevelSecurityEndpointsTests : IAsyncLifetime
         }
     }
 
-    private static (MetadataV2Graph Graph, string ResourceName) CreateCollisionGraph(MetadataV2GraphSnapshot original)
+    private static (MetadataV2Graph Baseline, MetadataV2Graph Graph, string ResourceName) CreateCollisionGraph(MetadataV2GraphSnapshot original)
     {
         var publication = original.Graph.Publications.First(candidate =>
             candidate.PublicationType == MetadataV2PublicationType.EsriFeatureLayer && candidate.LayerIndex == WebAppFixture.TestLayerId);
         var resource = original.ResolveResource(publication)!;
         var binding = original.Graph.StorageBindings.First(candidate =>
             candidate.ResourceId == resource.Metadata.Id && candidate.StorageLayerId == WebAppFixture.TestLayerId);
+        var odataService = original.Index.ServicesById[publication.ServiceId] with
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "collision-odata-service", Name = "collision-odata" },
+            Protocols = [MetadataV2ServiceProtocols.OData]
+        };
+        var odataPublication = publication with
+        {
+            Metadata = publication.Metadata with { Id = "collision-odata-publication", Name = "collision-odata-publication" },
+            ServiceId = odataService.Metadata.Id,
+            StorageBindingId = binding.Metadata.Id,
+            PublicationType = MetadataV2PublicationType.ODataEntitySet
+        };
+        var baseline = original.Graph with
+        {
+            Revision = original.Graph.Revision + 1,
+            Services = [.. original.Graph.Services, odataService],
+            Publications = [odataPublication, .. original.Graph.Publications]
+        };
         var adminBinding = binding with
         {
             Metadata = binding.Metadata with { Id = "collision-admin-binding", Name = "collision-admin-binding" },
@@ -137,14 +161,20 @@ public sealed class RowLevelSecurityEndpointsTests : IAsyncLifetime
             StorageBindingId = adminBinding.Metadata.Id,
             LayerIndex = 77
         };
-        var graph = original.Graph with
+        var adminODataPublication = adminPublication with
         {
-            Revision = original.Graph.Revision + 1,
-            Resources = [adminResource, .. original.Graph.Resources],
-            StorageBindings = [adminBinding, .. original.Graph.StorageBindings],
-            Publications = [adminPublication, .. original.Graph.Publications]
+            Metadata = adminPublication.Metadata with { Id = "collision-admin-odata-publication", Name = "collision-admin-odata-publication" },
+            ServiceId = odataService.Metadata.Id,
+            PublicationType = MetadataV2PublicationType.ODataEntitySet
         };
-        return (graph, resource.Metadata.Name);
+        var graph = baseline with
+        {
+            Revision = baseline.Revision + 1,
+            Resources = [adminResource, .. baseline.Resources],
+            StorageBindings = [adminBinding, .. baseline.StorageBindings],
+            Publications = [adminPublication, adminODataPublication, .. baseline.Publications]
+        };
+        return (baseline, graph, resource.Metadata.Name);
     }
 
     private static async Task<Guid> CreateCollisionMaskPolicyAsync(HttpClient adminClient, string resourceName)
@@ -169,16 +199,33 @@ public sealed class RowLevelSecurityEndpointsTests : IAsyncLifetime
         var payload = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, payload);
         using var document = JsonDocument.Parse(payload);
-        var features = document.RootElement.GetProperty("features").EnumerateArray().ToArray();
+        var attributes = document.RootElement.GetProperty("features").EnumerateArray()
+            .Select(feature => feature.GetProperty("attributes")).ToArray();
+        AssertCollisionPolicyAttributes(attributes, fieldMask);
+    }
+
+    private static async Task AssertODataCollisionPolicyResponseAsync(HttpClient client, bool fieldMask)
+    {
+        var response = await client.GetAsync($"/odata/Features({WebAppFixture.TestLayerId})?$top=10");
+        var payload = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, payload);
+        using var document = JsonDocument.Parse(payload);
+        var attributes = document.RootElement.GetProperty("value").EnumerateArray()
+            .Select(ODataTestHelpers.ParseAttributes).ToArray();
+        AssertCollisionPolicyAttributes(attributes, fieldMask);
+    }
+
+    private static void AssertCollisionPolicyAttributes(JsonElement[] attributes, bool fieldMask)
+    {
         if (fieldMask)
         {
-            features.Should().HaveCount(TestFeatureCount);
-            features.Should().OnlyContain(feature => !feature.GetProperty("attributes").EnumerateObject().Any(property => property.Name == "description"));
+            attributes.Should().HaveCount(TestFeatureCount);
+            attributes.Should().OnlyContain(value => !value.EnumerateObject().Any(property => property.Name == "description"));
         }
         else
         {
-            features.Should().HaveCount(CategoryTestCount);
-            features.Should().OnlyContain(feature => feature.GetProperty("attributes").GetProperty("category").GetString() == "test");
+            attributes.Should().HaveCount(CategoryTestCount);
+            attributes.Should().OnlyContain(value => value.GetProperty("category").GetString() == "test");
         }
     }
 
