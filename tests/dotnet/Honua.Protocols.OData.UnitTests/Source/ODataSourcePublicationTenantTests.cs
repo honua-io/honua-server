@@ -6,12 +6,14 @@ using FluentAssertions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Query;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation;
 using Honua.Core.Queries.Filters;
@@ -99,11 +101,17 @@ public sealed class ODataSourcePublicationTenantTests
         IMetadataV2GraphProvider provider, IRelationshipStore relationships, IStreamingFeatureStore stream)
     {
         var reader = Substitute.For<IFeatureReader>();
+        var dataProvider = Substitute.For<IFeatureDataProvider>();
+        dataProvider.ProviderName.Returns(DataProviderNames.Postgis);
+        dataProvider.Capabilities.Returns(FeatureProviderCapabilities.ReadOnlyAnalytical);
+        dataProvider.Reader.Returns(reader);
+        var router = new FeatureProviderQueryRouter(Substitute.For<ISecureConnectionRegistry>(),
+            new FeatureDataProviderRegistry([dataProvider]));
         var query = new ODataQueryService(Substitute.For<IFilterExpressionService>(),
             Substitute.For<IQueryParameterAdapter<ODataQueryParameters>>(), Substitute.For<IQueryProcessor>());
         var search = new ODataSearchService(new ODataSearchDependencies(reader, relationships, stream,
             Substitute.For<IGeometryService>(), Substitute.For<ICrsRegistry>(), provider,
-            new ODataFeatureProviderResolver(reader, Substitute.For<IFeatureWriter>(), null),
+            new ODataFeatureProviderResolver(reader, Substitute.For<IFeatureWriter>(), router),
             Options.Create(new ODataOptions())), query);
         return (search, query);
     }
