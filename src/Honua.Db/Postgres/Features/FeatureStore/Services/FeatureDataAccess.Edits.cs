@@ -701,6 +701,36 @@ internal sealed partial class FeatureDataAccess
         }
     }
 
+    private sealed record BatchUpdateExecution(
+        RowSecurityContext Row, (SqlFragment? Filter, OwnerEditGuard? Owner) Policy,
+        Dictionary<long, FeatureEditPrecondition>? Preconditions);
+
+    private async Task<Feature> ApplyBatchUpdateAsync(
+        Feature feature, BatchUpdateExecution execution, CancellationToken cancellationToken)
+    {
+        var (row, policy, preconditions) = execution;
+        FeatureEditPrecondition precondition = default;
+        var hasPrecondition = preconditions?.TryGetValue(feature.Id, out precondition) == true;
+        var updated = await RunRowMutationAtomicallyAsync(row.Connection, row.Transaction,
+            async (connection, transaction, token) =>
+            {
+                var preparation = new UpdatePreparation(row with { Connection = connection, Transaction = transaction },
+                    hasPrecondition ? precondition : null, policy.Filter);
+                var update = await PrepareCheckedUpdateAsync(feature, preparation, token).ConfigureAwait(false);
+                var written = await UpdateCheckedAsync(row.Target.LayerId, update, policy.Filter,
+                    connection, transaction, policy.Owner, token).ConfigureAwait(false);
+                await TryWriteOutboxRowForBatchAsync(connection, transaction, written.Id, "update", written, token).ConfigureAwait(false);
+                return written;
+            }, cancellationToken,
+            requireTransaction: hasPrecondition || feature.PreserveOmittedMaskedAttributes ||
+                !feature.PreservedAttributeNames.IsDefaultOrEmpty || feature.PreserveOmittedGeometry || policy.Filter is not null).ConfigureAwait(false);
+        if (hasPrecondition)
+        {
+            preconditions![updated.Id] = precondition with { ExpectedStateToken = FeatureStateToken.Compute(updated) };
+        }
+        return updated;
+    }
+
     private sealed record UpdatePreparation(RowSecurityContext Row, FeatureEditPrecondition? Precondition, SqlFragment? RowPolicy);
 
     private async Task<Feature> PrepareCheckedUpdateAsync(
@@ -1169,31 +1199,12 @@ internal sealed partial class FeatureDataAccess
                     var feature = operation.Feature
                         ?? throw new InvalidOperationException("Ordered update operation is missing the feature payload.");
 
-                    FeatureEditPrecondition precondition = default;
-                    var hasPrecondition = preconditions?.TryGetValue(feature.Id, out precondition) == true;
-
                     FeatureMutationOutboxScope.Current?.BeginRowAttempt?.Invoke("update");
                     try
                     {
-                        var updated = await RunRowMutationAtomicallyAsync(
-                            connection,
-                            transaction,
-                            async (conn, tx, ct) =>
-                            {
-                                var update = await PrepareCheckedUpdateAsync(feature,
-                                    new(new(conn, tx, new(_tableName, layerId, (null, feature.Id))), hasPrecondition ? precondition : null, writeCheck), ct).ConfigureAwait(false);
-
-                                var u = await UpdateCheckedAsync(
-                                    layerId, update, writeCheck, conn, tx, OwnerEditGuard.Find(ownerGuards, feature.Id), ct).ConfigureAwait(false);
-                                await TryWriteOutboxRowForBatchAsync(conn, tx, u.Id, "update", u, ct).ConfigureAwait(false);
-                                return u;
-                            },
-                            cancellationToken,
-                            requireTransaction: hasPrecondition || feature.PreserveOmittedMaskedAttributes || !feature.PreservedAttributeNames.IsDefaultOrEmpty || feature.PreserveOmittedGeometry || writeCheck is not null).ConfigureAwait(false);
-                        if (hasPrecondition)
-                        {
-                            preconditions![updated.Id] = precondition with { ExpectedStateToken = FeatureStateToken.Compute(updated) };
-                        }
+                        var updated = await ApplyBatchUpdateAsync(feature,
+                            new(new(connection, transaction, new(_tableName, layerId, (null, feature.Id))),
+                                (writeCheck, OwnerEditGuard.Find(ownerGuards, feature.Id)), preconditions), cancellationToken).ConfigureAwait(false);
                         updateResults.Add(EditOperationResult.Success(
                             updated.Id,
                             feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
@@ -2194,36 +2205,15 @@ internal sealed partial class FeatureDataAccess
                 return (updatedCount, results.ToImmutableArray());
             }
 
-            FeatureEditPrecondition precondition = default;
-            var hasPrecondition = preconditions?.TryGetValue(feature.Id, out precondition) == true;
-
             // Advance per-operation outbox metadata once per attempt; failed updates must
             // consume their queued slot so the next successful update gets its own
             // GeometryChanged / requestId rather than the failed row's.
             FeatureMutationOutboxScope.Current?.BeginRowAttempt?.Invoke("update");
             try
             {
-                var updated = await RunRowMutationAtomicallyAsync(
-                    connection,
-                    transaction,
-                    async (conn, tx, ct) =>
-                    {
-                        var update = await PrepareCheckedUpdateAsync(feature,
-                            new(new(conn, tx, new(_tableName, layerId, (null, feature.Id))), hasPrecondition ? precondition : null, writeCheck), ct).ConfigureAwait(false);
-
-                        var u = await UpdateCheckedAsync(
-                            layerId, update, writeCheck, conn, tx, OwnerEditGuard.Find(ownerGuards, feature.Id), ct).ConfigureAwait(false);
-                        await TryWriteOutboxRowForBatchAsync(conn, tx, u.Id, "update", u, ct).ConfigureAwait(false);
-                        return u;
-                    },
-                    cancellationToken,
-                    requireTransaction: hasPrecondition || feature.PreserveOmittedMaskedAttributes || !feature.PreservedAttributeNames.IsDefaultOrEmpty || feature.PreserveOmittedGeometry || writeCheck is not null).ConfigureAwait(false);
-                if (hasPrecondition)
-                {
-                    // Later operations on this row in the same batch must observe our
-                    // successful write, while still rejecting any external change.
-                    preconditions![updated.Id] = precondition with { ExpectedStateToken = FeatureStateToken.Compute(updated) };
-                }
+                var updated = await ApplyBatchUpdateAsync(feature,
+                    new(new(connection, transaction, new(_tableName, layerId, (null, feature.Id))),
+                        (writeCheck, OwnerEditGuard.Find(ownerGuards, feature.Id)), preconditions), cancellationToken).ConfigureAwait(false);
                 updatedCount++;
                 results.Add(EditOperationResult.Success(updated.Id, feature.Attributes.GetValueOrDefault("globalId")?.ToString()));
             }
