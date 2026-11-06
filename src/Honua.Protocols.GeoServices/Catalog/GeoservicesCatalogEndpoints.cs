@@ -97,16 +97,20 @@ internal static class GeoservicesCatalogEndpoints
 
         // A service's own node in the catalogue. Esri clients walking a service URL ask for
         // the parent of "{service}/{ServiceType}" before they will use it: a single
-        // MakeWCSLayer call issues GET /rest/services/{service} and, on receiving a 404
-        // envelope, aborts with the opaque "ERROR 999999 ... Error code: 404" - after the
-        // WCS conversation itself has already succeeded (#5158). This answers with the
-        // folder-shaped document Esri expects, listing the service-type entries published
-        // under that name. The built-in Utilities folder is handled inside the same method.
+        // Some clients probe the parent directory before opening a service.
         endpoints.Map("/rest/services/{folderName}", HandleGetServiceFolder)
-            .WithDisplayName("GeoServices Service Folder")
+            .WithDisplayName("GeoServices Folder or Root Service")
             .WithName("GeoServicesServiceFolder")
-            .WithSummary("List the service-type entries published under one service name")
-            .WithDescription("Esri clients resolve a service URL through its parent node before using it; this answers that node with the same projection the catalogue root uses, filtered to one name.")
+            .WithSummary("List a folder or the facets of a root service")
+            .WithTags("GeoServices Catalog")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get, HttpMethods.Post }))
+            .Produces<ServicesDirectoryResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(StatusCodes.Status400BadRequest);
+
+        endpoints.Map("/rest/services/{folderName}/{serviceId}", HandleGetServiceFolder)
+            .WithDisplayName("GeoServices Folder Service")
+            .WithName("GeoServicesFolderService")
+            .WithSummary("List the facets of a service in a folder")
             .WithTags("GeoServices Catalog")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get, HttpMethods.Post }))
             .Produces<ServicesDirectoryResponse>(StatusCodes.Status200OK, JsonContentType)
@@ -498,10 +502,12 @@ internal static class GeoservicesCatalogEndpoints
                             folderName).ConfigureAwait(false));
                     break;
                 case "GetFolders":
+                    var directory = await BuildServiceDirectoryProjectionAsync(context, graphProvider,
+                        rasterStore, licenseStatusProvider, logger).ConfigureAwait(false);
                     payload = new XElement(
                         "FolderNames",
                         new XAttribute(xsi + "type", "tns:ArrayOfString"),
-                        new XElement("String", PrintingToolsServiceCatalog.FolderName));
+                        GeoServicesCatalogDirectory.FolderNames(directory.Entries).Select(name => new XElement("String", name)));
                     break;
                 case "GetMessageVersion":
                     payload = new XElement("MessageVersion", "esriArcGISVersion108");
@@ -634,19 +640,10 @@ internal static class GeoservicesCatalogEndpoints
             throw new SoapCatalogAccessException(projection.AccessStatusCode!.Value);
         }
 
-        // IServiceCatalog2 defines ServiceDescriptionsEx(folderName). A named folder
-        // other than the built-in Utilities folder has no entries. Apply this only
-        // after authorization so a folder argument cannot bypass the principal-filtered
-        // discovery decision.
-        if (!string.IsNullOrWhiteSpace(folderName))
-        {
-            return [];
-        }
-
         // Preserve the established ImageServer-first record when one service name
         // publishes several protocol types; protocol-wide discovery adds siblings
         // without changing the existing SOAP catalog's primary description.
-        return projection.Entries
+        return GeoServicesCatalogDirectory.InFolder(projection.Entries, string.IsNullOrWhiteSpace(folderName) ? null : folderName)
             .OrderBy(static entry => entry.Name, StringComparer.OrdinalIgnoreCase)
             .ThenBy(static entry => string.Equals(entry.Type, ImageServerProtocolName, StringComparison.Ordinal) ? 0 : 1)
             .ThenBy(static entry => entry.Type, StringComparer.Ordinal)
@@ -657,9 +654,7 @@ internal static class GeoservicesCatalogEndpoints
     private static XElement CreateSoapServiceDescription(string baseUrl, ServiceDirectoryEntry entry)
     {
         XNamespace xsi = "http://www.w3.org/2001/XMLSchema-instance";
-        var escapedName = entry.Name == PrintingToolsServiceCatalog.QualifiedName
-            ? PrintingToolsServiceCatalog.EscapeCatalogName(entry.Name)
-            : Uri.EscapeDataString(entry.Name);
+        var escapedName = GeoServicesServiceUrls.EscapeName(entry.Name);
         var soapUrl = entry.Type is ImageServerProtocolName or GPServerProtocolName
             ? $"{baseUrl}/services/{escapedName}/{entry.Type}"
             : entry.Url;
@@ -777,7 +772,7 @@ internal static class GeoservicesCatalogEndpoints
                 directoryTypes = [GPServerProtocolName];
             }
 
-            var escapedName = Uri.EscapeDataString(service.Metadata.Name);
+            var escapedName = GeoServicesServiceUrls.EscapeName(MetadataV2ServicePaths.QualifiedName(snapshot.Graph, service));
             foreach (var directoryType in directoryTypes)
             {
                 if (string.Equals(directoryType, ImageServerProtocolName, StringComparison.Ordinal))
@@ -788,7 +783,10 @@ internal static class GeoservicesCatalogEndpoints
 
                 entries.Add(new ServiceDirectoryEntry
                 {
-                    Name = service.Metadata.Name,
+                    Name = MetadataV2ServicePaths.QualifiedName(snapshot.Graph, service),
+                    LogicalName = service.Metadata.Name,
+                    FolderName = MetadataV2ServicePaths.FolderName(snapshot.Graph, service),
+                    DisplayName = service.Metadata.Title ?? service.EffectivePublicName,
                     Type = directoryType,
                     Url = $"{baseUrl}/rest/services/{escapedName}/{directoryType}",
                     SoapCapabilities = string.Equals(directoryType, FeatureServerProtocolName, StringComparison.Ordinal)
@@ -822,10 +820,13 @@ internal static class GeoservicesCatalogEndpoints
                         }
                         if (probe.LayerId is not null)
                         {
-                            var escapedName = Uri.EscapeDataString(service.Metadata.Name);
+                            var escapedName = GeoServicesServiceUrls.EscapeName(MetadataV2ServicePaths.QualifiedName(snapshot.Graph, service));
                             imageServerEntries[index] = new ServiceDirectoryEntry
                             {
-                                Name = service.Metadata.Name,
+                                Name = MetadataV2ServicePaths.QualifiedName(snapshot.Graph, service),
+                    LogicalName = service.Metadata.Name,
+                    FolderName = MetadataV2ServicePaths.FolderName(snapshot.Graph, service),
+                    DisplayName = service.Metadata.Title ?? service.EffectivePublicName,
                                 Type = ImageServerProtocolName,
                                 Url = $"{baseUrl}/rest/services/{escapedName}/{ImageServerProtocolName}"
                             };
@@ -866,11 +867,10 @@ internal static class GeoservicesCatalogEndpoints
             entries.Add(PrintingToolsServiceCatalog.CreateEntry(baseUrl));
         }
 
-        // Decide folder access from that folder's visible entries and denied resources.
-        // A public locator or scene elsewhere must not suppress its authentication challenge.
+        // A public locator or scene elsewhere must not suppress a service authentication challenge.
         if (serviceName is not null)
         {
-            entries.RemoveAll(entry => !string.Equals(entry.Name, serviceName, StringComparison.OrdinalIgnoreCase));
+            entries.RemoveAll(entry => !string.Equals(entry.LogicalName ?? entry.Name, serviceName, StringComparison.OrdinalIgnoreCase));
         }
 
         // A graph can contain more than one publication/service record that projects to
@@ -1005,8 +1005,8 @@ internal static class GeoservicesCatalogEndpoints
 
         var response = new ServicesDirectoryResponse
         {
-            Folders = [PrintingToolsServiceCatalog.FolderName],
-            Services = [.. projection.Entries]
+            Folders = GeoServicesCatalogDirectory.FolderNames(projection.Entries),
+            Services = GeoServicesCatalogDirectory.InFolder(projection.Entries, null)
         };
 
         GeoservicesCatalogEndpointLogging.LogServicesDirectoryReturned(logger, response.Services.Length);
@@ -1014,7 +1014,6 @@ internal static class GeoservicesCatalogEndpoints
         return Results.Json(response, GeoservicesCatalogJsonContext.Default.ServicesDirectoryResponse, contentType: JsonContentType);
     }
 
-    // This node reuses the catalogue projection so a service that exists is not reported as not-found, while a denied folder keeps its access error and an unknown name stays not-found.
     private static async Task<IResult> HandleGetServiceFolder(
         HttpContext context,
         string folderName,
@@ -1027,40 +1026,41 @@ internal static class GeoservicesCatalogEndpoints
         f = await GeoServicesRequestValueHelpers.ReadFormValueOrDefaultAsync(
             context.Request, "f", f, context.RequestAborted).ConfigureAwait(false);
         if (!IsSupportedFormat(f))
-        {
             return StandardErrorHelpers.CreateBadRequest(context, "Output format must be json or pjson.");
-        }
 
-        if (PrintingToolsServiceCatalog.IsFolder(folderName))
-        {
+        var serviceLeaf = context.Request.RouteValues["serviceId"]?.ToString();
+        if (serviceLeaf is null && PrintingToolsServiceCatalog.IsFolder(folderName))
             return PrintingToolsDirectory(context);
-        }
 
+        var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
         var projection = await BuildServiceDirectoryProjectionAsync(
-            context,
-            graphProvider,
-            rasterStore,
-            licenseStatusProvider,
-            logger,
-            serviceName: folderName).ConfigureAwait(false);
-        if (projection.AccessError is not null)
+            context, graphProvider, rasterStore, licenseStatusProvider, logger, snapshot).ConfigureAwait(false);
+        var entries = serviceLeaf is null
+            ? GeoServicesCatalogDirectory.InFolder(projection.Entries, folderName) : [];
+        if (entries.Length == 0)
         {
-            return projection.AccessError;
+            var targets = MetadataV2ServicePaths.Resolve(snapshot.Graph, new()
+            {
+                FolderName = serviceLeaf is null ? null : folderName,
+                PublicName = serviceLeaf ?? folderName,
+                Tenant = TenantScopeHelpers.ResolveRequestTenantId(context)
+            });
+            var logicalNames = targets.Select(service => service.Metadata.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            entries = projection.Entries.Where(entry => logicalNames.Contains(entry.LogicalName ?? entry.Name)).ToArray();
+            if (entries.Length == 0)
+            {
+                if (logicalNames.Count == 1)
+                {
+                    var serviceProjection = await BuildServiceDirectoryProjectionAsync(
+                        context, graphProvider, rasterStore, licenseStatusProvider, logger,
+                        snapshot, serviceName: logicalNames.Single()).ConfigureAwait(false);
+                    if (serviceProjection.AccessError is not null) return serviceProjection.AccessError;
+                }
+                return StandardErrorHelpers.CreateNotFound(context, "Folder or service was not found.");
+            }
         }
-
-        var entries = projection.Entries;
-        if (entries.Count == 0)
-        {
-            return StandardErrorHelpers.CreateNotFound(
-                context, $"Folder '{folderName}' was not found.");
-        }
-
-        var response = new ServicesDirectoryResponse
-        {
-            Services = [.. entries]
-        };
-
-        return Results.Json(response, GeoservicesCatalogJsonContext.Default.ServicesDirectoryResponse, contentType: JsonContentType);
+        return Results.Json(new ServicesDirectoryResponse { Services = entries },
+            GeoservicesCatalogJsonContext.Default.ServicesDirectoryResponse, contentType: JsonContentType);
     }
 
     private static async Task<IResult> HandleGetRestInfo(

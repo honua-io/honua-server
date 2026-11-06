@@ -193,7 +193,7 @@ internal static partial class VectorTileServerEndpoints
 
         return new VectorTileServerMetadataResponse
         {
-            Name = service.Metadata.Name,
+            Name = service.EffectivePublicName,
             TileInfo = tileInfo,
             MinLod = minLod,
             MaxLod = maxLod,

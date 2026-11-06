@@ -165,7 +165,7 @@ internal static partial class VectorTileServerEndpoints
             var serviceUrl = BuildServiceUrl(context, service.Metadata.Name);
             var styleJson = VectorTileStyleComposer.Compose(
                 storedMapLibreJson,
-                service.Metadata.Name,
+                service.EffectivePublicName,
                 StyleSourceId,
                 tileUrl,
                 geometryType,
@@ -267,32 +267,16 @@ internal static partial class VectorTileServerEndpoints
     }
 
     private static string BuildServiceUrl(HttpContext context, string serviceName)
-    {
-        var baseUrl = BaseUrlResolver.GetBaseUrl(context).TrimEnd('/');
-        var encodedService = Uri.EscapeDataString(serviceName);
-        return $"{baseUrl}/rest/services/{encodedService}/VectorTileServer";
-    }
+        => GeoServicesServiceUrls.Requested(context, serviceName, "VectorTileServer");
 
     private static string BuildTileTemplateUrl(HttpContext context, string serviceName)
-    {
-        var baseUrl = BaseUrlResolver.GetBaseUrl(context).TrimEnd('/');
-        var encodedService = Uri.EscapeDataString(serviceName);
-        return $"{baseUrl}/rest/services/{encodedService}/VectorTileServer/tile/{{z}}/{{y}}/{{x}}.pbf";
-    }
+        => $"{BuildServiceUrl(context, serviceName)}/tile/{{z}}/{{y}}/{{x}}.pbf";
 
     private static string BuildSpriteBaseUrl(HttpContext context, string serviceName)
-    {
-        var baseUrl = BaseUrlResolver.GetBaseUrl(context).TrimEnd('/');
-        var encodedService = Uri.EscapeDataString(serviceName);
-        return $"{baseUrl}/rest/services/{encodedService}/VectorTileServer/resources/sprites/sprite";
-    }
+        => $"{BuildServiceUrl(context, serviceName)}/resources/sprites/sprite";
 
     private static string BuildGlyphsTemplateUrl(HttpContext context, string serviceName)
-    {
-        var baseUrl = BaseUrlResolver.GetBaseUrl(context).TrimEnd('/');
-        var encodedService = Uri.EscapeDataString(serviceName);
-        return $"{baseUrl}/rest/services/{encodedService}/VectorTileServer/resources/fonts/{{fontstack}}/{{range}}.pbf";
-    }
+        => $"{BuildServiceUrl(context, serviceName)}/resources/fonts/{{fontstack}}/{{range}}.pbf";
 
     private static async Task<IResult> HandleGetSpriteResource(HttpContext context, string spriteResource)
     {

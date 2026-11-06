@@ -1860,6 +1860,7 @@ app.UsePortalTokenAuthenticationRejection();
 app.UseMiddleware<Honua.Server.Features.Operations.UrlImportOperationMiddleware>();
 
 // Map public demo service/layer contract IDs to internal seeded layer IDs and guard demo writes.
+app.UseGeoServicesServicePaths();
 app.UseCloudDemoServiceLayerAliases();
 app.UseCloudDemoWritableFeatureGuard();
 
@@ -2221,6 +2222,10 @@ if (Honua.ControlPlane.SelfHostedRollingProxyRegistration.IsSelfHostedProxyEnabl
 {
     app.MapReverseProxy();
 }
+
+#if !HONUA_EXCLUDE_GEOSERVICES
+app.MapGeoServicesServicePaths();
+#endif
 
 app.Run();
 

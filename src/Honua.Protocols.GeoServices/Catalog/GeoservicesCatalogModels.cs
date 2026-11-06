@@ -30,6 +30,15 @@ internal sealed record ServiceDirectoryEntry
     public required string Url { get; init; }
 
     [JsonIgnore]
+    public string? LogicalName { get; init; }
+
+    [JsonIgnore]
+    public string? FolderName { get; init; }
+
+    [JsonIgnore]
+    public string? DisplayName { get; init; }
+
+    [JsonIgnore]
     public string? SoapCapabilities { get; init; }
 }
 

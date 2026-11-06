@@ -49,8 +49,8 @@ internal sealed class ProjectedCatalogDiscoveryRegistryStore(
             Items = projection.Entries.Select(entry => new CatalogEndpointItem
             {
                 Id = ItemId(projection.Workspace, entry),
-                Title = entry.Name,
-                FromService = entry.Name,
+                Title = entry.DisplayName,
+                FromService = entry.DisplayName,
                 Resource = entry.Url,
             }).ToArray(),
         };
@@ -73,7 +73,7 @@ internal sealed class ProjectedCatalogDiscoveryRegistryStore(
         return entry is null ? null : new CatalogItem
         {
             Id = ItemId(projection.Workspace, entry),
-            Title = entry.Name,
+            Title = entry.DisplayName,
             AutoMirror = true,
             Live = true,
             BackingServiceCount = 1,
@@ -85,7 +85,7 @@ internal sealed class ProjectedCatalogDiscoveryRegistryStore(
                     Scope = "resource-derived",
                     Fields =
                     [
-                        new CatalogItemField { Label = "Service", State = CatalogFieldStates.System, Value = entry.Name },
+                        new CatalogItemField { Label = "Service", State = CatalogFieldStates.System, Value = entry.DisplayName },
                         new CatalogItemField { Label = "Protocol", State = CatalogFieldStates.Calculated, Value = entry.Type, DerivedFrom = entry.Url },
                         new CatalogItemField { Label = "URL", State = CatalogFieldStates.Calculated, Value = entry.Url, DerivedFrom = entry.Name },
                     ],
@@ -143,7 +143,7 @@ internal sealed class ProjectedCatalogDiscoveryRegistryStore(
         Feeders = projection.Entries.Select(static entry => new CatalogFeeder
         {
             Kind = entry.Type == "FeatureServer" ? "feature-server" : "map-server",
-            Label = entry.Name,
+            Label = entry.DisplayName,
         }).ToArray(),
     };
 
@@ -157,7 +157,7 @@ internal sealed class ProjectedCatalogDiscoveryRegistryStore(
         return [];
 #else
         var projected = await GeoServicesCatalogProjection.ReadFeatureMapAsync(context, snapshot).ConfigureAwait(false);
-        return projected.Select(static entry => new CatalogEntry(entry.Name, entry.Type, entry.Url)).ToArray();
+        return projected.Select(static entry => new CatalogEntry(entry.Name, entry.Type, entry.Url, entry.DisplayName ?? entry.Name)).ToArray();
 #endif
     }
 
@@ -165,7 +165,7 @@ internal sealed class ProjectedCatalogDiscoveryRegistryStore(
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
             workspace.Id.ToUpperInvariant() + "\0" + workspace.TenantId + "\0" + workspace.Namespace + "\0" + entry.Name + "\0" + entry.Type))).ToLowerInvariant();
 
-    private sealed record CatalogEntry(string Name, string Type, string Url);
+    private sealed record CatalogEntry(string Name, string Type, string Url, string DisplayName);
 
     private sealed record WorkspaceProjection(
         CatalogDiscoveryWorkspaceOptions Workspace, string BaseUrl, IReadOnlyList<CatalogEntry> Entries);

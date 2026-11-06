@@ -29,7 +29,8 @@ internal static partial class FeatureServerEndpoints
         bool branchVersioningEnabled,
         bool versionManagementEnabled,
         bool offlineSyncEnabled,
-        PathString pathBase = default)
+        PathString pathBase = default,
+        string? versionManagementServerUrl = null)
     {
         ArgumentNullException.ThrowIfNull(service);
         ArgumentNullException.ThrowIfNull(publications);
@@ -57,7 +58,7 @@ internal static partial class FeatureServerEndpoints
 
         return new FeatureServerResponse
         {
-            ServiceName = service.Metadata.Name,
+            ServiceName = service.EffectivePublicName,
             ServiceDescription = service.Metadata.Description ?? string.Empty,
             CopyrightText = string.IsNullOrWhiteSpace(service.Metadata.Attribution)
                 ? service.Metadata.License
@@ -93,7 +94,7 @@ internal static partial class FeatureServerEndpoints
             IsDataVersioned = branchVersioningEnabled,
             SupportsBranchVersioning = versionManagementEnabled,
             VersionManagementServerUrl = versionManagementEnabled
-                ? $"{pathBase}/rest/services/{service.Metadata.Name}/VersionManagementServer"
+                ? versionManagementServerUrl ?? $"{pathBase}{GeoServicesServiceUrls.CanonicalPath(snapshot.Graph, service)}/VersionManagementServer"
                 : null,
         };
     }

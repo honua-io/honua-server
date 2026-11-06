@@ -2,6 +2,8 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Authentication;
 using Microsoft.AspNetCore.OutputCaching;
 
 namespace Honua.Infrastructure.Caching;
@@ -11,6 +13,11 @@ internal sealed class RouteTagOutputCachePolicy : IOutputCachePolicy
     public ValueTask CacheRequestAsync(OutputCacheContext context, CancellationToken cancellationToken)
     {
         AddRouteTags(context);
+        if (GeoServicesServicePath.FromRequest(context.HttpContext) is { } path)
+        {
+            context.CacheVaryByRules.VaryByValues["honua-service-revision"] = path.Snapshot.Etag;
+            context.CacheVaryByRules.VaryByValues["honua-service-tenant"] = TenantScopeHelpers.ResolveRequestTenantId(context.HttpContext) ?? string.Empty;
+        }
         return ValueTask.CompletedTask;
     }
 

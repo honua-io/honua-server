@@ -13,7 +13,7 @@ namespace Honua.Infrastructure.Helpers;
 
 internal static class ServiceResourceValidationHelpers
 {
-    private const string ServiceCatalogUnavailableMessage = "Service catalog is temporarily unavailable.";
+    internal const string ServiceCatalogUnavailableMessage = "Service catalog is temporarily unavailable.";
 
     internal readonly record struct ServiceValidationV2Result(
         bool IsValid,
@@ -57,6 +57,13 @@ internal static class ServiceResourceValidationHelpers
                     context,
                     ServiceCatalogUnavailableMessage,
                     retryable: true));
+        }
+
+        if (GeoServicesServicePath.FromRequest(context) is not null &&
+            (!serviceResult.IsValid || !GeoServicesServicePath.TargetsService(context, serviceResult.Resource!)))
+        {
+            return new ServiceValidationV2Result(false, null,
+                StandardErrorHelpers.CreateNotFound(context, "Service was not found."));
         }
 
         if (!serviceResult.IsValid)
@@ -136,6 +143,13 @@ internal static class ServiceResourceValidationHelpers
                     retryable: true));
         }
 
+        if (GeoServicesServicePath.FromRequest(context) is not null &&
+            (!resourceResult.IsValid || !GeoServicesServicePath.TargetsService(context, resourceResult.Resource.Service)))
+        {
+            return new ServiceLayerValidationV2Result(false, null, null, null,
+                StandardErrorHelpers.CreateNotFound(context, "Service layer was not found."));
+        }
+
         if (!resourceResult.IsValid)
         {
             var errorMessage = resourceResult.ErrorMessage ?? "Resource not found.";
@@ -185,6 +199,6 @@ internal static class ServiceResourceValidationHelpers
             null);
     }
 
-    private static bool IsCatalogStorageUnavailable(Exception exception)
+    internal static bool IsCatalogStorageUnavailable(Exception exception)
         => exception is DbException { SqlState: "42P01" };
 }
