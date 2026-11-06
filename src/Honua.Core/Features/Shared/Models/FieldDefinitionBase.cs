@@ -3,51 +3,22 @@
 
 namespace Honua.Core.Features.Shared.Models;
 
-/// <summary>
-/// Base field definition properties shared across all protocols and APIs.
-/// Consolidates common field metadata to eliminate duplication between GeoServices, OGC, and import models.
-/// </summary>
 public abstract record FieldDefinitionBase
 {
-    /// <summary>
-    /// Field name (database column name)
-    /// </summary>
     public required string Name { get; init; }
 
-    /// <summary>
-    /// Field type in protocol-specific format (e.g., "esriFieldTypeString", "string")
-    /// </summary>
     public required string Type { get; init; }
 
-    /// <summary>
-    /// Human-readable alias or display name for the field
-    /// </summary>
     public string? Alias { get; init; }
 
-    /// <summary>
-    /// Maximum length for string fields, null for other types
-    /// </summary>
     public int? Length { get; init; }
 
-    /// <summary>
-    /// Whether the field accepts null values
-    /// </summary>
     public bool Nullable { get; init; } = true;
 
-    /// <summary>
-    /// Default value for the field (optional)
-    /// </summary>
     public object? DefaultValue { get; init; }
 
-    /// <summary>
-    /// Gets the effective display name (Alias ?? Name)
-    /// </summary>
     public string DisplayName => Alias ?? Name;
 
-    /// <summary>
-    /// Validates field definition for common issues
-    /// </summary>
-    /// <returns>Validation error message if invalid, null if valid</returns>
     public virtual string? Validate()
     {
         if (string.IsNullOrWhiteSpace(Name))
@@ -66,11 +37,6 @@ public abstract record FieldDefinitionBase
         return null; // Valid
     }
 
-    /// <summary>
-    /// Determines if this field represents a string type based on the Type value.
-    /// Override in derived classes for protocol-specific string type detection.
-    /// </summary>
-    /// <returns>True if this is a string-based field type</returns>
     protected virtual bool IsStringType()
     {
         var typeUpper = Type.ToUpperInvariant();

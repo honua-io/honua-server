@@ -6,11 +6,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.Validation.Contracts;
 
-/// <summary>
-/// Source-generated JSON context for the shared field-level validation contract
-/// (<see cref="FieldValidationError"/> / <see cref="FieldValidationResult"/>).
-/// Keeps the contract AOT-serializable wherever it is emitted.
-/// </summary>
 [JsonSourceGenerationOptions(
     JsonSerializerDefaults.General,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]

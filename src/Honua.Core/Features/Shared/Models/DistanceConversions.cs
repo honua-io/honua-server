@@ -5,18 +5,8 @@ using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Core.Features.Shared.Models;
 
-/// <summary>
-/// Provides standardized distance unit conversions to eliminate magic numbers
-/// and ensure consistent distance calculations across the codebase.
-/// </summary>
 public static class DistanceConversions
 {
-    /// <summary>
-    /// Converts a distance from the specified unit to meters.
-    /// </summary>
-    /// <param name="distance">The distance value to convert.</param>
-    /// <param name="unit">The unit of the input distance.</param>
-    /// <returns>The distance converted to meters.</returns>
     public static double ToMeters(double distance, DistanceUnit unit) =>
         unit switch
         {
@@ -27,13 +17,6 @@ public static class DistanceConversions
             _ => distance
         };
 
-    /// <summary>
-    /// Converts a distance from the specified unit string to meters.
-    /// Used for text-based APIs and natural language processing.
-    /// </summary>
-    /// <param name="distance">The distance value to convert.</param>
-    /// <param name="unitString">The unit name (case-insensitive).</param>
-    /// <returns>The distance converted to meters.</returns>
     public static double ToMeters(double distance, string unitString) =>
         unitString.ToLowerInvariant() switch
         {
@@ -44,14 +27,6 @@ public static class DistanceConversions
             _ => distance
         };
 
-    /// <summary>
-    /// Determines whether the specified SRID is a geographic (latitude/longitude) CRS that is safe
-    /// to run a WGS 84 spheroid geodesic distance on. This is the narrow geodesic-safe allowlist
-    /// (<see cref="GeographicSridClassifier.IsGeodesicDistanceSafeSrid"/>), intentionally narrower
-    /// than the full geographic classification — see #2731/#2732.
-    /// </summary>
-    /// <param name="srid">The spatial reference identifier to check.</param>
-    /// <returns>True if the SRID is on the geodesic-safe geographic allowlist; otherwise false.</returns>
     public static bool IsGeographicSrid(int srid) =>
         GeographicSridClassifier.IsGeodesicDistanceSafeSrid(srid);
 }

@@ -12,18 +12,10 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Tiles;
 
-/// <summary>
-/// Default <see cref="ITileMatrixSetRegistry"/> implementation. Seeds the two reserved built-in
-/// gridsets (WebMercatorQuad, WorldCRS84Quad) from the canonical OGC constants and formulas so
-/// their advertised geometry is byte-identical to the previous hardcoded paths, then merges any
-/// operator-defined custom gridsets bound from the <c>TileMatrixSets</c> configuration section.
-/// </summary>
 public sealed class TileMatrixSetRegistry : ITileMatrixSetRegistry
 {
-    /// <summary>WebMercatorQuad reserved built-in identifier.</summary>
     public const string WebMercatorQuadId = "WebMercatorQuad";
 
-    /// <summary>WorldCRS84Quad reserved built-in identifier.</summary>
     public const string WorldCrs84QuadId = "WorldCRS84Quad";
 
     private const string WebMercatorQuadUri = "http://www.opengis.net/def/tilematrixset/OGC/1.0/WebMercatorQuad";
@@ -39,10 +31,6 @@ public sealed class TileMatrixSetRegistry : ITileMatrixSetRegistry
     private const double DegreesPerPixel = SpatialConstants.DegreesPerPixel;
     private const int DefaultTileSize = 256;
 
-    /// <summary>
-    /// The reserved built-in identifiers that operators may not redefine. Exposed so the
-    /// configuration validator can reject collisions with the same source of truth.
-    /// </summary>
     public static readonly ImmutableArray<string> ReservedIds =
         [WebMercatorQuadId, WorldCrs84QuadId];
 
@@ -56,19 +44,11 @@ public sealed class TileMatrixSetRegistry : ITileMatrixSetRegistry
     // here instead of being recomputed on every call.
     private readonly ConcurrentDictionary<(string Id, int MaxLevel), GridGeometry> _builtInGeometryCache = new();
 
-    /// <summary>
-    /// Creates a registry from the bound <see cref="TileMatrixSetDefinitionOptions"/>.
-    /// </summary>
-    /// <param name="options">The bound custom tile matrix set options.</param>
     public TileMatrixSetRegistry(IOptions<TileMatrixSetDefinitionOptions> options)
         : this(options?.Value ?? new TileMatrixSetDefinitionOptions())
     {
     }
 
-    /// <summary>
-    /// Creates a registry from the supplied options instance (used directly by tests).
-    /// </summary>
-    /// <param name="options">The custom tile matrix set options.</param>
     public TileMatrixSetRegistry(TileMatrixSetDefinitionOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -129,14 +109,11 @@ public sealed class TileMatrixSetRegistry : ITileMatrixSetRegistry
         _entriesById = _entries.ToDictionary(entry => entry.Id, StringComparer.OrdinalIgnoreCase);
     }
 
-    /// <inheritdoc />
     public IReadOnlyList<TileMatrixSetEntry> All => _entries;
 
-    /// <inheritdoc />
     public bool IsSupported(string tileMatrixSetId)
         => !string.IsNullOrWhiteSpace(tileMatrixSetId) && _entriesById.ContainsKey(tileMatrixSetId);
 
-    /// <inheritdoc />
     public bool TryGet(string tileMatrixSetId, [NotNullWhen(true)] out TileMatrixSetEntry? entry)
     {
         if (!string.IsNullOrWhiteSpace(tileMatrixSetId) &&
@@ -150,7 +127,6 @@ public sealed class TileMatrixSetRegistry : ITileMatrixSetRegistry
         return false;
     }
 
-    /// <inheritdoc />
     public bool TryGetGeometry(string tileMatrixSetId, int maxLevel, [NotNullWhen(true)] out GridGeometry? geometry)
     {
         if (string.IsNullOrWhiteSpace(tileMatrixSetId) || !_entriesById.TryGetValue(tileMatrixSetId, out var entry))

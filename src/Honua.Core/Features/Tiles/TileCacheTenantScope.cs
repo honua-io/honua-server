@@ -6,15 +6,8 @@ using Honua.Core.Features.MultiTenancy.Abstractions;
 
 namespace Honua.Core.Features.Tiles;
 
-/// <summary>
-/// Resolves the ownership scope stored beside generated tile-cache entries.
-/// </summary>
 public static class TileCacheTenantScope
 {
-    /// <summary>
-    /// Prefers the routed database schema and otherwise uses the request tenant, matching the
-    /// ImageServer write path when schema routing is disabled.
-    /// </summary>
     public static string? Resolve(IServiceProvider serviceProvider)
     {
         ArgumentNullException.ThrowIfNull(serviceProvider);

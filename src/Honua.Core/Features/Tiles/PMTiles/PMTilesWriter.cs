@@ -5,27 +5,14 @@ using System.Text.Json;
 
 namespace Honua.Core.Features.Tiles.PMTiles;
 
-/// <summary>
-/// Writes a PMTiles v3 archive from tile data.
-/// Tiles are collected and sorted in memory, then tile payloads are streamed directly to the
-/// output stream after the header and directories have been computed.
-/// </summary>
 public sealed class PMTilesWriter
 {
     private readonly List<TileEntry> _tiles = [];
     private readonly PMTilesCompression _tileCompression;
     private readonly PMTilesCompression _internalCompression;
 
-    /// <summary>
-    /// Gets the number of tiles added to the writer.
-    /// </summary>
     public int TileCount => _tiles.Count;
 
-    /// <summary>
-    /// Initializes a new PMTiles writer.
-    /// </summary>
-    /// <param name="tileCompression">Compression applied to tile data. Use <see cref="PMTilesCompression.None"/> if tiles are already compressed.</param>
-    /// <param name="internalCompression">Compression for internal directories. Defaults to Gzip.</param>
     public PMTilesWriter(
         PMTilesCompression tileCompression = PMTilesCompression.None,
         PMTilesCompression internalCompression = PMTilesCompression.Gzip)
@@ -34,13 +21,6 @@ public sealed class PMTilesWriter
         _internalCompression = internalCompression;
     }
 
-    /// <summary>
-    /// Adds a tile to the archive.
-    /// </summary>
-    /// <param name="z">Zoom level.</param>
-    /// <param name="x">Tile column.</param>
-    /// <param name="y">Tile row.</param>
-    /// <param name="data">Raw tile data bytes.</param>
     public void AddTile(int z, int x, int y, byte[] data)
     {
         ArgumentNullException.ThrowIfNull(data);
@@ -53,18 +33,6 @@ public sealed class PMTilesWriter
         _tiles.Add(new TileEntry(tileId, data));
     }
 
-    /// <summary>
-    /// Writes the complete PMTiles v3 archive to the output stream.
-    /// </summary>
-    /// <remarks>
-    /// The writer releases each tile's source buffer as it is copied into the archive to keep
-    /// peak memory at roughly one archive instead of two; a writer instance can therefore be
-    /// written only once.
-    /// </remarks>
-    /// <param name="output">The stream to write the archive to.</param>
-    /// <param name="metadata">Archive metadata (bounds, zoom, attribution).</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The total number of bytes written.</returns>
     public async Task<long> WriteAsync(Stream output, PMTilesArchiveMetadata metadata, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(output);

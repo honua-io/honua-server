@@ -2,43 +2,22 @@ using System.ComponentModel.DataAnnotations;
 
 namespace Honua.Core.Configuration;
 
-/// <summary>
-/// Validation attribute for TTL (Time To Live) values.
-/// </summary>
 public class ValidTtlAttribute : ValidationAttribute
 {
-    /// <summary>
-    /// Initializes a new instance of the <see cref="ValidTtlAttribute"/> class.
-    /// </summary>
-    /// <param name="minSeconds">The minimum allowed TTL, in seconds.</param>
-    /// <param name="maxHours">The maximum allowed TTL, in hours.</param>
     public ValidTtlAttribute(double minSeconds = 1, double maxHours = 24)
     {
         MinimumTtl = TimeSpan.FromSeconds(minSeconds);
         MaximumTtl = TimeSpan.FromHours(maxHours);
     }
 
-    /// <summary>
-    /// Gets or sets the minimum allowed TTL.
-    /// </summary>
     public TimeSpan MinimumTtl { get; set; }
 
-    /// <summary>
-    /// Gets or sets the maximum allowed TTL.
-    /// </summary>
     public TimeSpan MaximumTtl { get; set; }
 
-    /// <summary>
-    /// Gets or sets the recommended minimum TTL for production deployments.
-    /// </summary>
     public TimeSpan? RecommendedMinimumInProduction { get; set; }
 
-    /// <summary>
-    /// Gets or sets a value indicating whether development warnings should be surfaced by callers.
-    /// </summary>
     public bool WarnInDevelopment { get; set; }
 
-    /// <inheritdoc />
     public override bool IsValid(object? value)
     {
         if (value is null)
@@ -54,7 +33,6 @@ public class ValidTtlAttribute : ValidationAttribute
         return ttl >= MinimumTtl && ttl <= MaximumTtl;
     }
 
-    /// <inheritdoc />
     public override string FormatErrorMessage(string name)
     {
         return $"{name} must be between {MinimumTtl.TotalSeconds} seconds and {MaximumTtl.TotalHours} hours.";

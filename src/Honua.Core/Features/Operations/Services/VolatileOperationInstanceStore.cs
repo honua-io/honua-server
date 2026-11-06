@@ -7,23 +7,18 @@ using Honua.Core.Features.Operations.Domain;
 
 namespace Honua.Core.Features.Operations.Services;
 
-/// <summary>
-/// Non-durable operation-instance store for explicit development and unit-test composition.
-/// Production composition must replace it with a durable implementation.
-/// </summary>
+// Production composition must replace this store with a durable implementation.
 public sealed class VolatileOperationInstanceStore : IOperationInstanceStore
 {
     private readonly ConcurrentDictionary<string, OperationHandle> _instances = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, (string Owner, DateTimeOffset Expires)> _leases = new(StringComparer.Ordinal);
 
-    /// <inheritdoc />
     public Task<bool> TryCreateAsync(OperationHandle envelope, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult(_instances.TryAdd(envelope.OperationInstanceId, envelope));
     }
 
-    /// <inheritdoc />
     public Task SetAsync(OperationHandle envelope, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -39,7 +34,6 @@ public sealed class VolatileOperationInstanceStore : IOperationInstanceStore
         return Task.CompletedTask;
     }
 
-    /// <inheritdoc />
     public Task<bool> TrySetAsync(
         OperationHandle envelope,
         long expectedVersion,
@@ -65,7 +59,6 @@ public sealed class VolatileOperationInstanceStore : IOperationInstanceStore
         return Task.FromResult(false);
     }
 
-    /// <inheritdoc />
     public Task<OperationHandle?> GetAsync(
         string operationInstanceId,
         CancellationToken cancellationToken = default)
@@ -75,14 +68,12 @@ public sealed class VolatileOperationInstanceStore : IOperationInstanceStore
         return Task.FromResult(envelope);
     }
 
-    /// <inheritdoc />
     public Task<IReadOnlyList<OperationHandle>> ListActiveAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult<IReadOnlyList<OperationHandle>>(_instances.Values.Where(IsActive).ToArray());
     }
 
-    /// <inheritdoc />
     public Task<bool> TryAcquireLeaseAsync(
         string leaseId,
         string ownerId,
@@ -110,7 +101,6 @@ public sealed class VolatileOperationInstanceStore : IOperationInstanceStore
         }
     }
 
-    /// <inheritdoc />
     public Task ReleaseLeaseAsync(
         string leaseId,
         string ownerId,

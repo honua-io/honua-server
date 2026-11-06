@@ -6,9 +6,6 @@ using Honua.Core.Features.Scene.Domain;
 
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
-/// <summary>
-/// JSON serialization context for Metadata v2 domain models.
-/// </summary>
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(MetadataV2Graph))]
 [JsonSerializable(typeof(MetadataV2FolderSelection))]

@@ -6,40 +6,18 @@ using System.Diagnostics.CodeAnalysis;
 
 namespace Honua.Core.Features.Edit;
 
-/// <summary>
-/// Represents an edit transaction with unified semantics across all protocols.
-/// Handles transaction lifecycle, rollback semantics, and commit behavior.
-/// </summary>
 public readonly record struct EditTransaction
 {
-    /// <summary>
-    /// Unique transaction identifier.
-    /// </summary>
     public required string TransactionId { get; init; }
 
-    /// <summary>
-    /// Protocol that initiated this transaction.
-    /// </summary>
     public required string Protocol { get; init; }
 
-    /// <summary>
-    /// Edit requests to execute within this transaction.
-    /// </summary>
     public required ImmutableArray<UnifiedEditRequest> EditRequests { get; init; }
 
-    /// <summary>
-    /// Transaction configuration and constraints.
-    /// </summary>
     public required TransactionConfiguration Configuration { get; init; }
 
-    /// <summary>
-    /// Transaction state information.
-    /// </summary>
     public TransactionState State { get; init; }
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="EditTransaction"/> struct with default values.
-    /// </summary>
     public EditTransaction()
     {
         TransactionId = string.Empty;
@@ -52,31 +30,12 @@ public readonly record struct EditTransaction
         Principal = null;
     }
 
-    /// <summary>
-    /// Transaction metadata and context.
-    /// </summary>
     public ImmutableDictionary<string, object>? Metadata { get; init; }
 
-    /// <summary>
-    /// Timestamp when transaction was created.
-    /// </summary>
     public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
 
-    /// <summary>
-    /// User/principal that initiated the transaction.
-    /// </summary>
     public string? Principal { get; init; }
 
-    /// <summary>
-    /// Creates a new transaction.
-    /// </summary>
-    /// <param name="transactionId">Transaction ID</param>
-    /// <param name="protocol">Source protocol</param>
-    /// <param name="editRequests">Edit requests</param>
-    /// <param name="configuration">Transaction configuration</param>
-    /// <param name="metadata">Optional metadata</param>
-    /// <param name="principal">Optional principal</param>
-    /// <returns>Edit transaction</returns>
     public static EditTransaction Create(
         string transactionId,
         string protocol,
@@ -96,14 +55,6 @@ public readonly record struct EditTransaction
             CreatedAt = DateTimeOffset.UtcNow
         };
 
-    /// <summary>
-    /// Creates a simple single-request transaction.
-    /// </summary>
-    /// <param name="transactionId">Transaction ID</param>
-    /// <param name="protocol">Source protocol</param>
-    /// <param name="editRequest">Single edit request</param>
-    /// <param name="rollbackOnFailure">Whether to rollback on failure</param>
-    /// <returns>Edit transaction</returns>
     public static EditTransaction CreateSimple(
         string transactionId,
         string protocol,
@@ -115,43 +66,20 @@ public readonly record struct EditTransaction
             ImmutableArray.Create(editRequest),
             TransactionConfiguration.Default with { RollbackOnFailure = rollbackOnFailure });
 
-    /// <summary>
-    /// Gets the total number of operations across all requests.
-    /// </summary>
     public int TotalOperations => EditRequests.Sum(r => r.TotalOperations);
 
-    /// <summary>
-    /// Checks if the transaction is empty.
-    /// </summary>
     public bool IsEmpty => EditRequests.IsDefaultOrEmpty || EditRequests.All(r => r.IsEmpty);
 
-    /// <summary>
-    /// Checks if the transaction requires atomic semantics.
-    /// </summary>
     public bool RequiresAtomicSemantics => Configuration.RollbackOnFailure || TotalOperations > 1;
 
-    /// <summary>
-    /// Creates a new transaction with updated state.
-    /// </summary>
-    /// <param name="newState">New transaction state</param>
-    /// <returns>Updated transaction</returns>
     public EditTransaction WithState(TransactionState newState)
         => this with { State = newState };
 }
 
-/// <summary>
-/// Transaction configuration and behavior settings.
-/// </summary>
 public readonly record struct TransactionConfiguration
 {
-    /// <summary>
-    /// Whether to rollback all changes on any failure.
-    /// </summary>
     public bool RollbackOnFailure { get; init; }
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="TransactionConfiguration"/> struct with default values.
-    /// </summary>
     public TransactionConfiguration()
     {
         RollbackOnFailure = false;
@@ -165,49 +93,22 @@ public readonly record struct TransactionConfiguration
         ConfigurationOptions = null;
     }
 
-    /// <summary>
-    /// Whether partial success is allowed.
-    /// </summary>
     public bool AllowPartialSuccess { get; init; } = true;
 
-    /// <summary>
-    /// Transaction isolation level.
-    /// </summary>
     public TransactionIsolationLevel IsolationLevel { get; init; } = TransactionIsolationLevel.ReadCommitted;
 
-    /// <summary>
-    /// Transaction timeout in milliseconds.
-    /// </summary>
     public int TimeoutMs { get; init; } = 300_000; // 5 minutes default
 
-    /// <summary>
-    /// Whether to preserve operation order.
-    /// </summary>
     public bool PreserveOperationOrder { get; init; } = false;
 
-    /// <summary>
-    /// Whether to enable parallel execution for independent operations.
-    /// </summary>
     public bool EnableParallelExecution { get; init; } = false;
 
-    /// <summary>
-    /// Maximum batch size for large transactions.
-    /// </summary>
     public int MaxBatchSize { get; init; } = 1000;
 
-    /// <summary>
-    /// Retry policy for transient failures.
-    /// </summary>
     public RetryPolicy? RetryPolicy { get; init; }
 
-    /// <summary>
-    /// Additional configuration options.
-    /// </summary>
     public ImmutableDictionary<string, object>? ConfigurationOptions { get; init; }
 
-    /// <summary>
-    /// Default transaction configuration.
-    /// </summary>
     public static TransactionConfiguration Default => new()
     {
         RollbackOnFailure = false,
@@ -219,9 +120,6 @@ public readonly record struct TransactionConfiguration
         MaxBatchSize = 1000
     };
 
-    /// <summary>
-    /// Atomic transaction configuration (all or nothing).
-    /// </summary>
     public static TransactionConfiguration Atomic => new()
     {
         RollbackOnFailure = true,
@@ -233,9 +131,6 @@ public readonly record struct TransactionConfiguration
         MaxBatchSize = 1000
     };
 
-    /// <summary>
-    /// High-performance transaction configuration.
-    /// </summary>
     public static TransactionConfiguration HighPerformance => new()
     {
         RollbackOnFailure = false,
@@ -247,9 +142,6 @@ public readonly record struct TransactionConfiguration
         MaxBatchSize = 5000
     };
 
-    /// <summary>
-    /// Creates configuration for WFS 2.0 transaction semantics.
-    /// </summary>
     public static TransactionConfiguration ForWfs20 => new()
     {
         RollbackOnFailure = true,
@@ -261,9 +153,6 @@ public readonly record struct TransactionConfiguration
         MaxBatchSize = 1000
     };
 
-    /// <summary>
-    /// Creates configuration for GeoServices edit semantics.
-    /// </summary>
     public static TransactionConfiguration ForGeoServices => new()
     {
         RollbackOnFailure = false, // Configurable per request
@@ -275,9 +164,6 @@ public readonly record struct TransactionConfiguration
         MaxBatchSize = 2000
     };
 
-    /// <summary>
-    /// Creates configuration for OGC API Features transaction semantics.
-    /// </summary>
     public static TransactionConfiguration ForOgcFeatures => new()
     {
         RollbackOnFailure = false, // Individual operations
@@ -289,9 +175,6 @@ public readonly record struct TransactionConfiguration
         MaxBatchSize = 100
     };
 
-    /// <summary>
-    /// Creates configuration for OData transaction semantics.
-    /// </summary>
     public static TransactionConfiguration ForOData => new()
     {
         RollbackOnFailure = true,
@@ -304,65 +187,29 @@ public readonly record struct TransactionConfiguration
     };
 }
 
-/// <summary>
-/// Transaction state enumeration.
-/// </summary>
 public enum TransactionState
 {
-    /// <summary>
-    /// Transaction created but not yet started.
-    /// </summary>
     Pending,
 
-    /// <summary>
-    /// Transaction is currently executing.
-    /// </summary>
     Executing,
 
-    /// <summary>
-    /// Transaction completed successfully.
-    /// </summary>
     Committed,
 
-    /// <summary>
-    /// Transaction was rolled back.
-    /// </summary>
     RolledBack,
 
-    /// <summary>
-    /// Transaction failed with errors.
-    /// </summary>
     Failed,
 
-    /// <summary>
-    /// Transaction was cancelled.
-    /// </summary>
     Cancelled,
 
-    /// <summary>
-    /// Transaction timed out.
-    /// </summary>
     TimedOut
 }
 
-/// <summary>
-/// Retry policy for transient failures.
-/// </summary>
 public readonly record struct RetryPolicy
 {
-    /// <summary>
-    /// Maximum number of retry attempts.
-    /// </summary>
     public int MaxRetries { get; init; }
 
-    /// <summary>
-    /// Delay between retries in milliseconds.
-    /// </summary>
     public int DelayMs { get; init; }
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="RetryPolicy"/> struct with default values.
-    /// </summary>
     public RetryPolicy()
     {
         MaxRetries = 3;
@@ -371,24 +218,12 @@ public readonly record struct RetryPolicy
         MaxDelayMs = 30000;
     }
 
-    /// <summary>
-    /// Backoff strategy for retries.
-    /// </summary>
     public RetryBackoffStrategy BackoffStrategy { get; init; } = RetryBackoffStrategy.Exponential;
 
-    /// <summary>
-    /// Maximum delay for exponential backoff.
-    /// </summary>
     public int MaxDelayMs { get; init; } = 10_000;
 
-    /// <summary>
-    /// Error conditions that should trigger retry.
-    /// </summary>
     public ImmutableArray<string>? RetryableErrors { get; init; }
 
-    /// <summary>
-    /// Default retry policy.
-    /// </summary>
     public static RetryPolicy Default => new()
     {
         MaxRetries = 3,
@@ -397,29 +232,14 @@ public readonly record struct RetryPolicy
         MaxDelayMs = 10_000
     };
 
-    /// <summary>
-    /// No retry policy.
-    /// </summary>
     public static RetryPolicy None => new() { MaxRetries = 0 };
 }
 
-/// <summary>
-/// Retry backoff strategies.
-/// </summary>
 public enum RetryBackoffStrategy
 {
-    /// <summary>
-    /// Fixed delay between retries.
-    /// </summary>
     Fixed,
 
-    /// <summary>
-    /// Exponential backoff with doubling delay.
-    /// </summary>
     Exponential,
 
-    /// <summary>
-    /// Linear increase in delay.
-    /// </summary>
     Linear
 }

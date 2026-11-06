@@ -3,14 +3,8 @@
 
 namespace Honua.Core.Features.Styling.Services;
 
-/// <summary>
-/// Pure classification algorithms for dividing numeric data into classes.
-/// </summary>
 internal static class ClassificationAlgorithms
 {
-    /// <summary>
-    /// Computes equal-interval break values between min and max.
-    /// </summary>
     public static double[] EqualInterval(double min, double max, int classCount)
     {
         if (classCount < 2)
@@ -24,9 +18,6 @@ internal static class ClassificationAlgorithms
         return breaks;
     }
 
-    /// <summary>
-    /// Computes quantile (percentile) break values from sorted data.
-    /// </summary>
     public static double[] Quantile(ReadOnlySpan<double> sortedValues, int classCount)
     {
         if (sortedValues.Length == 0 || classCount < 2)
@@ -46,10 +37,6 @@ internal static class ClassificationAlgorithms
         return breaks;
     }
 
-    /// <summary>
-    /// Computes natural breaks (Jenks) via dynamic programming.
-    /// Falls back to EqualInterval if data is uniform or convergence fails.
-    /// </summary>
     public static double[] NaturalBreaks(ReadOnlySpan<double> values, int classCount)
     {
         if (values.Length == 0 || classCount < 2)

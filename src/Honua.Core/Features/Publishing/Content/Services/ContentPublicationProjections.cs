@@ -5,20 +5,8 @@ using Honua.Core.Features.Publishing.Content.Domain;
 
 namespace Honua.Core.Features.Publishing.Content.Services;
 
-/// <summary>
-/// Pure projections from registry records to client-safe views. Kept in Core so the
-/// redaction rules are unit-testable independent of the HTTP layer.
-/// </summary>
 public static class ContentPublicationProjections
 {
-    /// <summary>
-    /// Projects a route state plus a resolved immutable version into a client-safe
-    /// <see cref="PublishedArtifactView"/>. Excludes role lists and public-link
-    /// hashes; surfaces the embed contract the client needs.
-    /// </summary>
-    /// <param name="route">The current route state (governs visibility/embed policy).</param>
-    /// <param name="version">The resolved immutable version (governs content/app refs).</param>
-    /// <param name="includeDependencies">When true, includes the dependency references.</param>
     public static PublishedArtifactView ToPublishedView(
         ContentPublicationRouteState route,
         ContentPublicationVersion version,

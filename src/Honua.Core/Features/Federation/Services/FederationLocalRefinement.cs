@@ -7,26 +7,9 @@ using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Core.Features.Federation.Services;
 
-/// <summary>
-/// Pure, in-memory refinement of candidate rows that a federated source could not evaluate
-/// remotely. The executor fetches a candidate superset and then applies these refinements
-/// locally: temporal interval filtering, ordering, and paging. The helper is deterministic and
-/// performs no I/O, so it is exercised directly by unit tests.
-/// </summary>
-/// <remarks>
-/// Attribute (<c>WHERE</c>) and exact spatial-relationship refinement are intentionally not
-/// implemented here yet: the built-in source kinds always push attribute predicates down, and
-/// exact spatial refinement needs the geometry engine. Those are tracked as remaining work in
-/// issue #341; the executor reports any predicate it could not refine so callers are never
-/// silently handed an unrefined superset.
-/// </remarks>
+// Local refinement is deterministic and does no I/O; attribute filters and exact spatial relationships are not applied here.
 internal static class FederationLocalRefinement
 {
-    /// <summary>
-    /// Applies a temporal interval filter to the candidate rows, keeping only rows whose
-    /// temporal value (or interval) overlaps the requested window. Rows whose temporal value
-    /// is missing or unparseable are excluded.
-    /// </summary>
     public static ImmutableArray<Feature> ApplyTemporalFilter(ImmutableArray<Feature> features, in TemporalFilter filter)
     {
         var start = filter.Start;
@@ -65,9 +48,6 @@ internal static class FederationLocalRefinement
         return builder.ToImmutable();
     }
 
-    /// <summary>
-    /// Applies a stable multi-key ordering to the candidate rows.
-    /// </summary>
     public static ImmutableArray<Feature> ApplyOrderBy(ImmutableArray<Feature> features, ImmutableArray<OrderByClause> orderBy)
     {
         if (orderBy.IsDefaultOrEmpty || features.Length <= 1)
@@ -97,9 +77,6 @@ internal static class FederationLocalRefinement
                 : source.ThenByDescending(f => GetValue(f, clause.Field), new FederationValueComparer(clause.NullOrdering, ascending: false));
     }
 
-    /// <summary>
-    /// Applies offset/limit paging to the candidate rows.
-    /// </summary>
     public static ImmutableArray<Feature> ApplyPaging(ImmutableArray<Feature> features, int? offset, int? limit)
     {
         var skip = offset is > 0 ? offset.Value : 0;
@@ -163,12 +140,6 @@ internal static class FederationLocalRefinement
         }
     }
 
-    /// <summary>
-    /// Type-aware value comparer used for local ordering. Numbers compare numerically, dates
-    /// chronologically, and everything else by ordinal string comparison. Null placement
-    /// honours the clause's <see cref="NullOrdering"/>, defaulting to nulls-last for ascending
-    /// and nulls-first for descending.
-    /// </summary>
     private sealed class FederationValueComparer(NullOrdering nullOrdering, bool ascending) : IComparer<object?>
     {
         public int Compare(object? x, object? y)

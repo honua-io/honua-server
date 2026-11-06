@@ -8,25 +8,16 @@ using Honua.Core.Features.Reporting.Domain;
 
 namespace Honua.Core.Features.Reporting.Templates;
 
-/// <summary>
-/// Template for <c>generalization.dissolve</c> result packages. Reports the
-/// before/after feature counts and lists the group-by fields the operation
-/// applied.
-/// </summary>
 internal sealed class GeneralizationDissolveReportTemplate : IAnalysisReportTemplate
 {
     private const string ProcessIdentifier = "generalization.dissolve";
 
-    /// <inheritdoc />
     public string ProcessId => ProcessIdentifier;
 
-    /// <inheritdoc />
     public string TemplateId => "analysis-report.generalization-dissolve";
 
-    /// <inheritdoc />
     public string TemplateVersion => "1.0.0";
 
-    /// <inheritdoc />
     public AnalysisReportDraft Build(AnalysisResultPackage package)
     {
         ArgumentNullException.ThrowIfNull(package);

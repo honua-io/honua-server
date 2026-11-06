@@ -3,86 +3,45 @@
 
 namespace Honua.Core.Features.Caching;
 
-/// <summary>
-/// Stable reason for invalidating metadata cache entries.
-/// </summary>
 public enum MetadataCacheInvalidationReason
 {
-    /// <summary>The invalidation was triggered manually.</summary>
     Manual,
 
-    /// <summary>A tenant configuration change triggered the invalidation.</summary>
     TenantChanged,
 
-    /// <summary>A project configuration change triggered the invalidation.</summary>
     ProjectChanged,
 
-    /// <summary>An upstream source change triggered the invalidation.</summary>
     SourceChanged,
 
-    /// <summary>A schema change triggered the invalidation.</summary>
     SchemaChanged,
 
-    /// <summary>A style change triggered the invalidation.</summary>
     StyleChanged,
 
-    /// <summary>A permission change triggered the invalidation.</summary>
     PermissionChanged,
 
-    /// <summary>An adapter version change triggered the invalidation.</summary>
     AdapterVersionChanged,
 
-    /// <summary>A projection version change triggered the invalidation.</summary>
     ProjectionVersionChanged,
 
-    /// <summary>The upstream source became unavailable.</summary>
     SourceUnavailable
 }
 
-/// <summary>
-/// Targeted metadata cache invalidation event.
-/// </summary>
 public sealed record MetadataCacheInvalidationEvent
 {
-    /// <summary>
-    /// Tenant scope to invalidate. Null or whitespace matches all tenants.
-    /// </summary>
     public string? TenantId { get; init; }
 
-    /// <summary>
-    /// Project scope to invalidate. Null or whitespace matches all projects.
-    /// </summary>
     public string? ProjectId { get; init; }
 
-    /// <summary>
-    /// Source endpoint fingerprint to invalidate. Null or whitespace matches all sources.
-    /// </summary>
     public string? SourceFingerprint { get; init; }
 
-    /// <summary>
-    /// Adapter implementation to invalidate. Null or whitespace matches all adapters.
-    /// </summary>
     public string? Adapter { get; init; }
 
-    /// <summary>
-    /// Resource identifier to invalidate. Null or whitespace matches all resources.
-    /// </summary>
     public string? ResourceId { get; init; }
 
-    /// <summary>
-    /// Reason for the invalidation.
-    /// </summary>
     public required MetadataCacheInvalidationReason Reason { get; init; }
 
-    /// <summary>
-    /// Time the invalidation was emitted.
-    /// </summary>
     public DateTimeOffset OccurredAt { get; init; } = DateTimeOffset.UtcNow;
 
-    /// <summary>
-    /// Returns true when this invalidation event targets the supplied metadata cache request.
-    /// Empty target properties are treated as wildcards.
-    /// </summary>
     public bool Matches(MetadataCacheKeyRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);

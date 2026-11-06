@@ -6,17 +6,8 @@ using Honua.Core.Features.Infrastructure.ServiceRegistration;
 
 namespace Honua.Core.Features.Caching;
 
-/// <summary>
-/// Validates CacheOptions configuration to ensure consistent and safe cache behavior.
-/// Enforces complex business rules beyond individual DataAnnotations.
-/// </summary>
 public sealed class CacheOptionsValidator : ConfigurationValidator<CacheOptions>
 {
-    /// <summary>
-    /// Validates the cache options configuration using derived class-specific logic.
-    /// </summary>
-    /// <param name="options">The cache options instance to validate</param>
-    /// <param name="errors">List to add validation errors to</param>
     protected override void PerformFeatureSpecificValidation(CacheOptions options, List<string> errors)
     {
         // Complex business rule validations
@@ -27,9 +18,6 @@ public sealed class CacheOptionsValidator : ConfigurationValidator<CacheOptions>
     }
 
 
-    /// <summary>
-    /// Validates TTL configuration logic.
-    /// </summary>
     private static void ValidateTtlLogic(CacheOptions options, List<string> errors)
     {
         // When caching is enabled, TTL values must be positive
@@ -57,9 +45,6 @@ public sealed class CacheOptionsValidator : ConfigurationValidator<CacheOptions>
         ValidateRange(options.JitterPercentage, 0.0, 0.5, "JitterPercentage", errors);
     }
 
-    /// <summary>
-    /// Validates fallback configuration.
-    /// </summary>
     private static void ValidateFallbackConfiguration(CacheOptions options, List<string> errors)
     {
         // When fallback is enabled, validate fallback settings
@@ -78,9 +63,6 @@ public sealed class CacheOptionsValidator : ConfigurationValidator<CacheOptions>
         }
     }
 
-    /// <summary>
-    /// Validates background refresh configuration.
-    /// </summary>
     private static void ValidateBackgroundRefresh(CacheOptions options, List<string> errors)
     {
         if (!options.BackgroundRefreshEnabled)
@@ -91,9 +73,6 @@ public sealed class CacheOptionsValidator : ConfigurationValidator<CacheOptions>
         ValidateRange(options.RefreshTimeoutSeconds, 5, 120, "RefreshTimeoutSeconds", errors);
     }
 
-    /// <summary>
-    /// Validates key prefix configuration.
-    /// </summary>
     private static void ValidateKeyPrefix(CacheOptions options, List<string> errors)
     {
         ValidateRequiredString(options.KeyPrefix, "KeyPrefix", errors);

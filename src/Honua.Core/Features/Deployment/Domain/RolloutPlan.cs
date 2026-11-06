@@ -3,48 +3,20 @@
 
 namespace Honua.Core.Features.Deployment.Domain;
 
-/// <summary>
-/// Declarative rollout plan describing how a deployment reaches its final serving
-/// weight. The plan is immutable for the lifetime of a deployment; observed rollout
-/// progress is recorded on the <see cref="Deployment"/> itself.
-/// </summary>
 public sealed record RolloutPlan
 {
-    /// <summary>
-    /// Strategy governing how traffic shifts from the previous deployment to this one.
-    /// </summary>
     public required RolloutStrategy Strategy { get; init; }
 
-    /// <summary>
-    /// Ordered canary weight percentages when <see cref="Strategy"/> is
-    /// <see cref="RolloutStrategy.Canary"/>. Each step is in the inclusive range [1, 100],
-    /// strictly increasing, and the final step is 100. Empty for non-canary strategies.
-    /// </summary>
     public IReadOnlyList<int> Steps { get; init; } = [];
 
-    /// <summary>
-    /// Whether the rollout should advance automatically through steps without operator action.
-    /// </summary>
     public bool AutoPromote { get; init; } = true;
 
-    /// <summary>
-    /// Returns a rollout plan that cuts over in a single step.
-    /// </summary>
     public static RolloutPlan Immediate() => new() { Strategy = RolloutStrategy.Immediate, AutoPromote = true };
 
-    /// <summary>
-    /// Returns a blue-green rollout plan that stages the new deployment before cutover.
-    /// </summary>
-    /// <param name="autoPromote">Whether the cutover happens automatically once the new deployment is ready.</param>
     public static RolloutPlan BlueGreen(bool autoPromote = true)
         => new() { Strategy = RolloutStrategy.BlueGreen, AutoPromote = autoPromote };
 
-    /// <summary>
-    /// Returns a canary rollout plan advancing through the given weight steps.
-    /// </summary>
-    /// <param name="steps">Ordered canary weight percentages. Must be strictly increasing, each in [1, 100], and end at 100.</param>
-    /// <param name="autoPromote">Whether steps advance automatically.</param>
-    /// <exception cref="ArgumentException">Thrown when the steps are empty, unordered, out of range, or do not end at 100.</exception>
+    // Canary weights must be strictly increasing, each in 1 to 100, and end at 100.
     public static RolloutPlan Canary(IReadOnlyList<int> steps, bool autoPromote = true)
     {
         ArgumentNullException.ThrowIfNull(steps);
@@ -89,9 +61,6 @@ public sealed record RolloutPlan
         };
     }
 
-    /// <summary>
-    /// Returns a schedule-gated rollout plan that promotes only after a publication schedule fires.
-    /// </summary>
     public static RolloutPlan Scheduled()
         => new() { Strategy = RolloutStrategy.Scheduled, AutoPromote = false };
 }

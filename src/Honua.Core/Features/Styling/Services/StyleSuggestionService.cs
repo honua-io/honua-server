@@ -10,9 +10,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Core.Features.Styling.Services;
 
-/// <summary>
-/// Orchestrates the style suggestion pipeline: profile → select field → classify → suggest.
-/// </summary>
 internal sealed partial class StyleSuggestionService : IStyleSuggestionService
 {
     private const int MaxProfilingFields = 10;
@@ -289,11 +286,6 @@ internal sealed partial class StyleSuggestionService : IStyleSuggestionService
         });
     }
 
-    /// <summary>
-    /// Trims a classification result so it fits within <paramref name="maxClasses"/>.
-    /// For numeric breaks, keeps the first N-1 breaks (tail merges into a single class).
-    /// For categories, keeps the first N by frequency (already frequency-ordered from profiling).
-    /// </summary>
     private static ClassificationResult ClampClassification(ClassificationResult classification, int maxClasses)
     {
         if (classification.Categories != null)

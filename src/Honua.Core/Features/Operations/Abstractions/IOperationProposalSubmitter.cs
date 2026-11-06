@@ -5,10 +5,9 @@ using Honua.Core.Features.Operations.Domain;
 
 namespace Honua.Core.Features.Operations.Abstractions;
 
-/// <summary>Trusted adapter entry point that can propose an operator-gated operation but can never actuate it.</summary>
+// This entry can propose an operator-gated operation and can never actuate it.
 public interface IOperationProposalSubmitter
 {
-    /// <summary>Accepts and validates a non-dry-run request, preserving policy refusals and requiring durable separate approval.</summary>
-    /// <remarks>Context must come from authenticated server authority. Replay proofs and dry runs are refused; approved replay uses IOperationInvoker.</remarks>
+    // Replay proofs and dry runs are refused here; an approved replay uses the invoker.
     Task<OperationHandle> ProposeAsync(OperationRequest request, OperationPolicyContext context, CancellationToken cancellationToken = default);
 }

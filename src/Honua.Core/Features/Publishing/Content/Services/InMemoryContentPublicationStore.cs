@@ -6,12 +6,6 @@ using Honua.Core.Features.Publishing.Content.Domain;
 
 namespace Honua.Core.Features.Publishing.Content.Services;
 
-/// <summary>
-/// In-memory <see cref="IContentPublicationStore"/> for unit tests and non-durable
-/// deployments. Enforces route-slug uniqueness, append-only version rows, and
-/// atomic route-state plus event writes under a single lock. Durable deployments
-/// use the Postgres-backed store instead.
-/// </summary>
 public sealed class InMemoryContentPublicationStore : IContentPublicationStore
 {
     private readonly object _gate = new();
@@ -21,7 +15,6 @@ public sealed class InMemoryContentPublicationStore : IContentPublicationStore
     private readonly List<ContentPublicationEvent> _events = [];
     private long _eventSequence;
 
-    /// <inheritdoc />
     public Task<ContentPublicationRouteState?> GetRouteByPublicationIdAsync(string publicationId, CancellationToken cancellationToken = default)
     {
         lock (_gate)
@@ -30,7 +23,6 @@ public sealed class InMemoryContentPublicationStore : IContentPublicationStore
         }
     }
 
-    /// <inheritdoc />
     public Task<ContentPublicationRouteState?> GetRouteBySlugAsync(string routeSlug, CancellationToken cancellationToken = default)
     {
         lock (_gate)
@@ -45,7 +37,6 @@ public sealed class InMemoryContentPublicationStore : IContentPublicationStore
         }
     }
 
-    /// <inheritdoc />
     public Task<ContentPublicationVersion?> GetVersionByIdAsync(string publicationId, string versionId, CancellationToken cancellationToken = default)
     {
         lock (_gate)
@@ -63,7 +54,6 @@ public sealed class InMemoryContentPublicationStore : IContentPublicationStore
         }
     }
 
-    /// <inheritdoc />
     public Task<ContentPublicationVersion?> GetVersionByRevisionAsync(string publicationId, long revision, CancellationToken cancellationToken = default)
     {
         lock (_gate)
@@ -81,7 +71,6 @@ public sealed class InMemoryContentPublicationStore : IContentPublicationStore
         }
     }
 
-    /// <inheritdoc />
     public Task<IReadOnlyList<ContentPublicationVersion>> ListVersionsAsync(string publicationId, int limit, CancellationToken cancellationToken = default)
     {
         lock (_gate)
@@ -99,7 +88,6 @@ public sealed class InMemoryContentPublicationStore : IContentPublicationStore
         }
     }
 
-    /// <inheritdoc />
     public Task<IReadOnlyDictionary<string, IReadOnlyList<ContentPublicationVersion>>> ListVersionsByPublicationIdsAsync(
         IReadOnlyCollection<string> publicationIds,
         int limit,
@@ -137,7 +125,6 @@ public sealed class InMemoryContentPublicationStore : IContentPublicationStore
         return Task.FromResult<IReadOnlyDictionary<string, IReadOnlyList<ContentPublicationVersion>>>(result);
     }
 
-    /// <inheritdoc />
     public Task<(IReadOnlyList<ContentPublicationRouteState> Routes, int Total)> ListRoutesAsync(
         ContentPublicationLifecycle? lifecycle,
         int offset,
@@ -159,7 +146,6 @@ public sealed class InMemoryContentPublicationStore : IContentPublicationStore
         }
     }
 
-    /// <inheritdoc />
     public Task<long> GetMaxRevisionAsync(string publicationId, CancellationToken cancellationToken = default)
     {
         lock (_gate)
@@ -173,7 +159,6 @@ public sealed class InMemoryContentPublicationStore : IContentPublicationStore
         }
     }
 
-    /// <inheritdoc />
     public Task<IReadOnlyDictionary<string, ContentPublicationRouteState>> GetLatestRouteStatesBySourceContentIdsAsync(
         IReadOnlyCollection<string> sourceContentIds,
         CancellationToken cancellationToken = default)
@@ -219,7 +204,6 @@ public sealed class InMemoryContentPublicationStore : IContentPublicationStore
         return Task.FromResult<IReadOnlyDictionary<string, ContentPublicationRouteState>>(result);
     }
 
-    /// <inheritdoc />
     public Task AppendVersionAndSetRouteAsync(
         ContentPublicationVersion version,
         ContentPublicationRouteState routeState,
@@ -285,7 +269,6 @@ public sealed class InMemoryContentPublicationStore : IContentPublicationStore
         return Task.CompletedTask;
     }
 
-    /// <inheritdoc />
     public Task SetRouteAsync(
         ContentPublicationRouteState routeState,
         ContentPublicationEvent auditEvent,
@@ -314,7 +297,6 @@ public sealed class InMemoryContentPublicationStore : IContentPublicationStore
         return Task.CompletedTask;
     }
 
-    /// <inheritdoc />
     public Task<IReadOnlyList<ContentPublicationEvent>> ListEventsAsync(string publicationId, int limit, CancellationToken cancellationToken = default)
     {
         lock (_gate)

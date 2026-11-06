@@ -3,14 +3,6 @@
 
 namespace Honua.Core.Features.Licensing.Domain;
 
-/// <summary>
-/// Definition of an edition-gated platform feature.
-/// </summary>
-/// <param name="Key">Unique feature identifier</param>
-/// <param name="DisplayName">Human-readable feature name</param>
-/// <param name="Category">Feature category for grouping</param>
-/// <param name="MinimumEdition">Minimum edition required to enable this feature</param>
-/// <param name="Description">Brief description of the feature</param>
 public sealed record FeatureDefinition(
     string Key,
     string DisplayName,
@@ -18,358 +10,135 @@ public sealed record FeatureDefinition(
     HonuaEdition MinimumEdition,
     string Description);
 
-/// <summary>
-/// Static catalog of all edition-gated features in the Honua platform.
-/// </summary>
 public static class FeatureCatalog
 {
-    /// <summary>
-    /// Feature categories used for grouping in the admin UI.
-    /// </summary>
     public static class Categories
     {
-        /// <summary>Alerting and geofence features.</summary>
         public const string Alerts = "Alerts";
 
-        /// <summary>Alert delivery channel features.</summary>
         public const string Channels = "Channels";
 
-        /// <summary>Data import and ingestion features.</summary>
         public const string Import = "Import";
 
-        /// <summary>Geocoding and address resolution features.</summary>
         public const string Geocoding = "Geocoding";
 
-        /// <summary>Network routing and service-area analysis features.</summary>
         public const string Routing = "Routing";
 
-        /// <summary>Identity and authentication features.</summary>
         public const string Identity = "Identity";
 
-        /// <summary>Caching and performance features.</summary>
         public const string Caching = "Caching";
 
-        /// <summary>Static map image rendering features.</summary>
         public const string StaticMap = "StaticMap";
 
-        /// <summary>Styling and cartographic features.</summary>
         public const string Styling = "Styling";
 
-        /// <summary>Raster and imagery features.</summary>
         public const string Raster = "Raster";
 
-        /// <summary>Spatial analytics — clustering, joins, density, buffer aggregate.</summary>
         public const string Analytics = "Analytics";
 
-        /// <summary>Real-time feature streaming and subscriptions.</summary>
         public const string Streaming = "Streaming";
 
-        /// <summary>3D scene features — CityGML/BIM ingest and Building Scene Layer publishing.</summary>
         public const string Scene = "Scene";
 
-        /// <summary>Temporal animation, time-aware filtering, and time-series tile features.</summary>
         public const string Temporal = "Temporal";
 
-        /// <summary>Printing and layout export features.</summary>
         public const string Printing = "Printing";
 
-        /// <summary>Editing features — branch versioning, reconcile/post, multi-user editing.</summary>
         public const string Editing = "Editing";
 
-        /// <summary>Offline field operations and disconnected sync features.</summary>
         public const string FieldOps = "FieldOps";
 
-        /// <summary>Agentic AI operations — MCP discovery/query, spec plan/apply, grounding, workflow generation, and the agent-operations guardrail ladder.</summary>
         public const string Ai = "AI";
 
-        /// <summary>Server extensibility features — plugin/extension SDK.</summary>
         public const string Extensibility = "Extensibility";
 
-        /// <summary>High availability and disaster recovery — backup automation, failover, RTO/RPO reporting.</summary>
         public const string DisasterRecovery = "DisasterRecovery";
 
-        /// <summary>Platform control-plane capabilities.</summary>
         public const string ControlPlane = "ControlPlane";
 
-        /// <summary>
-        /// Capabilities that exist to run Honua's own hosted offering, not to be deployed by a
-        /// licensee. These are not part of the customer-deployable product surface and have no
-        /// path to general availability as a customer feature: the Fair Core License prohibits
-        /// providing Honua to third parties as a hosted or managed service, so a licensee can
-        /// never be the party operating them. Not Preview - Preview implies a GA path, and there
-        /// is none. Never published as customer documentation.
-        /// </summary>
+        // Hosted-only capabilities are not a preview and have no customer GA path, because the Fair Core License prohibits offering Honua as a hosted service.
         public const string Internal = "Internal";
     }
 
-    /// <summary>
-    /// Entitlement key for multi-tenant lifecycle administration and schema-per-tenant routing.
-    /// </summary>
     public const string MultiTenancyKey = "admin.multi-tenancy";
 
-    /// <summary>
-    /// Entitlement key for automated PostgreSQL backups — scheduled base backups plus
-    /// WAL archiving that enable point-in-time recovery (#356, ADR-0024). Enterprise-only.
-    /// </summary>
     public const string BackupAutomationKey = "dr.backup-automation";
 
-    /// <summary>
-    /// Entitlement key for active-passive failover playbooks driven by automated health
-    /// checks against the primary serving surface (#356, ADR-0024). Enterprise-only.
-    /// </summary>
     public const string FailoverPlaybooksKey = "dr.failover";
 
-    /// <summary>
-    /// Entitlement key for Redis cache-state backup and restore so warm cache contents
-    /// survive a regional failover (#356, ADR-0024). Enterprise-only.
-    /// </summary>
     public const string CacheBackupKey = "dr.cache-backup";
 
-    /// <summary>
-    /// Entitlement key for RTO/RPO objective tracking and recovery-readiness reporting that
-    /// surfaces last-successful-backup, restorable point, and objective compliance to the
-    /// admin observability surface (#356, ADR-0024). Enterprise-only.
-    /// </summary>
     public const string RecoveryReportingKey = "dr.rto-rpo-reporting";
 
-    /// <summary>
-    /// Entitlement key for agent-initiated operations under the Pro validation
-    /// layer (#1631, #1592): spec apply execution, NL grounding mutate surfaces,
-    /// AI workflow generation, and MCP execute/mutate tools. Pro and above run
-    /// agent changes through the validation layer (plan + dry-run + validate with
-    /// a pre-change snapshot/backup gate) before apply. MCP discovery/query and
-    /// agent reads remain Community and carry no gate.
-    /// </summary>
     public const string AiOperationsKey = "ai.agent-operations";
 
-    /// <summary>
-    /// Entitlement key for human-in-the-loop approval workflows over
-    /// agent-initiated operations (#1631). Enterprise-only: layers approval,
-    /// policy-scoped agent permissions, and immutable audit on top of the Pro
-    /// validation layer.
-    /// </summary>
     public const string AiApprovalWorkflowsKey = "ai.approval-workflows";
 
-    /// <summary>
-    /// Entitlement key for MCP discovery and query — the read/search/analyze
-    /// agent surface. Community-tier and always active: preserves the adoption
-    /// thesis that the work goes to agents on the free tier (#1592). Present in
-    /// the catalog so the capability manifest can advertise it explicitly.
-    /// </summary>
     public const string McpDiscoveryKey = "ai.mcp-discovery";
 
-    /// <summary>
-    /// Entitlement key for Esri-style branch versioning (named gdb versions, version read/edit
-    /// sessions, reconcile/post). Gates the GeoServices VersionManagementServer surface and
-    /// <c>gdbVersion</c>-scoped FeatureServer editing (#1272, ADR-0051). Postgres-only.
-    /// </summary>
     public const string BranchVersioningKey = "editing.branch-versioning";
 
     // Pro entitlement for FeatureServer writes. Open-protocol edits stay Community and ungated.
     // Branch versioning is a separate entitlement.
     public const string FeatureServerEditsKey = "editing.featureserver-edits";
 
-    /// <summary>
-    /// Entitlement key for disconnected field operations — form offline policy discovery,
-    /// FieldCollection cursor/change sync, and GeoServices replica delta sync (delivered as Esri JSON).
-    /// Online form package reads and submissions remain Community surfaces.
-    /// </summary>
     public const string FieldOpsOfflineSyncKey = "fieldops.offline-sync";
 
-    /// <summary>
-    /// Entitlement key for applying executable spec plans and MCP execution tools that submit
-    /// server-side agentic work. Spec validation, planning, discovery, and read/query paths stay
-    /// Community.
-    /// </summary>
     public const string AiSpecApplyKey = "ai.spec-apply";
 
-    /// <summary>
-    /// Entitlement key for natural-language spec mutation grounding. Deterministic summaries and
-    /// discovery paths remain Community.
-    /// </summary>
     public const string AiGroundingKey = "ai.grounding";
 
-    /// <summary>
-    /// Entitlement key for the server plugin/extension SDK (custom feature validators and edit
-    /// hooks today; computed fields and custom endpoints in later phases). Gates compile-time,
-    /// AOT-safe plugins registered at startup (#347, ADR-0024). Enterprise-only.
-    /// </summary>
     public const string PluginSdkKey = "plugin.sdk";
 
-    /// <summary>
-    /// Entitlement key for batch/multi-address geocoding execution — the GeoServices
-    /// <c>geocodeAddresses</c> HTTP operation and the MCP <c>honua_geocode_addresses</c> tool
-    /// (#2981). Enterprise-only: this is the volume/enterprise geocoding workload. Single-address
-    /// forward (<c>geocoding.forward</c>) and reverse (<c>geocoding.reverse</c>) geocoding moved to
-    /// Community in the same change — the demo/adoption showcase path — and are enumerated in
-    /// <see cref="CapabilityKeyCatalog.CommunityKeys"/> rather than here. Previously this key
-    /// existed in the catalog but was unenforced over HTTP (only the MCP
-    /// <c>honua_geocode_addresses</c> tool checked it); see ADR-0024.
-    /// </summary>
     public const string BatchGeocodingKey = "geocoding.batch";
 
-    /// <summary>
-    /// Entitlement key for automatically retrying a geocoding request against backup providers.
-    /// Pro-tier: Community geocoding requests remain pinned to their selected/default provider.
-    /// </summary>
     public const string GeocodingFailoverKey = "geocoding.failover";
 
-    /// <summary>
-    /// Entitlement key for basic single-provider OpenID Connect authentication. Pro-tier:
-    /// one configured Azure AD, Google, Okta, Auth0, or generic OIDC provider. Enforced on the
-    /// admin provider-configuration surface (<c>/api/v1/admin/oidc/providers</c>, #2997); the
-    /// JWT bearer / token-validation pipeline itself is deliberately NOT gated so existing
-    /// sessions and token validation keep working regardless of edition (see ADR-0024).
-    /// </summary>
+    // The OIDC admin configuration surface is edition-gated; the JWT bearer pipeline is not, so existing sessions keep validating.
     public const string OidcAuthenticationKey = "identity.oidc";
 
-    /// <summary>
-    /// Entitlement key for Enter/Exit geofence alert triggers (#2998). Pro-tier: enforced
-    /// through the license-derived <c>IAlertEditionPolicy</c> on the alert-rule admin surface
-    /// and the evaluation pipeline.
-    /// </summary>
     public const string AlertsEnterExitKey = "alerts.enter-exit";
 
-    /// <summary>
-    /// Entitlement key for the alert evaluation engine (#2998). Pro-tier: gates the on-demand
-    /// rule evaluation surface (<c>POST /api/v1/admin/alerts/rules/test</c>); background
-    /// evaluation enforces per-rule entitlements through <c>IAlertEditionPolicy</c>.
-    /// </summary>
     public const string AlertsEvaluationKey = "alerts.evaluation";
 
-    /// <summary>
-    /// Entitlement key for dwell alert triggers (#2998). Enterprise-only.
-    /// </summary>
     public const string AlertsDwellKey = "alerts.dwell";
 
-    /// <summary>
-    /// Entitlement key for attribute-threshold alert triggers (#2998). Enterprise-only.
-    /// </summary>
     public const string AlertsThresholdKey = "alerts.threshold";
 
-    /// <summary>
-    /// Entitlement key for webhook alert delivery (#2998). Pro-tier.
-    /// </summary>
     public const string ChannelsWebhookKey = "channels.webhook";
 
-    /// <summary>
-    /// Entitlement key for email alert delivery (#2998). Enterprise-only.
-    /// </summary>
     public const string ChannelsEmailKey = "channels.email";
 
-    /// <summary>
-    /// Entitlement key for Slack alert delivery (#2998). Enterprise-only.
-    /// </summary>
     public const string ChannelsSlackKey = "channels.slack";
 
-    /// <summary>
-    /// Entitlement key for Microsoft Teams alert delivery (#2998). Enterprise-only.
-    /// </summary>
     public const string ChannelsTeamsKey = "channels.teams";
 
-    /// <summary>
-    /// Entitlement key for AWS SNS/SQS alert delivery (#2998). Enterprise-only; the SQS queue
-    /// channel shares this key (same cloud family and tier, no separate catalog entry).
-    /// </summary>
     public const string ChannelsAwsSnsKey = "channels.aws-sns";
 
-    /// <summary>
-    /// Entitlement key for Azure Event Grid / Event Hub alert delivery (#2998). Enterprise-only;
-    /// the Event Hub channel shares this key (same cloud family and tier, no separate catalog
-    /// entry).
-    /// </summary>
     public const string ChannelsAzureEventGridKey = "channels.azure-eventgrid";
 
-    /// <summary>
-    /// Entitlement key for digest (batched summary) alert delivery (#2998). Enterprise-only.
-    /// </summary>
     public const string ChannelsDigestKey = "channels.digest";
 
-    /// <summary>
-    /// Entitlement key for the ASP.NET Core output-cache middleware (#2998). Pro-tier: enforced
-    /// per request in <c>Program</c>, which wires <c>UseOutputCache()</c> inside an
-    /// <c>app.UseWhen(...)</c> branch guarded by the live license snapshot, so a license applied
-    /// or expired at runtime takes effect without a restart. When unentitled the branch is not
-    /// taken and endpoint <c>CacheOutput</c> metadata is inert, so Community deployments serve
-    /// identical responses, just uncached.
-    /// </summary>
     public const string OutputCacheKey = "caching.output-cache";
 
-    /// <summary>
-    /// Entitlement key for the Redis-backed distributed and output-cache stores. Pro-tier:
-    /// deployments without this entitlement fall back to process-local cache storage.
-    /// </summary>
     public const string RedisCacheKey = "caching.redis";
 
-    /// <summary>
-    /// Entitlement key for SAML 2.0 service-provider authentication (#2978). Enterprise-only
-    /// per ADR-0024's Identity Governance tier ("Multi-provider OIDC configuration,
-    /// claim-to-role mapping, SAML bridge, SCIM user/group provisioning"); the Pro "no SSO
-    /// tax" position covers single-provider <see cref="OidcAuthenticationKey"/> only.
-    /// Previously shipped ungated (Community) in <c>CapabilityKeyCatalog.CommunityKeys</c> —
-    /// catalog drift from the ADR that let any SAML-speaking IdP bypass SSO tiering entirely.
-    /// </summary>
     public const string SamlAuthenticationKey = "identity.saml";
 
-    /// <summary>
-    /// Entitlement key for SCIM 2.0 user/group provisioning (#2978). Enterprise-only per
-    /// ADR-0024's Identity Governance tier, alongside <see cref="OidcMultiProviderKey"/> and
-    /// <see cref="OidcClaimsMappingKey"/>. Previously shipped ungated (Community) — the same
-    /// catalog drift as <see cref="SamlAuthenticationKey"/>.
-    /// </summary>
     public const string ScimProvisioningKey = "identity.scim";
 
-    /// <summary>
-    /// Entitlement key for configuring multiple OIDC identity providers in one deployment.
-    /// Enterprise-only identity governance; basic single-provider OIDC is separately gated
-    /// by <see cref="OidcAuthenticationKey"/>.
-    /// </summary>
     public const string OidcMultiProviderKey = "identity.oidc-multi-provider";
 
-    /// <summary>
-    /// Entitlement key for custom OIDC claim-to-role mapping. Enterprise-only identity
-    /// governance; default role assignment for basic single-provider OIDC remains Pro.
-    /// </summary>
     public const string OidcClaimsMappingKey = "identity.claims-mapping";
 
-    /// <summary>
-    /// Entitlement key for native mTLS client-certificate authentication (#2431). Enterprise-only:
-    /// gates the client-certificate trust-profile admin surface
-    /// (<c>/api/v1/admin/security/client-certificates/*</c>) and the enforcement pipeline that maps
-    /// a presented client certificate to a Honua principal. The capability itself is also
-    /// experimental again (#2958; registry id <c>security.mtls</c>) — it is off by default
-    /// regardless of edition until <c>Capabilities:Experimental:security.mtls:Enabled=true</c>.
-    /// </summary>
     public const string MtlsClientCertificateKey = "identity.mtls-client-certificate";
 
-    /// <summary>
-    /// Entitlement key for CityGML/BIM ingest into a servable Building Scene
-    /// Layer 3D Tiles tileset (#1207). Enterprise-only: gates the admin
-    /// <c>POST /api/v1/admin/scenes/ingest/citygml</c> surface that parses a
-    /// CityGML document and publishes a deterministic tileset with per-feature
-    /// discipline / sub-layer semantics. Postgres-only (registration-backed).
-    /// </summary>
     public const string SceneBimIngestKey = "scene.bim-ingest";
 
-    /// <summary>
-    /// Entitlement key for LAS/LAZ/COPC point-cloud ingest into a servable 3D
-    /// Tiles point tileset (#1201). Enterprise-only: gates the admin
-    /// <c>POST /api/v1/admin/scenes/ingest/pointcloud</c> surface that decodes a
-    /// LAS point cloud and publishes a deterministic <c>.pnts</c> quadtree
-    /// tileset preserving per-point classification, intensity, and RGB.
-    /// Postgres-only (registration-backed).
-    /// </summary>
     public const string ScenePointCloudIngestKey = "scene.pointcloud-ingest";
 
-    /// <summary>
-    /// Entitlement key for H3-indexed spatial aggregation and H3 vector tile surfaces.
-    /// Pro-tier: gates FeatureServer <c>queryH3</c> and H3 tile generation.
-    /// </summary>
     public const string H3AnalyticsKey = "analytics.h3";
 
-    /// <summary>
-    /// All edition-gated features in the platform.
-    /// </summary>
     public static IReadOnlyList<FeatureDefinition> All { get; } =
     [
         // Alerts — Pro

@@ -3,45 +3,34 @@
 
 namespace Honua.Core.Features.Security.Admission;
 
-/// <summary>Charges and reserves one model invocation against authoritative deployment and actor limits.</summary>
 public interface IAiExecutionAdmission
 {
-    /// <summary>Acquires a single-use permit, or fails closed with a sanitized admission exception.</summary>
     Task<IAiExecutionPermit> AcquireAsync(AiExecutionContext context, CancellationToken cancellationToken);
 
-    /// <summary>Reads the selected authoritative price basis for request preparation; acquisition revalidates it atomically.</summary>
     Task<AiFinancialPriceBasis?> GetFinancialBasisAsync(AiExecutionContext context, CancellationToken cancellationToken);
 
-    /// <summary>Acquires against the same authority with exact owned Reporting payload and route bounds.</summary>
     Task<IAiExecutionPermit> AcquireAsync(AiExecutionContext context, AiFinancialRequest request, CancellationToken cancellationToken);
 }
 
-/// <summary>One charged model invocation, owned through complete response/body disposal.</summary>
 public interface IAiExecutionPermit : IAsyncDisposable
 {
-    /// <summary>Caller cancellation linked with authoritative stop, generation/epoch loss and the fixed deadline.</summary>
     CancellationToken Token { get; }
 
-    /// <summary>Whether this invocation retains a monetary and token reservation.</summary>
     bool HasFinancialReservation { get; }
 
-    /// <summary>Records transport-observed supported usage against the original reservation, independently of cancellation.</summary>
     Task RecordFinancialUsageAsync(AiFinancialUsage usage, CancellationToken cancellationToken);
 
-    /// <summary>Claims this permit exactly once and checks current authority before credential preparation.</summary>
+    // The permit is claimed exactly once, and authority is checked again before credential preparation.
     Task BeginInvocationAsync(CancellationToken cancellationToken);
 
-    /// <summary>Rechecks current authority immediately before a model send; this does not charge another attempt.</summary>
     Task EnsureCurrentAsync(CancellationToken cancellationToken);
 
-    /// <summary>Authorizes exactly one actual provider send after invocation start and an authoritative check.</summary>
     Task AuthorizeSendAsync(CancellationToken cancellationToken);
 }
 
-/// <summary>Sanitized invocation admission failure without actor, prompt, destination or credential details.</summary>
+// An admission failure is sanitized and carries no actor, prompt, destination, or credential.
 public sealed class AiAdmissionException : Exception
 {
-    /// <summary>Creates a bounded, allowlisted admission failure.</summary>
     public AiAdmissionException(string code, int retryAfterSeconds = 1)
         : base("AI invocation admission is unavailable or denied.")
     {
@@ -54,9 +43,7 @@ public sealed class AiAdmissionException : Exception
         RetryAfterSeconds = Math.Clamp(retryAfterSeconds, 1, AiAdmissionPolicy.MaximumWindowSeconds);
     }
 
-    /// <summary>Stable failure category; no backend exception message is exposed.</summary>
     public string Code { get; }
 
-    /// <summary>Bounded conservative retry delay, independent of whether the caller retries.</summary>
     public int RetryAfterSeconds { get; }
 }

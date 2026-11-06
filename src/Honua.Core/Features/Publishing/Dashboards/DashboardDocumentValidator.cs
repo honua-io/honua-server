@@ -6,19 +6,9 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.Publishing.Dashboards;
 
-/// <summary>
-/// Purely structural validator for a <see cref="DashboardDocument"/>, mirroring
-/// <c>ReportDocumentValidator</c>. The dashboard has no DB-backed publish validator (the publication
-/// registry hashes the payload opaquely), so this is the only validation gate — it requires no live
-/// metadata. It checks: a title is present, at least one panel exists, panel ids are non-empty and
-/// unique, every panel kind is in the allowed set, every chart panel carries a non-empty Vega-Lite
-/// spec, and — the converse — no non-chart panel carries one. Every collection access is null-guarded so a partially-populated document never throws. The
-/// result mirrors the report package's <c>ReportValidationResult</c> (IsValid + Issues[code, severity,
-/// message, path]).
-/// </summary>
+// This structural check is the only validation gate, because the publication registry hashes the payload and does not parse it.
 public static class DashboardDocumentValidator
 {
-    /// <summary>Validates the structural integrity of a dashboard document.</summary>
     public static DashboardValidationResult Validate(DashboardDocument? document)
     {
         var issues = new List<DashboardValidationIssue>();
@@ -166,34 +156,26 @@ public static class DashboardDocumentValidator
         : $"index {index}";
 }
 
-/// <summary>Structural validation result for a dashboard document. Mirrors <c>ReportValidationResult</c>.</summary>
 public sealed class DashboardValidationResult
 {
-    /// <summary>Whether the document has no error-severity issues.</summary>
     [JsonPropertyName("isValid")]
     public bool IsValid { get; init; }
 
-    /// <summary>Validation issues.</summary>
     [JsonPropertyName("issues")]
     public DashboardValidationIssue[] Issues { get; init => field = value ?? []; } = [];
 }
 
-/// <summary>Single dashboard-document validation issue. Mirrors <c>ReportValidationIssue</c>.</summary>
 public sealed class DashboardValidationIssue
 {
-    /// <summary>Stable machine-readable issue code.</summary>
     [JsonPropertyName("code")]
     public string Code { get; init; } = string.Empty;
 
-    /// <summary>Issue severity, usually error or warning.</summary>
     [JsonPropertyName("severity")]
     public string Severity { get; init; } = "error";
 
-    /// <summary>Optional JSON pointer or property path.</summary>
     [JsonPropertyName("path")]
     public string? Path { get; init; }
 
-    /// <summary>Human-readable issue message.</summary>
     [JsonPropertyName("message")]
     public string Message { get; init; } = string.Empty;
 }
