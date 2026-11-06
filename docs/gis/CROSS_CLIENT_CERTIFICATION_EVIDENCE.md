@@ -309,7 +309,7 @@ For desktop, BI, and JS/MVT lanes where automation is not available:
 }
 ```
 
-The visual / style certification slice (ticket [`#478`](https://github.com/honua-io/honua-server/issues/478)) adds the six `CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01` IDs to the common core. They are append-only — the original 18 IDs are unchanged. See [`visual-style-certification-slice.md`](../internal/evidence/visual-style-certification-slice.md) for the per-scenario fixtures, expected colors, and lane substantiation. Lanes that do not exercise a slice category emit `skip` (or `not-applicable` for protocols where the category does not apply) so the gap is visible in the rollup.
+The visual / style certification slice (ticket [`#478`](https://github.com/honua-io/honua-server/issues/478)) adds the six `CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01` IDs to the common core. They are append-only — the original 18 IDs are unchanged. See [`visual-style-certification-slice.md`](https://github.com/honua-io/honua-server/blob/213e7ef3bf243fddf30c06a4cdb4cac737b9bfc8/docs/internal/evidence/visual-style-certification-slice.md) for the per-scenario fixtures, expected colors, and lane substantiation. Lanes that do not exercise a slice category emit `skip` (or `not-applicable` for protocols where the category does not apply) so the gap is visible in the rollup.
 
 ### Esri Leaflet Evidence Note
 
@@ -336,7 +336,7 @@ The reporter seeds the full 24-ID common-core matrix into every envelope it emit
 
 - Tests substantiating a CERT ID (`CERT-RNDR-01`, currently covered by `style-loading.spec.ts`, `layer-visibility.spec.ts`, and `feature-query.spec.ts`) are recorded at their test-case outcome using worst-status aggregation (fail > pass > skip), so a later passing test cannot mask an earlier failure when the same CERT ID is attached to multiple specs.
 - `CERT-CONN-01`, `CERT-CONN-02`, `CERT-AUTH-01`, `CERT-AUTH-02`, and `CERT-ERRH-01` are recorded as `skip` with the note `"Covered by JS/featureserver automated tests."` — they apply to MVT but are not exercisable in the MapLibre rendering path.
-- The six visual / style slice IDs (`CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01`) are recorded as `skip` with a `pending-fixture` note until the MapLibre MVT lane substantiates them. Tracked in [`visual-style-certification-slice.md`](../internal/evidence/visual-style-certification-slice.md).
+- The six visual / style slice IDs (`CERT-RNDR-{SYM,LIN,FIL,LBL,SPR,URL}-01`) are recorded as `skip` with a `pending-fixture` note until the MapLibre MVT lane substantiates them. Tracked in [`visual-style-certification-slice.md`](https://github.com/honua-io/honua-server/blob/213e7ef3bf243fddf30c06a4cdb4cac737b9bfc8/docs/internal/evidence/visual-style-certification-slice.md).
 - All remaining common-core IDs (DISC, SCHM, QFLT, PAGE, GEOM, ERRH-02, RNDR-02) are recorded as `not-applicable` because they do not list MVT in their protocol column.
 - `JS-EXT-01` (PBF/MVT decode fidelity) and `JS-EXT-02` (tile load pipeline) are recorded in the `extensions` array from `tile-rendering.spec.ts`.
 

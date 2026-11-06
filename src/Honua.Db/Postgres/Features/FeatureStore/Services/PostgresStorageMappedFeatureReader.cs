@@ -660,7 +660,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             // Use the jsonb-preserving accessor (->) for numeric/boolean/json fields so the
             // value round-trips with its declared type (an integer field returns a JSON
             // number, not a string). Text-like types keep the text accessor (->>) so existing
-            // string/date formatting is unchanged.
+            // string formatting is unchanged. DateTime values may also be epoch numbers.
             if (distinctObjectIdExpression is not null &&
                 (IsObjectIdField(field.Name) || field.SemanticRoles.Contains("id.primary")))
             {
@@ -684,17 +684,13 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         => fieldName.Equals("objectid", StringComparison.OrdinalIgnoreCase)
             || fieldName.Equals("object_id", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Whether a field's value should be projected with the jsonb-preserving
-    /// accessor (<c>-&gt;</c>) so its declared numeric/boolean/json type survives,
-    /// rather than the text accessor (<c>-&gt;&gt;</c>) which stringifies it.
-    /// </summary>
     private static bool PreservesJsonType(MetadataV2FieldType type)
         => type is MetadataV2FieldType.Integer
             or MetadataV2FieldType.BigInteger
             or MetadataV2FieldType.Double
             or MetadataV2FieldType.Float
             or MetadataV2FieldType.Boolean
+            or MetadataV2FieldType.DateTime
             or MetadataV2FieldType.Json;
 
     private MetadataV2Field[] ResolveAttributeFields(FeatureQuery query)

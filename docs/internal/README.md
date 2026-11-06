@@ -16,4 +16,6 @@ Key entry points:
 - [Contributor guide](contributor/README.md) — building, testing, and contributing to Honua Server
 - [Architecture decision records](contributor/adr/README.md)
 - [CI gate model](ci/gate-model.md)
-- [Evidence index](evidence/README.md) — compatibility, conformance, parity, and migration evidence
+- [Historical evidence index](https://github.com/honua-io/honua-server/blob/213e7ef3bf243fddf30c06a4cdb4cac737b9bfc8/docs/internal/evidence/README.md) — compatibility, conformance, parity, and migration evidence
+
+Write run evidence, reports and receipts beneath the ignored `artifacts/` directory. CI uploads run output as workflow artifacts; release evidence belongs on the corresponding GitHub Release in `honua-release`.

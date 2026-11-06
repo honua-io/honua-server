@@ -42,6 +42,7 @@ internal sealed class ODataAggregationHandler
         string applyExpression,
         string? filter,
         string baseUrl,
+        int? publicLayerId,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(resource);
@@ -58,7 +59,7 @@ internal sealed class ODataAggregationHandler
         // Read one sentinel row beyond the budget so truncation never produces a
         // plausible but incorrect aggregate. Apply the same bound to every transform.
         var query = new FeatureQuery { Limit = _maxInputRows + 1 };
-        query = ApplyODataFilter(query, filter, resource);
+        query = ApplyODataFilter(query, filter, resource, publicLayerId);
 
         // The terminal (last) transform decides whether the result is an aggregation or features.
         var terminal = ParseApplyExpression(segments[^1]);
@@ -66,7 +67,7 @@ internal sealed class ODataAggregationHandler
         {
             // filter() narrows rows before aggregation; apply every filter segment to the query
             // (a trailing filter-only pipeline then simply returns the filtered features).
-            query = ApplyODataFilter(query, parsed.FilterExpression, resource);
+            query = ApplyODataFilter(query, parsed.FilterExpression, resource, publicLayerId);
         }
 
         object[] aggregatedValues;
@@ -772,14 +773,14 @@ internal sealed class ODataAggregationHandler
         return dict;
     }
 
-    private FeatureQuery ApplyODataFilter(FeatureQuery query, string? filterExpression, MetadataV2Resource resource)
+    private FeatureQuery ApplyODataFilter(FeatureQuery query, string? filterExpression, MetadataV2Resource resource, int? publicLayerId)
     {
         if (string.IsNullOrWhiteSpace(filterExpression))
         {
             return query;
         }
 
-        var sqlFragment = _queryService.ConvertODataFilterToSqlFragment(filterExpression, resource);
+        var sqlFragment = _queryService.ConvertODataFilterToSqlFragment(filterExpression, resource, publicLayerId);
         return ODataSqlFragmentMergeHelper.Merge(query, sqlFragment);
     }
 }

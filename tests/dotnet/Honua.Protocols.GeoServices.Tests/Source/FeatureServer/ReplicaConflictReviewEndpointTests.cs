@@ -54,6 +54,17 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
     private static string ResolvePath(string serviceId, string replicaId, string conflictId) =>
         $"/api/v1/admin/services/{serviceId}/replicas/{replicaId}/conflicts/{conflictId}/resolve";
 
+    private async Task<bool> StoredAttributeExistsAsync(long objectId, string name)
+    {
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT attributes ? @name FROM features WHERE layer_id = @layerId AND objectid = @id";
+        command.Parameters.AddWithValue("name", name);
+        command.Parameters.AddWithValue("layerId", WebAppFixture.TestLayerId);
+        command.Parameters.AddWithValue("id", objectId);
+        return (bool)(await command.ExecuteScalarAsync())!;
+    }
+
     private Task<string> CreateReplicaAsync(string replicaName) =>
         CreateReplicaAsync(_fixture, replicaName);
 
@@ -567,7 +578,7 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
         var seeded = await SeedConflictAsync(replicaId, clientEditApplied: true);
         await UpdateFeatureNameAsync(seeded.ObjectId, "client");
         await UpdateFeatureDescriptionAsync(seeded.ObjectId, "client-only");
-        (await ReadFeatureAttributesAsync(seeded.ObjectId)).TryGetProperty("description", out _).Should().BeTrue();
+        (await StoredAttributeExistsAsync(seeded.ObjectId, "description")).Should().BeTrue();
         await MarkObjectIdFieldNonEditableAsync();
 
         var response = await _fixture.Client.PostAsync(
@@ -585,7 +596,8 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
             "server",
             "keeping the server after a last-write-wins sync must restore the captured pre-conflict state");
         var restoredAttributes = await ReadFeatureAttributesAsync(seeded.ObjectId);
-        restoredAttributes.TryGetProperty("description", out _).Should().BeFalse(
+        restoredAttributes.GetProperty("description").ValueKind.Should().Be(JsonValueKind.Null);
+        (await StoredAttributeExistsAsync(seeded.ObjectId, "description")).Should().BeFalse(
             "a complete captured server snapshot must remove attributes introduced only by the client edit");
         restoredAttributes.GetProperty("objectid").GetInt64().Should().Be(seeded.ObjectId,
             "complete-state replacement must preserve the addressed row's non-editable identity");

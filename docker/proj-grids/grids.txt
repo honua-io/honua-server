@@ -13,7 +13,7 @@
 # Lines beginning with '#' and blank lines are ignored. Keep this list in sync with
 # the `requiredGrids` entries in
 # src/Honua.Core/Features/Infrastructure/Crs/Resources/esri-default-datum-transformations.json
-# and the grid names documented in docs/internal/evidence/datum-transformation-parity.md.
+# and the grid names documented in docs/reference/compatibility/datum-transformation-parity.md.
 
 # --- NADCON / NADCON5 horizontal (NAD27 <-> NAD83 and realization chain, CONUS + Alaska) ---
 us_noaa_conus.tif
