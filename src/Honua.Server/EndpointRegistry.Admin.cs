@@ -9,6 +9,11 @@ public static partial class EndpointRegistry
     // initializer; this keeps `All` independent of cross-file static-init order.
     private static IReadOnlyList<EndpointDefinition> AdminEndpoints =>
     [
+        new("GET", "/api/v1/admin/folders"),
+        new("POST", "/api/v1/admin/folders"),
+        new("PATCH", "/api/v1/admin/folders/{id}"),
+        new("DELETE", "/api/v1/admin/folders/{id}"),
+        new("PUT", "/api/v1/admin/services/{serviceName}/folder"),
         new("GET", "/api/v1/admin/config"),
         new("POST", "/api/v1/admin/config"),
         new("PUT", "/api/v1/admin/config"),
