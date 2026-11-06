@@ -4,6 +4,7 @@
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
@@ -70,36 +71,29 @@ internal static class ServiceSettingsEndpoints
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
     }
 
-    private static async Task<Results<Ok<ApiResponse<ServiceSummary[]>>, ProblemHttpResult>>
+    private static async Task<Results<Ok<ApiResponse<ServiceListPage>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>
         HandleListServices(
             [FromServices] IMetadataV2GraphProvider graphProvider,
             ILogger<ServiceSettingsEndpointsLog> logger,
             HttpContext context)
     {
+        if (!AdminListQueryParser.TryParse(context.Request.Query, out var listQuery, out var error))
+        {
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(error));
+        }
+
         try
         {
-            // V2 cutover: list services from the canonical graph. Multiple V2 service entries can share a display
-            // name when the same logical service is exposed under different protocols
-            // (FeatureServer / MapServer / Stac all named "test" for the same dataset);
-            // the v1 admin response collapsed those into one row keyed by name, so we
-            // preserve that contract here by grouping on Metadata.Name and unioning
-            // protocols + layer counts.
             var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
-            var folderId = context.Request.Query["folderId"].ToString();
-            if (folderId.Length > 0 && folderId != "root" && !snapshot.Graph.Folders.Any(f => !f.Deleted && f.Metadata.Id == folderId &&
-                MetadataV2TenantVisibility.IsVisibleToTenant(f.Metadata.Tenant,
-                    context.RequestServices.GetService<Honua.Core.Features.MultiTenancy.Abstractions.ITenantContext>()?.TenantId)))
-                return TypedResults.Problem(statusCode: 404, detail: "Folder not found.");
-            context.Response.Headers.ETag = snapshot.Etag;
-            var summaries = snapshot.Graph.Services
-                .Where(s => Honua.Core.Features.Metadata.Domain.V2.MetadataV2TenantVisibility.IsVisibleToTenant(s.Metadata.Tenant,
-                    context.RequestServices.GetService<Honua.Core.Features.MultiTenancy.Abstractions.ITenantContext>()?.TenantId))
-                .Where(s => folderId.Length == 0 || (folderId == "root" ? s.FolderId is null : s.FolderId == folderId))
-                .GroupBy(s => s.Metadata.Name, StringComparer.OrdinalIgnoreCase)
-                .Select(group => BuildServiceSummary(group, snapshot))
-                .ToArray();
+            var tenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId;
+            if (ServiceCatalogPage.FolderIsMissing(snapshot, listQuery.FolderId, tenantId))
+            {
+                return TypedResults.Problem(statusCode: StatusCodes.Status404NotFound, detail: "Folder not found.");
+            }
 
-            return TypedResults.Ok(ApiResponse<ServiceSummary[]>.CreateSuccess(summaries));
+            context.Response.Headers.ETag = snapshot.Etag;
+            return TypedResults.Ok(ApiResponse<ServiceListPage>.CreateSuccess(
+                ServiceCatalogPage.Create(snapshot, listQuery, tenantId)));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -109,26 +103,6 @@ internal static class ServiceSettingsEndpoints
                 detail: "An internal error occurred while listing services.",
                 statusCode: StatusCodes.Status500InternalServerError);
         }
-    }
-
-    private static ServiceSummary BuildServiceSummary(IGrouping<string, MetadataV2Service> services, MetadataV2GraphSnapshot snapshot)
-    {
-        var representative = services.First();
-        var enabled = services.SelectMany(s => s.Protocols).Distinct(StringComparer.Ordinal).ToArray();
-        var layerCount = services.SelectMany(s => snapshot.Index.PublicationsByService[s.Metadata.Id])
-            .Select(p => p.ResourceId).Distinct(StringComparer.Ordinal).Count();
-        return new ServiceSummary
-        {
-            ServiceName = representative.Metadata.Name,
-            FolderMutationIssues = MetadataV2FolderPreflight.Inspect(snapshot.Graph, representative),
-            FolderId = representative.FolderId,
-            FolderName = MetadataV2ServicePaths.FolderName(snapshot.Graph, representative),
-            PublicName = representative.EffectivePublicName,
-            Title = representative.Metadata.Title,
-            Description = representative.Metadata.Description ?? string.Empty,
-            LayerCount = layerCount,
-            EnabledProtocols = enabled.Length == 0 ? MetadataV2ServiceProtocols.All : enabled,
-        };
     }
 
     private static async Task<Results<Ok<ApiResponse<ServiceSettingsResponse>>, NotFound<ApiResponse<object>>, ProblemHttpResult>>
