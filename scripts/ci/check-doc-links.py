@@ -335,13 +335,25 @@ def scan_for_docs_urls(repo_root, scan):
     return found
 
 
+class RelativeLinkReport:
+    def __init__(self):
+        self.errors = []
+        self.warnings = []
+        self.matched = set()
+        self.checked = 0
+
+    def record(self, key, detail, allowlist_entries):
+        if key in allowlist_entries:
+            self.matched.add(key)
+            self.warnings.append(f"allowlisted: {detail}")
+            return
+        self.errors.append(detail)
+
+
 def check_relative_links(docs_root, repo_root, allowlist_entries):
     """Port of the geospatial-mcp relative-link/anchor check, with the ratchet."""
     anchor_cache = {}
-    errors = []
-    warnings = []
-    matched_allowlist = set()
-    checked = 0
+    report = RelativeLinkReport()
 
     for md in iter_md_files([docs_root]):
         source = rel(md, repo_root)
@@ -354,7 +366,6 @@ def check_relative_links(docs_root, repo_root, allowlist_entries):
 
             path_part, _, fragment = target.partition("#")
             path_part = path_part.split("?", 1)[0]
-
             key = (source, target)
 
             if path_part == "":
@@ -362,43 +373,30 @@ def check_relative_links(docs_root, repo_root, allowlist_entries):
             else:
                 resolved = os.path.normpath(os.path.join(base_dir, path_part))
                 if not inside_repo(resolved, repo_root):
-                    detail = f"{source} -> {target} (escapes the repository)"
-                    if key in allowlist_entries:
-                        matched_allowlist.add(key)
-                        warnings.append(f"allowlisted: {detail}")
-                    else:
-                        errors.append(detail)
+                    report.record(key, f"{source} -> {target} (escapes the repository)", allowlist_entries)
                     continue
                 if not os.path.exists(resolved):
-                    detail = f"{source} -> {target} (file not found)"
-                    if key in allowlist_entries:
-                        matched_allowlist.add(key)
-                        warnings.append(f"allowlisted: {detail}")
-                    else:
-                        errors.append(detail)
+                    report.record(key, f"{source} -> {target} (file not found)", allowlist_entries)
                     continue
 
-            checked += 1
+            report.checked += 1
             if fragment and resolved.endswith(".md"):
                 if resolved not in anchor_cache:
                     anchor_cache[resolved] = heading_anchors(resolved)
                 if fragment not in anchor_cache[resolved]:
-                    detail = (f"{source} -> {target} (anchor '#{fragment}' not a "
-                              f"heading in {rel(resolved, repo_root)})")
-                    if key in allowlist_entries:
-                        matched_allowlist.add(key)
-                        warnings.append(f"allowlisted: {detail}")
-                    else:
-                        errors.append(detail)
+                    report.record(
+                        key,
+                        f"{source} -> {target} (anchor '#{fragment}' not a "
+                        f"heading in {rel(resolved, repo_root)})",
+                        allowlist_entries)
 
-    stale = sorted(set(allowlist_entries) - matched_allowlist)
-    for source, target in stale:
-        errors.append(
+    for source, target in sorted(set(allowlist_entries) - report.matched):
+        report.errors.append(
             f"stale rot-allowlist entry: {source} -> {target} now resolves (or "
             f"the link is gone). Delete it from the allowlist; this list only "
             f"shrinks.")
 
-    return checked, errors, warnings
+    return report.checked, report.errors, report.warnings
 
 
 def check_manifest(manifest, repo_root, docs_root, redirects):

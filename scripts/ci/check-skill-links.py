@@ -16,6 +16,7 @@ import urllib.request
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = Path(HERE).resolve().parents[1]
 HOME_URL = "https://honua.gitbook.io/honuaio"
+HTTP_OK = 200
 TITLE_RE = re.compile(r"<title>(.*?)</title>", re.IGNORECASE | re.DOTALL)
 USER_AGENT = "honua-skill-link-check"
 
@@ -56,13 +57,13 @@ def published_page_errors(skill_root, repo_root, fetch):
             location = f"{DOC_LINKS.rel(path, repo_root)} -> {target}"
             if home_title is None:
                 status, home_title = fetch(HOME_URL)
-                if status != 200 or not home_title:
+                if status != HTTP_OK or not home_title:
                     errors.append(f"GitBook home page title was not readable ({status})")
                     home_title = home_title or ""
             if target not in pages:
                 pages[target] = fetch(target)
             status, title = pages[target]
-            if status != 200:
+            if status != HTTP_OK:
                 errors.append(f"{location} returned HTTP {status}")
             elif not title:
                 errors.append(f"{location} returned no page title")
