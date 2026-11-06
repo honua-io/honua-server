@@ -4,7 +4,6 @@
 using System.Collections.Immutable;
 using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
