@@ -89,8 +89,9 @@ public sealed class ODataCrudServiceStorageLayerTests
         var adapter = Substitute.For<IEditParameterAdapter<ODataEditRequest>>();
         adapter.ConvertAsync(Arg.Any<ODataEditRequest>(), featureResource, Arg.Any<CancellationToken>())
             .Returns(EditAdapterResult.Failure("Conversion reached the authorized feature resource."));
+        var reader = Substitute.For<IFeatureReader>();
         var dependencies = new ODataCrudDependencies(
-            validator, Substitute.For<IFeatureReader>(), Substitute.For<IFeatureWriter>(),
+            validator, reader, Substitute.For<IFeatureWriter>(),
             Substitute.For<IGeometryService>(), Substitute.For<ICrsRegistry>(), Substitute.For<IETagService>(),
             new FeatureMutationValidator(Substitute.For<IGeometryValidator>()), adapter,
             Substitute.For<IEditProcessor>());
