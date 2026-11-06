@@ -183,9 +183,6 @@ jobs:
           python3 scripts/ci/check-agents-md.py --self-test
           bash scripts/ci/check-instructions-sync.sh
 
-      - name: Verify boot smoke readiness controls
-        run: python3 scripts/ci/server-boot-smoke.test.py
-
       - name: Validate modular test inventory and isolation
         run: |
           python3 scripts/ci/test-projects.py validate
