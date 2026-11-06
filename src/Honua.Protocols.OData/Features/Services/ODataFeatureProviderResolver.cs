@@ -106,7 +106,7 @@ internal sealed class ODataFeatureProviderResolver(
         int storageLayerId,
         CancellationToken cancellationToken)
     {
-        if (!RequiresWriteRouting(snapshot, publication))
+        if (!RequiresReadRouting(snapshot, publication))
         {
             return (true, null);
         }
@@ -126,6 +126,15 @@ internal sealed class ODataFeatureProviderResolver(
             return (false, "The layer's configured data provider is read-only for OData write operations.");
         }
 
+        var reader = binding.Provider is IBindableFeatureDataProvider bindable
+            ? bindable.CreateReaderForBinding(binding)
+            : binding.Provider.Reader;
+        if (binding.Connection is null && reader is IManagedFeatureWriteSupport managed
+            && await managed.SupportsManagedWritesAsync(storageLayerId, cancellationToken).ConfigureAwait(false))
+        {
+            return (true, null);
+        }
+
         // Even the primary provider's writer targets the managed partition, not this
         // connection/table binding. Until a binding-aware writer contract exists,
         // reject before any pre-read or mutation (including batch changesets).
@@ -136,24 +145,6 @@ internal sealed class ODataFeatureProviderResolver(
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         return publication is not null && !string.IsNullOrWhiteSpace(publication.StorageBindingId);
-    }
-
-    private static bool RequiresWriteRouting(
-        MetadataV2GraphSnapshot snapshot,
-        MetadataV2Publication? publication)
-    {
-        ArgumentNullException.ThrowIfNull(snapshot);
-
-        if (publication is null || string.IsNullOrWhiteSpace(publication.StorageBindingId))
-        {
-            return false;
-        }
-
-        // A publication with an explicit but invalid binding must still fail closed in the
-        // router. Managed writes keep using the primary writer until binding-aware
-        // writes are available. Read routing independently binds the resource policy.
-        return !snapshot.Index.StorageBindingsById.TryGetValue(publication.StorageBindingId, out var binding)
-            || !string.IsNullOrWhiteSpace(binding.ConnectionId);
     }
 
     private FeatureProviderQueryRouter RequireProviderRouter(

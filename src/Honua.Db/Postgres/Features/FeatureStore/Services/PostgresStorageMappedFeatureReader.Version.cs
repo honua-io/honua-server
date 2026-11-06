@@ -8,7 +8,7 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
-internal sealed partial class PostgresStorageMappedFeatureReader : IBranchVersioningFeatureReader
+internal sealed partial class PostgresStorageMappedFeatureReader : IBranchVersioningFeatureReader, IManagedFeatureWriteSupport
 {
     private bool HasManagedVersionMapping =>
         // The managed writer stores deltas in this fixed column shape. An arbitrary
@@ -31,6 +31,13 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IBranchVersio
         {
             throw new NotSupportedException(UnsupportedVersionMappingMessage);
         }
+    }
+
+    public async Task<bool> SupportsManagedWritesAsync(int storageLayerId, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return _mapping.LayerDiscriminatorValue == storageLayerId
+            && await GetUnsupportedBranchReadReasonAsync(cancellationToken).ConfigureAwait(false) is null;
     }
 
     public async Task<bool> SupportsBranchVersioningAsync(CancellationToken cancellationToken = default)

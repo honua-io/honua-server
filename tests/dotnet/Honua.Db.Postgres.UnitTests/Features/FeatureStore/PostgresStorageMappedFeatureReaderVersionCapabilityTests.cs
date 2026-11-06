@@ -55,6 +55,8 @@ public sealed class PostgresStorageMappedFeatureReaderVersionCapabilityTests
         };
         var (reader, connectionProvider) = CreateReader(mapping);
         (await reader.SupportsBranchVersioningAsync()).Should().Be(expected);
+        (await reader.SupportsManagedWritesAsync(7)).Should().Be(expected);
+        (await reader.SupportsManagedWritesAsync(8)).Should().BeFalse();
         if (!expected)
         {
             var read = () => reader.QueryAsync(7, new FeatureQuery
@@ -108,6 +110,8 @@ public sealed class PostgresStorageMappedFeatureReaderVersionCapabilityTests
             });
         var (reader, connectionProvider) = CreateReader(ManagedMapping, connection, encryption);
         (await reader.SupportsBranchVersioningAsync()).Should().Be(expected);
+        (await reader.SupportsManagedWritesAsync(7)).Should().Be(expected);
+        (await reader.SupportsManagedWritesAsync(8)).Should().BeFalse();
         AssertNoDatabaseOpened(connectionProvider);
     }
 
