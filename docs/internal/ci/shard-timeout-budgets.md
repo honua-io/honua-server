@@ -1469,3 +1469,22 @@ trigger. The Core/API partition validates at method granularity, and a separate
 regression compares these children with the original endpoint selector, so no
 original runnable method can be lost or duplicated. Fresh
 completed child timings remain unqualified until the integrated normal gate runs.
+
+
+## Miscellaneous class capacity
+
+Completed trunk run 42230715248 executed 223 passing Miscellaneous cases over a
+serial 23.2-minute interval. Whole-class filters assign every retained case to
+one child: 170 to Miscellaneous and 53 to Packages and Temporal. Source-method
+ownership and timing inputs are retained in
+[miscellaneous-shard-capacity.json](miscellaneous-shard-capacity.json).
+
+| Child | Predicted serial interval | Inner / outer budget |
+| --- | --- | --- |
+| Server Features Miscellaneous | 12.5m | 27m / 37m |
+| Server Features Packages and Temporal | 10.7m | 27m / 37m |
+
+Both budgets match the original shard. These class-interval estimates are not
+fresh post-split runtime measurements. The method-level partition guard rejects
+missing, overlapping or leaking ownership. Package, form and temporal source
+paths select their executing child within the unchanged six-family PR cap.

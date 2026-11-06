@@ -152,5 +152,23 @@
     "overlapMethods": 0,
     "missingMethods": 0,
     "originalMethodSetSha256": "2967d51304ac13ffaef7a0f2ab672bf1514839130ed03c78cc7606c539733fbf"
+  },
+  "runtimeSelectorProof": {
+    "excludedTiers": [
+      "Fast",
+      "Slow"
+    ],
+    "originalMethods": 189,
+    "childMethods": {
+      "Server Features Miscellaneous": 137,
+      "Server Features Packages and Temporal": 52
+    },
+    "missingMethods": 0,
+    "overlapMethods": 0,
+    "retainedTrxCases": 223,
+    "childRetainedTrxCases": {
+      "Server Features Miscellaneous": 170,
+      "Server Features Packages and Temporal": 53
+    }
   }
 }

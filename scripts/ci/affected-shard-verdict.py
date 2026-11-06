@@ -12,6 +12,10 @@ from pathlib import Path
 from typing import Any, NamedTuple
 
 CONTRACT = "honua.pr-gate-affected-shard-verdict/v1"
+UNAFFECTED_SKIP_REASONS = {
+    "docs_only", "validated_generated_only", "no_product_code", "no_shards_selected",
+}
+observe_execution = runpy.run_path(str(Path(__file__).with_name("shard-execution-evidence.py")))["observe"]
 RED_ANNOTATION = (
     "HONUA_AFFECTED_SHARD_RED shard='{shard}' status='{status}' — "
     "this shard family is red on the pull-request head. The trailing matrix "
@@ -51,7 +55,7 @@ class Selection(NamedTuple):
     skip: str
     reason: str
     count: str
-    shards: list[str] | None = None
+    shards: list[str]
 
 
 def decide(
@@ -69,7 +73,7 @@ def decide(
     else:
         lines.append(
             f"- Mode: `{mode or 'report'}` "
-            "(report-only until the promotion rule in pr-gate.yml is met)"
+            "(report-only; enforcement policy: docs/ci/affected-shards-promotion.md)"
         )
     lines.append(
         f"- Selection: `{selection.reason or 'unavailable'}` (`{selection.count or '0'}` shard families)"
@@ -144,6 +148,12 @@ def decide(
             f"selection concluded '{selection.result}'.",
         )
     if selection.skip == "true":
+        if enforcing and (selection.reason not in UNAFFECTED_SKIP_REASONS
+                          or _count(selection.count) != 0 or selection.shards):
+            return unavailable(
+                "untrusted_skip", "selection cannot prove that no shard is affected.",
+                f"selection skipped with reason '{selection.reason}'.",
+            )
         return finish(
             "skipped",
             exit_code=0,
@@ -184,9 +194,7 @@ def decide(
     expected = counts["expected"]
     red = counts["red"]
     received_shards = [timing.get("shard") for timing in timings]
-    complete = received == expected and len(set(received_shards)) == received
-    if selection.shards is not None:
-        complete = complete and sorted(received_shards) == sorted(selection.shards)
+    complete = expected == len(selection.shards) and sorted(received_shards) == sorted(selection.shards)
     if red == 0 and not complete:
         return unavailable(
             "incomplete_receipts",
@@ -232,8 +240,7 @@ def _verify_execution(timing: dict[str, Any], directory: Path) -> None:
     if Path(trx_name).name != trx_name or execution.get("trxFile") != trx_name:
         timing["status"] = "invalid_execution"
         return
-    verifier = runpy.run_path(str(Path(__file__).with_name("shard-execution-evidence.py")))
-    measured = verifier["observe"](directory / trx_name, timing.get("shard"), execution.get("project"))
+    measured = observe_execution(directory / trx_name, timing.get("shard"), execution.get("project"))
     if (execution.get("status") != "passed" or measured["status"] != "passed"
             or execution.get("trxSha256") != measured["trxSha256"]
             or execution.get("counts") != measured["counts"]):

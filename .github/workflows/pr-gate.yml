@@ -1101,7 +1101,7 @@ jobs:
     # The shard's OWN outer budget from .github/ci-shards.json, exactly as
     # ci.yml::server-tests applies it. Substituting a flat cap here would make
     # this lane time out on shards the trailing matrix runs comfortably, which
-    # is precisely the false red the promotion rule measures.
+    # is precisely the false red measured in docs/ci/affected-shards-promotion.md.
     timeout-minutes: ${{ matrix.timeout_minutes }}
     strategy:
       fail-fast: false

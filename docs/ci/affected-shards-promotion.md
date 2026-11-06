@@ -9,6 +9,8 @@ evidence. The aggregate reuses `shard-execution-evidence.py` to read each
 passing timing receipt's exact TRX and compare its measured counts and digest.
 It requires exactly one receipt for each selected family. Documentation-only
 and validated generated-only selections retain their explicit skipped verdict.
+Other proven empty selections (`no_product_code`, `no_shards_selected`) may also
+skip; an untrustworthy base or unknown skip reason fails closed.
 The six-family cap remains unchanged; the trailing matrix retains full coverage.
 
 The founder authorized enforcement after real regressions passed the
