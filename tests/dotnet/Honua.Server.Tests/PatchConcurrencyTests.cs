@@ -8,7 +8,6 @@ using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Exceptions;
-using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -39,7 +38,7 @@ public sealed class PatchConcurrencyTests
         barrier.Resume.TrySetResult();
         var mask = new MutableFieldMask();
         var fixture = CreateFixture(barrier, mask);
-        await fixture.InitializeAsync();
+        await InitializeFeatureFixtureAsync(fixture);
         try
         {
             var id = await fixture.InsertFeatureAsync(0, "conditional delete");
@@ -55,7 +54,7 @@ public sealed class PatchConcurrencyTests
             Assert.DoesNotContain("population", await read.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
             if (stale)
             {
-                var current = (await ReadBoundFeatureAsync(fixture, id))!.Value;
+                var current = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
                 await fixture.GetService<IFeatureWriter>().UpdateAsync(
                     0, current with { Attributes = current.Attributes.SetItem("name", "changed name") });
             }
@@ -80,7 +79,7 @@ public sealed class PatchConcurrencyTests
         var barrier = new WriteBarrier { PauseDelete = true };
         var mask = new MutableFieldMask();
         var fixture = CreateFixture(barrier, mask);
-        await fixture.InitializeAsync();
+        await InitializeFeatureFixtureAsync(fixture);
         try
         {
             var id = await fixture.InsertFeatureAsync(0, "conditional delete");
@@ -174,7 +173,8 @@ public sealed class PatchConcurrencyTests
             mask.Fields = ImmutableArray.Create("POPULATION");
             await Assert.ThrowsAsync<ResourceAccessDeniedException>(() =>
                 fixture.GetService<IFeatureReader>().GetAsync(0, id));
-            Assert.False((await ReadBoundFeatureAsync(fixture, id))!.Value.Attributes.ContainsKey("population"));
+            fixture.RemoveRasterResources();
+            Assert.False((await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value.Attributes.ContainsKey("population"));
             if (!concurrent) barrier.Resume.TrySetResult();
             using var request = CreatePatch(protocol != "ogc", id, changeName: true, batch: protocol == "batch");
             var firstTask = fixture.Client.SendAsync(request);
@@ -215,6 +215,9 @@ public sealed class PatchConcurrencyTests
             if (concurrent)
             {
                 mask.Fields = ImmutableArray.Create("POPULATION");
+            await Assert.ThrowsAsync<ResourceAccessDeniedException>(() =>
+                fixture.GetService<IFeatureReader>().GetAsync(0, id));
+            fixture.RemoveRasterResources();
                 using var retry = CreatePatch(protocol != "ogc", id, changeName: true, batch: protocol == "batch");
                 using var retriedResponse = await fixture.Client.SendAsync(retry);
                 Assert.InRange((int)await ReadStatusAsync(retriedResponse, protocol == "batch"), 200, 299);
@@ -296,7 +299,7 @@ public sealed class PatchConcurrencyTests
         var barrier = new WriteBarrier();
         barrier.Resume.TrySetResult();
         var fixture = CreateFixture(barrier);
-        await fixture.InitializeAsync();
+        await InitializeFeatureFixtureAsync(fixture);
         try
         {
             var id = await fixture.InsertFeatureAsync(0, "original name");
@@ -335,7 +338,7 @@ public sealed class PatchConcurrencyTests
         barrier.Resume.TrySetResult();
         var mask = new MutableFieldMask();
         var fixture = CreateFixture(barrier, mask);
-        await fixture.InitializeAsync();
+        await InitializeFeatureFixtureAsync(fixture);
         try
         {
             var id = await fixture.InsertFeatureAsync(0, "original name");
@@ -366,7 +369,7 @@ public sealed class PatchConcurrencyTests
         var mask = new MutableFieldMask();
         var errors = new ErrorCapture();
         var fixture = CreateFixture(barrier, mask).ConfigureServices(services => services.AddSingleton<ILoggerProvider>(errors));
-        await fixture.InitializeAsync();
+        await InitializeFeatureFixtureAsync(fixture);
         try
         {
             var id = await fixture.InsertFeatureAsync(0, "public-name");
@@ -399,7 +402,7 @@ public sealed class PatchConcurrencyTests
         barrier.Resume.TrySetResult();
         var mask = new MutableFieldMask();
         var fixture = CreateFixture(barrier, mask);
-        await fixture.InitializeAsync();
+        await InitializeFeatureFixtureAsync(fixture);
         try
         {
             var id = await fixture.InsertFeatureAsync(0, "original name");
@@ -441,18 +444,18 @@ public sealed class PatchConcurrencyTests
         var barrier = new WriteBarrier();
         var mask = new MutableFieldMask();
         var fixture = CreateFixture(barrier, mask);
-        await fixture.InitializeAsync();
+        await InitializeFeatureFixtureAsync(fixture);
         try
         {
             var id = await fixture.InsertFeatureAsync(0, "original name");
-            var original = (await ReadBoundFeatureAsync(fixture, id))!.Value;
+            var original = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
             mask.Fields = ImmutableArray.Create("population");
             var readUrl = protocol == "ogc" ? $"/ogc/features/collections/0/items/{id}" : $"/odata/Features(LayerId=0,ObjectId={id})";
             async Task<string> ReadConditionEtagAsync()
             {
                 if (protocol == "ogc")
                 {
-                    var feature = (await ReadBoundFeatureAsync(fixture, id))!.Value;
+                    var feature = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
                     return Honua.Protocols.Ogc.Api.Features.Services.OgcFeatureEntityTag.Compute(
                         feature, fixture.GetService<Honua.Infrastructure.Caching.IETagService>());
                 }
@@ -493,7 +496,7 @@ public sealed class PatchConcurrencyTests
             using var response = await pending;
             Assert.Equal(conditionFailsAtConflict ? HttpStatusCode.PreconditionFailed : HttpStatusCode.Conflict,
                 await ReadStatusAsync(response, protocol == "batch"));
-            var stored = (await ReadBoundFeatureAsync(fixture, id))!.Value;
+            var stored = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
             Assert.Equal(later.Attributes["name"], stored.Attributes["name"]);
             Assert.Equal(later.Geometry, stored.Geometry);
         }
@@ -513,7 +516,7 @@ public sealed class PatchConcurrencyTests
     {
         var barrier = new WriteBarrier();
         var fixture = CreateFixture(barrier);
-        await fixture.InitializeAsync();
+        await InitializeFeatureFixtureAsync(fixture);
         try
         {
             var id = await fixture.InsertFeatureAsync(0, "original name");
@@ -566,19 +569,10 @@ public sealed class PatchConcurrencyTests
         finally { await fixture.DisposeAsync(); }
     }
 
-    private static async Task<Feature?> ReadBoundFeatureAsync(WebAppFixture fixture, long objectId)
+    private static async Task InitializeFeatureFixtureAsync(WebAppFixture fixture)
     {
-        var snapshot = fixture.GetCurrentV2GraphSnapshot();
-        var publication = snapshot.Index.PublicationsById["pub-layer-0"];
-        var resource = snapshot.ResolveResource(publication)!;
-        var reader = await fixture.GetService<FeatureProviderQueryRouter>().ResolveReaderAsync(
-            snapshot,
-            snapshot.Index.ServicesById[publication.ServiceId],
-            resource,
-            publication,
-            0,
-            FeatureProviderReadOperation.Query);
-        return await reader.GetAsync(0, objectId);
+        await fixture.InitializeAsync();
+        fixture.RemoveRasterResources();
     }
 
     private static WebAppFixture CreateFixture(WriteBarrier barrier, MutableFieldMask? mask = null)
@@ -631,7 +625,7 @@ public sealed class PatchConcurrencyTests
     {
         var barrier = new WriteBarrier();
         var fixture = CreateFixture(barrier);
-        await fixture.InitializeAsync();
+        await InitializeFeatureFixtureAsync(fixture);
         try
         {
             var objectId = await fixture.InsertFeatureAsync(0, "original name");
