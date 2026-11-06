@@ -52,9 +52,10 @@ public sealed partial class OgcFeaturesOwnerEditPolicyTests
         var result = await ExecuteProtectedPatchAsync("{\"properties\":{\"name\":\"after\"}}", existing);
 
         result.Status.Should().Be(StatusCodes.Status200OK);
-        result.Batch.Should().NotBeNull();
-        result.Batch!.Value.Updates[0].Attributes["name"].Should().Be("after");
-        result.Batch.Value.Updates[0].PreserveOmittedMaskedAttributes.Should().BeTrue();
+        result.Batch.HasValue.Should().BeTrue();
+        var replacement = result.Batch.GetValueOrDefault().Updates[0];
+        replacement.Attributes["name"].Should().Be("after");
+        replacement.PreserveOmittedMaskedAttributes.Should().BeTrue();
     }
 
     [UnitTest]

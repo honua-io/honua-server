@@ -869,7 +869,8 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                 {
                     continue;
                 }
-                if (fieldsByName.TryGetValue(name, out var field) && AttributeMutationPolicy.IsReadOnlyOnUpdate(resource, field))
+                if (fieldsByName.TryGetValue(name, out var field) && field is not null &&
+                    AttributeMutationPolicy.IsReadOnlyOnUpdate(resource, field))
                 {
                     return StandardErrorHelpers.CreateBadRequest(context, $"Field '{field.Name}' is not editable.");
                 }
