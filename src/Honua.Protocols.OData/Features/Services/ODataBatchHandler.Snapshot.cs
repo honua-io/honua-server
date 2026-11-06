@@ -11,7 +11,7 @@ internal sealed partial class ODataBatchHandler
     private sealed record BatchMutationRead(ODataBatchLayerContext Layer, long ObjectId,
         ODataBatchRequestItem Request, Dictionary<(int LayerId, long ObjectId), Feature?> PreparedFeatures);
 
-    private async Task<(Feature? Existing, bool IsFirstMutation, ODataBatchResponseItem? Error)> ReadMutationSnapshotAsync(
+    private async Task<(Feature Existing, bool IsFirstMutation, ODataBatchResponseItem? Error)> ReadMutationSnapshotAsync(
         BatchMutationRead read, CancellationToken cancellationToken)
     {
         var isFirst = !read.PreparedFeatures.TryGetValue((read.Layer.PublicLayerId, read.ObjectId), out var existing);
@@ -21,13 +21,13 @@ internal sealed partial class ODataBatchHandler
         }
         if (!existing.HasValue)
         {
-            return (null, isFirst, CreateErrorResponse(read.Request.Id, 404, "ResourceNotFound",
+            return (default, isFirst, CreateErrorResponse(read.Request.Id, 404, "ResourceNotFound",
                 $"Feature {read.ObjectId} not found in layer {read.Layer.PublicLayerId}."));
         }
         var precondition = await ValidatePreconditionsAsync(read.Layer, existing.Value, read.Request.Headers, cancellationToken);
         return precondition.IsValid
-            ? (existing, isFirst, null)
-            : (null, isFirst, CreateErrorResponse(read.Request.Id, 412, "PreconditionFailed",
+            ? (existing.Value, isFirst, null)
+            : (default, isFirst, CreateErrorResponse(read.Request.Id, 412, "PreconditionFailed",
                 precondition.ErrorMessage ?? "Precondition failed."));
     }
 }
