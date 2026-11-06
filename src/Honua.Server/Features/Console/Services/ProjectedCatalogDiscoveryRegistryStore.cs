@@ -87,7 +87,7 @@ internal sealed class ProjectedCatalogDiscoveryRegistryStore(
                     [
                         new CatalogItemField { Label = "Service", State = CatalogFieldStates.System, Value = entry.DisplayName },
                         new CatalogItemField { Label = "Protocol", State = CatalogFieldStates.Calculated, Value = entry.Type, DerivedFrom = entry.Url },
-                        new CatalogItemField { Label = "URL", State = CatalogFieldStates.Calculated, Value = entry.Url, DerivedFrom = entry.Name },
+                        new CatalogItemField { Label = "URL", State = CatalogFieldStates.Calculated, Value = entry.Url, DerivedFrom = entry.DisplayName },
                     ],
                 },
             ],

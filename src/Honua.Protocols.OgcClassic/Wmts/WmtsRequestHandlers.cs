@@ -335,7 +335,6 @@ internal static class WmtsRequestHandlers
                 context.Request,
                 svcDef,
                 visibleLayers,
-                serviceId,
                 baseUrl,
                 sections,
                 wmtsMaxZoom,
@@ -1245,7 +1244,6 @@ internal static class WmtsRequestHandlers
         HttpRequest request,
         MetadataV2Service service,
         IReadOnlyList<WmtsLayer> visibleLayers,
-        string serviceId,
         string baseUrl,
         WmtsCapabilitiesSections sections,
         int wmtsMaxZoom,
@@ -1264,7 +1262,7 @@ internal static class WmtsRequestHandlers
         var includeServiceMetadataUrl = sections == WmtsCapabilitiesSections.All;
 
         var normalizedBaseUrl = baseUrl.TrimEnd('/');
-        var wmtsEndpoint = $"{normalizedBaseUrl}/rest/services/{serviceId}/MapServer/WMTS";
+        var wmtsEndpoint = GeoServicesServiceUrls.RequestedProtocol(request.HttpContext, "WMTS");
         var credentialedWmtsEndpoint = BaseUrlResolver.PreserveToken(request, wmtsEndpoint);
         var wmtsKvpUrlPrefix = $"{credentialedWmtsEndpoint}{(credentialedWmtsEndpoint.Contains('?') ? '&' : '?')}";
         var wmtsRestUrlPrefix = BaseUrlResolver.PreserveToken(request, $"{wmtsEndpoint}/");
@@ -1283,7 +1281,7 @@ internal static class WmtsRequestHandlers
         if (includeServiceIdentification)
         {
             sb.AppendLine("  <ows:ServiceIdentification>");
-            var serviceTitle = service.Metadata.Title ?? service.Metadata.Name ?? serviceId;
+            var serviceTitle = service.Metadata.Title ?? service.EffectivePublicName;
             sb.Append("    <ows:Title>").Append(EscapeXml(serviceTitle)).AppendLine("</ows:Title>");
             if (!string.IsNullOrWhiteSpace(service.Metadata.Description))
             {
@@ -1431,7 +1429,7 @@ internal static class WmtsRequestHandlers
                 var tileTemplate = BaseUrlResolver.PreserveToken(request, $"{wmtsEndpoint}/{layerId}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}.png{dimensionTemplateSuffix}");
                 var featureInfoTextTemplate = BaseUrlResolver.PreserveToken(request, $"{wmtsEndpoint}/{layerId}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}/{{J}}/{{I}}.txt{dimensionTemplateSuffix}");
                 var featureInfoJsonTemplate = BaseUrlResolver.PreserveToken(request, $"{wmtsEndpoint}/{layerId}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}/{{J}}/{{I}}.json{dimensionTemplateSuffix}");
-                var legendHref = BaseUrlResolver.PreserveToken(request, $"{normalizedBaseUrl}/rest/services/{serviceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetLegendGraphic&VERSION=1.3.0&LAYER={Uri.EscapeDataString(GetWmsLayerName(layer.Resource, layer.Publication))}&STYLE=default&FORMAT=image/png{legendDimensionSuffix}");
+                var legendHref = BaseUrlResolver.PreserveToken(request, $"{wmtsEndpoint[..^"WMTS".Length]}WMS?SERVICE=WMS&REQUEST=GetLegendGraphic&VERSION=1.3.0&LAYER={Uri.EscapeDataString(GetWmsLayerName(layer.Resource, layer.Publication))}&STYLE=default&FORMAT=image/png{legendDimensionSuffix}");
 
                 sb.AppendLine("    <Layer>");
                 var layerTitle = layer.Resource.Metadata.Title

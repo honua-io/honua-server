@@ -357,22 +357,19 @@ internal static partial class WmsRequestHandlers
         HttpContext context,
         MetadataV2Service service,
         IReadOnlyList<WmsLayer> accessibleLayers,
-        string serviceId,
-        string baseUrl,
         string version)
     {
         var isWms111 = IsWms111Version(version);
         var responseVersion = isWms111 ? Wms111Version : Wms13Version;
         var crsElementName = isWms111 ? "SRS" : "CRS";
-        var normalizedBaseUrl = baseUrl.TrimEnd('/');
         var wmsEndpoint = BaseUrlResolver.PreserveToken(
             context.Request,
-            $"{normalizedBaseUrl}/rest/services/{serviceId}/MapServer/WMS");
+            GeoServicesServiceUrls.RequestedProtocol(context, "WMS"));
         var wmsUrlPrefix = $"{wmsEndpoint}{(wmsEndpoint.Contains('?') ? '&' : '?')}";
         var metadataUrl = $"{wmsUrlPrefix}SERVICE=WMS&REQUEST=GetCapabilities&VERSION={responseVersion}";
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var coordinateTransformService = context.RequestServices.GetService<ICoordinateTransformService>();
-        var serviceTitle = service.Metadata.Title ?? service.Metadata.Name ?? serviceId;
+        var serviceTitle = service.Metadata.Title ?? service.EffectivePublicName;
         var serviceAbstract = service.Metadata.Description ?? "Honua WMS service";
 
         var sb = new StringBuilder(8192);
@@ -404,7 +401,7 @@ internal static partial class WmsRequestHandlers
         sb.Append("    <Title>").Append(EscapeXml(serviceTitle)).AppendLine("</Title>");
         sb.Append("    <Abstract>").Append(EscapeXml(serviceAbstract)).AppendLine("</Abstract>");
         AppendWmsKeywords(sb, service.Metadata.Keywords
-            .Prepend(service.Metadata.Name ?? serviceId).Prepend("OGC").Prepend("WMS"), "    ");
+            .Prepend(service.EffectivePublicName).Prepend("OGC").Prepend("WMS"), "    ");
         AppendWmsOnlineResource(sb, "    ", wmsEndpoint, isWms111);
         sb.AppendLine("    <ContactInformation>");
         sb.AppendLine("      <ContactPersonPrimary>");

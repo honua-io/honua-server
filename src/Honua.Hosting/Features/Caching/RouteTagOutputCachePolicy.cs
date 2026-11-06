@@ -4,21 +4,37 @@
 using System.Globalization;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Authentication;
+using Honua.Core.Features.Metadata.Abstractions;
 using Microsoft.AspNetCore.OutputCaching;
 
 namespace Honua.Infrastructure.Caching;
 
 internal sealed class RouteTagOutputCachePolicy : IOutputCachePolicy
 {
-    public ValueTask CacheRequestAsync(OutputCacheContext context, CancellationToken cancellationToken)
+    public async ValueTask CacheRequestAsync(OutputCacheContext context, CancellationToken cancellationToken)
     {
         AddRouteTags(context);
-        if (GeoServicesServicePath.FromRequest(context.HttpContext) is { } path)
+        var snapshot = GeoServicesServicePath.FromRequest(context.HttpContext)?.Snapshot;
+        if (snapshot is null && context.HttpContext.GetEndpoint()?.Metadata.GetMetadata<GeoServicesServiceRoutes.CatalogRoute>() is not null)
         {
-            context.CacheVaryByRules.VaryByValues["honua-service-revision"] = path.Snapshot.Etag;
+            try
+            {
+                snapshot = await context.HttpContext.RequestServices.GetRequiredService<IMetadataV2GraphProvider>()
+                    .GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception exception) when (ServiceResourceValidationHelpers.IsCatalogStorageUnavailable(exception))
+            {
+                context.EnableOutputCaching = false;
+                context.AllowCacheLookup = false;
+                context.AllowCacheStorage = false;
+                return;
+            }
+        }
+        if (snapshot is not null)
+        {
+            context.CacheVaryByRules.VaryByValues["honua-service-revision"] = snapshot.Etag;
             context.CacheVaryByRules.VaryByValues["honua-service-tenant"] = TenantScopeHelpers.ResolveRequestTenantId(context.HttpContext) ?? string.Empty;
         }
-        return ValueTask.CompletedTask;
     }
 
     public ValueTask ServeFromCacheAsync(OutputCacheContext context, CancellationToken cancellationToken)

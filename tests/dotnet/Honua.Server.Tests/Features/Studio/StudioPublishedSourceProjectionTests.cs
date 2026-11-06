@@ -72,6 +72,30 @@ public sealed class StudioPublishedSourceProjectionTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/studio/published/{*route}")]
+    public async Task Projection_FolderMove_KeepsLogicalSourceIdentityAndReachableCanonicalUrl()
+    {
+        var url = await PublishAsync(7);
+        SetGraph(_graph with
+        {
+            Folders = [new() { Metadata = new() { Id = "folder", Name = "Public" } }],
+            Services = _graph.Services.Select(service => service with
+            {
+                FolderId = "folder", PublicName = "Parcels"
+            }).ToArray()
+        });
+        using var projected = await ReadAsync(_anonymous, url + "?includeSources=true");
+        var source = projected.RootElement.GetProperty("data").GetProperty("sourceCatalog")[0];
+        source.GetProperty("id").GetString().Should().Be(SourceId(7));
+        var locator = source.GetProperty("locator");
+        locator.GetProperty("serviceId").GetString().Should().Be(ServiceId);
+        var serviceUrl = locator.GetProperty("url").GetString();
+        serviceUrl.Should().EndWith("/rest/services/Public/Parcels/FeatureServer");
+        using var metadata = await ReadAsync(_anonymous, serviceUrl!);
+        metadata.RootElement.GetProperty("serviceName").GetString().Should().Be("Parcels");
+    }
+
     [IntegrationTheory]
     [InlineData(false)]
     [InlineData(true)]

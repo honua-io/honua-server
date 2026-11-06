@@ -470,11 +470,12 @@ internal static partial class ImageServerSoapEndpoints
             return extras.Error;
         }
 
+        var publicName = GeoServicesServicePath.FromRequest(request.HttpContext)?.PublicName ?? serviceId;
         var result = new XElement(
             "Result",
             new XAttribute(xsi + "type", "tns:ImageServiceInfo"),
-            new XElement("Name", serviceId),
-            new XElement("Description", $"Image service for {serviceId}"),
+            new XElement("Name", publicName),
+            new XElement("Description", $"Image service for {publicName}"),
             BuildEnvelope(extent),
             new XElement("PixelSizeX", FormatDouble(pixelSizeX)),
             new XElement("PixelSizeY", FormatDouble(pixelSizeY)),

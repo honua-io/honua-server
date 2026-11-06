@@ -73,6 +73,7 @@ internal static class GeoservicesCatalogEndpoints
         // resource accepts either verb; a GET-only mapping answered those POSTs with a 404
         // envelope for a resource that plainly exists.
         endpoints.Map("/rest/services", HandleGetServicesDirectory)
+            .WithMetadata(new GeoServicesServiceRoutes.CatalogRoute())
             .WithDisplayName("GeoServices Services Directory")
             .WithName("GeoServicesServicesDirectory")
             .WithSummary("List available GeoServices endpoints")
@@ -95,8 +96,6 @@ internal static class GeoservicesCatalogEndpoints
             .Produces<ServicesDirectoryResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(StatusCodes.Status400BadRequest);
 
-        // A service's own node in the catalogue. Esri clients walking a service URL ask for
-        // the parent of "{service}/{ServiceType}" before they will use it: a single
         // Some clients probe the parent directory before opening a service.
         endpoints.Map("/rest/services/{folderName}", HandleGetServiceFolder)
             .WithDisplayName("GeoServices Folder or Root Service")
@@ -824,9 +823,9 @@ internal static class GeoservicesCatalogEndpoints
                             imageServerEntries[index] = new ServiceDirectoryEntry
                             {
                                 Name = MetadataV2ServicePaths.QualifiedName(snapshot.Graph, service),
-                    LogicalName = service.Metadata.Name,
-                    FolderName = MetadataV2ServicePaths.FolderName(snapshot.Graph, service),
-                    DisplayName = service.Metadata.Title ?? service.EffectivePublicName,
+                                LogicalName = service.Metadata.Name,
+                                FolderName = MetadataV2ServicePaths.FolderName(snapshot.Graph, service),
+                                DisplayName = service.Metadata.Title ?? service.EffectivePublicName,
                                 Type = ImageServerProtocolName,
                                 Url = $"{baseUrl}/rest/services/{escapedName}/{ImageServerProtocolName}"
                             };

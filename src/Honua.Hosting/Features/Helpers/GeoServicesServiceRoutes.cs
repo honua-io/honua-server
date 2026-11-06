@@ -9,6 +9,7 @@ namespace Honua.Infrastructure.Helpers;
 internal static class GeoServicesServiceRoutes
 {
     internal sealed record ServiceRoute(string Root, string ServiceType, string ServiceParameter);
+    internal sealed record CatalogRoute;
 
     public static void MapGeoServicesServicePaths(this IEndpointRouteBuilder endpoints)
     {
@@ -29,7 +30,8 @@ internal static class GeoServicesServiceRoutes
         var offset = segments.Count > 0 && Literal(segments[0]) == "rest" ? 2 : 1;
         if (segments.Count <= offset + 1 || Literal(segments[offset - 1]) != "services") return null;
         if (segments[offset].Parts is not [RoutePatternParameterPart parameter] ||
-            parameter.ParameterPolicies.Count > 0 || parameter.Name != "serviceId") return null;
+            parameter.Name != "serviceId" ||
+            parameter.ParameterPolicies.Any(policy => policy.Content == "int")) return null;
         var serviceType = Literal(segments[offset + 1]);
         return serviceType is "FeatureServer" or "MapServer" or "ImageServer" or "VectorTileServer" or
             "GPServer" or "NAServer" or "VersionManagementServer"
@@ -72,7 +74,9 @@ internal static class GeoServicesServiceRoutes
                 yield break;
             }
             yield return Copy(route, route.RoutePattern, serviceRoute);
-            var qualified = route.RoutePattern.RawText!.Replace("{serviceId}", "{folderName}/{serviceId}", StringComparison.Ordinal);
+            var template = route.RoutePattern.RawText!;
+            var serviceParameterOffset = template.IndexOf("{serviceId", StringComparison.Ordinal);
+            var qualified = template.Insert(serviceParameterOffset, "{folderName}/");
             yield return Copy(route, RoutePatternFactory.Parse(qualified), serviceRoute);
         }
 

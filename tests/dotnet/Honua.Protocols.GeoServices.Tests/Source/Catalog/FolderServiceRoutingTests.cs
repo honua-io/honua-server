@@ -3,9 +3,12 @@
 
 using System.Net;
 using System.Text.Json;
+using System.Text;
+using System.Xml.Linq;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Security.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Infrastructure;
@@ -83,6 +86,89 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
         }
     }
 
+    [IntegrationTheory]
+    [InlineData("WMS", "1.3.0")]
+    [InlineData("WMTS", "1.0.0")]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{folderName}/{serviceId}/MapServer/WMS")]
+    [Endpoint("GET /rest/services/{folderName}/{serviceId}/MapServer/WMTS")]
+    public async Task Capabilities_PublicFolder_AdvertisesReachableIncomingBase(string protocol, string version)
+    {
+        var original = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        SetGraph(OrganizeService(original));
+        try
+        {
+            var path = $"/rest/services/Public/Parcels/MapServer/{protocol}";
+            using var response = await _fixture.Client.GetAsync($"{path}?SERVICE={protocol}&REQUEST=GetCapabilities&VERSION={version}");
+            var body = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+            var document = XDocument.Parse(body);
+            document.Root!.Name.LocalName.Should().Be(protocol == "WMS" ? "WMS_Capabilities" : "Capabilities");
+            document.Descendants().Attributes(XName.Get("href", "http://www.w3.org/1999/xlink"))
+                .Should().Contain(attribute => attribute.Value.Contains(path, StringComparison.Ordinal));
+            body.Should().NotContain($"/rest/services/{WebAppFixture.TestServiceId}/");
+        }
+        finally
+        {
+            SetGraph(original);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [InterfaceOperation(TestProtocols.GeoservicesCatalog, "GetFolders")]
+    [InterfaceOperation(TestProtocols.GeoservicesCatalog, "GetServiceDescriptionsEx")]
+    [Endpoint("POST /services")]
+    public async Task SoapCatalog_PublicFolder_ScopesQualifiedNamesAndAddresses()
+    {
+        var original = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        SetGraph(OrganizeService(original));
+        try
+        {
+            var folders = await ReadSoapAsync("GetFolders", string.Empty);
+            folders.Descendants().Where(element => element.Name.LocalName == "String")
+                .Select(element => element.Value).Should().Contain("Public");
+            var descriptions = await ReadSoapAsync("GetServiceDescriptionsEx", "<FolderName>Public</FolderName>");
+            var names = descriptions.Descendants().Where(element => element.Name.LocalName == "Name").ToArray();
+            names.Should().NotBeEmpty();
+            names.Should().OnlyContain(element => element.Value == "Public/Parcels");
+            descriptions.Descendants().Where(element => element.Name.LocalName is "Url" or "RestUrl")
+                .Should().OnlyContain(element => element.Value.Contains("/Public/Parcels/", StringComparison.Ordinal));
+        }
+        finally
+        {
+            SetGraph(original);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{folderName}")]
+    [Endpoint("GET /rest/services/{folderName}/{serviceId}/FeatureServer")]
+    public async Task FolderAccess_HiddenService_DoesNotExposeFolderOrBypassPolicy()
+    {
+        var original = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        var organized = OrganizeService(original);
+        SetGraph(organized with
+        {
+            Services = organized.Services.Select(service => service.Metadata.Name == WebAppFixture.TestServiceId
+                ? service with { AccessPolicy = new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["folder-reader"] } }
+                : service).ToArray()
+        });
+        try
+        {
+            using var anonymous = _fixture.CreateClient();
+            using var folder = await anonymous.GetAsync("/rest/services/Public?f=json");
+            await folder.AssertGeoServicesErrorAsync(404);
+            using var service = await anonymous.GetAsync("/rest/services/Public/Parcels/FeatureServer?f=json");
+            await service.AssertGeoServicesErrorAsync(401);
+        }
+        finally
+        {
+            SetGraph(original);
+        }
+    }
+
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /rest/services/{folderName}/{serviceId}/FeatureServer/{layerId}/query")]
@@ -144,6 +230,17 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);
         return JsonDocument.Parse(body);
+    }
+
+    private async Task<XDocument> ReadSoapAsync(string operation, string arguments)
+    {
+        using var body = new StringContent(
+            $"<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"><soap:Body><{operation} xmlns=\"http://www.esri.com/schemas/ArcGIS/10.8\">{arguments}</{operation}></soap:Body></soap:Envelope>",
+            Encoding.UTF8, "text/xml");
+        using var response = await _fixture.Client.PostAsync("/services", body);
+        var text = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, text);
+        return XDocument.Parse(text);
     }
 
     private static MetadataV2Graph OrganizeService(MetadataV2Graph graph)
