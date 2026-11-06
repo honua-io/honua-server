@@ -1819,11 +1819,28 @@ jobs:
             --no-restore \
             --configuration Release
 
+      - name: Identify the Python native dependency runner image
+        id: python-native-image
+        run: echo "image=${ImageOS:?}-${ImageVersion:?}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Python native dependency packages
+        id: python-native-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/python-native-debs
+          key: python-native-debs-${{ runner.os }}-${{ runner.arch }}-${{ steps.python-native-image.outputs.image }}-${{ hashFiles('scripts/ci/provision-python-native.sh') }}
+
       - name: Install GDAL tools and native Parquet dependency
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -yqq gdal-bin libatomic1
-          ogrinfo --version
+        env:
+          PYTHON_NATIVE_CACHE_HIT: ${{ steps.python-native-cache.outputs.cache-hit }}
+        run: bash scripts/ci/provision-python-native.sh
+
+      - name: Save validated Python native dependency packages
+        if: steps.python-native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/python-native-debs
+          key: python-native-debs-${{ runner.os }}-${{ runner.arch }}-${{ steps.python-native-image.outputs.image }}-${{ hashFiles('scripts/ci/provision-python-native.sh') }}
 
       - name: Install Python test dependencies
         run: |
