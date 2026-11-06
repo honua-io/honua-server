@@ -81,7 +81,7 @@ public sealed partial class OgcFeaturesOwnerEditPolicyTests
             var update = writer.LastBatch.Updates.Should().ContainSingle().Which;
             update.PreserveOmittedMaskedAttributes.Should().BeFalse();
             update.PreservedAttributeNames.Should().BeEquivalentTo(["code", "globalid"]);
-            update.ExplicitAttributeRemovals.Should().BeEmpty();
+            update.ExplicitAttributeRemovals.IsDefaultOrEmpty.Should().BeTrue();
             update.Attributes.Should().NotContainKey("code").And.NotContainKey("globalid");
             update.PreserveOmittedGeometry.Should().BeFalse();
         }
