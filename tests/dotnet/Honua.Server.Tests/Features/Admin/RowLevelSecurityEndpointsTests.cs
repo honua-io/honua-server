@@ -6,6 +6,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using FluentAssertions.Execution;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
 using Honua.Server.Features.Admin.Models;
@@ -108,8 +109,11 @@ public sealed class RowLevelSecurityEndpointsTests : IAsyncLifetime
             await AssertCollisionPolicyResponseAsync(client, fieldMask);
             await AssertODataCollisionPolicyResponseAsync(client, fieldMask);
             provider.SetGraph(graph, schema: _fixture.MetadataGraphSchema);
-            await AssertCollisionPolicyResponseAsync(client, fieldMask);
-            await AssertODataCollisionPolicyResponseAsync(client, fieldMask);
+            using (new AssertionScope())
+            {
+                await AssertCollisionPolicyResponseAsync(client, fieldMask);
+                await AssertODataCollisionPolicyResponseAsync(client, fieldMask);
+            }
         }
         finally
         {
