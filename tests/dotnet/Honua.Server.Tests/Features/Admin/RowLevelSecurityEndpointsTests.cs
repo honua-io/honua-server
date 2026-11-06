@@ -133,7 +133,9 @@ public sealed class RowLevelSecurityEndpointsTests : IAsyncLifetime
         var adminPublication = publication with
         {
             Metadata = publication.Metadata with { Id = "collision-admin-publication", Name = "collision-admin-publication" },
-            ResourceId = adminResource.Metadata.Id, StorageBindingId = adminBinding.Metadata.Id, LayerIndex = 77
+            ResourceId = adminResource.Metadata.Id,
+            StorageBindingId = adminBinding.Metadata.Id,
+            LayerIndex = 77
         };
         var graph = original.Graph with
         {
@@ -149,7 +151,10 @@ public sealed class RowLevelSecurityEndpointsTests : IAsyncLifetime
     {
         using var content = JsonContent.Create(new CreateFieldMaskPolicyRequest
         {
-            Role = "*", Service = "*", Layer = resourceName, Attribute = "description"
+            Role = "*",
+            Service = "*",
+            Layer = resourceName,
+            Attribute = "description"
         }, FieldMaskPolicyJsonContext.Default.CreateFieldMaskPolicyRequest);
         var response = await adminClient.PostAsync("/api/v1/admin/field-mask-policies", content);
         var payload = await response.Content.ReadAsStringAsync();
