@@ -60,11 +60,17 @@ public sealed class WmtsAdvertisedResourceTests : IAsyncLifetime
             using var metadata = await _fixture.Client.GetAsync(new Uri(metadataUrl).PathAndQuery);
             metadata.StatusCode.Should().Be(HttpStatusCode.OK);
             XDocument.Parse(await metadata.Content.ReadAsStringAsync()).Root!.Name.Should().Be(wmts + "Capabilities");
-            var tileUrl = document.Descendants(wmts + "ResourceURL").First(element => element.Attribute("resourceType")?.Value == "tile")
-                .Attribute("template")!.Value.Replace("{Style}", "default", StringComparison.Ordinal)
+            var tileResource = document.Descendants(wmts + "ResourceURL").First(element => element.Attribute("resourceType")?.Value == "tile");
+            var tileUrl = tileResource.Attribute("template")!.Value.Replace("{Style}", "default", StringComparison.Ordinal)
                 .Replace("{TileMatrixSet}", "WebMercatorQuad", StringComparison.Ordinal)
                 .Replace("{TileMatrix}", "0", StringComparison.Ordinal).Replace("{TileRow}", "0", StringComparison.Ordinal)
                 .Replace("{TileCol}", "0", StringComparison.Ordinal);
+            foreach (var dimension in tileResource.Parent!.Elements(wmts + "Dimension"))
+            {
+                var identifier = dimension.Element(ows + "Identifier")!.Value;
+                var defaultValue = dimension.Element(wmts + "Default")!.Value;
+                tileUrl = tileUrl.Replace($"{{{identifier}}}", Uri.EscapeDataString(defaultValue), StringComparison.Ordinal);
+            }
             using var tile = await _fixture.Client.GetAsync(new Uri(tileUrl).PathAndQuery);
             tile.StatusCode.Should().Be(HttpStatusCode.OK, await tile.Content.ReadAsStringAsync());
             tile.Content.Headers.ContentType!.MediaType.Should().Be("image/png");
