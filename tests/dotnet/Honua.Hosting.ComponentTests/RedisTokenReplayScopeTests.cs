@@ -74,7 +74,7 @@ public sealed class RedisTokenReplayScopeTests(AiAdmissionRedisFixture fixture)
         }).ToArray();
         barrier.SetResult();
         var results = await Task.WhenAll(requests);
-        Assert.Single(results.Where(result => result.Result == TokenReplayRegistrationResult.Registered));
+        Assert.Single(results, result => result.Result == TokenReplayRegistrationResult.Registered);
         Assert.Equal(23, results.Count(result => result.Result == TokenReplayRegistrationResult.Reused));
         var original = await first.GetDatabase().KeyExpireTimeAsync(key);
         await TryRegisterTokenReplayAsync(key, expiry.AddHours(1), second, null, true, scope, NullLogger.Instance, default);

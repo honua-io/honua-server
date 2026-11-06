@@ -83,7 +83,7 @@ public sealed class TokenReplayScopeTests
         })).ToArray();
         barrier.SetResult();
         var results = await Task.WhenAll(requests);
-        Assert.Single(results.Where(result => result.Result == TokenReplayRegistrationResult.Registered));
+        Assert.Single(results, result => result.Result == TokenReplayRegistrationResult.Registered);
         Assert.Equal(23, results.Count(result => result.Result == TokenReplayRegistrationResult.Reused));
         var changed = TokenReplayScope.ReusableSurface("mcp", "validated-token-b");
         Assert.Equal(TokenReplayRegistrationResult.ReplayDetected, (await RegisterAsync(cache, key, changed, expiry)).Result);

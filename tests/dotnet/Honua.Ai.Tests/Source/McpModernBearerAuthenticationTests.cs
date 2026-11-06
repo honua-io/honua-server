@@ -12,6 +12,7 @@ using Honua.Infrastructure.Security;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using static Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests;
@@ -58,19 +59,26 @@ public sealed class McpModernBearerAuthenticationTests : IAsyncLifetime
         response.StatusCode.Should().Be(firstSurface == secondSurface ? HttpStatusCode.OK : HttpStatusCode.Unauthorized);
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData(null)]
+    [InlineData("")]
     [Endpoint("POST /mcp")]
     [InterfaceOperation(TestProtocols.Mcp, "server/discover")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
-    public async Task Post_SameValidatedToken_DiscoversListsAndCallsWithoutSession()
+    public async Task Post_SameValidatedToken_DiscoversListsAndCallsWithoutSession(string? tokenId)
     {
-        var token = CreateToken("modern-tool-owner", additionalClaims: Authority);
+        var token = CreateToken("modern-tool-owner", additionalClaims: Authority, tokenId: tokenId);
         await AssertModernSuccessAsync("server/discover", token);
         var tools = await AssertModernSuccessAsync("tools/list", token);
         tools.GetProperty("tools").GetArrayLength().Should().BeGreaterThan(0);
         var called = await AssertModernSuccessAsync("tools/call", token, "honua_list_capabilities");
         called.GetProperty("isError").GetBoolean().Should().BeFalse();
+        using var foreignSession = BuildModernRequest("tools/list", token);
+        foreignSession.Headers.Add("Mcp-Session-Id", "foreign-session");
+        using var foreignResponse = await _fixture.Client.SendAsync(foreignSession);
+        foreignResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        foreignResponse.Headers.Contains("Mcp-Session-Id").Should().BeFalse();
         await AssertModernSuccessAsync("server/discover", token);
     }
 
@@ -179,7 +187,6 @@ public sealed class McpModernBearerAuthenticationTests : IAsyncLifetime
     [InlineData("audience")]
     [InlineData("issuer")]
     [InlineData("signature")]
-    [InlineData("retention-limit")]
     [Endpoint("POST /mcp")]
     public async Task Post_InvalidOrOverLimitToken_IsRefused(string invalidity)
     {
@@ -189,13 +196,50 @@ public sealed class McpModernBearerAuthenticationTests : IAsyncLifetime
             "audience" => CreateToken("invalid-owner", audience: "different-audience"),
             "issuer" => CreateToken("invalid-owner", issuer: "https://different-issuer.example"),
             "signature" => CreateToken("invalid-owner", signingKey: new string('x', 64)),
-            "retention-limit" => CreateToken("invalid-owner", expiresInMinutes: 25 * 60),
             _ => "invalid-token"
         };
         using var request = BuildModernDiscovery(token);
         using var response = await _fixture.Client.SendAsync(request);
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         response.Headers.Contains("Mcp-Session-Id").Should().BeFalse();
+    }
+
+    [IntegrationTheory]
+    [InlineData("modern")]
+    [InlineData("legacy")]
+    [InlineData("http")]
+    [Endpoint("POST /mcp")]
+    [Endpoint("GET /api/v1/studio/package-families")]
+    public async Task Request_TokenValidityExceedsRetentionMaximum_IsRefusedOnEverySurface(string surface)
+    {
+        var token = CreateToken("over-limit-owner", expiresInMinutes: 25 * 60, additionalClaims: Authority);
+        using var request = BuildReplayProbe(surface, token);
+        using var response = await _fixture.Client.SendAsync(request);
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /mcp")]
+    public async Task Post_PreviouslyAdmittedTokenExpiresAtZeroSkew_IsRefusedOnReuse()
+    {
+        var fixture = CreateReplayProtectedFixture().ConfigureWebHost(builder =>
+            builder.UseSetting("Oidc:TokenValidation:ClockSkew", "00:00:00"));
+        await fixture.InitializeAsync();
+        try
+        {
+            var token = CreateToken("expiring-owner", expiresInMinutes: 1, additionalClaims: Authority);
+            using var first = BuildModernDiscovery(token);
+            using var admitted = await fixture.Client.SendAsync(first);
+            admitted.StatusCode.Should().Be(HttpStatusCode.OK);
+            await Task.Delay(TimeSpan.FromSeconds(65));
+            using var retry = BuildModernDiscovery(token);
+            using var expired = await fixture.Client.SendAsync(retry);
+            expired.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     [IntegrationTest]
