@@ -58,6 +58,9 @@ public sealed class ReportingCacheConfiguration
 /// <summary>LLM narrative provider configuration.</summary>
 public sealed class ReportingNarrativeConfiguration
 {
+    /// <summary>Operator approvals for model data disclosure; classification is an operator workload assertion, not content detection.</summary>
+    public Honua.Core.Features.Security.AiDisclosurePolicyOptions Disclosure { get; set; } = new();
+
     /// <summary>
     /// Token accepted by <see cref="Provider"/>. Validated case-insensitively
     /// when <see cref="Enabled"/> is true.

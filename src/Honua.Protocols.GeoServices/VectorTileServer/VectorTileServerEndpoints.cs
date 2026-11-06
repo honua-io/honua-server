@@ -1,7 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 //
-// Read-only Esri-compatible VectorTileServer surface; anonymous by design. The
+// Read-only GeoServices REST VectorTileServer surface; anonymous by design. The
 // service-name route resolves the GeoServices service by NAME (not a numeric layer
 // id) via ValidateServiceV2Async, mirroring MapServer. GET + POST share the metadata
 // handler because Esri clients hydrate service metadata by POSTing {"f":"json"}.
@@ -30,21 +30,10 @@ using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.Servic
 
 namespace Honua.Protocols.GeoServices.VectorTileServer;
 
-/// <summary>
-/// Maps GeoServices VectorTileServer REST API endpoints (Esri vector tile service adapter).
-/// </summary>
 internal static partial class VectorTileServerEndpoints
 {
     private const string JsonContentType = "application/json";
 
-    /// <summary>
-    /// Maps VectorTileServer REST API endpoints using AOT-compatible routing. The
-    /// service identifier in the route is the GeoServices service NAME, resolved through
-    /// the shared <c>ValidateServiceV2Async</c> helper against the
-    /// <see cref="MetadataV2ServiceProtocols.VectorTileServer"/> protocol.
-    /// </summary>
-    /// <param name="endpoints">The endpoint route builder to register routes on.</param>
-    /// <returns>The same <paramref name="endpoints"/> instance for chaining.</returns>
     public static IEndpointRouteBuilder MapVectorTileServerEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
@@ -54,7 +43,7 @@ internal static partial class VectorTileServerEndpoints
             .WithDisplayName("Get VectorTileServer Service Metadata")
             .WithName("GetVectorTileServerMetadata")
             .WithSummary("Get VectorTileServer service metadata")
-            .WithDescription("Returns Esri-compatible VectorTileServer service metadata including the WebMercatorQuad tileInfo descriptor")
+            .WithDescription("Returns GeoServices REST VectorTileServer service metadata including the WebMercatorQuad tileInfo descriptor")
             .WithTags("VectorTileServer")
             .AllowAnonymous()
             .CacheOutput("ServiceMetadata");
@@ -67,7 +56,7 @@ internal static partial class VectorTileServerEndpoints
             .WithDisplayName("Get VectorTileServer Service Metadata (POST)")
             .WithName("GetVectorTileServerMetadataPost")
             .WithSummary("Get VectorTileServer service metadata using POST")
-            .WithDescription("Returns Esri-compatible VectorTileServer service metadata including the WebMercatorQuad tileInfo descriptor")
+            .WithDescription("Returns GeoServices REST VectorTileServer service metadata including the WebMercatorQuad tileInfo descriptor")
             .WithTags("VectorTileServer")
             .AllowAnonymous();
 
@@ -78,11 +67,6 @@ internal static partial class VectorTileServerEndpoints
         return endpoints;
     }
 
-    /// <summary>
-    /// Handle VectorTileServer service metadata requests. Resolves the service by name and
-    /// emits the Esri VectorTileServer descriptor (tiles template, WebMercatorQuad tileInfo,
-    /// styles / tileMap pointers, and the service extent resolved like MapServer).
-    /// </summary>
     private static async Task<IResult> HandleGetServiceMetadata(HttpContext context)
     {
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);

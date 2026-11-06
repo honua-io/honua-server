@@ -57,9 +57,9 @@
       "id": "registry-lane-absent-from-artifact",
       "delta": 1,
       "affectedEntryIds": [
-        "arcgis-stub"
+        "geoservices-rest-stub"
       ],
-      "note": "client-certification-matrix.v1.json registers an active `arcgis-stub` lane with committed evidence for featureserver, mapserver, and portal. The artifact has no row for it because it folded the stub into the ArcGIS Pro harness column. It is a distinct identity here because it is a stub harness, not a shipped client, and must never be read as certifying ArcGIS Pro."
+      "note": "client-certification-matrix.v1.json registers an active `geoservices-rest-stub` lane. Historical baseline evidence was recorded under its retired lane identifier; new-identity receipts remain pending. The artifact has no separate row for it. It is a protocol stub harness, not a shipped client."
     },
     {
       "id": "registry-sublane-absent-from-artifact",
@@ -199,8 +199,8 @@
           "reason": "GeoParquet analytic surface consumed by Apache Sedona."
         },
         {
-          "id": "esri-integration",
-          "reason": "Power BI's packaged ArcGIS visual integration, which is neither raw FeatureServer nor OData."
+          "id": "packaged-visual-integration",
+          "reason": "Packaged visual integration, separate from raw FeatureServer and OData."
         }
       ]
     },
@@ -310,7 +310,7 @@
         "notApplicable": [
           {
             "family": "CERT-PRTL",
-            "reason": "Portal/Sharing discovery is substantiated by the arcgis-stub portal envelope, not by this lane."
+            "reason": "Portal/Sharing discovery is substantiated by the geoservices-rest-stub portal envelope, not by this lane."
           }
         ]
       },
@@ -360,7 +360,7 @@
       "activationState": "awaiting-runtime",
       "rosterOrigin": "artifact",
       "sourceStatus": "Built, unrun",
-      "clientVersionPolicy": "ArcGIS Pro build is the build named on the desktop-arcgis evidence identifier in honua-esri-compat. Evidence is content-addressed.",
+      "clientVersionPolicy": "This repository does not certify ArcGIS clients.",
       "protocolSurfaces": [
         "featureserver",
         "mapserver",
@@ -402,15 +402,13 @@
       "licensing": {
         "model": "entitlement-bound",
         "requiresSeat": true,
-        "notes": "Desktop entitlement detail stays in honua-esri-compat. This roster does not configure it."
+        "notes": "This repository does not certify ArcGIS clients."
       },
       "runtime": "windows-license",
       "fixtureProjection": {
         "kind": "canonical-client-fixture",
         "status": "migration-required",
-        "inputs": [
-          "honua-esri-compat licensed fixtures"
-        ],
+        "inputs": [],
         "note": "Esri-owned fixtures must project onto the #3393 canonical fixture before federation."
       },
       "evidenceProducer": null,
@@ -418,11 +416,11 @@
         "matrixLaneId": "desktop-arcgis",
         "role": "planned-lane"
       },
-      "owningIssue": "https://github.com/honua-io/honua-esri-compat/issues/75",
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3389",
       "needsOwningIssue": false,
       "exclusionRationale": null,
       "coveredAlternative": null,
-      "notes": "The 2026.1 gate (#3434) joins honua-esri-compat evidence by reference rather than activating this lane. Activation targets 2026.2 via workstream A of #3389. No desktop receipt is linked from this repo."
+      "notes": "This repository does not certify ArcGIS clients."
     },
     {
       "id": "js",
@@ -672,7 +670,7 @@
       "activationState": "awaiting-federation",
       "rosterOrigin": "artifact",
       "sourceStatus": "Partial",
-      "clientVersionPolicy": "CDN/npm-pinned ArcGIS Maps SDK for JavaScript version recorded by the honua-esri-compat sdk_matrix/jsapi run.",
+      "clientVersionPolicy": "This repository does not certify ArcGIS clients.",
       "protocolSurfaces": [
         "featureserver",
         "mapserver",
@@ -713,21 +711,19 @@
       "fixtureProjection": {
         "kind": "canonical-client-fixture",
         "status": "migration-required",
-        "inputs": [
-          "honua-esri-compat licensed fixtures"
-        ],
+        "inputs": [],
         "note": "Esri-owned fixtures must project onto the #3393 canonical fixture before federation."
       },
-      "evidenceProducer": "honua-esri-compat (sdk_matrix/jsapi)",
+      "evidenceProducer": "This repository does not certify ArcGIS clients.",
       "laneBinding": {
         "matrixLaneId": null,
         "role": "external-producer"
       },
-      "owningIssue": "https://github.com/honua-io/honua-esri-compat/issues/74",
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3389",
       "needsOwningIssue": false,
       "exclusionRationale": null,
       "coveredAlternative": null,
-      "notes": "This is the client customers port from, but its evidence is produced in honua-esri-compat and is not yet federated into this registry, so it declares requiredTier `none` and can neither pass nor block a honua-server gate."
+      "notes": "This repository does not certify ArcGIS clients."
     },
     {
       "id": "cli",
@@ -816,7 +812,7 @@
       "activationState": "awaiting-federation",
       "rosterOrigin": "artifact",
       "sourceStatus": "Live",
-      "clientVersionPolicy": "pip/conda pin of `arcgis` in the honua-esri-compat arcgis_python lane image.",
+      "clientVersionPolicy": "This repository does not certify ArcGIS clients.",
       "protocolSurfaces": [
         "featureserver",
         "portal"
@@ -856,17 +852,15 @@
       "fixtureProjection": {
         "kind": "canonical-client-fixture",
         "status": "migration-required",
-        "inputs": [
-          "honua-esri-compat licensed fixtures"
-        ],
+        "inputs": [],
         "note": "Esri-owned fixtures must project onto the #3393 canonical fixture before federation."
       },
-      "evidenceProducer": "honua-esri-compat (arcgis_python)",
+      "evidenceProducer": "This repository does not certify ArcGIS clients.",
       "laneBinding": {
         "matrixLaneId": null,
         "role": "external-producer"
       },
-      "owningIssue": "https://github.com/honua-io/honua-esri-compat/issues/74",
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3389",
       "needsOwningIssue": false,
       "exclusionRationale": null,
       "coveredAlternative": null,
@@ -902,7 +896,7 @@
         "notApplicable": [
           {
             "family": "CERT-PRTL",
-            "reason": "Portal/Sharing discovery is substantiated by the arcgis-stub portal envelope, not by this lane."
+            "reason": "Portal/Sharing discovery is substantiated by the geoservices-rest-stub portal envelope, not by this lane."
           }
         ]
       },
@@ -926,9 +920,7 @@
       "fixtureProjection": {
         "kind": "canonical-client-fixture",
         "status": "migration-required",
-        "inputs": [
-          "honua-esri-compat licensed fixtures"
-        ],
+        "inputs": [],
         "note": "Esri-owned fixtures must project onto the #3393 canonical fixture before federation."
       },
       "evidenceProducer": null,
@@ -936,7 +928,7 @@
         "matrixLaneId": null,
         "role": "unregistered"
       },
-      "owningIssue": "https://github.com/honua-io/honua-esri-compat/issues/75",
+      "owningIssue": "https://github.com/honua-io/honua-server/issues/3389",
       "needsOwningIssue": false,
       "exclusionRationale": null,
       "coveredAlternative": null,
@@ -1103,9 +1095,9 @@
       "notes": "The compliance receipt is currently 1137/1138; WFS 2.0 basic is 166/167 because multi-layer rollbackOnFailure=true transactions are rejected. Keeps its specification-mandated fixtures under the governed fixturePolicy exception and is never relabelled as having used the canonical client fixture."
     },
     {
-      "id": "arcgis-stub",
-      "displayName": "ArcGIS REST + Portal facade stub client",
-      "family": "esri-harness",
+      "id": "geoservices-rest-stub",
+      "displayName": "GeoServices REST + Portal facade stub",
+      "family": "geoservices-rest-harness",
       "tier": 0,
       "status": "active",
       "targetRelease": "2026.1",
@@ -1159,16 +1151,16 @@
         ],
         "note": "Converges on the single logical fixture + server-config revision tracked by #3393."
       },
-      "evidenceProducer": "docker/client-compat/arcgis-stub",
+      "evidenceProducer": "docker/client-compat/geoservices-rest-stub",
       "laneBinding": {
-        "matrixLaneId": "arcgis-stub",
+        "matrixLaneId": "geoservices-rest-stub",
         "role": "lane"
       },
       "owningIssue": "https://github.com/honua-io/honua-server/issues/3434",
       "needsOwningIssue": false,
       "exclusionRationale": null,
       "coveredAlternative": null,
-      "notes": "A registered `lanes` entry in client-certification-matrix.v1.json with no row in the source artifact, which folded it into the ArcGIS Pro harness column. It substantiates the license-free Esri REST common core and the CERT-PRTL-* Portal facade slice. Being a stub, it never certifies a real Esri client."
+      "notes": "A registered `lanes` entry in client-certification-matrix.v1.json with no separate row in the source artifact. It substantiates GeoServices REST FeatureServer, MapServer, and Portal behavior through a stub harness."
     },
     {
       "id": "py-geopandas",
@@ -1677,7 +1669,7 @@
       "protocolSurfaces": [
         "odata",
         "wms",
-        "esri-integration"
+        "packaged-visual-integration"
       ],
       "operationApplicability": {
         "applicable": [
@@ -1765,7 +1757,7 @@
         "notApplicable": [
           {
             "family": "CERT-PRTL",
-            "reason": "Portal/Sharing discovery is substantiated by the arcgis-stub portal envelope, not by this lane."
+            "reason": "Portal/Sharing discovery is substantiated by the geoservices-rest-stub portal envelope, not by this lane."
           }
         ]
       },
@@ -1983,7 +1975,7 @@
           },
           {
             "family": "CERT-PRTL",
-            "reason": "Portal/Sharing discovery is substantiated by the arcgis-stub portal envelope, not by this lane."
+            "reason": "Portal/Sharing discovery is substantiated by the geoservices-rest-stub portal envelope, not by this lane."
           }
         ]
       },
@@ -2339,7 +2331,7 @@
         "notApplicable": [
           {
             "family": "CERT-PRTL",
-            "reason": "Portal/Sharing discovery is substantiated by the arcgis-stub portal envelope, not by this lane."
+            "reason": "Portal/Sharing discovery is substantiated by the geoservices-rest-stub portal envelope, not by this lane."
           }
         ]
       },
@@ -2440,7 +2432,7 @@
       "needsOwningIssue": true,
       "exclusionRationale": null,
       "coveredAlternative": null,
-      "notes": "Offline sync is the hard part. Field Maps binds through the Portal facade (epic #1240), so the arcgis-stub CERT-PRTL-* slice partially de-risks it; the sync protocol itself is unproven. No implementation issue exists yet."
+      "notes": "Offline sync is the hard part. Field Maps binds through the Portal facade (epic #1240), so the geoservices-rest-stub CERT-PRTL-* slice partially de-risks it; the sync protocol itself is unproven. No implementation issue exists yet."
     },
     {
       "id": "qfield-mergin",
@@ -3230,7 +3222,7 @@
       "owningIssue": "https://github.com/honua-io/honua-server/issues/3395",
       "needsOwningIssue": false,
       "exclusionRationale": "No distinct server surface beyond the governed MapServer and KML lanes.",
-      "coveredAlternative": "arcgis-stub (mapserver) and ogc-cite (KML 2.2) already prove everything it consumes.",
+      "coveredAlternative": "geoservices-rest-stub (mapserver) and ogc-cite (KML 2.2) already prove everything it consumes.",
       "notes": null
     },
     {

@@ -12,9 +12,6 @@ namespace Honua.Server.Features.HealthCheck;
 
 using Honua.Core.Features.Infrastructure.Health;
 
-/// <summary>
-/// Health check endpoints with full AOT compatibility
-/// </summary>
 
 internal static class HealthEndpoints
 {
@@ -26,9 +23,6 @@ internal static class HealthEndpoints
         HttpMethods.Patch
     ];
 
-    /// <summary>
-    /// Configure health endpoints using AOT-compatible routing
-    /// </summary>
     public static void MapHealthEndpoints(this IEndpointRouteBuilder endpoints)
     {
         // Probe answers must reflect the live process on every request (honua-server#4805): the
@@ -62,9 +56,6 @@ internal static class HealthEndpoints
         metricsEndpoint.RequireAdminAuthorization();
     }
 
-    /// <summary>
-    /// Handle liveness probe - indicates if the process is running
-    /// </summary>
     private static async Task HandleLivenessProbe(HttpContext context)
     {
         context.Response.StatusCode = 200;
@@ -73,10 +64,6 @@ internal static class HealthEndpoints
         await context.Response.WriteAsync("Healthy");
     }
 
-    /// <summary>
-    /// Handle readiness probe - indicates if the service is ready to accept traffic
-    /// Delegates health checking to dedicated service for better separation of concerns
-    /// </summary>
     private static async Task HandleReadinessProbe(HttpContext context)
     {
         // Delegate health checking to dedicated service
@@ -87,10 +74,6 @@ internal static class HealthEndpoints
         await WriteHealthCheckResponse(context, result);
     }
 
-    /// <summary>
-    /// PERFORMANCE OPTIMIZATION: Endpoint to expose performance metrics
-    /// Provides insights into query performance and system health
-    /// </summary>
     private static async Task<IResult> HandlePerformanceMetrics(
         IDatabasePerformanceMetricsProvider databaseMetricsProvider,
         IReadinessCheckService readinessCheckService,
@@ -167,9 +150,6 @@ internal static class HealthEndpoints
         }
     }
 
-    /// <summary>
-    /// Calculates overall performance score based on comprehensive metrics
-    /// </summary>
     private static double CalculateBasicPerformanceScore(long totalMemoryBytes, ILogger logger)
     {
         try
@@ -215,11 +195,6 @@ internal static class HealthEndpoints
         }
     }
 
-    /// <summary>
-    /// Writes health check result to HTTP response
-    /// </summary>
-    /// <param name="context">HTTP context</param>
-    /// <param name="result">Health check result</param>
     private static async Task WriteHealthCheckResponse(HttpContext context, ReadinessResult result)
     {
         context.Response.StatusCode = result.StatusCode;

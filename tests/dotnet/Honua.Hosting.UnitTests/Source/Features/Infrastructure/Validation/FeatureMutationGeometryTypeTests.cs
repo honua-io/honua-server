@@ -131,6 +131,39 @@ public sealed class FeatureMutationGeometryTypeTests
             Wkb("MULTIPOINT ((0 0), (1 1))"), CancellationToken.None)).IsValid.Should().BeTrue();
     }
 
+    [UnitTheory]
+    [InlineData(MetadataV2GeometryType.MultiPoint, "POINT (1 2)", "MultiPoint")]
+    [InlineData(MetadataV2GeometryType.MultiLineString, "LINESTRING (0 0, 1 1)", "MultiLineString")]
+    [InlineData(MetadataV2GeometryType.MultiPolygon, "POLYGON ((0 0, 1 0, 1 1, 0 0))", "MultiPolygon")]
+    public async Task ValidateGeometryAsync_SinglePartOnMultiLayer_PromotesGeometry(
+        MetadataV2GeometryType layerType, string wkt, string expectedType)
+    {
+        var validator = CreateValidator(GeometryValidationResult.Success());
+        var result = await validator.ValidateGeometryAsync(Resource(layerType), Wkb(wkt), CancellationToken.None);
+        result.IsValid.Should().BeTrue();
+        new WKBReader().Read(result.Geometry!).GeometryType.Should().Be(expectedType);
+    }
+
+    [UnitTheory]
+    [InlineData("POINT Z EMPTY", true, false)]
+    [InlineData("POINT M EMPTY", false, true)]
+    [InlineData("POINT ZM EMPTY", true, true)]
+    [InlineData("POINT ZM (1 2 3 4)", true, true)]
+    public void Enforce_PromotesPointWithoutLosingDeclaredDimensions(string wkt, bool z, bool m)
+    {
+        var geometry = new WKTReader().Read(wkt);
+        geometry.SRID = 4326;
+        var source = new WKBWriter(ByteOrder.LittleEndian, handleSRID: true, emitZ: z, emitM: m).Write(geometry);
+        var result = GeometryTypeEnforcement.Enforce(source, source, MetadataV2GeometryType.MultiPoint, false, false);
+        result.IsValid.Should().BeTrue();
+        var promoted = new WKBReader().Read(result.Geometry!);
+        promoted.Should().BeOfType<MultiPoint>();
+        promoted.SRID.Should().Be(4326);
+        var type = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(result.Geometry!.AsSpan(1, 4));
+        ((type & 0x80000000u) != 0).Should().Be(z);
+        ((type & 0x40000000u) != 0).Should().Be(m);
+    }
+
     [UnitTest]
     public async Task ValidateGeometryAsync_UnconstrainedLayers_AcceptAnyGeometryType()
     {

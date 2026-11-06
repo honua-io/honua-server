@@ -5,20 +5,8 @@ using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.Server.Features.Provisioner.BuildJobs;
 
-/// <summary>
-/// Translates a <see cref="GeocoderBuildRequest"/> into a durable
-/// <see cref="ExecutionJobSpec"/> of kind <see cref="ExecutionJobKind.GeocoderBuild"/>
-/// and back, keeping the encode/decode contract in one place (mirroring
-/// <c>TileCacheExecutionSpecBuilder</c>) so the admin submission path and the GP-on-Batch
-/// worker stay in agreement. Pure and allocation-light; no infrastructure dependencies so
-/// it is directly unit-testable.
-/// </summary>
 internal static class GeocoderBuildExecutionSpecBuilder
 {
-    /// <summary>
-    /// Builds the execution-job spec for <paramref name="request"/>, encoding every
-    /// behavior-changing build parameter onto <see cref="ExecutionJobSpec.Parameters"/>.
-    /// </summary>
     public static ExecutionJobSpec Build(GeocoderBuildRequest request, ProvisionerBuildBatchOptions options)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -56,11 +44,6 @@ internal static class GeocoderBuildExecutionSpecBuilder
         };
     }
 
-    /// <summary>
-    /// Reconstructs a <see cref="GeocoderBuildRequest"/> from a geocoder-build execution
-    /// job's spec parameters. Returns <c>false</c> with a clean classification when a
-    /// required key is absent or malformed so the worker can fail the job without throwing.
-    /// </summary>
     public static bool TryParse(
         IReadOnlyDictionary<string, string> parameters,
         out GeocoderBuildRequest request,

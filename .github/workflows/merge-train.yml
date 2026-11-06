@@ -93,7 +93,7 @@ jobs:
     # 0-job startup failure. This job runs on every listed trigger.
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           # The FF land pushes directly to trunk, so the git push must be
@@ -141,7 +141,7 @@ jobs:
       # route it to Bedrock per docs/cloud-providers.md.
       - name: Configure AWS credentials for Bedrock (autofix)
         if: steps.mode.outputs.train_autofix == '1'
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           aws-access-key-id: ${{ secrets.BEDROCK_AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.BEDROCK_AWS_SECRET_ACCESS_KEY }}
@@ -253,7 +253,7 @@ jobs:
 
       - name: Upload merge-train metrics
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: merge-train-metrics
           path: |

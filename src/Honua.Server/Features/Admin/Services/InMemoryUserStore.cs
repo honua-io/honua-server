@@ -7,23 +7,12 @@ using Honua.Core.Features.Identity.Domain;
 
 namespace Honua.Server.Features.Admin.Services;
 
-/// <summary>
-/// In-memory user store for the admin API surface. Also backs the SCIM 2.0 provisioning
-/// surface (<see cref="IScimUserStore"/>, #510) over the same record set so users created by
-/// an identity provider are immediately visible to the admin endpoints.
-/// Default for no-database/test profiles only: on Postgres profiles the durable
-/// <c>PostgresUserStore</c> registered by <c>AddPostgreSqlServices</c> takes precedence
-/// (#3141), because a node-local store cannot answer managed-membership queries across
-/// replicas or restarts (honua-server#3081).
-/// </summary>
+// This node-local store is only the no-database default, because it cannot answer membership queries across replicas or restarts.
 internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
 {
     private readonly ConcurrentDictionary<string, ManagedUser> _users = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _externalIdWriteLock = new();
 
-    /// <summary>
-    /// Seeds a user into the store (for testing).
-    /// </summary>
     internal void Seed(ManagedUser user) => _users[user.UserId] = user;
 
     public Task<UserListResult> ListUsersAsync(UserListFilter filter, CancellationToken cancellationToken = default)
@@ -266,9 +255,6 @@ internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
     public Task<bool> DeleteUserAsync(string userId, CancellationToken cancellationToken = default)
         => DeprovisionUserAsync(userId, cancellationToken);
 
-    /// <summary>
-    /// Adds a role to a user (used by group membership sync). No-op when the user is absent.
-    /// </summary>
     internal void AddRole(string userId, string role)
     {
         if (!_users.TryGetValue(userId, out var existing))
@@ -284,9 +270,6 @@ internal sealed class InMemoryUserStore : IUserStore, IScimUserStore
         _users[userId] = Clone(existing, existing.IsActive, NormalizeRoles([.. existing.Roles, role]));
     }
 
-    /// <summary>
-    /// Removes a role from a user (used by group membership sync). No-op when the user is absent.
-    /// </summary>
     internal void RemoveRole(string userId, string role)
     {
         if (!_users.TryGetValue(userId, out var existing))

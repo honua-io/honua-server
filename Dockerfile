@@ -11,9 +11,9 @@
 # scripts/ci/base-image-mirrors.sh reads them and the nightly `mirror-base-images`
 # job mirrors exactly what it prints, so no second digest list needs updating.
 # digest pinned 2026-08-12
-ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa
+ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:de4fe90a98845d75910b9769662465c84de1a934665c431279d1382b2bddc02b
 # digest pinned 2026-08-20
-ARG DOTNET_ASPNET_IMAGE=mcr.microsoft.com/dotnet/aspnet:10.0@sha256:d5633778c754e89a386882eddf8dbee6942447a8a4b8267c19cf1e1158d0b0ac
+ARG DOTNET_ASPNET_IMAGE=mcr.microsoft.com/dotnet/aspnet:10.0@sha256:de0ee358cdd672f7017a003bed21e9ac9ed48a27c922a59b18175b6e82fa7fee
 
 # Build stage
 # Extract restore inputs with their directory structure. Ordinary source edits,
@@ -90,6 +90,9 @@ COPY . .
 # SC2086 suppression rationale: EXTRA_MSBUILD_ARGS holds multiple MSBuild flags that must
 # word-split into separate `-p:` arguments. Quoting collapses them into a single (invalid) argument.
 ARG CONFIGURATION=Release
+# Empty VERSION preserves Directory.Build.props for local container builds.
+ARG VERSION=
+ARG HONUA_GIT_SHA=
 # hadolint ignore=SC2086
 RUN --mount=type=cache,target=/root/.nuget/packages \
     --mount=type=secret,id=github_actor \
@@ -109,6 +112,9 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
       --runtime "$RUNTIME_ID" \
       $EXTRA_MSBUILD_ARGS && \
     dotnet publish src/Honua.Server/Honua.Server.csproj \
+      ${VERSION:+-p:Version="$VERSION"} \
+      ${VERSION:+-p:InformationalVersion="$VERSION$(if [ -n "$HONUA_GIT_SHA" ]; then printf '+%.7s' "$HONUA_GIT_SHA"; fi)"} \
+      ${VERSION:+-p:IncludeSourceRevisionInInformationalVersion=false} \
       --configuration "$CONFIGURATION" \
       --runtime "$RUNTIME_ID" \
       --no-restore \
@@ -137,7 +143,10 @@ FROM ${DOTNET_ASPNET_IMAGE} AS runtime
 # The current upstream digest predates available OS fixes. The revision is
 # echoed in the upgrade RUN so a bump invalidates the cached apt layer.
 # 2026-10-08: pick up libfreetype6 2.13.2+dfsg-1ubuntu0.2 (CVE-2026-95512).
-ARG RUNTIME_PACKAGE_REVISION=20261008
+# 2026-10-29: pick up libbrotli1 1.1.0-2ubuntu0.1 (CVE-2026-111497).
+# 2026-10-30: pick up zlib1g 1:1.3.dfsg-3.1ubuntu2.3 (CVE-2026-85091).
+# dpkg-query needs the version field with one dollar. Two dollars emit a leading dollar and fail the epoch check.
+ARG RUNTIME_PACKAGE_REVISION=20261105
 
 # Security: Install runtime dependencies. The glibc runtime is required by
 # ParquetSharp's native library, which backs the GeoParquet writer.
@@ -151,9 +160,13 @@ RUN echo "runtime package revision ${RUNTIME_PACKAGE_REVISION}" && \
     ca-certificates \
     fontconfig \
     libatomic1 \
+    libbrotli1 \
     libgssapi-krb5-2 \
-    tzdata \
-    wget && \
+    tzdata && \
+    dpkg --compare-versions "$(dpkg-query -W -f '${Version}' libbrotli1)" ge "1.1.0-2ubuntu0.1" && \
+    dpkg --compare-versions "$(dpkg-query -W -f '${Version}' zlib1g)" ge "1:1.3.dfsg-3.1ubuntu2.3" && \
+    dpkg --compare-versions "$(dpkg-query -W -f '${Version}' apt)" ge "2.8.4ubuntu0.1" && \
+    dpkg --compare-versions "$(dpkg-query -W -f '${Version}' libapt-pkg6.0t64)" ge "2.8.4ubuntu0.1" && \
     rm -rf /var/lib/apt/lists/* /tmp/*
 
 # Security: Create non-root user with minimal privileges
@@ -209,6 +222,8 @@ LABEL security.non-root="true" \
 # HONUA_IMAGE_DIGEST is intentionally not set here: an image cannot contain its own digest,
 # so deployments inject it (Helm/Terraform/task definition) once the image has been pushed.
 ARG HONUA_GIT_SHA=
+ARG VERSION=
+LABEL org.opencontainers.image.version="${VERSION}"
 LABEL org.opencontainers.image.revision="${HONUA_GIT_SHA}"
 ENV HONUA_GIT_SHA=${HONUA_GIT_SHA}
 
@@ -222,9 +237,9 @@ ENV ASPNETCORE_ENVIRONMENT=Production \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \
     DOTNET_EnableDiagnostics=0
 
-# Health check
+# Health check. The runtime image has bash and no HTTP client.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD ["wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:8080/healthz/live"]
+    CMD ["bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /healthz/live HTTP/1.0\\r\\nHost: 127.0.0.1\\r\\nConnection: close\\r\\n\\r\\n' >&3 && IFS= read -r status <&3 && case \"$status\" in *' 200 '*) exit 0 ;; *) exit 1 ;; esac"]
 
 EXPOSE 8080/tcp 8081/tcp
 

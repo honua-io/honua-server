@@ -8,21 +8,13 @@ using AccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Evaluates layered service and layer access policies.
-/// </summary>
 internal sealed class AccessPolicyEvaluator : IAccessPolicyEvaluator
 {
-    /// <summary>
-    /// Denial recorded when an explicit role list excludes the principal.
-    /// </summary>
     internal const string RequiredRoleDeniedReason = "User does not have the required role.";
 
-    /// <inheritdoc />
     public Task<AccessDecision> EvaluateAsync(ClaimsPrincipal principal, string resource, string action)
         => Task.FromResult(Evaluate(principal, resource, action));
 
-    /// <inheritdoc />
     public AccessDecision Evaluate(ClaimsPrincipal principal, string resource, string action)
     {
         var requiresAuthentication = !string.IsNullOrWhiteSpace(resource) || !string.IsNullOrWhiteSpace(action);
@@ -36,7 +28,6 @@ internal sealed class AccessPolicyEvaluator : IAccessPolicyEvaluator
             : AccessDecision.RequiresAuth("Authentication is required.");
     }
 
-    /// <inheritdoc />
     public Task<AccessDecision> EvaluateAsync(
         ClaimsPrincipal principal,
         AccessPolicy? layerPolicy,
@@ -44,7 +35,6 @@ internal sealed class AccessPolicyEvaluator : IAccessPolicyEvaluator
         object? scope = null)
         => Task.FromResult(Evaluate(principal, layerPolicy, servicePolicy, scope));
 
-    /// <inheritdoc />
     public AccessDecision Evaluate(
         ClaimsPrincipal principal,
         AccessPolicy? layerPolicy,

@@ -48,9 +48,9 @@
       "test_case_id": "CERT-DISC-01",
       "status": "pass",
       "duration_ms": 8,
-      "measured_count": 10,
+      "measured_count": 11,
       "measured_delta": null,
-      "notes": "10 OGC API Maps conformance classes returned",
+      "notes": "11 OGC API Maps conformance classes returned",
       "evidence_ref": ""
     },
     {

@@ -16,6 +16,8 @@ from typing import Any, NamedTuple
 from pmtiles_http import HttpRangeSource, load_source
 from derived_zarr import has_derived_binding, observe_array
 from derived_fsspec import observe_fsspec
+from producer_run import DISPATCH_ENV, producer_run
+from flatgeobuf_readback import read_flatgeobuf
 
 CLIENTS = {
     "GeoPandas": "1.1.4",
@@ -956,8 +958,8 @@ def validate_flatgeobuf(path: Path, args: argparse.Namespace) -> list[dict]:
         geopandas_seen.update(_flatgeobuf_frame_metadata(frame))
 
     def gdal_check() -> str:
-        info = _run("ogrinfo", "-json", "-al", "-so", str(path))
-        gdal_seen.update(_gdal_flatgeobuf_metadata(json.loads(info.stdout)))
+        info = read_flatgeobuf(path)
+        gdal_seen.update(_gdal_flatgeobuf_metadata(info))
         return _command_version("GDAL", "gdalinfo", "--version")
 
     _collect_client(
@@ -1015,17 +1017,22 @@ def validate_pmtiles(path: Path, args: argparse.Namespace) -> list[dict]:
         header = reader.header()
         metadata = reader.metadata()
         tiles = list(all_tiles(source))
-        first = tiles[0] if tiles else None
         if header.get("version") != 3:
             raise ValueError(f"PMTiles reader reported version={header.get('version')!r}, expected 3")
         if not isinstance(metadata, dict):
             raise ValueError("PMTiles metadata is not an object")
-        if first is None or not first[1]:
-            raise ValueError("PMTiles reader found no non-empty tiles")
+        expected_coordinates = {(z, x, y) for z in range(3) for x in range(1 << z) for y in range(1 << z)}
+        coordinates = [tuple(tile[0]) for tile in tiles]
+        if len(coordinates) != 21 or set(coordinates) != expected_coordinates:
+            raise ValueError("PMTiles canonical fixture tile coordinates differ")
+        if any(not tile[1] for tile in tiles):
+            raise ValueError("PMTiles reader found an empty fixture tile")
     except Exception as error:
         observation["result"] = "fail"
         observation["failure_reason"] = f"{type(error).__name__}: {error}"
         return [observation]
+    finally:
+        observation["completed_at"] = _now()
     # #4398: the declared pmtiles budget oracle, read back from the archive Honua wrote.
     observation["observed_metadata"] = {
         "spec_version": str(header.get("version")),
@@ -1229,10 +1236,76 @@ def validate_honua_zarr_subset(path: Path, args: argparse.Namespace) -> list[dic
     return observations
 
 
-def validate_hdf5_netcdf(path: Path, args: argparse.Namespace) -> list[dict]:
+def _validate_canonical_hdf5(path: Path) -> None:
+    """Assert this lane's known NetCDF fixture, not arbitrary HDF conventions."""
     import h5py
+    import numpy as np
+
+    with h5py.File(path, "r") as handle:
+        if "temperature" not in handle:
+            raise ValueError("canonical temperature dataset is missing")
+        data = handle["temperature"]
+        if data.shape != (4, 8, 16):
+            raise ValueError("canonical temperature shape differs")
+        if data.chunks != (1, 4, 4):
+            raise ValueError("canonical temperature chunks differ")
+        if data.dtype.kind != "f" or data.dtype.itemsize != 4:
+            raise ValueError("canonical temperature dtype differs from Float32")
+        if not np.array_equal(data[:], np.arange(512, dtype=np.float32).reshape(4, 8, 16)):
+            raise ValueError("canonical temperature values differ")
+        for index, name in enumerate(("time", "y", "x")):
+            scales = list(data.dims[index].values())
+            if len(scales) != 1 or scales[0].name != "/" + name:
+                raise ValueError("canonical dimension scale links differ")
+        metadata = ((handle, "Conventions", "CF-1.10"),
+                    (data, "units", "degC"), (data, "standard_name", "sea_surface_temperature"),
+                    (handle["y"], "standard_name", "latitude"), (handle["y"], "units", "degrees_north"),
+                    (handle["y"], "axis", "Y"), (handle["x"], "standard_name", "longitude"),
+                    (handle["x"], "units", "degrees_east"), (handle["x"], "axis", "X"),
+                    (handle["time"], "calendar", "proleptic_gregorian"),
+                    (handle["time"], "units", "days since 2026-01-01 00:00:00"))
+        for target, key, expected in metadata:
+            actual = target.attrs.get(key)
+            if isinstance(actual, bytes):
+                actual = actual.decode("utf-8")
+            if actual != expected:
+                raise ValueError(f"canonical CF metadata differs: {key}")
+        for name, expected in (("time", np.arange(4)), ("y", np.linspace(22., 18., 8)), ("x", np.linspace(-160., -156., 16))):
+            if not np.array_equal(handle[name][:], expected):
+                raise ValueError(f"canonical coordinate differs: {name}")
+
+
+def _validate_canonical_xarray(path: Path) -> None:
+    import numpy as np
     import xarray
 
+    with xarray.open_dataset(path, engine="h5netcdf") as dataset:
+        if dict(dataset.sizes) != {"time": 4, "y": 8, "x": 16}:
+            raise ValueError("canonical multidimensional shape differs")
+        data = dataset["temperature"]
+        if data.dims != ("time", "y", "x"):
+            raise ValueError("canonical dimension order differs")
+        if data.dtype.kind != "f" or data.dtype.itemsize != 4:
+            raise ValueError("canonical temperature dtype differs from Float32")
+        if tuple(data.encoding.get("chunksizes", ())) != (1, 4, 4):
+            raise ValueError("canonical temperature chunks differ")
+        if not np.array_equal(data.values, np.arange(512, dtype=np.float32).reshape(4, 8, 16)):
+            raise ValueError("canonical temperature values differ")
+        for name, expected in (("time", np.array(["2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04"], dtype="datetime64[ns]")),
+                               ("y", np.linspace(22., 18., 8)), ("x", np.linspace(-160., -156., 16))):
+            if dataset[name].dims != (name,) or not np.array_equal(dataset[name].values, expected):
+                raise ValueError(f"canonical coordinate differs: {name}")
+        expected_metadata = ((dataset, "Conventions", "CF-1.10"), (data, "units", "degC"),
+                             (data, "standard_name", "sea_surface_temperature"),
+                             (dataset["y"], "standard_name", "latitude"), (dataset["y"], "units", "degrees_north"),
+                             (dataset["y"], "axis", "Y"), (dataset["x"], "standard_name", "longitude"),
+                             (dataset["x"], "units", "degrees_east"), (dataset["x"], "axis", "X"))
+        for target, key, expected in expected_metadata:
+            if target.attrs.get(key) != expected:
+                raise ValueError(f"canonical CF metadata differs: {key}")
+
+
+def validate_hdf5_netcdf(path: Path, args: argparse.Namespace) -> list[dict]:
     observations: list[dict] = []
 
     def h5stat_check() -> str:
@@ -1246,23 +1319,29 @@ def validate_hdf5_netcdf(path: Path, args: argparse.Namespace) -> list[dict]:
         with tempfile.NamedTemporaryFile(suffix=".nc", delete=False) as stream:
             repacked = Path(stream.name)
         try:
-            _run("h5repack", str(path), str(repacked))
+            # This tiny fixture proves PAGE layout conversion, not a cloud-sized chunk profile.
+            _run("h5repack", "-S", "PAGE", "-G", "262144", str(path), str(repacked))
+            _validate_canonical_hdf5(repacked)
+            _validate_canonical_xarray(repacked)
+            import h5py
             with h5py.File(repacked, "r") as handle:
-                if "temperature" not in handle or handle["temperature"].size < 1:
-                    raise ValueError("repacked file lost the temperature dataset")
+                properties = handle.id.get_create_plist()
+                if properties.get_file_space_strategy()[0] != h5py.h5f.FSPACE_STRATEGY_PAGE:
+                    raise ValueError("repacked file does not use PAGE file space strategy")
+                if properties.get_file_space_page_size() != 262144:
+                    raise ValueError("repacked PAGE size differs from 262144 bytes")
+            statistics = _run("h5stat", "-S", str(repacked)).stdout
+            metadata = re.search(r"File metadata:\s*(\d+) bytes", statistics)
+            if not metadata or int(metadata.group(1)) > 262144:
+                raise ValueError("repacked PAGE does not contain the reported file metadata")
         finally:
             repacked.unlink(missing_ok=True)
 
     def h5py_check() -> None:
-        with h5py.File(path, "r") as handle:
-            if "temperature" not in handle or handle["temperature"].size < 1:
-                raise ValueError("h5py did not recover the temperature dataset")
+        _validate_canonical_hdf5(path)
 
     def xarray_check() -> None:
-        with xarray.open_dataset(path, engine="h5netcdf") as dataset:
-            if "temperature" not in dataset or dataset["temperature"].size < 1:
-                raise ValueError("xarray did not recover the netCDF temperature variable")
-            dataset.load()
+        _validate_canonical_xarray(path)
 
     for operation, client, lane, check in (
         ("metadata-statistics", "h5stat", "h5stat", h5stat_check),
@@ -1489,6 +1568,26 @@ def _append_unexecuted_cells(observations: list[dict], args: argparse.Namespace)
     return observations
 
 
+def _bind_producer_run(observations: list[dict], run: dict | None) -> None:
+    """Record the nightly producer run in every executed receipt identity.
+
+    honua-release's convergence ledger accepts a nightly pass/fail cell only when
+    `evidence_receipt.identity.producer_run` equals the run it dispatched. The
+    identity must be bound before the receipt is hashed into `evidence_digest`, so
+    this runs on the receipt objects themselves, never on a digest already taken.
+    Today every CNG observation carries `evidence_receipt = None` (receipt v2 is
+    honua-server#3753), so this records nothing per cell until that lands.
+    """
+    if run is None:
+        return
+    for observation in observations:
+        receipt = observation.get("evidence_receipt")
+        if isinstance(receipt, dict):
+            if not isinstance(receipt.get("identity"), dict):
+                raise ValueError(f"{_cell_name(observation)}: receipt has no identity object")
+            receipt["identity"]["producer_run"] = dict(run)
+
+
 def _cell_name(observation: dict) -> str:
     """Names one certification cell exactly. Surfaces alone are ambiguous: the Zarr
     surface holds both third-party store reads and Honua's subset transcode."""
@@ -1537,7 +1636,16 @@ def main() -> int:
     parser.add_argument("--fixture-revision", required=True)
     parser.add_argument("--evidence-uri", required=True)
     parser.add_argument("--base-url", required=True)
+    # Nightly orchestrator correlation id (honua-release nightly-certification).
+    # Empty means not nightly-dispatched: no producer_run is emitted at all.
+    parser.add_argument("--nightly-dispatch-id", default=os.environ.get(DISPATCH_ENV, ""))
     args = parser.parse_args()
+    # Fail closed before any cell runs: a malformed id, a non-dispatch event, or a
+    # foreign repository/workflow ref must never be stamped onto evidence.
+    try:
+        args.producer_run = producer_run(args.nightly_dispatch_id)
+    except ValueError as error:
+        parser.error(str(error))
     args.evidence_digest = _digest_evidence(args.artifacts, args.native_results)
     # The generator's receipt for Honua's own COG/Zarr reads. Loaded before any cell
     # runs so a lane that skipped the generator fails loudly rather than quietly
@@ -1561,6 +1669,7 @@ def main() -> int:
     _collect(observations, validate_stac, args.base_url, args)
     _collect(observations, validate_javascript, args.artifacts, args)
     observations = _append_unexecuted_cells(_normalize_observations(observations, args), args)
+    _bind_producer_run(observations, args.producer_run)
     fragment = {
         "schema": "honua.protocol-certification-fragment/v1",
         "producer": "honua-server-cng",
@@ -1606,6 +1715,11 @@ def main() -> int:
         },
         "observations": observations,
     }
+    if args.producer_run is not None:
+        # Fragment-level statement of which dispatched run produced this fragment.
+        # honua-evidence admits unknown top-level fragment fields; it is not a
+        # substitute for the per-receipt identity the ledger authenticates.
+        fragment["producer_run"] = args.producer_run
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(fragment, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     passed = sum(observation["result"] == "pass" for observation in observations)

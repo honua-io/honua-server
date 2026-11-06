@@ -459,10 +459,14 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
         ArgumentNullException.ThrowIfNull(migrationsAssembly);
     }
 
-    private static string BuildMigrationConnectionString(string connectionString) =>
+    // Unpooled: the migration lock is a session advisory lock and migration scripts may SET
+    // session state. Behind RDS Proxy either pins the proxy session, and a pooled connection
+    // would keep that pin after the host starts, through every Lambda freeze (honua-server#6760).
+    internal static string BuildMigrationConnectionString(string connectionString) =>
         new NpgsqlConnectionStringBuilder(connectionString)
         {
             SearchPath = "public",
+            Pooling = false,
         }.ConnectionString;
 
     /// <summary>

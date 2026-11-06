@@ -12,26 +12,13 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for user identity management.
-/// </summary>
 internal static partial class UserManagementEndpoints
 {
-    /// <summary>
-    /// Defence-in-depth ceiling on the user list page size. Mirrors the
-    /// field-collection pull cap (<c>MaxPullLimit = 1_000</c>) so an admin
-    /// caller cannot request an unbounded <c>.Take(limit)</c> page.
-    /// </summary>
+    // The user-list page size is capped so an admin request cannot take an unbounded page.
     private const int MaxListLimit = 1_000;
 
-    /// <summary>
-    /// Maximum persisted role-name length from migration 106.
-    /// </summary>
     private const int MaxRoleNameLength = 256;
 
-    /// <summary>
-    /// Log category for user management endpoints.
-    /// </summary>
     internal sealed class UserManagementEndpointsLog;
 
     internal static partial class UserManagementLog
@@ -53,9 +40,6 @@ internal static partial class UserManagementEndpoints
         public static partial void EffectivePermissionsResolved(ILogger logger, string userId, int permissionCount);
     }
 
-    /// <summary>
-    /// Configure user management admin endpoints.
-    /// </summary>
     public static void MapUserManagementEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/users")
@@ -72,13 +56,17 @@ internal static partial class UserManagementEndpoints
             .WithDisplayName("Get User")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
+        // Granting roles or removing identities changes identity authority, so general admin
+        // write is not enough.
         group.MapPut("/{id}/roles", HandleUpdateUserRoles)
             .WithDisplayName("Update User Roles")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }))
+            .RequireAdminCredentialManagementAuthorization();
 
         group.MapDelete("/{id}", HandleDeleteUser)
             .WithDisplayName("Deprovision User")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Delete }))
+            .RequireAdminCredentialManagementAuthorization();
 
         group.MapGet("/{id}/effective-permissions", HandleGetEffectivePermissions)
             .WithDisplayName("Get User Effective Permissions")

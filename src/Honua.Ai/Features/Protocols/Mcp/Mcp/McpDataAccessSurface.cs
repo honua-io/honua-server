@@ -253,11 +253,14 @@ internal sealed class McpDataAccessSurface
             return ErrorResponse(request.Id, McpErrorMapper.InvalidArgument(viewError!));
         }
 
-        if (requestedView is not null
-            && !McpWorkflowViewNegotiation.IsFullCatalog(requestedView)
-            && McpWorkflowViewCatalog.Find(requestedView) is null)
+        // HTTP selectors are request-local fallbacks, not negotiated session metadata.
+        // Validate them at initialize too so stock clients see the same unknown-view error.
+        var selectedView = requestedView ?? McpWorkflowViewNegotiation.ReadHttpView(httpContext.Request);
+        if (selectedView is not null
+            && !McpWorkflowViewNegotiation.IsFullCatalog(selectedView)
+            && McpWorkflowViewCatalog.Find(selectedView) is null)
         {
-            return ErrorResponse(request.Id, McpErrorMapper.InvalidArgument(UnknownViewMessage(requestedView)));
+            return ErrorResponse(request.Id, McpErrorMapper.InvalidArgument(UnknownViewMessage(selectedView)));
         }
 
         httpContext.Items[McpWorkflowViewNegotiation.HttpContextItemKey] = requestedView;
@@ -337,7 +340,7 @@ internal sealed class McpDataAccessSurface
         var dynamicTools = await ResolveDynamicToolsAsync(cancellationToken).ConfigureAwait(false);
 
         // honua-server#3428: resolve the effective workflow view from the explicit
-        // request / session / server-profile negotiation contract. Selecting a view
+        // request / session / HTTP / server-profile negotiation contract. Selecting a view
         // can only NARROW discovery — it never grants authority. The reserved
         // `full` export is explicit and authenticated. Discovery is not authority: every tools/call still
         // reauthenticates and reauthorizes on the existing call-time path,
@@ -350,7 +353,8 @@ internal sealed class McpDataAccessSurface
         var effectiveView = McpWorkflowViewNegotiation.ResolveEffectiveView(
             requestView,
             SessionWorkflowView(httpContext),
-            ProfileDefaultWorkflowView(httpContext));
+            ProfileDefaultWorkflowView(httpContext),
+            McpWorkflowViewNegotiation.ReadHttpView(httpContext.Request));
 
         if (effectiveView is null && httpContext.User.Identity?.IsAuthenticated != true)
         {
@@ -921,7 +925,13 @@ internal sealed class McpDataAccessSurface
         var resourceFamily = handler.ResolveFamily(parameters.Uri);
         try
         {
-            var maxChars = parameters.MaxChars ?? _limits.MaxResourceReadChars;
+            // A read without a cursor returns the whole resource, bounded by the hard
+            // MaxResourceReadChars ceiling, so a spec-only MCP client (resources/read has no
+            // cursor in the protocol) receives one complete document, never a JSON fragment.
+            // A client continuing with a cursor keeps the configured page size, and an explicit
+            // maxChars still opts into smaller pages.
+            var maxChars = parameters.MaxChars
+                ?? (string.IsNullOrEmpty(parameters.Cursor) ? McpPagination.MaxResourceReadChars : _limits.MaxResourceReadChars);
             if (maxChars <= 0 || maxChars > McpPagination.MaxResourceReadChars)
             {
                 throw new GeoprocessingValidationException(

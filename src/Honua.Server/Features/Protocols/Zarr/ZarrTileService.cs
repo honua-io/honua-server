@@ -17,11 +17,6 @@ using Microsoft.AspNetCore.Http;
 
 namespace Honua.Server.Features.Protocols.Zarr;
 
-/// <summary>
-/// Focused service for the datacube tile request path. Keeping publication resolution,
-/// authorization, storage access, and rendering behind this seam prevents the endpoint
-/// handler from becoming an unreviewable dependency container.
-/// </summary>
 internal interface IZarrTileService
 {
     Task<IResult> HandleAsync(
@@ -34,7 +29,6 @@ internal interface IZarrTileService
         CancellationToken cancellationToken);
 }
 
-/// <inheritdoc />
 internal sealed class ZarrTileService : IZarrTileService
 {
     private const long MaxTileSliceBytes = 4L * 1024L * 1024L;
@@ -213,8 +207,10 @@ internal sealed class ZarrTileService : IZarrTileService
             return StandardErrorHelpers.CreateInternalServerError(context, "The Zarr store returned invalid data for this tile.");
         }
 
-        var fillValue = slice.Plan.Array.FillValue as double?;
-        var png = ZarrTileRenderer.Render(result, slice, ZarrTileRenderer.DefaultTileSize, colormap: null, fillValue: fillValue);
+        // Preserve the source dtype until nodata comparison; widening int64/uint64
+        // sentinels first can collapse an adjacent real sample onto the same double.
+        var png = ZarrTileRenderer.RenderWithTypedFill(result, slice, ZarrTileRenderer.DefaultTileSize,
+            colormap: null, fillValue: slice.Plan.Array.FillValue);
         ZarrLog.DatacubeTileRendered(_logger, layerId, result.Variable, z, x, y, png.Length);
         return Results.Bytes(png, "image/png");
     }

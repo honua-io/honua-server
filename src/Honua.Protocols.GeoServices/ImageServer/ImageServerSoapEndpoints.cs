@@ -3,8 +3,8 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
-using System.Text;
 using System.Text.Json;
+using System.Text;
 using System.Xml.Linq;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -16,20 +16,16 @@ using Honua.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.Protocols.GeoServices.ImageServer.Models;
 using Honua.Protocols.GeoServices.ImageServer.Raster;
 using Honua.Protocols.GeoServices.ImageServer.Services;
-using static Honua.Protocols.GeoServices.Soap.ArcGisSoapProtocol;
 using Honua.ServiceDefaults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Microsoft.OpenApi;
 using SkiaSharp;
+using static Honua.Protocols.GeoServices.Soap.GeoServicesSoapProtocol;
 
 namespace Honua.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Bounded ArcGIS SOAP adapter for the read-only ImageServer operations used by
-/// ArcGIS Pro. Rendering delegates to the canonical REST ImageServer handler so
-/// the SOAP surface never becomes a second raster execution engine.
-/// </summary>
+// SOAP rendering delegates to the REST ImageServer handler so the SOAP surface does not become a second raster engine.
 internal static partial class ImageServerSoapEndpoints
 {
     private const string XmlSchemaNamespace = "http://www.w3.org/2001/XMLSchema";
@@ -40,7 +36,7 @@ internal static partial class ImageServerSoapEndpoints
     {
         endpoints.MapPost("/services/{serviceId}/ImageServer", HandlePostSoapImageServer)
             .WithDisplayName("ArcGIS SOAP ImageServer")
-            .WithName("ArcGisSoapImageServer")
+            .WithName("GeoServicesSoapImageServer")
             .WithSummary("Read and render an ImageServer through ArcGIS SOAP")
             .WithDescription("Implements the bounded ArcGIS Pro ImageServer SOAP compatibility surface over Honua's canonical raster service.")
             .WithTags("ImageServer")
@@ -356,7 +352,11 @@ internal static partial class ImageServerSoapEndpoints
             return service.ErrorResult;
         }
 
-        var srid = service.Extent!.Value.Srid ?? SpatialConstants.DefaultSrid;
+        // GetServiceInfo describes a registered coverage's grid (#6493), so the
+        // catalog geometry must carry that same CRS rather than the base mosaic's.
+        var coverageGrid = await ReadCoverageGridAsync(
+            request.HttpContext, service.Resolution.LayerId, cancellationToken).ConfigureAwait(false);
+        var srid = (coverageGrid?.Extent ?? service.Extent!.Value).Srid ?? SpatialConstants.DefaultSrid;
         var maskedFields = await ReadCatalogMasksAsync(
             request.HttpContext, service.Resolution.LayerId, cancellationToken).ConfigureAwait(false);
         return CreateSoapResponse(
@@ -591,7 +591,7 @@ internal static partial class ImageServerSoapEndpoints
             // The samples' NoData values already match every source. MatchAny still
             // needs an AND of the canonical per-band validity masks on the BSQ wire.
             requireAllBandsValid = string.Equals(request.NoDataInterpretation, "esriNoDataMatchAny", StringComparison.OrdinalIgnoreCase);
-            request = CopyWithoutNoData(request);
+            request = request with { NoData = null };
         }
 
         request = CopyWithResponseFormat(
@@ -709,34 +709,71 @@ internal static partial class ImageServerSoapEndpoints
         }
 
         var raster = referenceRaster.Value;
-        if (!string.Equals(raster.PixelType, "8BUI", StringComparison.OrdinalIgnoreCase))
+        // Pro draws with Compression=LERC (and ExportImage's esriImageLERC). That is a LERC2
+        // block, not the uncompressed 8-bit BIP pixel block (#6563).
+        var lercDraw = IsLercDraw(request);
+        if (!lercDraw)
         {
-            return CreateSoapFault(
-                "SOAP GetImage currently supports unsigned 8-bit image services.",
-                StatusCodes.Status400BadRequest,
+            if (!string.Equals(raster.PixelType, "8BUI", StringComparison.OrdinalIgnoreCase))
+            {
+                return CreateSoapFault(
+                    "SOAP GetImage currently supports unsigned 8-bit image services.",
+                    StatusCodes.Status400BadRequest,
+                    requestContext.SoapNamespace);
+            }
+
+            if (request.Compression is not null
+                && !string.Equals(request.Compression, "None", StringComparison.OrdinalIgnoreCase))
+            {
+                return CreateSoapFault(
+                    "SOAP GetImage supports uncompressed Esri pixel blocks only.",
+                    StatusCodes.Status400BadRequest,
+                    requestContext.SoapNamespace);
+            }
+
+            var bandCount = ResolveGetImageBandCount(request.BandIds, raster.BandCount);
+            if (bandCount is not (1 or 3))
+            {
+                return CreateSoapFault(
+                    "SOAP GetImage currently supports one-band grayscale or three-band RGB pixel blocks; " +
+                    "multispectral bands require a raw-sample renderer that preserves a distinct NoData mask.",
+                    StatusCodes.Status501NotImplemented,
+                    requestContext.SoapNamespace);
+            }
+
+            request = CopyWithResponseFormat(request, "image", MapPixelType(raster.PixelType));
+            var uncompressed = await exportHandler.ExportImageAsync(
+                requestContext.HttpContext,
+                current.PublicationLayerIndex ?? current.LayerId,
+                request,
+                current.PublicationId!,
+                AuthorizationOperation.Export,
+                cancellationToken).ConfigureAwait(false);
+            if (uncompressed is Microsoft.AspNetCore.Http.HttpResults.FileContentHttpResult
+                { FileContents: var imageData })
+            {
+                if (!TryBuildEsriPixelBlock(imageData.Span, width, height, bandCount, out var pixelBlock))
+                {
+                    return CreateSoapFault(
+                        "The canonical raster renderer returned an invalid image payload.",
+                        StatusCodes.Status500InternalServerError,
+                        requestContext.SoapNamespace);
+                }
+
+                return CreateSoapResponse(
+                    requestContext.SoapNamespace,
+                    requestContext.OperationNamespace,
+                    "GetImageResponse",
+                    new XElement("Result", Convert.ToBase64String(pixelBlock)));
+            }
+
+            return CreateSoapFaultFromResult(
+                uncompressed,
+                "Image export failed.",
                 requestContext.SoapNamespace);
         }
 
-        if (request.Compression is not null
-            && !string.Equals(request.Compression, "None", StringComparison.OrdinalIgnoreCase))
-        {
-            return CreateSoapFault(
-                "SOAP GetImage supports uncompressed Esri pixel blocks only.",
-                StatusCodes.Status400BadRequest,
-                requestContext.SoapNamespace);
-        }
-
-        var bandCount = ResolveGetImageBandCount(request.BandIds, raster.BandCount);
-        if (bandCount is not (1 or 3))
-        {
-            return CreateSoapFault(
-                "SOAP GetImage currently supports one-band grayscale or three-band RGB pixel blocks; " +
-                "multispectral bands require a raw-sample renderer that preserves a distinct NoData mask.",
-                StatusCodes.Status501NotImplemented,
-                requestContext.SoapNamespace);
-        }
-
-        request = CopyWithResponseFormat(request, "image", MapPixelType(raster.PixelType));
+        request = CopyWithResponseFormat(request, "image", MapPixelType(raster.PixelType), "lerc");
         var exportResult = await exportHandler.ExportImageAsync(
             requestContext.HttpContext,
             current.PublicationLayerIndex ?? current.LayerId,
@@ -745,21 +782,13 @@ internal static partial class ImageServerSoapEndpoints
             AuthorizationOperation.Export,
             cancellationToken).ConfigureAwait(false);
         if (exportResult is Microsoft.AspNetCore.Http.HttpResults.FileContentHttpResult
-            { FileContents: var imageData })
+            { FileContents: var lercData })
         {
-            if (!TryBuildEsriPixelBlock(imageData.Span, width, height, bandCount, out var pixelBlock))
-            {
-                return CreateSoapFault(
-                    "The canonical raster renderer returned an invalid image payload.",
-                    StatusCodes.Status500InternalServerError,
-                    requestContext.SoapNamespace);
-            }
-
             return CreateSoapResponse(
                 requestContext.SoapNamespace,
                 requestContext.OperationNamespace,
                 "GetImageResponse",
-                new XElement("Result", Convert.ToBase64String(pixelBlock)));
+                new XElement("Result", Convert.ToBase64String(lercData.Span)));
         }
 
         return CreateSoapFaultFromResult(
@@ -847,12 +876,6 @@ internal static partial class ImageServerSoapEndpoints
         return outputBandCount > 0 && values.Length == outputBandCount && values.All(value => value == storedValue);
     }
 
-    /// <summary>
-    /// Converts the canonical encoded render into Esri GetImage binary layout: unsigned
-    /// 8-bit samples in band-interleaved-by-pixel order followed by a packed validity
-    /// mask. Mask bits are stored most-significant-bit first; one means valid and zero
-    /// means NoData, with no row padding.
-    /// </summary>
     private static bool TryBuildEsriPixelBlock(
         ReadOnlySpan<byte> encodedImage,
         int expectedWidth,
@@ -907,11 +930,6 @@ internal static partial class ImageServerSoapEndpoints
         return true;
     }
 
-    /// <summary>
-    /// Reads band ids from a direct <c>BandIDs</c>, <c>BandIds</c>, or <c>BandSelection</c>
-    /// child of <paramref name="description"/>. Nested integers under
-    /// <c>MosaicRule</c> (lock raster ids) are not band ids.
-    /// </summary>
     internal static string? ReadImageDescriptionBandIds(XElement description)
     {
         ArgumentNullException.ThrowIfNull(description);
@@ -940,7 +958,11 @@ internal static partial class ImageServerSoapEndpoints
         return serviceBandCount;
     }
 
-    private static bool TryCreateExportRequest(
+    internal static bool IsLercDraw(ExportImageRequest request)
+        => string.Equals(request.Format, "lerc", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(request.Compression, "LERC", StringComparison.OrdinalIgnoreCase);
+
+    internal static bool TryCreateExportRequest(
         XElement operation,
         out ExportImageRequest request,
         out int width,
@@ -1025,43 +1047,19 @@ internal static partial class ImageServerSoapEndpoints
         return true;
     }
 
-    private static ExportImageRequest CopyWithoutNoData(ExportImageRequest request)
-        => new()
-        {
-            Bbox = request.Bbox,
-            Size = request.Size,
-            ImageSr = request.ImageSr,
-            BboxSr = request.BboxSr,
-            Format = request.Format,
-            PixelType = request.PixelType,
-            Interpolation = request.Interpolation,
-            Compression = request.Compression,
-            CompressionQuality = request.CompressionQuality,
-            BandIds = request.BandIds,
-            MosaicRule = request.MosaicRule,
-            F = request.F
-        };
 
-    private static ExportImageRequest CopyWithResponseFormat(
+    internal static ExportImageRequest CopyWithResponseFormat(
         ExportImageRequest request,
         string responseFormat,
-        string? sourcePixelType = null)
-        => new()
+        string? sourcePixelType = null,
+        string? formatOverride = null)
+        => request with
         {
-            Bbox = request.Bbox,
-            Size = request.Size,
-            ImageSr = request.ImageSr,
-            BboxSr = request.BboxSr,
-            Format = request.Format,
+            Format = formatOverride ?? request.Format,
             PixelType = string.Equals(request.PixelType, sourcePixelType, StringComparison.OrdinalIgnoreCase)
                 ? null
                 : request.PixelType,
-            NoData = request.NoData,
-            Interpolation = request.Interpolation,
-            Compression = request.Compression,
-            CompressionQuality = request.CompressionQuality,
             BandIds = string.IsNullOrWhiteSpace(request.BandIds) ? null : request.BandIds,
-            MosaicRule = request.MosaicRule,
             F = responseFormat
         };
 
@@ -1270,13 +1268,6 @@ internal static partial class ImageServerSoapEndpoints
         return Encoding.UTF8.GetString(stream.ToArray());
     }
 
-    /// <summary>
-    /// SOAP catalog field names: the neutral catalog schema
-    /// (<see cref="ImageServerCatalogFields.Schema"/>) that REST metadata and query
-    /// also project, minus the caller's field masks, with the footprint <c>Shape</c>
-    /// geometry field after the OID, as Esri mosaic catalogs list it.
-    /// GetFields, AllowedFields and QueryRasterCatalog therefore describe one schema.
-    /// </summary>
     internal static IEnumerable<string> SoapCatalogFieldNames(ImmutableArray<string> maskedFields = default)
         => SoapCatalogFields(maskedFields).Select(static field => field.Name);
 
@@ -1441,7 +1432,13 @@ internal static partial class ImageServerSoapEndpoints
         => string.IsNullOrWhiteSpace(value) ? null : value;
 
     private static string? MapImageFormat(string? format)
-        => format switch
+    {
+        if (string.Equals(format, "esriImageLERC", StringComparison.OrdinalIgnoreCase))
+        {
+            return "lerc";
+        }
+
+        return format switch
         {
             null or "" or "esriImagePNG" or "esriImagePNG24" or "esriImagePNG32" => "png",
             "esriImageJPG" => "jpg",
@@ -1449,6 +1446,7 @@ internal static partial class ImageServerSoapEndpoints
             "esriImageBSQ" => "bsq",
             _ => null
         };
+    }
 
     private static string MapEsriImageFormat(string? format)
         => format switch
@@ -1456,6 +1454,7 @@ internal static partial class ImageServerSoapEndpoints
             "jpg" or "jpeg" => "esriImageJPG",
             "tif" or "tiff" => "esriImageTIFF",
             "bsq" => "esriImageBSQ",
+            "lerc" => "esriImageLERC",
             _ => "esriImagePNG"
         };
 

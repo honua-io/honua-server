@@ -16,7 +16,7 @@ namespace Honua.FileStorage;
 
 internal sealed class AwsS3FileStorage : CloudFileStorageBase
 {
-    /// <summary>S3 rejects one PutObject larger than 5 GiB. Multipart is required above that.</summary>
+    // S3 rejects one PutObject larger than 5 GiB, so those objects use multipart upload.
     internal const long S3SinglePutMaxBytes = 5L * 1024 * 1024 * 1024;
 
     private const int DefaultPartBytes = 16 * 1024 * 1024;
@@ -26,12 +26,21 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
     private readonly TimeSpan _signedUrlLifetime;
 
     private readonly AwsS3Options _options;
-    private readonly AmazonS3Client _client;
+    private readonly IAmazonS3 _client;
 
     public AwsS3FileStorage(
         IOptions<CloudStorageOptions> options,
         ILogger<AwsS3FileStorage> logger,
         IUploadProgressStore progressStore)
+        : this(options, logger, progressStore, client: null)
+    {
+    }
+
+    internal AwsS3FileStorage(
+        IOptions<CloudStorageOptions> options,
+        ILogger<AwsS3FileStorage> logger,
+        IUploadProgressStore progressStore,
+        IAmazonS3? client)
         : base(logger, progressStore)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -60,7 +69,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
             throw new InvalidOperationException("AWS S3 access key ID is required when secret access key is provided.");
         }
 
-        _client = CreateClient(_options);
+        _client = client ?? CreateClient(_options);
     }
 
     public override CloudStorageProvider Provider => CloudStorageProvider.AwsS3;
@@ -96,7 +105,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
         UploadCancellationTokens[uploadId] = linkedCancellationSource;
 
         var initialProgress = UploadProgress.CreateInitial(uploadId, request.FileName, totalBytes, request.ContentType);
-        await ProgressStore.SetProgressAsync(uploadId, initialProgress, TimeSpan.FromHours(1), cancellationToken);
+        await TrySetUploadProgressAsync(uploadId, initialProgress, TimeSpan.FromHours(1), cancellationToken);
         ReportProgressToCaller(request.Progress, uploadId, initialProgress);
         SerializedUploadProgressWriter? progressWriter = null;
 
@@ -236,7 +245,7 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
                 await progressWriter.CloseAndDrainAsync().ConfigureAwait(false);
             }
 
-            await ProgressStore.SetProgressAsync(uploadId, completedProgress, TimeSpan.FromHours(1), cancellationToken);
+            await TrySetUploadProgressAsync(uploadId, completedProgress, TimeSpan.FromHours(1), cancellationToken);
             ReportProgressToCaller(request.Progress, uploadId, completedProgress);
 
             stopwatch.Stop();
@@ -310,21 +319,38 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
         }
     }
 
-    public override async Task<Stream?> DownloadAsync(string fileId, CancellationToken cancellationToken = default)
+    public override Task<Stream?> DownloadAsync(string fileId, CancellationToken cancellationToken = default)
+        => DownloadCoreAsync(fileId, expectedETag: null, cancellationToken);
+
+    public override Task<Stream?> DownloadIfMatchAsync(string fileId, string expectedETag, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedETag);
+        return DownloadCoreAsync(fileId, expectedETag, cancellationToken);
+    }
+
+    private async Task<Stream?> DownloadCoreAsync(string fileId, string? expectedETag, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
 
         try
         {
-            var response = await _client.GetObjectAsync(_options.BucketName, fileId, cancellationToken);
+            var response = await _client.GetObjectAsync(new GetObjectRequest
+            {
+                BucketName = _options.BucketName,
+                Key = fileId,
+                EtagToMatch = expectedETag
+            }, cancellationToken);
             return new ResponseDisposingStream(response.ResponseStream, response);
+        }
+        catch (AmazonS3Exception ex) when (ex.StatusCode == HttpStatusCode.PreconditionFailed)
+        {
+            throw new CloudFileRevisionChangedException();
         }
         catch (AmazonS3Exception ex) when (IsNotFound(ex))
         {
             return null;
         }
     }
-
 
     public override async Task<bool> DeleteAsync(string fileId, CancellationToken cancellationToken = default)
     {
@@ -638,17 +664,9 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
         return new AmazonS3Client(config);
     }
 
-    /// <summary>
-    /// A single PUT is unsafe when the object is larger than 5 GiB or its length is not known.
-    /// Conditional cache writes stay on PutObject; those objects are small.
-    /// </summary>
     internal static bool RequiresMultipartUpload(bool conditional, long? knownLength)
         => !conditional && knownLength is null or > S3SinglePutMaxBytes;
 
-    /// <summary>
-    /// Part size that stays under S3's 10,000-part cap for <paramref name="knownLength"/>.
-    /// Unknown lengths use <see cref="DefaultPartBytes"/>, which covers the 50 GiB import default.
-    /// </summary>
     internal static int MultipartPartSize(long? knownLength)
     {
         long part = DefaultPartBytes;

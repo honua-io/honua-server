@@ -35,6 +35,9 @@ services:
       - FileStorage__AwsS3__SecretAccessKey=test
       - FileStorage__AwsS3__EnableServerSideEncryption=false
       - FileStorage__PMTilesPublish__KeyPrefix=pmtiles
+      # The lane uploads the archive itself (publish tags, no source binding).
+      # Operator-provisioned archives on this prefix are served when this is true.
+      - FileStorage__PMTilesPublish__AllowAnonymousUnboundArchives=true
       - Security__ConnectionEncryption__MasterKey=test-master-key-that-is-at-least-32-characters-long-for-security
       - Security__ConnectionEncryption__Salt=dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM=
     depends_on:
@@ -47,7 +50,7 @@ services:
     networks:
       - cng-network
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "-T", "5", "-O", "/dev/null", "http://localhost:8080/healthz/ready"]
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /healthz/ready HTTP/1.0\\r\\nHost: 127.0.0.1\\r\\nConnection: close\\r\\n\\r\\n' >&3 && IFS= read -r status <&3 && case \"$$status\" in *' 200 '*) exit 0 ;; *) exit 1 ;; esac"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -103,6 +106,6 @@ networks:
 
 secrets:
   github_actor:
-    file: ${HONUA_GITHUB_ACTOR_SECRET_FILE:-.empty-build-secret}
+    environment: HONUA_CNG_BUILD_ACTOR
   github_token:
-    file: ${HONUA_GITHUB_TOKEN_SECRET_FILE:-.empty-build-secret}
+    environment: HONUA_CNG_BUILD_TOKEN

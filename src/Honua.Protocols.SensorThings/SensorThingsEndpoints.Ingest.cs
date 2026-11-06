@@ -17,17 +17,8 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Protocols.SensorThings;
 
-/// <summary>
-/// OGC SensorThings API (STA v1.1) Phase 2 ingest surface (#1747): REST + bulk
-/// observation creation and Datastream creation. These map to the unified
-/// <c>sensor.ingest</c> and <c>datastream.create</c> operations so the console and
-/// AI toolset reach ingest identically. New observations are published to the
-/// real-time observation stream (Phase 3) through
-/// <see cref="IObservationChangeEventPublisher"/>.
-/// </summary>
 internal static partial class SensorThingsIngestEndpoints
 {
-    /// <summary>Maps the SensorThings Phase 2 ingest endpoints.</summary>
     public static IEndpointRouteBuilder MapSensorThingsIngestEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var allowAnonymousWrites = endpoints.ServiceProvider

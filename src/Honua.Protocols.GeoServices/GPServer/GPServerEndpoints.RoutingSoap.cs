@@ -8,13 +8,12 @@ using Honua.Protocols.GeoServices.GPServer.Models;
 using Honua.Protocols.GeoServices.NAServer;
 using Honua.Routing.Features.Routing.Abstractions;
 using Microsoft.AspNetCore.Http.HttpResults;
-using static Honua.Protocols.GeoServices.Soap.ArcGisSoapProtocol;
+using static Honua.Protocols.GeoServices.Soap.GeoServicesSoapProtocol;
 
 namespace Honua.Protocols.GeoServices.GPServer;
 
 internal static partial class GPServerEndpoints
 {
-    /// <summary>Projects the provider-level Routing service without changing catalog GP services.</summary>
     internal static async Task<IResult?> TryHandleRoutingSoapAsync(
         HttpContext context, XElement operation, XNamespace soap, CancellationToken ct)
     {

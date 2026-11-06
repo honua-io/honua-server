@@ -16,7 +16,7 @@ const allowedTools = /--allowedTools "([^"]+)"/.exec(source)?.[1] ?? '';
 
 test('the lane never runs from the pull request it reviews', () => {
   // A `pull_request` trigger would execute the candidate's own copy of this
-  // workflow, its prompt and its CLAUDE.md with secrets and `id-token: write`,
+  // workflow, its prompt and its AGENTS.md with secrets and `id-token: write`,
   // letting a PR attest to itself and exfiltrate the credentials. Only
   // default-branch-executed events are permitted.
   assert.match(source, /^on:\n(?:.*\n)*?\s{2}workflow_run:/m);

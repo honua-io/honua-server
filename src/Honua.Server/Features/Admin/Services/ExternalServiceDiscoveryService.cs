@@ -3,14 +3,13 @@
 
 using System.Net;
 using System.Net.Http.Json;
-using System.Net.Sockets;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Xml;
 using System.Xml.Linq;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Core.Features.Infrastructure.Internal;
+using Honua.Core.Features.Infrastructure.Validation;
 using Honua.Server.Features.Admin.Models;
 using Honua.Import;
 using Honua.Migration;
@@ -30,76 +29,18 @@ internal sealed partial class ExternalServiceDiscoveryService(
     private const int MaxCatalogServices = 250;
     private const int CatalogConcurrency = 6;
 
-    /// <summary>
-    /// Upper bound on a single JSON discovery response. The XML path is already bounded
-    /// (<see cref="CreateSecureXmlReaderSettings"/> caps the document at 2M characters); this is the
-    /// matching guard for JSON so a hostile or buggy external service cannot exhaust server memory
-    /// with a multi-GB body.
-    /// </summary>
+    private static readonly PinnedDnsFailureMessages PinnedConnectionFailures = new(
+        "External service host resolves to a private, loopback, or unresolvable network address, which is not allowed.",
+        "Unable to establish a connection to the external service host.");
+
+    // A JSON discovery body is size-capped so one response cannot exhaust server memory.
     internal const long MaxJsonResponseBytes = 8 * 1024 * 1024;
 
-    /// <summary>
-    /// Primary handler for the <see cref="HttpClientName"/> client. SSRF hardening for the admin
-    /// discovery surface: redirects are never followed (a remote 302 could point the request at a
-    /// private/loopback/cloud-metadata address — or downgrade to plain HTTP — after the pre-request
-    /// network guard has passed), and connections are pinned to a freshly resolved, guard-validated
-    /// address so DNS rebinding between the guard check and the connect cannot reach a disallowed
-    /// network address. Mirrors <c>ArcGisRestClient.CreatePinnedDnsHttpMessageHandler</c>.
-    /// </summary>
     internal static HttpMessageHandler CreatePinnedDnsHttpMessageHandler()
-        => new SocketsHttpHandler
-        {
-            AllowAutoRedirect = false,
-            ConnectCallback = static (context, cancellationToken) =>
-                ConnectWithValidatedAddressAsync(context, cancellationToken)
-        };
-
-    private static async ValueTask<Stream> ConnectWithValidatedAddressAsync(
-        SocketsHttpConnectionContext context,
-        CancellationToken cancellationToken)
-    {
-        var host = context.DnsEndPoint.Host;
-        IPAddress[] addresses = IPAddress.TryParse(host, out var literalAddress)
-            ? [literalAddress]
-            : await Dns.GetHostAddressesAsync(host, cancellationToken).ConfigureAwait(false);
-
-        // Re-run the network guard against the addresses this connection will actually use.
-        var hostUri = new UriBuilder(Uri.UriSchemeHttps, host).Uri;
-        var disallowed = await NetworkAddressValidator.IsDisallowedAddressAsync(
-                hostUri,
-                (_, _) => Task.FromResult(addresses),
-                cancellationToken)
-            .ConfigureAwait(false);
-        if (disallowed || addresses.Length == 0)
-        {
-            throw new HttpRequestException(
-                "External service host resolves to a private, loopback, or unresolvable network address, which is not allowed.");
-        }
-
-        Exception? lastException = null;
-        foreach (var address in addresses)
-        {
-            using var socketOwner = new SocketConnectionOwner(
-                new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp) { NoDelay = true });
-            try
-            {
-                await socketOwner.Socket
-                    .ConnectAsync(address, context.DnsEndPoint.Port, cancellationToken)
-                    .ConfigureAwait(false);
-                return socketOwner.TransferToNetworkStream();
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex) when (ex is SocketException or ObjectDisposedException)
-            {
-                lastException = ex;
-            }
-        }
-
-        throw new HttpRequestException("Unable to establish a connection to the external service host.", lastException);
-    }
+        => new PinnedDnsConnector(
+                static (host, cancellationToken) => Dns.GetHostAddressesAsync(host, cancellationToken),
+                PinnedConnectionFailures)
+            .CreateHandler(maxConnectionsPerServer: int.MaxValue);
 
     public async Task<ExternalServiceDiscoveryResponse> DiscoverAsync(
         ExternalServiceDiscoveryRequest request,
@@ -121,7 +62,7 @@ internal sealed partial class ExternalServiceDiscoveryService(
 
         if (serviceType is not null)
         {
-            return await DiscoverArcGisAsync(
+            return await DiscoverGeoServicesAsync(
                     sourceUrl,
                     normalizedUri,
                     serviceType,
@@ -131,9 +72,9 @@ internal sealed partial class ExternalServiceDiscoveryService(
                 .ConfigureAwait(false);
         }
 
-        if (TryGetArcGisCatalogRemainder(normalizedUri, out var catalogFolder))
+        if (TryGetGeoServicesCatalogRemainder(normalizedUri, out var catalogFolder))
         {
-            return await DiscoverArcGisCatalogAsync(
+            return await DiscoverGeoServicesCatalogAsync(
                     sourceUrl,
                     normalizedUri,
                     catalogFolder,
@@ -163,7 +104,7 @@ internal sealed partial class ExternalServiceDiscoveryService(
             .ConfigureAwait(false);
     }
 
-    private async Task<ExternalServiceDiscoveryResponse> DiscoverArcGisAsync(
+    private async Task<ExternalServiceDiscoveryResponse> DiscoverGeoServicesAsync(
         string sourceUrl,
         Uri serviceUri,
         string serviceType,
@@ -172,7 +113,7 @@ internal sealed partial class ExternalServiceDiscoveryService(
         CancellationToken cancellationToken)
     {
         var warnings = new List<string>();
-        var summary = await DiscoverArcGisServiceCoreAsync(
+        var summary = await DiscoverGeoServicesServiceCoreAsync(
                 serviceUri,
                 serviceType,
                 folderPath: null,
@@ -201,12 +142,7 @@ internal sealed partial class ExternalServiceDiscoveryService(
         };
     }
 
-    /// <summary>
-    /// Reads a single ArcGIS service document and its layers/tables into a service summary. Shared by
-    /// single-service discovery and catalog enumeration. In catalog mode feature counts are skipped to keep
-    /// the per-service cost low; the cheap counts the layer document already exposes are still surfaced.
-    /// </summary>
-    private async Task<ExternalServiceSummary> DiscoverArcGisServiceCoreAsync(
+    private async Task<ExternalServiceSummary> DiscoverGeoServicesServiceCoreAsync(
         Uri serviceUri,
         string serviceType,
         string? folderPath,
@@ -222,7 +158,7 @@ internal sealed partial class ExternalServiceDiscoveryService(
 
         var serviceDocument = await GetJsonAsync(
                 BuildServiceInfoUri(serviceUri),
-                ExternalServiceDiscoveryJsonContext.Default.ArcGisServiceDocument,
+                ExternalServiceDiscoveryJsonContext.Default.GeoServicesServiceDocument,
                 auth,
                 timeoutSeconds,
                 cancellationToken)
@@ -246,7 +182,7 @@ internal sealed partial class ExternalServiceDiscoveryService(
             {
                 var layer = await GetJsonAsync(
                         BuildLayerInfoUri(serviceUri, reference.Id),
-                        ExternalServiceDiscoveryJsonContext.Default.ArcGisLayerDocument,
+                        ExternalServiceDiscoveryJsonContext.Default.GeoServicesLayerDocument,
                         auth,
                         timeoutSeconds,
                         cancellationToken)
@@ -303,7 +239,7 @@ internal sealed partial class ExternalServiceDiscoveryService(
         };
     }
 
-    private async Task<ExternalServiceDiscoveryResponse> DiscoverArcGisCatalogAsync(
+    private async Task<ExternalServiceDiscoveryResponse> DiscoverGeoServicesCatalogAsync(
         string sourceUrl,
         Uri catalogUri,
         string? requestedFolder,
@@ -318,7 +254,7 @@ internal sealed partial class ExternalServiceDiscoveryService(
 
         var rootCatalog = await GetJsonAsync(
                 BuildServiceInfoUri(catalogUri),
-                ExternalServiceDiscoveryJsonContext.Default.ArcGisCatalogDocument,
+                ExternalServiceDiscoveryJsonContext.Default.GeoServicesCatalogDocument,
                 auth,
                 timeoutSeconds,
                 cancellationToken)
@@ -331,7 +267,7 @@ internal sealed partial class ExternalServiceDiscoveryService(
 
         // (folder, service) pairs to enumerate. The requested folder's services come from the root listing;
         // when at the catalog root we also walk each child folder.
-        var serviceTargets = new List<(string? Folder, ArcGisCatalogServiceDocument Service)>();
+        var serviceTargets = new List<(string? Folder, GeoServicesCatalogServiceDocument Service)>();
         foreach (var service in rootCatalog.Services ?? [])
         {
             serviceTargets.Add((requestedFolder, service));
@@ -351,7 +287,7 @@ internal sealed partial class ExternalServiceDiscoveryService(
                 {
                     var folderCatalog = await GetJsonAsync(
                             BuildServiceInfoUri(AppendPathSegment(servicesBaseUri, folder)),
-                            ExternalServiceDiscoveryJsonContext.Default.ArcGisCatalogDocument,
+                            ExternalServiceDiscoveryJsonContext.Default.GeoServicesCatalogDocument,
                             auth,
                             timeoutSeconds,
                             cancellationToken)
@@ -417,7 +353,7 @@ internal sealed partial class ExternalServiceDiscoveryService(
 
     private async Task<ExternalServiceSummary[]> EnumerateCatalogServicesAsync(
         Uri servicesBaseUri,
-        IReadOnlyList<(string? Folder, ArcGisCatalogServiceDocument Service)> targets,
+        IReadOnlyList<(string? Folder, GeoServicesCatalogServiceDocument Service)> targets,
         ResolvedAuth auth,
         int timeoutSeconds,
         List<string> warnings,
@@ -434,7 +370,7 @@ internal sealed partial class ExternalServiceDiscoveryService(
                 var serviceType = GetCatalogServiceType(target.Service.Type)!;
                 var serviceUri = BuildCatalogServiceUri(servicesBaseUri, target.Service.Name!, serviceType);
                 var serviceWarnings = new List<string>();
-                var summary = await DiscoverArcGisServiceCoreAsync(
+                var summary = await DiscoverGeoServicesServiceCoreAsync(
                         serviceUri,
                         serviceType,
                         target.Folder,
@@ -585,7 +521,7 @@ internal sealed partial class ExternalServiceDiscoveryService(
         {
             var count = await GetJsonAsync(
                     BuildLayerCountUri(serviceUri, layerId),
-                    ExternalServiceDiscoveryJsonContext.Default.ArcGisCountDocument,
+                    ExternalServiceDiscoveryJsonContext.Default.GeoServicesCountDocument,
                     auth,
                     timeoutSeconds,
                     cancellationToken)
@@ -604,7 +540,7 @@ internal sealed partial class ExternalServiceDiscoveryService(
         }
     }
 
-    private static IEnumerable<ArcGisLayerReferenceDocument> EnumerateLayerReferences(ArcGisServiceDocument serviceDocument)
+    private static IEnumerable<GeoServicesLayerReferenceDocument> EnumerateLayerReferences(GeoServicesServiceDocument serviceDocument)
     {
         foreach (var layer in serviceDocument.Layers ?? [])
         {
@@ -621,9 +557,9 @@ internal sealed partial class ExternalServiceDiscoveryService(
         Uri serviceUri,
         string sourceKind,
         string serviceName,
-        ArcGisSpatialReferenceDocument? serviceSpatialReference,
-        ArcGisLayerReferenceDocument reference,
-        ArcGisLayerDocument layer,
+        GeoServicesSpatialReferenceDocument? serviceSpatialReference,
+        GeoServicesLayerReferenceDocument reference,
+        GeoServicesLayerDocument layer,
         int? featureCount)
     {
         var extent = MapExtent(layer.Extent);
@@ -649,8 +585,8 @@ internal sealed partial class ExternalServiceDiscoveryService(
         Uri serviceUri,
         string sourceKind,
         string serviceName,
-        ArcGisSpatialReferenceDocument? serviceSpatialReference,
-        ArcGisLayerReferenceDocument reference)
+        GeoServicesSpatialReferenceDocument? serviceSpatialReference,
+        GeoServicesLayerReferenceDocument reference)
         => new()
         {
             SourceKind = sourceKind,
@@ -1108,7 +1044,7 @@ internal sealed partial class ExternalServiceDiscoveryService(
             : null;
     }
 
-    private static ExternalServiceExtent? MapExtent(ArcGisExtentDocument? extent)
+    private static ExternalServiceExtent? MapExtent(GeoServicesExtentDocument? extent)
         => extent is null
             ? null
             : new ExternalServiceExtent
@@ -1120,7 +1056,7 @@ internal sealed partial class ExternalServiceDiscoveryService(
                 Srid = GetSrid(extent.SpatialReference)
             };
 
-    private static ExternalServiceField[] MapFields(ArcGisFieldDocument[]? fields)
+    private static ExternalServiceField[] MapFields(GeoServicesFieldDocument[]? fields)
         => fields is null
             ? []
             : fields
@@ -1137,10 +1073,6 @@ internal sealed partial class ExternalServiceDiscoveryService(
 
     // ---- Authentication -------------------------------------------------------------------------------
 
-    /// <summary>
-    /// Resolved, transient authentication material applied to discovery requests: a token appended as a query
-    /// parameter (ArcGIS) and/or an Authorization header (Basic), plus an optional Referer.
-    /// </summary>
     private readonly record struct ResolvedAuth(string? Token, string? AuthorizationHeader, string? Referer)
     {
         public static ResolvedAuth None => default;
@@ -1183,7 +1115,7 @@ internal sealed partial class ExternalServiceDiscoveryService(
                 return new ResolvedAuth(null, $"Basic {encoded}", null);
 
             case "arcgis-token":
-                return await MintArcGisTokenAsync(serviceUri, credentials, timeoutSeconds, cancellationToken)
+                return await MintGeoServicesTokenAsync(serviceUri, credentials, timeoutSeconds, cancellationToken)
                     .ConfigureAwait(false);
 
             case "oauth":
@@ -1196,7 +1128,7 @@ internal sealed partial class ExternalServiceDiscoveryService(
         }
     }
 
-    private async Task<ResolvedAuth> MintArcGisTokenAsync(
+    private async Task<ResolvedAuth> MintGeoServicesTokenAsync(
         Uri serviceUri,
         ExternalServiceCredentials credentials,
         int timeoutSeconds,
@@ -1209,7 +1141,7 @@ internal sealed partial class ExternalServiceDiscoveryService(
         }
 
         var tokenSource = string.IsNullOrWhiteSpace(credentials.TokenUrl)
-            ? DeriveArcGisTokenUrl(serviceUri)
+            ? DeriveGeoServicesTokenUrl(serviceUri)
             : credentials.TokenUrl;
         var tokenUri = await NormalizeAndValidateAsync(tokenSource, cancellationToken).ConfigureAwait(false);
 
@@ -1233,7 +1165,7 @@ internal sealed partial class ExternalServiceDiscoveryService(
         var token = await PostFormAsync(
                 tokenUri,
                 form,
-                ExternalServiceDiscoveryJsonContext.Default.ArcGisTokenDocument,
+                ExternalServiceDiscoveryJsonContext.Default.GeoServicesTokenDocument,
                 timeoutSeconds,
                 cancellationToken)
             .ConfigureAwait(false);
@@ -1314,7 +1246,7 @@ internal sealed partial class ExternalServiceDiscoveryService(
             "Authentication token endpoint returned an empty response.");
     }
 
-    private static string DeriveArcGisTokenUrl(Uri serviceUri)
+    private static string DeriveGeoServicesTokenUrl(Uri serviceUri)
     {
         // ArcGIS Server co-locates a token endpoint at /{instance}/tokens/generateToken, where {instance} is the
         // first path segment (commonly "arcgis"). Callers can override via Credentials.TokenUrl for portal/AGOL.
@@ -1352,11 +1284,7 @@ internal sealed partial class ExternalServiceDiscoveryService(
 
     // ---- ArcGIS catalog enumeration -------------------------------------------------------------------
 
-    /// <summary>
-    /// Detects an ArcGIS catalog root (<c>.../rest/services</c>) or single folder (<c>.../rest/services/{folder}</c>)
-    /// and returns the folder name (null at the root). Returns false for specific service/layer URLs.
-    /// </summary>
-    private static bool TryGetArcGisCatalogRemainder(Uri uri, out string? folderPath)
+    private static bool TryGetGeoServicesCatalogRemainder(Uri uri, out string? folderPath)
     {
         folderPath = null;
         var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
@@ -1688,7 +1616,7 @@ internal sealed partial class ExternalServiceDiscoveryService(
         return true;
     }
 
-    private static int? GetSrid(ArcGisSpatialReferenceDocument? spatialReference)
+    private static int? GetSrid(GeoServicesSpatialReferenceDocument? spatialReference)
         => spatialReference?.LatestWkid ?? spatialReference?.Wkid;
 
     private static int ClampTimeout(int? timeoutSeconds)

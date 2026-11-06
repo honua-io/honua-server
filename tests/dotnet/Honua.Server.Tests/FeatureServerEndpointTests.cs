@@ -7,6 +7,8 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Infrastructure.Middleware;
+using Honua.Infrastructure.Security;
 using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
@@ -709,7 +711,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         serviceResponse.Should().NotBeNull();
 
         // Required GeoServices REST service properties.
-        // Honua does not advertise an ArcGIS Server version (see NoArcGisServerVersionTests).
+        // Honua does not advertise an ArcGIS Server version (see NoGeoServicesServerVersionTests).
         serviceResponse!.ServiceName.Should().NotBeNullOrEmpty();
         serviceResponse.ServiceDescription.Should().NotBeNullOrEmpty();
         serviceResponse.Layers.Should().NotBeNull();
@@ -746,7 +748,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         layerResponse.Should().NotBeNull();
 
         // Required GeoServices REST layer properties.
-        // Honua does not advertise an ArcGIS Server version (see NoArcGisServerVersionTests).
+        // Honua does not advertise an ArcGIS Server version (see NoGeoServicesServerVersionTests).
         layerResponse!.Id.Should().BeGreaterThanOrEqualTo(0);
         layerResponse.Name.Should().NotBeNullOrEmpty();
         layerResponse.Type.Should().Be("Feature Layer");
@@ -1605,7 +1607,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query?returnAllRecords=true")]
-    public async Task QueryFeatures_WithArcGisClientParameters_ReturnsOk()
+    public async Task QueryFeatures_WithGeoServicesClientParameters_ReturnsOk()
     {
         // ArcGIS Pro and the ArcGIS API for Python send these by default; they must
         // be accepted (and ignored where unsupported) rather than rejected (#1276).
@@ -3649,8 +3651,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         // error, carrying code 409 in the standard envelope.
         var idempotencyKey = Guid.NewGuid().ToString("n");
         var store = _fixture.Services.GetRequiredService<IApplyEditsIdempotencyStore>();
-        // Authenticate the fixture's actual request rather than reserve display-name
-        // guesses. API keys now identify edit owners by their stable api_key_id.
+        // Resolve the caller from the fixture's real credentials and tenant middleware, so the held
+        // reservation is the one the request below contends for.
         using var authenticationScope = _fixture.Services.CreateScope();
         var context = new DefaultHttpContext { RequestServices = authenticationScope.ServiceProvider };
         var requestBase = _fixture.Client.BaseAddress!;
@@ -3665,9 +3667,18 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
 
         var authentication = await context.AuthenticateAsync();
         authentication.Succeeded.Should().BeTrue("the fixture's edit client is authenticated");
-        var subject = EditOwnerSubject.Resolve(authentication.Principal);
-        subject.Should().NotBeNullOrWhiteSpace();
-        var heldScope = new ApplyEditsIdempotencyScope(TestServiceId, TestLayerId, subject!, idempotencyKey);
+        context.User = authentication.Principal!;
+        IdempotencyCaller? caller = null;
+        var tenantResolution = ActivatorUtilities.CreateInstance<TenantContextMiddleware>(
+            authenticationScope.ServiceProvider,
+            (RequestDelegate)(resolved =>
+            {
+                caller = IdempotencyCaller.Resolve(resolved);
+                return Task.CompletedTask;
+            }));
+        await tenantResolution.InvokeAsync(context);
+        caller.Should().NotBeNull("the tenant middleware admits the fixture's edit client");
+        var heldScope = new ApplyEditsIdempotencyScope(TestServiceId, TestLayerId, caller!, idempotencyKey);
         (await store.TryReserveAsync(heldScope)).Should().NotBeNull();
 
         var editsRequest = new ApplyEditsRequest

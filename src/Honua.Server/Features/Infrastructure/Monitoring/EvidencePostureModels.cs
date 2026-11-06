@@ -5,7 +5,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Infrastructure.Monitoring;
 
-/// <summary>Versioned, additive evidence-integrity contract shared by REST and MCP ops reads.</summary>
 public sealed class EvidencePosture
 {
     public const string CurrentSchemaVersion = "1.0";
@@ -20,7 +19,6 @@ public sealed class EvidencePosture
     public required IReadOnlyList<EvidenceSourceEnvelope> Sources { get; init; }
 }
 
-/// <summary>Bounded evidence about one implementation actually queried for an ops read.</summary>
 public sealed class EvidenceSourceEnvelope
 {
     [JsonPropertyName("sourceId")]
@@ -54,7 +52,6 @@ public sealed class EvidenceSourceEnvelope
     public DateTimeOffset? ValidUntil { get; init; }
 }
 
-/// <summary>Optional bounded coverage dimensions. Unknown values remain null.</summary>
 public sealed class EvidenceSourceCoverage
 {
     [JsonPropertyName("requestedFrom")]
@@ -94,7 +91,6 @@ public sealed class EvidenceSourceCoverage
     public IReadOnlyList<string>? ExpectedComponentIds { get; init; }
 }
 
-/// <summary>Closed wire vocabularies for evidence envelopes.</summary>
 public static class EvidencePostureVocabulary
 {
     public static class Completeness
@@ -158,12 +154,6 @@ internal static class EvidencePostureFactory
 {
     private static readonly TimeSpan ClockSkew = TimeSpan.FromMinutes(1);
 
-    /// <summary>
-    /// Reason codes that describe incomplete coverage of an otherwise successful collection. A source
-    /// carrying only these reasons still returned valid observations, so it degrades to
-    /// <c>partial</c> rather than <c>unavailable</c>. Any other reason code means the configured
-    /// backend produced no evidence that can be trusted at all.
-    /// </summary>
     private static readonly HashSet<string> CoverageReasonCodes = new(StringComparer.Ordinal)
     {
         EvidencePostureVocabulary.ReasonCodes.PartialResult,
@@ -190,10 +180,7 @@ internal static class EvidencePostureFactory
             ValidUntil = observedAt.ToUniversalTime().Add(maximumAge),
         };
 
-    /// <summary>
-    /// A configured backend that could not supply valid evidence. Missing timestamps stay missing;
-    /// they are never replaced with the response time.
-    /// </summary>
+    // Missing timestamps stay missing and are never replaced with the response time.
     public static EvidenceSourceEnvelope Unavailable(
         string sourceId,
         string backendKind,
@@ -215,7 +202,6 @@ internal static class EvidencePostureFactory
             MaximumAgeSeconds = maximumAge is { } age ? (long)age.TotalSeconds : null,
         };
 
-    /// <summary>A source that returned valid observations with known-incomplete coverage.</summary>
     public static EvidenceSourceEnvelope Partial(
         string sourceId,
         string backendKind,
@@ -237,10 +223,6 @@ internal static class EvidencePostureFactory
             ValidUntil = observedAt.ToUniversalTime().Add(maximumAge),
         };
 
-    /// <summary>
-    /// A source with no configured backend at all. Distinct from <see cref="Unavailable"/>: nothing
-    /// was queried, so there is neither an observation nor a collection-health signal to report.
-    /// </summary>
     public static EvidenceSourceEnvelope NotConfigured(string sourceId, string backendKind, string backendId) => new()
     {
         SourceId = sourceId,
@@ -250,10 +232,7 @@ internal static class EvidencePostureFactory
         ReasonCodes = [EvidencePostureVocabulary.ReasonCodes.NotConfigured],
     };
 
-    /// <summary>
-    /// Composes a top-level source over already-validated component sources. The aggregate never
-    /// claims more than its weakest component and publishes which component ids it actually covered.
-    /// </summary>
+    // The aggregate never claims more than its weakest component.
     public static EvidenceSourceEnvelope Aggregate(
         string sourceId,
         string backendId,
@@ -318,10 +297,7 @@ internal static class EvidencePostureFactory
         };
     }
 
-    /// <summary>
-    /// Summarizes the required sources without hiding any of them: the top-level status is the
-    /// weakest individual state, so a client that only reads the summary still fails closed.
-    /// </summary>
+    // The summary status is the weakest source, so a client that reads only the summary still fails closed.
     private static string SummarizeStatus(EvidenceSourceEnvelope[] sources)
     {
         if (sources.Length == 0)
@@ -429,13 +405,7 @@ internal static class EvidencePostureFactory
         };
     }
 
-    /// <summary>
-    /// Resolves the published completeness from the declared value and the accumulated reasons.
-    /// A not-configured source stays not-configured (a client must be able to tell "nothing was
-    /// wired" from "the configured backend failed"); coverage-only reasons degrade to
-    /// <c>partial</c> so valid partial data is not misreported as a total source failure; anything
-    /// else is <c>unavailable</c>.
-    /// </summary>
+    // A source that is not configured stays not-configured, distinct from a configured source that failed.
     private static string ResolveCompleteness(string declared, HashSet<string> reasons)
     {
         if (reasons.Count == 0)

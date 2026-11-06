@@ -16,11 +16,35 @@ using Honua.ControlPlane;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Honua.TestKit.Attributes;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
 public sealed class DeployWorkflowServiceTests
 {
+    [UnitTest]
+    public async Task ImmediateCheckpointedDeploy_PersistsPendingPhaseBeforeReconciliation()
+    {
+        var store = new TestWorkflowOperationStore();
+        var backend = Substitute.For<IDeployBackend, ICheckpointedDeployBackend>();
+        backend.BackendName.Returns("honua-gitops-kubernetes");
+        backend.TargetKind.Returns(DeployTargetKind.Kubernetes);
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(new DeployBackendCapabilities());
+        backend.PlanAsync(Arg.Any<DeployOperationSpec>(), Arg.Any<CancellationToken>())
+            .Returns(new DeployPlan { IsReadyToSubmit = true });
+        ((ICheckpointedDeployBackend)backend).RequiresCheckpoint(Arg.Any<WorkflowOperationRecord>()).Returns(true);
+        var service = CreateService(store, backend);
+
+        var operation = await service.CreateAsync("prod-api", "sha256:abc123", "sha256:old", "alice", "Deploy",
+            "checkpoint-immediate", "corr", OperationPriority.Normal, submitImmediately: true, parameterOverrides: null);
+
+        operation.Should().NotBeNull();
+        operation!.Status.Should().Be(WorkflowOperationStatus.Submitted);
+        operation.CurrentPhase.Should().Be(ICheckpointedDeployBackend.PendingPhase);
+        (await store.GetAsync(operation.OperationId))!.CurrentPhase.Should().Be(ICheckpointedDeployBackend.PendingPhase);
+        await backend.DidNotReceiveWithAnyArgs().StartAsync(default!, default);
+    }
+
     [Fact]
     public async Task CreateAsync_WithDuplicateIdempotencyKey_StartsBackendOnlyOnce()
     {
@@ -55,7 +79,9 @@ public sealed class DeployWorkflowServiceTests
             parameterOverrides: null);
 
         secondCreate.Should().NotBeNull();
-        secondCreate!.Status.Should().Be(WorkflowOperationStatus.Planned);
+        secondCreate!.Status.Should().Be(WorkflowOperationStatus.Submitted);
+        (await store.TryAcquireLeaseAsync(secondCreate.OperationId, "reconciler", TimeSpan.FromMinutes(1)))
+            .Should().BeFalse("reconciliation must wait until the backend submission completes");
 
         backend.AllowStart();
         var firstResult = await firstCreate;

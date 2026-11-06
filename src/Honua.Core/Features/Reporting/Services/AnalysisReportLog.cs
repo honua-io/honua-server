@@ -13,10 +13,9 @@ namespace Honua.Core.Features.Reporting.Services;
 internal static partial class AnalysisReportLog
 {
     [LoggerMessage(8230, LogLevel.Warning,
-        "Reporting narrative provider failed; falling back to deterministic text. TemplateId={TemplateId}, Exception={ExceptionType}, Message={Message}")]
+        "Reporting narrative provider failed; falling back to deterministic text. TemplateId={TemplateId}, Exception={ExceptionType}")]
     public static partial void NarrativeFallback(
         ILogger logger,
         string templateId,
-        string exceptionType,
-        string message);
+        string exceptionType);
 }

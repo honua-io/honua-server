@@ -6,18 +6,12 @@ using System.Text;
 
 namespace Honua.Core.Queries.Filters.Cql2;
 
-/// <summary>
-/// Lexical analyzer for CQL2-Text expressions
-/// </summary>
 public sealed class Cql2Lexer
 {
     private readonly string _input;
     private int _position;
     private readonly List<Cql2Token> _tokens = [];
 
-    /// <summary>
-    /// Keywords that are recognized as special tokens
-    /// </summary>
     private static readonly FrozenDictionary<string, Cql2TokenType> _keywords =
         new Dictionary<string, Cql2TokenType>(StringComparer.OrdinalIgnoreCase)
         {
@@ -86,17 +80,12 @@ public sealed class Cql2Lexer
             { "BBOX", Cql2TokenType.Bbox }
         }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
-    /// <inheritdoc/>
     public Cql2Lexer(string input)
     {
         _input = input ?? throw new ArgumentNullException(nameof(input));
         _position = 0;
     }
 
-    /// <summary>
-    /// Tokenizes the input CQL2-Text expression
-    /// </summary>
-    /// <returns>List of tokens</returns>
     public IReadOnlyList<Cql2Token> Tokenize()
     {
         _tokens.Clear();

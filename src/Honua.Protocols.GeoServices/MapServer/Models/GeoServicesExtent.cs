@@ -1,0 +1,35 @@
+// Copyright (c) Honua Geo Inc. All rights reserved.
+// Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
+
+using System.Text.Json.Serialization;
+using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Shared.Models;
+
+namespace Honua.Protocols.GeoServices.MapServer.Models;
+
+internal sealed class GeoServicesExtent
+{
+    [JsonPropertyName("xmin")]
+    public required double Xmin { get; init; }
+
+    [JsonPropertyName("ymin")]
+    public required double Ymin { get; init; }
+
+    [JsonPropertyName("xmax")]
+    public required double Xmax { get; init; }
+
+    [JsonPropertyName("ymax")]
+    public required double Ymax { get; init; }
+
+    [JsonPropertyName("spatialReference")]
+    public required SpatialReferenceJson SpatialReference { get; init; }
+
+    internal static GeoServicesExtent FromFeatureExtent(FeatureExtent extent) => new()
+    {
+        Xmin = extent.MinX,
+        Ymin = extent.MinY,
+        Xmax = extent.MaxX,
+        Ymax = extent.MaxY,
+        SpatialReference = SpatialReferenceJson.FromSpatialReference(extent.GetSpatialReference())
+    };
+}

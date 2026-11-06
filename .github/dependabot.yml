@@ -23,7 +23,11 @@ updates:
 
   # GitHub Actions
   - package-ecosystem: "github-actions"
-    directory: "/"
+    # "/" covers .github/workflows; the composite actions under .github/actions
+    # carry their own SHA pins and are only scanned when listed explicitly.
+    directories:
+      - "/"
+      - "/.github/actions/*"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -32,6 +36,10 @@ updates:
     labels:
       - "dependencies"
       - "github-actions"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
 
   # Docker (for Testcontainers base images if we add Dockerfile)
   - package-ecosystem: "docker"

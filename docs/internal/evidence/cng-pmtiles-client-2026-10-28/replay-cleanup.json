@@ -1,0 +1,12 @@
+{
+  "stopped": [
+    "871f684fc4eec2cec898089cb3a12df252f5d7c903702f05231f049fde0800be",
+    "94fb1908144df6eb9e069870a9f5415c528b05ae8281bfb140af8a6ec4ce202a",
+    "335aa49ebeb6164d5d772f761064f19bf771bcb3500830778037509a6cd60785",
+    "7f5f8772b102f9c268a764aa1e9f95337d3dc61ccee1980be7ae8a1cafde122c"
+  ],
+  "workerNeverStarted": true,
+  "onlyMutatedObject": "pmtiles/cng/honua.pmtiles",
+  "ncHdfObjectsRestored": false,
+  "oldStoreUrlsClaimedLive": false
+}

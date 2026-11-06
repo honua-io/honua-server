@@ -83,6 +83,65 @@ public sealed class CustomCodeBatchBoundaryTests
             request.Attempt == 2 && request.JobId == job.OperationId && request.TenantId == "tenant"), Arg.Any<CancellationToken>());
     }
 
+    [UnitTest]
+    public async Task Dispatch_InjectsAdmittedCorrelationAndTraceWithoutClobberingTraceId()
+    {
+        var client = new StubAwsBatchJobClient();
+        var issuer = Substitute.For<IScopedJobTokenIssuer>();
+        issuer.IssueAsync(Arg.Any<ScopedJobTokenRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new ScopedJobTokenIssuance("capability-1", DateTimeOffset.UtcNow.AddHours(1)));
+        var backend = new AwsBatchComputeBackend(client, Options.Create(new AwsBatchExecutionOptions()),
+            NullLogger<AwsBatchComputeBackend>.Instance, issuer);
+        const string traceId = "4bf92f3577b34da6a3ce929d0e0e4736";
+        var traceParent = "00-" + traceId + "-00f067aa0ba902b7-01";
+        var job = AwsBatchComputeBackendTests.CreateJob() with
+        {
+            Audit = new OperationAuditInfo
+            {
+                CustomCodeOwnerScope = new CustomCodeOwnerScope("owner", "tenant", [], [], []),
+                CorrelationId = "corr-admitted",
+                TraceParent = traceParent
+            }
+        };
+
+        var prepared = await backend.PrepareSubmissionAsync(job, CancellationToken.None);
+        Assert.NotNull(prepared);
+        Assert.Equal("corr-admitted", prepared![JobEventIdentity.CorrelationParameter]);
+        Assert.Equal(traceParent, prepared[JobEventIdentity.TraceParentParameter]);
+        Assert.Equal(traceId, prepared[JobEventIdentity.TraceIdParameter]);
+
+        var parameters = job.Spec.Parameters.Concat(prepared).ToDictionary(pair => pair.Key, pair => pair.Value);
+        var started = await backend.StartAsync(job with { Spec = job.Spec with { Parameters = parameters } });
+        Assert.Equal("capability-1", started.ResolvedParameters!["env.HONUA_JOB_TOKEN"]);
+        Assert.False(started.ResolvedParameters.ContainsKey(JobEventIdentity.CorrelationParameter));
+        Assert.Contains(client.LastSubmission!.EnvironmentOverrides, entry => entry.Name == JobEventIdentity.CorrelationEnvironmentName && entry.Value == "corr-admitted");
+        Assert.Contains(client.LastSubmission.EnvironmentOverrides, entry => entry.Name == JobEventIdentity.TraceParentEnvironmentName && entry.Value == traceParent);
+
+        var preserved = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        var preset = job with
+        {
+            Audit = new OperationAuditInfo
+            {
+                CustomCodeOwnerScope = job.Audit.CustomCodeOwnerScope,
+                CorrelationId = "password=hunter2",
+                TraceParent = traceParent
+            },
+            Spec = job.Spec with
+            {
+                Parameters = new Dictionary<string, string>(job.Spec.Parameters, StringComparer.Ordinal)
+                {
+                    [JobEventIdentity.TraceIdParameter] = preserved
+                }
+            }
+        };
+        var preparedPreset = await backend.PrepareSubmissionAsync(preset, CancellationToken.None);
+        Assert.NotNull(preparedPreset);
+        Assert.False(preparedPreset!.ContainsKey(JobEventIdentity.CorrelationParameter));
+        Assert.False(preparedPreset.ContainsKey(JobEventIdentity.TraceIdParameter));
+        Assert.Equal(traceParent, preparedPreset[JobEventIdentity.TraceParentParameter]);
+        Assert.Equal(preserved, preset.Spec.Parameters[JobEventIdentity.TraceIdParameter]);
+    }
+
     [UnitTheory]
     [InlineData("RUNNABLE", false)]
     [InlineData("STARTING", true)]

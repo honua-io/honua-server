@@ -9,9 +9,6 @@ using Honua.Core.Features.Infrastructure.Domain;
 
 namespace Honua.FileStorage;
 
-/// <summary>
-/// Azure Blob Storage implementation of <see cref="ICloudRangeReader"/> using native range requests.
-/// </summary>
 internal sealed class AzureBlobRangeReader : ICloudRangeReader
 {
     private readonly BlobServiceClient _serviceClient;
@@ -21,10 +18,8 @@ internal sealed class AzureBlobRangeReader : ICloudRangeReader
         _serviceClient = serviceClient ?? throw new ArgumentNullException(nameof(serviceClient));
     }
 
-    /// <inheritdoc />
     public CloudStorageProvider Provider => CloudStorageProvider.AzureBlob;
 
-    /// <inheritdoc />
     public Task<byte[]> ReadRangeAsync(
         string bucket,
         string key,
@@ -33,7 +28,6 @@ internal sealed class AzureBlobRangeReader : ICloudRangeReader
         CancellationToken cancellationToken = default)
         => ReadRangeCoreAsync(bucket, key, offset, length, expectedETag: null, cancellationToken);
 
-    /// <inheritdoc />
     public Task<byte[]> ReadRangeAsync(
         string bucket,
         string key,
@@ -57,15 +51,23 @@ internal sealed class AzureBlobRangeReader : ICloudRangeReader
         var blobClient = _serviceClient.GetBlobContainerClient(bucket).GetBlobClient(key);
         var range = new HttpRange(offset, length);
 
-        var response = await blobClient.DownloadStreamingAsync(
-            new BlobDownloadOptions
-            {
-                Range = range,
-                Conditions = string.IsNullOrWhiteSpace(expectedETag)
-                    ? null
-                    : new BlobRequestConditions { IfMatch = new ETag(expectedETag) },
-            },
-            cancellationToken).ConfigureAwait(false);
+        Azure.Response<BlobDownloadStreamingResult> response;
+        try
+        {
+            response = await blobClient.DownloadStreamingAsync(
+                new BlobDownloadOptions
+                {
+                    Range = range,
+                    Conditions = string.IsNullOrWhiteSpace(expectedETag)
+                        ? null
+                        : new BlobRequestConditions { IfMatch = new ETag(expectedETag) },
+                },
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (RequestFailedException ex) when (ex.Status == 412)
+        {
+            throw new CloudFileRevisionChangedException();
+        }
         using var download = response.Value;
 
         using var ms = new MemoryStream(length);
@@ -73,7 +75,6 @@ internal sealed class AzureBlobRangeReader : ICloudRangeReader
         return ms.ToArray();
     }
 
-    /// <inheritdoc />
     public async Task<Stream> ReadRangeStreamAsync(string bucket, string key, long offset, int length, CancellationToken cancellationToken = default)
     {
         var blobClient = _serviceClient.GetBlobContainerClient(bucket).GetBlobClient(key);
@@ -89,7 +90,6 @@ internal sealed class AzureBlobRangeReader : ICloudRangeReader
         return new BlobDownloadStream(response.Value);
     }
 
-    /// <inheritdoc />
     public async Task<long> GetObjectSizeAsync(string bucket, string key, CancellationToken cancellationToken = default)
     {
         var blobClient = _serviceClient.GetBlobContainerClient(bucket).GetBlobClient(key);
@@ -104,7 +104,6 @@ internal sealed class AzureBlobRangeReader : ICloudRangeReader
         }
     }
 
-    /// <inheritdoc />
     public async Task<CloudObjectMetadata> GetObjectMetadataAsync(
         string bucket,
         string key,

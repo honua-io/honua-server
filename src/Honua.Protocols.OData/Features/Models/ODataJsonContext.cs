@@ -5,9 +5,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Protocols.OData.Models;
 
-/// <summary>
-/// JSON serialization context for OData models with AOT support
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

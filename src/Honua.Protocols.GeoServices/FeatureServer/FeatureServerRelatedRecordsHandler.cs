@@ -18,9 +18,6 @@ using Honua.Infrastructure.Validation;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Handler for FeatureServer related records operations.
-/// </summary>
 internal sealed class FeatureServerRelatedRecordsHandler(
     FeatureServerRelatedRecordsDependencies dependencies,
     ILogger<FeatureServerRelatedRecordsHandler> logger,
@@ -34,9 +31,6 @@ internal sealed class FeatureServerRelatedRecordsHandler(
     private readonly IHttpContextAccessor _httpContextAccessor = dependencies.HttpContextAccessor;
     private readonly ILogger<FeatureServerRelatedRecordsHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
-    /// <summary>
-    /// Executes a query for related records with proper validation and formatting.
-    /// </summary>
     public async Task<IResult> HandleQueryRelatedRecordsAsync(
         string serviceId,
         int layerId,
@@ -199,7 +193,7 @@ internal sealed class FeatureServerRelatedRecordsHandler(
             SqlFragment? sqlFilter = null;
             if (!string.IsNullOrWhiteSpace(validatedParams.Where))
             {
-                var parseResult = _filterExpressionService.Parse(FilterLanguage.ArcGisSql, validatedParams.Where);
+                var parseResult = _filterExpressionService.Parse(FilterLanguage.GeoServicesSql, validatedParams.Where);
                 if (!parseResult.IsSuccess)
                 {
                     return StandardErrorHelpers.CreateBadRequest(httpContext,

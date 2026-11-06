@@ -37,6 +37,7 @@
     <PackageReference Include="AWSSDK.ECS" />
     <PackageReference Include="AWSSDK.ElasticLoadBalancingV2" />
     <PackageReference Include="AWSSDK.Lambda" />
+    <PackageReference Include="AWSSDK.RDS" />
     <PackageReference Include="AWSSDK.SecretsManager" />
     <PackageReference Include="AWSSDK.SimpleNotificationService" />
     <PackageReference Include="AWSSDK.SQS" />

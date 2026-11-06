@@ -272,6 +272,130 @@ public sealed class GrpcFeatureServiceTests
         _featureChangeEventPublisher.ReceivedCalls().Should().BeEmpty();
     }
 
+    // SEC-5: the publication's declared edit capabilities bound gRPC ApplyEdits the same way
+    // they bound FeatureServer applyEdits and OGC API Features, even for a caller whose
+    // per-operation write grant would otherwise allow the edit.
+    [UnitTheory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(4)]
+    [InlineData(7)]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_QueryOnlyPublication_RejectsEveryEditKindBeforeReadWriteOrOutbox(int editKinds)
+    {
+        UseDeclaredCapabilities("Query");
+
+        var act = async () => await _sut.ApplyEdits(
+            CreateApplyEditsRequest(editKinds),
+            CreateCallContext(CreateAuthenticatedUser("granted-role"), AllWriteGrants()));
+
+        var exception = await act.Should().ThrowAsync<RpcException>();
+        exception.Which.StatusCode.Should().Be(StatusCode.FailedPrecondition);
+        AssertNoReadWriteOrOutbox();
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_CreateOnlyPublication_RejectsDeleteAndAllowsCreate()
+    {
+        UseDeclaredCapabilities("Query", "Create");
+        _featureWriter
+            .ApplyEditsAsync(default, default, default)
+            .ReturnsForAnyArgs(Task.FromResult(FeatureEditResult.Success(createdCount: 1, updatedCount: 0, deletedCount: 0)));
+
+        var deleteAct = async () => await _sut.ApplyEdits(
+            CreateApplyEditsRequest(editKinds: 4),
+            CreateCallContext(CreateAuthenticatedUser("granted-role"), AllWriteGrants()));
+
+        var exception = await deleteAct.Should().ThrowAsync<RpcException>();
+        exception.Which.StatusCode.Should().Be(StatusCode.FailedPrecondition);
+        AssertNoReadWriteOrOutbox();
+
+        _ = await _sut.ApplyEdits(
+            CreateApplyEditsRequest(editKinds: 1),
+            CreateCallContext(CreateAuthenticatedUser("granted-role"), AllWriteGrants()));
+
+        _featureWriter.ReceivedCalls()
+            .Count(call => call.GetMethodInfo().Name == nameof(IFeatureWriter.ApplyEditsAsync))
+            .Should()
+            .Be(1);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_UnspecifiedCapabilities_KeepsLegacyEditBehavior()
+    {
+        _featureWriter
+            .ApplyEditsAsync(default, default, default)
+            .ReturnsForAnyArgs(Task.FromResult(FeatureEditResult.Success(createdCount: 1, updatedCount: 1, deletedCount: 1)));
+
+        _ = await _sut.ApplyEdits(
+            CreateApplyEditsRequest(editKinds: 7),
+            CreateCallContext(CreateAuthenticatedUser("granted-role"), AllWriteGrants()));
+
+        _featureWriter.ReceivedCalls()
+            .Count(call => call.GetMethodInfo().Name == nameof(IFeatureWriter.ApplyEditsAsync))
+            .Should()
+            .Be(1);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    [Operation(Operations.ApplyEdits)]
+    public async Task ApplyEdits_MoreFeaturesThanMaxFeaturesPerEdit_IsRejectedBeforeReadOrWrite()
+    {
+        var limits = new LimitsOptions();
+        limits.Edits.MaxFeaturesPerEdit = 1;
+        var sut = new HonuaFeatureService(
+            _resourceValidator, _featureReader, _featureWriter, _streamingStore,
+            new CommonQueryValidator(Options.Create(new LimitsOptions())),
+            new SpatialReferenceResolver(_crsDetectionService, _crsRegistry),
+            new FeatureMutationEventService(_featureChangeEventPublisher, outboxCapabilityProvider: _outboxCapabilityProvider),
+            Options.Create(limits),
+            Options.Create(new GrpcOptions()),
+            NullLogger<HonuaFeatureService>.Instance,
+            new GrpcApplyEditsIdempotencyStore());
+        var request = CreateApplyEditsRequest(editKinds: 4);
+        request.Deletes.Add(3);
+
+        var act = async () => await sut.ApplyEdits(request, CreateCallContext());
+
+        var exception = await act.Should().ThrowAsync<RpcException>();
+        exception.Which.StatusCode.Should().Be(StatusCode.InvalidArgument);
+        AssertNoReadWriteOrOutbox();
+    }
+
+    private void UseDeclaredCapabilities(params string[] capabilities)
+    {
+        var triple = CreateTriple(_testService, _testResource);
+        _resourceValidator
+            .ValidateServiceLayerV2Async("test", 0, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success(triple with
+            {
+                Publication = triple.Publication with { Capabilities = capabilities }
+            }));
+    }
+
+    private static PermissionGrant[] AllWriteGrants()
+        => new[] { "insert", "update", "delete" }
+            .Select(operation => new PermissionGrant { Service = "test", Layer = "*", Operation = operation })
+            .ToArray();
+
+    private void AssertNoReadWriteOrOutbox()
+    {
+        _featureReader.ReceivedCalls()
+            .Should()
+            .NotContain(call => call.GetMethodInfo().Name == nameof(IFeatureReader.GetAsync));
+        _featureWriter.ReceivedCalls()
+            .Should()
+            .NotContain(call => call.GetMethodInfo().Name == nameof(IFeatureWriter.ApplyEditsAsync));
+        _outboxCapabilityProvider.ReceivedCalls().Should().BeEmpty();
+        _featureChangeEventPublisher.ReceivedCalls().Should().BeEmpty();
+    }
+
     [Theory]
     [InlineData("write:test/test", true)]
     [InlineData("write:test/other-layer", false)]

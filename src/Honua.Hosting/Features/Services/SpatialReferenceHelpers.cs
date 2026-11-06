@@ -8,10 +8,6 @@ using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Infrastructure.Services;
 
-/// <summary>
-/// Shared utilities for parsing spatial reference system identifiers.
-/// Handles EPSG codes, OGC URIs, and bare SRID numbers across all protocol features.
-/// </summary>
 internal static class SpatialReferenceHelpers
 {
     public const string Crs84Uri = "http://www.opengis.net/def/crs/OGC/1.3/CRS84";
@@ -35,20 +31,11 @@ internal static class SpatialReferenceHelpers
         @"^urn:ogc:def:crs:OGC:(?:1\.3:|:)?CRS84$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
-    /// <summary>
-    /// Parses a CRS string into an SRID integer.
-    /// Supports EPSG:XXXX, OGC URI format, safe CURIE format, CRS84, and bare SRID numbers.
-    /// </summary>
-    /// <param name="crs">The CRS string to parse (e.g., "EPSG:4326", "http://www.opengis.net/def/crs/EPSG/0/4326", "4326")</param>
-    /// <returns>The SRID if successfully parsed, null otherwise</returns>
     public static int? TryParseSrid(string? crs)
         => TryParseCrsDefinition(crs, out var definition)
             ? definition.Srid
             : null;
 
-    /// <summary>
-    /// Parses a CRS string into a canonical definition with axis-order metadata.
-    /// </summary>
     public static bool TryParseCrsDefinition(string? crs, out CrsDefinition definition)
     {
         definition = default;
@@ -85,13 +72,6 @@ internal static class SpatialReferenceHelpers
         return false;
     }
 
-    /// <summary>
-    /// Parses the Esri JSON spatial-reference form (<c>{"wkid":N}</c> /
-    /// <c>{"latestWkid":N}</c>) that ArcGIS SDK clients send for parameters such
-    /// as <c>bboxSR</c>/<c>imageSR</c>. Only the WKID-bearing form is resolved
-    /// synchronously here; <c>wkt</c>-only payloads require CRS detection and are
-    /// handled by the async resolver path.
-    /// </summary>
     private static bool TryParseEsriSpatialReferenceJson(string value, out int srid)
     {
         srid = 0;

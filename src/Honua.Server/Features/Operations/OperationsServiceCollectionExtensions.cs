@@ -8,19 +8,16 @@ using Honua.Core.Features.Operations.Services;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Hosting;
+using Honua.Infrastructure.Security.Admission;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
 namespace Honua.Server.Features.Operations;
 
-/// <summary>
-/// Registers the Honua Operations Toolset: the grounding catalog (descriptor providers +
-/// aggregator), the executors, the policy decision point seam, and the dispatcher.
-/// </summary>
 internal static class OperationsServiceCollectionExtensions
 {
     public static IServiceCollection AddOperationsToolset(
@@ -31,6 +28,7 @@ internal static class OperationsServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(environment);
+        services.AddAiExecutionAdmission(configuration);
 
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<OperationLineageAttestationStore>();
@@ -119,7 +117,7 @@ internal static class OperationsServiceCollectionExtensions
         services.TryAddSingleton<IOperationEnvelopeFactory>(sp =>
             new ScopedOperationEnvelopeFactory(
                 sp.GetRequiredService<IServiceScopeFactory>(),
-                environment.IsDevelopment() || environment.IsEnvironment("Test")));
+                environment.IsEnvironment("Test")));
 
         // Grounding catalog: descriptor providers aggregated by the catalog.
         services.TryAddEnumerable(
@@ -128,6 +126,17 @@ internal static class OperationsServiceCollectionExtensions
             new OperationCatalog(
                 sp.GetServices<IOperationDescriptorProvider>(),
                 sp.GetRequiredService<TimeProvider>()));
+
+        if (!services.Any(descriptor => descriptor.ServiceType == typeof(AiAdmissionControlRegistrationMarker)))
+        {
+            services.AddSingleton<AiAdmissionControlRegistrationMarker>();
+            services.TryAddSingleton<IHttpContextAccessor, HttpContextAccessor>();
+            foreach (var controlId in AiAdmissionControlOperation.Actions.Keys)
+            {
+                services.AddDeferredOperationExecutor(controlId, provider => new AiAdmissionControlExecutor(controlId, provider));
+                services.AddSingleton<IOperationApprovalRequestMapper>(new AiAdmissionControlApprovalMapper(controlId));
+            }
+        }
 
         services.TryAddDeferredOperationExecutor<StylePresetExecutor>(StylePresetOperation.OperationId);
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IOperationApprovalRequestMapper, StylePresetApprovalMapper>());
@@ -281,7 +290,7 @@ internal static class OperationsServiceCollectionExtensions
                 sp.GetRequiredService<TimeProvider>(),
                 sp.GetService<IOperationApprovalBridge>(),
                 ComposeDispatcherInstanceStore(sp.GetRequiredService<IOperationInstanceStore>()),
-                environment.IsDevelopment() || environment.IsEnvironment("Test")
+                environment.IsEnvironment("Test")
                     ? new VolatileOperationAuditLog()
                     : sp.GetRequiredService<Honua.Core.Features.AuditLog.Abstractions.IAuditLog>(),
                 !Honua.Core.Features.ControlPlane.UnavailableOperationProposalStore.IsDurable(
@@ -292,28 +301,20 @@ internal static class OperationsServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Operations a Redis-off host may execute directly, without the durable operation-instance
-    /// store, when the policy decision is Allow. Owner decision 3 (topology) and decision 20
-    /// (2026-10-10): a Redis-off cell is a serving + configure + style/render topology, so the
-    /// configure step (<c>service.publish</c>) and the style step (<c>style.apply-preset</c>, the
-    /// operation behind <c>honua_apply_style_preset</c>) involve no governed proposal when the
-    /// policy allows them and must not be refused for a missing Redis. Rendering is a read and
-    /// never enters the operation runtime. Governed / proposal-based paths (RequireApproval
-    /// decisions, Studio drafts and publication requests, geoprocessing, the
-    /// <c>honua_admin_*</c> catalogs) are not listed and keep the typed capability-unavailable
-    /// refusal.
-    /// </summary>
+    // A Redis-off host may run the listed configure and style operations, and governed paths stay refused.
     internal static readonly IReadOnlyList<string> RedisOffDirectOperationIds =
     [
         ServicePublishOperation.OperationId,
         StylePresetOperation.OperationId,
+        // Only direct policy-allowed controls use a transient generic envelope here.
+        // Their actual ledger mutation and replay/audit receipt remain atomic and durable.
+        // RequireApproval still needs the existing durable proposal infrastructure.
+        "admin.ai.admission.initialize",
+        "admin.ai.admission.policy-update",
+        "admin.ai.admission.stop",
+        "admin.ai.admission.resume",
     ];
 
-    /// <summary>
-    /// Wraps the fail-closed Redis-off instance store in a dispatcher-scoped non-durable store for
-    /// <see cref="RedisOffDirectOperationIds"/>; every other store is used as composed.
-    /// </summary>
     internal static IOperationInstanceStore ComposeDispatcherInstanceStore(IOperationInstanceStore store)
         => store is UnavailableOperationInstanceStore
             ? new NonDurableDirectOperationInstanceStore(store, RedisOffDirectOperationIds)
@@ -325,11 +326,8 @@ internal static class OperationsServiceCollectionExtensions
         => services.AddDeferredOperationExecutor(LegacyOperationIds.For(operationClass), sp =>
             new LegacyGatewayOperationAdapter(sp, operationClass));
 
-    /// <summary>
-    /// Registration sentinel proving the legacy gateway adapters were already added, so
-    /// repeated <see cref="AddOperationsToolset"/> calls stay idempotent without
-    /// <c>TryAddEnumerable</c> (which cannot hold factory descriptors).
-    /// </summary>
+    internal sealed class AiAdmissionControlRegistrationMarker;
+
     internal sealed class LegacyAdapterRegistrationMarker;
 
     internal sealed class AdminConnectImportRegistrationMarker;

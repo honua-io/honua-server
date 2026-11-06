@@ -9,12 +9,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Startup;
 
-/// <summary>
-/// Registers control-plane deploy backends (Kubernetes/AWS/Azure GitOps + revision adapters)
-/// and batch-compute backends (Azure Batch, AWS Batch, Local, Kubernetes Job). The relative
-/// order between deploy backends is preserved because consumers iterate <c>IEnumerable&lt;IDeployBackend&gt;</c>
-/// and pick the first match by name; the same applies to <c>IBatchComputeBackend</c>.
-/// </summary>
 internal static class BatchAndDeployBackendsRegistration
 {
     public static IServiceCollection AddHonuaBatchAndDeployBackends(this IServiceCollection services)
@@ -24,6 +18,9 @@ internal static class BatchAndDeployBackendsRegistration
         services.AddSingleton<IAwsLambdaAliasClient, AwsSdkLambdaAliasClient>();
         services.AddSingleton<IAwsAlbClient, AwsSdkAlbClient>();
         services.AddSingleton<IAwsEcsClient, AwsSdkEcsClient>();
+        services.AddSingleton<IEcsWorkloadControl, AwsSdkEcsWorkloadControl>();
+        services.AddSingleton<ILambdaAliasRecycle, AwsSdkLambdaAliasRecycle>();
+        services.AddSingleton<Honua.ControlPlane.Executors.IGovernedWorkloadExecutor, Honua.ControlPlane.Executors.AwsGovernedWorkloadExecutor>();
 #endif
 #if !HONUA_EXCLUDE_AZURE
         services.AddSingleton<IAzureFunctionsSlotClient, AzureManagementFunctionsSlotClient>();
@@ -100,6 +97,14 @@ internal static class BatchAndDeployBackendsRegistration
         // runtime by ControlPlane:SelfHosted:Enabled rather than a compile-time HONUA_EXCLUDE_* switch.
         services.AddSingleton<YarpRollingDeployBackend>();
         services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<YarpRollingDeployBackend>());
+
+        // Installed Compose project (honua-server#6811). Registered unconditionally and gated at
+        // runtime by the executor socket. The server process does not receive the Docker socket.
+        services.AddOptions<ComposeExecutorOptions>()
+            .BindConfiguration(ComposeExecutorOptions.SectionName);
+        services.AddSingleton<IComposeExecutorClient, ComposeSocketClient>();
+        services.AddSingleton<ComposeDeployBackend>();
+        services.AddSingleton<IDeployBackend>(sp => sp.GetRequiredService<ComposeDeployBackend>());
 
         // Batch backends. Local fallback is registered first so it sits earlier in the enumerable.
         services.AddSingleton<LocalBatchComputeBackend>();

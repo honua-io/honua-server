@@ -10,27 +10,6 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Optional JWT access-token format for the OAuth2 surface (ADR-0068, #1890).
-/// </summary>
-/// <remarks>
-/// <para>
-/// Honua's baseline (ADR-0049/0053) is a single opaque, cache-backed token with
-/// cache-eviction revocation and one request-path validator. This service is the
-/// strictly opt-in JWT alternative: it mints an HMAC-SHA256-signed JWT carrying the
-/// principal, roles, binding and a <c>jti</c>, and <em>also</em> records that
-/// <c>jti</c> in the shared portal-token cache via <see cref="IPortalTokenIssuer"/>.
-/// </para>
-/// <para>
-/// Recording the <c>jti</c> in the same cache keeps the two ADR-0053 §4 invariants
-/// that JWT would otherwise reopen: (1) revocation stays synchronous — evicting the
-/// cache entry stops the token, exactly as for opaque tokens — and (2) the request
-/// path still has a single validator (<c>PortalTokenAuthenticationHandler</c> over
-/// the cache), so a JWT validates on <c>/rest/services/*</c> with no second
-/// validation path. The JWT's signature gives operators stateless validation at the
-/// introspection endpoint without the request path forking.
-/// </para>
-/// </remarks>
 internal sealed class PortalJwtAccessTokenService(
     IPortalTokenIssuer tokenIssuer,
     IOptions<PortalTokenAuthenticationOptions> tokenOptions)
@@ -40,15 +19,8 @@ internal sealed class PortalJwtAccessTokenService(
     private readonly IPortalTokenIssuer _tokenIssuer = tokenIssuer;
     private readonly PortalTokenAuthenticationOptions _tokenOptions = tokenOptions.Value;
 
-    /// <summary>Whether minting JWT access tokens is enabled and correctly configured.</summary>
     public bool JwtEnabled => _tokenOptions.OAuth2.Jwt.EnableJwtAccessTokens && HasUsableKey(_tokenOptions.OAuth2.Jwt);
 
-    /// <summary>
-    /// Mints a JWT access token for the supplied principal. The opaque reference the
-    /// JWT's <c>jti</c> points at is recorded through <see cref="IPortalTokenIssuer"/>
-    /// so cache-eviction revocation and the single request-path validator are
-    /// preserved. Returns the signed compact JWT and its expiry.
-    /// </summary>
     public async Task<PortalTokenIssuance> IssueAsync(
         PortalTokenIssueRequest request,
         CancellationToken cancellationToken)
@@ -115,12 +87,6 @@ internal sealed class PortalJwtAccessTokenService(
         return handler.CreateToken(descriptor);
     }
 
-    /// <summary>
-    /// Validates a JWT's signature and lifetime offline (stateless). Returns the
-    /// embedded <c>jti</c> (the opaque cache reference) when the signature, issuer,
-    /// audience and lifetime check out, otherwise <see langword="null"/>. The caller
-    /// then confirms the <c>jti</c> is still present (not revoked) in the cache.
-    /// </summary>
     public async Task<string?> TryReadReferenceAsync(string token)
     {
         if (string.IsNullOrWhiteSpace(token))
@@ -174,11 +140,7 @@ internal sealed class PortalJwtAccessTokenService(
     }
 }
 
-/// <summary>
-/// Minimal <c>env:</c>-indirection secret resolver mirroring the OIDC secret
-/// handling: a value of the form <c>env:NAME</c> resolves to the environment
-/// variable <c>NAME</c>; any other value is used verbatim.
-/// </summary>
+// A value prefixed with env: is read from that environment variable; any other value is the secret itself.
 internal static class SecretResolver
 {
     private const string EnvPrefix = "env:";

@@ -16,20 +16,11 @@ using Honua.Protocols.GeoServices.FeatureServer.Models;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
-/// <summary>
-/// Executes FeatureServer queries and handles streaming responses.
-/// </summary>
 internal sealed partial class FeatureServerQueryExecutor
 {
     private const int FlushInterval = 64;
 
-    /// <summary>
-    /// Hard ceiling on the object ids a <c>returnIdsOnly</c> query returns from a provider reader that
-    /// cannot stream (federated ArcGIS REST and other <see cref="IFeatureReader"/>-only providers).
-    /// Those readers buffer the whole id list, and a federated reader pays one upstream round trip per
-    /// page, so an anonymous ids-only request is bounded here and reports <c>exceededTransferLimit</c>
-    /// when more ids match (#6113).
-    /// </summary>
+    // A provider that cannot stream buffers the whole id list, so returnIdsOnly is capped and reports exceededTransferLimit when more ids match.
     internal const int MaxNonStreamingObjectIds = 100_000;
 
     private readonly IFeatureReader _featureReader;
@@ -81,10 +72,7 @@ internal sealed partial class FeatureServerQueryExecutor
         CancellationToken cancellationToken)
         => await QueryWithValidationAsync(_featureReader, layerId, query, cancellationToken).ConfigureAwait(false);
 
-    /// <summary>
-    /// Id-only read. <c>returnIdsOnly</c> must not materialize geometry or attributes
-    /// (#5615 SRV-GS-001). Callers format the returned object ids directly.
-    /// </summary>
+    // returnIdsOnly reads object ids only and must not materialize geometry or attributes.
     public async Task<ImmutableArray<long>> QueryObjectIdsWithValidationAsync(
         int layerId,
         FeatureQuery query,
@@ -278,8 +266,10 @@ internal sealed partial class FeatureServerQueryExecutor
 
             writer.WritePropertyName(property.Name);
 
-            // Canonical Boolean storage must match the advertised SmallInteger wire type.
-            if (property.Value.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            // Match the materialized path: booleans are small integers, while JSON
+            // arrays and objects are strings as required by the advertised field type.
+            if (property.Value.ValueKind is JsonValueKind.True or JsonValueKind.False
+                or JsonValueKind.Array or JsonValueKind.Object)
             {
                 JsonSerializer.Serialize(writer, GeoServicesAttributeProjection.ToEsriValue(property.Value),
                     FeatureServerJsonContext.Default.Object);
@@ -570,10 +560,4 @@ internal sealed partial class FeatureServerQueryExecutor
         => hasMoreResults ? itemCount + 1L : itemCount;
 }
 
-/// <summary>
-/// Object ids read from a non-streaming provider reader under
-/// <see cref="FeatureServerQueryExecutor.MaxNonStreamingObjectIds"/>.
-/// </summary>
-/// <param name="ObjectIds">The object ids, at most the ceiling.</param>
-/// <param name="ExceededTransferLimit">Whether more ids matched than were returned.</param>
 internal readonly record struct BoundedObjectIds(ImmutableArray<long> ObjectIds, bool ExceededTransferLimit);

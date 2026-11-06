@@ -18,9 +18,6 @@ using AlbAction = Amazon.ElasticLoadBalancingV2.Model.Action;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Weight entry for one ALB target group within a listener-rule forward action.
-/// </summary>
 internal sealed record AwsAlbTargetGroupWeight
 {
     public required string TargetGroupArn { get; init; }
@@ -28,9 +25,6 @@ internal sealed record AwsAlbTargetGroupWeight
     public int Weight { get; init; }
 }
 
-/// <summary>
-/// Read-only snapshot of an ALB listener rule's weighted forward action.
-/// </summary>
 internal sealed record AwsAlbListenerRuleState
 {
     public required string ListenerRuleArn { get; init; }
@@ -39,13 +33,6 @@ internal sealed record AwsAlbListenerRuleState
         Array.Empty<AwsAlbTargetGroupWeight>();
 }
 
-/// <summary>
-/// Aggregated view of the listener-rule weights the deploy controller actually
-/// owns. The deploy controller writes pairs that always sum to 100 with no
-/// stray target groups; <see cref="MatchesExpectedShare"/> validates an
-/// observation against that contract before treating it as a stable rollout
-/// endpoint.
-/// </summary>
 internal sealed record AwsAlbWeightSummary
 {
     public int CanaryShare { get; init; }
@@ -64,11 +51,6 @@ internal sealed record AwsAlbWeightSummary
             && StableShare == 100 - expectedCanaryShare;
 }
 
-/// <summary>
-/// Outcome of an ECS deployment-level convergence check. The reason field is
-/// surfaced into the operator-facing observation message so an operation that
-/// is not yet ready can be inspected without parsing structured logs.
-/// </summary>
 internal sealed record AwsEcsDeploymentConvergence
 {
     public bool IsConverged { get; init; }
@@ -78,14 +60,6 @@ internal sealed record AwsEcsDeploymentConvergence
     public string? PrimaryTaskDefinitionArn { get; init; }
 }
 
-/// <summary>
-/// Read-only snapshot of an ECS service used to confirm canary convergence.
-/// Top-level counts are aggregates across all deployments; the
-/// <see cref="Deployments"/> collection carries per-deployment status so the
-/// reconciler can require the PRIMARY deployment for the requested task
-/// definition to be at steady state with no ACTIVE old deployments still
-/// serving tasks.
-/// </summary>
 internal sealed record AwsEcsServiceState
 {
     public required string ServiceName { get; init; }
@@ -104,27 +78,15 @@ internal sealed record AwsEcsServiceState
         Array.Empty<AwsEcsDeploymentState>();
 }
 
-/// <summary>
-/// Per-deployment ECS state. ECS exposes one PRIMARY deployment plus zero or
-/// more ACTIVE deployments that still hold running tasks while a rollout is
-/// settling. The reconciler needs that visibility because aggregate service
-/// counts can satisfy <c>RunningCount &gt;= DesiredCount</c> while an old
-/// ACTIVE deployment is still serving traffic on the previous task definition.
-/// </summary>
+// Aggregate running counts can look healthy while an old ACTIVE deployment is still serving the previous task definition.
 internal sealed record AwsEcsDeploymentState
 {
     public string? DeploymentId { get; init; }
 
-    /// <summary>PRIMARY, ACTIVE, or INACTIVE.</summary>
     public string? Status { get; init; }
 
     public string? TaskDefinitionArn { get; init; }
 
-    /// <summary>
-    /// IN_PROGRESS, COMPLETED, FAILED, or null when ECS does not return a
-    /// deployment-level rollout state (services not using the rolling-update
-    /// deployment type or services behind a Classic Load Balancer).
-    /// </summary>
     public string? RolloutState { get; init; }
 
     public string? RolloutStateReason { get; init; }
@@ -136,18 +98,15 @@ internal sealed record AwsEcsDeploymentState
     public int PendingCount { get; init; }
 }
 
-/// <summary>One registered target in an ALB target group, with its health state.</summary>
 internal sealed record AwsAlbTargetHealth
 {
     public string? TargetId { get; init; }
 
     public int? Port { get; init; }
 
-    /// <summary>ALB target health state value, for example <c>healthy</c> or <c>unhealthy</c>.</summary>
     public string? State { get; init; }
 }
 
-/// <summary>Target-health sample for the stable target group that receives rolled-back traffic.</summary>
 internal sealed record AwsAlbTargetHealthState
 {
     public IReadOnlyList<AwsAlbTargetHealth> Targets { get; init; } = Array.Empty<AwsAlbTargetHealth>();
@@ -158,10 +117,6 @@ internal sealed record AwsAlbTargetHealthState
     public int RegisteredCount => Targets.Count;
 }
 
-/// <summary>
-/// ALB client surface used by the deploy backend so unit tests can substitute a stub
-/// without exercising the AWS SDK.
-/// </summary>
 internal interface IAwsAlbClient
 {
     Task<AwsAlbListenerRuleState> GetListenerRuleWeightsAsync(
@@ -175,17 +130,12 @@ internal interface IAwsAlbClient
         string? region,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Reads target health for the stable target group. Empty means the restored plane is not serving.</summary>
     Task<AwsAlbTargetHealthState> DescribeTargetHealthAsync(
         string targetGroupArn,
         string? region,
         CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// ECS client surface used by the deploy backend so unit tests can substitute a stub
-/// without exercising the AWS SDK.
-/// </summary>
 internal interface IAwsEcsClient
 {
     Task<AwsEcsServiceState> DescribeServiceAsync(
@@ -200,14 +150,49 @@ internal interface IAwsEcsClient
         string taskDefinitionArn,
         string? region,
         CancellationToken cancellationToken = default);
+
+    Task<TaskDefinition> DescribeTaskDefinitionAsync(
+        string taskDefinition,
+        string? region,
+        CancellationToken cancellationToken = default)
+        => System.Threading.Tasks.Task.FromException<TaskDefinition>(new NotSupportedException(
+            "ECS task definition describe is not available on this client."));
+
+    Task<string> RegisterTaskDefinitionAsync(
+        RegisterTaskDefinitionRequest request,
+        string? region,
+        CancellationToken cancellationToken = default)
+        => System.Threading.Tasks.Task.FromException<string>(new NotSupportedException(
+            "ECS task definition registration is not available on this client."));
+
+    Task<string> RunTaskAsync(
+        string cluster,
+        string taskDefinitionArn,
+        IReadOnlyList<string> subnets,
+        IReadOnlyList<string> securityGroups,
+        string? region,
+        CancellationToken cancellationToken = default)
+        => System.Threading.Tasks.Task.FromException<string>(new NotSupportedException(
+            "ECS RunTask is not available on this client."));
+
+    Task<AwsEcsStoppedTask> DescribeStoppedTaskAsync(
+        string cluster,
+        string taskArn,
+        string containerName,
+        string? region,
+        CancellationToken cancellationToken = default)
+        => System.Threading.Tasks.Task.FromException<AwsEcsStoppedTask>(new NotSupportedException(
+            "ECS task describe is not available on this client."));
 }
 
-/// <summary>
-/// AWS SDK implementation of <see cref="IAwsAlbClient"/> backed by
-/// <c>AmazonElasticLoadBalancingV2Client</c>. Mirrors the per-call client construction
-/// used by <see cref="AwsSdkLambdaAliasClient"/> so credential resolution and region
-/// selection follow the same chain that the rest of the server already trusts.
-/// </summary>
+// The provider stop reason is omitted so an operator message cannot carry it.
+internal sealed record AwsEcsStoppedTask
+{
+    public required string LastStatus { get; init; }
+
+    public int? ExitCode { get; init; }
+}
+
 internal sealed class AwsSdkAlbClient : IAwsAlbClient, IDisposable
 {
     // AWS SDK clients are thread-safe and meant to be reused for the process lifetime. This client
@@ -312,7 +297,6 @@ internal sealed class AwsSdkAlbClient : IAwsAlbClient, IDisposable
             : new AmazonElasticLoadBalancingV2Client(RegionEndpoint.GetBySystemName(k)));
     }
 
-    /// <inheritdoc />
     public void Dispose()
     {
         foreach (var client in _clients.Values)
@@ -353,13 +337,6 @@ internal sealed class AwsSdkAlbClient : IAwsAlbClient, IDisposable
     }
 }
 
-/// <summary>
-/// Builds the <see cref="AlbAction"/> list passed to <c>ModifyRule</c> so target
-/// group weights change in place while the existing forward action's stickiness
-/// configuration, action ordering, and sibling actions (for example
-/// authenticate-cognito) are preserved. Lifted out of <see cref="AwsSdkAlbClient"/>
-/// so unit tests can verify the mutation contract without an AWS SDK fake.
-/// </summary>
 internal static class AwsAlbActionMutator
 {
     public static List<AlbAction> RebuildActionsWithUpdatedWeights(
@@ -407,10 +384,7 @@ internal static class AwsAlbActionMutator
     }
 }
 
-/// <summary>
-/// AWS SDK implementation of <see cref="IAwsEcsClient"/> backed by <c>AmazonECSClient</c>.
-/// </summary>
-internal sealed class AwsSdkEcsClient : IAwsEcsClient, IDisposable
+internal sealed partial class AwsSdkEcsClient : IAwsEcsClient, IDisposable
 {
     // AWS SDK clients are thread-safe and meant to be reused for the process lifetime. This client
     // is a singleton, but its construction varies by region, so cache one AmazonECSClient per
@@ -495,7 +469,6 @@ internal sealed class AwsSdkEcsClient : IAwsEcsClient, IDisposable
             : new AmazonECSClient(RegionEndpoint.GetBySystemName(k)));
     }
 
-    /// <inheritdoc />
     public void Dispose()
     {
         foreach (var client in _clients.Values)
@@ -507,18 +480,11 @@ internal sealed class AwsSdkEcsClient : IAwsEcsClient, IDisposable
     }
 }
 
-/// <summary>
-/// Native AWS ECS + ALB canary deploy backend. Manages ALB listener-rule weights and
-/// the canary ECS service's task definition through direct AWS SDK calls so Honua
-/// controls promotion and rollback end-to-end without relying on an external GitOps
-/// agent. Coexists with <c>AwsEcsGitOpsDeployBackend</c> under
-/// <see cref="DeployTargetKind.AwsEcs"/>; targets pick by backend name.
-/// </summary>
 internal sealed partial class AwsEcsAlbDeployBackend(
     IAwsAlbClient albClient,
     IAwsEcsClient ecsClient,
     ILogger<AwsEcsAlbDeployBackend> logger,
-    IRollbackDataPlaneProbe? dataPlaneProbe = null) : IDeployBackend
+    IRollbackDataPlaneProbe? dataPlaneProbe = null) : IDeployBackend, ICheckpointedDeployBackend
 {
     internal const string AdapterBackendName = "honua-aws-ecs-alb";
 
@@ -597,6 +563,8 @@ internal sealed partial class AwsEcsAlbDeployBackend(
             blockingReasons.Add("AWS ECS/ALB canary traffic shifting requires telemetry.connection so the rollout can be promoted or rolled back automatically.");
         }
 
+        AppendImageConvergencePlan(spec, blockingReasons, warnings);
+
         return System.Threading.Tasks.Task.FromResult(new DeployPlan
         {
             IsReadyToSubmit = blockingReasons.Count == 0 && !spec.RequiresApproval,
@@ -617,6 +585,22 @@ internal sealed partial class AwsEcsAlbDeployBackend(
 
         var target = ResolveTarget(spec);
         EnsureValidTarget(target);
+        if (RequiresCheckpoint(operation))
+        {
+            if (spec.CanaryRamp is { IsValid: true, CurrentStepIndex: > 0 } &&
+                spec.TrafficExposedAt is not null &&
+                ReleaseImageDigest.IsEcsTaskDefinitionArn(operation.ProviderOperationId))
+            {
+                return await AdvanceCheckpointedCanaryAsync(operation, spec, target, cancellationToken).ConfigureAwait(false);
+            }
+
+            return new DeploySubmissionResult
+            {
+                Status = WorkflowOperationStatus.Submitted,
+                Message = ICheckpointedDeployBackend.PendingPhase
+            };
+        }
+
         _ = TryResolveCanaryWeightPercentage(spec.Parameters, out var canaryWeight, out _);
 
         using var activity = StartActivity(ControlPlaneTelemetry.Activities.BackendStart, operation, target);
@@ -629,6 +613,20 @@ internal sealed partial class AwsEcsAlbDeployBackend(
 
         try
         {
+            var appliedTaskDefinition = spec.DesiredRevision;
+            var imageConvergence = ReleaseImageDigest.IsImmutable(spec.DesiredRevision);
+            if (imageConvergence)
+            {
+                var prepared = await PrepareReleaseImageAsync(operation, spec, target, cancellationToken)
+                    .ConfigureAwait(false);
+                if (prepared.Failure is not null)
+                {
+                    return prepared.Failure;
+                }
+
+                appliedTaskDefinition = prepared.TaskDefinitionArn!;
+            }
+
             var canaryServiceState = await ecsClient.DescribeServiceAsync(
                     target.Cluster!,
                     target.CanaryService!,
@@ -666,10 +664,31 @@ internal sealed partial class AwsEcsAlbDeployBackend(
             await ecsClient.UpdateServiceTaskDefinitionAsync(
                     target.Cluster!,
                     target.CanaryService!,
-                    spec.DesiredRevision,
+                    appliedTaskDefinition,
                     target.Region,
                     cancellationToken)
                 .ConfigureAwait(false);
+
+            if (imageConvergence)
+            {
+                var steady = await AwaitReleaseImageSteadyAsync(
+                        operation,
+                        spec,
+                        target,
+                        appliedTaskDefinition,
+                        observedTaskDefinition,
+                        canaryWeight,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (steady.Status == WorkflowOperationStatus.Failed && albWeightsShifted && originalRuleState is not null)
+                {
+                    await RestoreAlbWeightsAsync(operation, spec, target, originalRuleState, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+
+                Log.OperationSubmitted(logger, operation.OperationId, spec.TargetId, target.Cluster!, target.CanaryService!, appliedTaskDefinition);
+                return steady;
+            }
 
             Log.OperationSubmitted(logger, operation.OperationId, spec.TargetId, target.Cluster!, target.CanaryService!, spec.DesiredRevision);
             return new DeploySubmissionResult
@@ -737,6 +756,10 @@ internal sealed partial class AwsEcsAlbDeployBackend(
         {
             EnsureValidTarget(target);
             _ = TryResolveCanaryWeightPercentage(spec.Parameters, out var desiredCanaryWeight, out _);
+            if (ReleaseImageDigest.IsImmutable(spec.DesiredRevision) && spec.CanaryRamp is { IsValid: true } ramp)
+            {
+                desiredCanaryWeight = ramp.CurrentStepWeight;
+            }
 
             var ruleState = await albClient.GetListenerRuleWeightsAsync(
                     target.ListenerRuleArn!,
@@ -765,6 +788,11 @@ internal sealed partial class AwsEcsAlbDeployBackend(
                         .ConfigureAwait(false);
                 }
 
+                if (ReleaseImageDigest.IsImmutable(spec.DesiredRevision) && !albWeights.MatchesExpectedShare(0))
+                {
+                    await RestoreStableServiceWhenReadyAsync(operation, spec, target, cancellationToken).ConfigureAwait(false);
+                }
+
                 return new DeployObservation
                 {
                     Status = WorkflowOperationStatus.RollbackRequested,
@@ -779,7 +807,39 @@ internal sealed partial class AwsEcsAlbDeployBackend(
             // still serving traffic. Aggregate service counts can satisfy
             // RunningCount >= DesiredCount while ECS is still draining a previous
             // deployment, so deployment-level state is the source of truth here.
-            var convergence = EvaluateDeploymentConvergence(serviceState, spec.DesiredRevision);
+            // A digest is not itself a task definition. Convergence compares the
+            // registered ARN recorded when the rollout started.
+            var desiredTaskDefinition = spec.DesiredRevision;
+            if (ReleaseImageDigest.IsImmutable(spec.DesiredRevision))
+            {
+                if (!ReleaseImageDigest.IsEcsTaskDefinitionArn(operation.ProviderOperationId))
+                {
+                    return new DeployObservation
+                    {
+                        Status = WorkflowOperationStatus.Reconciling,
+                        ProviderOperationId = operation.ProviderOperationId,
+                        ObservedRevision = serviceState.TaskDefinitionArn,
+                        Message = "ECS image convergence is waiting for the registered task definition."
+                    };
+                }
+
+                desiredTaskDefinition = operation.ProviderOperationId!;
+                var primary = serviceState.Deployments.FirstOrDefault(deployment =>
+                    string.Equals(deployment.Status, "PRIMARY", StringComparison.OrdinalIgnoreCase));
+                if (string.Equals(primary?.RolloutState, "FAILED", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new DeployObservation
+                    {
+                        Status = WorkflowOperationStatus.Reconciling,
+                        ProviderOperationId = operation.ProviderOperationId,
+                        ObservedRevision = primary?.TaskDefinitionArn ?? serviceState.TaskDefinitionArn,
+                        RollbackRecommended = true,
+                        Message = "ECS rollout failed before the service reached steady state; rollback is required."
+                    };
+                }
+            }
+
+            var convergence = EvaluateDeploymentConvergence(serviceState, desiredTaskDefinition);
             var primaryRevision = convergence.PrimaryTaskDefinitionArn ?? serviceState.TaskDefinitionArn;
 
             // ALB target-group weights are relative; the deploy controller writes
@@ -789,6 +849,67 @@ internal sealed partial class AwsEcsAlbDeployBackend(
             // cannot be treated as a stable rollout endpoint regardless of the
             // canary share, so PromotionRecommended and Succeeded both require
             // MatchesExpectedShare on the configured share.
+            if (ReleaseImageDigest.IsImmutable(spec.DesiredRevision) && !convergence.IsConverged &&
+                operation.Deploy?.TrafficExposedAt is null)
+            {
+                return new DeployObservation
+                {
+                    Status = WorkflowOperationStatus.Submitted,
+                    ProviderOperationId = operation.ProviderOperationId,
+                    ObservedRevision = primaryRevision,
+                    Message = "ECS candidate is converging before traffic shift."
+                };
+            }
+
+            if (ReleaseImageDigest.IsImmutable(spec.DesiredRevision) && convergence.IsConverged &&
+                operation.Deploy?.TrafficExposedAt is null)
+            {
+                var health = await albClient.DescribeTargetHealthAsync(target.CanaryTargetGroupArn!, target.Region, cancellationToken).ConfigureAwait(false);
+                if (serviceState.DesiredCount <= 0 || health.HealthyCount < serviceState.DesiredCount)
+                {
+                    return new DeployObservation
+                    {
+                        Status = WorkflowOperationStatus.Submitted,
+                        ProviderOperationId = operation.ProviderOperationId,
+                        Message = "ECS candidate is waiting for healthy load balancer targets."
+                    };
+                }
+
+                if (albWeights.MatchesExpectedShare(0))
+                {
+                    return new DeployObservation
+                    {
+                        Status = WorkflowOperationStatus.Submitted,
+                        ProviderOperationId = operation.ProviderOperationId,
+                        PromotionRecommended = true,
+                        Message = "ECS candidate is ready for the pre-cutover checks."
+                    };
+                }
+
+                return new DeployObservation
+                {
+                    Status = WorkflowOperationStatus.ManualInterventionRequired,
+                    ProviderOperationId = operation.ProviderOperationId,
+                    Message = "ECS traffic routing changed before cutover."
+                };
+            }
+
+            if (ReleaseImageDigest.IsImmutable(spec.DesiredRevision) && operation.Deploy?.TrafficExposedAt is not null &&
+                convergence.IsConverged && !albWeights.MatchesExpectedShare(0))
+            {
+                var health = await albClient.DescribeTargetHealthAsync(target.CanaryTargetGroupArn!, target.Region, cancellationToken).ConfigureAwait(false);
+                if (serviceState.DesiredCount <= 0 || health.HealthyCount < serviceState.DesiredCount)
+                {
+                    return new DeployObservation
+                    {
+                        Status = WorkflowOperationStatus.Reconciling,
+                        ProviderOperationId = operation.ProviderOperationId,
+                        RollbackRecommended = true,
+                        Message = "ECS candidate load balancer targets are unhealthy; rollback is required."
+                    };
+                }
+            }
+
             if (albWeights.MatchesExpectedShare(100) && convergence.IsConverged)
             {
                 return new DeployObservation
@@ -796,7 +917,7 @@ internal sealed partial class AwsEcsAlbDeployBackend(
                     Status = WorkflowOperationStatus.Succeeded,
                     ProviderOperationId = operation.ProviderOperationId,
                     ObservedRevision = primaryRevision,
-                    Message = $"ECS canary service '{target.CanaryService}' is serving 100% of traffic on task definition '{spec.DesiredRevision}'."
+                    Message = $"ECS canary service '{target.CanaryService}' is serving 100% of traffic on task definition '{desiredTaskDefinition}'."
                 };
             }
 
@@ -810,7 +931,7 @@ internal sealed partial class AwsEcsAlbDeployBackend(
                     ProviderOperationId = operation.ProviderOperationId,
                     ObservedRevision = primaryRevision,
                     PromotionRecommended = true,
-                    Message = $"ECS canary service '{target.CanaryService}' is holding {albWeights.CanaryShare}% of traffic on task definition '{spec.DesiredRevision}' and is ready for promotion."
+                    Message = $"ECS canary service '{target.CanaryService}' is holding {albWeights.CanaryShare}% of traffic on task definition '{desiredTaskDefinition}' and is ready for promotion."
                 };
             }
 
@@ -854,12 +975,27 @@ internal sealed partial class AwsEcsAlbDeployBackend(
 
         using var activity = StartActivity(ControlPlaneTelemetry.Activities.BackendPromote, operation, target);
 
+        if (RequiresCheckpoint(operation) && spec.TrafficExposedAt is null)
+        {
+            return await ExposeCheckpointedCandidateAsync(operation, spec, target, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (ReleaseImageDigest.IsImmutable(spec.DesiredRevision) &&
+            !ReleaseImageDigest.IsEcsTaskDefinitionArn(operation.ProviderOperationId))
+        {
+            return new DeployObservation
+            {
+                Status = WorkflowOperationStatus.Failed,
+                Message = "ECS image promotion requires the registered task definition."
+            };
+        }
+
         try
         {
             await ecsClient.UpdateServiceTaskDefinitionAsync(
                     target.Cluster!,
                     target.CanaryService!,
-                    spec.CurrentRevision!,
+                    ReleaseImageDigest.IsImmutable(spec.DesiredRevision) ? operation.ProviderOperationId! : spec.CurrentRevision!,
                     target.Region,
                     cancellationToken)
                 .ConfigureAwait(false);
@@ -914,12 +1050,19 @@ internal sealed partial class AwsEcsAlbDeployBackend(
 
         try
         {
-            await albClient.UpdateListenerRuleWeightsAsync(
-                    target.ListenerRuleArn!,
-                    BuildWeights(target.CanaryTargetGroupArn!, 0, target.StableTargetGroupArn!, 100),
-                    target.Region,
-                    cancellationToken)
-                .ConfigureAwait(false);
+            if (ReleaseImageDigest.IsImmutable(spec.DesiredRevision))
+            {
+                await RestoreStableServiceWhenReadyAsync(operation, spec, target, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await albClient.UpdateListenerRuleWeightsAsync(
+                        target.ListenerRuleArn!,
+                        BuildWeights(target.CanaryTargetGroupArn!, 0, target.StableTargetGroupArn!, 100),
+                        target.Region,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
 
             Log.RollbackRequested(logger, operation.OperationId, spec.TargetId, target.Cluster!, target.CanaryService!);
             return new DeployObservation

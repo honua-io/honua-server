@@ -5,15 +5,8 @@ using System.Data.Common;
 
 namespace Honua.Db.Postgres.Features.Infrastructure;
 
-/// <summary>
-/// Extension methods for DbCommand parameter management.
-/// Centralizes the parameter-adding pattern used across Postgres stores.
-/// </summary>
 internal static class DbCommandExtensions
 {
-    /// <summary>
-    /// Adds a named parameter to the command.
-    /// </summary>
     public static void AddParameter(this DbCommand command, string name, object value)
     {
         var parameter = command.CreateParameter();

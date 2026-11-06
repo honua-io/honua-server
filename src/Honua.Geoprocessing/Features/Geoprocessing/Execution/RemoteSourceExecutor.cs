@@ -18,31 +18,6 @@ using NtsGeometry = NetTopologySuite.Geometries.Geometry;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// Production <see cref="IJobExecutor"/> for the first-class remote DAG source
-/// connectors (<c>source.honua-layer</c>, <c>source.esri-featureserver</c>,
-/// <c>source.ogc-features</c>, <c>source.wfs</c>, <c>source.postgis</c>). A single
-/// executor type is instantiated once per source id; it resolves the matching
-/// <see cref="IDagFeatureSource"/> (which REUSES the existing import readers'
-/// pagination/streaming) at execution time through an <see cref="IServiceScopeFactory"/>
-/// scope — the same provider-resolution pattern <c>import.dataset</c> and
-/// <c>sink.external-postgis</c> use, because the source readers live in the active
-/// data-provider assembly, not in Honua.Geoprocessing.
-///
-/// <para>
-/// The executor builds the upstream <see cref="DagSourceRequest"/> from the durable
-/// step inputs, resolves auth (ArcGIS portal token / PostGIS secure connection) the
-/// same way the import path and <c>sink.external-postgis</c> do, streams the matching
-/// features, rehydrates each into a NetTopologySuite feature, and publishes the
-/// canonical FeatureCollection artifact downstream transform/sink nodes consume.
-/// </para>
-///
-/// <para>
-/// The optional <c>since</c> watermark + <c>watermarkField</c> are passed straight
-/// through to the reader; persisting the next watermark is owned by the
-/// incremental-extract orchestration, not this executor.
-/// </para>
-/// </summary>
 internal sealed partial class RemoteSourceExecutor : IProcessExecutor
 {
     private readonly string _processId;
@@ -64,15 +39,12 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
         _logger = logger;
     }
 
-    /// <summary>The source process id this instance handles.</summary>
     public string HandledProcessId => _processId;
 
-    /// <inheritdoc />
     public IReadOnlySet<string> ProcessIds => _processIds;
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
-    /// <summary>Creates an executor bound to a single source process id.</summary>
     public static RemoteSourceExecutor ForProcess(
         string processId,
         IServiceScopeFactory serviceScopeFactory,
@@ -102,7 +74,7 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
 
         // SSRF guard (PA-194): validate serviceUrl for remote HTTP sources before any
         // DI scope or network activity. The Esri path (source.esri-featureserver) is
-        // guarded at configuration time via ArcGisRestUrlValidator; WFS and OGC-features
+        // guarded at configuration time via GeoServicesRestUrlValidator; WFS and OGC-features
         // receive a user-supplied URL per-submit and must be validated here.
         if (_processId is "source.ogc-features" or "source.wfs")
         {
@@ -238,14 +210,14 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
                 : inputs.TryGet("typeName", out var typeName) ? typeName : null,
             ServiceUrl = inputs.TryGet("serviceUrl", out var serviceUrl) ? serviceUrl : null,
             LayerId = TryGetInt(inputs, "layerId"),
-            EsriLayerId = TryGetInt(inputs, "esriLayerId"),
+            GeoServicesLayerId = TryGetInt(inputs, "esriLayerId"),
         };
 
         return _processId switch
         {
             "source.esri-featureserver" => request with
             {
-                EsriCredentials = await ResolveEsriCredentialsAsync(inputs, services, cancellationToken).ConfigureAwait(false)
+                GeoServicesCredentials = await ResolveEsriCredentialsAsync(inputs, services, cancellationToken).ConfigureAwait(false)
             },
             "source.ogc-features" or "source.wfs" => request with
             {
@@ -319,11 +291,7 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
         return inputs.TryGet(inlineKey, out var inline) ? inline : null;
     }
 
-    /// <summary>
-    /// Resolves a password from a secret reference only; rejects inline plaintext passwords.
-    /// Used for OGC source types (source.ogc-features, source.wfs) where credentials are stored
-    /// in the durable job spec — inline passwords would persist as cleartext in the job store.
-    /// </summary>
+    // A secret reference is required because an inline password would be stored in cleartext on the durable job spec.
     private static async Task<string?> ResolveSecretPasswordOnlyAsync(
         StepInputReader inputs,
         IServiceProvider services,
@@ -348,10 +316,7 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
         return await ResolveRequestSecretReferenceAsync(services, secretReference!, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Step inputs are request-supplied, so their secret references resolve only through the
-    /// operator policy (<see cref="IRequestSecretReferenceResolver"/>).
-    /// </summary>
+    // Step inputs are caller-supplied, so their secret references resolve only through the operator policy.
     private static async Task<string> ResolveRequestSecretReferenceAsync(
         IServiceProvider services,
         string secretReference,

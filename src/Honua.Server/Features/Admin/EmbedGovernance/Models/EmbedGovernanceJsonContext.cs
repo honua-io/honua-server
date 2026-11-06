@@ -6,9 +6,6 @@ using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Admin.EmbedGovernance.Models;
 
-/// <summary>
-/// JSON source generation context for embed governance models.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

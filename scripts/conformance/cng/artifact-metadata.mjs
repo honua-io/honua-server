@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 // Metadata observations from canonical-client decoded values only.
 export function flatGeobufMetadata(features, header) {
   const bounds = [Infinity, Infinity, -Infinity, -Infinity];
@@ -46,4 +47,22 @@ export function pmtilesMetadata(header) {
     zoom_range: [header.minZoom, header.maxZoom],
     tile_count: header.numAddressedTiles,
   };
+}
+
+// Validate the existing canonical PMTiles fixture after the official MVT decoder.
+export function validatePmtilesFixtureTile(tile, z, x, y) {
+  const name = `cng-${z}-${x}-${y}`;
+  const layer = tile?.layers?.[name];
+  if (Object.keys(tile?.layers ?? {}).length !== 1 || !layer || layer.version !== 2 || layer.extent !== 4096 || layer.length !== 1) {
+    throw new Error("PMTiles MVT fixture layer identity/schema differs");
+  }
+  const feature = layer.feature(0);
+  const point = feature.loadGeometry();
+  const attribute = Array.from({ length: 32 }, (_, block) =>
+    createHash("sha256").update(`cng-mvt:${z}:${x}:${y}:${block}`).digest("hex")).join("");
+  if (feature.id !== 1 || feature.type !== 1 || feature.properties.name !== name ||
+      feature.properties.fixture !== attribute || point.length !== 1 || point[0].length !== 1 ||
+      point[0][0].x !== 100 + x || point[0][0].y !== 200 + y) {
+    throw new Error("PMTiles MVT fixture feature/point/attribute differs");
+  }
 }

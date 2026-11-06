@@ -6,16 +6,6 @@ using Org.BouncyCastle.Security;
 
 namespace Honua.LicenseMint;
 
-/// <summary>
-/// An Ed25519 signing key pair used to mint and verify Honua license envelopes.
-/// </summary>
-/// <remarks>
-/// The private key (the 32-byte seed) is the trust root for the entire licensing
-/// system. It MUST be held only by Honua's hosted mint host and never committed,
-/// distributed to customers, or embedded in a published artifact. The public key
-/// is what operators configure as a trusted verification key under
-/// <c>Licensing:TrustedKeys:&lt;keyId&gt;</c>.
-/// </remarks>
 internal sealed class LicenseSigningKeyPair
 {
     private LicenseSigningKeyPair(byte[] privateSeed, byte[] publicKey)
@@ -24,15 +14,11 @@ internal sealed class LicenseSigningKeyPair
         PublicKey = publicKey;
     }
 
-    /// <summary>The 32-byte Ed25519 private seed. Secret material — never log or commit.</summary>
+    // This 32-byte Ed25519 seed is the licensing trust root and must not be logged, committed, or shipped.
     public byte[] PrivateSeed { get; }
 
-    /// <summary>The 32-byte Ed25519 public key used for offline verification.</summary>
     public byte[] PublicKey { get; }
 
-    /// <summary>
-    /// Generates a fresh Ed25519 key pair using a cryptographically secure RNG.
-    /// </summary>
     public static LicenseSigningKeyPair Generate()
     {
         var seed = new byte[Ed25519PrivateKeyParameters.KeySize];
@@ -40,10 +26,6 @@ internal sealed class LicenseSigningKeyPair
         return FromPrivateSeed(seed);
     }
 
-    /// <summary>
-    /// Reconstructs a key pair from an existing 32-byte private seed.
-    /// </summary>
-    /// <param name="privateSeed">The 32-byte Ed25519 private seed.</param>
     public static LicenseSigningKeyPair FromPrivateSeed(ReadOnlySpan<byte> privateSeed)
     {
         if (privateSeed.Length != Ed25519PrivateKeyParameters.KeySize)
@@ -59,16 +41,9 @@ internal sealed class LicenseSigningKeyPair
         return new LicenseSigningKeyPair(seedCopy, publicKey);
     }
 
-    /// <summary>
-    /// Returns the public key in the exact format operators paste into
-    /// <c>Licensing:TrustedKeys:&lt;keyId&gt;</c> (the runtime accepts a
-    /// <c>base64url:</c>-prefixed Base64URL key).
-    /// </summary>
     public string PublicKeyTrustedKeySetting() => "base64url:" + Base64Url.Encode(PublicKey);
 
-    /// <summary>Returns the unprefixed Base64URL-encoded public key.</summary>
     public string PublicKeyBase64Url() => Base64Url.Encode(PublicKey);
 
-    /// <summary>Returns the unprefixed Base64URL-encoded private seed. Secret material.</summary>
     public string PrivateSeedBase64Url() => Base64Url.Encode(PrivateSeed);
 }

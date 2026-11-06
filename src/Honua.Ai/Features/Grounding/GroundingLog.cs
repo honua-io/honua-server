@@ -3,11 +3,6 @@
 
 namespace Honua.Ai.Grounding;
 
-/// <summary>
-/// Source-generated structured log methods for the grounding service. Event
-/// ID range 8200-8219 — reserved directly after MCP (8150-8199) so dashboards
-/// can subscribe to both ranges without collision.
-/// </summary>
 internal static partial class GroundingLog
 {
     [LoggerMessage(8200, LogLevel.Debug, "Grounding pass started: Engine={Engine}, GoalTokens={GoalTokens}, HasHint={HasHint}")]

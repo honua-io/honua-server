@@ -6,12 +6,6 @@ using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Composes the existing container deploy/rollout lifecycle as a coordinated-release step. Thin
-/// adapter over <see cref="DeployWorkflowService"/>: it submits a deploy operation for the rollout,
-/// observes it through the deploy reconciler, and rolls it back through the deploy rollback path. It
-/// does not reimplement the rollout, canary, or backend dispatch behavior.
-/// </summary>
 internal sealed class CoordinatedContainerStepExecutor(
     DeployWorkflowService deployService,
     IWorkflowOperationReconciler deployReconciler,
@@ -114,19 +108,10 @@ internal sealed class CoordinatedContainerStepExecutor(
             };
     }
 
-    /// <summary>
-    /// Maps the container child's durable status to a coordinated-step outcome. A container operation
-    /// promoted into its post-activation observation window (honua-server#4618) — non-terminal
-    /// <see cref="WorkflowOperationStatus.Reconciling"/> with <c>Deploy.Protection</c> set — is treated
-    /// as <see cref="CoordinatedStepOutcome.Succeeded"/> for orchestration purposes: the candidate is
-    /// already exposed and the coordinated release's own rollback path can still unwind it (through
-    /// <see cref="RollbackAsync"/>, which drives the SAME deploy reconciler) at any point during that
-    /// window. Waiting for the window to fully elapse before letting the release proceed to its next
-    /// step would block coordinated releases for the whole observation duration for no added safety.
-    /// </summary>
     private static CoordinatedStepOutcome MapOutcome(WorkflowOperationRecord deploy) => deploy.Status switch
     {
         WorkflowOperationStatus.Succeeded => CoordinatedStepOutcome.Succeeded,
+        // Reconciling with protection counts as success because the candidate is already active and coordinated rollback can still unwind it.
         WorkflowOperationStatus.Reconciling when deploy.Deploy?.Protection != null => CoordinatedStepOutcome.Succeeded,
         WorkflowOperationStatus.RolledBack => CoordinatedStepOutcome.RolledBack,
         WorkflowOperationStatus.Failed or WorkflowOperationStatus.ManualInterventionRequired => CoordinatedStepOutcome.Failed,
@@ -134,13 +119,6 @@ internal sealed class CoordinatedContainerStepExecutor(
     };
 }
 
-/// <summary>
-/// Composes the existing additive metadata-release lifecycle (its DB ScriptMigration + metadata-v2
-/// activation) as a coordinated-release step. Thin adapter over
-/// <see cref="MetadataReleaseControlService"/> and the metadata-release reconciler: it submits the
-/// additive metadata-release operation, drives it through its stages, and requests its reversible
-/// rollback. It does not reimplement the schema mutation, activation, or inverse.
-/// </summary>
 internal sealed class CoordinatedMetadataStepExecutor(
     MetadataReleaseControlService metadataControlService,
     IMetadataReleaseOperationReconciler metadataReconciler,

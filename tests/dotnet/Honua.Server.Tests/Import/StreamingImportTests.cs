@@ -258,7 +258,7 @@ public class StreamingImportTests : IAsyncLifetime
 
         response.BeSuccessful();
         var responseContent = await response.Content.ReadAsStringAsync();
-        responseContent.Should().Contain("EsriJson");
+        responseContent.Should().Contain("GeoServicesJson");
         responseContent.Should().Contain("\"featureCount\":2");
     }
 
@@ -1197,7 +1197,7 @@ public class StreamingImportTests : IAsyncLifetime
             }
             await using var connection = await _fixture.Postgres.GetConnectionAsync();
             await using var command = connection.CreateCommand();
-            command.CommandText = $"SELECT properties->>'key', properties->>'name', properties->>'value', ST_X(geometry), ST_Y(geometry), ST_SRID(geometry) FROM honua_data.{QuoteIdentifier(table)} ORDER BY properties->>'key'";
+            command.CommandText = $"SELECT properties->>'key', properties->>'name', properties->>'value', ST_X(ST_GeometryN(geometry, 1)), ST_Y(ST_GeometryN(geometry, 1)), ST_SRID(geometry) FROM honua_data.{QuoteIdentifier(table)} ORDER BY properties->>'key'";
             var rows = new List<(string, string, string?, double, double, int)>();
             await using (var reader = await command.ExecuteReaderAsync())
             {
@@ -1215,7 +1215,14 @@ public class StreamingImportTests : IAsyncLifetime
             {
                 while (await reader.ReadAsync()) columns.Add((reader.GetString(0), reader.GetString(1)));
             }
-            columns.Should().Equal(("id", "int4"), ("geometry", "geometry"), ("properties", "jsonb"), ("created_at", "timestamptz"));
+            columns.Should().Equal(
+                ("id", "int4"),
+                ("geometry", "geometry"),
+                ("properties", "jsonb"),
+                ("created_at", "timestamptz"),
+                ("key", "text"),
+                ("name", "text"),
+                ("value", "int8"));
             command.CommandText = "SELECT indexdef FROM pg_indexes WHERE schemaname='honua_data' AND tablename=@table";
             var indexes = new List<string>();
             await using (var reader = await command.ExecuteReaderAsync())
@@ -1271,7 +1278,7 @@ public class StreamingImportTests : IAsyncLifetime
         await using var connection = await _fixture.Postgres.GetConnectionAsync(schema);
         await using var command = connection.CreateCommand();
         command.CommandText =
-            $"SELECT ST_X(geometry), ST_Y(geometry), ST_SRID(geometry), properties->>'{nameAttribute}' " +
+            $"SELECT ST_X(ST_GeometryN(geometry, 1)), ST_Y(ST_GeometryN(geometry, 1)), ST_SRID(geometry), properties->>'{nameAttribute}' " +
             $"FROM {QuoteIdentifier("honua_data")}.{QuoteIdentifier("imported_" + tableName)} " +
             $"ORDER BY properties->>'{nameAttribute}'";
         var rows = new List<(double, double, int, string?)>();
@@ -1290,7 +1297,7 @@ public class StreamingImportTests : IAsyncLifetime
         var schema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Schema was not initialized.");
         await using var connection = await _fixture.Postgres.GetConnectionAsync(schema);
         await using var command = connection.CreateCommand();
-        command.CommandText = $"SELECT ST_X(geometry), ST_SRID(geometry) FROM {QuoteIdentifier("honua_data")}.{QuoteIdentifier("imported_" + tableName)} LIMIT 1";
+        command.CommandText = $"SELECT ST_X(ST_GeometryN(geometry, 1)), ST_SRID(geometry) FROM {QuoteIdentifier("honua_data")}.{QuoteIdentifier("imported_" + tableName)} LIMIT 1";
         await using var reader = await command.ExecuteReaderAsync();
         if (!await reader.ReadAsync())
         {

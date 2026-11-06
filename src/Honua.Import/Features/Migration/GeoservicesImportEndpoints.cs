@@ -162,16 +162,16 @@ internal static partial class GeoservicesImportEndpoints
             await Results.Json(response, GeoservicesImportApiJsonContext.Default.GeoservicesDiscoverResponse)
                 .ExecuteAsync(context);
         }
-        catch (ArcGisAuthenticationException ex)
+        catch (GeoServicesAuthenticationException ex)
         {
             Log.ServiceDiscoveryFailed(GetLogger(context), request.ServiceUrl, ex);
-            var status = ex.Kind == ArcGisAuthenticationFailureKind.CredentialDenied
+            var status = ex.Kind == GeoServicesAuthenticationFailureKind.CredentialDenied
                 ? StatusCodes.Status403Forbidden
                 : StatusCodes.Status401Unauthorized;
             var message = ex.Kind switch
             {
-                ArcGisAuthenticationFailureKind.CredentialRequired => "ArcGIS service authentication is required.",
-                ArcGisAuthenticationFailureKind.CredentialExpired => "ArcGIS service credentials have expired.",
+                GeoServicesAuthenticationFailureKind.CredentialRequired => "ArcGIS service authentication is required.",
+                GeoServicesAuthenticationFailureKind.CredentialExpired => "ArcGIS service credentials have expired.",
                 _ => "ArcGIS service credentials were denied."
             };
             await AdminResponseWriter.WriteErrorAsync(context, message, status);

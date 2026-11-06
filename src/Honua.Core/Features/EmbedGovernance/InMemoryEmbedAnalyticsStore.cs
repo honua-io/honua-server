@@ -7,26 +7,17 @@ using Honua.Core.Features.EmbedGovernance.Domain;
 
 namespace Honua.Core.Features.EmbedGovernance;
 
-/// <summary>
-/// In-memory <see cref="IEmbedAnalyticsStore"/>. Retains a bounded ring of recent
-/// events for operator reporting; a durable provider can replace it later.
-/// </summary>
 public sealed class InMemoryEmbedAnalyticsStore : IEmbedAnalyticsStore
 {
     private const string Unknown = "(unknown)";
     private readonly int _capacity;
     private readonly ConcurrentQueue<EmbedAnalyticsEvent> _events = new();
 
-    /// <summary>
-    /// Creates the store.
-    /// </summary>
-    /// <param name="capacity">Maximum retained events before oldest are dropped.</param>
     public InMemoryEmbedAnalyticsStore(int capacity = 50_000)
     {
         _capacity = capacity > 0 ? capacity : 50_000;
     }
 
-    /// <inheritdoc />
     public Task IngestAsync(EmbedAnalyticsEvent analyticsEvent, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -41,7 +32,6 @@ public sealed class InMemoryEmbedAnalyticsStore : IEmbedAnalyticsStore
         return Task.CompletedTask;
     }
 
-    /// <inheritdoc />
     public Task<EmbedUsageReport> QueryAsync(EmbedUsageQuery query, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();

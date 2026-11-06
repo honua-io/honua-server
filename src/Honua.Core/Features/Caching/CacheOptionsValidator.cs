@@ -70,6 +70,12 @@ public sealed class CacheOptionsValidator : ConfigurationValidator<CacheOptions>
         }
 
         ValidateRange(options.ResponseCacheMaxEntries, 100, 500000, "ResponseCacheMaxEntries", errors);
+        ValidateRange(options.ResponseCacheMaxEntryBytes, 1024, 268435456, "ResponseCacheMaxEntryBytes", errors);
+        ValidateRange(options.ResponseCacheMaxBytes, 65536, 1073741824, "ResponseCacheMaxBytes", errors);
+        if (options.ResponseCacheMaxBytes < options.ResponseCacheMaxEntryBytes)
+        {
+            errors.Add("ResponseCacheMaxBytes must be greater than or equal to ResponseCacheMaxEntryBytes.");
+        }
     }
 
     /// <summary>

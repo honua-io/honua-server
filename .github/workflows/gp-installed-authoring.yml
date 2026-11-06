@@ -22,15 +22,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: '10.0.x'
       - name: Pack candidate devkit and consumer script
         run: |
           dotnet pack src/Honua.Geoprocessing.Cli -c Release -o artifacts/installed-gp -p:VersionSuffix=installed.${{ github.run_id }}.${{ github.run_attempt }}
           cp scripts/ci/verify-gp-installed-authoring.py scripts/ci/gp_devkit_publication.py artifacts/installed-gp/
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: installed-gp-candidate
           path: artifacts/installed-gp
@@ -46,14 +46,14 @@ jobs:
     timeout-minutes: 20
     steps:
       # Deliberately no checkout. This runner receives only the packed tool and verifier.
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: installed-gp-candidate
           path: candidate
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: '10.0.x'
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12'
       - name: Install and exercise the package without source
@@ -64,14 +64,14 @@ jobs:
           dotnet tool install Honua.Geoprocessing.Cli --add-source candidate --tool-path installed --version "$version"
           python candidate/verify-gp-installed-authoring.py --tool "installed/honua-gp-devkit${{ runner.os == 'Windows' && '.exe' || '' }}" --restored-locks restored-locks --host-debug-receipt host-debug.json --package-version-stamp "$version"
       - name: Preserve host-debug receipt
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: gp-devkit-host-debug-${{ matrix.os }}
           path: host-debug.json
           if-no-files-found: error
       - name: Preserve restored template dependency locks
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: installed-gp-locks-${{ matrix.os }}
           path: restored-locks
@@ -82,22 +82,22 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v8
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: gp-devkit-host-debug-ubuntu-latest
           path: host-debug/ubuntu
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: gp-devkit-host-debug-windows-latest
           path: host-debug/windows
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: gp-devkit-host-debug-macos-latest
           path: host-debug/macos
       - name: Hand supported-OS host-debug receipts to release qualification
         run: python3 scripts/ci/gp_devkit_publication.py handoff --receipts host-debug --output artifacts/gp-devkit-host-debug-handoff.json
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: gp-devkit-host-debug-handoff
           path: artifacts/gp-devkit-host-debug-handoff.json

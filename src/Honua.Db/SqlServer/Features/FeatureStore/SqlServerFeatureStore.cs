@@ -167,9 +167,9 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     public async Task<ImmutableArray<long>> QueryObjectIdsAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
         await EnsureReadPolicyEnforceableAsync(layerId, cancellationToken).ConfigureAwait(false);
-        var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
         query = PrepareQuery(query, mapping.PrimaryKeyColumn);
-        var sql = SqlServerFeatureQueryBuilder.BuildObjectIdsQuery(mapping, query);
+        var sql = SqlServerFeatureQueryBuilder.BuildObjectIdsQuery(mapping, query, attributeColumns);
         return await _dataAccess.ExecuteObjectIdsAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
     }
 
@@ -187,9 +187,9 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     public async Task<FeatureExtent?> GetExtentAsync(int layerId, FeatureQuery? query = null, CancellationToken cancellationToken = default)
     {
         await EnsureReadPolicyEnforceableAsync(layerId, cancellationToken).ConfigureAwait(false);
-        var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
         query = query is { } extentQuery ? PrepareQuery(extentQuery, mapping.PrimaryKeyColumn) : null;
-        var sql = SqlServerFeatureQueryBuilder.BuildExtentQuery(mapping, query);
+        var sql = SqlServerFeatureQueryBuilder.BuildExtentQuery(mapping, query, attributeColumns);
         return await _dataAccess.ExecuteExtentAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
     }
 

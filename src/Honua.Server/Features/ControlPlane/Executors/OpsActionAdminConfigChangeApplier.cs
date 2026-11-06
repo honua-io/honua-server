@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.ControlPlane;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.AuditLog.Abstractions;
@@ -11,14 +12,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.ControlPlane.Executors;
 
-/// <summary>
-/// Real <see cref="IAdminConfigChangeApplier"/>: a payload-discriminated ops-action
-/// registry. It parses the <c>{action, target, params}</c> execution payload, dispatches
-/// to the matching self-healing actuator, and audits an operate-timeline event. Each
-/// action is idempotent and validated <em>before</em> any side effect, so a malformed or
-/// unknown payload fails closed (throws <see cref="OpsActionException"/>) and never
-/// partially applies. Replaces the previous logging stub that applied nothing (#2561).
-/// </summary>
+// Each action is validated before any side effect, so a malformed or unknown payload fails closed and never partially applies.
 internal sealed partial class OpsActionAdminConfigChangeApplier(
     IServiceScopeFactory scopeFactory,
     TimeProvider timeProvider,
@@ -46,6 +40,11 @@ internal sealed partial class OpsActionAdminConfigChangeApplier(
             OpsActionNames.PauseChannel => await SetChannelPausedAsync(services, request, paused: true, now, cancellationToken).ConfigureAwait(false),
             OpsActionNames.ResumeChannel => await SetChannelPausedAsync(services, request, paused: false, now, cancellationToken).ConfigureAwait(false),
             OpsActionNames.TuneBoundedAdmission => TuneBoundedAdmission(services, request),
+            OpsActionNames.ComposeApplyConfig => throw new OpsActionException(ComposeExecutorCodes.ConfigUnsupported),
+            OpsActionNames.ComposeRestartService => await RestartComposeServiceAsync(services, request, cancellationToken).ConfigureAwait(false),
+            OpsActionNames.RestartEcs => await RestartRegisteredEcsAsync(services, request, cancellationToken).ConfigureAwait(false),
+            OpsActionNames.RestartLambda => await RestartRegisteredLambdaAsync(services, request, cancellationToken).ConfigureAwait(false),
+            OpsActionNames.SetConfig => await SetRegisteredConfigAsync(services, request, cancellationToken).ConfigureAwait(false),
             _ => throw new OpsActionException($"Unknown ops action '{request.Name}'."),
         };
 
@@ -113,6 +112,51 @@ internal sealed partial class OpsActionAdminConfigChangeApplier(
             "bounded",
             $"Tuned bounded database admission target to {limit.ToString(CultureInfo.InvariantCulture)} "
             + $"(range [{gate.MinLimit.ToString(CultureInfo.InvariantCulture)}, {gate.MaxLimit.ToString(CultureInfo.InvariantCulture)}]).");
+    }
+
+    private static async Task<OpsActionOutcome> RestartComposeServiceAsync(
+        IServiceProvider services,
+        OpsActionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var options = services.GetService<Microsoft.Extensions.Options.IOptions<ComposeExecutorOptions>>()?.Value;
+        if (request.Target is not null)
+        {
+            if (options is null || request.Target != options.TargetId)
+                throw new OpsActionException(ComposeExecutorCodes.ScopeViolation);
+            var target = await RequireTargetAsync(services, request, cancellationToken).ConfigureAwait(false);
+            if (target.TargetId != options.TargetId || target.TargetKind != Honua.Core.Features.ControlPlane.Domain.DeployTargetKind.LocalCompose
+                || target.Backend != ComposeDeployBackend.AdapterBackendName)
+                throw new OpsActionException(ComposeExecutorCodes.ScopeViolation);
+        }
+        if (request.Service is not null && (request.Target is null || options is null
+            || !new[] { options.ServiceName, options.PostgresService, options.RedisService }.Contains(request.Service, StringComparer.Ordinal)))
+            throw new OpsActionException(ComposeExecutorCodes.ScopeViolation);
+        if (request.HasParameters && (request.ParameterNames.Count != 1 || request.ParameterNames[0] != "service"
+            || string.IsNullOrWhiteSpace(request.Service)))
+            throw new OpsActionException(ComposeExecutorCodes.ConfigUnsupported);
+
+        var client = services.GetService<IComposeExecutorClient>()
+            ?? throw new OpsActionException(ComposeExecutorCodes.ExecutorUnconfigured);
+        ComposeExecutorResponse response;
+        try
+        {
+            response = await client.ExecuteAsync(
+                    new ComposeExecutorRequest { Op = "restart", Service = request.Service, RequestId = Guid.NewGuid().ToString("N") },
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new OpsActionException(ComposeExecutorCodes.ExecutorUnconfigured);
+        }
+
+        if (!response.Ok || !response.ReadbackComplete)
+        {
+            throw new OpsActionException(response.Code ?? ComposeExecutorCodes.ReadbackIncomplete);
+        }
+
+        return new OpsActionOutcome("compose", "service", "Restarted the registered Compose service.");
     }
 
     private static IAlertDispatchStore ResolveDispatchStore(IServiceProvider services)

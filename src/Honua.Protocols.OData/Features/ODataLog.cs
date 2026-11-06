@@ -3,9 +3,6 @@
 
 namespace Honua.Protocols.OData;
 
-/// <summary>
-/// Structured logging for OData endpoint requests.
-/// </summary>
 internal static partial class ODataLog
 {
     [LoggerMessage(

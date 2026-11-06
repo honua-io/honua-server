@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Configuration;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -17,6 +18,7 @@ internal sealed class SecureConnectionDataSourceCache : IDisposable, IAsyncDispo
     private readonly bool _schemaHeadersEnabled;
     private readonly ConnectionLimits _connectionLimits;
     private readonly string? _defaultSchema;
+    private readonly bool _releaseSessionOnClose;
     private readonly Func<string, NpgsqlDataSource>? _createDataSource;
     private readonly TimeProvider _timeProvider;
     private readonly TimeSpan _idleLifetime;
@@ -57,6 +59,11 @@ internal sealed class SecureConnectionDataSourceCache : IDisposable, IAsyncDispo
         // ISchemaContext.CurrentSchema is null) fall back to the PostgreSQL default
         // search_path and miss schema-qualified tables (honua-server#2949).
         _defaultSchema = configuration["Database:Schema"];
+        // Named and bound pools always SET their session settings per connection (see below).
+        // Behind RDS Proxy that pins the proxy session, and a frozen Lambda never prunes its
+        // pool, so on Lambda these pools are unpooled: each logical close ends the pinned
+        // session (honua-server#6760).
+        _releaseSessionOnClose = ControlPlaneEventHandlerHost.IsLambda(configuration);
         _createDataSource = createDataSource;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _logger = logger ?? NullLogger<SecureConnectionDataSourceCache>.Instance;
@@ -150,8 +157,11 @@ internal sealed class SecureConnectionDataSourceCache : IDisposable, IAsyncDispo
         // Database:SessionSettings:Mode=role-defaults: their role can differ from the
         // DefaultConnection role the startup check verifies (honua-server#5870).
         var dataSource = _createDataSource?.Invoke(connectionString) ?? (preservePrimarySchema
-            ? PostgresDataSourceFactory.Create(connectionString, _schemaHeadersEnabled, _connectionLimits, _defaultSchema)
-            : PostgresDataSourceFactory.CreateForBoundSource(connectionString, _connectionLimits));
+            ? PostgresDataSourceFactory.Create(
+                connectionString, _schemaHeadersEnabled, _connectionLimits, _defaultSchema,
+                releaseSessionOnClose: _releaseSessionOnClose)
+            : PostgresDataSourceFactory.CreateForBoundSource(
+                connectionString, _connectionLimits, _releaseSessionOnClose));
         var replacement = new CacheEntry(connectionString, dataSource, _timeProvider.GetTimestamp());
         _dataSources[key] = replacement;
         if (entry != null)

@@ -311,6 +311,39 @@ public sealed class FeatureServerQueryExecutorTests
 
     [global::Xunit.Trait("Tier", "Fast")]
     [Fact]
+    public async Task QueryRawGeoServicesPointJsonWithValidationAsync_ComplexFields_ReturnJsonStrings()
+    {
+        var featureReader = Substitute.For<IFeatureReader, IPagedRawGeoServicesFeatureStore>();
+        var rawStore = (IPagedRawGeoServicesFeatureStore)featureReader;
+        var rawFeatures = ImmutableArray.Create(RawGeoServicesFeature.Create(42,
+            attributesJson: """{"object_value":{"name":"A"},"array_value":[1,2],"empty":null,"number":12}""", x: 1.5, y: 2.5));
+        rawStore.QueryGeoServicesRawPointPageAsync(7, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(PagedQueryResult<RawGeoServicesFeature>.Create(rawFeatures)));
+        var sut = CreateSut(featureReader);
+        var service = CreateService();
+        var resource = CreatePointResource() with
+        {
+            SchemaFields = [
+                new MetadataV2Field { Name = "object_value", Type = MetadataV2FieldType.Json },
+                new MetadataV2Field { Name = "array_value", Type = MetadataV2FieldType.Json },
+                new MetadataV2Field { Name = "empty", Type = MetadataV2FieldType.Json },
+                new MetadataV2Field { Name = "number", Type = MetadataV2FieldType.Integer }
+            ]
+        };
+        var (payload, count) = await sut.QueryRawGeoServicesPointJsonWithValidationAsync(
+            service, resource, CreatePublication(service, resource), 7, new FeatureQuery { Limit = 1 },
+            returnGeometry: true, outputSrid: null, cancellationToken: CancellationToken.None);
+        count.Should().Be(1);
+        using var document = JsonDocument.Parse(payload);
+        var attributes = document.RootElement.GetProperty("features")[0].GetProperty("attributes");
+        attributes.GetProperty("object_value").GetString().Should().Be("""{"name":"A"}""");
+        attributes.GetProperty("array_value").GetString().Should().Be("[1,2]");
+        attributes.GetProperty("empty").ValueKind.Should().Be(JsonValueKind.Null);
+        attributes.GetProperty("number").GetInt32().Should().Be(12);
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
     public async Task QueryRawGeoServicesPointJsonWithValidationAsync_TemporalFields_PreserveCalendarDateAndEpoch()
     {
         var featureReader = Substitute.For<IFeatureReader, IPagedRawGeoServicesFeatureStore>();
@@ -815,14 +848,14 @@ public sealed class FeatureServerQueryExecutorTests
 
     [UnitTest]
     [Operation(Operations.Query)]
-    public async Task StreamIdsAsync_FederatedArcGisLayer_RequestsIdsOnlyAndStopsAtCeiling()
+    public async Task StreamIdsAsync_FederatedGeoServicesLayer_RequestsIdsOnlyAndStopsAtCeiling()
     {
         // #6113: an anonymous returnIdsOnly query on a federated ArcGIS layer must ask the
         // upstream for ids only (never features or geometry) and stop at a hard ceiling,
         // reporting exceededTransferLimit, instead of materialising the whole upstream layer.
         var upstreamTotal = FeatureServerQueryExecutor.MaxNonStreamingObjectIds + 5_000;
-        var upstream = new RecordingArcGisRestClient(upstreamTotal);
-        var (sut, service, resource, publication) = CreateFederatedArcGisSut(upstream);
+        var upstream = new RecordingGeoServicesRestClient(upstreamTotal);
+        var (sut, service, resource, publication) = CreateFederatedGeoServicesSut(upstream);
         var context = CreateHttpContext();
 
         await sut.StreamIdsAsync(
@@ -842,7 +875,7 @@ public sealed class FeatureServerQueryExecutorTests
             && url.Contains("returnGeometry=false", StringComparison.Ordinal)
             && !url.Contains("returnGeometry=true", StringComparison.Ordinal));
         upstream.IdsServed.Should().BeLessThanOrEqualTo(
-            FeatureServerQueryExecutor.MaxNonStreamingObjectIds + ArcGisRestFeatureStore.DefaultPageSize,
+            FeatureServerQueryExecutor.MaxNonStreamingObjectIds + GeoServicesRestFeatureStore.DefaultPageSize,
             "the upstream id paging must stop at the ceiling, not drain the layer");
 
         var json = await ReadResponseAsync(context);
@@ -854,11 +887,11 @@ public sealed class FeatureServerQueryExecutorTests
 
     [UnitTest]
     [Operation(Operations.Query)]
-    public async Task TryQueryNonStreamingObjectIdsAsync_FederatedArcGisLayer_ReturnsBoundedIdsWithoutFeatureReads()
+    public async Task TryQueryNonStreamingObjectIdsAsync_FederatedGeoServicesLayer_ReturnsBoundedIdsWithoutFeatureReads()
     {
         // The materialised ids path (f=pbf, or a small resultRecordCount) shares the bound.
-        var upstream = new RecordingArcGisRestClient(totalIds: 25);
-        var (sut, service, resource, publication) = CreateFederatedArcGisSut(upstream);
+        var upstream = new RecordingGeoServicesRestClient(totalIds: 25);
+        var (sut, service, resource, publication) = CreateFederatedGeoServicesSut(upstream);
 
         var bounded = await sut.TryQueryNonStreamingObjectIdsAsync(
             service,
@@ -897,7 +930,7 @@ public sealed class FeatureServerQueryExecutorTests
     }
 
     private static (FeatureServerQueryExecutor Sut, MetadataV2Service Service, MetadataV2Resource Resource, MetadataV2Publication Publication)
-        CreateFederatedArcGisSut(IArcGisRestFeatureClient upstream)
+        CreateFederatedGeoServicesSut(IGeoServicesRestFeatureClient upstream)
     {
         var service = CreateService();
         var resource = CreatePointResource(storageBindingIds: ["binding-roads"]);
@@ -906,14 +939,14 @@ public sealed class FeatureServerQueryExecutorTests
         var connection = new DataConnection
         {
             ConnectionId = Guid.NewGuid(),
-            Provider = DataProviderNames.ArcGisRest,
+            Provider = DataProviderNames.GeoServicesRest,
             Name = "remote-roads",
             // Public address literal. The service-root validator vets the host with a live DNS
             // lookup and fail-closes when resolution is unavailable, which is what CI did for
             // services.example.com. An address literal is vetted without contacting a resolver.
             ConnectionString = "https://93.184.216.34/arcgis/rest/services/roads/FeatureServer"
         };
-        var store = new ArcGisRestFeatureStore(upstream, NullLogger<ArcGisRestFeatureStore>.Instance);
+        var store = new GeoServicesRestFeatureStore(upstream, NullLogger<GeoServicesRestFeatureStore>.Instance);
         var reader = ((IBindableFeatureDataProvider)store).CreateReaderForBinding(new FeatureProviderBinding(
             service,
             resource,
@@ -935,7 +968,7 @@ public sealed class FeatureServerQueryExecutorTests
     /// Fake upstream FeatureServer that honors resultOffset/resultRecordCount on returnIdsOnly
     /// requests and records every request so a test can prove what was asked for.
     /// </summary>
-    private sealed class RecordingArcGisRestClient(int totalIds) : IArcGisRestFeatureClient
+    private sealed class RecordingGeoServicesRestClient(int totalIds) : IGeoServicesRestFeatureClient
     {
         public List<string> FeatureRequests { get; } = [];
 
@@ -943,13 +976,13 @@ public sealed class FeatureServerQueryExecutorTests
 
         public long IdsServed { get; private set; }
 
-        public Task<ArcGisRestQueryResponse> QueryAsync(string url, string? authorizationHeader, CancellationToken cancellationToken)
+        public Task<GeoServicesRestQueryResponse> QueryAsync(string url, string? authorizationHeader, CancellationToken cancellationToken)
         {
             FeatureRequests.Add(url);
-            return Task.FromResult(new ArcGisRestQueryResponse { Features = [] });
+            return Task.FromResult(new GeoServicesRestQueryResponse { Features = [] });
         }
 
-        public Task<ArcGisRestObjectIdsResponse> QueryObjectIdsAsync(string url, string? authorizationHeader, CancellationToken cancellationToken)
+        public Task<GeoServicesRestObjectIdsResponse> QueryObjectIdsAsync(string url, string? authorizationHeader, CancellationToken cancellationToken)
         {
             ObjectIdsRequests.Add(url);
             var offset = ReadInt(url, "resultOffset") ?? 0;
@@ -962,17 +995,17 @@ public sealed class FeatureServerQueryExecutorTests
             }
 
             IdsServed += take;
-            return Task.FromResult(new ArcGisRestObjectIdsResponse { ObjectIdFieldName = "objectid", ObjectIds = ids });
+            return Task.FromResult(new GeoServicesRestObjectIdsResponse { ObjectIdFieldName = "objectid", ObjectIds = ids });
         }
 
-        public Task<ArcGisRestCountResponse> QueryCountAsync(string url, string? authorizationHeader, CancellationToken cancellationToken)
-            => Task.FromResult(new ArcGisRestCountResponse { Count = totalIds });
+        public Task<GeoServicesRestCountResponse> QueryCountAsync(string url, string? authorizationHeader, CancellationToken cancellationToken)
+            => Task.FromResult(new GeoServicesRestCountResponse { Count = totalIds });
 
-        public Task<ArcGisRestExtentResponse> QueryExtentAsync(string url, string? authorizationHeader, CancellationToken cancellationToken)
-            => Task.FromResult(new ArcGisRestExtentResponse());
+        public Task<GeoServicesRestExtentResponse> QueryExtentAsync(string url, string? authorizationHeader, CancellationToken cancellationToken)
+            => Task.FromResult(new GeoServicesRestExtentResponse());
 
-        public Task<ArcGisRestLayerResponse> GetLayerMetadataAsync(string url, string? authorizationHeader, CancellationToken cancellationToken)
-            => Task.FromResult(new ArcGisRestLayerResponse());
+        public Task<GeoServicesRestLayerResponse> GetLayerMetadataAsync(string url, string? authorizationHeader, CancellationToken cancellationToken)
+            => Task.FromResult(new GeoServicesRestLayerResponse());
 
         private static int? ReadInt(string url, string key)
         {

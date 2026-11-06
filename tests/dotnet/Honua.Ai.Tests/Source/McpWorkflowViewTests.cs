@@ -126,7 +126,61 @@ public sealed class McpWorkflowViewTests
         full.Names.Should().Contain("honua_geocode_address");
         view.Names.Should().NotContain("honua_geocode_address");
         view.Names.Should().NotContain("honua_solve_route");
-        view.Names.Should().NotContain("honua_create_app_package");
+    }
+
+    [UnitTest]
+    public async Task SetupView_ListsPackageCompositionToAnonymousCallersWithoutGrantingIt()
+    {
+        // Listing is discovery only: an installed client that resolves tools from the listing
+        // (MCP Inspector) can now send the call, and the server still refuses it anonymously.
+        var surface = BuildFullSurface();
+        var anonymous = await ListToolsAsync(surface, McpWorkflowViewCatalog.SetupViewName, McpTestFactory.AnonymousHttpContext());
+
+        anonymous.Names.Should().Contain(["honua_create_map_package", "honua_create_app_package"]);
+        anonymous.Names.Should().NotContain(["honua_validate_package", "honua_preview_package"]);
+        McpWorkflowViewCatalog.Setup.Revision.Should().Be("setup.v6");
+
+        foreach (var name in new[] { "honua_create_map_package", "honua_create_app_package" })
+        {
+            var response = await DispatchAsync(
+                surface,
+                "{\"jsonrpc\":\"2.0\",\"id\":\"anon\",\"method\":\"tools/call\",\"params\":{\"name\":\"" + name + "\",\"arguments\":{}}}",
+                McpTestFactory.AnonymousHttpContext());
+
+            var refused = response!.Error is not null
+                ? response.Error.Data!.Code
+                : response.Result!.Value.GetProperty("structuredContent").GetProperty("code").GetString();
+            refused.Should().Be("unauthenticated", name);
+        }
+    }
+
+    [UnitTest]
+    public async Task ReviewView_ListsPackageReviewToAnonymousCallersWithoutGrantingIt()
+    {
+        // The two review descriptors do not fit on setup (128 KiB aggregate). Inspector
+        // resolves --tool-name against tools/list, so they need a view it can negotiate.
+        var surface = BuildFullSurface();
+        var anonymous = await ListToolsAsync(surface, McpWorkflowViewCatalog.ReviewViewName, McpTestFactory.AnonymousHttpContext());
+
+        anonymous.Names.Should().Equal("honua_preview_package", "honua_validate_package");
+        McpWorkflowViewCatalog.Review.Revision.Should().Be("review.v1");
+
+        var projection = McpWorkflowViewProjector.Project(McpWorkflowViewCatalog.Review, BuildCatalogEntries());
+        projection.BudgetViolations.Should().BeEmpty();
+        projection.AggregateCanonicalBytes.Should().BeLessThanOrEqualTo(McpWorkflowViewBudget.MaxAggregateDescriptorBytes);
+
+        foreach (var name in new[] { "honua_validate_package", "honua_preview_package" })
+        {
+            var response = await DispatchAsync(
+                surface,
+                "{\"jsonrpc\":\"2.0\",\"id\":\"anon\",\"method\":\"tools/call\",\"params\":{\"name\":\"" + name + "\",\"arguments\":{}}}",
+                McpTestFactory.AnonymousHttpContext());
+
+            var refused = response!.Error is not null
+                ? response.Error.Data!.Code
+                : response.Result!.Value.GetProperty("structuredContent").GetProperty("code").GetString();
+            refused.Should().Be("unauthenticated", name);
+        }
     }
 
     [UnitTest]
@@ -177,10 +231,13 @@ public sealed class McpWorkflowViewTests
             "honua_studio_remove_interaction",
             "honua_studio_add_control",
             "honua_studio_remove_control",
+            "honua_create_map_package",
+            "honua_create_app_package",
             "honua_studio_propose_publication",
             "honua_supported_operation_kinds",
         ]);
-        view.Names.Should().HaveCount(39);
+        view.Names.Should().NotContain(["honua_validate_package", "honua_preview_package"]);
+        view.Names.Should().HaveCount(41);
 
         var stages = view.Meta.GetProperty("stages").EnumerateArray().ToArray();
         stages.Select(s => s.GetProperty("id").GetString()).Should().Equal(
@@ -455,6 +512,120 @@ public sealed class McpWorkflowViewTests
     }
 
     [UnitTest]
+    public async Task ToolsList_HttpSelectors_RespectNegotiationPrecedence()
+    {
+        var surface = BuildFullSurface();
+        var context = McpTestFactory.AuthenticatedHttpContextWithServices(services =>
+            services.AddSingleton<IOptionsMonitor<McpWorkflowViewOptions>>(
+                new StubOptionsMonitor(new McpWorkflowViewOptions { DefaultView = "default" })));
+        context.Request.Headers["X-Honua-Workflow-View"] = "configure";
+
+        var header = await ListToolsAsync(surface, view: null, context: context);
+        header.Meta.GetProperty("view").GetString().Should().Be("configure");
+
+        context.Request.QueryString = new QueryString("?view=setup");
+        var query = await ListToolsAsync(surface, view: null, context: context);
+        query.Meta.GetProperty("view").GetString().Should().Be("setup");
+
+        context.Items[McpWorkflowViewNegotiation.HttpContextItemKey] = "review";
+        var session = await ListToolsAsync(surface, view: null, context: context);
+        session.Meta.GetProperty("view").GetString().Should().Be("review");
+
+        var request = await ListToolsAsync(surface, view: "operate", context: context);
+        request.Meta.GetProperty("view").GetString().Should().Be("operate");
+
+        var full = await ListToolsAsync(surface, view: "full", context: context);
+        full.Meta.ValueKind.Should().Be(JsonValueKind.Undefined);
+    }
+
+    [UnitTest]
+    public async Task ToolsList_BlankAndFullHttpSelectors_PreserveFallbackAndAuthentication()
+    {
+        var surface = BuildFullSurface();
+        var context = McpTestFactory.AuthenticatedHttpContext();
+        context.Request.QueryString = new QueryString("?view=%20");
+        context.Request.Headers["X-Honua-Workflow-View"] = "configure";
+        var fallback = await ListToolsAsync(surface, view: null, context: context);
+        fallback.Meta.GetProperty("view").GetString().Should().Be("configure");
+
+        context.Request.QueryString = new QueryString("?view=full");
+        var full = await ListToolsAsync(surface, view: null, context: context);
+        full.Meta.ValueKind.Should().Be(JsonValueKind.Undefined);
+
+        var anonymous = McpTestFactory.AnonymousHttpContext();
+        anonymous.Request.Headers["X-Honua-Workflow-View"] = "full";
+        var denied = await DispatchAsync(surface,
+            """{"jsonrpc":"2.0","id":"v","method":"tools/list"}""", anonymous);
+        denied!.Error!.Data!.Code.Should().Be(McpErrorMapper.Codes.PermissionDenied);
+    }
+
+    [UnitTest]
+    public async Task Initialize_HttpSelectors_ValidateWithoutReplacingSessionMetadata()
+    {
+        var surface = BuildFullSurface();
+        const string rpc = """
+            {"jsonrpc":"2.0","id":"i","method":"initialize","params":{
+              "protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"stock","version":"1"}}}
+            """;
+        foreach (var useQuery in new[] { true, false })
+        {
+            var context = McpTestFactory.AuthenticatedHttpContext();
+            void Select(string view)
+            {
+                if (useQuery)
+                {
+                    context.Request.QueryString = new QueryString($"?view={view}");
+                }
+                else
+                {
+                    context.Request.Headers["X-Honua-Workflow-View"] = view;
+                }
+            }
+
+            Select("configure");
+            var initialized = await DispatchAsync(surface, rpc, context);
+            initialized!.Error.Should().BeNull();
+            context.Items[McpWorkflowViewNegotiation.HttpContextItemKey].Should().BeNull(
+                "HTTP selectors stay below session metadata on each request");
+
+            Select("nope");
+            var unknown = await DispatchAsync(surface, rpc, context);
+            var expected = await DispatchAsync(surface, rpc.Replace(
+                "\"capabilities\":{}", "\"capabilities\":{},\"_meta\":{\"honua.io/workflow-view\":\"nope\"}", StringComparison.Ordinal));
+            unknown!.Error.Should().BeEquivalentTo(expected!.Error);
+
+            var negotiated = await DispatchAsync(surface, rpc.Replace(
+                "\"capabilities\":{}", "\"capabilities\":{},\"_meta\":{\"honua.io/workflow-view\":\"setup\"}", StringComparison.Ordinal), context);
+            negotiated!.Error.Should().BeNull();
+            context.Items[McpWorkflowViewNegotiation.HttpContextItemKey].Should().Be("setup");
+        }
+    }
+
+    [UnitTest]
+    public async Task ToolsList_UnknownHttpSelectors_ReturnSameErrorAsRequestSelector()
+    {
+        var surface = BuildFullSurface();
+        const string rpc = """{"jsonrpc":"2.0","id":"v","method":"tools/list"}""";
+        var expected = await DispatchAsync(surface,
+            """{"jsonrpc":"2.0","id":"v","method":"tools/list","params":{"view":"nope"}}""");
+        foreach (var useQuery in new[] { true, false })
+        {
+            var context = McpTestFactory.AuthenticatedHttpContext();
+            if (useQuery)
+            {
+                context.Request.QueryString = new QueryString("?view=nope");
+            }
+            else
+            {
+                context.Request.Headers["X-Honua-Workflow-View"] = "nope";
+            }
+
+            var response = await DispatchAsync(surface, rpc, context);
+            response!.Error.Should().BeEquivalentTo(expected!.Error);
+        }
+    }
+
+    [UnitTest]
     public async Task ToolsList_ServerProfileDefaultView_AppliesWhenNothingIsNegotiated()
     {
         var surface = BuildFullSurface();
@@ -678,7 +849,7 @@ public sealed class McpWorkflowViewTests
 
         after.Names.Should().NotContain("honua_op_import_geojson")
             .And.NotContain("honua_op_service_promote");
-        after.Names.Should().HaveCount(39);
+        after.Names.Should().HaveCount(41);
 
         // Removing the operation drops it again, still with no edit.
         var removed = await ListToolsAsync(BuildFullSurface(), McpWorkflowViewCatalog.SetupViewName);
@@ -711,7 +882,7 @@ public sealed class McpWorkflowViewTests
 
         var baseline = McpWorkflowViewProjector.Project(McpWorkflowViewCatalog.Setup, BuildCatalogEntries());
         names.Should().Equal(baseline.Members.Select(m => m.ToolName));
-        names.Should().HaveCount(39);
+        names.Should().HaveCount(41);
     }
 
     [UnitTest]
@@ -749,7 +920,7 @@ public sealed class McpWorkflowViewTests
 
         response!.Error.Should().BeNull();
         var tools = response.Result!.Value.GetProperty("tools");
-        tools.GetArrayLength().Should().Be(39);
+        tools.GetArrayLength().Should().Be(41);
         tools.EnumerateArray().Select(t => t.GetProperty("name").GetString())
             .Should().NotContain(name => name!.StartsWith("honua_op_import_", StringComparison.Ordinal));
     }
@@ -846,7 +1017,7 @@ public sealed class McpWorkflowViewTests
             .ToArray();
 
         views.Select(v => v.GetProperty("name").GetString()).Should().Equal(
-            "analyze", "configure", "default", "operate", "setup");
+            "analyze", "configure", "default", "operate", "review", "setup");
         views.Should().OnlyContain(v => v.GetProperty("toolCount").GetInt32() <= McpWorkflowViewBudget.MaxDescriptors);
     }
 
@@ -951,6 +1122,8 @@ public sealed class McpWorkflowViewTests
         configure.Members.Select(member => member.ToolName).Should().Contain(
         [
             "honua_admin_connections_create",
+            "honua_admin_connections_list",
+            "honua_admin_connection_tables_list",
             "honua_admin_layer_publish",
             "honua_studio_add_layer",
             "honua_studio_get_version",

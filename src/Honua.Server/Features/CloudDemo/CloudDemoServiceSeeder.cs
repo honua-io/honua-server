@@ -51,14 +51,7 @@ internal sealed class CloudDemoServiceSeeder(
         await ProjectLegacyCatalogIntoGraphAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Projects the freshly-seeded legacy catalog into the active Metadata v2 graph so the
-    /// demo services, layers, fields, and collections are visible to the v2-graph-backed read
-    /// paths (FeatureServer query, OGC API Features items). The legacy <c>SeedCatalogSql</c>
-    /// writes only the V1 catalog (<c>honua.services</c>/<c>honua.layers</c>/...); after the
-    /// Metadata v2 cutover those reads resolve through the graph, so without this projection a
-    /// post-reset query/items returns 404. (honua-server#2081.)
-    /// </summary>
+    // Without the v2 graph projection a post-reset query returns 404, because those reads resolve through the graph.
     private async Task ProjectLegacyCatalogIntoGraphAsync(CancellationToken cancellationToken)
     {
         var graph = await legacyCatalogProjector

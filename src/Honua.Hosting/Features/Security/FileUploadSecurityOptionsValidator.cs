@@ -7,17 +7,8 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Security;
 
-/// <summary>
-/// Validates FileUploadSecurityOptions configuration to ensure secure file upload handling.
-/// Enforces reasonable limits and security best practices for file uploads.
-/// </summary>
 internal sealed class FileUploadSecurityOptionsValidator : OptionsValidator<FileUploadSecurityOptions>
 {
-    /// <summary>
-    /// Validates the file upload security options configuration using derived class-specific logic.
-    /// </summary>
-    /// <param name="options">The file upload security options instance to validate</param>
-    /// <param name="failures">List to add validation errors to</param>
     protected override void ValidateOptions(FileUploadSecurityOptions options, List<string> failures)
     {
         // Complex business rule validations
@@ -25,9 +16,6 @@ internal sealed class FileUploadSecurityOptionsValidator : OptionsValidator<File
     }
 
 
-    /// <summary>
-    /// Validates security scan size configuration.
-    /// </summary>
     private static void ValidateSecurityScanSize(FileUploadSecurityOptions options, List<string> failures)
     {
         // Basic range validation (1KB to 100MB)

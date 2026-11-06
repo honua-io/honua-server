@@ -28,16 +28,10 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Logger category for attachment operations
-/// </summary>
 internal sealed class AttachmentOperations
 {
 }
 
-/// <summary>
-/// Extension methods to register FeatureServer attachment endpoints
-/// </summary>
 internal static partial class AttachmentEndpoints
 {
     private static readonly ISet<string> SupportedAttachmentContentTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -46,18 +40,7 @@ internal static partial class AttachmentEndpoints
         "multipart/form-data"
     };
 
-    /// <summary>
-    /// Maps FeatureServer attachment REST API endpoints using AOT-compatible routing.
-    /// </summary>
-    /// <remarks>
-    /// Mutation endpoints use <see cref="AuthorizationEndpointConventionBuilderExtensions.AllowAnonymous"/>
-    /// to bypass the application-wide authorization policy so per-layer access checks can run.
-    /// Every handler invokes <c>AccessPolicyHelpers.RequireResourceAccess(... Read|Write)</c>
-    /// (via <c>TryValidateLayerAccessAsync</c>) before touching storage, which is what returns
-    /// 401/403 for unauthenticated or unauthorized callers. Removing <c>AllowAnonymous()</c>
-    /// without first moving the per-layer gate into the pipeline would lock out every caller
-    /// whose permissions live on the layer rather than on a global role.
-    /// </remarks>
+    // Mutation routes are AllowAnonymous so the per-layer access check can run; every handler calls RequireResourceAccess before storage, and dropping AllowAnonymous without moving that gate into the pipeline locks out callers whose permissions live on the layer.
     public static IEndpointRouteBuilder MapAttachmentEndpoints(this IEndpointRouteBuilder endpoints)
     {
         // Query attachments for a feature
@@ -137,9 +120,6 @@ internal static partial class AttachmentEndpoints
         return endpoints;
     }
 
-    /// <summary>
-    /// Handles querying attachments for a feature
-    /// </summary>
     private static async Task HandleQueryAttachments(HttpContext context)
     {
         var resource = await TryValidateLayerAccessAsync(context);
@@ -236,7 +216,7 @@ internal static partial class AttachmentEndpoints
         if (!string.IsNullOrWhiteSpace(definitionExpression))
         {
             var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
-            var parseResult = filterService.Parse(FilterLanguage.ArcGisSql, definitionExpression);
+            var parseResult = filterService.Parse(FilterLanguage.GeoServicesSql, definitionExpression);
             if (!parseResult.IsSuccess)
             {
                 await RouteValidationHelpers.WriteValidationErrorAsync(
@@ -350,9 +330,6 @@ internal static partial class AttachmentEndpoints
         return result;
     }
 
-    /// <summary>
-    /// Handles adding an attachment to a feature
-    /// </summary>
     private static async Task HandleAddAttachment(HttpContext context)
     {
         var resource = await TryValidateLayerAccessAsync(context, AccessScope.Write, AuthorizationOperation.Insert);
@@ -461,9 +438,6 @@ internal static partial class AttachmentEndpoints
         await result.ExecuteAsync(context);
     }
 
-    /// <summary>
-    /// Handles updating an attachment's metadata
-    /// </summary>
     private static async Task HandleUpdateAttachment(HttpContext context)
     {
         var resource = await TryValidateLayerAccessAsync(context, AccessScope.Write, AuthorizationOperation.Update);
@@ -575,9 +549,6 @@ internal static partial class AttachmentEndpoints
         await result.ExecuteAsync(context);
     }
 
-    /// <summary>
-    /// Handles deleting attachments from a feature
-    /// </summary>
     private static async Task HandleDeleteAttachments(HttpContext context)
     {
         var resource = await TryValidateLayerAccessAsync(context, AccessScope.Write, AuthorizationOperation.Delete);
@@ -762,9 +733,6 @@ internal static partial class AttachmentEndpoints
         await result.ExecuteAsync(context);
     }
 
-    /// <summary>
-    /// Handles downloading attachment content with authorization check
-    /// </summary>
     private static async Task HandleDownloadAttachment(HttpContext context)
     {
         var resource = await TryValidateLayerAccessAsync(context);
@@ -903,11 +871,6 @@ internal static partial class AttachmentEndpoints
         return null;
     }
 
-    /// <summary>
-    /// Resolved V2 attachment-access context: the canonical resource, the publishing service,
-    /// the integer storage-layer handle the attachment store expects, and the public route
-    /// layer id clients use in URLs.
-    /// </summary>
     internal readonly record struct AttachmentAccessContext(
         MetadataV2Service Service,
         MetadataV2Resource Resource,
@@ -944,7 +907,7 @@ internal static partial class AttachmentEndpoints
 
         var principal = context.User?.Identity?.IsAuthenticated == true
             ? new EditPrincipal(
-                EditOwnerSubject.Resolve(context.User),
+                ServiceDataEditorAuthorization.ResolveOwnerSubject(context.User),
                 IsAuthenticated: true,
                 IsAdmin: ServiceDataEditorAuthorization.IsAdminPrincipal(context))
             : EditPrincipal.Anonymous;
@@ -971,11 +934,6 @@ internal static partial class AttachmentEndpoints
         return false;
     }
 
-    /// <summary>
-    /// Returns a client-safe refusal when the layer does not support attachments, or when a
-    /// write asks for an edit capability the publication does not declare. A read of an
-    /// attachment-capable layer is allowed. Null means the request may proceed.
-    /// </summary>
     internal static string? DescribeDeniedAttachmentAccess(
         MetadataV2Service service,
         MetadataV2Publication? publication,
@@ -1211,15 +1169,6 @@ internal static partial class AttachmentEndpoints
         return false;
     }
 
-    /// <summary>
-    /// Parses the Esri <c>attachmentTypes</c>, <c>keywords</c>, and <c>size</c>
-    /// queryAttachments facets into an <see cref="AttachmentQueryFilter"/>.
-    /// </summary>
-    /// <remarks>
-    /// <c>size</c> follows the Esri convention of an inclusive <c>lower,upper</c>
-    /// byte range; a single value is treated as the lower bound. Either bound may be
-    /// omitted (e.g. <c>,2048</c> or <c>1024,</c>).
-    /// </remarks>
     private static bool TryParseAttachmentFilter(
         Dictionary<string, StringValues> values,
         out AttachmentQueryFilter filter,

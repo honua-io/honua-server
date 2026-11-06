@@ -1,8 +1,8 @@
 {
   "$schema": "./mcp-tool-roster.v1.schema.json",
   "schemaVersion": 1,
-  "serverSha": "3a77d863c2ea066b234c8433d98459359fc1409c",
-  "generatedAt": "2026-10-23T00:06:11Z",
+  "serverSha": "a054afcbf371e07a4bc4fe1749eebf543c6a4822",
+  "generatedAt": "2026-11-04T23:53:35Z",
   "regenerate": "bash scripts/generate-mcp-tool-roster.sh",
   "static": [
     "honua_alert_events",
@@ -62,6 +62,7 @@
     "honua_studio_save_version",
     "honua_studio_set_layer_style",
     "honua_studio_set_layer_visibility",
+    "honua_studio_set_map_style",
     "honua_studio_set_view",
     "honua_studio_update_draft",
     "honua_studio_validate_draft",
@@ -73,7 +74,10 @@
     "honua_admin_api_key_effective_permissions",
     "honua_admin_api_key_list",
     "honua_admin_api_key_revoke",
+    "honua_admin_api_key_update_restrictions",
+    "honua_admin_connection_tables_list",
     "honua_admin_connections_create",
+    "honua_admin_connections_list",
     "honua_admin_connections_test",
     "honua_admin_field_mask_policy_create",
     "honua_admin_field_mask_policy_delete",
@@ -140,10 +144,17 @@
     "honua_admin_user_effective_permissions",
     "honua_admin_user_get",
     "honua_admin_user_list",
-    "honua_admin_user_roles_update"
+    "honua_admin_user_roles_update",
+    "honua_op_folder_create",
+    "honua_op_folder_delete",
+    "honua_op_folder_list",
+    "honua_op_folder_update",
+    "honua_op_service_move"
   ],
   "requiresDurableControlPlane": [
+    "honua_admin_connection_tables_list",
     "honua_admin_connections_create",
+    "honua_admin_connections_list",
     "honua_admin_connections_test",
     "honua_admin_import_upload_object",
     "honua_admin_import_upload_url",
@@ -166,7 +177,12 @@
     "honua_admin_services_list",
     "honua_admin_services_protocols_set",
     "honua_admin_services_settings_get",
-    "honua_admin_services_timeinfo_set"
+    "honua_admin_services_timeinfo_set",
+    "honua_op_folder_create",
+    "honua_op_folder_delete",
+    "honua_op_folder_list",
+    "honua_op_folder_update",
+    "honua_op_service_move"
   ],
   "views": {
     "analyze": [
@@ -186,7 +202,9 @@
     "configure": [
       "honua_admin_api_key_effective_permissions",
       "honua_admin_api_key_list",
+      "honua_admin_connection_tables_list",
       "honua_admin_connections_create",
+      "honua_admin_connections_list",
       "honua_admin_connections_test",
       "honua_admin_import_upload_object",
       "honua_admin_import_upload_url",
@@ -248,8 +266,14 @@
       "honua_propose_finding",
       "honua_supported_operation_kinds"
     ],
+    "review": [
+      "honua_preview_package",
+      "honua_validate_package"
+    ],
     "setup": [
       "honua_apply_style_preset",
+      "honua_create_app_package",
+      "honua_create_map_package",
       "honua_describe_layer",
       "honua_dry_run_plan",
       "honua_execute_plan",

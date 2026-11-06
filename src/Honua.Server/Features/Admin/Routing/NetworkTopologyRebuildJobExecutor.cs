@@ -10,23 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Admin.Routing;
 
-/// <summary>
-/// Worker-side <see cref="IJobExecutor"/> for <see cref="ExecutionJobKind.NetworkTopologyRebuild"/>
-/// jobs (#2718). Runs entirely in-process against Postgres: acquires the rebuild attempt's
-/// fencing lease (#2720), materializes an isolated shadow edge/vertex topology from the
-/// generation's staged content edits, records per-stage checkpoints so a restarted worker
-/// resumes cleanly, computes graph-integrity evidence, and completes or fails the attempt
-/// (which drives the owning generation to <c>ready</c>/<c>failed</c>). Never touches the
-/// active generation's solve tables.
-/// </summary>
-/// <remarks>
-/// <see cref="IJobExecutor"/> instances are registered and resolved as singletons by
-/// <c>JobExecutionService</c>, but the routing stores this executor needs are registered
-/// scoped (they are stateless Postgres session wrappers, matching every other
-/// network-topology store's lifetime). Rather than change those lifetimes, this executor
-/// creates a fresh DI scope per job execution and resolves them from it — the standard
-/// pattern for a singleton consuming scoped dependencies.
-/// </remarks>
+// The executor opens a scope per job because the routing stores are scoped, and it never writes the active generation's solve tables.
 internal sealed partial class NetworkTopologyRebuildJobExecutor : IJobExecutor
 {
     private static readonly TimeSpan LeaseDuration = TimeSpan.FromMinutes(2);
@@ -34,9 +18,6 @@ internal sealed partial class NetworkTopologyRebuildJobExecutor : IJobExecutor
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<NetworkTopologyRebuildJobExecutor> _logger;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="NetworkTopologyRebuildJobExecutor"/> class.
-    /// </summary>
     public NetworkTopologyRebuildJobExecutor(
         IServiceScopeFactory scopeFactory,
         ILogger<NetworkTopologyRebuildJobExecutor> logger)
@@ -45,10 +26,8 @@ internal sealed partial class NetworkTopologyRebuildJobExecutor : IJobExecutor
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <inheritdoc />
     public ExecutionJobKind Kind => ExecutionJobKind.NetworkTopologyRebuild;
 
-    /// <inheritdoc />
     public async Task<JobExecutionResult> ExecuteAsync(
         ExecutionJobRecord job,
         IJobExecutionContext context,

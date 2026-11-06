@@ -1,0 +1,1759 @@
+{
+  "schema": "honua.studio.composition-reducer-cases/v1",
+  "description": "Composition commands and their expected outcome. The client reducer, the mock server and honua-server's honua_studio_* tools must each reach expect.body, or refuse with expect.error. Bodies compare on sourceBindings, styleRefs, mapSpec, layers, view, widgets and controls.",
+  "bodies": {
+    "seeded": {
+      "sourceBindings": [
+        {
+          "sourceId": "parcels",
+          "protocol": "geoservices_feature_service",
+          "locator": {
+            "url": "/rest/services/parcels/FeatureServer/0",
+            "serviceId": "parcels",
+            "layerId": 0
+          }
+        },
+        {
+          "sourceId": "roads",
+          "protocol": "geoservices_feature_service",
+          "locator": {
+            "url": "/rest/services/roads/FeatureServer/0",
+            "serviceId": "roads",
+            "layerId": 0
+          }
+        }
+      ],
+      "styleRefs": [
+        {
+          "styleId": "honua-inline:roads",
+          "body": {
+            "roads": {
+              "paint": {
+                "line-color": "#334455"
+              }
+            }
+          }
+        }
+      ],
+      "mapSpec": {
+        "version": 8,
+        "sources": {
+          "parcels": {
+            "type": "geojson",
+            "data": {}
+          },
+          "roads": {
+            "type": "geojson",
+            "data": {}
+          }
+        },
+        "layers": [
+          {
+            "id": "parcels",
+            "type": "fill",
+            "source": "parcels"
+          },
+          {
+            "id": "parcel-labels",
+            "type": "symbol",
+            "source": "parcels"
+          },
+          {
+            "id": "roads",
+            "type": "line",
+            "source": "roads"
+          },
+          {
+            "id": "roads__outline",
+            "type": "line",
+            "source": "roads"
+          },
+          {
+            "id": "road-names",
+            "type": "symbol",
+            "source": "roads",
+            "metadata": {
+              "honua:compositionLayerId": "roads"
+            }
+          }
+        ],
+        "metadata": {
+          "honua:compositionLayerIds": ["parcels", "parcel-labels", "roads"]
+        }
+      },
+      "layers": [
+        {
+          "id": "parcels",
+          "sourceId": "parcels",
+          "visible": true
+        },
+        {
+          "id": "parcel-labels",
+          "sourceId": "parcels",
+          "visible": true
+        },
+        {
+          "id": "roads",
+          "sourceId": "roads",
+          "visible": true,
+          "styleRef": "honua-inline:roads"
+        }
+      ],
+      "view": {
+        "center": [-157.86, 21.3],
+        "zoom": 9
+      },
+      "widgets": []
+    },
+    "unused-binding": {
+      "sourceBindings": [
+        {
+          "sourceId": "parcels",
+          "protocol": "geoservices_feature_service",
+          "locator": {
+            "url": "/rest/services/parcels/FeatureServer/0",
+            "serviceId": "parcels",
+            "layerId": 0
+          }
+        },
+        {
+          "sourceId": "roads",
+          "protocol": "geoservices_feature_service",
+          "locator": {
+            "url": "/rest/services/roads/FeatureServer/0",
+            "serviceId": "roads",
+            "layerId": 0
+          }
+        },
+        {
+          "sourceId": "retired",
+          "protocol": "geoservices_feature_service",
+          "locator": {
+            "url": "/rest/services/retired/FeatureServer/0",
+            "serviceId": "retired",
+            "layerId": 0
+          }
+        }
+      ],
+      "styleRefs": [
+        {
+          "styleId": "honua-inline:roads",
+          "body": {
+            "roads": {
+              "paint": {
+                "line-color": "#334455"
+              }
+            }
+          }
+        }
+      ],
+      "mapSpec": {
+        "version": 8,
+        "sources": {
+          "parcels": {
+            "type": "geojson",
+            "data": {}
+          },
+          "roads": {
+            "type": "geojson",
+            "data": {}
+          }
+        },
+        "layers": [
+          {
+            "id": "parcels",
+            "type": "fill",
+            "source": "parcels"
+          },
+          {
+            "id": "parcel-labels",
+            "type": "symbol",
+            "source": "parcels"
+          },
+          {
+            "id": "roads",
+            "type": "line",
+            "source": "roads"
+          },
+          {
+            "id": "roads__outline",
+            "type": "line",
+            "source": "roads"
+          },
+          {
+            "id": "road-names",
+            "type": "symbol",
+            "source": "roads",
+            "metadata": {
+              "honua:compositionLayerId": "roads"
+            }
+          }
+        ],
+        "metadata": {
+          "honua:compositionLayerIds": ["parcels", "parcel-labels", "roads"]
+        }
+      },
+      "layers": [
+        {
+          "id": "parcels",
+          "sourceId": "parcels",
+          "visible": true
+        },
+        {
+          "id": "parcel-labels",
+          "sourceId": "parcels",
+          "visible": true
+        },
+        {
+          "id": "roads",
+          "sourceId": "roads",
+          "visible": true,
+          "styleRef": "honua-inline:roads"
+        }
+      ],
+      "view": {
+        "center": [-157.86, 21.3],
+        "zoom": 9
+      },
+      "widgets": []
+    },
+    "control-on-roads": {
+      "sourceBindings": [
+        {
+          "sourceId": "parcels",
+          "protocol": "geoservices_feature_service",
+          "locator": {
+            "url": "/rest/services/parcels/FeatureServer/0",
+            "serviceId": "parcels",
+            "layerId": 0
+          }
+        },
+        {
+          "sourceId": "roads",
+          "protocol": "geoservices_feature_service",
+          "locator": {
+            "url": "/rest/services/roads/FeatureServer/0",
+            "serviceId": "roads",
+            "layerId": 0
+          }
+        }
+      ],
+      "styleRefs": [
+        {
+          "styleId": "honua-inline:roads",
+          "body": {
+            "roads": {
+              "paint": {
+                "line-color": "#334455"
+              }
+            }
+          }
+        }
+      ],
+      "mapSpec": {
+        "version": 8,
+        "sources": {
+          "parcels": {
+            "type": "geojson",
+            "data": {}
+          },
+          "roads": {
+            "type": "geojson",
+            "data": {}
+          }
+        },
+        "layers": [
+          {
+            "id": "parcels",
+            "type": "fill",
+            "source": "parcels"
+          },
+          {
+            "id": "parcel-labels",
+            "type": "symbol",
+            "source": "parcels"
+          },
+          {
+            "id": "roads",
+            "type": "line",
+            "source": "roads"
+          },
+          {
+            "id": "roads__outline",
+            "type": "line",
+            "source": "roads"
+          },
+          {
+            "id": "road-names",
+            "type": "symbol",
+            "source": "roads",
+            "metadata": {
+              "honua:compositionLayerId": "roads"
+            }
+          }
+        ],
+        "metadata": {
+          "honua:compositionLayerIds": ["parcels", "parcel-labels", "roads"]
+        }
+      },
+      "layers": [
+        {
+          "id": "parcels",
+          "sourceId": "parcels",
+          "visible": true
+        },
+        {
+          "id": "parcel-labels",
+          "sourceId": "parcels",
+          "visible": true
+        },
+        {
+          "id": "roads",
+          "sourceId": "roads",
+          "visible": true,
+          "styleRef": "honua-inline:roads"
+        }
+      ],
+      "view": {
+        "center": [-157.86, 21.3],
+        "zoom": 9
+      },
+      "widgets": [],
+      "controls": [
+        {
+          "id": "road-filter",
+          "kind": "filterSelect",
+          "sourceId": "roads"
+        }
+      ]
+    },
+    "widget-on-roads": {
+      "sourceBindings": [
+        {
+          "sourceId": "parcels",
+          "protocol": "geoservices_feature_service",
+          "locator": {
+            "url": "/rest/services/parcels/FeatureServer/0",
+            "serviceId": "parcels",
+            "layerId": 0
+          }
+        },
+        {
+          "sourceId": "roads",
+          "protocol": "geoservices_feature_service",
+          "locator": {
+            "url": "/rest/services/roads/FeatureServer/0",
+            "serviceId": "roads",
+            "layerId": 0
+          }
+        }
+      ],
+      "styleRefs": [
+        {
+          "styleId": "honua-inline:roads",
+          "body": {
+            "roads": {
+              "paint": {
+                "line-color": "#334455"
+              }
+            }
+          }
+        }
+      ],
+      "mapSpec": {
+        "version": 8,
+        "sources": {
+          "parcels": {
+            "type": "geojson",
+            "data": {}
+          },
+          "roads": {
+            "type": "geojson",
+            "data": {}
+          }
+        },
+        "layers": [
+          {
+            "id": "parcels",
+            "type": "fill",
+            "source": "parcels"
+          },
+          {
+            "id": "parcel-labels",
+            "type": "symbol",
+            "source": "parcels"
+          },
+          {
+            "id": "roads",
+            "type": "line",
+            "source": "roads"
+          },
+          {
+            "id": "roads__outline",
+            "type": "line",
+            "source": "roads"
+          },
+          {
+            "id": "road-names",
+            "type": "symbol",
+            "source": "roads",
+            "metadata": {
+              "honua:compositionLayerId": "roads"
+            }
+          }
+        ],
+        "metadata": {
+          "honua:compositionLayerIds": ["parcels", "parcel-labels", "roads"]
+        }
+      },
+      "layers": [
+        {
+          "id": "parcels",
+          "sourceId": "parcels",
+          "visible": true
+        },
+        {
+          "id": "parcel-labels",
+          "sourceId": "parcels",
+          "visible": true
+        },
+        {
+          "id": "roads",
+          "sourceId": "roads",
+          "visible": true,
+          "styleRef": "honua-inline:roads"
+        }
+      ],
+      "view": {
+        "center": [-157.86, 21.3],
+        "zoom": 9
+      },
+      "widgets": [
+        {
+          "id": "road-table",
+          "kind": "table",
+          "sourceId": "roads"
+        }
+      ]
+    },
+    "control-and-widget-on-roads": {
+      "sourceBindings": [
+        {
+          "sourceId": "parcels",
+          "protocol": "geoservices_feature_service",
+          "locator": {
+            "url": "/rest/services/parcels/FeatureServer/0",
+            "serviceId": "parcels",
+            "layerId": 0
+          }
+        },
+        {
+          "sourceId": "roads",
+          "protocol": "geoservices_feature_service",
+          "locator": {
+            "url": "/rest/services/roads/FeatureServer/0",
+            "serviceId": "roads",
+            "layerId": 0
+          }
+        }
+      ],
+      "styleRefs": [
+        {
+          "styleId": "honua-inline:roads",
+          "body": {
+            "roads": {
+              "paint": {
+                "line-color": "#334455"
+              }
+            }
+          }
+        }
+      ],
+      "mapSpec": {
+        "version": 8,
+        "sources": {
+          "parcels": {
+            "type": "geojson",
+            "data": {}
+          },
+          "roads": {
+            "type": "geojson",
+            "data": {}
+          }
+        },
+        "layers": [
+          {
+            "id": "parcels",
+            "type": "fill",
+            "source": "parcels"
+          },
+          {
+            "id": "parcel-labels",
+            "type": "symbol",
+            "source": "parcels"
+          },
+          {
+            "id": "roads",
+            "type": "line",
+            "source": "roads"
+          },
+          {
+            "id": "roads__outline",
+            "type": "line",
+            "source": "roads"
+          },
+          {
+            "id": "road-names",
+            "type": "symbol",
+            "source": "roads",
+            "metadata": {
+              "honua:compositionLayerId": "roads"
+            }
+          }
+        ],
+        "metadata": {
+          "honua:compositionLayerIds": ["parcels", "parcel-labels", "roads"]
+        }
+      },
+      "layers": [
+        {
+          "id": "parcels",
+          "sourceId": "parcels",
+          "visible": true
+        },
+        {
+          "id": "parcel-labels",
+          "sourceId": "parcels",
+          "visible": true
+        },
+        {
+          "id": "roads",
+          "sourceId": "roads",
+          "visible": true,
+          "styleRef": "honua-inline:roads"
+        }
+      ],
+      "view": {
+        "center": [-157.86, 21.3],
+        "zoom": 9
+      },
+      "widgets": [
+        {
+          "id": "road-table",
+          "kind": "table",
+          "sourceId": "roads"
+        }
+      ],
+      "controls": [
+        {
+          "id": "road-filter",
+          "kind": "filterSelect",
+          "sourceId": "roads"
+        }
+      ]
+    },
+    "control-on-shared-source": {
+      "sourceBindings": [
+        {
+          "sourceId": "parcels",
+          "protocol": "geoservices_feature_service",
+          "locator": {
+            "url": "/rest/services/parcels/FeatureServer/0",
+            "serviceId": "parcels",
+            "layerId": 0
+          }
+        },
+        {
+          "sourceId": "roads",
+          "protocol": "geoservices_feature_service",
+          "locator": {
+            "url": "/rest/services/roads/FeatureServer/0",
+            "serviceId": "roads",
+            "layerId": 0
+          }
+        }
+      ],
+      "styleRefs": [
+        {
+          "styleId": "honua-inline:roads",
+          "body": {
+            "roads": {
+              "paint": {
+                "line-color": "#334455"
+              }
+            }
+          }
+        }
+      ],
+      "mapSpec": {
+        "version": 8,
+        "sources": {
+          "parcels": {
+            "type": "geojson",
+            "data": {}
+          },
+          "roads": {
+            "type": "geojson",
+            "data": {}
+          }
+        },
+        "layers": [
+          {
+            "id": "parcels",
+            "type": "fill",
+            "source": "parcels"
+          },
+          {
+            "id": "parcel-labels",
+            "type": "symbol",
+            "source": "parcels"
+          },
+          {
+            "id": "roads",
+            "type": "line",
+            "source": "roads"
+          },
+          {
+            "id": "roads__outline",
+            "type": "line",
+            "source": "roads"
+          },
+          {
+            "id": "road-names",
+            "type": "symbol",
+            "source": "roads",
+            "metadata": {
+              "honua:compositionLayerId": "roads"
+            }
+          }
+        ],
+        "metadata": {
+          "honua:compositionLayerIds": ["parcels", "parcel-labels", "roads"]
+        }
+      },
+      "layers": [
+        {
+          "id": "parcels",
+          "sourceId": "parcels",
+          "visible": true
+        },
+        {
+          "id": "parcel-labels",
+          "sourceId": "parcels",
+          "visible": true
+        },
+        {
+          "id": "roads",
+          "sourceId": "roads",
+          "visible": true,
+          "styleRef": "honua-inline:roads"
+        }
+      ],
+      "view": {
+        "center": [-157.86, 21.3],
+        "zoom": 9
+      },
+      "widgets": [],
+      "controls": [
+        {
+          "id": "parcel-filter",
+          "kind": "filterSelect",
+          "sourceId": "parcels"
+        }
+      ]
+    },
+    "layer-id-names-another-source": {
+      "sourceBindings": [
+        {
+          "sourceId": "dataset",
+          "protocol": "geoservices_feature_service",
+          "locator": {
+            "url": "/rest/services/dataset/FeatureServer/0",
+            "serviceId": "dataset",
+            "layerId": 0
+          }
+        },
+        {
+          "sourceId": "different",
+          "protocol": "geoservices_feature_service",
+          "locator": {
+            "url": "/rest/services/different/FeatureServer/0",
+            "serviceId": "different",
+            "layerId": 0
+          }
+        }
+      ],
+      "layers": [
+        {
+          "id": "presentation",
+          "sourceId": "dataset",
+          "visible": true
+        },
+        {
+          "id": "dataset",
+          "sourceId": "different",
+          "visible": true
+        }
+      ],
+      "controls": [
+        {
+          "id": "dataset-filter",
+          "kind": "filterSelect",
+          "sourceId": "dataset"
+        }
+      ],
+      "view": {
+        "center": [-157.86, 21.3],
+        "zoom": 9
+      },
+      "widgets": []
+    },
+    "binding-survives-for-layer-id": {
+      "sourceBindings": [
+        {
+          "sourceId": "dataset",
+          "protocol": "geoservices_feature_service",
+          "locator": {
+            "url": "/rest/services/dataset/FeatureServer/0",
+            "serviceId": "dataset",
+            "layerId": 0
+          }
+        },
+        {
+          "sourceId": "presentation",
+          "protocol": "geoservices_feature_service",
+          "locator": {
+            "url": "/rest/services/presentation/FeatureServer/0",
+            "serviceId": "presentation",
+            "layerId": 0
+          }
+        }
+      ],
+      "layers": [
+        {
+          "id": "presentation",
+          "sourceId": "dataset",
+          "visible": true
+        }
+      ],
+      "controls": [
+        {
+          "id": "presentation-filter",
+          "kind": "filterSelect",
+          "sourceId": "presentation"
+        }
+      ],
+      "view": {
+        "center": [-157.86, 21.3],
+        "zoom": 9
+      },
+      "widgets": []
+    },
+    "another-layer-declares-the-source": {
+      "sourceBindings": [
+        {
+          "sourceId": "dataset",
+          "protocol": "geoservices_feature_service",
+          "locator": {
+            "url": "/rest/services/dataset/FeatureServer/0",
+            "serviceId": "dataset",
+            "layerId": 0
+          }
+        }
+      ],
+      "layers": [
+        {
+          "id": "presentation",
+          "sourceId": "dataset",
+          "visible": true
+        },
+        {
+          "id": "detail",
+          "sourceId": "dataset",
+          "visible": true
+        }
+      ],
+      "controls": [
+        {
+          "id": "dataset-filter",
+          "kind": "filterSelect",
+          "sourceId": "dataset"
+        }
+      ],
+      "view": {
+        "center": [-157.86, 21.3],
+        "zoom": 9
+      },
+      "widgets": []
+    }
+  },
+  "cases": [
+    {
+      "name": "removing a layer prunes its binding, inline style, map-style source, style layers and owner entry",
+      "body": "seeded",
+      "command": {
+        "name": "removeLayer",
+        "target": {
+          "kind": "layer",
+          "id": "roads"
+        }
+      },
+      "tool": {
+        "name": "honua_studio_remove_layer",
+        "arguments": {
+          "layerId": "roads"
+        }
+      },
+      "expect": {
+        "body": {
+          "sourceBindings": [
+            {
+              "sourceId": "parcels",
+              "protocol": "geoservices_feature_service",
+              "locator": {
+                "url": "/rest/services/parcels/FeatureServer/0",
+                "serviceId": "parcels",
+                "layerId": 0
+              }
+            }
+          ],
+          "styleRefs": [],
+          "mapSpec": {
+            "version": 8,
+            "sources": {
+              "parcels": {
+                "type": "geojson",
+                "data": {}
+              }
+            },
+            "layers": [
+              {
+                "id": "parcels",
+                "type": "fill",
+                "source": "parcels"
+              },
+              {
+                "id": "parcel-labels",
+                "type": "symbol",
+                "source": "parcels"
+              }
+            ],
+            "metadata": {
+              "honua:compositionLayerIds": ["parcels", "parcel-labels"]
+            }
+          },
+          "layers": [
+            {
+              "id": "parcels",
+              "sourceId": "parcels",
+              "visible": true
+            },
+            {
+              "id": "parcel-labels",
+              "sourceId": "parcels",
+              "visible": true
+            }
+          ],
+          "view": {
+            "center": [-157.86, 21.3],
+            "zoom": 9
+          },
+          "widgets": []
+        }
+      }
+    },
+    {
+      "name": "removing one of two layers on a source keeps that source bound and drawn",
+      "body": "seeded",
+      "command": {
+        "name": "removeLayer",
+        "target": {
+          "kind": "layer",
+          "id": "parcels"
+        }
+      },
+      "tool": {
+        "name": "honua_studio_remove_layer",
+        "arguments": {
+          "layerId": "parcels"
+        }
+      },
+      "expect": {
+        "body": {
+          "sourceBindings": [
+            {
+              "sourceId": "parcels",
+              "protocol": "geoservices_feature_service",
+              "locator": {
+                "url": "/rest/services/parcels/FeatureServer/0",
+                "serviceId": "parcels",
+                "layerId": 0
+              }
+            },
+            {
+              "sourceId": "roads",
+              "protocol": "geoservices_feature_service",
+              "locator": {
+                "url": "/rest/services/roads/FeatureServer/0",
+                "serviceId": "roads",
+                "layerId": 0
+              }
+            }
+          ],
+          "styleRefs": [
+            {
+              "styleId": "honua-inline:roads",
+              "body": {
+                "roads": {
+                  "paint": {
+                    "line-color": "#334455"
+                  }
+                }
+              }
+            }
+          ],
+          "mapSpec": {
+            "version": 8,
+            "sources": {
+              "parcels": {
+                "type": "geojson",
+                "data": {}
+              },
+              "roads": {
+                "type": "geojson",
+                "data": {}
+              }
+            },
+            "layers": [
+              {
+                "id": "parcel-labels",
+                "type": "symbol",
+                "source": "parcels"
+              },
+              {
+                "id": "roads",
+                "type": "line",
+                "source": "roads"
+              },
+              {
+                "id": "roads__outline",
+                "type": "line",
+                "source": "roads"
+              },
+              {
+                "id": "road-names",
+                "type": "symbol",
+                "source": "roads",
+                "metadata": {
+                  "honua:compositionLayerId": "roads"
+                }
+              }
+            ],
+            "metadata": {
+              "honua:compositionLayerIds": ["parcel-labels", "roads"]
+            }
+          },
+          "layers": [
+            {
+              "id": "parcel-labels",
+              "sourceId": "parcels",
+              "visible": true
+            },
+            {
+              "id": "roads",
+              "sourceId": "roads",
+              "visible": true,
+              "styleRef": "honua-inline:roads"
+            }
+          ],
+          "view": {
+            "center": [-157.86, 21.3],
+            "zoom": 9
+          },
+          "widgets": []
+        }
+      }
+    },
+    {
+      "name": "removing a layer also drops a binding that no layer used before",
+      "body": "unused-binding",
+      "command": {
+        "name": "removeLayer",
+        "target": {
+          "kind": "layer",
+          "id": "roads"
+        }
+      },
+      "tool": {
+        "name": "honua_studio_remove_layer",
+        "arguments": {
+          "layerId": "roads"
+        }
+      },
+      "expect": {
+        "body": {
+          "sourceBindings": [
+            {
+              "sourceId": "parcels",
+              "protocol": "geoservices_feature_service",
+              "locator": {
+                "url": "/rest/services/parcels/FeatureServer/0",
+                "serviceId": "parcels",
+                "layerId": 0
+              }
+            }
+          ],
+          "styleRefs": [],
+          "mapSpec": {
+            "version": 8,
+            "sources": {
+              "parcels": {
+                "type": "geojson",
+                "data": {}
+              }
+            },
+            "layers": [
+              {
+                "id": "parcels",
+                "type": "fill",
+                "source": "parcels"
+              },
+              {
+                "id": "parcel-labels",
+                "type": "symbol",
+                "source": "parcels"
+              }
+            ],
+            "metadata": {
+              "honua:compositionLayerIds": ["parcels", "parcel-labels"]
+            }
+          },
+          "layers": [
+            {
+              "id": "parcels",
+              "sourceId": "parcels",
+              "visible": true
+            },
+            {
+              "id": "parcel-labels",
+              "sourceId": "parcels",
+              "visible": true
+            }
+          ],
+          "view": {
+            "center": [-157.86, 21.3],
+            "zoom": 9
+          },
+          "widgets": []
+        }
+      }
+    },
+    {
+      "name": "a control on a source only the removed layer binds refuses the removal",
+      "body": "control-on-roads",
+      "command": {
+        "name": "removeLayer",
+        "target": {
+          "kind": "layer",
+          "id": "roads"
+        }
+      },
+      "tool": {
+        "name": "honua_studio_remove_layer",
+        "arguments": {
+          "layerId": "roads"
+        }
+      },
+      "expect": {
+        "error": {
+          "reducerCode": "source-in-use",
+          "mcpCode": "invalid_argument",
+          "message": "Cannot remove layer 'roads' because control 'road-filter' still uses sourceId 'roads'. Remove or rebind the control first."
+        }
+      }
+    },
+    {
+      "name": "a widget on a source only the removed layer binds refuses the removal",
+      "body": "widget-on-roads",
+      "command": {
+        "name": "removeLayer",
+        "target": {
+          "kind": "layer",
+          "id": "roads"
+        }
+      },
+      "tool": {
+        "name": "honua_studio_remove_layer",
+        "arguments": {
+          "layerId": "roads"
+        }
+      },
+      "expect": {
+        "error": {
+          "reducerCode": "source-in-use",
+          "mcpCode": "invalid_argument",
+          "message": "Cannot remove layer 'roads' because widget 'road-table' still uses sourceId 'roads'. Remove or rebind the widget first."
+        }
+      }
+    },
+    {
+      "name": "a control is reported before a widget",
+      "body": "control-and-widget-on-roads",
+      "command": {
+        "name": "removeLayer",
+        "target": {
+          "kind": "layer",
+          "id": "roads"
+        }
+      },
+      "tool": {
+        "name": "honua_studio_remove_layer",
+        "arguments": {
+          "layerId": "roads"
+        }
+      },
+      "expect": {
+        "error": {
+          "reducerCode": "source-in-use",
+          "mcpCode": "invalid_argument",
+          "message": "Cannot remove layer 'roads' because control 'road-filter' still uses sourceId 'roads'. Remove or rebind the control first."
+        }
+      }
+    },
+    {
+      "name": "a control on a source another layer still binds allows the removal",
+      "body": "control-on-shared-source",
+      "command": {
+        "name": "removeLayer",
+        "target": {
+          "kind": "layer",
+          "id": "parcels"
+        }
+      },
+      "tool": {
+        "name": "honua_studio_remove_layer",
+        "arguments": {
+          "layerId": "parcels"
+        }
+      },
+      "expect": {
+        "body": {
+          "sourceBindings": [
+            {
+              "sourceId": "parcels",
+              "protocol": "geoservices_feature_service",
+              "locator": {
+                "url": "/rest/services/parcels/FeatureServer/0",
+                "serviceId": "parcels",
+                "layerId": 0
+              }
+            },
+            {
+              "sourceId": "roads",
+              "protocol": "geoservices_feature_service",
+              "locator": {
+                "url": "/rest/services/roads/FeatureServer/0",
+                "serviceId": "roads",
+                "layerId": 0
+              }
+            }
+          ],
+          "styleRefs": [
+            {
+              "styleId": "honua-inline:roads",
+              "body": {
+                "roads": {
+                  "paint": {
+                    "line-color": "#334455"
+                  }
+                }
+              }
+            }
+          ],
+          "mapSpec": {
+            "version": 8,
+            "sources": {
+              "parcels": {
+                "type": "geojson",
+                "data": {}
+              },
+              "roads": {
+                "type": "geojson",
+                "data": {}
+              }
+            },
+            "layers": [
+              {
+                "id": "parcel-labels",
+                "type": "symbol",
+                "source": "parcels"
+              },
+              {
+                "id": "roads",
+                "type": "line",
+                "source": "roads"
+              },
+              {
+                "id": "roads__outline",
+                "type": "line",
+                "source": "roads"
+              },
+              {
+                "id": "road-names",
+                "type": "symbol",
+                "source": "roads",
+                "metadata": {
+                  "honua:compositionLayerId": "roads"
+                }
+              }
+            ],
+            "metadata": {
+              "honua:compositionLayerIds": ["parcel-labels", "roads"]
+            }
+          },
+          "layers": [
+            {
+              "id": "parcel-labels",
+              "sourceId": "parcels",
+              "visible": true
+            },
+            {
+              "id": "roads",
+              "sourceId": "roads",
+              "visible": true,
+              "styleRef": "honua-inline:roads"
+            }
+          ],
+          "view": {
+            "center": [-157.86, 21.3],
+            "zoom": 9
+          },
+          "widgets": [],
+          "controls": [
+            {
+              "id": "parcel-filter",
+              "kind": "filterSelect",
+              "sourceId": "parcels"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "a partial view merges into the current view",
+      "body": "seeded",
+      "command": {
+        "name": "setView",
+        "view": {
+          "zoom": 12
+        }
+      },
+      "tool": {
+        "name": "honua_studio_set_view",
+        "arguments": {
+          "view": {
+            "zoom": 12
+          }
+        }
+      },
+      "expect": {
+        "body": {
+          "sourceBindings": [
+            {
+              "sourceId": "parcels",
+              "protocol": "geoservices_feature_service",
+              "locator": {
+                "url": "/rest/services/parcels/FeatureServer/0",
+                "serviceId": "parcels",
+                "layerId": 0
+              }
+            },
+            {
+              "sourceId": "roads",
+              "protocol": "geoservices_feature_service",
+              "locator": {
+                "url": "/rest/services/roads/FeatureServer/0",
+                "serviceId": "roads",
+                "layerId": 0
+              }
+            }
+          ],
+          "styleRefs": [
+            {
+              "styleId": "honua-inline:roads",
+              "body": {
+                "roads": {
+                  "paint": {
+                    "line-color": "#334455"
+                  }
+                }
+              }
+            }
+          ],
+          "mapSpec": {
+            "version": 8,
+            "sources": {
+              "parcels": {
+                "type": "geojson",
+                "data": {}
+              },
+              "roads": {
+                "type": "geojson",
+                "data": {}
+              }
+            },
+            "layers": [
+              {
+                "id": "parcels",
+                "type": "fill",
+                "source": "parcels"
+              },
+              {
+                "id": "parcel-labels",
+                "type": "symbol",
+                "source": "parcels"
+              },
+              {
+                "id": "roads",
+                "type": "line",
+                "source": "roads"
+              },
+              {
+                "id": "roads__outline",
+                "type": "line",
+                "source": "roads"
+              },
+              {
+                "id": "road-names",
+                "type": "symbol",
+                "source": "roads",
+                "metadata": {
+                  "honua:compositionLayerId": "roads"
+                }
+              }
+            ],
+            "metadata": {
+              "honua:compositionLayerIds": ["parcels", "parcel-labels", "roads"]
+            }
+          },
+          "layers": [
+            {
+              "id": "parcels",
+              "sourceId": "parcels",
+              "visible": true
+            },
+            {
+              "id": "parcel-labels",
+              "sourceId": "parcels",
+              "visible": true
+            },
+            {
+              "id": "roads",
+              "sourceId": "roads",
+              "visible": true,
+              "styleRef": "honua-inline:roads"
+            }
+          ],
+          "view": {
+            "center": [-157.86, 21.3],
+            "zoom": 12
+          },
+          "widgets": []
+        }
+      }
+    },
+    {
+      "name": "an out-of-bounds view is refused",
+      "body": "seeded",
+      "command": {
+        "name": "setView",
+        "view": {
+          "zoom": 30
+        }
+      },
+      "tool": {
+        "name": "honua_studio_set_view",
+        "arguments": {
+          "view": {
+            "zoom": 30
+          }
+        }
+      },
+      "expect": {
+        "error": {
+          "reducerCode": "out-of-bounds",
+          "mcpCode": "invalid_argument",
+          "messageIncludes": "out of bounds"
+        }
+      }
+    },
+    {
+      "name": "a layer style body becomes that layer's inline style",
+      "body": "seeded",
+      "command": {
+        "name": "setLayerStyleRef",
+        "target": {
+          "kind": "layer",
+          "id": "parcels"
+        },
+        "styleBody": {
+          "parcels": {
+            "paint": {
+              "fill-color": "#112233"
+            }
+          }
+        }
+      },
+      "tool": {
+        "name": "honua_studio_set_layer_style",
+        "arguments": {
+          "layerId": "parcels",
+          "styleBody": {
+            "parcels": {
+              "paint": {
+                "fill-color": "#112233"
+              }
+            }
+          }
+        }
+      },
+      "expect": {
+        "body": {
+          "sourceBindings": [
+            {
+              "sourceId": "parcels",
+              "protocol": "geoservices_feature_service",
+              "locator": {
+                "url": "/rest/services/parcels/FeatureServer/0",
+                "serviceId": "parcels",
+                "layerId": 0
+              }
+            },
+            {
+              "sourceId": "roads",
+              "protocol": "geoservices_feature_service",
+              "locator": {
+                "url": "/rest/services/roads/FeatureServer/0",
+                "serviceId": "roads",
+                "layerId": 0
+              }
+            }
+          ],
+          "styleRefs": [
+            {
+              "styleId": "honua-inline:roads",
+              "body": {
+                "roads": {
+                  "paint": {
+                    "line-color": "#334455"
+                  }
+                }
+              }
+            },
+            {
+              "styleId": "honua-inline:parcels",
+              "body": {
+                "parcels": {
+                  "paint": {
+                    "fill-color": "#112233"
+                  }
+                }
+              }
+            }
+          ],
+          "mapSpec": {
+            "version": 8,
+            "sources": {
+              "parcels": {
+                "type": "geojson",
+                "data": {}
+              },
+              "roads": {
+                "type": "geojson",
+                "data": {}
+              }
+            },
+            "layers": [
+              {
+                "id": "parcels",
+                "type": "fill",
+                "source": "parcels"
+              },
+              {
+                "id": "parcel-labels",
+                "type": "symbol",
+                "source": "parcels"
+              },
+              {
+                "id": "roads",
+                "type": "line",
+                "source": "roads"
+              },
+              {
+                "id": "roads__outline",
+                "type": "line",
+                "source": "roads"
+              },
+              {
+                "id": "road-names",
+                "type": "symbol",
+                "source": "roads",
+                "metadata": {
+                  "honua:compositionLayerId": "roads"
+                }
+              }
+            ],
+            "metadata": {
+              "honua:compositionLayerIds": ["parcels", "parcel-labels", "roads"]
+            }
+          },
+          "layers": [
+            {
+              "id": "parcels",
+              "sourceId": "parcels",
+              "visible": true,
+              "styleRef": "honua-inline:parcels"
+            },
+            {
+              "id": "parcel-labels",
+              "sourceId": "parcels",
+              "visible": true
+            },
+            {
+              "id": "roads",
+              "sourceId": "roads",
+              "visible": true,
+              "styleRef": "honua-inline:roads"
+            }
+          ],
+          "view": {
+            "center": [-157.86, 21.3],
+            "zoom": 9
+          },
+          "widgets": []
+        }
+      }
+    },
+    {
+      "name": "clearing a layer's style keeps the shared style definitions",
+      "body": "seeded",
+      "command": {
+        "name": "setLayerStyleRef",
+        "target": {
+          "kind": "layer",
+          "id": "roads"
+        }
+      },
+      "tool": {
+        "name": "honua_studio_set_layer_style",
+        "arguments": {
+          "layerId": "roads",
+          "styleRef": null
+        }
+      },
+      "expect": {
+        "body": {
+          "sourceBindings": [
+            {
+              "sourceId": "parcels",
+              "protocol": "geoservices_feature_service",
+              "locator": {
+                "url": "/rest/services/parcels/FeatureServer/0",
+                "serviceId": "parcels",
+                "layerId": 0
+              }
+            },
+            {
+              "sourceId": "roads",
+              "protocol": "geoservices_feature_service",
+              "locator": {
+                "url": "/rest/services/roads/FeatureServer/0",
+                "serviceId": "roads",
+                "layerId": 0
+              }
+            }
+          ],
+          "styleRefs": [
+            {
+              "styleId": "honua-inline:roads",
+              "body": {
+                "roads": {
+                  "paint": {
+                    "line-color": "#334455"
+                  }
+                }
+              }
+            }
+          ],
+          "mapSpec": {
+            "version": 8,
+            "sources": {
+              "parcels": {
+                "type": "geojson",
+                "data": {}
+              },
+              "roads": {
+                "type": "geojson",
+                "data": {}
+              }
+            },
+            "layers": [
+              {
+                "id": "parcels",
+                "type": "fill",
+                "source": "parcels"
+              },
+              {
+                "id": "parcel-labels",
+                "type": "symbol",
+                "source": "parcels"
+              },
+              {
+                "id": "roads",
+                "type": "line",
+                "source": "roads"
+              },
+              {
+                "id": "roads__outline",
+                "type": "line",
+                "source": "roads"
+              },
+              {
+                "id": "road-names",
+                "type": "symbol",
+                "source": "roads",
+                "metadata": {
+                  "honua:compositionLayerId": "roads"
+                }
+              }
+            ],
+            "metadata": {
+              "honua:compositionLayerIds": ["parcels", "parcel-labels", "roads"]
+            }
+          },
+          "layers": [
+            {
+              "id": "parcels",
+              "sourceId": "parcels",
+              "visible": true
+            },
+            {
+              "id": "parcel-labels",
+              "sourceId": "parcels",
+              "visible": true
+            },
+            {
+              "id": "roads",
+              "sourceId": "roads",
+              "visible": true
+            }
+          ],
+          "view": {
+            "center": [-157.86, 21.3],
+            "zoom": 9
+          },
+          "widgets": []
+        }
+      }
+    },
+    {
+      "name": "a surviving layer whose id equals the source does not keep it declared",
+      "body": "layer-id-names-another-source",
+      "command": {
+        "name": "removeLayer",
+        "target": {
+          "kind": "layer",
+          "id": "presentation"
+        }
+      },
+      "tool": {
+        "name": "honua_studio_remove_layer",
+        "arguments": {
+          "layerId": "presentation"
+        }
+      },
+      "expect": {
+        "error": {
+          "reducerCode": "source-in-use",
+          "mcpCode": "invalid_argument",
+          "message": "Cannot remove layer 'presentation' because control 'dataset-filter' still uses sourceId 'dataset'. Remove or rebind the control first."
+        }
+      }
+    },
+    {
+      "name": "a surviving binding for the removed layer's id does not keep a consumer of that id served",
+      "body": "binding-survives-for-layer-id",
+      "command": {
+        "name": "removeLayer",
+        "target": {
+          "kind": "layer",
+          "id": "presentation"
+        }
+      },
+      "tool": {
+        "name": "honua_studio_remove_layer",
+        "arguments": {
+          "layerId": "presentation"
+        }
+      },
+      "expect": {
+        "error": {
+          "reducerCode": "source-in-use",
+          "mcpCode": "invalid_argument",
+          "message": "Cannot remove layer 'presentation' because control 'presentation-filter' still uses sourceId 'presentation'. Remove or rebind the control first."
+        }
+      }
+    },
+    {
+      "name": "another layer declaring the same sourceId allows the removal",
+      "body": "another-layer-declares-the-source",
+      "command": {
+        "name": "removeLayer",
+        "target": {
+          "kind": "layer",
+          "id": "presentation"
+        }
+      },
+      "tool": {
+        "name": "honua_studio_remove_layer",
+        "arguments": {
+          "layerId": "presentation"
+        }
+      },
+      "expect": {
+        "body": {
+          "sourceBindings": [
+            {
+              "sourceId": "dataset",
+              "protocol": "geoservices_feature_service",
+              "locator": {
+                "url": "/rest/services/dataset/FeatureServer/0",
+                "serviceId": "dataset",
+                "layerId": 0
+              }
+            }
+          ],
+          "layers": [
+            {
+              "id": "detail",
+              "sourceId": "dataset",
+              "visible": true
+            }
+          ],
+          "view": {
+            "center": [-157.86, 21.3],
+            "zoom": 9
+          },
+          "widgets": [],
+          "controls": [
+            {
+              "id": "dataset-filter",
+              "kind": "filterSelect",
+              "sourceId": "dataset"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -616,7 +616,10 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         // Skip-migrations serving cannot run the pending provider script. When the baseline tables
         // already match that script's creation contract, record the journal receipt only. A missing
         // or partial raster schema stays a floor failure (honua-server#6496).
-        await using var connection = new NpgsqlConnection(connectionString);
+        // The adoption lock is a session advisory lock. Unpooled, so closing the connection ends
+        // the session instead of returning an RDS Proxy-pinned connection to the pool (#6760).
+        await using var connection = new NpgsqlConnection(
+            new NpgsqlConnectionStringBuilder(connectionString) { Pooling = false }.ConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         if (!await TryAcquireRasterAdoptionLockAsync(connection, cancellationToken).ConfigureAwait(false))
         {

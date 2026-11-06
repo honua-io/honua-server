@@ -50,7 +50,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout trusted observer policy
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
           path: policy
@@ -59,7 +59,7 @@ jobs:
 
       - id: collect
         name: Resolve canonical exact-head PR Gate subject
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           SOURCE_RUN_ID: ${{ github.event.workflow_run.id || inputs.run_id }}
           SOURCE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt || inputs.run_attempt }}
@@ -141,7 +141,7 @@ jobs:
       # regression. Read from the artifact catalog; never downloaded.
       - name: Retain observation skip marker
         if: steps.collect.outputs.skip == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: native-image-impact-skipped-${{ steps.collect.outputs.skip_code }}-attempt-${{ github.run_attempt }}
           path: ${{ runner.temp }}/observation-skipped.json
@@ -150,7 +150,7 @@ jobs:
 
       - name: Checkout candidate tree as inert data
         if: steps.collect.outputs.skip != 'true'
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ steps.collect.outputs.head_repository }}
           ref: ${{ steps.collect.outputs.head_sha }}
@@ -249,7 +249,7 @@ jobs:
       - id: recheck
         name: Recheck exact PR identity before retaining evidence
         if: steps.collect.outputs.skip != 'true'
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           SOURCE_RUN_ID: ${{ steps.collect.outputs.run_id }}
           SOURCE_RUN_ATTEMPT: ${{ steps.collect.outputs.run_attempt }}
@@ -326,7 +326,7 @@ jobs:
       # runs when collect did not skip, so the two can never both upload.
       - name: Retain post-observation skip marker
         if: steps.recheck.outputs.skip == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: native-image-impact-skipped-${{ steps.recheck.outputs.skip_code }}-attempt-${{ github.run_attempt }}
           path: ${{ runner.temp }}/observation-skipped.json
@@ -341,7 +341,7 @@ jobs:
 
       - name: Retain trusted observation evidence
         if: steps.recheck.outputs.retain == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: native-image-impact-observation-v3-attempt-${{ github.run_attempt }}
           path: |

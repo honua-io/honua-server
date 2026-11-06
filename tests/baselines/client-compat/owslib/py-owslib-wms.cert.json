@@ -296,9 +296,9 @@
       "test_case_id": "NB-OWS-WMS-CAP-04",
       "status": "pass",
       "duration_ms": null,
-      "measured_count": 3904,
+      "measured_count": 4320,
       "measured_delta": null,
-      "notes": "The advertised LegendURL for style 'default' returned a decodable 122x32 PNG. A dangling LegendURL silently breaks every client legend panel.",
+      "notes": "The advertised LegendURL for style 'default' returned a decodable 135x32 PNG. A dangling LegendURL silently breaks every client legend panel.",
       "evidence_ref": "http://honua:5000/rest/services/browser_compat/MapServer/WMS?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetLegendGraphic&LAYER=Browser%20Points&STYLE=default&FORMAT=image/png",
       "protocol_version": null
     },

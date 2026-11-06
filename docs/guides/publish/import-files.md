@@ -98,7 +98,31 @@ A synchronous import returns the result inline; a completed background job retur
 | CSV | `.csv` | Needs lon/lat columns or a WKT geometry column. |
 | FlatGeobuf | `.fgb` | Upload directly, no archive. CRS read from the header; if absent, `sourceSrid` is required or the import is rejected. |
 | FileGDB | `.gdb.zip` | Zip exactly one `.gdb` directory with its internal files intact (do not flatten). SRID detected from geodatabase metadata when present. One target table per request — per-layer selection is not exposed. Domains, relationship classes, subtypes, topology rules, and network datasets are detected but not imported; they surface in `warnings`. |
-| GeoParquet | `.parquet`, `.geoparquet` | CRS read from the GeoParquet `geo` metadata. Requires WKB geometry encoding; nested columns are skipped with warnings; rows with null geometry are skipped and reported; Parquet row groups are streamed one group at a time. |
+| GeoParquet | `.parquet`, `.geoparquet` | GeoParquet 1.0.0/1.1.0 with one WKB geometry column and planar edges. Null-geometry rows retain their attributes. See the [input contract](#geoparquet-input-contract). |
+
+Homogeneous imports retain their stored geometry family (Point, LineString, Polygon,
+and their Multi forms) and target SRID in PostGIS constraints. Table discovery and
+publication use those facts for FeatureServer geometry metadata, OGC Features
+collection `geometryType` and `storageCrs`, and MCP layer catalog/description metadata.
+Null geometries do not change the inferred family. Mixed imports remain generic
+`GEOMETRY`; the publication validator rejects mixed geometry rather than advertising
+a single type. Existing typed attribute columns and the complete properties document
+remain available. Older imports gain these constraints when reimported; republish
+existing layers to refresh their catalog geometry metadata.
+
+### GeoParquet input contract
+
+Preview and import validate the required `version`, `primary_column`, per-column `encoding`, and `geometry_types` metadata. The primary geometry name must match the Parquet column exactly, including case. Unknown extension metadata does not substitute for required fields. UTF-8 `geo` metadata is limited to 1 MiB, each explicit CRS definition to 256 KiB, and JSON nesting to 32 levels.
+
+Only WKB geometry encoding is currently accepted. Valid GeoParquet 1.1 native geometry encodings are refused with an explicit WKB-only diagnostic, including geometry stored as a nested Parquet structure. Multiple geometry columns are refused before import writes or preview sampling, rather than discarding secondary geometries. Explicit `edges: "spherical"` is refused; omitted edges mean `planar`, and malformed edge values are rejected. For explicit or omitted planar edges, import preserves the long-side Cartesian shape of antimeridian-crossing polygons rather than cutting them into short-side coverage. Spherical-edge import requires a separate geometry engine and is unsupported.
+
+An explicit `crs` must be a structurally valid, complete PROJJSON CRS definition that resolves to a supported canonical storage CRS. An authority identifier alone, legacy GeoJSON `crs.properties.name`, or an identifier conflicting with the definition is rejected. A valid definition that cannot be resolved produces an unsupported-CRS diagnostic. Omitting `crs` means OGC:CRS84 (longitude, latitude), stored as SRID 4326. Explicit `crs: null` means unknown CRS and requires an operator-supplied `sourceSrid`; `targetSrid` does not establish the source CRS.
+
+Rows with null geometry remain rows: their IDs and attributes are counted and can be sampled in preview, and are stored on import. Representable struct, list and map attributes retain their JSONB structure, including null versus empty containers. The importer validates every bounded source row before opening the database write path, so a later unsupported nested value or malformed geometry cannot leave earlier append/upsert batches committed. Parquet row groups are read one at a time, subject to the configured memory budget.
+
+Finite coordinate epochs from supported dynamic CRS files are retained through import, durable spatial metadata, publication and same-CRS GeoParquet export. Append and upsert reject an epoch mismatch before changing target rows; failed replacement rolls back the rows and epoch registration together. Export in a different CRS is rejected when an epoch is attached because epoch-aware reprojection is not supported.
+
+Declared XY/XYZ dimensions survive empty WKB geometries. Measured, nonlinear and malformed WKB are refused explicitly; the accepted GeoParquet geometry subset is planar XY/XYZ WKB with one geometry column. Native geometry encodings, spherical edges and additional geometry columns remain unsupported format capabilities.
 
 When the server cannot detect a source CRS and no `sourceSrid` was supplied, the import fails with the stable error code `import.source_srid_required`.
 
@@ -115,9 +139,8 @@ More help: [troubleshooting](../deploy/troubleshooting.md).
 ## Next steps
 
 - [Publish layers](publish-layers.md) — turn the imported table into a live layer.
-- [Import from ArcGIS services](import-from-arcgis-services.md) — import from a live service instead of a file.
+- [Import from GeoServices REST services](import-from-geoservices-rest.md) — import from a live service instead of a file.
 - [Publish rasters](publish-rasters.md) — GeoTIFF and other raster imports use a separate endpoint.
-
 
 ## Replacing tables and legacy imports
 

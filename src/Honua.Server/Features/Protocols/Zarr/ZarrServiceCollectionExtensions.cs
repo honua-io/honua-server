@@ -6,14 +6,8 @@ using Honua.Core.Features.Raster.ZarrParser;
 
 namespace Honua.Server.Features.Protocols.Zarr;
 
-/// <summary>
-/// Service collection extensions for the Zarr coverage feature.
-/// </summary>
 internal static class ZarrServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers the AOT-safe Zarr metadata/subset readers and the in-memory catalog.
-    /// </summary>
     public static IServiceCollection AddZarrServices(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);

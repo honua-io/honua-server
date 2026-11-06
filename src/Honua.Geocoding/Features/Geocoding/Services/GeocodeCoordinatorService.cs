@@ -83,6 +83,12 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
         activity?.SetTag("honua.geocoding.preferred_provider", providerName);
 
         var providers = GetProvidersToTry(providerName, allowFailover);
+        var unavailable = RefuseUnregisteredPreferredProvider<IReadOnlyList<GeocodeCandidate>>(providerName, providers);
+        if (unavailable is not null)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, unavailable.ErrorMessage);
+            return unavailable;
+        }
 
         var attemptedProviders = new List<string>();
         Exception? lastException = null;
@@ -207,6 +213,12 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
         activity?.SetTag("honua.geocoding.preferred_provider", providerName);
 
         var providers = GetProvidersToTry(providerName, allowFailover);
+        var unavailable = RefuseUnregisteredPreferredProvider<ReverseGeocodeMatch?>(providerName, providers);
+        if (unavailable is not null)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, unavailable.ErrorMessage);
+            return unavailable;
+        }
 
         var attemptedProviders = new List<string>();
         Exception? lastException = null;
@@ -332,6 +344,12 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
         activity?.SetTag("honua.geocoding.query_length", request.Text?.Length ?? 0);
 
         var providers = GetProvidersToTry(providerName, allowFailover);
+        var unavailable = RefuseUnregisteredPreferredProvider<IReadOnlyList<GeocodeSuggestion>>(providerName, providers);
+        if (unavailable is not null)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, unavailable.ErrorMessage);
+            return unavailable;
+        }
 
         var attemptedProviders = new List<string>();
         Exception? lastException = null;
@@ -456,6 +474,12 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
         activity?.SetTag("honua.geocoding.batch_size", request.Queries.Count);
 
         var providers = GetProvidersToTry(providerName, allowFailover);
+        var unavailable = RefuseUnregisteredPreferredProvider<IReadOnlyList<GeocodeCandidate>>(providerName, providers);
+        if (unavailable is not null)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, unavailable.ErrorMessage);
+            return unavailable;
+        }
 
         // Enforce the batch cap (provider + licensing) against the effective batch-capable provider
         // before any work, then the per-minute request rate. Both reuse the shared limit enforcer so
@@ -625,50 +649,61 @@ internal sealed class GeocodeCoordinatorService : IGeocodeCoordinatorService
             attemptedCount < Math.Max(1, _configuration.MaxFailoverAttempts);
     }
 
+    // An explicitly named provider is the only candidate. Substituting the default
+    // (public Nominatim) when that provider is missing or down sends the caller's
+    // address to a service they did not choose (#6601).
+    private static GeocodeResult<T>? RefuseUnregisteredPreferredProvider<T>(
+        string? providerName,
+        List<IGeocodeProvider> providers)
+    {
+        if (string.IsNullOrWhiteSpace(providerName) || providers.Count > 0)
+        {
+            return null;
+        }
+
+        return new GeocodeResult<T>
+        {
+            Data = default!,
+            ProviderName = providerName,
+            IsSuccess = false,
+            ErrorMessage = $"provider_unavailable: geocoding provider '{providerName}' is not registered.",
+            AttemptedProviders = [],
+            Metadata = new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                ["errorCode"] = GeocodeErrorCodes.ProviderUnavailable
+            }
+        };
+    }
+
     private List<IGeocodeProvider> GetProvidersToTry(string? preferredProviderName, bool allowFailover)
     {
-        var providers = new List<IGeocodeProvider>();
-
-        // This returns the full ordered candidate set; it is intentionally NOT truncated to
-        // MaxFailoverAttempts. The MaxFailoverAttempts cap bounds the number of providers that
-        // actually *attempt* the operation, which the calling loop enforces (see
-        // HasFailoverBudget). Truncating here would let providers that the loop skips because
-        // they lack the requested capability crowd a capable provider out of the candidate list
-        // entirely, defeating failover.
-
-        // Add preferred provider first if specified and available.
+        // Explicit requests never fail over. The unnamed path below is intentionally
+        // not truncated to MaxFailoverAttempts; the calling loop enforces that budget
+        // (see HasFailoverBudget) so a capability skip cannot crowd out a capable provider.
         if (!string.IsNullOrWhiteSpace(preferredProviderName))
         {
             var preferredProvider = _providerRegistry.GetProvider(preferredProviderName);
-            if (preferredProvider != null)
+            if (preferredProvider is not null)
             {
-                providers.Add(preferredProvider);
+                return [preferredProvider];
             }
-            else
-            {
-                GeocodeCoordinatorLog.PreferredProviderUnavailable(_logger, preferredProviderName);
-            }
+
+            GeocodeCoordinatorLog.PreferredProviderUnavailable(_logger, preferredProviderName);
+            return [];
         }
 
-        // Add default provider next if not already added.
-        if (providers.Count == 0 ||
-            (allowFailover &&
-             !providers.Any(p => p.Name.Equals(_configuration.DefaultProvider, StringComparison.OrdinalIgnoreCase))))
+        var providers = new List<IGeocodeProvider>();
+        var defaultProvider = _providerRegistry.GetProvider(_configuration.DefaultProvider);
+        if (defaultProvider is not null)
         {
-            var defaultProvider = _providerRegistry.GetProvider(_configuration.DefaultProvider);
-            if (defaultProvider != null)
-            {
-                providers.Add(defaultProvider);
-            }
+            providers.Add(defaultProvider);
         }
 
-        // Add the remaining registered providers as failover candidates when enabled.
         if (allowFailover && _configuration.EnableFailover)
         {
-            var allProviders = _providerRegistry.GetAllProviders();
-            var additionalProviders = allProviders
-                .Where(p => !providers.Any(existing => existing.Name.Equals(p.Name, StringComparison.OrdinalIgnoreCase)));
-
+            var additionalProviders = _providerRegistry.GetAllProviders()
+                .Where(provider => !providers.Any(existing =>
+                    existing.Name.Equals(provider.Name, StringComparison.OrdinalIgnoreCase)));
             providers.AddRange(additionalProviders);
         }
 

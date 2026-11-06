@@ -5,7 +5,6 @@ using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>Provider-backed routing operations executed by the shared managed job runtime.</summary>
 internal static class RoutingProcessDefinitions
 {
     internal const string ClosestFacilities = "routing.closest-facilities";

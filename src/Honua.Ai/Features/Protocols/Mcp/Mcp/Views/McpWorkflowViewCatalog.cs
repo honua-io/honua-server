@@ -3,49 +3,20 @@
 
 namespace Honua.Ai.Protocols.Mcp.Views;
 
-/// <summary>
-/// The server-authored workflow-view catalog (honua-server#3428). <c>setup</c> is the
-/// bounded terminal path, including Studio 2D composition and lifecycle.
-/// <c>configure</c>, <c>operate</c>, and <c>analyze</c> are the 2026.1 views the curated
-/// prompts select.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The catalog owns <em>selection</em> only. Every published descriptor —
-/// description, annotations, input schema, output schema — is taken verbatim from
-/// the canonical live catalog (<c>McpDataAccessSurface.GetAllToolsAsync</c>, the
-/// same roster <c>tools/list</c> serves and the ADR-0058 capability registry
-/// governs), so neither this server nor any client maintains a second
-/// name/schema inventory.
-/// </para>
-/// <para>
-/// Stages are matched first-match-wins in declaration order, and family prefix
-/// rules make the view self-updating: an eligible server operation added to (or
-/// removed from) a covered family joins or leaves the generated view with no edit
-/// here and no SDK/Studio source-list edit.
-/// </para>
-/// </remarks>
 internal static class McpWorkflowViewCatalog
 {
-    /// <summary>The bounded default discovery/workflow surface.</summary>
     public const string DefaultViewName = "default";
 
-    /// <summary>The bounded terminal-setup view name.</summary>
     public const string SetupViewName = "setup";
 
-    /// <summary>The 2026.1 configure view: closed admin roster, publish, style, and Studio.</summary>
     public const string ConfigureViewName = "configure";
 
-    /// <summary>The 2026.1 operate view: health, findings, and one finding proposal.</summary>
     public const string OperateViewName = "operate";
 
-    /// <summary>The 2026.1 analyze view: ground, plan, execute, and job control.</summary>
     public const string AnalyzeViewName = "analyze";
 
-    /// <summary>
-    /// The default meta/workflow surface. Long-tail operations are reached by
-    /// resolving/searching, describing, planning/proposing, then executing.
-    /// </summary>
+    public const string ReviewViewName = "review";
+
     public static McpWorkflowViewDefinition Default { get; } = new()
     {
         Name = DefaultViewName,
@@ -87,11 +58,6 @@ internal static class McpWorkflowViewCatalog
         ],
     };
 
-    /// <summary>
-    /// The <c>setup</c> view: readiness → connect/import → publish → verify access
-    /// → style/render → bounded geoprocessing → Studio composition/lifecycle →
-    /// publication submit/status.
-    /// </summary>
     public static McpWorkflowViewDefinition Setup { get; } = new()
     {
         Name = SetupViewName,
@@ -102,7 +68,7 @@ internal static class McpWorkflowViewCatalog
             + "layer, verify access, apply canonical style and render, run bounded geoprocessing, compose and save "
             + "Studio maps/dashboards, then submit a publication and poll its status. Select this view to receive "
             + "only the descriptors that path needs; the full paginated catalog is an explicit escape hatch.",
-        Revision = "setup.v5",
+        Revision = "setup.v6",
         Stages =
         [
             new McpWorkflowViewStageDefinition
@@ -209,6 +175,14 @@ internal static class McpWorkflowViewCatalog
                     McpWorkflowViewMemberRule.Exact("honua_studio_remove_interaction"),
                     McpWorkflowViewMemberRule.Exact("honua_studio_add_control"),
                     McpWorkflowViewMemberRule.Exact("honua_studio_remove_control"),
+
+                    // Map and app package composition. Listing grants no authority: both tools
+                    // still refuse an anonymous caller (unauthenticated), which an installed client
+                    // that resolves tools from the listing can now actually exercise.
+                    // honua_validate_package and honua_preview_package live on the review view:
+                    // adding their descriptors pushed this view over the 128 KiB aggregate ceiling.
+                    McpWorkflowViewMemberRule.Exact("honua_create_map_package"),
+                    McpWorkflowViewMemberRule.Exact("honua_create_app_package"),
                 ],
 
                 // Publication submit belongs to the publication stage below even
@@ -231,10 +205,6 @@ internal static class McpWorkflowViewCatalog
         ],
     };
 
-    /// <summary>
-    /// The <c>configure</c> view. Prompts select this, not <c>setup</c>. Studio composition stays
-    /// here unless the descriptor budget forces a <c>compose</c> split.
-    /// </summary>
     public static McpWorkflowViewDefinition Configure { get; } = new()
     {
         Name = ConfigureViewName,
@@ -255,6 +225,8 @@ internal static class McpWorkflowViewCatalog
                     McpWorkflowViewMemberRule.Exact("honua_admin_server_status"),
                     McpWorkflowViewMemberRule.Exact("honua_admin_api_key_list"),
                     McpWorkflowViewMemberRule.Exact("honua_admin_api_key_effective_permissions"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_connections_list"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_connection_tables_list"),
                     McpWorkflowViewMemberRule.Exact("honua_admin_connections_create"),
                     McpWorkflowViewMemberRule.Exact("honua_admin_connections_test"),
                     McpWorkflowViewMemberRule.Exact("honua_admin_import_upload_object"),
@@ -350,7 +322,6 @@ internal static class McpWorkflowViewCatalog
         ],
     };
 
-    /// <summary>The <c>operate</c> view: read operational evidence and propose one finding.</summary>
     public static McpWorkflowViewDefinition Operate { get; } = new()
     {
         Name = OperateViewName,
@@ -385,9 +356,6 @@ internal static class McpWorkflowViewCatalog
         ],
     };
 
-    /// <summary>
-    /// The <c>analyze</c> view named by the site, hazard, and permit prompts before publish.
-    /// </summary>
     public static McpWorkflowViewDefinition Analyze { get; } = new()
     {
         Name = AnalyzeViewName,
@@ -431,7 +399,31 @@ internal static class McpWorkflowViewCatalog
         ],
     };
 
-    /// <summary>Every view this server publishes, keyed by name (ordinal).</summary>
+    // Package review is not placed on setup because those descriptors push that view past the 128 KiB aggregate ceiling.
+    public static McpWorkflowViewDefinition Review { get; } = new()
+    {
+        Name = ReviewViewName,
+        Title = "Review a package",
+        Description =
+            "Validate or preview a map, app, or other supported package. The review is read-only "
+            + "and does not execute or publish. Listing grants no authority.",
+        Revision = "review.v1",
+        Stages =
+        [
+            new McpWorkflowViewStageDefinition
+            {
+                Id = "package-review",
+                Title = "Read-only package review",
+                Description = "Inspect a package and return the canonical review. An anonymous caller is still refused.",
+                Rules =
+                [
+                    McpWorkflowViewMemberRule.Exact("honua_validate_package"),
+                    McpWorkflowViewMemberRule.Exact("honua_preview_package"),
+                ],
+            },
+        ],
+    };
+
     public static IReadOnlyDictionary<string, McpWorkflowViewDefinition> All { get; } =
         new Dictionary<string, McpWorkflowViewDefinition>(StringComparer.Ordinal)
         {
@@ -440,13 +432,12 @@ internal static class McpWorkflowViewCatalog
             [Configure.Name] = Configure,
             [Operate.Name] = Operate,
             [Analyze.Name] = Analyze,
+            [Review.Name] = Review,
         };
 
-    /// <summary>The published view names, in stable ordinal order.</summary>
     public static IReadOnlyList<string> Names { get; } =
         All.Keys.OrderBy(static n => n, StringComparer.Ordinal).ToArray();
 
-    /// <summary>Finds a published view by name, or <c>null</c> when unknown.</summary>
     public static McpWorkflowViewDefinition? Find(string? name) =>
         name is null ? null : All.GetValueOrDefault(name);
 }

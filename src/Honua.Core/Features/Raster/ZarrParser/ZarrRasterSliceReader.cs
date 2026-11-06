@@ -220,7 +220,7 @@ public sealed class ZarrRasterSliceReader : IZarrRasterSliceReader
                     slice!.Plan.Request,
                     cancellationToken)
                 .ConfigureAwait(false);
-            var fillValue = TryConvertFillValue(slice.Plan.Array.FillValue);
+            var fillValue = slice.Plan.Array.FillValue;
 
             // Map each output pixel centre to a coordinate in the output CRS, then warp the
             // whole grid back into the native CRS in one batch transform so the renderer can
@@ -243,7 +243,7 @@ public sealed class ZarrRasterSliceReader : IZarrRasterSliceReader
             }
 
             var stretchRange = ResolveStretchRange(request.Stretch);
-            var rgba = ZarrTileRenderer.RenderRgba(
+            var rgba = ZarrTileRenderer.RenderRgbaWithTypedFill(
                 subset,
                 slice,
                 request.OutputWidth,
@@ -544,23 +544,6 @@ public sealed class ZarrRasterSliceReader : IZarrRasterSliceReader
             XMax = Math.Min(bounds.XMax, extent.XMax),
             YMax = Math.Min(bounds.YMax, extent.YMax),
         };
-
-    private static double? TryConvertFillValue(object? fillValue)
-    {
-        if (fillValue is null)
-        {
-            return null;
-        }
-
-        try
-        {
-            return Convert.ToDouble(fillValue, CultureInfo.InvariantCulture);
-        }
-        catch (Exception ex) when (ex is FormatException or InvalidCastException or OverflowException)
-        {
-            return null;
-        }
-    }
 
     private static ZarrRasterSliceReadResult Finish(
         ZarrRasterSliceReadStatus status,

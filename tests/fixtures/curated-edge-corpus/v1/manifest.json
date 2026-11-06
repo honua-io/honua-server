@@ -11,7 +11,7 @@
     "containsProductionData": false
   },
   "license": {
-    "expression": "Elastic-2.0",
+    "expression": "LicenseRef-FCL-1.0-ALv2",
     "scope": "repository"
   },
   "assets": [

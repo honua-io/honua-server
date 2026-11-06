@@ -6,9 +6,6 @@ using System.Text.Json;
 
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
-/// <summary>
-/// Pure in-memory compatibility analyzer for Metadata v2 release packages.
-/// </summary>
 public static class MetadataCompatibilityAnalyzer
 {
     private const string DomainIdKey = "domainId";
@@ -19,9 +16,6 @@ public static class MetadataCompatibilityAnalyzer
     private const string IndexesKey = "indexes";
     private const string IndexedKey = "indexed";
 
-    /// <summary>
-    /// Creates an unknown-state report for package or graph resolution failures.
-    /// </summary>
     public static MetadataCompatibilityReport CreateUnavailableReport(
         MetadataReleasePackage? package,
         string targetEnvironment,
@@ -64,9 +58,6 @@ public static class MetadataCompatibilityAnalyzer
             scriptCount);
     }
 
-    /// <summary>
-    /// Analyzes the release package against source and target graph snapshots.
-    /// </summary>
     public static MetadataCompatibilityReport Analyze(
         MetadataReleasePackage package,
         MetadataV2GraphSnapshot sourceSnapshot,

@@ -8,6 +8,8 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Ai.Protocols.Mcp;
+using Honua.Ai.Protocols.Mcp.MapTools;
+using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
@@ -67,6 +69,7 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
     private int? _layerId;
     private bool _missingLayerSrid;
     private string? _importedTableName;
+    private string? _legacyImportedTableName;
     private string? _importedTableSchema;
 
     public async Task InitializeAsync()
@@ -79,6 +82,11 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
         _fixture.ConfigureServices(services =>
         {
             services.AddMcpCatalogPublicationSurface();
+            // The Test host composes MCP before the fixture graph provider exists, so
+            // honua_query_features is absent unless this production tool is registered here.
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, QueryFeaturesTool>());
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, ListLayersTool>());
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMcpTool, DescribeLayerTool>());
             // Publication metadata is stored in the canonical honua schema. Use its
             // production attachment authority as well; the fixture's isolated feature
             // schema is not a second attachment authority for these publications.
@@ -365,13 +373,13 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
         listResponse.Be200Ok();
 
         var listPayload = await listResponse.Content.ReadAsStringAsync();
-        var listApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary[]>>(listPayload, _jsonOptions);
+        var listApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerPage>>(listPayload, _jsonOptions);
 
         listApi.Should().NotBeNull();
         listApi!.Success.Should().BeTrue();
         listApi.Data.Should().NotBeNull();
 
-        var listedLayer = listApi.Data!.Single(layer => layer.LayerId == _layerId);
+        var listedLayer = listApi.Data!.Items.Single(layer => layer.LayerId == _layerId);
         listedLayer.Enabled.Should().BeTrue();
 
         var toggleRequest = new LayerEnabledRequest { Enabled = false };
@@ -420,10 +428,10 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
         var listResponse = await _client.GetAsync(
             $"/api/v1/admin/connections/{_connectionId}/layers?serviceName={_serviceName}");
         listResponse.Be200Ok();
-        var listApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary[]>>(
+        var listApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerPage>>(
             await listResponse.Content.ReadAsStringAsync(),
             _jsonOptions);
-        listApi!.Data!.Single(layer => layer.LayerId == published.LayerId).LicenseUrl
+        listApi!.Data!.Items.Single(layer => layer.LayerId == published.LayerId).LicenseUrl
             .Should().Be(expectedLicenseUrl);
     }
 
@@ -535,11 +543,11 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
         var listResponse = await _client.GetAsync(
             $"/api/v1/admin/connections/{_connectionId}/layers?serviceName={_serviceName}");
         listResponse.Be200Ok();
-        var listApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary[]>>(
+        var listApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerPage>>(
             await listResponse.Content.ReadAsStringAsync(),
             _jsonOptions);
         AssertSummaryGovernance(
-            listApi!.Data!.Single(layer => layer.LayerId == published.LayerId),
+            listApi!.Data!.Items.Single(layer => layer.LayerId == published.LayerId),
             license,
             attribution,
             publisher,
@@ -3358,13 +3366,23 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
 
     private async Task DropImportedTableAsync()
     {
-        if (string.IsNullOrWhiteSpace(_importedTableSchema) || string.IsNullOrWhiteSpace(_importedTableName))
+        if (string.IsNullOrWhiteSpace(_importedTableSchema))
         {
             return;
         }
 
-        await _fixture.Postgres.ExecuteDdlUnderLockAsync(
-            $"DROP TABLE IF EXISTS {_importedTableSchema}.{_importedTableName};");
+        var tables = new[] { _importedTableName, _legacyImportedTableName }
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .ToArray();
+        if (tables.Length == 0)
+        {
+            return;
+        }
+
+        var sql = string.Join(
+            '\n',
+            tables.Select(name => $"DROP TABLE IF EXISTS {_importedTableSchema}.{name};"));
+        await _fixture.Postgres.ExecuteDdlUnderLockAsync(sql);
     }
 
     private async Task<Guid> CreateTransientSecureConnectionAsync(string connectionString, string name)

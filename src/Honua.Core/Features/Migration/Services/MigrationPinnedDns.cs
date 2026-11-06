@@ -3,7 +3,6 @@
 
 using System.Net;
 using System.Net.Sockets;
-using Honua.Core.Features.Infrastructure.Internal;
 using Honua.Core.Features.Infrastructure.Validation;
 
 namespace Honua.Core.Features.Migration.Services;
@@ -25,8 +24,8 @@ internal readonly record struct MigrationServiceUrlPolicy(
     string ConnectionFailureMessage);
 
 /// <summary>
-/// Shared HTTPS, redirect, and pinned-DNS checks for migration clients.
-/// Each client used to carry its own copy of this guard.
+/// Shared HTTPS, redirect, and pinned-DNS checks for migration clients, which may opt in to
+/// local destinations for development sources.
 /// </summary>
 internal static class MigrationPinnedDns
 {
@@ -64,41 +63,10 @@ internal static class MigrationPinnedDns
         MigrationServiceUrlPolicy policy,
         CancellationToken cancellationToken)
     {
-        if (IPAddress.TryParse(host, out var literalAddress))
-        {
-            if (!allowUnsafeLocalUrls && OutboundHttpUrlValidator.IsPrivateOrReservedAddress(literalAddress))
-            {
-                throw new HttpRequestException(policy.DisallowedAddressMessage);
-            }
-
-            return [literalAddress];
-        }
-
-        IPAddress[] addresses;
-        try
-        {
-            addresses = await hostAddressResolver(host, cancellationToken).ConfigureAwait(false);
-        }
-        catch (SocketException)
-        {
-            throw new HttpRequestException(policy.DisallowedAddressMessage);
-        }
-        catch (ArgumentException)
-        {
-            throw new HttpRequestException(policy.DisallowedAddressMessage);
-        }
-
-        if (addresses.Length == 0)
-        {
-            throw new HttpRequestException(policy.DisallowedAddressMessage);
-        }
-
-        if (!allowUnsafeLocalUrls && addresses.Any(static address => OutboundHttpUrlValidator.IsPrivateOrReservedAddress(address)))
-        {
-            throw new HttpRequestException(policy.DisallowedAddressMessage);
-        }
-
-        return addresses;
+        var addresses = allowUnsafeLocalUrls
+            ? await ResolveAnyAddressesAsync(host, hostAddressResolver, cancellationToken).ConfigureAwait(false)
+            : await PinnedDnsConnector.TryResolveAllowedAddressesAsync(host, hostAddressResolver, cancellationToken).ConfigureAwait(false);
+        return addresses ?? throw new HttpRequestException(policy.DisallowedAddressMessage);
     }
 
     internal static async ValueTask<Stream> ConnectAsync(
@@ -116,30 +84,32 @@ internal static class MigrationPinnedDns
                 cancellationToken)
             .ConfigureAwait(false);
 
-        Exception? lastException = null;
-        foreach (var address in addresses)
-        {
-            using var socketOwner = new SocketConnectionOwner(
-                new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp));
+        var connector = new PinnedDnsConnector(
+            hostAddressResolver,
+            new PinnedDnsFailureMessages(policy.DisallowedAddressMessage, policy.ConnectionFailureMessage));
+        return await connector.ConnectToFirstReachableAsync(addresses, context.DnsEndPoint.Port, cancellationToken)
+            .ConfigureAwait(false);
+    }
 
-            try
-            {
-                await socketOwner.Socket
-                    .ConnectAsync(address, context.DnsEndPoint.Port, cancellationToken)
-                    .ConfigureAwait(false);
-                return socketOwner.TransferToNetworkStream();
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex) when (ex is SocketException or ObjectDisposedException)
-            {
-                lastException = ex;
-            }
+    private static async Task<IPAddress[]?> ResolveAnyAddressesAsync(
+        string host,
+        Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
+        CancellationToken cancellationToken)
+    {
+        if (IPAddress.TryParse(host, out var literalAddress))
+        {
+            return [literalAddress];
         }
 
-        throw new HttpRequestException(policy.ConnectionFailureMessage, lastException);
+        try
+        {
+            var addresses = await hostAddressResolver(host, cancellationToken).ConfigureAwait(false);
+            return addresses.Length == 0 ? null : addresses;
+        }
+        catch (Exception ex) when (ex is SocketException or ArgumentException)
+        {
+            return null;
+        }
     }
 
     internal static Uri? ResolveRedirectUri(Uri requestUri, Uri? location)

@@ -5,37 +5,22 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.SensorThings.Streaming;
 
-/// <summary>
-/// Admission and buffering limits for the SensorThings observation stream
-/// (<c>SensorThings:Streaming</c>). Sessions are admitted against three nested caps so a
-/// single credential or tenant cannot pin the node-wide budget and lock every other
-/// subscriber out (#4198): per principal, per tenant, and per node.
-/// </summary>
+// Sessions are capped per principal, per tenant, and per node so one credential cannot lock every other subscriber out.
 internal sealed class ObservationStreamOptions
 {
-    /// <summary>Configuration section name.</summary>
     public const string SectionName = SensorThingsOptions.SectionName + ":Streaming";
 
-    /// <summary>Maximum concurrent observation-stream sessions on this node across all callers.</summary>
     public int MaxConcurrentSessions { get; set; } = 256;
 
-    /// <summary>
-    /// Maximum concurrent sessions for one tenant. Callers without a resolved tenant (for
-    /// example platform administrators) share a single untenanted partition.
-    /// </summary>
     public int MaxSessionsPerTenant { get; set; } = 64;
 
-    /// <summary>Maximum concurrent sessions for one authenticated principal within a tenant.</summary>
     public int MaxSessionsPerPrincipal { get; set; } = 8;
 
-    /// <summary>Maximum queued frames per connection before the slow consumer's frames are dropped.</summary>
     public int MaxBufferPerConnection { get; set; } = 256;
 
-    /// <summary>Retry-After hint, in seconds, returned with a rejected session.</summary>
     public int RetryAfterSeconds { get; set; } = 30;
 }
 
-/// <summary>Validates <see cref="ObservationStreamOptions"/> at startup.</summary>
 internal sealed class ObservationStreamOptionsValidator : IValidateOptions<ObservationStreamOptions>
 {
     public ValidateOptionsResult Validate(string? name, ObservationStreamOptions options)

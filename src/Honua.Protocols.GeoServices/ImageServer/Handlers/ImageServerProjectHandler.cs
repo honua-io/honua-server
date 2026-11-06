@@ -18,9 +18,6 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
-/// <summary>
-/// Handler for ImageServer geometry projection operations.
-/// </summary>
 internal sealed class ImageServerProjectHandler
 {
     private const int MaxGeometryCount = 1_000;
@@ -43,9 +40,6 @@ internal sealed class ImageServerProjectHandler
         _rasterStore = rasterStore;
     }
 
-    /// <summary>
-    /// Projects Esri JSON geometries between spatial references.
-    /// </summary>
     public async Task<IResult> ProjectAsync(
         HttpContext context,
         int layerId,
@@ -183,16 +177,6 @@ internal sealed class ImageServerProjectHandler
         }
     }
 
-    /// <summary>
-    /// Projects geometries between image (pixel sample/line) space and map space using the
-    /// resolved raster's RPC sensor model (#1881). The supplied geometries are interpreted as
-    /// image coordinates and mapped to ground (longitude/latitude, EPSG:4326), then reprojected
-    /// into <c>outSR</c> when it differs and a transform service is available. The image-CS warp
-    /// composes with a client-supplied <c>datumTransformation</c> on the ground -&gt; <c>outSR</c>
-    /// leg (#2840); an unknown/inapplicable transformation is rejected with a precise 400 instead
-    /// of being silently dropped. Returns 400 when the raster carries no RPC metadata (the image CS
-    /// is genuinely unsupported for that raster).
-    /// </summary>
     private async Task<IResult> ProjectImageCoordinatesAsync(
         HttpContext context,
         int layerId,

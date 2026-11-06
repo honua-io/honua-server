@@ -5,10 +5,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Features.Protocols.Cog;
 
-/// <summary>
-/// Structured logging for COG operations.
-/// Event ID range: 7900-7999.
-/// </summary>
 internal static partial class CogLog
 {
     [LoggerMessage(

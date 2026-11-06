@@ -35,7 +35,7 @@ public sealed class StudioMcpOwnershipAuthorizationGuardTests
             .Distinct(StringComparer.Ordinal)
             .ToArray();
 
-        registeredTypes.Should().HaveCount(20,
+        registeredTypes.Should().HaveCount(21,
             "the complete honua_studio lifecycle/composition/proposal roster must remain under this guard");
 
         var sourceFiles = Directory.EnumerateFiles(studioRoot, "*.cs", SearchOption.TopDirectoryOnly)
@@ -52,7 +52,6 @@ public sealed class StudioMcpOwnershipAuthorizationGuardTests
         bypasses.Should().BeEmpty(
             "raw Studio draft loads outside StudioDraftToolBase bypass the canonical loaded-owner check");
 
-        var compositionSource = sourceFiles["StudioCompositionTools.cs"];
         var compositionBaseSource = sourceFiles["StudioCompositionToolBase.cs"];
         compositionBaseSource.Should().Contain("RequireAuthorizedDraftAsync(",
             "every composition tool delegates its load/mutation to this single owner-authorized helper");
@@ -74,7 +73,7 @@ public sealed class StudioMcpOwnershipAuthorizationGuardTests
                 continue;
             }
 
-            if (compositionSource.Contains($"class {type} : StudioCompositionToolBase", StringComparison.Ordinal))
+            if (resolvedDeclaration.Source.Contains($"class {type} : StudioCompositionToolBase", StringComparison.Ordinal))
             {
                 continue;
             }

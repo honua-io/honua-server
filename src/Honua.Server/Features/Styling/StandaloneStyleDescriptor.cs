@@ -7,24 +7,8 @@ using GeometryType = Honua.Core.Features.Metadata.Domain.V2.MetadataV2GeometryTy
 
 namespace Honua.Server.Features.Styling;
 
-/// <summary>
-/// Builds a <see cref="StyleLayerDescriptor"/> for a standalone (styleId-keyed) catalog
-/// style (ADR-0048, Phase 2). Phase 1 styles borrow the descriptor from the owning
-/// metadata-v2 resource, but a standalone style is decoupled from any layer, so the
-/// geometry type and storage-layer id have to be read back out of the style documents
-/// themselves. Both style ↔ drawingInfo converters are geometry-driven, so without this
-/// the standalone encodings degrade to the "no geometry" default document.
-/// </summary>
 internal static class StandaloneStyleDescriptor
 {
-    /// <summary>
-    /// Derives a descriptor from a canonical MapLibre style document: the storage-layer
-    /// id from its Honua tile source (<c>layer-{id}</c>), the geometry type from the
-    /// first symbolizing layer's type.
-    /// </summary>
-    /// <param name="styleId">Stable style identifier, used as the descriptor name.</param>
-    /// <param name="mapLibreStyleJson">Canonical MapLibre style JSON.</param>
-    /// <returns>A descriptor usable by the style converters.</returns>
     public static StyleLayerDescriptor FromMapLibre(string styleId, string mapLibreStyleJson)
     {
         int? layerId = null;
@@ -60,15 +44,6 @@ internal static class StandaloneStyleDescriptor
             SourceLayer: selectedSourceLayer);
     }
 
-    /// <summary>
-    /// Infers the geometry type a GeoServices <c>drawingInfo</c> renderer symbolizes and
-    /// verifies that every recognized renderer symbol belongs to the same geometry family.
-    /// </summary>
-    /// <param name="drawingInfo">Parsed <c>drawingInfo</c> document.</param>
-    /// <param name="geometryType">The inferred geometry type, or <see cref="GeometryType.None"/> when unknown.</param>
-    /// <param name="hasUnsupportedContent">Whether declared renderer content is incomplete or unsupported.</param>
-    /// <param name="validationError">A non-recoverable renderer error, when validation fails.</param>
-    /// <returns><see langword="false"/> when recognized symbols use different geometry families.</returns>
     public static bool TryInferConsistentGeometryType(
         JsonElement drawingInfo,
         out GeometryType geometryType,
@@ -211,12 +186,7 @@ internal static class StandaloneStyleDescriptor
         return geometryType != GeometryType.None;
     }
 
-    /// <summary>
-    /// Finds the layer whose symbology defines the style, returning both the geometry type
-    /// it implies and the name of the source it draws from. The source travels with the
-    /// geometry type because the conversion has to be bound to the layer that was actually
-    /// selected, not to whichever source happens to be declared first.
-    /// </summary>
+    // The conversion binds to the layer that defines the symbol, not to the first declared source.
     private static (GeometryType GeometryType, string? SourceName, string? SourceLayer) ReadSymbolizingLayer(JsonElement root)
     {
         if (!root.TryGetProperty("layers", out var layers) || layers.ValueKind != JsonValueKind.Array)
@@ -300,10 +270,6 @@ internal static class StandaloneStyleDescriptor
             : (fallbackGeometryType, fallbackSourceName, fallbackSourceLayer);
     }
 
-    /// <summary>
-    /// Resolves the storage-layer id the conversion must be bound to, preferring the source
-    /// the symbolizing layer actually references.
-    /// </summary>
     private static int? ResolveStorageLayerId(JsonElement root, string? sourceName)
     {
         if (!root.TryGetProperty("sources", out var sources) || sources.ValueKind != JsonValueKind.Object)

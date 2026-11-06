@@ -129,6 +129,28 @@ public class ImageServerMetadataHandlerTests
 
     [UnitTest]
     [Operation(Operations.GetServiceInfo)]
+    public async Task GetServiceInfoAsync_GeographicRaster_AdvertisesNoScaleOrPixelSizeLimit()
+    {
+        // ArcGIS Pro draws an image service only inside minPixelSize..maxPixelSize and
+        // minScale..maxScale. ArcGIS Server publishes 0 for all four ("no limit"). A positive
+        // minPixelSize in geographic units hides Client Compat Coverage at 1:339,824: the map
+        // cell is ~0.001 degrees and the service was advertising 0.1 (#6563). Export of the
+        // same bbox still returns pixels; Pro never requests them.
+        SetupSuccessfulMetadata();
+
+        var context = CreateImageServerContext();
+        var result = await _handler.GetServiceInfoAsync(context, 1);
+
+        var info = result.Should().BeOfType<JsonHttpResult<ImageServerServiceInfo>>().Which.Value!;
+        info.PixelSizeX.Should().BeApproximately(1.0, 0.0001);
+        info.MinPixelSize.Should().Be(0);
+        info.MaxPixelSize.Should().Be(0);
+        info.MinScale.Should().Be(0);
+        info.MaxScale.Should().Be(0);
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
     public async Task GetServiceInfoAsync_ResponseEmitsNonNullFieldsWithOid()
     {
         // The ArcGIS Maps SDK for JavaScript calls fields.find(...) during

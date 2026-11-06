@@ -13,13 +13,6 @@ using Microsoft.Extensions.Hosting;
 
 namespace Honua.Infrastructure.Monitoring;
 
-/// <summary>
-/// Background loop that restores database access after the host started in degraded mode because the
-/// database was unavailable at boot (issue #1632). It retries the PostGIS preflight check and pending
-/// migrations with bounded exponential backoff, marking <see cref="MigrationState"/> ready once the
-/// database is reachable so <c>/healthz/ready</c> flips to ready. The loop is inert (no-op) when the
-/// host started normally, so it adds nothing to the steady-state path.
-/// </summary>
 internal sealed class DatabaseRecoveryBackgroundService : BackgroundService
 {
     private readonly DegradedStartupContext _context;
@@ -29,6 +22,8 @@ internal sealed class DatabaseRecoveryBackgroundService : BackgroundService
     private readonly StartupResilienceOptions _options;
     private readonly IServiceProvider _services;
     private readonly ILogger<DatabaseRecoveryBackgroundService> _logger;
+    private readonly SemaphoreSlim _attemptGate = new(1, 1);
+    private int _attempts; // guarded by _attemptGate
 
     public DatabaseRecoveryBackgroundService(
         DegradedStartupContext context,
@@ -46,7 +41,21 @@ internal sealed class DatabaseRecoveryBackgroundService : BackgroundService
         _options = options;
         _services = services;
         _logger = logger;
+        RecoversOnReadinessProbe = !string.IsNullOrWhiteSpace(
+            configuration[StartupDatabasePreflight.AwsLambdaFunctionNameKey]);
+        if (RecoversOnReadinessProbe)
+        {
+            // Readiness already depends on the degraded-start context. Registering here keeps the
+            // probe attempt on that context instead of adding this service as another collaborator.
+            context.RegisterReadinessProbeRecovery(async (budget, token) =>
+            {
+                await TryRecoverOnReadinessProbeAsync(budget, token);
+            });
+        }
     }
+
+    // On Lambda a readiness probe runs one recovery attempt, because the background loop cannot finish while the sandbox is frozen between invocations.
+    internal bool RecoversOnReadinessProbe { get; }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -64,22 +73,98 @@ internal sealed class DatabaseRecoveryBackgroundService : BackgroundService
         while (!stoppingToken.IsCancellationRequested)
         {
             attempt++;
+            Exception? failure;
             try
             {
-                await TryRecoverAsync(stoppingToken);
-                _context.MarkRecovered();
-                MonitoringLog.DatabaseRecoverySucceeded(_logger, attempt);
-                return;
+                failure = await RunAttemptAsync(stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
                 return;
             }
-            // Intentional: this is the top-level retry loop for database recovery after a
-            // startup connectivity failure; any exception type from the recovery attempt
-            // (connection, auth, migration, or otherwise) must be classified via
-            // IsTransientConnectivityError below rather than crash the background service,
-            // so retries/backoff and the terminal "give up" path both stay reachable.
+
+            if (failure is null)
+            {
+                return;
+            }
+
+            if (_context.RecoveryFailure is not null)
+            {
+                // A non-transient failure: RunAttemptAsync already recorded it.
+                MonitoringLog.DatabaseRecoveryGaveUp(_logger, attempt, failure.Message, failure);
+                return;
+            }
+
+            if (_options.MaxRetryAttempts > 0 && attempt >= _options.MaxRetryAttempts)
+            {
+                _context.MarkRecoveryAbandoned(DescribeFailure(failure));
+                MonitoringLog.DatabaseRecoveryGaveUp(_logger, attempt, failure.Message, failure);
+                return;
+            }
+
+            var delay = StartupDatabaseResilience.GetRetryDelay(
+                attempt, _options.RetryBaseDelay, _options.RetryMaxDelay, jitter);
+            MonitoringLog.DatabaseRecoveryAttemptFailed(
+                _logger, attempt, delay.TotalSeconds, failure.Message, failure);
+
+            try
+            {
+                await Task.Delay(delay, stoppingToken);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+        }
+    }
+
+    internal async Task<bool> TryRecoverOnReadinessProbeAsync(TimeSpan budget, CancellationToken cancellationToken)
+    {
+        if (!RecoversOnReadinessProbe || !_context.IsAwaitingDatabase || _context.RecoveryFailure is not null)
+        {
+            return !_context.IsAwaitingDatabase;
+        }
+
+        using var bounded = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        bounded.CancelAfter(budget);
+        try
+        {
+            await RunAttemptAsync(bounded.Token);
+        }
+        catch (OperationCanceledException) when (bounded.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            // The budget ran out (or an attempt in flight held the gate): the next probe retries.
+        }
+
+        return !_context.IsAwaitingDatabase;
+    }
+
+    private async Task<Exception?> RunAttemptAsync(CancellationToken cancellationToken)
+    {
+        await _attemptGate.WaitAsync(cancellationToken);
+        try
+        {
+            if (!_context.IsAwaitingDatabase)
+            {
+                return null;
+            }
+
+            var attempt = ++_attempts;
+            try
+            {
+                await TryRecoverAsync(cancellationToken);
+                _context.MarkRecovered();
+                MonitoringLog.DatabaseRecoverySucceeded(_logger, attempt);
+                return null;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            // Intentional: this is the top-level boundary of one recovery attempt; any exception
+            // type (connection, auth, migration, or otherwise) must be classified via
+            // IsTransientConnectivityError below rather than crash the background service, so
+            // retries/backoff and the terminal "give up" path both stay reachable.
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 if (IsSchemaBehindBinary(ex, out var schemaFloorReason))
@@ -88,38 +173,29 @@ internal sealed class DatabaseRecoveryBackgroundService : BackgroundService
                     // start before the migration task ran): keep waiting, and say so on readiness.
                     _context.UpdateReason(ReadinessReasonCodes.SchemaFloor, schemaFloorReason);
                 }
-                else if (!IsTransient(ex))
+                else if (!IsTransient(ex) && !cancellationToken.IsCancellationRequested)
                 {
+                    // (A failure surfaced by a cancelled attempt, such as a probe whose budget ran
+                    // out mid-connect, is never classified as terminal.)
                     // A non-transient failure surfaced during recovery (e.g. the database is now
                     // reachable but a migration script is invalid). Stop retrying; this needs an
                     // operator, not another connection attempt.
                     _context.MarkRecoveryAbandoned(DescribeFailure(ex));
-                    MonitoringLog.DatabaseRecoveryGaveUp(_logger, attempt, ex.Message, ex);
-                    return;
                 }
 
-                if (_options.MaxRetryAttempts > 0 && attempt >= _options.MaxRetryAttempts)
-                {
-                    _context.MarkRecoveryAbandoned(DescribeFailure(ex));
-                    MonitoringLog.DatabaseRecoveryGaveUp(_logger, attempt, ex.Message, ex);
-                    return;
-                }
-
-                var delay = StartupDatabaseResilience.GetRetryDelay(
-                    attempt, _options.RetryBaseDelay, _options.RetryMaxDelay, jitter);
-                MonitoringLog.DatabaseRecoveryAttemptFailed(
-                    _logger, attempt, delay.TotalSeconds, ex.Message, ex);
-
-                try
-                {
-                    await Task.Delay(delay, stoppingToken);
-                }
-                catch (OperationCanceledException)
-                {
-                    return;
-                }
+                return ex;
             }
         }
+        finally
+        {
+            _attemptGate.Release();
+        }
+    }
+
+    public override void Dispose()
+    {
+        _attemptGate.Dispose();
+        base.Dispose();
     }
 
     private async Task TryRecoverAsync(CancellationToken cancellationToken)
@@ -200,11 +276,7 @@ internal sealed class DatabaseRecoveryBackgroundService : BackgroundService
         _migrationState.MarkSucceeded("Database recovered; migrations are up to date.");
     }
 
-    /// <summary>
-    /// Whether <paramref name="exception"/> says the schema is behind this binary: a required
-    /// numbered migration is not journaled as applied. A schema that diverges from its journal, or a
-    /// database newer than this binary (<see cref="DatabaseSchemaCompatibilityException"/>), is not.
-    /// </summary>
+    // A schema newer than this binary, or a schema that diverges from its journal, is not treated as a missing migration.
     internal static bool IsSchemaBehindBinary(Exception exception, out string reason)
     {
         if (exception is DatabaseSchemaFloorException
@@ -220,7 +292,6 @@ internal sealed class DatabaseRecoveryBackgroundService : BackgroundService
         return false;
     }
 
-    /// <summary>Sanitized schema-floor reason (the migration script name only).</summary>
     internal static string BuildSchemaFloorReason(string migrationScript)
         => "schema guard: migration '" + migrationScript + "' not applied";
 
@@ -236,13 +307,11 @@ internal sealed class DatabaseRecoveryBackgroundService : BackgroundService
             _ => StartupDatabaseResilience.DescribeFailureClass(exception),
         };
 
-    /// <summary>The compatibility probe still could not reach the database.</summary>
     private sealed class TransientRecoveryFailureException(string failureClass, Exception? innerException)
         : Exception("Database still unavailable: " + failureClass + ".", innerException)
     {
         public string FailureClass { get; } = failureClass;
     }
 
-    /// <summary>The database is reachable but failed the compatibility check.</summary>
     private sealed class IncompatibleDatabaseException(string message) : InvalidOperationException(message);
 }

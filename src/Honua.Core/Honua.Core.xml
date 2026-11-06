@@ -618,8 +618,9 @@
         </member>
         <member name="P:Honua.Core.Configuration.ConnectionLimits.MaxConnectionPoolSize">
             <summary>
-            Maximum size of the database connection pool.
-            Range: 10-500.
+            Maximum connection pool size. Valid values are 1 through 1000. Startup refuses a pool
+            only when maximum concurrent queries exceed it. An unset value on Lambda is lowered
+            separately from this long-lived default.
             </summary>
         </member>
         <member name="P:Honua.Core.Configuration.ConnectionLimits.RequestTimeout">

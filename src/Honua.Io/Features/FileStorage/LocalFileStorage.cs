@@ -12,9 +12,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.FileStorage;
 
-/// <summary>
-/// Local filesystem implementation of cloud file storage for development and testing
-/// </summary>
 internal sealed class LocalFileStorage : CloudFileStorageBase
 {
     private const int MutationLockStripeCount = 64;
@@ -26,12 +23,6 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
     private readonly string _basePath;
     private readonly string _metadataPath;
 
-    /// <summary>
-    /// Creates a new local file storage instance
-    /// </summary>
-    /// <param name="options">Local storage options</param>
-    /// <param name="logger">Logger instance</param>
-    /// <param name="progressStore">Upload progress store</param>
     public LocalFileStorage(
         IOptions<LocalStorageOptions> options,
         ILogger<LocalFileStorage> logger,
@@ -50,10 +41,8 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         InitializeStorage();
     }
 
-    /// <inheritdoc />
     public override CloudStorageProvider Provider => CloudStorageProvider.Local;
 
-    /// <inheritdoc />
     public override Task<UploadResult> UploadAsync(
         FileUploadRequest request,
         CancellationToken cancellationToken = default)
@@ -88,6 +77,9 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         SerializedUploadProgressWriter? progressWriter = null;
         SemaphoreSlim? mutationLock = null;
         var mutationLockHeld = false;
+        string? pendingPath = null;
+        string? unpublishedPath = null;
+        var published = false;
 
         // Store cancellation token for potential cancellation
         UploadCancellationTokens[uploadId] = linkedCancellationSource;
@@ -98,7 +90,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
             var initialProgress = UploadProgress.CreateInitial(uploadId, request.FileName, totalBytes, request.ContentType);
 
             // Store initial progress
-            await ProgressStore.SetProgressAsync(uploadId, initialProgress, TimeSpan.FromHours(1), cancellationToken);
+            await TrySetUploadProgressAsync(uploadId, initialProgress, TimeSpan.FromHours(1), cancellationToken);
 
             // Report initial progress if callback provided
             ReportProgressToCaller(request.Progress, uploadId, initialProgress);
@@ -117,7 +109,13 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
                 storagePath = BuildStoragePath(fileId, request.FileName, request.Folder);
             }
 
+            // Logical keys remain stable; physical generations are never overwritten in place.
+            var extension = Path.GetExtension(storagePath);
+            var generationId = Guid.NewGuid().ToString("N");
+            storagePath = storagePath[..^extension.Length] + ".honua-" + generationId + extension;
             var fullPath = GetSafeFullPath(storagePath);
+            pendingPath = fullPath + ".pending";
+            unpublishedPath = fullPath;
 
             mutationLock = GetMutationLock(fileId);
             await mutationLock.WaitAsync(linkedCancellationSource.Token).ConfigureAwait(false);
@@ -137,6 +135,8 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
                 }
             }
 
+            _fileIndex.TryGetValue(fileId, out var previousGeneration);
+
             // Ensure directory exists
             var directory = Path.GetDirectoryName(fullPath);
             if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
@@ -148,7 +148,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
             string? contentHash;
             long sizeBytes;
 
-            await using (var fileStream = new FileStream(fullPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true))
+            await using (var fileStream = new FileStream(pendingPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, true))
             {
                 using var hashAlgorithm = SHA256.Create();
                 await using var cryptoStream = new CryptoStream(fileStream, hashAlgorithm, CryptoStreamMode.Write, leaveOpen: true);
@@ -199,13 +199,23 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
                 UploadedAt = uploadedAt,
                 ExpiresAt = expiresAt,
                 ContentHash = contentHash,
-                ETag = uploadId,
+                ETag = generationId,
                 Metadata = request.Metadata.Add("UploadId", uploadId),
                 Provider = CloudStorageProvider.Local
             };
 
+            // Publish a complete generation through one atomic metadata-pointer replacement.
+            // A process interruption before this move retains the previous pointer; after it, restart sees
+            // the new complete bytes. Unreferenced staging remnants are never served.
+            File.Move(pendingPath, fullPath);
+            pendingPath = null;
+            await SaveMetadataAsync(cloudFile, linkedCancellationSource.Token).ConfigureAwait(false);
             _fileIndex[fileId] = cloudFile;
-            await SaveMetadataAsync(cloudFile, cancellationToken);
+            published = true;
+            if (previousGeneration is not null && previousGeneration.StoragePath != storagePath)
+            {
+                TryDeleteGeneration(GetSafeFullPath(previousGeneration.StoragePath), fileId);
+            }
 
             // Report completion
             var completedProgress = new UploadProgress
@@ -221,7 +231,7 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
                 CompletedAt = uploadedAt,
                 CurrentPhase = "Upload completed"
             };
-            await ProgressStore.SetProgressAsync(uploadId, completedProgress, TimeSpan.FromHours(1), cancellationToken);
+            await TrySetUploadProgressAsync(uploadId, completedProgress, TimeSpan.FromHours(1), cancellationToken);
             ReportProgressToCaller(request.Progress, uploadId, completedProgress);
 
             stopwatch.Stop();
@@ -289,6 +299,14 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         }
         finally
         {
+            if (pendingPath is not null)
+            {
+                TryDeleteGeneration(pendingPath, uploadId);
+            }
+            if (!published && unpublishedPath is not null)
+            {
+                TryDeleteGeneration(unpublishedPath, uploadId);
+            }
             if (mutationLockHeld)
             {
                 mutationLock!.Release();
@@ -300,28 +318,59 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         }
     }
 
-    /// <inheritdoc />
-    public override async Task<Stream?> DownloadAsync(string fileId, CancellationToken cancellationToken = default)
+    public override Task<Stream?> DownloadAsync(string fileId, CancellationToken cancellationToken = default)
+        => OpenGenerationAsync(fileId, expectedETag: null, cancellationToken);
+
+    public override Task<Stream?> DownloadIfMatchAsync(string fileId, string expectedETag, CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
-
-        var cloudFile = await GetMetadataAsync(fileId, cancellationToken);
-        if (cloudFile is null)
-        {
-            return null;
-        }
-
-        var fullPath = GetSafeFullPath(cloudFile.StoragePath);
-        if (!File.Exists(fullPath))
-        {
-            FileStorageLog.FileMissingOnDisk(Logger, fileId);
-            return null;
-        }
-
-        return new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, true);
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedETag);
+        return OpenGenerationAsync(fileId, expectedETag, cancellationToken);
     }
 
-    /// <inheritdoc />
+    private async Task<Stream?> OpenGenerationAsync(string fileId, string? expectedETag, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
+        var mutationLock = GetMutationLock(fileId);
+        await mutationLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (!_fileIndex.TryGetValue(fileId, out var cloudFile))
+            {
+                return null;
+            }
+            if (expectedETag is not null && !string.Equals(expectedETag, cloudFile.ETag, StringComparison.Ordinal))
+            {
+                throw new CloudFileRevisionChangedException();
+            }
+            var fullPath = GetSafeFullPath(cloudFile.StoragePath);
+            if (!File.Exists(fullPath))
+            {
+                FileStorageLog.FileMissingOnDisk(Logger, fileId);
+                return null;
+            }
+            // Managed writes publish a new immutable path. Once opened, the OS handle
+            // pins these bytes while allowing other readers and replacement cleanup.
+            return new FileStream(fullPath, FileMode.Open, FileAccess.Read,
+                FileShare.Read | FileShare.Delete, 81920, true);
+        }
+        finally
+        {
+            mutationLock.Release();
+        }
+    }
+
+    private void TryDeleteGeneration(string path, string fileId)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            FileStorageLog.FileDeleteFailed(Logger, ex, fileId);
+        }
+    }
+
     public override async Task<bool> DeleteAsync(string fileId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
@@ -420,7 +469,6 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         }
     }
 
-    /// <inheritdoc />
     public override Task<CloudFile?> GetMetadataAsync(string fileId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
@@ -429,7 +477,6 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         return Task.FromResult(cloudFile);
     }
 
-    /// <inheritdoc />
     public override Task<bool> ExistsAsync(string fileId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
@@ -438,7 +485,6 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         return Task.FromResult(exists);
     }
 
-    /// <inheritdoc />
     public override Task<IReadOnlyList<CloudFile>> ListFilesAsync(
         string? folder = null,
         int maxResults = 1000,
@@ -457,7 +503,6 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         return Task.FromResult<IReadOnlyList<CloudFile>>(files);
     }
 
-    /// <inheritdoc />
     public override Task<string?> GetPresignedUrlAsync(
         string fileId,
         TimeSpan? expiresIn = null,
@@ -476,7 +521,6 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         return Task.FromResult<string?>(ToAbsoluteFileUri(fullPath));
     }
 
-    /// <inheritdoc />
     public override Task<(string Url, string FileId)?> GetPresignedUploadUrlAsync(
         string fileName,
         string contentType,
@@ -503,7 +547,6 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
             (ToAbsoluteFileUri(fullPath), fileId));
     }
 
-    /// <inheritdoc />
     public override async Task<int> CleanupExpiredFilesAsync(CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow;
@@ -603,8 +646,18 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
     private async Task SaveMetadataAsync(CloudFile cloudFile, CancellationToken cancellationToken)
     {
         var metadataFile = GetMetadataFilePath(cloudFile.FileId);
-        var json = JsonSerializer.Serialize(cloudFile, FileStorageJsonContext.Default.CloudFile);
-        await File.WriteAllTextAsync(metadataFile, json, cancellationToken);
+        var pending = metadataFile + "." + Guid.NewGuid().ToString("N") + ".pending";
+        try
+        {
+            var json = JsonSerializer.Serialize(cloudFile, FileStorageJsonContext.Default.CloudFile);
+            await File.WriteAllTextAsync(pending, json, cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            File.Move(pending, metadataFile, overwrite: true);
+        }
+        finally
+        {
+            TryDeleteGeneration(pending, cloudFile.FileId);
+        }
     }
 
     private string GetMetadataFilePath(string fileId)
@@ -678,13 +731,6 @@ internal sealed class LocalFileStorage : CloudFileStorageBase
         return Path.Join(folder, storageName);
     }
 
-    /// <summary>
-    /// Combines <paramref name="storagePath"/> with the base path and verifies the result is
-    /// contained within the base directory. This is defence-in-depth: the denylist in
-    /// <see cref="ValidateObjectKeyOverride"/> and <see cref="ValidateFolderPath"/> already
-    /// blocks explicit traversal segments, but a GetFullPath containment check also catches
-    /// symlinks and any platform-specific path encoding tricks.
-    /// </summary>
     private string GetSafeFullPath(string storagePath)
     {
         var combined = Path.GetFullPath(Path.Join(_basePath, storagePath));

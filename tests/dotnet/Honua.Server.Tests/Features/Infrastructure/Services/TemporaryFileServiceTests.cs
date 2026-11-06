@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Amazon.S3;
+using Amazon.S3.Model;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
@@ -920,6 +922,49 @@ public sealed class TemporaryFileServiceTests : IDisposable
         (await cloudStorage.ListFilesAsync("temporary-files")).Should().BeEmpty();
     }
 
+    [UnitTest]
+    public async Task StoreTemporaryFileAsync_WhenProgressStoreThrows_StillReturnsUrl()
+    {
+        var progressStore = new ThrowingUploadProgressStore();
+        var s3 = Substitute.For<IAmazonS3>();
+        s3.PutObjectAsync(Arg.Any<PutObjectRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new PutObjectResponse { ETag = "\"etag\"" });
+        s3.ListObjectsV2Async(Arg.Any<ListObjectsV2Request>(), Arg.Any<CancellationToken>())
+            .Returns(new ListObjectsV2Response { IsTruncated = false, S3Objects = [] });
+
+        var storage = new AwsS3FileStorage(
+            Options.Create(new CloudStorageOptions
+            {
+                AwsS3 = new AwsS3Options
+                {
+                    BucketName = "honua-temp",
+                    Region = "us-east-1"
+                }
+            }),
+            NullLogger<AwsS3FileStorage>.Instance,
+            progressStore,
+            s3);
+        var redis = CreateRedisLeaseMultiplexer();
+        var service = CreateCloudAwareService(
+            new TemporaryFileOptions
+            {
+                StorageDirectory = Path.Join(_storageDirectory, "node-a"),
+                BaseUrl = "/temp",
+                MaxFileCount = 0,
+                MaxTotalStorageBytes = 0,
+                DefaultExpiration = TimeSpan.FromMinutes(5)
+            },
+            storage,
+            redis: redis);
+
+        var url = await service.StoreTemporaryFileAsync([1, 2, 3, 4], "image/png");
+
+        url.Should().StartWith("/temp/");
+        url.Should().EndWith(".png");
+        progressStore.SetAttempts.Should().BeGreaterThan(0);
+        await s3.Received().PutObjectAsync(Arg.Any<PutObjectRequest>(), Arg.Any<CancellationToken>());
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_storageDirectory))
@@ -1119,6 +1164,34 @@ public sealed class TemporaryFileServiceTests : IDisposable
         [
             new Claim("sub", subject)
         ], "Bearer"));
+    }
+
+    private sealed class ThrowingUploadProgressStore : IUploadProgressStore
+    {
+        public int SetAttempts { get; private set; }
+
+        public Task SetProgressAsync(
+            string uploadId,
+            UploadProgress progress,
+            TimeSpan? ttl = null,
+            CancellationToken cancellationToken = default)
+        {
+            SetAttempts++;
+            throw new InvalidOperationException(
+                "Distributed import progress state is unavailable while attempting to set progress.");
+        }
+
+        public Task<UploadProgress?> GetProgressAsync(string uploadId, CancellationToken cancellationToken = default)
+            => Task.FromResult<UploadProgress?>(null);
+
+        public Task DeleteProgressAsync(string uploadId, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task<IReadOnlyList<string>> GetActiveUploadIdsAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<string>>([]);
+
+        public Task<IReadOnlyList<UploadProgress>> GetActiveUploadsAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<UploadProgress>>([]);
     }
 
     private sealed class FakeCloudFileStorage : ICloudFileStorage

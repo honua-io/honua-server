@@ -7,15 +7,7 @@ using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Caching;
 
-/// <summary>
-/// Redis-backed <see cref="ITileCacheGenerationCheckpointStore"/> (issue #2661). Durable,
-/// cross-node resume state for bounded generated tile-cache seed/warm generations must not live
-/// on a single serving pod's local memory, so when a Redis multiplexer is present this binding
-/// overrides the in-memory default. Each generation's checkpoint is stored under a stable,
-/// prefixed key with a bounded TTL so abandoned generations self-expire. Payloads are truncated
-/// to the deterministic upper bound enforced by <see cref="TileCacheGenerationCheckpointBounds"/>
-/// before serialization, so persisted state stays release-safe regardless of gridset size.
-/// </summary>
+// Resume state must not live on one pod, so a Redis multiplexer overrides the in-memory default and abandoned generations expire.
 internal sealed partial class RedisTileCacheGenerationCheckpointStore : ITileCacheGenerationCheckpointStore
 {
     private const string KeyPrefix = "honua:tile-cache:generation:checkpoint:";
@@ -35,7 +27,6 @@ internal sealed partial class RedisTileCacheGenerationCheckpointStore : ITileCac
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <inheritdoc />
     public async ValueTask SaveAsync(TileCacheGenerationCheckpoint checkpoint, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(checkpoint);
@@ -51,7 +42,6 @@ internal sealed partial class RedisTileCacheGenerationCheckpointStore : ITileCac
             .ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async ValueTask<TileCacheGenerationCheckpoint?> LoadAsync(string generationId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(generationId);
@@ -81,7 +71,6 @@ internal sealed partial class RedisTileCacheGenerationCheckpointStore : ITileCac
         }
     }
 
-    /// <inheritdoc />
     public async ValueTask<bool> DeleteAsync(string generationId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(generationId);

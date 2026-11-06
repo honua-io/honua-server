@@ -6,11 +6,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Server.Features.Mobile.FieldCollection;
 
-/// <summary>
-/// Source-generated JSON context for FieldCollection mobile sync request and
-/// response models (#894). Keeps the endpoints reflection-free and compatible
-/// with Native AOT.
-/// </summary>
 [JsonSourceGenerationOptions(JsonSerializerDefaults.General)]
 [JsonSerializable(typeof(FieldCollectionGenerationResponse))]
 [JsonSerializable(typeof(FieldCollectionSyncCursorResponse))]

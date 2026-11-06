@@ -12,19 +12,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Service collection extensions for Image Server feature registration.
-/// </summary>
 internal static class ImageServerServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers Image Server services with dependency injection.
-    /// </summary>
-    /// <param name="services">The service collection to register into.</param>
-    /// <param name="configuration">
-    /// Application configuration used to bind <see cref="ImageServerTileMetadataOptions"/>
-    /// (the opt-in tiled-consumption metadata flag, #1648).
-    /// </param>
     public static IServiceCollection AddImageServer(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -103,7 +92,7 @@ internal static class ImageServerServiceCollectionExtensions
         // Shared Esri datum-transformation catalog (WKID -> PROJ pipeline) used by the
         // project operation. TryAdd keeps a single instance shared with the FeatureServer
         // registration regardless of protocol registration order.
-        services.TryAddSingleton<IDatumTransformationCatalog>(static _ => EsriDatumTransformationCatalog.Create());
+        services.TryAddSingleton<IDatumTransformationCatalog>(static _ => GeoServicesDatumTransformationCatalog.Create());
         services.AddScoped<IImageServerLayerResolver, MetadataV2ImageServerLayerResolver>();
         services.AddScoped<IImageServerCatalogReader, ImageServerCatalogReader>();
         services.AddSingleton<IImageServerCatalogFilterEvaluator, ImageServerCatalogFilterEvaluator>();

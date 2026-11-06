@@ -3,14 +3,11 @@
 
 using System.Linq;
 using System.Net;
-using System.Net.Sockets;
+using Honua.Core.Features.Infrastructure.Validation;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Events;
 
-/// <summary>
-/// Stored feature-change event envelope used for replay and webhook delivery.
-/// </summary>
 internal sealed record FeatureChangeEvent
 {
     public required string EventId { get; init; }
@@ -28,45 +25,20 @@ internal sealed record FeatureChangeEvent
     public string? AuditId { get; init; }
     public string? ProposalId { get; init; }
 
-    /// <summary>
-    /// Optional. Changed attribute values when available. Null when the originating
-    /// protocol does not provide attribute-level change tracking, or for deletes.
-    /// </summary>
+    // Null attributes can mean the protocol has no attribute-level tracking, including deletes. GeometryChanged false does not prove the geometry is unchanged.
     public Dictionary<string, object?>? ChangedAttributes { get; init; }
 
-    /// <summary>
-    /// Whether the feature's geometry was modified by this operation.
-    /// Best-effort: may default to false when the originating protocol cannot determine this.
-    /// </summary>
     public bool GeometryChanged { get; init; }
 
-    /// <summary>
-    /// Geometry bounding box (MinX, MinY, MaxX, MaxY) captured at mutation time.
-    /// Null for deletes or non-spatial features.
-    /// </summary>
     public double[]? GeometryEnvelope { get; init; }
 
-    /// <summary>
-    /// Pre-serialized JSON of feature attributes at mutation time.
-    /// Null for deletes.
-    /// </summary>
     public string? PropertiesJson { get; init; }
 
-    /// <summary>
-    /// Pre-serialized GeoJSON geometry captured at mutation time.
-    /// Null for deletes or non-spatial features.
-    /// </summary>
     public string? GeometryJson { get; init; }
 
-    /// <summary>
-    /// SRID for <see cref="GeometryJson"/> when known.
-    /// </summary>
     public int? GeometrySrid { get; init; }
 }
 
-/// <summary>
-/// Input payload used by writers to publish feature-change events.
-/// </summary>
 internal sealed record FeatureChangeEventRequest
 {
     public string? EventId { get; init; }
@@ -83,95 +55,43 @@ internal sealed record FeatureChangeEventRequest
     public string? ProposalId { get; init; }
     public DateTimeOffset? Timestamp { get; init; }
 
-    /// <summary>
-    /// Optional. Changed attribute values when available. Null when the originating
-    /// protocol does not provide attribute-level change tracking, or for deletes.
-    /// </summary>
+    // Null attributes can mean the protocol has no attribute-level tracking, including deletes. GeometryChanged false does not prove the geometry is unchanged.
     public Dictionary<string, object?>? ChangedAttributes { get; init; }
 
-    /// <summary>
-    /// Whether the feature's geometry was modified by this operation.
-    /// Best-effort: may default to false when the originating protocol cannot determine this.
-    /// </summary>
     public bool GeometryChanged { get; init; }
 
-    /// <summary>
-    /// Geometry bounding box (MinX, MinY, MaxX, MaxY) captured at mutation time.
-    /// Null for deletes or non-spatial features.
-    /// </summary>
     public double[]? GeometryEnvelope { get; init; }
 
-    /// <summary>
-    /// Pre-serialized JSON of feature attributes at mutation time.
-    /// Null for deletes.
-    /// </summary>
     public string? PropertiesJson { get; init; }
 
-    /// <summary>
-    /// Pre-serialized GeoJSON geometry captured at mutation time.
-    /// Null for deletes or non-spatial features.
-    /// </summary>
     public string? GeometryJson { get; init; }
 
-    /// <summary>
-    /// SRID for <see cref="GeometryJson"/> when known.
-    /// </summary>
     public int? GeometrySrid { get; init; }
 }
 
-/// <summary>
-/// Feature-change event configuration.
-/// </summary>
 public sealed class FeatureChangeEventOptions
 {
     public const string SectionName = "FeatureChangeEvents";
 
-    /// <summary>
-    /// Maximum number of events retained in-memory for replay.
-    /// </summary>
     public int MaxRetainedEvents { get; set; } = 20_000;
 }
 
-/// <summary>
-/// Webhook delivery configuration for feature-change events.
-/// </summary>
 public sealed class FeatureChangeWebhookOptions
 {
     public const string SectionName = "FeatureChangeEvents:Webhook";
 
-    /// <summary>
-    /// Enables outbound webhook delivery.
-    /// </summary>
     public bool Enabled { get; set; }
 
-    /// <summary>
-    /// Absolute webhook URL.
-    /// </summary>
     public string? Url { get; set; }
 
-    /// <summary>
-    /// Shared HMAC secret for signature generation.
-    /// </summary>
     public string? Secret { get; set; }
 
-    /// <summary>
-    /// Maximum delivery attempts per event.
-    /// </summary>
     public int MaxAttempts { get; set; } = 5;
 
-    /// <summary>
-    /// Base retry delay in milliseconds. Exponential backoff doubles this value per attempt.
-    /// </summary>
     public int InitialBackoffMs { get; set; } = 500;
 
-    /// <summary>
-    /// Upper bound for retry delay in milliseconds.
-    /// </summary>
     public int MaxBackoffMs { get; set; } = 30_000;
 
-    /// <summary>
-    /// Per-request timeout for webhook calls in seconds.
-    /// </summary>
     public int RequestTimeoutSeconds { get; set; } = 15;
 }
 
@@ -203,7 +123,7 @@ internal static class FeatureChangeWebhookUrlValidation
             return failure;
         }
 
-        if (IPAddress.TryParse(uri.Host, out var literalAddress) && IsPrivateOrReservedAddress(literalAddress))
+        if (IPAddress.TryParse(uri.Host, out var literalAddress) && OutboundHttpUrlValidator.IsPrivateOrReservedAddress(literalAddress))
         {
             return FeatureChangeWebhookUrlValidationResult.Failure(DisallowedAddressMessage);
         }
@@ -247,7 +167,7 @@ internal static class FeatureChangeWebhookUrlValidation
             return false;
         }
 
-        if (uri.IsLoopback || IsLocalhostHostName(uri.Host))
+        if (uri.IsLoopback || OutboundHttpUrlValidator.IsLocalhostHostName(uri.Host))
         {
             failure = FeatureChangeWebhookUrlValidationResult.Failure(DisallowedAddressMessage);
             return false;
@@ -264,88 +184,9 @@ internal static class FeatureChangeWebhookUrlValidation
         Uri uri,
         Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
         CancellationToken cancellationToken)
-    {
-        if (IPAddress.TryParse(uri.Host, out var literalAddress))
-        {
-            return IsPrivateOrReservedAddress(literalAddress);
-        }
+        => await PinnedDnsConnector.TryResolveAllowedAddressesAsync(uri.DnsSafeHost, hostAddressResolver, cancellationToken)
+            .ConfigureAwait(false) is null;
 
-        IPAddress[] addresses;
-        try
-        {
-            addresses = await hostAddressResolver(uri.DnsSafeHost, cancellationToken).ConfigureAwait(false);
-        }
-        catch (SocketException)
-        {
-            return true;
-        }
-        catch (ArgumentException)
-        {
-            return true;
-        }
-
-        if (addresses.Length == 0)
-        {
-            return true;
-        }
-
-        return addresses.Any(IsPrivateOrReservedAddress);
-    }
-
-    private static bool IsLocalhostHostName(string host)
-        => string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase)
-           || host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsPrivateOrReservedAddress(IPAddress address)
-    {
-        if (IPAddress.IsLoopback(address))
-        {
-            return true;
-        }
-
-        if (address.IsIPv4MappedToIPv6)
-        {
-            address = address.MapToIPv4();
-        }
-
-        if (address.AddressFamily == AddressFamily.InterNetwork)
-        {
-            var bytes = address.GetAddressBytes();
-
-            if (bytes[0] == 0 ||
-                bytes[0] == 10 ||
-                (bytes[0] == 100 && bytes[1] >= 64 && bytes[1] <= 127) ||
-                bytes[0] == 127 ||
-                (bytes[0] == 169 && bytes[1] == 254) ||
-                (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31) ||
-                (bytes[0] == 192 && bytes[1] == 0 && bytes[2] == 0) ||
-                (bytes[0] == 192 && bytes[1] == 0 && bytes[2] == 2) ||
-                (bytes[0] == 192 && bytes[1] == 168) ||
-                (bytes[0] == 198 && (bytes[1] == 18 || bytes[1] == 19)) ||
-                (bytes[0] == 198 && bytes[1] == 51 && bytes[2] == 100) ||
-                (bytes[0] == 203 && bytes[1] == 0 && bytes[2] == 113) ||
-                bytes[0] >= 224)
-            {
-                return true;
-            }
-        }
-        else if (address.AddressFamily == AddressFamily.InterNetworkV6)
-        {
-            var bytes = address.GetAddressBytes();
-
-            if (address.Equals(IPAddress.IPv6None) ||
-                address.Equals(IPAddress.IPv6Loopback) ||
-                (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0x80) ||
-                (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0xc0) ||
-                (bytes[0] & 0xfe) == 0xfc ||
-                (bytes[0] == 0x20 && bytes[1] == 0x01 && bytes[2] == 0x0d && bytes[3] == 0xb8))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
 }
 
 internal sealed class FeatureChangeWebhookOptionsValidator : IValidateOptions<FeatureChangeWebhookOptions>

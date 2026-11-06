@@ -12,23 +12,13 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Console.Collaboration;
 
-/// <summary>
-/// Durable Studio map collaboration endpoints (honua-server#1278, slice 1):
-/// feature-pinned comment threads (list/create/reply/resolve) and the collaboration
-/// activity feed for a map draft/package. The real-time presence/cursor/markup
-/// transport is deferred to a follow-up slice; the Console collaboration surface
-/// (#124) keeps rendering its missing-binding state for those live slots until then.
-/// All routes require admin authorization (Console management surface).
-/// </summary>
 internal static class StudioMapCollaborationEndpoints
 {
     private const int DefaultActivityLimit = 50;
     private const int MaxActivityLimit = 200;
 
-    /// <summary>Log category for the collaboration endpoints.</summary>
     internal sealed class StudioMapCollaborationLogCategory;
 
-    /// <summary>Maps the durable Studio map collaboration endpoints.</summary>
     public static void MapStudioMapCollaborationEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/console/maps/{mapId}/collab")

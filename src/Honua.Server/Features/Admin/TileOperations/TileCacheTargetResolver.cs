@@ -11,11 +11,6 @@ internal readonly record struct TileCacheTargetResolution(
     IReadOnlyList<string> PublicationIds,
     bool IsServiceScoped);
 
-/// <summary>
-/// Resolves protocol-facing tile-operation targets to the publication layer indices embedded in
-/// generated tile cache keys, falling back to the authoritative storage layer ID for publications
-/// whose service-local identifier is not numeric.
-/// </summary>
 internal static class TileCacheTargetResolver
 {
     public static async Task<IReadOnlyList<int>> ResolveLayerIdsAsync(

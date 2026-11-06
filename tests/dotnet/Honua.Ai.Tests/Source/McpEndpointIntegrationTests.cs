@@ -1292,6 +1292,51 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
         (await httpArtifact.Content.ReadAsByteArrayAsync()).Should().Equal(png);
     }
 
+    [IntegrationTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
+    public async Task ToolsList_WithHttpWorkflowView_SelectsConfigureWithoutMeta(bool useQuery)
+    {
+        // A stock client sends the configured URL/headers on initialize and tools/list.
+        var url = useQuery ? "/mcp?view=configure" : "/mcp";
+        using var initializeRequest = new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = JsonContent("""
+                {"jsonrpc":"2.0","id":1,"method":"initialize","params":{
+                    "protocolVersion":"2025-03-26","capabilities":{},
+                    "clientInfo":{"name":"stock-client","version":"1"}}}
+                """)
+        };
+        if (!useQuery)
+        {
+            initializeRequest.Headers.Add("X-Honua-Workflow-View", "configure");
+        }
+
+        using var initialized = await _client.SendAsync(initializeRequest);
+        initialized.StatusCode.Should().Be(HttpStatusCode.OK);
+        initialized.Headers.TryGetValues("Mcp-Session-Id", out var sessions).Should().BeTrue();
+        using var listRequest = new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = JsonContent("""{"jsonrpc":"2.0","id":2,"method":"tools/list"}""")
+        };
+        listRequest.Headers.Add("Mcp-Session-Id", sessions!.Single());
+        if (!useQuery)
+        {
+            listRequest.Headers.Add("X-Honua-Workflow-View", "configure");
+        }
+
+        using var response = await _client.SendAsync(listRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadJsonAsync(response);
+        var result = document.RootElement.GetProperty("result");
+        result.GetProperty("_meta").GetProperty("view").GetString().Should().Be("configure");
+        result.GetProperty("tools").EnumerateArray().Select(tool => tool.GetProperty("name").GetString())
+            .Should().Contain("honua_admin_layer_publish");
+    }
+
     private async Task<string> InitializeAndGetSessionIdAsync()
     {
         var response = await PostRpcAsync("""

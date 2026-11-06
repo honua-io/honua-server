@@ -7,11 +7,6 @@ using Honua.Core.Features.Authorization.Domain;
 
 namespace Honua.Server.Features.Admin.Services;
 
-/// <summary>
-/// In-memory <see cref="IRlsPolicyStore"/> default (#502). Registered via TryAdd so a
-/// durable provider implementation (e.g. <c>PostgresRlsPolicyStore</c>) wins when
-/// present; keeps non-Postgres deployments and tests functional without persistence.
-/// </summary>
 internal sealed class InMemoryRlsPolicyStore : IRlsPolicyStore
 {
     private readonly ConcurrentDictionary<Guid, RlsPolicy> _policies = new();

@@ -37,22 +37,16 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
         _time = time ?? TimeProvider.System;
     }
 
-    /// <inheritdoc />
     public bool IsEvaluatorEnabled => _options.Enabled;
 
-    /// <inheritdoc />
     public bool IsEvaluatorRunning => _isRunning;
 
-    /// <inheritdoc />
     public bool IsLeader => _leaderElection.IsLeader;
 
-    /// <inheritdoc />
     public DateTimeOffset? LastHeartbeatAt => ReadTimestamp(ref _lastHeartbeatAtTicks);
 
-    /// <inheritdoc />
     public DateTimeOffset? LastLeaderPassAt => ReadTimestamp(ref _lastLeaderPassAtTicks);
 
-    /// <inheritdoc />
     public DateTimeOffset? LeaderAcquisitionFailingSince => ReadTimestamp(ref _leaderAcquisitionFailingSinceTicks);
 
     private static DateTimeOffset? ReadTimestamp(ref long ticks)
@@ -171,13 +165,6 @@ internal sealed partial class AlertEvaluationBackgroundService : BackgroundServi
         LogStopped(_logger);
     }
 
-    /// <summary>
-    /// Tracks the fleet-wide no-leader signal from the coordinator's last acquisition attempt.
-    /// A faulted attempt (the coordinator errored) starts/continues a "failing since" window; any
-    /// determinate result (led, or cleanly conceded to another holder) clears it. The evaluation
-    /// health check compares the window age to <see cref="AlertEvaluationOptions.NoLeaderThreshold"/>.
-    /// The gauge mirrors the boolean failing state for scrape-time visibility.
-    /// </summary>
     private void UpdateLeaderAcquisitionState()
     {
         if (_leaderElection.LastAcquireFaulted)

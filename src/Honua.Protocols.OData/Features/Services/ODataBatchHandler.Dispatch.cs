@@ -17,12 +17,6 @@ using Microsoft.AspNetCore.WebUtilities;
 
 namespace Honua.Protocols.OData.Services;
 
-/// <summary>
-/// Per-request dispatch for the OData $batch handler: routes a single sub-request to the
-/// appropriate handler (query, CRUD, streaming) and builds the per-request HttpContext.
-/// Also hosts the URL normalization, path parsing, access validation, and collection
-/// query-option parsing helpers that the dispatcher and atomic group rely on.
-/// </summary>
 internal sealed partial class ODataBatchHandler
 {
     private async Task<ODataBatchResponseItem> ProcessSingleRequestAsync(
@@ -384,11 +378,12 @@ internal sealed partial class ODataBatchHandler
         {
             // Per-operation authorization (BH3-001/BH3-014): map the batch sub-request method to
             // its canonical operation so an insert-only grantee cannot Update/Delete via $batch.
+            var operation = MapMethodToOperation(method);
             var rbacResult = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
                 context,
                 validation.Resource,
                 validation.Service,
-                MapMethodToOperation(method),
+                operation,
                 cancellationToken).ConfigureAwait(false);
             if (rbacResult != null)
             {
@@ -398,6 +393,21 @@ internal sealed partial class ODataBatchHandler
                     StatusCodes.Status403Forbidden,
                     "Forbidden",
                     "Access to one or more requested layers is forbidden."));
+            }
+
+            // Declared publication capabilities bound $batch writes the same way they bound
+            // single-entity OData writes (SEC-5): 405, because no caller may edit this way.
+            var undeclared = LayerValidationHelpers.FindUndeclaredEditCapability(
+                validation.Service,
+                validation.Publication,
+                operation);
+            if (undeclared is not null)
+            {
+                return (null, CreateErrorResponse(
+                    requestId,
+                    StatusCodes.Status405MethodNotAllowed,
+                    "MethodNotAllowed",
+                    LayerValidationHelpers.DescribeUndeclaredEditCapability(undeclared)));
             }
         }
 

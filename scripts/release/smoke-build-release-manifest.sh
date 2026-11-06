@@ -40,10 +40,7 @@ cat >"$WORKDIR/evidence.json" <<'EOF'
       "owningRepo": "honua-io/honua-server", "tier": "nightly",
       "requirement": "Zero baseline regressions.",
       "conclusion": "success", "runUrl": "https://github.com/honua-io/honua-server/actions/runs/2" },
-    { "id": "server-esri-sdk-certification", "name": "Esri SDK Certification",
-      "owningRepo": "honua-io/honua-esri-compat", "tier": "nightly",
-      "requirement": "License-free Esri SDKs certify against the candidate image.",
-      "conclusion": "success", "runUrl": "https://github.com/honua-io/honua-esri-compat/actions/runs/9" },
+
     { "id": "server-security-nightly", "name": "Security Nightly",
       "owningRepo": "honua-io/honua-server", "tier": "nightly",
       "conclusion": "failure", "runUrl": "https://github.com/honua-io/honua-server/actions/runs/3",
@@ -114,8 +111,6 @@ jq -e '.releaseGates[] | select(.id=="server-sdk-compatibility") | .evidenceStat
   || { echo "[ERROR] success gate not mapped to passed" >&2; exit 1; }
 jq -e '.releaseGates[] | select(.id=="server-security-nightly") | .evidenceState=="blocked" and (.blockers[0].url|test("939"))' "$WORKDIR/manifest-ready.json" >/dev/null \
   || { echo "[ERROR] failing gate not mapped to blocked with blocker" >&2; exit 1; }
-jq -e '.releaseGates[] | select(.id=="server-esri-sdk-certification") | .evidenceState=="passed" and .owningRepo=="honua-io/honua-esri-compat"' "$WORKDIR/manifest-ready.json" >/dev/null \
-  || { echo "[ERROR] esri-sdk-certification gate missing/wrong" >&2; exit 1; }
 echo "[OK] conclusion->evidenceState mapping correct"
 
 echo

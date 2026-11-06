@@ -6,366 +6,148 @@ using Honua.Protocols.GeoServices.Models;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Models;
 
-/// <summary>
-/// Response model for individual layer metadata endpoint
-/// </summary>
 public sealed class LayerResponse
 {
     // No ArcGIS Server version (currentVersion/fullVersion) is advertised. Honua is an
-    // independent, Esri-compatible server and must not impersonate a specific ArcGIS Server
-    // release. Do NOT add a currentVersion/fullVersion field (guarded by NoArcGisServerVersionTests).
+    // independent GeoServices REST server and must not impersonate a specific ArcGIS Server
+    // release. Do NOT add a currentVersion/fullVersion field (guarded by NoGeoServicesServerVersionTests).
 
-    /// <summary>
-    /// Layer identifier
-    /// </summary>
     public required int Id { get; init; }
 
-    /// <summary>
-    /// Layer name
-    /// </summary>
     public required string Name { get; init; }
 
-    /// <summary>
-    /// Resource type: "Feature Layer" or attribute-only "Table".
-    /// </summary>
     public string Type { get; init; } = "Feature Layer";
 
-    /// <summary>
-    /// Human-readable description
-    /// </summary>
     public string? Description { get; init; }
 
-    /// <summary>Layer attribution in the standard GeoServices copyright field.</summary>
     public string? CopyrightText { get; init; }
 
-    /// <summary>SPDX license expression from canonical metadata.</summary>
     public string? License { get; init; }
 
-    /// <summary>Data producer or source organization from canonical metadata.</summary>
     public string? Publisher { get; init; }
 
-    /// <summary>Additive license/source documentation links.</summary>
     public GeoServicesGovernanceLink[]? Links { get; init; }
 
-    /// <summary>
-    /// Geometry type of features in this layer
-    /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public required string? GeometryType { get; init; }
 
-    /// <summary>
-    /// Layer's spatial reference system
-    /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public required SpatialReferenceInfo? SpatialReference { get; init; }
 
-    /// <summary>
-    /// Whether features in this layer carry Z (elevation) ordinates. Sourced from
-    /// the authored Metadata v2 spatial/display flag. Emitted only when <c>true</c>
-    /// (<see cref="JsonIgnoreCondition.WhenWritingDefault"/>) so 2D layer documents
-    /// stay byte-for-byte compatible with existing Esri clients (#1877 Part C).
-    /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     [JsonPropertyName("hasZ")]
     public bool HasZ { get; init; }
 
-    /// <summary>
-    /// Whether features in this layer carry M (measure) ordinates. Sourced from
-    /// the authored Metadata v2 spatial/display flag. Emitted only when <c>true</c>
-    /// (<see cref="JsonIgnoreCondition.WhenWritingDefault"/>) so non-measured layer
-    /// documents stay byte-for-byte compatible with existing Esri clients (#1877 Part C).
-    /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     [JsonPropertyName("hasM")]
     public bool HasM { get; init; }
 
-    /// <summary>
-    /// Field definitions for the layer
-    /// </summary>
     public required GeoServicesFieldInfo[] Fields { get; init; }
 
-    /// <summary>
-    /// Layer extent
-    /// </summary>
     public ExtentInfo? Extent { get; init; }
 
-    /// <summary>
-    /// Temporal metadata for time-aware layers.
-    /// </summary>
     public FeatureServerTimeInfo? TimeInfo { get; init; }
 
-    /// <summary>
-    /// Extrusion metadata for 3D-capable layers. Absent from the response
-    /// when no extrusion is configured to preserve byte-for-byte
-    /// compatibility with 2D clients.
-    /// </summary>
     public FeatureServerExtrusionInfo? ExtrusionInfo { get; init; }
 
-    /// <summary>
-    /// Minimum scale for layer visibility
-    /// </summary>
     public double? MinScale { get; init; }
 
-    /// <summary>
-    /// Maximum scale for layer visibility
-    /// </summary>
     public double? MaxScale { get; init; }
 
-    /// <summary>
-    /// Default visibility state
-    /// </summary>
     public bool DefaultVisibility { get; init; } = true;
 
-    /// <summary>
-    /// Layer capabilities
-    /// </summary>
     public string Capabilities { get; init; } = "Query,Extract";
 
-    /// <summary>
-    /// Maximum number of records in a single query
-    /// </summary>
     public int MaxRecordCount { get; init; } = 1000;
 
-    /// <summary>
-    /// Whether the layer supports advanced queries
-    /// </summary>
     public bool SupportsAdvancedQueries { get; init; } = true;
 
-    /// <summary>
-    /// Whether the layer supports statistics
-    /// </summary>
     public bool SupportsStatistics { get; init; } = true;
 
-    /// <summary>
-    /// Whether the layer can return count only
-    /// </summary>
     public bool SupportsCountDistinct { get; init; } = true;
 
-    /// <summary>
-    /// Whether the layer supports ordering by fields
-    /// </summary>
     public bool SupportsOrderBy { get; init; } = true;
 
-    /// <summary>
-    /// Whether the layer supports distinct values
-    /// </summary>
     public bool SupportsDistinct { get; init; } = true;
 
-    /// <summary>
-    /// Whether the layer supports pagination
-    /// </summary>
     public bool SupportsPagination { get; init; } = true;
 
-    /// <summary>
-    /// Whether the layer supports TrueCurve geometries
-    /// </summary>
     public bool SupportsTrueCurve { get; init; }
 
-    /// <summary>
-    /// Object ID field name
-    /// </summary>
     public required string ObjectIdField { get; init; }
 
-    /// <summary>
-    /// Global ID field name (if available)
-    /// </summary>
     public string? GlobalIdField { get; init; }
 
-    /// <summary>
-    /// Display field name (primary field for display)
-    /// </summary>
     public string? DisplayField { get; init; }
 
-    /// <summary>
-    /// Unique identifier field metadata per the GeoServices REST spec
-    /// </summary>
     public UniqueIdFieldInfo? UniqueIdField { get; init; }
 
-    /// <summary>
-    /// Type ID field name (if used for symbology)
-    /// </summary>
     public string? TypeIdField { get; init; }
 
-    /// <summary>
-    /// Esri-style editing <c>types</c> for the layer. Derived from the canonical
-    /// subtype set (one type per subtype, each with per-field domains and an editing
-    /// template seeded with the subtype's default values), mirroring how ArcGIS projects
-    /// layer types from subtypes. Null (and omitted from the response) when the layer
-    /// declares no subtypes (#1878).
-    /// </summary>
     public GeoServicesLayerType[]? Types { get; init; }
 
-    /// <summary>
-    /// Relationships to other layers
-    /// </summary>
     public LayerRelationshipInfo[] Relationships { get; init; } = [];
 
-    /// <summary>
-    /// Whether the layer supports versioned data.
-    /// </summary>
     public bool IsDataVersioned { get; init; }
 
-    /// <summary>
-    /// Whether the layer supports branch versioning, as advertised by its service.
-    /// </summary>
     public bool IsDataBranchVersioned { get; init; }
 
-    /// <summary>
-    /// Whether time is enabled for the layer
-    /// </summary>
     public bool? SupportsRollbackOnFailureParameter { get; init; }
 
-    /// <summary>
-    /// Archive information (for versioned data)
-    /// </summary>
     public object? ArchivingInfo { get; init; }
 
-    /// <summary>
-    /// Whether the layer supports applying edits
-    /// </summary>
     public bool SupportsApplyEditsWithGlobalIds { get; init; }
 
-    /// <summary>
-    /// Drawing information for the layer
-    /// </summary>
     public object? DrawingInfo { get; init; }
 
-    /// <summary>
-    /// Whether layer has attachments
-    /// </summary>
     public bool HasAttachments { get; init; }
 
-    /// <summary>
-    /// Whether the layer supports the <c>queryAttachments</c> operation. The ArcGIS
-    /// Maps SDK for JavaScript reads this flag off the layer root and refuses to
-    /// issue <c>queryAttachments(where)</c> when it is absent/false, so it must be
-    /// emitted as <c>true</c> whenever the layer actually has attachments (#1453).
-    /// </summary>
+    // The layer root emits supportsQueryAttachments as true when the layer has attachments, because the ArcGIS Maps SDK for JavaScript refuses the operation when the root flag is absent or false.
     public bool SupportsQueryAttachments { get; init; }
 
-    /// <summary>
-    /// Whether the layer supports filtering attachment queries by keyword. Emitted
-    /// alongside <see cref="SupportsQueryAttachments"/> because the attachment query
-    /// surface honors the documented Esri <c>keywords</c> parameter (#1453).
-    /// </summary>
     public bool SupportsAttachmentKeywords { get; init; }
 
-    /// <summary>
-    /// Whether attachment payloads may be supplied by upload id. Emitted with the
-    /// other attachment-capability flags Esri clients inspect when a layer supports
-    /// attachments (#1453).
-    /// </summary>
     public bool SupportsAttachmentsByUploadId { get; init; }
 
-    /// <summary>
-    /// HTML popup information
-    /// </summary>
     public object? PopupInfo { get; init; }
 
-    /// <summary>
-    /// Whether layer supports querying for related records
-    /// </summary>
     public bool SupportsQueryRelated { get; init; }
 
-    /// <summary>
-    /// Supported query formats. The GeoServices spec defines this as a
-    /// comma-delimited string (the ArcGIS Maps SDK for JavaScript calls
-    /// <c>value.split(",")</c> on it), so it is serialized as one.
-    /// </summary>
+    // Supported query formats are a comma-delimited string because the ArcGIS Maps SDK for JavaScript calls split on the value.
     [System.Text.Json.Serialization.JsonConverter(typeof(CommaDelimitedStringArrayConverter))]
     public string[] SupportedQueryFormats { get; init; } = ["JSON", "GeoJSON"];
 
-    /// <summary>
-    /// Layer ownership information
-    /// </summary>
     public object? OwnershipBasedAccessControlForFeatures { get; init; }
 
-    /// <summary>
-    /// Whether the layer uses standardized queries
-    /// </summary>
     public bool UseStandardizedQueries { get; init; } = true;
 
-    /// <summary>
-    /// Whether the layer honors the query <c>sqlFormat</c> parameter
-    /// (<c>standard</c> for SQL-92 standardized where syntax, <c>native</c> for provider-native).
-    /// </summary>
     public bool SupportsSqlFormat { get; init; } = true;
 
-    /// <summary>
-    /// SQL formats accepted by the layer's query endpoint. The GeoServices spec defines this as a
-    /// comma-delimited string, so it is serialized as one.
-    /// </summary>
+    // Supported SQL formats are a comma-delimited string because clients split the value and the GeoServices contract defines it that way.
     [System.Text.Json.Serialization.JsonConverter(typeof(CommaDelimitedStringArrayConverter))]
     public string[] SupportedSqlFormats { get; init; } = ["none", "standard", "native"];
 
-    /// <summary>
-    /// Whether the layer can return the aggregate extent of a query result set
-    /// (<c>returnExtentOnly=true</c>). Mirrors
-    /// <see cref="AdvancedQueryCapabilities.SupportsReturningQueryExtent"/>, but is also
-    /// emitted at the layer root because the ArcGIS Maps SDK for JavaScript reads this flag
-    /// from the layer object root (<c>p(layer, "supportsReturningQueryExtent", false)</c>)
-    /// when deciding whether <c>FeatureLayer.queryExtent()</c> is allowed.
-    /// </summary>
+    // supportsReturningQueryExtent is also emitted on the layer root because the ArcGIS Maps SDK for JavaScript reads it from the layer object, not only from the nested capabilities.
     public bool SupportsReturningQueryExtent { get; init; }
 
-    /// <summary>
-    /// Whether the layer supports spatial queries
-    /// </summary>
     public bool SupportsCoordinatesQuantization { get; init; } = true;
 
-    /// <summary>
-    /// Whether the layer allows geometry updates on features
-    /// </summary>
     public bool AllowGeometryUpdates { get; init; } = true;
 
-    /// <summary>
-    /// Information about editor tracking fields (null when editor tracking is not configured)
-    /// </summary>
     public EditFieldsInfo? EditFieldsInfo { get; init; }
 
-    /// <summary>
-    /// Information about last edit timestamps
-    /// </summary>
     public EditingInfo? EditingInfo { get; init; }
 
-    /// <summary>
-    /// Feature templates for creating new features
-    /// </summary>
     public FeatureTemplate[] Templates { get; init; } = [];
 
-    /// <summary>
-    /// Advanced query capabilities per the GeoServices REST spec.
-    /// Esri clients (ArcGIS Pro, JS API) check this object to enable pagination, statistics, orderBy, etc.
-    /// </summary>
     public AdvancedQueryCapabilities? AdvancedQueryCapabilities { get; init; }
 
-    /// <summary>
-    /// Name of the integer field that selects the subtype for each row. Null (and
-    /// omitted from the response) when the layer declares no subtypes.
-    /// </summary>
     public string? SubtypeField { get; init; }
 
-    /// <summary>
-    /// Default subtype code applied to new rows when none is supplied. Null (and
-    /// omitted from the response) when the layer declares no subtypes or no default.
-    /// </summary>
     public System.Text.Json.JsonElement? DefaultSubtypeCode { get; init; }
 
-    /// <summary>
-    /// Esri subtype definitions for the layer. Null (and omitted from the response)
-    /// when the layer declares no subtypes.
-    /// </summary>
     public GeoServicesSubtypeInfo[]? Subtypes { get; init; }
 
-    /// <summary>
-    /// Contingent-value definition for the layer: the cross-field value-combination
-    /// constraints (field groups and their enumerated allowed value combinations) declared
-    /// on the canonical Metadata v2 resource. Surfaced here on the layer metadata in addition
-    /// to the service-level <c>queryContingentValues</c> operation, mirroring how Esri exposes
-    /// <c>contingentValuesDefinition</c> on a feature layer. Null (and omitted from the
-    /// response) when the layer declares no contingent values, so layers without them stay
-    /// byte-for-byte compatible with existing Esri clients (#1878).
-    /// </summary>
     [JsonPropertyName("contingentValuesDefinition")]
     public ContingentValuesDefinition? ContingentValuesDefinition { get; init; }
 }

@@ -5,9 +5,6 @@ using Honua.Core.Features.Infrastructure.Domain;
 
 namespace Honua.Infrastructure.Progress;
 
-/// <summary>
-/// Progress entry for asynchronous data export operations.
-/// </summary>
 internal sealed record ExportProgress : IOperationProgress, ICancellableOperationProgress
 {
     public required string JobId { get; init; }

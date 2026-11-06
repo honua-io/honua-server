@@ -6,30 +6,11 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Infrastructure.AuditLog.Export;
 
-/// <summary>
-/// Background job that enforces the configurable audit retention policy (#509):
-/// periodically removes audit records older than <c>AuditLog:Export:RetentionDays</c>
-/// from the audit store via the registered <see cref="IAuditRetentionPruner"/>.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Only registered when a bounded retention window is configured
-/// (<c>RetentionDays &gt; 0</c>); an unbounded policy means "retain forever" and
-/// no sweep is scheduled. The sweep runs once shortly after startup and then on
-/// a fixed interval. Failures are logged and swallowed so a transient database
-/// hiccup never crashes the host — the next sweep retries.
-/// </para>
-/// <para>
-/// The pruner itself only ever deletes a contiguous head prefix of the
-/// tamper-evident chain, so retention never breaks integrity verification.
-/// </para>
-/// </remarks>
+// The pruner deletes only a contiguous head of the chain, and an unbounded policy schedules no sweep.
 internal sealed partial class AuditRetentionPruneService : BackgroundService
 {
-    /// <summary>How often the retention sweep runs.</summary>
     internal static readonly TimeSpan SweepInterval = TimeSpan.FromHours(6);
 
-    /// <summary>Grace delay before the first sweep so startup work settles first.</summary>
     internal static readonly TimeSpan InitialDelay = TimeSpan.FromMinutes(1);
 
     private readonly IServiceScopeFactory _scopeFactory;

@@ -79,6 +79,9 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
                 schema_name, staging_name, target_srid);
             EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I.%I USING GIST (geometry)', 'idx_' || staging_name || '_geometry', schema_name, staging_name);
             EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I.%I USING GIN (properties)', 'idx_' || staging_name || '_properties', schema_name, staging_name);
+            -- Mirrors 129_ProtectImportTableOwnership.sql: a promoted staging table is importer-owned,
+            -- so a later replace of the same target passes the importer's ownership check.
+            EXECUTE format('COMMENT ON TABLE %I.%I IS %L', schema_name, staging_name, 'honua:import-owned:v1');
             RETURN staging_name;
         END;
         $$;
@@ -187,6 +190,12 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
                     VALUES (ST_SetSRID(ST_MakePoint(0, 0), 4326), jsonb_build_object('name', 'legacy'));
                     """;
                 await command.ExecuteNonQueryAsync();
+            }
+
+            if (loadMode == ImportLoadMode.Replace)
+            {
+                // A replace drops the live table, so a legacy table must be explicitly adopted first.
+                await MarkImporterOwnedAsync(schema, legacyName);
             }
 
             var provider = new TestConnectionProvider(fixture.DataSource, schema);
@@ -310,6 +319,7 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
         {
             await EnsureImportFunctionsAsync();
             await SeedOverwriteGuardTargetAsync(schema);
+            await MarkImporterOwnedAsync(schema, OverwriteGuardPhysicalTable);
             var relationIdBefore = await ReadRelationIdAsync(schema, OverwriteGuardPhysicalTable);
 
             var result = await ImportOverwriteGuardFixtureAsync(schema, overwriteExisting: true);
@@ -524,6 +534,7 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
         {
             await EnsureImportFunctionsAsync();
             await SeedOverwriteGuardTargetAsync(schema);
+            await MarkImporterOwnedAsync(schema, OverwriteGuardPhysicalTable);
             var liveOid = await ReadRelationIdAsync(schema, OverwriteGuardPhysicalTable);
             using var cancellation = new CancellationTokenSource();
             var committedBatches = 0;
@@ -592,6 +603,7 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
         {
             await EnsureImportFunctionsAsync();
             await SeedOverwriteGuardTargetAsync(schema);
+            await MarkImporterOwnedAsync(schema, OverwriteGuardPhysicalTable);
             var liveOid = await ReadRelationIdAsync(schema, OverwriteGuardPhysicalTable);
             var provider = new TestConnectionProvider(fixture.DataSource, schema);
             var service = CreateStreamingService(provider, schema);
@@ -631,6 +643,7 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
         {
             await EnsureImportFunctionsAsync();
             await SeedOverwriteGuardTargetAsync(schema);
+            await MarkImporterOwnedAsync(schema, OverwriteGuardPhysicalTable);
             var provider = new TestConnectionProvider(fixture.DataSource, schema);
             var service = CreateStreamingService(provider, schema);
             await using var stream = new MemoryStream(Encoding.UTF8.GetBytes("name,lat,lon\n"));
@@ -776,7 +789,7 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
             await using (var command = connection.CreateCommand())
             {
                 command.CommandText = $"""
-                    SELECT properties->>'name', (properties->>'code')::int, ST_AsText(geometry)
+                    SELECT properties->>'name', (properties->>'code')::int, ST_AsText(ST_GeometryN(geometry, 1))
                     FROM "{schema}"."{OverwriteGuardPhysicalTable}"
                     WHERE properties ? 'code'
                     ORDER BY id
@@ -904,7 +917,7 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
                     count(DISTINCT (properties->>'ordinal')::int),
                     min((properties->>'ordinal')::int), max((properties->>'ordinal')::int),
                     bool_and((properties->>'padding') IS NOT DISTINCT FROM repeat('x', 4096)),
-                    bool_and(geometry IS NOT NULL AND ST_X(geometry)=1 AND ST_Y(geometry)=2 AND ST_SRID(geometry)=4326)
+                    bool_and(geometry IS NOT NULL AND ST_X(ST_GeometryN(geometry, 1))=1 AND ST_Y(ST_GeometryN(geometry, 1))=2 AND ST_SRID(geometry)=4326)
                 FROM "{schema}".imported_memory_proof
                 """;
             await using var reader = await command.ExecuteReaderAsync();
@@ -1037,7 +1050,7 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
         await using var connection = await fixture.DataSource.OpenConnectionAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
-            SELECT id, properties->>'name', (properties->>'code')::int, ST_AsText(geometry)
+            SELECT id, properties->>'name', (properties->>'code')::int, ST_AsText(ST_GeometryN(geometry, 1))
             FROM "{schema}"."{OverwriteGuardPhysicalTable}"
             ORDER BY id
             """;
@@ -1545,7 +1558,7 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
             await using var connection = await fixture.DataSource.OpenConnectionAsync();
             await using var command = connection.CreateCommand();
             command.CommandText =
-                $"SELECT ST_X(geometry), ST_Y(geometry) FROM \"{schema}\".imported_local_srs_demo;";
+                $"SELECT ST_X(ST_GeometryN(geometry, 1)), ST_Y(ST_GeometryN(geometry, 1)) FROM \"{schema}\".imported_local_srs_demo;";
             await using var reader = await command.ExecuteReaderAsync();
             (await reader.ReadAsync()).Should().BeTrue();
             reader.GetDouble(0).Should().BeApproximately(-0.129, 0.05, "easting 530000 must transform as BNG metres, not the local srs_id");

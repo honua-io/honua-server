@@ -48,5 +48,6 @@
     <Content Include="../Honua.Db.Postgres.Tests/Features/Import/Fixtures/RetryResume/*.json" Link="Features/Import/Fixtures/RetryResume/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../Honua.Db.Postgres.Tests/Features/Import/Fixtures/LoadMode/*.geojson" Link="Features/Import/Fixtures/LoadMode/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../Honua.Db.Postgres.Tests/Features/Import/Fixtures/FileGdb/*.gdb.zip" Link="Features/Import/Fixtures/FileGdb/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../Honua.Server.Tests/TestData/GeoParquet/*.parquet" Link="TestData/GeoParquet/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

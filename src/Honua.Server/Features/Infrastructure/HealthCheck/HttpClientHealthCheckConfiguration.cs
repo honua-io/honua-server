@@ -7,13 +7,9 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace Honua.Infrastructure.HealthCheck;
 
-/// <summary>
-/// Configures health checks for HTTP clients with circuit breaker awareness.
-/// Provides centralized health monitoring for all external service dependencies.
-/// </summary>
 public static class HttpClientHealthCheckConfiguration
 {
-    private static readonly string[] ArcGisRestTags = ["external", "arcgis", "import"];
+    private static readonly string[] GeoServicesRestTags = ["external", "arcgis", "import"];
     private static readonly string[] GeoServerRestTags = ["external", "geoserver", "import"];
     private static readonly string[] AwsSecretsManagerTags = ["external", "aws", "secrets"];
     private static readonly string[] AzureKeyVaultTags = ["external", "azure", "secrets"];
@@ -22,11 +18,6 @@ public static class HttpClientHealthCheckConfiguration
     private static readonly string[] NlQueryTags = ["external", "ai", "nlquery"];
     private static readonly string[] CircuitBreakerTags = ["circuit-breaker", "resilience"];
 
-    /// <summary>
-    /// Adds health checks for all configured HTTP clients with circuit breaker monitoring.
-    /// </summary>
-    /// <param name="builder">The health checks builder.</param>
-    /// <returns>The health checks builder for chaining.</returns>
     public static IHealthChecksBuilder AddHttpClientHealthChecks(this IHealthChecksBuilder builder)
     {
         // External service health checks - these are treated as degraded when failing
@@ -37,7 +28,7 @@ public static class HttpClientHealthCheckConfiguration
             "arcgis-rest",
             "https://services.arcgis.com/health", // Placeholder - replace with actual health endpoint
             timeout: TimeSpan.FromSeconds(15),
-            tags: ArcGisRestTags);
+            tags: GeoServicesRestTags);
 
         // GeoServer REST services
         builder.AddHttpClientHealthCheck(
@@ -84,13 +75,6 @@ public static class HttpClientHealthCheckConfiguration
         return builder;
     }
 
-    /// <summary>
-    /// Adds webhook health checks for notification systems.
-    /// These are marked as degraded when failing since they don't affect core functionality.
-    /// </summary>
-    /// <param name="builder">The health checks builder.</param>
-    /// <param name="webhookUrls">Dictionary of webhook name to URL mappings.</param>
-    /// <returns>The health checks builder for chaining.</returns>
     public static IHealthChecksBuilder AddWebhookHealthChecks(
         this IHealthChecksBuilder builder,
         IReadOnlyDictionary<string, string>? webhookUrls = null)
@@ -113,11 +97,6 @@ public static class HttpClientHealthCheckConfiguration
         return builder;
     }
 
-    /// <summary>
-    /// Creates a custom health check for monitoring circuit breaker states across all HTTP clients.
-    /// </summary>
-    /// <param name="builder">The health checks builder.</param>
-    /// <returns>The health checks builder for chaining.</returns>
     public static IHealthChecksBuilder AddCircuitBreakerHealthCheck(this IHealthChecksBuilder builder)
     {
         return builder.Add(new HealthCheckRegistration(
@@ -128,9 +107,6 @@ public static class HttpClientHealthCheckConfiguration
     }
 }
 
-/// <summary>
-/// Health check that monitors the state of circuit breakers across all HTTP clients.
-/// </summary>
 internal sealed class CircuitBreakerHealthCheck : IHealthCheck
 {
     private static readonly string[] MonitoredServices = new[]

@@ -12,9 +12,6 @@ using ConfigurationSection = Honua.Core.Configuration.ConfigurationSection;
 
 namespace Honua.Server.Features.Admin.Services;
 
-/// <summary>
-/// Service for building self-documenting configuration metadata.
-/// </summary>
 public sealed class ConfigurationDocumentationService
 {
     private readonly IConfiguration _configuration;
@@ -26,9 +23,6 @@ public sealed class ConfigurationDocumentationService
     private readonly IOptions<TracingOptions> _tracingOptions;
     private readonly IReadOnlyList<IConfigurationDocumentationContributor> _configurationDocumentationContributors;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="ConfigurationDocumentationService"/> class.
-    /// </summary>
     public ConfigurationDocumentationService(
         IConfiguration configuration,
         IWebHostEnvironment environment,
@@ -50,9 +44,6 @@ public sealed class ConfigurationDocumentationService
             ?? throw new ArgumentNullException(nameof(configurationDocumentationContributors));
     }
 
-    /// <summary>
-    /// Builds the complete configuration documentation.
-    /// </summary>
     public ConfigurationDocumentation BuildDocumentation()
     {
         var sections = new List<ConfigurationSection>
@@ -174,7 +165,13 @@ public sealed class ConfigurationDocumentationService
                 BuildPropertyWithCurrent("Cache:Enabled", "Cache__Enabled", "boolean",
                     "Whether caching is enabled", true, opts.Enabled),
                 BuildPropertyWithCurrent("Cache:ResponseCachingEnabled", "Cache__ResponseCachingEnabled", "boolean",
-                    "Whether exact response caching is enabled separately from metadata/catalog caching", false, opts.ResponseCachingEnabled),
+                    "Whether exact response caching is enabled separately from metadata/catalog caching. Admission requires an empty principal; cookies and client certificates count as credentials", false, opts.ResponseCachingEnabled),
+                BuildPropertyWithCurrent("Cache:ResponseCachingAllowInMemoryFallback", "Cache__ResponseCachingAllowInMemoryFallback", "boolean",
+                    "Allow exact response caching while the cache is process-local (distributed memory or the in-memory fallback). Single-instance only", false, opts.ResponseCachingAllowInMemoryFallback),
+                BuildPropertyWithCurrent("Cache:ResponseCacheMaxEntryBytes", "Cache__ResponseCacheMaxEntryBytes", "integer",
+                    "Skip storing a query response larger than this many bytes", 1048576, opts.ResponseCacheMaxEntryBytes, "Range: 1024-268435456"),
+                BuildPropertyWithCurrent("Cache:ResponseCacheMaxBytes", "Cache__ResponseCacheMaxBytes", "integer",
+                    "Skip storing a query response that would exceed this process-local payload budget", 67108864, opts.ResponseCacheMaxBytes, "Range: 65536-1073741824"),
                 BuildPropertyWithCurrent("Cache:DefaultTtlSeconds", "Cache__DefaultTtlSeconds", "integer",
                     "Default cache TTL in seconds", 1800, opts.DefaultTtlSeconds, "Range: 1-86400"),
                 BuildPropertyWithCurrent("Cache:ServiceTtlSeconds", "Cache__ServiceTtlSeconds", "integer",
@@ -397,7 +394,8 @@ public sealed class ConfigurationDocumentationService
                 BuildPropertyWithCurrent("Limits:Connections:MaxConcurrentQueries", "Limits__Connections__MaxConcurrentQueries", "integer",
                     "Maximum concurrent query operations", 100, opts.MaxConcurrentQueries, "Range: 10-1000"),
                 BuildPropertyWithCurrent("Limits:Connections:MaxConnectionPoolSize", "Limits__Connections__MaxConnectionPoolSize", "integer",
-                    "Maximum database connection pool size", 200, opts.MaxConnectionPoolSize, "Range: 10-500"),
+                    "Maximum database connection pool size. An unset value on Lambda defaults to 4; an explicit value wins.",
+                    200, opts.MaxConnectionPoolSize, "Range: 1-1000"),
                 BuildPropertyWithCurrent("Limits:Connections:MinConnectionPoolSize", "Limits__Connections__MinConnectionPoolSize", "integer",
                     "Minimum database connection pool size (clamped to MaxConnectionPoolSize)", 20, opts.MinConnectionPoolSize, "Range: 0-100"),
                 BuildPropertyWithCurrent("Limits:Connections:BufferSizeBytes", "Limits__Connections__BufferSizeBytes", "integer",
@@ -835,10 +833,6 @@ public sealed class ConfigurationDocumentationService
         return MaskCurrentValue(value, isSensitive) as string;
     }
 
-    /// <summary>
-    /// Masks sensitive and credential-bearing current values. Default values and
-    /// environment-variable examples are left unchanged.
-    /// </summary>
     private static void MaskCredentialBearingValues(IEnumerable<ConfigurationSection> sections)
     {
         foreach (var section in sections)
@@ -925,6 +919,9 @@ public sealed class ConfigurationDocumentationService
             new() { Name = "ConnectionStrings__redis", ConfigPath = "Cache", Description = "Redis connection string for metadata/output caching", Required = false, Example = "localhost:6379" },
             new() { Name = "Cache__Enabled", ConfigPath = "Cache", Description = "Enable caching", Default = "true", Example = "false" },
             new() { Name = "Cache__ResponseCachingEnabled", ConfigPath = "Cache", Description = "Enable exact response caching separately from metadata/catalog caching", Default = "false", Example = "true" },
+            new() { Name = "Cache__ResponseCachingAllowInMemoryFallback", ConfigPath = "Cache", Description = "Allow response caching on a process-local cache for a single server instance", Default = "false", Example = "true" },
+            new() { Name = "Cache__ResponseCacheMaxEntryBytes", ConfigPath = "Cache", Description = "Maximum bytes of one cached query response", Default = "1048576", Example = "1048576" },
+            new() { Name = "Cache__ResponseCacheMaxBytes", ConfigPath = "Cache", Description = "Maximum total bytes of cached query responses in this process", Default = "67108864", Example = "67108864" },
             new() { Name = "Cache__DefaultTtlSeconds", ConfigPath = "Cache", Description = "Default cache TTL", Default = "1800", Example = "600" },
             new() { Name = "Cache__ServiceTtlSeconds", ConfigPath = "Cache", Description = "Service metadata cache TTL", Default = "3600", Example = "1800" },
             new() { Name = "Cache__LayerTtlSeconds", ConfigPath = "Cache", Description = "Layer metadata cache TTL", Default = "1800", Example = "900" },

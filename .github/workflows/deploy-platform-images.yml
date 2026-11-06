@@ -12,13 +12,22 @@ on:
         required: false
         default: false
         type: boolean
+      skip_acr:
+        description: >-
+          Publish to ECR only and skip Azure Container Registry. For when the ACR service
+          principal cannot log in (for example an expired ARM client secret) and an AWS image is
+          needed now. Every other leg, scan and boundary check still runs.
+        required: false
+        default: false
+        type: boolean
 
 permissions: {}
 
 env:
   ECR_REGION: ${{ vars.AWS_ECR_REGION }}
   ECR_REPOSITORY: ${{ vars.AWS_ECR_REPOSITORY }}
-  ACR_LOGIN_SERVER: ${{ vars.ACR_LOGIN_SERVER }}
+  # Empty when a dispatch opts out of ACR: every ACR step and target is keyed on this value.
+  ACR_LOGIN_SERVER: ${{ !(github.event_name == 'workflow_dispatch' && inputs.skip_acr == true) && vars.ACR_LOGIN_SERVER || '' }}
   ACR_REPOSITORY: ${{ vars.ACR_REPOSITORY }}
   TRIVY_IMAGE: aquasec/trivy:0.68.1
   PUBLISH_IMAGES: ${{ github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || inputs.scan_only != true) }}
@@ -138,15 +147,15 @@ jobs:
       id-token: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
       - name: Log in to GHCR for build cache
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -154,7 +163,7 @@ jobs:
 
       - name: Configure AWS credentials for ECR
         if: ${{ env.PUBLISH_IMAGES == 'true' && env.ECR_REGION != '' }}
-        uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6
         with:
           role-to-assume: arn:aws:iam::585192672263:role/honua-server-gha-ecr-publish
           aws-region: ${{ env.ECR_REGION }}
@@ -291,10 +300,36 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
+      # The Lambda images COPY the AWS Lambda Web Adapter from Public ECR. Anonymous
+      # Public ECR pulls from shared runner IPs hit "429 toomanyrequests: Data limit
+      # exceeded" (scheduled runs 39228446917 and 40298273178). Nightly Container Build
+      # already mirrors the exact digest-pinned adapter into GHCR, so pull it from there
+      # by the same digest the Dockerfile pins, and fall back to the Public ECR source
+      # only when the mirror does not hold that digest. Same bytes either way.
+      - name: Resolve Lambda Web Adapter source
+        id: lambda_adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          tab="$(printf '\tX')"; tab="${tab%X}"
+          src="$(scripts/ci/base-image-mirrors.sh | awk -F"${tab}" '$1 == "lambda-adapter-0.9.1" { print $2 }')"
+          if [ -z "$src" ]; then
+            echo "::error::scripts/ci/base-image-mirrors.sh has no lambda-adapter-0.9.1 entry"
+            exit 1
+          fi
+          mirror="ghcr.io/${{ github.repository }}-base:lambda-adapter-0.9.1@${src##*@}"
+          if docker buildx imagetools inspect "$mirror" >/dev/null 2>&1; then
+            echo "Using GHCR mirror $mirror"
+            echo "image=$mirror" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::GHCR mirror $mirror is unavailable; pulling $src from Public ECR"
+            echo "image=$src" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build native-AOT platform candidate by digest
         id: aot_candidate
         if: ${{ env.PUBLISH_IMAGES == 'true' && contains(matrix.image_key, 'aot') }}
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
           file: ${{ matrix.dockerfile }}
@@ -303,6 +338,7 @@ jobs:
           # excludes .git, so without this the image reports a null deployment revision.
           build-args: |
             HONUA_GIT_SHA=${{ github.sha }}
+            LAMBDA_ADAPTER_IMAGE=${{ steps.lambda_adapter.outputs.image }}
           outputs: type=image,name=${{ steps.targets.outputs.scan_image }},push-by-digest=true,name-canonical=true,push=true
           labels: ${{ steps.meta.outputs.labels }}
           secrets: |
@@ -370,7 +406,7 @@ jobs:
       - name: Build and push JIT platform image
         id: build
         if: ${{ env.PUBLISH_IMAGES == 'true' && contains(matrix.image_key, 'aot') == false }}
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
           file: ${{ matrix.dockerfile }}
@@ -384,6 +420,7 @@ jobs:
           # null — the exact evidence binding the revision plumbing exists to provide.
           build-args: |
             HONUA_GIT_SHA=${{ github.sha }}
+            LAMBDA_ADAPTER_IMAGE=${{ steps.lambda_adapter.outputs.image }}
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
@@ -394,7 +431,7 @@ jobs:
 
       - name: Build local image for security scan
         if: ${{ env.PUBLISH_IMAGES != 'true' }}
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
           file: ${{ matrix.dockerfile }}
@@ -404,6 +441,7 @@ jobs:
           # Kept identical to the publish step so the scanned image is the image that ships.
           build-args: |
             HONUA_GIT_SHA=${{ github.sha }}
+            LAMBDA_ADAPTER_IMAGE=${{ steps.lambda_adapter.outputs.image }}
           secrets: |
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
@@ -436,7 +474,7 @@ jobs:
       # Production Lambda AOT uses the per-architecture serving child digest
       # for deployment; its OCI index also retains SBOM and provenance.
       - name: Generate SBOM (SPDX JSON) for ${{ matrix.image_key }} (${{ matrix.arch }})
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           image: ${{ steps.scan_prep.outputs.scan_local }}
           format: spdx-json
@@ -514,14 +552,14 @@ jobs:
             "$SCAN_LOCAL"
 
       - name: Upload Trivy scan results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         if: always() && hashFiles(format('{0}-{1}.sarif', matrix.sarif_output, matrix.arch)) != ''
         with:
           sarif_file: ${{ matrix.sarif_output }}-${{ matrix.arch }}.sarif
           category: ${{ matrix.sarif_category }}-${{ matrix.arch }}
 
       - name: Upload Trivy unfixed-inclusive inventory
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && hashFiles(format('trivy-inventory-{0}-{1}.json', matrix.image_key, matrix.arch)) != ''
         with:
           name: trivy-inventory-${{ matrix.image_key }}-${{ matrix.arch }}
@@ -571,11 +609,11 @@ jobs:
       id-token: write
     steps:
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
       - name: Configure AWS credentials for ECR
         if: ${{ env.ECR_REGION != '' }}
-        uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6
         with:
           role-to-assume: arn:aws:iam::585192672263:role/honua-server-gha-ecr-publish
           aws-region: ${{ env.ECR_REGION }}

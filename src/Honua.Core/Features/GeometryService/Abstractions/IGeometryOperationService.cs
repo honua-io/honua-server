@@ -5,64 +5,14 @@ using Honua.Core.Features.Infrastructure.Crs;
 
 namespace Honua.Core.Features.GeometryService.Abstractions;
 
-/// <summary>
-/// Provides server-side geometry operations (buffer, simplify, project, union, intersect, difference, measurements)
-/// backed by a spatial database engine such as PostGIS.
-/// </summary>
 public interface IGeometryOperationService
 {
-    /// <summary>
-    /// Buffers a geometry by the specified distance.
-    /// </summary>
-    /// <param name="wkb">Input geometry in WKB format.</param>
-    /// <param name="srid">Spatial reference ID of the input geometry.</param>
-    /// <param name="distance">Buffer distance in meters.</param>
-    /// <param name="geodesic">When true, performs a geodesic (geography-based) buffer.</param>
-    /// <param name="ct">Cancellation token.</param>
-    /// <returns>Buffered geometry in WKB format.</returns>
     Task<byte[]> BufferAsync(byte[] wkb, int srid, double distance, bool geodesic, CancellationToken ct = default);
 
-    /// <summary>
-    /// Simplifies a geometry using the Douglas-Peucker algorithm.
-    /// </summary>
-    /// <param name="wkb">Input geometry in WKB format.</param>
-    /// <param name="tolerance">Simplification tolerance in the units of the geometry's spatial reference.</param>
-    /// <param name="preserveTopology">When true, uses topology-preserving simplification.</param>
-    /// <param name="ct">Cancellation token.</param>
-    /// <returns>Simplified geometry in WKB format.</returns>
     Task<byte[]> SimplifyAsync(byte[] wkb, double tolerance, bool preserveTopology, CancellationToken ct = default);
 
-    /// <summary>
-    /// Reprojects a geometry from one spatial reference to another.
-    /// </summary>
-    /// <param name="wkb">Input geometry in WKB format.</param>
-    /// <param name="fromSrid">Source spatial reference ID.</param>
-    /// <param name="toSrid">Target spatial reference ID.</param>
-    /// <param name="ct">Cancellation token.</param>
-    /// <returns>Reprojected geometry in WKB format.</returns>
     Task<byte[]> ProjectAsync(byte[] wkb, int fromSrid, int toSrid, CancellationToken ct = default);
 
-    /// <summary>
-    /// Reprojects a geometry from one spatial reference to another using an explicitly
-    /// selected datum transformation.
-    /// </summary>
-    /// <param name="wkb">Input geometry in WKB format.</param>
-    /// <param name="fromSrid">Source spatial reference ID.</param>
-    /// <param name="toSrid">Target spatial reference ID.</param>
-    /// <param name="selection">
-    /// The resolved datum transformation. When it carries a PROJ pipeline, the
-    /// authoritative 3-argument <c>ST_Transform</c> is used so the result matches the
-    /// selected (Esri-parity) pipeline. When <see langword="null"/>, behaves like the
-    /// SRID-only overload (PROJ chooses its default pipeline).
-    /// </param>
-    /// <param name="ct">Cancellation token.</param>
-    /// <returns>Reprojected geometry in WKB format.</returns>
-    /// <remarks>
-    /// Provided as a default interface method so existing implementations remain
-    /// source-compatible; the default ignores the pipeline and delegates to the
-    /// SRID-only overload. The PostGIS implementation overrides this to honor the
-    /// selected pipeline via 3-argument <c>ST_Transform</c>.
-    /// </remarks>
     Task<byte[]> ProjectAsync(
         byte[] wkb,
         int fromSrid,
@@ -71,98 +21,23 @@ public interface IGeometryOperationService
         CancellationToken ct = default)
         => ProjectAsync(wkb, fromSrid, toSrid, ct);
 
-    /// <summary>
-    /// Makes a geometry topologically valid (fixes self-intersections, ring orientation, etc.).
-    /// This corresponds to the ArcGIS REST API "simplify" operation, which performs topological
-    /// correction rather than generalization.
-    /// </summary>
-    /// <param name="wkb">Input geometry in WKB format.</param>
-    /// <param name="srid">Spatial reference ID of the input geometry.</param>
-    /// <param name="ct">Cancellation token.</param>
-    /// <returns>Topologically valid geometry in WKB format.</returns>
     Task<byte[]> MakeValidAsync(byte[] wkb, int srid, CancellationToken ct = default);
 
-    /// <summary>
-    /// Computes the union of multiple geometries.
-    /// </summary>
-    /// <param name="wkbs">Array of input geometries in WKB format.</param>
-    /// <param name="srid">Spatial reference ID of the input geometries.</param>
-    /// <param name="ct">Cancellation token.</param>
-    /// <returns>Unioned geometry in WKB format.</returns>
     Task<byte[]> UnionAsync(byte[][] wkbs, int srid, CancellationToken ct = default);
 
-    /// <summary>
-    /// Computes the intersection of two geometries.
-    /// </summary>
-    /// <param name="targetWkb">Target geometry in WKB format.</param>
-    /// <param name="intersectorWkb">Intersector geometry in WKB format.</param>
-    /// <param name="srid">Spatial reference ID of both geometries.</param>
-    /// <param name="ct">Cancellation token.</param>
-    /// <returns>Intersection geometry in WKB format.</returns>
     Task<byte[]> IntersectAsync(byte[] targetWkb, byte[] intersectorWkb, int srid, CancellationToken ct = default);
 
-    /// <summary>
-    /// Clips a geometry using the envelope of another geometry.
-    /// This corresponds to the ArcGIS REST API "clip" operation, which clips input geometries
-    /// to the bounding envelope of the clipping geometry.
-    /// </summary>
-    /// <param name="targetWkb">Target geometry in WKB format.</param>
-    /// <param name="clipEnvelopeWkb">Clipping geometry in WKB format (the envelope will be computed).</param>
-    /// <param name="srid">Spatial reference ID of both geometries.</param>
-    /// <param name="ct">Cancellation token.</param>
-    /// <returns>Clipped geometry in WKB format.</returns>
     Task<byte[]> ClipAsync(byte[] targetWkb, byte[] clipEnvelopeWkb, int srid, CancellationToken ct = default);
 
-    /// <summary>
-    /// Computes the geometric difference of two geometries.
-    /// </summary>
-    /// <param name="targetWkb">Target geometry in WKB format.</param>
-    /// <param name="eraserWkb">Eraser geometry in WKB format.</param>
-    /// <param name="srid">Spatial reference ID of both geometries.</param>
-    /// <param name="ct">Cancellation token.</param>
-    /// <returns>Difference geometry in WKB format.</returns>
     Task<byte[]> DifferenceAsync(byte[] targetWkb, byte[] eraserWkb, int srid, CancellationToken ct = default);
 
-    /// <summary>
-    /// Computes area for a geometry.
-    /// </summary>
-    /// <param name="wkb">Geometry in WKB format.</param>
-    /// <param name="srid">Spatial reference ID of the geometry.</param>
-    /// <param name="ct">Cancellation token.</param>
-    /// <returns>Area value in square meters.</returns>
     Task<double> AreaAsync(byte[] wkb, int srid, CancellationToken ct = default);
 
-    /// <summary>
-    /// Computes length for a geometry.
-    /// </summary>
-    /// <param name="wkb">Geometry in WKB format.</param>
-    /// <param name="srid">Spatial reference ID of the geometry.</param>
-    /// <param name="ct">Cancellation token.</param>
-    /// <returns>Length value in meters.</returns>
     Task<double> LengthAsync(byte[] wkb, int srid, CancellationToken ct = default);
 
-    /// <summary>
-    /// Spheroidal distance in meters between two geometries. Vertices are transformed
-    /// to EPSG:4326 and the minimum distance is evaluated on the WGS 84 spheroid.
-    /// </summary>
-    /// <param name="wkbA">First geometry in WKB format.</param>
-    /// <param name="wkbB">Second geometry in WKB format.</param>
-    /// <param name="srid">Spatial reference ID of both geometries.</param>
-    /// <param name="ct">Cancellation token.</param>
-    /// <returns>Minimum spheroidal distance in meters.</returns>
     Task<double> DistanceAsync(byte[] wkbA, byte[] wkbB, int srid, CancellationToken ct = default)
         => throw new NotSupportedException();
 
-    /// <summary>
-    /// Densifies every edge into equal geodesic pieces no longer than
-    /// <paramref name="maxSegmentLengthMeters"/> on the WGS 84 spheroid, and returns
-    /// the geometry in <paramref name="srid"/>.
-    /// </summary>
-    /// <param name="wkb">Geometry in WKB format.</param>
-    /// <param name="srid">Spatial reference ID of the geometry.</param>
-    /// <param name="maxSegmentLengthMeters">Maximum geodesic segment length in meters.</param>
-    /// <param name="ct">Cancellation token.</param>
-    /// <returns>Densified geometry in WKB format, in <paramref name="srid"/>.</returns>
     Task<byte[]> SegmentizeGeodesicAsync(byte[] wkb, int srid, double maxSegmentLengthMeters, CancellationToken ct = default)
         => throw new NotSupportedException();
 }

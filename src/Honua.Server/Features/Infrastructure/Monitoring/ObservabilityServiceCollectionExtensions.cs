@@ -5,6 +5,7 @@ using System.IO.Compression;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.ControlPlane;
 using Honua.Server.Features.Admin.Jobs;
+using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Observability.Abstractions;
 using Honua.Infrastructure.Caching;
@@ -29,6 +30,8 @@ internal static class ObservabilityServiceCollectionExtensions
 
         ConfigureOutputCaching(services, configuration, redisCacheEntitled);
         services.AddSingleton<OutputCacheInvalidationService>();
+        services.AddSingleton<IQueryResponseCacheInvalidator>(sp =>
+            sp.GetRequiredService<OutputCacheInvalidationService>());
         services.AddETags();
         services.TryAddSingleton<ISystemMetricsCollector, SystemMetricsCollector>();
         services.AddPerformanceMonitoring();
@@ -75,6 +78,7 @@ internal static class ObservabilityServiceCollectionExtensions
             .Bind(configuration.GetSection(OpsAutonomyOptions.SectionName))
             .ValidateDataAnnotations()
             .ValidateOnStart();
+        services.AddSingleton<IManagedComposeObserver, ManagedComposeObserver>();
         services.AddScoped<IOpsHealthSnapshotService, OpsHealthSnapshotService>();
         // Singleton: the scoped engine must still report a store source's last successful collection
         // after a failed read in a later scope (#4840).
@@ -86,6 +90,7 @@ internal static class ObservabilityServiceCollectionExtensions
             RollupStore = sp.GetService<IOpsHealthRollupStore>(),
             CollectionLedger = sp.GetRequiredService<OpsFindingsCollectionLedger>(),
             TimeProvider = sp.GetService<TimeProvider>(),
+            ManagedComposeObserver = sp.GetService<IManagedComposeObserver>(),
         });
         // One scoped instance behind both seams: callers that only need findings keep the domain
         // abstraction, while the read/proposal surfaces resolve the evidence-carrying view.
@@ -123,12 +128,6 @@ internal static class ObservabilityServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Register the Console Operate observability feed (#1168) and its
-    /// background OTLP probe. The probe stays opt-in: when no OTLP endpoint
-    /// is configured it reports <c>disabled</c> without generating outbound
-    /// traffic, so air-gapped deployments are unaffected.
-    /// </summary>
     private static void AddOperateObservability(IServiceCollection services)
     {
         services.TryAddSingleton(TimeProvider.System);

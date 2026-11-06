@@ -22,6 +22,83 @@ public sealed class PdalExecutionProofTests(ITestOutputHelper testOutput) : IDis
     private readonly string _scratch = Path.Join(AppContext.BaseDirectory, "pdal-proof", Guid.NewGuid().ToString("N"));
 
     [Theory]
+    [InlineData(6)]
+    [InlineData(7)]
+    [InlineData(8)]
+    [Trait("Tier", "Integration")]
+    public async Task Translate_GenuineCopc_PreservesPointValuesIncludingInfrared(int sourceFormat)
+    {
+        var source = await File.ReadAllBytesAsync(Path.Join(AppContext.BaseDirectory, "Fixtures", "PointCloudProof", $"genuine-{sourceFormat}.copc.laz"));
+        using var manifest = System.Text.Json.JsonDocument.Parse(await File.ReadAllBytesAsync(
+            Path.Join(AppContext.BaseDirectory, "Fixtures", "PointCloudProof", "copc-fixtures.json")));
+        Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(source)).Should().Be(
+            manifest.RootElement.GetProperty("fixtures").GetProperty($"genuine-{sourceFormat}.copc.laz").GetString());
+        (source[104] & 0x3F).Should().Be(sourceFormat);
+        Encoding.ASCII.GetString(source, 377, 4).Should().Be("copc");
+        BitConverter.ToUInt16(source, 393).Should().Be(1);
+        var executor = new PdalPointCloudConvertJobExecutor(CreateRunner(), GdalJobFactory.Options(_scratch),
+            NullLogger<PdalPointCloudConvertJobExecutor>.Instance);
+        var job = GdalJobFactory.Job("pcloud.translate", ("source", Convert.ToBase64String(source)));
+        var context = new RecordingJobExecutionContext(job.OperationId);
+        var result = await executor.ExecuteAsync(job, context, CancellationToken.None);
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
+        context.Artifacts.Should().ContainSingle();
+        var output = GdalCli.DecodeDataUri(context.Artifacts[0]);
+        Encoding.ASCII.GetString(output, 0, 4).Should().Be("LASF");
+        output[24].Should().Be(1);
+        output[25].Should().Be(4);
+        for (var axis = 0; axis < 3; axis++)
+        {
+            BitConverter.ToDouble(output, 131 + axis * 8).Should().Be(BitConverter.ToDouble(source, 131 + axis * 8));
+            var sourceOffset = BitConverter.ToDouble(source, 155 + axis * 8);
+            var offsetTolerance = Math.Abs(Math.BitIncrement(sourceOffset) - sourceOffset) * 4;
+            BitConverter.ToDouble(output, 155 + axis * 8).Should().BeApproximately(sourceOffset, offsetTolerance,
+                "forwarded offsets may round by a few binary ULPs during PDAL option serialization");
+        }
+        output[104].Should().Be(sourceFormat == 8 ? (byte)8 : (byte)7,
+            "normalizing COPC 6/7 to LAS 7 is allowed, but source 8 infrared must remain representable");
+        BitConverter.ToUInt64(output, 247).Should().Be(3);
+        var offset = checked((int)BitConverter.ToUInt32(output, 96));
+        var length = BitConverter.ToUInt16(output, 105);
+        length.Should().Be(sourceFormat == 8 ? (ushort)38 : (ushort)36);
+        var points = new List<(double X, double Y, double Z, int Offset)>();
+        for (var row = 0; row < 3; row++)
+        {
+            var position = offset + row * length;
+            double ReadCoordinate(int axis) => BitConverter.ToInt32(output, position + axis * 4) *
+                BitConverter.ToDouble(output, 131 + axis * 8) + BitConverter.ToDouble(output, 155 + axis * 8);
+            points.Add((ReadCoordinate(0), ReadCoordinate(1), ReadCoordinate(2), position));
+        }
+        (double X, double Y, double Z, ushort Intensity, byte Classification, byte Returns, double Gps, ushort Red, ushort Green, ushort Blue, ushort Nir)[] expected =
+        [
+            (10.0000001, 20.0000002, 30.125, 10, 2, 0x21, 123456.125, 65535, 0, 123, 23456),
+            (10.0000013, 20.0000017, 31.375, 60000, 6, 0x22, 123457.25, 1234, 5678, 9012, 54321),
+            (9.9999989, 19.9999991, 29.875, 123, 9, 0x11, 123458.5, 0, 65535, 456, 65535)
+        ];
+        foreach (var point in expected)
+        {
+            var actual = points.MinBy(value => Math.Abs(value.X - point.X) + Math.Abs(value.Y - point.Y));
+            actual.X.Should().BeApproximately(point.X, 5.01e-8);
+            actual.Y.Should().BeApproximately(point.Y, 5.01e-8);
+            actual.Z.Should().BeApproximately(point.Z, .000501);
+            BitConverter.ToUInt16(output, actual.Offset + 12).Should().Be(point.Intensity);
+            output[actual.Offset + 14].Should().Be(point.Returns);
+            output[actual.Offset + 16].Should().Be(point.Classification);
+            BitConverter.ToDouble(output, actual.Offset + 22).Should().Be(point.Gps);
+            if (sourceFormat >= 7)
+            {
+                BitConverter.ToUInt16(output, actual.Offset + 30).Should().Be(point.Red);
+                BitConverter.ToUInt16(output, actual.Offset + 32).Should().Be(point.Green);
+                BitConverter.ToUInt16(output, actual.Offset + 34).Should().Be(point.Blue);
+            }
+            if (sourceFormat == 8)
+            {
+                BitConverter.ToUInt16(output, actual.Offset + 36).Should().Be(point.Nir);
+            }
+        }
+    }
+
+    [Theory]
     [InlineData("geographic.las", "EPSG:4326", 4326, false)]
     [InlineData("mercator.las", null, 3857, false)]
     [InlineData("mercator.las", "EPSG:3857", 4979, true)]

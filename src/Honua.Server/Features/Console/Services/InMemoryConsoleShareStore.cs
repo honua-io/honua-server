@@ -9,18 +9,7 @@ using Honua.Core.Features.Console.Domain;
 
 namespace Honua.Server.Features.Console.Services;
 
-/// <summary>
-/// Baseline in-memory <see cref="IConsoleShareStore"/>. Suitable for tests and
-/// early Console wiring; a persistent implementation lands in a follow-on ticket
-/// alongside the persistent content store (#1163).
-/// </summary>
-/// <remarks>
-/// Token values are held in plaintext here, which is acceptable for an in-memory
-/// MVP store. The persistent implementation MUST store a SHA-256 hash of the
-/// token value and compare on lookup so tokens cannot be read back out of the
-/// database. Resolution does a linear scan over token records — acceptable for
-/// in-memory, but the persistent store should index the token (hash) column.
-/// </remarks>
+// This in-memory store holds plaintext tokens; a persistent store must store and compare a SHA-256 hash so tokens cannot be read back.
 internal sealed class InMemoryConsoleShareStore : IConsoleShareStore
 {
     private const int TokenByteLength = 32;
@@ -225,12 +214,6 @@ internal sealed class InMemoryConsoleShareStore : IConsoleShareStore
         return Task.FromResult<ConsoleEmbedTokenResolution?>(null);
     }
 
-    /// <summary>
-    /// Applies <paramref name="mutator"/> to the item's state under a
-    /// compare-and-swap loop, seeding new state with
-    /// <paramref name="seedAccessTier"/> when none exists. Always refreshes the
-    /// audit stamp.
-    /// </summary>
     private ConsoleShareState Mutate(string itemId, ConsoleShareAccessTier seedAccessTier, string? principalId, Func<ConsoleShareState, ConsoleShareState> mutator)
     {
         while (true)

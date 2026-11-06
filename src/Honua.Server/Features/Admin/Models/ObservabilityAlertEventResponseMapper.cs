@@ -6,9 +6,6 @@ using Honua.Core.Features.Alerts.Domain;
 
 namespace Honua.Server.Features.Admin.Models;
 
-/// <summary>
-/// Maps alert-event summaries onto the Console Operate wire shape.
-/// </summary>
 internal static class ObservabilityAlertEventResponseMapper
 {
     public static ObservabilityAlertEventResponse Map(AlertEventSummary summary)

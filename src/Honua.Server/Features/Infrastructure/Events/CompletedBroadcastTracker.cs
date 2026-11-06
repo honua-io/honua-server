@@ -5,10 +5,7 @@ using System.Collections.Concurrent;
 
 namespace Honua.Infrastructure.Events;
 
-/// <summary>
-/// Retains fallback broadcast deduplication IDs for the same lifetime as their Redis keys.
-/// The retry queue's recovery loop sweeps expired IDs even when no new events arrive.
-/// </summary>
+// The retry queue sweeps expired ids even when no new events arrive.
 internal sealed class CompletedBroadcastTracker(TimeSpan retention, TimeProvider? timeProvider = null)
 {
     private readonly ConcurrentDictionary<string, DateTimeOffset> _completed = new(StringComparer.Ordinal);

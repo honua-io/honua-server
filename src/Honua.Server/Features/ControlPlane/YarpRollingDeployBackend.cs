@@ -9,165 +9,95 @@ using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Parameter keys read from a self-hosted rolling deploy operation's parameters. Every value has an
-/// options-level default (<see cref="SelfHostedDeployOptions"/>); per-operation overrides keep the
-/// backend stateless because each operation carries its own port/image assignment.
-/// </summary>
 internal static class SelfHostedDeployParameterKeys
 {
-    /// <summary>Container image to launch for the standby replica. Falls back to the deploy spec's desired revision.</summary>
     public const string Image = "selfhosted.image";
 
-    /// <summary>Host port the standby replica listens on (the new revision).</summary>
     public const string StandbyPort = "selfhosted.standby_port";
 
-    /// <summary>Host port the currently active replica listens on (the live revision fronted by the proxy).</summary>
     public const string ActivePort = "selfhosted.active_port";
 
-    /// <summary>Container port the replica image exposes.</summary>
     public const string ContainerPort = "selfhosted.container_port";
 
-    /// <summary>Prefix for <c>env.&lt;NAME&gt;</c> environment variables passed into the replica container.</summary>
     public const string EnvironmentPrefix = "env.";
 
-    /// <summary>
-    /// Prefix for <c>mount.&lt;CONTAINER_PATH&gt;</c> read-only host mounts placed into the replica
-    /// container, where the parameter value is the host path (honua-server#4617).
-    /// </summary>
-    /// <remarks>
-    /// Environment variables alone cannot carry a file, and a 2026.1 server image that connects to
-    /// Redis outside Development/Test refuses to start until
-    /// <c>Operations:SecretChannel:KeyRingCertificatePath</c> names a real PKCS#12 key-ring
-    /// certificate (honua-server#4722, #4885). Without a file seam the self-hosted rolling backend
-    /// could not roll out such an image at all: every standby would exit at startup and the rollout
-    /// would fail at the exposure deadline without activating. Mounts are always read-only, so a
-    /// replica can never write back to operator-supplied material. The container path is the key
-    /// because it is absolute and POSIX, which keeps a Windows host path (<c>C:\…</c>) out of the
-    /// part that would otherwise have to be split on a separator.
-    /// </remarks>
+    // Mounts are read-only, and the container path is the key so a Windows host path is not split on a separator.
     public const string MountPrefix = "mount.";
 }
 
-/// <summary>A read-only host path made visible inside a replica container.</summary>
-/// <param name="HostPath">Absolute path on the container host.</param>
-/// <param name="ContainerPath">Absolute path inside the container.</param>
 internal sealed record ContainerMount(string HostPath, string ContainerPath);
 
-/// <summary>
-/// Container-runtime seam so the backend can drive <c>docker</c>/<c>podman</c> without taking a hard
-/// dependency on a process launcher, and so unit tests can fake replica lifecycle without a daemon.
-/// </summary>
 internal interface IContainerRuntimeClient
 {
-    /// <summary>Whether the configured container runtime executable is invocable on this host.</summary>
     Task<bool> IsAvailableAsync(string executable, CancellationToken cancellationToken);
 
-    /// <summary>Runs a detached container and returns its id (or name when the id is unavailable).</summary>
     Task<string> RunAsync(ContainerRunRequest request, CancellationToken cancellationToken);
 
-    /// <summary>Stops and removes a container by name or id. Best-effort; a missing container is not an error.</summary>
     Task StopAsync(string executable, string containerNameOrId, CancellationToken cancellationToken);
 
-    /// <summary>Lists containers matching all supplied labels, including their labels and running state.</summary>
     Task<IReadOnlyList<ContainerSummary>> ListAsync(
         string executable,
         IReadOnlyDictionary<string, string> labelSelectors,
         CancellationToken cancellationToken);
 }
 
-/// <summary>Request describing a detached container to run for a rolling replica.</summary>
 internal sealed record ContainerRunRequest
 {
-    /// <summary>Container runtime executable (<c>docker</c> or <c>podman</c>).</summary>
     public required string Executable { get; init; }
 
-    /// <summary>Container image reference.</summary>
     public required string Image { get; init; }
 
-    /// <summary>Deterministic container name so state can be reconstructed from <c>docker ps</c>.</summary>
     public required string ContainerName { get; init; }
 
-    /// <summary>Host port to publish.</summary>
     public required int HostPort { get; init; }
 
-    /// <summary>Container port to publish from.</summary>
     public required int ContainerPort { get; init; }
 
-    /// <summary>Labels stamped onto the container so observation can reconstruct role/revision statelessly.</summary>
     public IReadOnlyDictionary<string, string> Labels { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal);
 
-    /// <summary>Environment variables passed into the container.</summary>
     public IReadOnlyDictionary<string, string> Environment { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal);
 
-    /// <summary>Read-only host paths mounted into the container.</summary>
     public IReadOnlyList<ContainerMount> Mounts { get; init; } = [];
 }
 
-/// <summary>Read-only snapshot of a container discovered through the runtime.</summary>
 internal sealed record ContainerSummary
 {
-    /// <summary>Container id.</summary>
     public required string Id { get; init; }
 
-    /// <summary>Container name.</summary>
     public required string Name { get; init; }
 
-    /// <summary>Container labels.</summary>
     public IReadOnlyDictionary<string, string> Labels { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal);
 
-    /// <summary>Whether the container is currently running.</summary>
     public bool Running { get; init; }
 }
 
-/// <summary>
-/// Atomic reverse-proxy destination swap seam. The embedded-YARP implementation rewrites the cluster
-/// destination through <c>InMemoryConfigProvider</c> so the cutover is a single, atomic switch.
-/// </summary>
 internal interface IProxyStateSwapper
 {
-    /// <summary>Whether the embedded reverse proxy is configured/enabled on this host.</summary>
     bool IsConfigured { get; }
 
-    /// <summary>The destination address the proxy currently forwards to, or null when unknown/unconfigured.</summary>
     string? ActiveDestinationAddress { get; }
 
-    /// <summary>Atomically points the proxy cluster at <paramref name="destinationAddress"/>.</summary>
     Task SwapAsync(string destinationAddress, CancellationToken cancellationToken);
 }
 
-/// <summary>Result of probing a co-located replica's health endpoint.</summary>
 internal sealed record LocalReplicaHealthResult
 {
-    /// <summary>Number of probe requests issued.</summary>
     public int Attempts { get; init; }
 
-    /// <summary>Number of probe requests that did not return the expected status (or threw).</summary>
     public int Failures { get; init; }
 
-    /// <summary>Whether every issued probe returned the expected status.</summary>
     public bool Healthy => Attempts > 0 && Failures == 0;
 
-    /// <summary>Whether at least one probe received an HTTP response (as opposed to a transport failure).</summary>
     public bool Reached { get; init; }
 
-    /// <summary>Response body of a reached probe, used as the local functional-query sample.</summary>
     public string? Body { get; init; }
 
-    /// <summary>Human-readable detail for the operation phase message.</summary>
     public string? Detail { get; init; }
 }
 
-/// <summary>
-/// Health-probe seam for a co-located replica. Unlike <c>HttpDeployHealthProbe</c>, the target here is
-/// a replica on this same host (loopback), which the shared <c>OutboundHttpUrlValidator</c> deliberately
-/// blocks as an SSRF destination. This local-probe path therefore does not run the outbound SSRF guard:
-/// probing a sibling replica on localhost is the intended behavior, not an outbound call to an untrusted
-/// host. The URL is built by the backend from validated numeric ports, never from client input.
-/// </summary>
+// This local probe skips the outbound address guard because the target is a sibling replica, and the URL is built from validated ports.
 internal interface ILocalReplicaHealthProbe
 {
-    /// <summary>Issues <paramref name="samples"/> sequential GETs and counts unhealthy responses.</summary>
     Task<LocalReplicaHealthResult> ProbeAsync(
         string url,
         int samples,
@@ -176,25 +106,6 @@ internal interface ILocalReplicaHealthProbe
         CancellationToken cancellationToken);
 }
 
-/// <summary>
-/// Substrate-neutral, single-host rolling-replace deploy backend (ADR-0060). The Honua process fronts
-/// traffic with embedded YARP and owns the cutover end-to-end: it launches a standby replica of the
-/// desired revision, health-gates it, atomically swaps the reverse-proxy destination, and keeps the old
-/// replica serving until the new one is healthy. This delivers the on-prem/air-gapped, zero-cloud
-/// zero-downtime upgrade and rollback story — it is not cloud blue/green.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Statelessness discipline (the server process may itself be replaced mid-operation): the backend
-/// persists no in-memory state beyond what can be reconstructed from container labels/names plus the
-/// operation record parameters. <see cref="ObserveAsync"/> rediscovers the standby and active replicas
-/// from <c>docker ps</c> labels (<c>honua.role</c>, <c>honua.revision</c>, <c>honua.operation</c>).
-/// </para>
-/// <para>
-/// A bare-process replica mode (launch the revision as a plain OS process instead of a container) is a
-/// deliberate future extension and is out of scope here; the container-runtime seam keeps that door open.
-/// </para>
-/// </remarks>
 internal sealed partial class YarpRollingDeployBackend(
     IContainerRuntimeClient containerRuntime,
     IProxyStateSwapper proxySwapper,
@@ -640,13 +551,6 @@ internal sealed partial class YarpRollingDeployBackend(
         }
     }
 
-    /// <summary>
-    /// Retires the old replica retained through cutover (honua-server#4618) once the reconciler's
-    /// post-activation observation window elapses without a rollback trigger. This is the deferred half
-    /// of what <see cref="PromoteAsync"/> used to do immediately at cutover: only after the durable
-    /// operation itself decides the window is over does the previous revision's capacity actually go
-    /// away, so a candidate that fails mid-window always has somewhere to recover to.
-    /// </summary>
     public async Task<DeployObservation> CompleteProtectionAsync(
         WorkflowOperationRecord operation,
         CancellationToken cancellationToken = default)
@@ -686,12 +590,6 @@ internal sealed partial class YarpRollingDeployBackend(
         }
     }
 
-    /// <summary>
-    /// Stops the standby (new-revision) replica after the configured drain window during a
-    /// post-cutover rollback. Traffic has already been repointed at the previous replica, so the
-    /// drain only lets the failed revision finish in-flight requests. Best-effort by name when the
-    /// label discovery did not surface the standby container.
-    /// </summary>
     private async Task StopStandbyAfterDrainAsync(
         SelfHostedDeployTarget target,
         ContainerSummary? standby,
@@ -892,15 +790,7 @@ internal sealed partial class YarpRollingDeployBackend(
         return environment;
     }
 
-    /// <summary>
-    /// Reads the <c>mount.&lt;CONTAINER_PATH&gt;=&lt;HOST_PATH&gt;</c> parameters (honua-server#4617).
-    /// </summary>
-    /// <remarks>
-    /// A mount that cannot be satisfied is rejected here, before a container exists. The alternative
-    /// is a standby that starts, exits on the missing file, and only surfaces at the exposure
-    /// deadline as "never passed the backend health gate" — a configuration error reported as a
-    /// candidate health failure.
-    /// </remarks>
+    // An unsatisfiable mount is rejected before a container exists, so a missing file is not reported as a candidate health failure.
     private static List<ContainerMount> BuildMounts(DeployOperationSpec spec)
     {
         var mounts = new List<ContainerMount>();

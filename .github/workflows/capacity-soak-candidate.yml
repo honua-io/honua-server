@@ -84,12 +84,11 @@ env:
   SOAK_DB_NAME: honua_soak
   SOAK_DB_USER: honua
   SOAK_DB_PORT: '5432'
-  SOAK_DB_PASSWORD: soak-candidate-db-password
+  # SOAK_DB_PASSWORD is minted per run in the soak job (see "Mint a throwaway database password").
   # Per-run, not a repository literal: a credential checked in here is a public value, and
   # production startup validation refuses every credential literal this repository ships.
   SOAK_ADMIN_PASSWORD: 'Capacity-Soak-${{ github.run_id }}-${{ github.run_attempt }}-Aa1!'
   SOAK_MASTER_KEY: capacity-soak-master-key-${{ github.run_id }}-${{ github.run_attempt }}-padding0000
-  SOAK_GP_WORKERS: '1'
   LOCK_PATH: certification/capacity-envelope.v1.json
 
 jobs:
@@ -341,6 +340,11 @@ jobs:
               raise SystemExit("dispatch does not match the pinned manifest candidate and image")
           PYTHON
           digest="$(sha256sum lock.json | cut -d' ' -f1)"
+          # The started server's GP admission comes from the lock, never from a workflow literal.
+          # Every later `docker compose` call re-reads docker-compose.soak.yml, so it goes to the
+          # job environment.
+          gp_active_jobs="$(PYTHONPATH=producer/scripts/soak python -c 'import json, envelope_config; print(envelope_config.admission_active_job_limit(json.load(open("lock.json"))["supportedEnvelope"]))')"
+          echo "SOAK_GP_ACTIVE_JOBS=$gp_active_jobs" >> "$GITHUB_ENV"
           echo "url=$url" >> "$GITHUB_OUTPUT"
           echo "sha256=$digest" >> "$GITHUB_OUTPUT"
           python - <<'PY' >> "$GITHUB_OUTPUT"
@@ -418,6 +422,19 @@ jobs:
           rm -f "$RUNNER_TEMP/license/soak.key"
           echo "::add-mask::$trusted"
           echo "trusted_key=$trusted" >> "$GITHUB_OUTPUT"
+
+      - name: Mint a throwaway database password for this run
+        run: |
+          set -euo pipefail
+          # Since #5077 the Production startup policy refuses every credential literal this
+          # repository ships, so the old literal SOAK_DB_PASSWORD in this file reached the
+          # server through ConnectionStrings__DefaultConnection and every candidate exited before
+          # readiness (honua-server run 40355678030, candidate 8cb074f7). The disposable Postgres
+          # gets a per-run secret instead; the refusal stays.
+          SOAK_DB_PASSWORD="$(openssl rand -hex 24)"
+          echo "::add-mask::$SOAK_DB_PASSWORD"
+          # Every later step (substrate start, seeding, republish) reads it from the job environment.
+          echo "SOAK_DB_PASSWORD=$SOAK_DB_PASSWORD" >> "$GITHUB_ENV"
 
       - name: Mint a throwaway key-ring certificate for this run
         run: |
@@ -530,6 +547,16 @@ jobs:
           done
           curl -fsS "$BASE_URL/rest/services/test/FeatureServer/0/query?f=json&where=1%3D1&returnCountOnly=true"
 
+      - name: Refuse a server whose effective configuration differs from the envelope
+        working-directory: producer
+        run: |
+          set -euo pipefail
+          # Fail in seconds, not after an hour: the GP admission limit, rate-limit posture, worker
+          # count, published services and layers the server actually started with must be the
+          # envelope's, or the soak measures a different deployment than the one it claims.
+          python scripts/soak/envelope_config.py --lock ../lock.json --base-url "$BASE_URL" \
+            --admin-key "$SOAK_ADMIN_PASSWORD" --report "$RUNNER_TEMP/effective-config.json"
+
       # Under workflow_call GITHUB_WORKFLOW_REF names the caller; the attestation signer
       # (Fulcio buildSignerURI) is this workflow's OIDC job_workflow_ref, so record that.
       - name: Resolve the executing workflow identity
@@ -568,7 +595,7 @@ jobs:
 
       - name: Upload raw observations before binding the Actions artifact URI
         id: observations
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: capacity-observations-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/capacity-observations.json
@@ -668,7 +695,7 @@ jobs:
 
       - name: Upload run evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: capacity-soak-${{ inputs.candidate_sha }}-${{ github.run_id }}
           path: |
@@ -677,6 +704,7 @@ jobs:
             ${{ runner.temp }}/verified-attestation.json
             ${{ runner.temp }}/gate-verdict.txt
             ${{ runner.temp }}/topology.json
+            ${{ runner.temp }}/effective-config.json
             ${{ runner.temp }}/capacity-runner-admission.json
             ${{ runner.temp }}/honua-server.log
             ${{ runner.temp }}/postgres.log

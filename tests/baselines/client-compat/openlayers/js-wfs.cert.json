@@ -57,18 +57,18 @@
       "test_case_id": "CERT-DISC-02",
       "status": "pass",
       "duration_ms": 16,
-      "measured_count": 4,
+      "measured_count": 11,
       "measured_delta": null,
-      "notes": "4 FeatureType(s) found, first: honua:test_layer",
+      "notes": "11 FeatureType(s) found, first: honua:test_layer",
       "evidence_ref": ""
     },
     {
       "test_case_id": "CERT-SCHM-01",
       "status": "pass",
       "duration_ms": 0,
-      "measured_count": 14,
+      "measured_count": 15,
       "measured_delta": null,
-      "notes": "Feature has 14 properties: shape, objectid, name, description, status, count, ratio, active, created_at, event_date, event_time, uid, tags, numbers",
+      "notes": "Feature has 15 properties: shape, objectid, name, description, status, count, ratio, active, created_at, event_date, event_time, uid, tags, numbers, eo_x003A_cloud_cover",
       "evidence_ref": ""
     },
     {

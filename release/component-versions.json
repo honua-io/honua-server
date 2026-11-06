@@ -10,6 +10,8 @@
     "stac": "1.0.0"
   },
   "schemaVersions": {
-    "certification-evidence-receipt": "2.0"
+    "certification-evidence-receipt": "2.0",
+    "inspector-pagination-observer": "v2",
+    "metadata": "2.0.0-alpha.1"
   }
 }

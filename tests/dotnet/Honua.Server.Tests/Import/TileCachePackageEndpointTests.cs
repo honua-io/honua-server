@@ -10,9 +10,12 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Import.TileCachePackage;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Extensions;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Import;
 
@@ -90,8 +93,11 @@ public sealed class TileCachePackageEndpointTests : IAsyncLifetime
         using var content = new ByteArrayContent(package);
         content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
 
+        // The tileset id names a published layer the test client can read, so its tiles
+        // serve under that layer's read policy (SEC-15).
+        var tilesetId = await PublishedLayerResourceIdAsync();
         var importResponse = await _client.PostAsync(
-            "/api/v1/admin/import/tile-package?tilesetId=served-demo&fileName=served.tpkx", content);
+            $"/api/v1/admin/import/tile-package?tilesetId={Uri.EscapeDataString(tilesetId)}&fileName=served.tpkx", content);
         importResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var importDoc = JsonDocument.Parse(await importResponse.Content.ReadAsStringAsync());
@@ -121,10 +127,49 @@ public sealed class TileCachePackageEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /tiles/imported/{tileCacheId}")]
+    [Endpoint("GET /tiles/imported/{tileCacheId}/{z}/{x}/{y}")]
+    public async Task ImportTilePackage_TilesetIdNamingNoLayer_IsNotServed()
+    {
+        var package = BuildCompactV2Package(
+            tiles: [(2, 5, Encoding.ASCII.GetBytes("UNBOUND-TILE"))], level: 3);
+        using var content = new ByteArrayContent(package);
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+
+        var importResponse = await _client.PostAsync(
+            "/api/v1/admin/import/tile-package?tilesetId=unbound-demo&fileName=unbound.tpkx", content);
+        importResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var importDoc = JsonDocument.Parse(await importResponse.Content.ReadAsStringAsync());
+        var tileCacheId = importDoc.RootElement.GetProperty("tileCacheId").GetString();
+        tileCacheId.Should().NotBeNullOrEmpty();
+
+        // No published layer carries the id, so there is no read policy to apply: the
+        // cache answers exactly like a missing one.
+        var tileSetResponse = await _client.GetAsync($"/tiles/imported/{tileCacheId}");
+        await tileSetResponse.AssertGeoServicesErrorAsync(404);
+
+        var tileResponse = await _client.GetAsync($"/tiles/imported/{tileCacheId}/3/5/2");
+        await tileResponse.AssertGeoServicesErrorAsync(404, allowEmpty: true);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /tiles/imported/{tileCacheId}")]
     public async Task GetImportedTileSet_UnknownCache_ReturnsNotFound()
     {
         var response = await _client.GetAsync("/tiles/imported/tilecache:nope:nope:deadbeef");
         await response.AssertGeoServicesErrorAsync(404);
+    }
+
+    private async Task<string> PublishedLayerResourceIdAsync()
+    {
+        // A numeric collection id is a service-local layer index and is shared across
+        // services, so bind by the resource id, which names exactly one layer.
+        var graphProvider = _fixture.Services.GetRequiredService<IMetadataV2GraphProvider>();
+        var snapshot = await graphProvider.GetCurrentAsync();
+        var resourceId = snapshot.Graph.Resources
+            .Select(resource => resource.Metadata.Id)
+            .FirstOrDefault(id => ImportedTileCacheAccess.ResolveSources(snapshot, id, (_, _, _) => true).Count > 0);
+        resourceId.Should().NotBeNullOrEmpty("the seeded host publishes at least one layer");
+        return resourceId!;
     }
 
     private static byte[] BuildCompactV2Package((int Row, int Col, byte[] Bytes)[] tiles, int level)

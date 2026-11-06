@@ -20,16 +20,10 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.PackageReview;
 
-/// <summary>
-/// Admin endpoints for package validation and read-only preview planning.
-/// </summary>
 internal static partial class PackageReviewEndpoints
 {
     internal sealed class PackageReviewEndpointsLog;
 
-    /// <summary>
-    /// Maps package-review endpoints.
-    /// </summary>
     public static void MapPackageReviewEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/packages")
@@ -265,10 +259,6 @@ internal static partial class PackageReviewEndpoints
         public StudioPublicationIntent? Intent { get; init; }
     }
 
-    /// <summary>
-    /// Accepted publication proposal for a saved map package version. Nothing is published until
-    /// a separate principal approves <see cref="ProposalId"/>.
-    /// </summary>
     internal sealed record MapPackagePublishResponse
     {
         public required string PackageId { get; init; }

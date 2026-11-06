@@ -12,16 +12,6 @@ namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
 internal static class ImageServerMosaicHelpers
 {
-    /// <summary>
-    /// Parses the Esri ImageServer <c>time</c> parameter: <c>time=&lt;timeInstant&gt;</c> or
-    /// <c>time=&lt;startTime&gt;,&lt;endTime&gt;</c>, where each value is epoch milliseconds (the
-    /// form the service advertises in <c>timeInfo.timeExtent</c>) or an ISO 8601 instant and either
-    /// extent bound may be <c>null</c>/empty for an open interval. An instant is returned in
-    /// <paramref name="timestamp"/> with a null <paramref name="timeStart"/>; an extent returns its
-    /// end bound in <paramref name="timestamp"/> and its start bound in <paramref name="timeStart"/>.
-    /// Shares <see cref="GeoServicesTemporalQueryBuilder.TryParseTimeParameter"/> with
-    /// MapServer/FeatureServer so every GeoServices surface accepts the same values.
-    /// </summary>
     internal static bool TryParseTime(
         string? value,
         out DateTimeOffset? timestamp,

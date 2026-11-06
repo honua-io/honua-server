@@ -7,386 +7,212 @@ using Honua.Core.Features.Infrastructure.Domain;
 
 namespace Honua.Server.Features.Admin.Models;
 
-/// <summary>
-/// Instance-scoped deploy preflight response for coordinated Honua rollouts.
-/// </summary>
 public sealed class DeployPreflightResponse
 {
-    /// <summary>
-    /// Current status for coordinated deployment eligibility.
-    /// </summary>
     [JsonPropertyName("status")]
     public string Status { get; init; } = string.Empty;
 
-    /// <summary>
-    /// Whether this instance is ready to participate in a coordinated deployment.
-    /// </summary>
     [JsonPropertyName("readyForCoordinatedDeploy")]
     public bool ReadyForCoordinatedDeploy { get; init; }
 
-    /// <summary>
-    /// Operator-facing summary for the current preflight result.
-    /// </summary>
     [JsonPropertyName("message")]
     public string Message { get; init; } = string.Empty;
 
-    /// <summary>
-    /// Honua server version currently running on this instance.
-    /// </summary>
     [JsonPropertyName("serverVersion")]
     public string? ServerVersion { get; init; }
 
-    /// <summary>
-    /// ASP.NET host environment for this instance.
-    /// </summary>
     [JsonPropertyName("environment")]
     public string? Environment { get; init; }
 
-    /// <summary>
-    /// Deployment mode configured for this instance.
-    /// </summary>
     [JsonPropertyName("deploymentMode")]
     public string? DeploymentMode { get; init; }
 
-    /// <summary>
-    /// Machine or instance name serving the request.
-    /// </summary>
     [JsonPropertyName("instanceName")]
     public string? InstanceName { get; init; }
 
-    /// <summary>
-    /// Timestamp when the preflight payload was generated.
-    /// </summary>
     [JsonPropertyName("generatedAt")]
     public DateTimeOffset GeneratedAt { get; init; }
 
-    /// <summary>
-    /// Current readiness state for this instance.
-    /// </summary>
     [JsonPropertyName("readiness")]
     public DeployPreflightReadiness? Readiness { get; init; }
 
-    /// <summary>
-    /// Current migration and schema alignment state for this instance.
-    /// </summary>
     [JsonPropertyName("migration")]
     public DeployPreflightMigration? Migration { get; init; }
 
-    /// <summary>
-    /// Database compatibility state for this instance (PostGIS/engine versions).
-    /// </summary>
     [JsonPropertyName("databaseCompatibility")]
     public DeployPreflightDatabaseCompatibility? DatabaseCompatibility { get; init; }
 
-    /// <summary>
-    /// How the database session settings (timeouts, default search_path) are applied
-    /// (<c>Database:SessionSettings:Mode</c>) and, in <c>role-defaults</c> mode, the startup
-    /// verification of the role defaults.
-    /// </summary>
     [JsonPropertyName("databaseSessionSettings")]
     public DeployPreflightDatabaseSessionSettings? DatabaseSessionSettings { get; init; }
 
-    /// <summary>
-    /// Cross-plane platform-release projection: the release version each plane currently projects and
-    /// whether the serving and geoprocessing worker images are co-versioned (ADR-0060 WS2).
-    /// </summary>
     [JsonPropertyName("platformRelease")]
     public DeployPreflightPlatformRelease? PlatformRelease { get; init; }
 }
 
-/// <summary>
-/// Cross-plane platform-release consistency summary embedded in deploy preflight responses. Lets a
-/// mid-upgrade operator see whether the serving deploy targets and the geoprocessing worker images
-/// are aligned on the same declared release version.
-/// </summary>
 public sealed class DeployPreflightPlatformRelease
 {
-    /// <summary>Configured projection backend and freshness evidence.</summary>
     [JsonPropertyName("evidencePosture")]
     public EvidencePosture? EvidencePosture { get; init; }
 
-    /// <summary>
-    /// Declared platform release version, or null when no release is configured.
-    /// </summary>
     [JsonPropertyName("releaseVersion")]
     public string? ReleaseVersion { get; init; }
 
-    /// <summary>
-    /// Whether a platform release is declared for this instance.
-    /// </summary>
     [JsonPropertyName("releaseDeclared")]
     public bool ReleaseDeclared { get; init; }
 
-    /// <summary>
-    /// Whether both planes are aligned on the declared release (no element pins a diverging artifact).
-    /// </summary>
     [JsonPropertyName("isCoVersioned")]
     public bool IsCoVersioned { get; init; }
 
-    /// <summary>
-    /// Serving-plane projections (one per deploy target).
-    /// </summary>
     [JsonPropertyName("serving")]
     public IReadOnlyList<DeployPreflightPlaneProjection> Serving { get; init; } = Array.Empty<DeployPreflightPlaneProjection>();
 
-    /// <summary>
-    /// Execution-plane projections (one per geoprocessing workload).
-    /// </summary>
     [JsonPropertyName("execution")]
     public IReadOnlyList<DeployPreflightPlaneProjection> Execution { get; init; } = Array.Empty<DeployPreflightPlaneProjection>();
 
-    /// <summary>
-    /// Identifiers of plane elements pinning an artifact that diverges from the release projection.
-    /// </summary>
     [JsonPropertyName("skewedIds")]
     public IReadOnlyList<string> SkewedIds { get; init; } = Array.Empty<string>();
 }
 
-/// <summary>
-/// One plane element's platform-release projection embedded in deploy preflight responses.
-/// </summary>
 public sealed class DeployPreflightPlaneProjection
 {
-    /// <summary>
-    /// Stable identifier of the plane element (deploy target id or execution workload id).
-    /// </summary>
+    [JsonPropertyName("observedArtifactReference")]
+    public string? ObservedArtifactReference { get; init; }
+
+    [JsonPropertyName("observedImageId")]
+    public string? ObservedImageId { get; init; }
+
+    [JsonPropertyName("serverVersion")]
+    public string? ServerVersion { get; init; }
+
+    // Configuration is never reported as a live observation.
+    [JsonPropertyName("observationStatus")]
+    public string? ObservationStatus { get; init; }
+
+    [JsonPropertyName("observedAt")]
+    public DateTimeOffset? ObservedAt { get; init; }
+
     [JsonPropertyName("id")]
     public string Id { get; init; } = string.Empty;
 
-    /// <summary>
-    /// Runtime profile of the element, if any.
-    /// </summary>
     [JsonPropertyName("runtimeProfile")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public string? RuntimeProfile { get; init; }
 
-    /// <summary>
-    /// Effective artifact reference after applying explicit-pin-wins precedence over the release.
-    /// </summary>
     [JsonPropertyName("effectiveArtifactReference")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public string? EffectiveArtifactReference { get; init; }
 
-    /// <summary>
-    /// Whether the effective artifact was projected from the release rather than an explicit pin.
-    /// </summary>
     [JsonPropertyName("projectedFromRelease")]
     public bool ProjectedFromRelease { get; init; }
 
-    /// <summary>
-    /// Whether the element pins an explicit artifact that diverges from the release projection.
-    /// </summary>
     [JsonPropertyName("skewed")]
     public bool Skewed { get; init; }
 }
 
-/// <summary>
-/// Readiness summary embedded in deploy preflight responses.
-/// </summary>
 public sealed class DeployPreflightReadiness
 {
-    /// <summary>
-    /// Whether the instance is currently ready to accept traffic.
-    /// </summary>
     [JsonPropertyName("isReady")]
     public bool IsReady { get; init; }
 
-    /// <summary>
-    /// HTTP status code that would be returned by the readiness endpoint.
-    /// </summary>
     [JsonPropertyName("statusCode")]
     public int StatusCode { get; init; }
 
-    /// <summary>
-    /// Human-readable readiness message.
-    /// </summary>
     [JsonPropertyName("message")]
     public string Message { get; init; } = string.Empty;
 }
 
-/// <summary>
-/// Migration and schema alignment summary embedded in deploy preflight responses.
-/// </summary>
 public sealed class DeployPreflightMigration
 {
-    /// <summary>
-    /// Current migration lifecycle status observed by this instance.
-    /// </summary>
     [JsonPropertyName("lifecycleStatus")]
     public string LifecycleStatus { get; init; } = string.Empty;
 
-    /// <summary>
-    /// Optional operator-facing lifecycle detail.
-    /// </summary>
     [JsonPropertyName("message")]
     public string? Message { get; init; }
 
-    /// <summary>
-    /// Whether a migration plan could be generated successfully.
-    /// </summary>
     [JsonPropertyName("planAvailable")]
     public bool PlanAvailable { get; init; }
 
-    /// <summary>
-    /// Whether the current instance detects pending migration scripts.
-    /// </summary>
     [JsonPropertyName("upgradeRequired")]
     public bool UpgradeRequired { get; init; }
 
-    /// <summary>
-    /// Pending migration scripts for this instance and current database.
-    /// </summary>
     [JsonPropertyName("pendingScripts")]
     public IReadOnlyList<string> PendingScripts { get; init; } = Array.Empty<string>();
 
-    /// <summary>
-    /// Runtime expand/contract classification for every pending migration script.
-    /// </summary>
     [JsonPropertyName("pendingScriptClassifications")]
     public IReadOnlyList<DeployPreflightMigrationClassification> PendingScriptClassifications { get; init; }
         = Array.Empty<DeployPreflightMigrationClassification>();
 
-    /// <summary>Exact physical binding and resource/rendered SQL identities.</summary>
     [JsonPropertyName("scriptBindings")]
     public IReadOnlyList<DatabaseMigrationScriptBinding> ScriptBindings { get; init; }
         = Array.Empty<DatabaseMigrationScriptBinding>();
 
-    /// <summary>Approval nonce bound to this exact plan and custom rendering context.</summary>
     [JsonPropertyName("contractApprovalNonce")]
     public string? ContractApprovalNonce { get; init; }
 
-    /// <summary>
-    /// Scripts previously executed against the database but no longer discovered by the current binary.
-    /// </summary>
     [JsonPropertyName("executedButNotDiscoveredScripts")]
     public IReadOnlyList<string> ExecutedButNotDiscoveredScripts { get; init; } = Array.Empty<string>();
 
-    /// <summary>
-    /// Error detail when migration planning could not be completed.
-    /// </summary>
     [JsonPropertyName("planError")]
     public string? PlanError { get; init; }
 
-    /// <summary>
-    /// Last backup-hook outcome for the current pending contract-migration set, when applicable.
-    /// </summary>
     [JsonPropertyName("backupHook")]
     public MigrationBackupHookStatus? BackupHook { get; init; }
 }
 
-/// <summary>
-/// One pending migration's runtime safety classification and exact matched rules.
-/// </summary>
 public sealed class DeployPreflightMigrationClassification
 {
-    /// <summary>
-    /// Embedded migration script name used by the runner and journal.
-    /// </summary>
     [JsonPropertyName("scriptName")]
     public string ScriptName { get; init; } = string.Empty;
 
-    /// <summary>
-    /// Expand/contract classifier result.
-    /// </summary>
     [JsonPropertyName("classification")]
     public string Classification { get; init; } = string.Empty;
 
-    /// <summary>
-    /// Exact potentially-breaking classifier rule names matched by the script.
-    /// </summary>
     [JsonPropertyName("breakingRules")]
     public IReadOnlyList<string> BreakingRules { get; init; } = Array.Empty<string>();
 }
 
-/// <summary>
-/// Database compatibility summary embedded in deploy preflight responses.
-/// </summary>
 public sealed class DeployPreflightDatabaseCompatibility
 {
-    /// <summary>
-    /// Whether the database meets Honua compatibility requirements.
-    /// </summary>
     [JsonPropertyName("isCompatible")]
     public bool IsCompatible { get; init; }
 
-    /// <summary>
-    /// Database engine version string.
-    /// </summary>
     [JsonPropertyName("engineVersion")]
     public string EngineVersion { get; init; } = string.Empty;
 
-    /// <summary>
-    /// PostGIS extension version, if installed.
-    /// </summary>
     [JsonPropertyName("postGisVersion")]
     public string? PostGisVersion { get; init; }
 
-    /// <summary>
-    /// PostGIS raster extension version, if installed.
-    /// </summary>
     [JsonPropertyName("postGisRasterVersion")]
     public string? PostGisRasterVersion { get; init; }
 
-    /// <summary>
-    /// Extensions installed in the database.
-    /// </summary>
     [JsonPropertyName("installedExtensions")]
     public IReadOnlyList<string> InstalledExtensions { get; init; } = Array.Empty<string>();
 
-    /// <summary>
-    /// Non-fatal warnings from the compatibility check.
-    /// </summary>
     [JsonPropertyName("warnings")]
     public IReadOnlyList<string> Warnings { get; init; } = Array.Empty<string>();
 
-    /// <summary>
-    /// Error message when the compatibility check determined incompatibility.
-    /// </summary>
     [JsonPropertyName("errorMessage")]
     public string? ErrorMessage { get; init; }
 }
 
-/// <summary>
-/// Database session-settings mode and role-default verification embedded in deploy preflight
-/// responses (honua-server#5870).
-/// </summary>
 public sealed class DeployPreflightDatabaseSessionSettings
 {
-    /// <summary>
-    /// The configured mode: <c>connection</c> (the server sets the values on every connection)
-    /// or <c>role-defaults</c> (no session SET; the database role's defaults apply).
-    /// </summary>
     [JsonPropertyName("mode")]
     public string Mode { get; init; } = string.Empty;
 
-    /// <summary>
-    /// Verification status: <c>not-applicable</c>, <c>pending</c>, <c>verified</c>,
-    /// <c>mismatch</c> or <c>unavailable</c>.
-    /// </summary>
     [JsonPropertyName("verification")]
     public string Verification { get; init; } = string.Empty;
 
-    /// <summary>
-    /// The database role whose defaults were verified, when known.
-    /// </summary>
     [JsonPropertyName("role")]
     public string? Role { get; init; }
 
-    /// <summary>
-    /// The <c>ALTER ROLE</c> statements an operator runs to align the role defaults with
-    /// <c>Limits:Connections</c>. Empty when verified or not applicable.
-    /// </summary>
     [JsonPropertyName("remediation")]
     public IReadOnlyList<string> Remediation { get; init; } = Array.Empty<string>();
 
-    /// <summary>
-    /// Why verification is unavailable, when it is.
-    /// </summary>
     [JsonPropertyName("message")]
     public string? Message { get; init; }
 }
 
-/// <summary>
-/// Request payload for planning a deploy workflow operation.
-/// </summary>
 public sealed class DeployPlanRequest
 {
     [JsonPropertyName("targetId")]
@@ -402,9 +228,6 @@ public sealed class DeployPlanRequest
     public IReadOnlyDictionary<string, string>? Parameters { get; init; }
 }
 
-/// <summary>
-/// Request payload for creating a durable deploy workflow operation.
-/// </summary>
 public sealed class CreateDeployOperationRequest
 {
     [JsonPropertyName("targetId")]
@@ -435,72 +258,43 @@ public sealed class CreateDeployOperationRequest
     public IReadOnlyDictionary<string, string>? Parameters { get; init; }
 }
 
-/// <summary>
-/// Request payload for a deploy rollback operation.
-/// </summary>
-/// <remarks>
-/// Every property other than <see cref="Reason"/> is part of the optional <b>recovery fence</b>
-/// (honua-server#4958). A body that supplies none of them keeps the pre-#4958 behaviour for existing
-/// callers; a body that supplies any of them is asserting the terms of a declared recovery grant, and
-/// the server refuses the rollback outright when any supplied term does not match what the protected
-/// activation actually recorded. A supplied term is never treated as advisory and never silently
-/// dropped: the type disallows unmapped members, so a property this server does not implement is itself
-/// a refusal and a client that believes it is fencing cannot be wrong about it.
-/// </remarks>
+// A rollback body that supplies any fence term is asserting a grant, and a term that does not match the recorded activation refuses the rollback rather than being ignored.
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed class RollbackDeployOperationRequest
 {
     [JsonPropertyName("reason")]
     public string? Reason { get; init; }
 
-    /// <summary>Deploy target the caller believes it is compensating. Must equal the operation's target.</summary>
     [JsonPropertyName("targetId")]
     public string? TargetId { get; init; }
 
-    /// <summary>Revision the caller believes is currently activated. Must equal <c>protection.candidateRevision</c>.</summary>
     [JsonPropertyName("expectedCandidateRevision")]
     public string? ExpectedCandidateRevision { get; init; }
 
-    /// <summary>Revision the caller believes the compensation restores. Must equal <c>protection.previousRevision</c>.</summary>
     [JsonPropertyName("expectedPreviousRevision")]
     public string? ExpectedPreviousRevision { get; init; }
 
-    /// <summary>
-    /// Protection phase the caller believes the operation is in — one of <c>observing</c>,
-    /// <c>protected</c>, <c>recovering</c>, <c>expired</c>, <c>unavailable</c>. Must equal
-    /// <c>protection.phase</c>, which is what makes a rollback outside an observation window refusable.
-    /// </summary>
     [JsonPropertyName("expectedProtectionPhase")]
     public string? ExpectedProtectionPhase { get; init; }
 
-    /// <summary>Identity of the recovery grant. Must equal <c>protection.grantId</c>.</summary>
     [JsonPropertyName("grantId")]
     public string? GrantId { get; init; }
 
-    /// <summary>Safety-policy digest the grant was minted against. Must equal <c>protection.policyDigest</c>.</summary>
     [JsonPropertyName("policyDigest")]
     public string? PolicyDigest { get; init; }
 
-    /// <summary>Principal the grant authorizes. Must equal both the authenticated caller and <c>protection.actor</c>.</summary>
     [JsonPropertyName("actor")]
     public string? Actor { get; init; }
 
-    /// <summary>Tenant the grant is bound to. Must equal both the caller's tenant and <c>protection.tenantId</c>.</summary>
     [JsonPropertyName("tenantId")]
     public string? TenantId { get; init; }
 
-    /// <summary>Grant expiry. The rollback is refused once the server clock is past it.</summary>
     [JsonPropertyName("notAfter")]
     public DateTimeOffset? NotAfter { get; init; }
 
-    /// <summary>
-    /// Compensation the caller is asking for. Must equal <c>protection.permittedCompensation</c>; any
-    /// other value is broader than what the activation preauthorized and is refused.
-    /// </summary>
     [JsonPropertyName("compensation")]
     public string? Compensation { get; init; }
 
-    /// <summary>Whether the caller supplied any recovery-fence term at all.</summary>
     [JsonIgnore]
     public bool HasFence =>
         !string.IsNullOrWhiteSpace(TargetId) ||
@@ -514,10 +308,6 @@ public sealed class RollbackDeployOperationRequest
         !string.IsNullOrWhiteSpace(Compensation) ||
         NotAfter.HasValue;
 
-    /// <summary>
-    /// Whether the caller supplied a term that only a protection record can answer. Such a term is a
-    /// refusal, not a no-op, when no protection window exists.
-    /// </summary>
     [JsonIgnore]
     public bool HasProtectionBoundFence =>
         !string.IsNullOrWhiteSpace(ExpectedCandidateRevision) ||
@@ -528,157 +318,77 @@ public sealed class RollbackDeployOperationRequest
         !string.IsNullOrWhiteSpace(Compensation);
 }
 
-/// <summary>
-/// Request payload for converging the running serving targets onto the declared platform release
-/// (ADR-0060 WS2). The endpoint always converges to the release declared in
-/// <c>ControlPlane:PlatformRelease</c>; it never resolves a version to an artifact. An optional
-/// <see cref="TargetVersion"/> lets the caller assert which release it expects, and a mismatch is
-/// rejected with a 409 <c>platform_release_version_mismatch</c> problem.
-/// </summary>
+// The endpoint converges only to the release declared in configuration and never resolves a version to an artifact; a mismatched expected release is a 409.
 public sealed class PlatformReleaseConvergeRequest
 {
-    /// <summary>
-    /// Optional release the caller expects to converge to (for example <c>2026.1-rc.3</c>; <c>honua-</c>
-    /// and <c>v</c> prefixes and a zero patch are normalized). When it does not name the declared
-    /// release the converge is rejected with 409 <c>platform_release_version_mismatch</c>.
-    /// </summary>
     [JsonPropertyName("targetVersion")]
     public string? TargetVersion { get; init; }
 
-    /// <summary>
-    /// Optional operator reason recorded on every deploy operation the converge creates.
-    /// </summary>
     [JsonPropertyName("reason")]
     public string? Reason { get; init; }
 
-    /// <summary>
-    /// Optional correlation identifier propagated onto the created deploy operations/proposals.
-    /// </summary>
     [JsonPropertyName("correlationId")]
     public string? CorrelationId { get; init; }
 }
 
-/// <summary>
-/// Response payload for a platform-release converge invocation. Lists the per-target outcome of
-/// actuating the declared serving release and states that worker images are not deployed here.
-/// </summary>
 public sealed class PlatformReleaseConvergeResponse
 {
-    /// <summary>
-    /// Declared platform release version the converge targeted.
-    /// </summary>
     [JsonPropertyName("releaseVersion")]
     public string ReleaseVersion { get; init; } = string.Empty;
 
-    /// <summary>
-    /// Declared serving artifact reference the divergent targets are converged onto.
-    /// </summary>
     [JsonPropertyName("servingArtifactReference")]
     public string? ServingArtifactReference { get; init; }
 
-    /// <summary>
-    /// Whether the serving plane was already fully converged: no deploy operation or proposal was
-    /// created by this call (every target was already-converged or skipped).
-    /// </summary>
     [JsonPropertyName("converged")]
     public bool Converged { get; init; }
 
-    /// <summary>
-    /// Always <see langword="true"/>: this API deliberately does not deploy geoprocessing worker
-    /// images. Workers converge at the next geoprocessing dispatch via
-    /// <c>PlatformReleaseProjection.ResolveWorkerArtifact</c>.
-    /// </summary>
+    // This API does not deploy geoprocessing worker images; workers converge at the next dispatch.
     [JsonPropertyName("workersDeferred")]
     public bool WorkersDeferred { get; init; } = true;
 
-    /// <summary>
-    /// Operator-facing note explaining that worker images are not deployed by converge.
-    /// </summary>
     [JsonPropertyName("workerConvergenceNote")]
     public string WorkerConvergenceNote { get; init; } = string.Empty;
 
-    /// <summary>
-    /// Per-target converge outcomes.
-    /// </summary>
     [JsonPropertyName("targets")]
     public IReadOnlyList<PlatformReleaseConvergeTargetOutcome> Targets { get; init; } = Array.Empty<PlatformReleaseConvergeTargetOutcome>();
 
-    /// <summary>
-    /// Timestamp when the converge result was generated.
-    /// </summary>
     [JsonPropertyName("generatedAt")]
     public DateTimeOffset GeneratedAt { get; init; }
 }
 
-/// <summary>
-/// One serving deploy target's outcome from a platform-release converge.
-/// </summary>
 public sealed class PlatformReleaseConvergeTargetOutcome
 {
-    /// <summary>
-    /// Stable deploy target identifier.
-    /// </summary>
     [JsonPropertyName("targetId")]
     public string TargetId { get; init; } = string.Empty;
 
-    /// <summary>
-    /// Converge classification for this target. One of <c>operation-created</c>,
-    /// <c>skipped-pinned</c>, <c>already-converged</c>, <c>unknown-treated-divergent</c>, or the
-    /// defensive <c>blocked</c> when the guardrail gateway denied the deploy.
-    /// </summary>
     [JsonPropertyName("outcome")]
     public string Outcome { get; init; } = string.Empty;
 
-    /// <summary>
-    /// Deploy operation id when the gateway executed the converge deploy directly. For an
-    /// approval-mediated route the id is carried on <see cref="ProposalId"/> instead.
-    /// </summary>
     [JsonPropertyName("operationId")]
     public string? OperationId { get; init; }
 
-    /// <summary>
-    /// Proposal id when the guardrail gateway routed the converge deploy to human approval.
-    /// </summary>
     [JsonPropertyName("proposalId")]
     public string? ProposalId { get; init; }
 
-    /// <summary>
-    /// Last-applied serving revision detected for the target (the <c>DesiredRevision</c> of its most
-    /// recent terminal-Succeeded deploy operation), or null when no terminal-Succeeded operation
-    /// exists (unknown → treated as divergent).
-    /// </summary>
     [JsonPropertyName("lastAppliedRevision")]
     public string? LastAppliedRevision { get; init; }
 
-    /// <summary>
-    /// Operator-facing detail for this target's outcome.
-    /// </summary>
     [JsonPropertyName("message")]
     public string? Message { get; init; }
 }
 
-/// <summary>
-/// Request payload for submitting or approving a planned deploy operation.
-/// </summary>
 public sealed class SubmitDeployOperationRequest
 {
     [JsonPropertyName("reason")]
     public string? Reason { get; init; }
 }
 
-/// <summary>
-/// Request payload for manually promoting (forcing the cutover of) a deploy operation that is parked
-/// awaiting promotion.
-/// </summary>
 public sealed class PromoteDeployOperationRequest
 {
     [JsonPropertyName("reason")]
     public string? Reason { get; init; }
 }
 
-/// <summary>
-/// Response payload for deploy planning.
-/// </summary>
 public sealed class DeployPlanResponse
 {
     [JsonPropertyName("target")]
@@ -709,9 +419,6 @@ public sealed class DeployPlanResponse
     public DateTimeOffset GeneratedAt { get; init; }
 }
 
-/// <summary>
-/// Deploy target metadata resolved during planning.
-/// </summary>
 public sealed class DeployPlanTargetResponse
 {
     [JsonPropertyName("targetId")]
@@ -745,9 +452,6 @@ public sealed class DeployPlanTargetResponse
     public IReadOnlyDictionary<string, string> Parameters { get; init; } = new Dictionary<string, string>();
 }
 
-/// <summary>
-/// Response payload for backend capabilities used by deploy planning.
-/// </summary>
 public sealed class DeployBackendCapabilitiesResponse
 {
     [JsonPropertyName("supportsRollback")]
@@ -769,9 +473,6 @@ public sealed class DeployBackendCapabilitiesResponse
     public bool SupportsRevisionPinning { get; init; }
 }
 
-/// <summary>
-/// Response payload for a durable deploy workflow operation.
-/// </summary>
 public sealed class DeployOperationResponse
 {
     [JsonPropertyName("operationId")]
@@ -819,10 +520,6 @@ public sealed class DeployOperationResponse
     [JsonPropertyName("correlationId")]
     public string? CorrelationId { get; init; }
 
-    /// <summary>
-    /// Verified provisioning root from the DevOps handoff. Canonical field; the nested
-    /// metadata-release context carries the same value when this operation is a release.
-    /// </summary>
     [JsonPropertyName("rootProvisioningOperationId")]
     public string? RootProvisioningOperationId { get; init; }
 
@@ -835,19 +532,10 @@ public sealed class DeployOperationResponse
     [JsonPropertyName("completedAt")]
     public DateTimeOffset? CompletedAt { get; init; }
 
-    /// <summary>
-    /// Durable post-activation observation/recovery window (honua-server#4618), present while a
-    /// promoted candidate is being observed, until the window elapses or a triggered recovery finishes.
-    /// </summary>
     [JsonPropertyName("protection")]
     public DeployProtectionResponse? Protection { get; init; }
 }
 
-/// <summary>
-/// Post-activation observation/recovery window state for a promoted deploy operation
-/// (honua-server#4618). Exposes stable, bounded reason codes and revision identity so clients can
-/// present outcome-oriented progress without inspecting provider telemetry or Git state directly.
-/// </summary>
 public sealed class DeployProtectionResponse
 {
     [JsonPropertyName("previousRevision")]
@@ -871,85 +559,51 @@ public sealed class DeployProtectionResponse
     [JsonPropertyName("approvalScope")]
     public string? ApprovalScope { get; init; }
 
-    /// <summary>One of <c>observing</c>, <c>protected</c>, <c>recovering</c>, <c>expired</c>, or <c>unavailable</c>.</summary>
     [JsonPropertyName("phase")]
     public string Phase { get; init; } = string.Empty;
 
     [JsonPropertyName("reasonCode")]
     public string? ReasonCode { get; init; }
 
-    /// <summary>
-    /// Identity of the recovery grant sealed when the candidate was activated (honua-server#4958).
-    /// A fenced rollback quotes this back in <c>grantId</c>.
-    /// </summary>
     [JsonPropertyName("grantId")]
     public string? GrantId { get; init; }
 
-    /// <summary>Principal that requested the protected activation, and the only one the grant authorizes.</summary>
     [JsonPropertyName("actor")]
     public string? Actor { get; init; }
 
-    /// <summary>Tenant binding of <c>actor</c>, or absent on a single-tenant installation.</summary>
     [JsonPropertyName("tenantId")]
     public string? TenantId { get; init; }
 
-    /// <summary>The single compensation this window preauthorizes, for example <c>restore-previous-revision</c>.</summary>
     [JsonPropertyName("permittedCompensation")]
     public string? PermittedCompensation { get; init; }
 }
 
-/// <summary>
-/// Paged, newest-first collection of durable deploy workflow operations.
-/// </summary>
 public sealed class DeployOperationListResponse
 {
-    /// <summary>Durable workflow backend and page coverage evidence.</summary>
     [JsonPropertyName("evidencePosture")]
     public EvidencePosture? EvidencePosture { get; init; }
 
-    /// <summary>
-    /// Operations on this page, ordered newest-first by creation time.
-    /// </summary>
     [JsonPropertyName("items")]
     public IReadOnlyList<DeployOperationResponse> Items { get; init; } = Array.Empty<DeployOperationResponse>();
 
-    /// <summary>
-    /// One-based page number that produced this page.
-    /// </summary>
     [JsonPropertyName("page")]
     public int Page { get; init; }
 
-    /// <summary>
-    /// Effective page size applied when producing this page.
-    /// </summary>
     [JsonPropertyName("pageSize")]
     public int PageSize { get; init; }
 
-    /// <summary>
-    /// Total number of operations matching the filter within the materialized window.
-    /// </summary>
     [JsonPropertyName("totalCount")]
     public int TotalCount { get; init; }
 
-    /// <summary>
-    /// Whether at least one more page exists after this one.
-    /// </summary>
     [JsonPropertyName("hasMore")]
     public bool HasMore { get; init; }
 }
 
-/// <summary>
-/// Metadata release lifecycle context embedded in a workflow operation response.
-/// </summary>
 public sealed class MetadataReleaseContextResponse
 {
     [JsonPropertyName("packageId")]
     public string PackageId { get; init; } = string.Empty;
 
-    /// <summary>
-    /// Verified provisioning root from the DevOps handoff. Matches the top-level
-    /// <c>rootProvisioningOperationId</c> on the operation response.
-    /// </summary>
     [JsonPropertyName("rootProvisioningOperationId")]
     public string? RootProvisioningOperationId { get; init; }
 
@@ -990,9 +644,6 @@ public sealed class MetadataReleaseContextResponse
     public IReadOnlyList<string> Warnings { get; init; } = Array.Empty<string>();
 }
 
-/// <summary>
-/// Rollback plan embedded in a metadata release operation response.
-/// </summary>
 public sealed class MetadataRollbackPlanResponse
 {
     [JsonPropertyName("class")]
@@ -1014,9 +665,6 @@ public sealed class MetadataRollbackPlanResponse
     public string? ApprovalPolicyRef { get; init; }
 }
 
-/// <summary>
-/// Metadata release evidence reference embedded in operation responses.
-/// </summary>
 public sealed class MetadataEvidenceRefResponse
 {
     [JsonPropertyName("kind")]

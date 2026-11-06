@@ -45,7 +45,7 @@ public sealed class GPServerClientCompatibilityTests : IClassFixture<WebAppFixtu
         var service = await client.GetServiceInfoAsync();
         var task = await client.GetTaskInfoAsync("geometry.buffer");
 
-        // Honua does not advertise an ArcGIS Server version (see NoArcGisServerVersionTests).
+        // Honua does not advertise an ArcGIS Server version (see NoGeoServicesServerVersionTests).
         service.HasCurrentVersion.Should().BeFalse();
         service.ExecutionType.Should().Be("esriExecutionTypeAsynchronous");
         service.Tasks.Should().Contain("Honua_67656F6D657472792E627566666572");

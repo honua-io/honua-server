@@ -11,27 +11,11 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Plugins;
 
-/// <summary>
-/// Maps plugin-contributed REST routes (<see cref="ICustomEndpoint"/>, issue #1562). Each registered
-/// custom endpoint is mapped once at startup under the reserved <c>/plugins</c> prefix using the
-/// AOT-safe <c>MapMethods</c> + explicit HTTP-metadata pattern (no runtime route discovery). Routes
-/// are gated, at request time, behind the Enterprise <c>plugin.sdk</c> entitlement and the operator
-/// kill-switch, and pass through the host's authorization metadata when the plugin requests it — a
-/// plugin cannot bypass the shared authorization pipeline.
-/// </summary>
+// A plugin route cannot bypass the shared authorization pipeline.
 public static class PluginCustomEndpoints
 {
-    /// <summary>Reserved route prefix all plugin-contributed endpoints are mounted under.</summary>
     public const string RoutePrefix = "/plugins";
 
-    /// <summary>
-    /// Maps every registered <see cref="ICustomEndpoint"/> under the reserved <c>/plugins</c> prefix.
-    /// A no-op when no plugins contribute endpoints. Safe to call unconditionally in the host
-    /// composition root: the per-request license/kill-switch gate keeps contributed routes inert
-    /// unless the SDK is licensed and enabled.
-    /// </summary>
-    /// <param name="endpoints">The endpoint route builder.</param>
-    /// <returns>The same builder for chaining.</returns>
     public static IEndpointRouteBuilder MapHonuaPluginEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
@@ -192,11 +176,6 @@ public static class PluginCustomEndpoints
         return buffer.ToArray();
     }
 
-    /// <summary>
-    /// Writes a plugin-produced <see cref="PluginEndpointResponse"/> back to the caller. Implemented
-    /// as an <see cref="IResult"/> so the contributed route participates in the standard response
-    /// pipeline (logging, telemetry, exception handling) like every other endpoint.
-    /// </summary>
     private sealed class PluginEndpointResult(PluginEndpointResponse response) : IResult
     {
         public async Task ExecuteAsync(HttpContext httpContext)

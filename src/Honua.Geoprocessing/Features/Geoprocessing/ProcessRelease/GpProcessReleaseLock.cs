@@ -10,85 +10,43 @@ using System.Text.RegularExpressions;
 
 namespace Honua.Geoprocessing.Release;
 
-/// <summary>
-/// The immutable identity of one geoprocessing process release
-/// (<c>honua.gp-process-release-lock/v1</c>, honua-server#6221): the exact source commit,
-/// dependency lock, runtime image, workflow version, configuration references (references,
-/// never values), execution targets, artifact digests and validation receipts that a
-/// deployment may activate. The wire form is the JSON Schema published by honua-release
-/// (<c>schemas/gp-process-release-lock.v1.schema.json</c>); this type is the server-side
-/// reader/writer for exactly that document and nothing more.
-/// </summary>
-/// <remarks>
-/// A release is identified by <see cref="Digest"/>: the SHA-256 of the lock's canonical JSON
-/// (keys sorted ordinally at every level, no whitespace, UTF-8 without ASCII escaping), which is
-/// byte-identical to Python's <c>json.dumps(sort_keys=True, separators=(",", ":"),
-/// ensure_ascii=False)</c> used by <c>tools/gp_process_release.py lock-digest</c>. Formatting of
-/// the file on disk therefore never changes a release's identity.
-/// </remarks>
+// The digest is the SHA-256 of canonical JSON with keys sorted at every level and no whitespace, matching the Python lock tool, so file formatting does not change the identity.
 public sealed record GpProcessReleaseLock
 {
-    /// <summary>The schema identifier every lock carries.</summary>
     public const string SchemaId = "honua.gp-process-release-lock/v1";
 
-    /// <summary>The process identity and contract.</summary>
     public required GpReleaseProcess Process { get; init; }
 
-    /// <summary>The source commit the release was built from.</summary>
     public required GpReleaseSource Source { get; init; }
 
-    /// <summary>The dependency lock file and its digest.</summary>
     public required GpReleaseFileDigest DependencyLock { get; init; }
 
-    /// <summary>The runtime image the process executes in, pinned by digest.</summary>
     public required GpReleaseRuntimeImage RuntimeImage { get; init; }
 
-    /// <summary>The serving-side workflow version the release targets.</summary>
     public required string WorkflowVersion { get; init; }
 
-    /// <summary>Configuration the worker resolves at execution time; references only.</summary>
     public required IReadOnlyList<GpReleaseConfigurationReference> ConfigurationReferences { get; init; }
 
-    /// <summary>Execution targets the release may be activated on.</summary>
     public required IReadOnlyList<GpReleaseTarget> Targets { get; init; }
 
-    /// <summary>Server execution-contract compatibility window.</summary>
     public required GpReleaseCompatibility Compatibility { get; init; }
 
-    /// <summary>Release artifacts (the built process bundle) by name, digest and size.</summary>
     public required IReadOnlyList<GpReleaseArtifact> Artifacts { get; init; }
 
-    /// <summary>Validation receipts that passed before the lock was written.</summary>
     public required IReadOnlyList<GpReleaseValidationReceipt> ValidationReceipts { get; init; }
 
-    /// <summary>UTC instant the lock was generated, <c>yyyy-MM-ddTHH:mm:ssZ</c>.</summary>
     public required string GeneratedAt { get; init; }
 
-    /// <summary>
-    /// The release identity: <c>sha256:&lt;hex&gt;</c> of <see cref="ToCanonicalJson"/>.
-    /// </summary>
     public string Digest => Sha256Of(ToCanonicalJsonBytes());
 
-    /// <summary>The first twelve hex characters of the digest, used for lock file names.</summary>
     public string ShortDigest => Digest.Substring("sha256:".Length, 12);
 
-    /// <summary>Serializes the lock in canonical form (see the type remarks).</summary>
     public string ToCanonicalJson() => Encoding.UTF8.GetString(ToCanonicalJsonBytes());
 
-    /// <summary>Serializes the lock in canonical form as UTF-8 bytes.</summary>
     public byte[] ToCanonicalJsonBytes() => Serialize(indented: false);
 
-    /// <summary>
-    /// Serializes the lock for a file on disk: the same sorted keys, two-space indented so the
-    /// committed file matches the release repository's <c>json.dumps(indent=2, sort_keys=True)</c>
-    /// convention and diffs stay readable. Identity is unaffected by formatting.
-    /// </summary>
     public string ToIndentedJson() => Encoding.UTF8.GetString(Serialize(indented: true)) + "\n";
 
-    /// <summary>Parses a lock document and validates it against the v1 contract.</summary>
-    /// <param name="json">The lock JSON, in any formatting.</param>
-    /// <returns>The parsed lock.</returns>
-    /// <exception cref="GpProcessReleaseLockException">The document is not a valid v1 lock.</exception>
     public static GpProcessReleaseLock Parse(string json)
     {
         ArgumentNullException.ThrowIfNull(json);
@@ -127,10 +85,6 @@ public sealed record GpProcessReleaseLock
         }
     }
 
-    /// <summary>
-    /// Validates every field against the v1 schema's patterns and bounds. An empty list means
-    /// the lock is valid; otherwise each entry names the offending field.
-    /// </summary>
     public IReadOnlyList<string> Validate()
     {
         var errors = new List<string>();
@@ -194,11 +148,9 @@ public sealed record GpProcessReleaseLock
         return errors;
     }
 
-    /// <summary>Formats a UTC instant the way <see cref="GeneratedAt"/> requires.</summary>
     public static string FormatGeneratedAt(DateTimeOffset instant)
         => instant.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
 
-    /// <summary>Computes <c>sha256:&lt;hex&gt;</c> over the given bytes.</summary>
     public static string Sha256Of(ReadOnlySpan<byte> bytes) => "sha256:" + Convert.ToHexStringLower(SHA256.HashData(bytes));
 
     private byte[] Serialize(bool indented)
@@ -603,148 +555,106 @@ public sealed record GpProcessReleaseLock
     }
 }
 
-/// <summary>Process identity inside a release lock.</summary>
 public sealed record GpReleaseProcess
 {
-    /// <summary>Logical process name (<c>^[a-z][a-z0-9-]{1,62}$</c>).</summary>
     public required string Name { get; init; }
 
-    /// <summary>Semantic version of the process.</summary>
     public required string Version { get; init; }
 
-    /// <summary><c>python</c> or <c>dotnet</c>.</summary>
     public required string Runtime { get; init; }
 
-    /// <summary>Runtime entrypoint, e.g. <c>buffer_features:execute</c>.</summary>
     public required string Entrypoint { get; init; }
 
-    /// <summary>Digests of the input and output JSON schemas.</summary>
     public required GpReleaseContract Contract { get; init; }
 }
 
-/// <summary>Input/output contract digests.</summary>
 public sealed record GpReleaseContract
 {
-    /// <summary>Digest of the input schema file.</summary>
     public required string InputSchemaSha256 { get; init; }
 
-    /// <summary>Digest of the output schema file.</summary>
     public required string OutputSchemaSha256 { get; init; }
 }
 
-/// <summary>The source commit of a release.</summary>
 public sealed record GpReleaseSource
 {
-    /// <summary><c>owner/name</c> of the repository holding the process.</summary>
     public required string Repository { get; init; }
 
-    /// <summary>Full 40-hex commit SHA.</summary>
     public required string Sha { get; init; }
 
-    /// <summary>Path of the descriptor inside the repository.</summary>
     public required string DescriptorPath { get; init; }
 }
 
-/// <summary>A file path and its digest.</summary>
 public sealed record GpReleaseFileDigest
 {
-    /// <summary>Repository-relative path.</summary>
     public required string Path { get; init; }
 
-    /// <summary><c>sha256:&lt;hex&gt;</c> of the file bytes.</summary>
     public required string Sha256 { get; init; }
 }
 
-/// <summary>A runtime image pinned by digest.</summary>
 public sealed record GpReleaseRuntimeImage
 {
-    /// <summary><c>registry/repository@sha256:&lt;hex&gt;</c>.</summary>
     public required string Reference { get; init; }
 
-    /// <summary>The digest part of <see cref="Reference"/>.</summary>
     public required string Digest { get; init; }
 }
 
-/// <summary>A configuration reference the worker resolves at execution time.</summary>
 public sealed record GpReleaseConfigurationReference
 {
-    /// <summary>Environment-variable style name.</summary>
     public required string Name { get; init; }
 
-    /// <summary>An <c>aws:secretsmanager:</c>, <c>azure:keyvault:</c> or <c>ref:</c> reference, never a value.</summary>
+    // A configuration entry is a secrets-manager, key-vault, or ref pointer, never the secret value.
     public required string Reference { get; init; }
 }
 
-/// <summary>An execution target a release may be activated on.</summary>
 public sealed record GpReleaseTarget
 {
-    /// <summary><c>kubernetes-job</c> or <c>aws-batch</c>.</summary>
     public required string Kind { get; init; }
 
-    /// <summary>Digest of the worker image this target runs.</summary>
     public required string WorkerImageDigest { get; init; }
 
-    /// <summary>Chart version for Kubernetes targets.</summary>
     public string? ChartVersion { get; init; }
 
-    /// <summary>Job definition name for AWS Batch targets.</summary>
     public string? JobDefinitionName { get; init; }
 }
 
-/// <summary>Server execution-contract compatibility.</summary>
 public sealed record GpReleaseCompatibility
 {
-    /// <summary>The inclusive window of server contract versions the release supports.</summary>
     public required GpReleaseContractWindow ServerContractVersion { get; init; }
 }
 
-/// <summary>An inclusive integer window.</summary>
 public sealed record GpReleaseContractWindow
 {
-    /// <summary>Lowest supported version.</summary>
     public required int Minimum { get; init; }
 
-    /// <summary>Highest supported version.</summary>
     public required int Maximum { get; init; }
 }
 
-/// <summary>A release artifact by name, digest and size.</summary>
 public sealed record GpReleaseArtifact
 {
-    /// <summary>File name of the artifact.</summary>
     public required string Name { get; init; }
 
-    /// <summary><c>sha256:&lt;hex&gt;</c> of the artifact bytes.</summary>
     public required string Sha256 { get; init; }
 
-    /// <summary>Size in bytes.</summary>
     public required long SizeBytes { get; init; }
 }
 
-/// <summary>A validation receipt that passed before the release was locked.</summary>
 public sealed record GpReleaseValidationReceipt
 {
-    /// <summary>Receipt name, e.g. <c>golden-tests.junit.xml</c>.</summary>
     public required string Name { get; init; }
 
-    /// <summary><c>sha256:&lt;hex&gt;</c> of the receipt bytes.</summary>
     public required string Sha256 { get; init; }
 
-    /// <summary>Always <c>pass</c>; a failed receipt never reaches a lock.</summary>
     public required string Status { get; init; }
 }
 
-/// <summary>Raised when a document is not a valid v1 release lock.</summary>
 public sealed class GpProcessReleaseLockException : Exception
 {
-    /// <summary>Creates the exception from the validation findings.</summary>
     public GpProcessReleaseLockException(IReadOnlyList<string> errors)
         : base("Invalid GP process release lock: " + string.Join("; ", errors))
     {
         Errors = errors;
     }
 
-    /// <summary>Every finding, one per offending field.</summary>
     public IReadOnlyList<string> Errors { get; }
 }
 

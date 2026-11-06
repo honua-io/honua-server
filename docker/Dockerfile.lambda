@@ -4,8 +4,12 @@
 # Pin manifest digests to avoid intermittent MCR tag resolution failures in GitHub Actions buildx
 # and to keep Trivy scans deterministic. Refresh cadence + remediation rationale:
 # docs/internal/security/code-scanning-2026-Q2-remediation.md.
-ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa
-ARG LAMBDA_RUNTIME_IMAGE=public.ecr.aws/lambda/provided:al2023@sha256:9b3ad8941296d16bffb52819b30ccc4c9b54db5fafac6f93737e034ba007c618
+ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:de4fe90a98845d75910b9769662465c84de1a934665c431279d1382b2bddc02b
+ARG LAMBDA_RUNTIME_IMAGE=public.ecr.aws/lambda/provided:al2023@sha256:612c98f126c2a95e77a016d56fed50a83055e11d636132ee6ebdd461f01b9617
+# CI may point this at the GHCR mirror of the same digest (see deploy-platform-images.yml).
+ARG LAMBDA_ADAPTER_IMAGE=public.ecr.aws/awsguru/aws-lambda-adapter:0.9.1@sha256:46d6625e68cbbdd2efab4a20245977664513f13ffef47915b000d431adcea0b4
+
+FROM ${LAMBDA_ADAPTER_IMAGE} AS lambda-adapter
 
 FROM ${DOTNET_SDK_IMAGE} AS build
 WORKDIR /src
@@ -80,6 +84,9 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
 COPY . .
 
 ARG CONFIGURATION=Release
+# Empty VERSION preserves Directory.Build.props for local container builds.
+ARG VERSION=
+ARG HONUA_GIT_SHA=
 # A remote BuildKit layer can preserve project.assets.json without the mutable
 # NuGet cache mount. Force the exact JIT graph back into that mount in this
 # source layer before the no-restore publish consumes it.
@@ -99,6 +106,9 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
       -p:PublishAot=false \
       -p:SelfContained=true && \
     dotnet publish src/Honua.Server/Honua.Server.csproj \
+      ${VERSION:+-p:Version="$VERSION"} \
+      ${VERSION:+-p:InformationalVersion="$VERSION$(if [ -n "$HONUA_GIT_SHA" ]; then printf '+%.7s' "$HONUA_GIT_SHA"; fi)"} \
+      ${VERSION:+-p:IncludeSourceRevisionInInformationalVersion=false} \
       --configuration "$CONFIGURATION" \
       --runtime "$RUNTIME_ID" \
       --no-restore \
@@ -117,10 +127,12 @@ FROM ${LAMBDA_RUNTIME_IMAGE} AS runtime
 # Immutable deployment identity (#3038). Keep the SHA in the runtime stage so revision-only
 # changes do not invalidate publish layers; the pushed image digest is injected by deployment.
 ARG HONUA_GIT_SHA=
+ARG VERSION=
+LABEL org.opencontainers.image.version="${VERSION}"
 LABEL org.opencontainers.image.revision="${HONUA_GIT_SHA}"
 ENV HONUA_GIT_SHA=${HONUA_GIT_SHA}
 
-COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:0.9.1@sha256:46d6625e68cbbdd2efab4a20245977664513f13ffef47915b000d431adcea0b4 /lambda-adapter /opt/extensions/lambda-adapter
+COPY --from=lambda-adapter /lambda-adapter /opt/extensions/lambda-adapter
 
 WORKDIR /var/task
 COPY --from=build /app /var/task
@@ -158,3 +170,13 @@ LABEL honua.runtime.profile="web-debug" \
 EXPOSE 8080
 
 CMD ["Honua.Server"]
+
+# `docker build --target local-emulation` keeps the base emulator for local
+# `docker run` when AWS_LAMBDA_RUNTIME_API is unset. The last stage is what CI publishes.
+FROM runtime AS local-emulation
+
+FROM runtime
+# CVE-2026-111943: the current public al2023 index is still Go 1.26.9
+# (fixed in 1.26.10 / 1.27.3). Production sets AWS_LAMBDA_RUNTIME_API and the
+# entrypoint execs /var/runtime/bootstrap, so this stage removes the emulator.
+RUN rm -f /usr/local/bin/aws-lambda-rie

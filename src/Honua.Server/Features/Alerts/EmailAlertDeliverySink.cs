@@ -130,12 +130,6 @@ internal sealed partial class EmailAlertDeliverySink : IAlertDeliverySink
         }
     }
 
-    /// <summary>
-    /// Builds the email subject, body, and rule header for an alert event. Ops
-    /// notifications render their human-readable title/body/attributes; the rule
-    /// header is omitted (they are not linked to an alert rule). GIS alerts keep the
-    /// existing subject/body/rule-header formatting.
-    /// </summary>
     internal static EmailAlertContent BuildContent(AlertEventEnvelope alertEvent)
     {
         if (OpsNotificationPresentation.TryResolve(alertEvent) is { } ops)
@@ -159,10 +153,6 @@ internal sealed partial class EmailAlertDeliverySink : IAlertDeliverySink
             RuleHeader: alertEvent.RuleId.ToString(CultureInfo.InvariantCulture));
     }
 
-    /// <summary>Rendered email content for an alert event.</summary>
-    /// <param name="Subject">Email subject line.</param>
-    /// <param name="Body">Plain-text email body.</param>
-    /// <param name="RuleHeader">Value for the <c>X-Honua-Alert-Rule</c> header, or null to omit it (ops events).</param>
     internal readonly record struct EmailAlertContent(string Subject, string Body, string? RuleHeader);
 
     [LoggerMessage(EventId = 9441, Level = LogLevel.Warning, Message = "Email alert delivery failed for event {DedupeKey}.")]

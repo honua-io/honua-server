@@ -5,9 +5,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Protocols.Ogc.Classic;
 
-/// <summary>
-/// Source-generated log messages for classic OGC web service operations.
-/// </summary>
 internal static partial class OgcClassicLog
 {
     [LoggerMessage(

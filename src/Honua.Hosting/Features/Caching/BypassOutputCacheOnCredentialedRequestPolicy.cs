@@ -1,66 +1,23 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Authentication.ClientCertificates;
 using Microsoft.AspNetCore.OutputCaching;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using Microsoft.Net.Http.Headers;
 
 namespace Honua.Infrastructure.Caching;
 
-/// <summary>
-/// Output cache policy that keeps a request out of the shared output cache — no
-/// stored entry is served to it and its response is not stored — when it
-/// carries any credential the application defines.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The shared output cache keys on the request URL plus the base policy's
-/// vary-by values (tenant, license fingerprint). A response that depends on a
-/// credential presented in a header or query parameter is therefore not a
-/// function of its cache key, and a request that presents one must reach its
-/// handler so the handler's own credential, origin, rate and revocation checks
-/// run.
-/// </para>
-/// <para>
-/// <see cref="AnonymousOnlyOutputCachePolicy"/> covers credentials that
-/// materialise as an authenticated <see cref="HttpContext.User"/>. This policy
-/// covers credential families the application validates inside the endpoint
-/// handler (embed keys, portal tokens, scene access tokens), which never reach
-/// the authentication pipeline.
-/// </para>
-/// <para>
-/// This policy is composed into the base policy, and the middleware runs the
-/// endpoint's own policy <em>after</em> the base policies. A named policy (or
-/// <c>CacheOutput()</c>) starts with the framework default, which re-enables
-/// lookup and storage during <see cref="CacheRequestAsync"/>, and a policy
-/// cannot veto a lookup once the middleware has fetched an entry. The policy
-/// therefore enforces its decision in two ways that survive that ordering:
-/// </para>
-/// <list type="bullet">
-///   <item><description>
-///   Lookup: it adds a per-request vary-by value, so the cache key of a
-///   credentialed request never matches a stored entry.
-///   </description></item>
-///   <item><description>
-///   Storage: it clears <see cref="OutputCacheContext.AllowCacheStorage"/> in
-///   <see cref="ServeResponseAsync"/>, which the framework default never sets
-///   back.
-///   </description></item>
-/// </list>
-/// </remarks>
+// A credentialed request must miss the shared output cache because the cache key omits header and query credentials, and a later policy cannot veto a lookup once an entry was fetched.
 internal sealed class BypassOutputCacheOnCredentialedRequestPolicy : IOutputCachePolicy
 {
-    /// <summary>
-    /// Vary-by key that partitions credentialed requests away from stored entries.
-    /// </summary>
     internal const string CredentialedRequestVaryKey = "honua-credentialed-request";
 
-    /// <summary>
-    /// Request headers that carry a caller credential. <c>Authorization</c> and
-    /// <c>X-API-Key</c> normally produce an authenticated principal, but they are
-    /// listed here too so the decision does not depend on an authentication
-    /// handler having run for the matched route.
-    /// </summary>
+    // Authorization and X-API-Key count as credentials even when no authentication handler ran for the route.
     private static readonly string[] CredentialHeaders =
     [
         HeaderNames.Authorization,
@@ -70,15 +27,19 @@ internal sealed class BypassOutputCacheOnCredentialedRequestPolicy : IOutputCach
         "X-Honua-Token",
     ];
 
-    /// <summary>
-    /// Query parameters that carry a caller credential: the ArcGIS-compatible
-    /// portal/scene <c>token</c> and the embed governance <c>key</c>.
-    /// </summary>
     private static readonly string[] CredentialQueryParameters =
     [
         "token",
         "key",
     ];
+
+    private static readonly string[] CredentialCookies =
+    [
+        AdminAuthSessionStore.AuthSessionCookieName,
+        AdminAuthSessionStore.PendingSessionCookieName,
+    ];
+
+    private const string DefaultForwardedClientCertHeader = "X-Forwarded-Client-Cert";
 
     public ValueTask CacheRequestAsync(OutputCacheContext context, CancellationToken cancellationToken)
     {
@@ -110,13 +71,6 @@ internal sealed class BypassOutputCacheOnCredentialedRequestPolicy : IOutputCach
         return ValueTask.CompletedTask;
     }
 
-    /// <summary>
-    /// Reports whether the request presents any application-defined credential.
-    /// Single source of truth for the credential surfaces the shared output
-    /// cache must not key on.
-    /// </summary>
-    /// <param name="context">The request context.</param>
-    /// <returns><see langword="true"/> when a credential is present.</returns>
     internal static bool CarriesCredential(HttpContext context)
     {
         var request = context.Request;
@@ -137,6 +91,82 @@ internal sealed class BypassOutputCacheOnCredentialedRequestPolicy : IOutputCach
             }
         }
 
+        foreach (var cookieName in CredentialCookies)
+        {
+            if (!string.IsNullOrEmpty(request.Cookies[cookieName]))
+            {
+                return true;
+            }
+        }
+
+        if (context.Connection.ClientCertificate is not null)
+        {
+            return true;
+        }
+
+        if (HasForwardedClientCertificate(context))
+        {
+            return true;
+        }
+
         return false;
+    }
+
+    private static bool HasForwardedClientCertificate(HttpContext context)
+    {
+        if (!StringValues.IsNullOrEmpty(context.Request.Headers[DefaultForwardedClientCertHeader]))
+        {
+            return true;
+        }
+
+        var configured = ResolveForwardedClientCertHeader(context);
+        if (configured is null ||
+            string.Equals(configured, DefaultForwardedClientCertHeader, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return !StringValues.IsNullOrEmpty(context.Request.Headers[configured]);
+    }
+
+    private static string? ResolveForwardedClientCertHeader(HttpContext context)
+    {
+        if (!TryGetRequestServices(context, out var services))
+        {
+            return null;
+        }
+
+        var monitored = services.GetService<IOptionsMonitor<ClientCertificateAuthenticationOptions>>()
+            ?.CurrentValue.ForwardedCertificate?.HeaderName;
+        if (!string.IsNullOrWhiteSpace(monitored))
+        {
+            return monitored;
+        }
+
+        var configured = services.GetService<IOptions<ClientCertificateAuthenticationOptions>>()
+            ?.Value.ForwardedCertificate?.HeaderName;
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            return configured;
+        }
+
+        var configuration = services.GetService<IConfiguration>();
+        var fromConfig = configuration?[$"{ClientCertificateAuthenticationOptions.SectionName}:ForwardedCertificate:HeaderName"];
+        return string.IsNullOrWhiteSpace(fromConfig) ? null : fromConfig;
+    }
+
+    private static bool TryGetRequestServices(HttpContext context, out IServiceProvider services)
+    {
+        try
+        {
+            services = context.RequestServices;
+        }
+        catch (InvalidOperationException)
+        {
+            services = null!;
+            return false;
+        }
+
+        return services is not null;
     }
 }

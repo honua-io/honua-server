@@ -107,7 +107,7 @@ Use the capability manifest when Console, MCP, QGIS plugins, native hosts, or SD
 > API under `/api/v1/analysis/**` and is not yet part of this snapshot.
 >
 > **Migration scanner note**: `POST /api/v1/admin/import/scan` returns the inventory artifact itself, not the usual admin envelope, and a `200` response can still carry `scanCompleteness.status = "failed"`.
-> Request aliases normalize `sourceKind` to `geoserver-rest` or `arcgis-geoservices-rest`, and dependency addresses plus secret-like metadata are sanitized for planning-safe export.
+> Request aliases normalize `sourceKind` to `geoserver-rest` or `geoservices-rest` (the legacy `arcgis-geoservices-rest` is still accepted), and dependency addresses plus secret-like metadata are sanitized for planning-safe export.
 > Stable IDs cross-link `resources[*].styleIds`, `styles[*].resourceIds`, and `externalDependencies[*].resourceId` so review tooling can traverse the artifact without guessing by display name.
 >
 > **Control-plane direction**: this API is intended to back a Honua-managed control plane. Honua is not positioning Flux or Argo CD as the primary rollout controller.
@@ -155,9 +155,9 @@ Studio route without updating the document fails the OpenAPI drift gate.
 
 ## GeoServices REST Services
 
-**Protocol**: Esri-compatible REST API
+**Protocol**: GeoServices REST
 **Base URL**: `/rest/services`
-**Compatibility**: Esri-compatible subset (see coverage matrices for exact operation support)
+**Coverage**: GeoServices REST subset (see coverage matrices for exact operation support)
 
 > **Note**: FeatureServer, MapServer, and ImageServer endpoints follow Esri REST conventions and provide service-specific self-describing metadata. Geometry Service currently exposes operation endpoints only; Honua does not implement the root GeometryServer metadata resource.
 >

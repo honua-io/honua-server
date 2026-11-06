@@ -77,10 +77,10 @@ internal static class ProviderSmokeHostConfiguration
             ["Observability:OpsHealthRollup:Enabled"] = "false",
             // No secondary-provider connections are configured for these standalone
             // fixtures; keep the always-registered secondary providers (SqlServer/
-            // ArcGisRest/Oracle) dormant rather than erroring on missing config
+            // GeoServicesRest/Oracle) dormant rather than erroring on missing config
             // (honua-server "secondary-provider-dormant-startup" contract).
             ["SqlServer:Enabled"] = "false",
-            ["ArcGisRest:Enabled"] = "false",
+            ["GeoServicesRest:Enabled"] = "false",
             ["Oracle:Enabled"] = "false",
         };
 

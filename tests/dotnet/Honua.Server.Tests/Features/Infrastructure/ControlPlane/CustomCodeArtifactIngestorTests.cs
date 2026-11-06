@@ -112,11 +112,20 @@ public sealed class CustomCodeArtifactIngestorTests(RedisFixture fixture)
         await using var redis = await ConnectionMultiplexer.ConnectAsync(fixture.ConnectionString);
         var logs = new RedisExecutionLogStore(redis, NullLogger<RedisExecutionLogStore>.Instance);
         var bytes = Encoding.UTF8.GetBytes("""
-            {"v":1,"kind":"phase","seq":0,"attempt":"untrusted","phase":"execute"}
-            {"v":1,"kind":"failure","seq":1,"attempt":"untrusted","error":{"type":"ToolError","message":"LONG_FAILURE"}}
-            {"v":1,"kind":"terminal","seq":2,"attempt":"untrusted","status":"failed","exitCode":1}
+            {"v":1,"kind":"phase","seq":0,"attempt":"untrusted","correlation":"forged-corr","trace":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","phase":"execute"}
+            {"v":1,"kind":"failure","seq":1,"attempt":"untrusted","correlation":"forged-corr","error":{"type":"ToolError","message":"LONG_FAILURE"}}
+            {"v":1,"kind":"terminal","seq":2,"attempt":"untrusted","correlation":"forged-corr","status":"failed","exitCode":1}
             """.Replace("LONG_FAILURE", new string('x', 10000), StringComparison.Ordinal));
-        var job = AwsBatchComputeBackendTests.CreateJob() with { AttemptCount = 3 };
+        const string traceId = "4bf92f3577b34da6a3ce929d0e0e4736";
+        var job = AwsBatchComputeBackendTests.CreateJob() with
+        {
+            AttemptCount = 3,
+            Audit = new OperationAuditInfo
+            {
+                CorrelationId = "corr-admitted",
+                TraceParent = "00-" + traceId + "-00f067aa0ba902b7-01"
+            }
+        };
         var artifact = new CustomCodeArtifactDescriptor
         {
             JobId = job.OperationId,
@@ -145,7 +154,14 @@ public sealed class CustomCodeArtifactIngestorTests(RedisFixture fixture)
             await ingestor.IngestAsync(job, artifact, CancellationToken.None);
             var tail = await logs.TailAsync(job.OperationId, 10);
             tail.TotalCount.Should().Be(3);
-            tail.Items.Should().OnlyContain(entry => entry.Metadata![HarnessEvents.AttemptKey] == "3");
+            tail.Items.Should().OnlyContain(entry =>
+                entry.Metadata![HarnessEvents.AttemptKey] == "3"
+                && entry.Metadata[JobEventIdentity.JobMetadataKey] == job.OperationId
+                && entry.Metadata[JobEventIdentity.CorrelationMetadataKey] == "corr-admitted"
+                && entry.Metadata[JobEventIdentity.TraceMetadataKey] == traceId);
+            tail.Items.Should().NotContain(entry =>
+                entry.Metadata!.Values.Contains("forged-corr") || entry.Metadata.Values.Contains("untrusted")
+                || entry.Metadata.Values.Contains("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
             tail.Items[1].Metadata![HarnessEvents.KindKey].Should().Be("failure");
             tail.Items[1].Metadata!["honua.log.truncated"].Should().Be("true");
             tail.Items[^1].Metadata![HarnessEvents.KindKey].Should().Be("terminal");

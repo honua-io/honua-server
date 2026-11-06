@@ -7,10 +7,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Compression;
 
-/// <summary>
-/// PERFORMANCE FIX: Adaptive compression provider that adjusts compression level based on content size
-/// Small responses use Fastest for low latency, large responses use Optimal for better compression ratios
-/// </summary>
 internal sealed class AdaptiveBrotliCompressionProvider : ICompressionProvider
 {
     private readonly AdaptiveCompressionOptions _options;
@@ -30,9 +26,6 @@ internal sealed class AdaptiveBrotliCompressionProvider : ICompressionProvider
     }
 }
 
-/// <summary>
-/// PERFORMANCE FIX: Adaptive Gzip compression provider for fallback scenarios
-/// </summary>
 internal sealed class AdaptiveGzipCompressionProvider : ICompressionProvider
 {
     private readonly AdaptiveCompressionOptions _options;
@@ -52,9 +45,6 @@ internal sealed class AdaptiveGzipCompressionProvider : ICompressionProvider
     }
 }
 
-/// <summary>
-/// PERFORMANCE FIX: Configuration options for adaptive compression
-/// </summary>
 public sealed class AdaptiveCompressionOptions
 {
     public int FastCompressionThreshold { get; set; } = 4096; // 4KB - use Fastest for small responses
@@ -82,9 +72,6 @@ internal static class AdaptiveCompressionLevelSelector
     }
 }
 
-/// <summary>
-/// PERFORMANCE FIX: Adaptive Brotli stream that chooses compression level based on content size
-/// </summary>
 internal sealed class AdaptiveBrotliStream : Stream
 {
     private readonly Stream _outputStream;
@@ -257,9 +244,6 @@ internal sealed class AdaptiveBrotliStream : Stream
     public override void SetLength(long value) => throw new NotSupportedException();
 }
 
-/// <summary>
-/// PERFORMANCE FIX: Adaptive Gzip stream implementation
-/// </summary>
 internal sealed class AdaptiveGzipStream : Stream
 {
     private readonly Stream _outputStream;

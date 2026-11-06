@@ -1,9 +1,27 @@
 name: Validated examples (advisory)
+# A dispatch with candidate_image runs the examples against that exact published image (no build);
+# the run title and each job's evidence artifact record it.
+run-name: >-
+  ${{ inputs.candidate_image && format('Validated examples (advisory) on {0}', inputs.candidate_image)
+  || 'Validated examples (advisory)' }}
 
 on:
   schedule:
     - cron: "37 10 * * *"
   workflow_dispatch:
+    inputs:
+      candidate_image:
+        description: >-
+          Digest-pinned server image to run instead of a source build,
+          e.g. ghcr.io/honua-io/honua-server@sha256:<64 hex>. Empty builds the checked-out source.
+        required: false
+        default: ""
+        type: string
+      python_sdk_version:
+        description: Exact honua-sdk (PyPI) version the gp-local-dev example installs.
+        required: false
+        default: "0.1.19"
+        type: string
 
 permissions:
   contents: read
@@ -18,26 +36,90 @@ jobs:
       fail-fast: false
       matrix:
         scenario: [stac-ops, mobile-offline, gp-local-dev]
+    env:
+      SCENARIO: ${{ matrix.scenario }}
+      CANDIDATE_IMAGE_INPUT: ${{ inputs.candidate_image || '' }}
+      # The rc.2 release manifest certifies honua-sdk 0.1.19; the schedule uses the same pin.
+      PYTHON_SDK_VERSION: ${{ inputs.python_sdk_version || '0.1.19' }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Verify inventory completeness
         run: python3 scripts/examples/generate-manifest.py --check
+      - name: Select candidate image
+        run: |
+          if [[ -z "${CANDIDATE_IMAGE_INPUT}" ]]; then
+            echo "No candidate_image: building the checked-out source."
+            exit 0
+          fi
+          if [[ ! "${CANDIDATE_IMAGE_INPUT}" =~ ^ghcr\.io/honua-io/honua-server(:[A-Za-z0-9._-]+)?@sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::candidate_image must be ghcr.io/honua-io/honua-server[:tag]@sha256:<64 hex>"
+            exit 2
+          fi
+          echo "HONUA_EXAMPLES_CANDIDATE_IMAGE=${CANDIDATE_IMAGE_INPUT}" >> "$GITHUB_ENV"
+      - name: Install the example's Python SDK
+        if: matrix.scenario == 'gp-local-dev'
+        run: |
+          # Same steps as the GP quickstart: a virtual environment with honua-sdk from PyPI.
+          if [[ ! "${PYTHON_SDK_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::python_sdk_version must be an exact version such as 0.1.19"
+            exit 2
+          fi
+          python3 -m venv "${RUNNER_TEMP}/gp-sdk"
+          "${RUNNER_TEMP}/gp-sdk/bin/python" -m pip install --disable-pip-version-check "honua-sdk==${PYTHON_SDK_VERSION}"
+          echo "PYTHON=${RUNNER_TEMP}/gp-sdk/bin/python" >> "$GITHUB_ENV"
       - name: Execute shipped example against local candidate
+        id: execute
         env:
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -o pipefail
-          bash scripts/examples/validate-customer-paths.sh "${{ matrix.scenario }}" 2>&1 \
-            | tee validated-examples-${{ matrix.scenario }}.txt
+          bash scripts/examples/validate-customer-paths.sh "${SCENARIO}" 2>&1 \
+            | tee "validated-examples-${SCENARIO}.txt"
+      - name: Record candidate evidence
+        if: always()
+        run: |
+          # What actually ran: the pulled candidate's repo digests, and whether any local
+          # server image was built (a candidate run must not build one).
+          built=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^honua-server:' || true)
+          repo_digests='[]'
+          if [[ -n "${HONUA_EXAMPLES_CANDIDATE_IMAGE:-}" ]]; then
+            repo_digests=$(docker image inspect --format '{{json .RepoDigests}}' "${HONUA_EXAMPLES_CANDIDATE_IMAGE}" 2>/dev/null || echo '[]')
+          fi
+          sdk_version=""
+          if [[ -n "${PYTHON:-}" ]]; then
+            sdk_version=$("${PYTHON}" -c 'import importlib.metadata as m; print(m.version("honua-sdk"))' 2>/dev/null || true)
+          fi
+          jq -n \
+            --arg scenario "${SCENARIO}" \
+            --arg sourceSha "${GITHUB_SHA}" \
+            --arg runId "${GITHUB_RUN_ID}" \
+            --arg runAttempt "${GITHUB_RUN_ATTEMPT}" \
+            --arg event "${GITHUB_EVENT_NAME}" \
+            --arg candidateImage "${HONUA_EXAMPLES_CANDIDATE_IMAGE:-}" \
+            --argjson candidateRepoDigests "${repo_digests}" \
+            --arg locallyBuiltServerImages "${built}" \
+            --arg pythonSdkVersion "${sdk_version}" \
+            --arg outcome "${{ steps.execute.outcome || job.status }}" \
+            '{schema: "honua.validated-examples-evidence/v1", scenario: $scenario, sourceSha: $sourceSha,
+              runId: $runId, runAttempt: $runAttempt, event: $event,
+              candidateImage: (if $candidateImage == "" then null else $candidateImage end),
+              candidateRepoDigests: $candidateRepoDigests,
+              locallyBuiltServerImages: ($locallyBuiltServerImages | split("\n") | map(select(. != ""))),
+              pythonSdkVersion: (if $pythonSdkVersion == "" then null else $pythonSdkVersion end),
+              jobStatus: $outcome}' \
+            > "validated-examples-${SCENARIO}.json"
+          cat "validated-examples-${SCENARIO}.json"
       - name: Capture Compose evidence
         if: always()
         run: |
-          docker ps -a >> validated-examples-${{ matrix.scenario }}.txt
-          docker compose ls >> validated-examples-${{ matrix.scenario }}.txt
-      - uses: actions/upload-artifact@v7
+          docker ps -a >> "validated-examples-${SCENARIO}.txt"
+          docker compose ls >> "validated-examples-${SCENARIO}.txt"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: validated-examples-${{ matrix.scenario }}
-          path: validated-examples-${{ matrix.scenario }}.txt
+          path: |
+            validated-examples-${{ matrix.scenario }}.txt
+            validated-examples-${{ matrix.scenario }}.json
           retention-days: 14

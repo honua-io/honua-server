@@ -3,11 +3,6 @@
 
 namespace Honua.Infrastructure.Security;
 
-/// <summary>
-/// Builds Content Security Policy (CSP) headers tailored for geospatial API servers.
-/// Provides methods to create security policies that protect against XSS and injection attacks
-/// while allowing necessary resources for geospatial data visualization and processing.
-/// </summary>
 internal sealed class ContentSecurityPolicyBuilder
 {
     private static readonly string[] _defaultTileServers =
@@ -31,21 +26,12 @@ internal sealed class ContentSecurityPolicyBuilder
     private readonly Dictionary<string, HashSet<string>> _directives = new();
     private readonly bool _isDevelopment;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="ContentSecurityPolicyBuilder"/> class.
-    /// </summary>
-    /// <param name="isDevelopment">Whether the application is running in development mode</param>
     public ContentSecurityPolicyBuilder(bool isDevelopment = false)
     {
         _isDevelopment = isDevelopment;
         InitializeDefaults();
     }
 
-    /// <summary>
-    /// Creates a CSP policy optimized for geospatial API servers.
-    /// This policy is restrictive but allows necessary resources for map rendering and data visualization.
-    /// </summary>
-    /// <returns>A new builder instance with geospatial API defaults</returns>
     public static ContentSecurityPolicyBuilder ForGeospatialApi(bool isDevelopment = false)
     {
         var builder = new ContentSecurityPolicyBuilder(isDevelopment);
@@ -108,11 +94,6 @@ internal sealed class ContentSecurityPolicyBuilder
         return builder;
     }
 
-    /// <summary>
-    /// Creates a CSP policy for API-only servers with no browser UI components.
-    /// This is the most restrictive policy suitable for pure REST APIs.
-    /// </summary>
-    /// <returns>A new builder instance with API-only defaults</returns>
     public static ContentSecurityPolicyBuilder ForApiOnly()
     {
         var builder = new ContentSecurityPolicyBuilder();
@@ -139,12 +120,6 @@ internal sealed class ContentSecurityPolicyBuilder
         return builder;
     }
 
-    /// <summary>
-    /// Allows trusted tile servers for map rendering.
-    /// Common geospatial tile servers that are generally safe to include.
-    /// </summary>
-    /// <param name="additionalServers">Additional tile server URLs to allow</param>
-    /// <returns>The builder instance for method chaining</returns>
     public ContentSecurityPolicyBuilder AllowTileServers(params string[] additionalServers)
     {
         var tileServers = _defaultTileServers.Concat(additionalServers);
@@ -158,11 +133,6 @@ internal sealed class ContentSecurityPolicyBuilder
         return this;
     }
 
-    /// <summary>
-    /// Allows Content Delivery Networks commonly used for mapping libraries.
-    /// </summary>
-    /// <param name="additionalCdns">Additional CDN URLs to allow</param>
-    /// <returns>The builder instance for method chaining</returns>
     public ContentSecurityPolicyBuilder AllowMappingCdns(params string[] additionalCdns)
     {
         var cdns = _defaultMappingCdns.Concat(additionalCdns);
@@ -177,11 +147,6 @@ internal sealed class ContentSecurityPolicyBuilder
         return this;
     }
 
-    /// <summary>
-    /// Allows WebSocket connections for real-time geospatial data.
-    /// </summary>
-    /// <param name="websocketUrls">WebSocket URLs to allow</param>
-    /// <returns>The builder instance for method chaining</returns>
     public ContentSecurityPolicyBuilder AllowWebSockets(params string[] websocketUrls)
     {
         foreach (var url in websocketUrls)
@@ -192,11 +157,6 @@ internal sealed class ContentSecurityPolicyBuilder
         return this;
     }
 
-    /// <summary>
-    /// Allows specific domains for CORS-enabled geospatial APIs.
-    /// </summary>
-    /// <param name="apiDomains">API domain URLs to allow</param>
-    /// <returns>The builder instance for method chaining</returns>
     public ContentSecurityPolicyBuilder AllowGeospatialApis(params string[] apiDomains)
     {
         foreach (var domain in apiDomains)
@@ -207,12 +167,6 @@ internal sealed class ContentSecurityPolicyBuilder
         return this;
     }
 
-    /// <summary>
-    /// Allows inline styles with specific hashes for map libraries that require them.
-    /// This is safer than 'unsafe-inline' as it only allows specific inline styles.
-    /// </summary>
-    /// <param name="styleHashes">SHA256 hashes of allowed inline styles</param>
-    /// <returns>The builder instance for method chaining</returns>
     public ContentSecurityPolicyBuilder AllowInlineStyleHashes(params string[] styleHashes)
     {
         foreach (var hash in styleHashes)
@@ -224,12 +178,6 @@ internal sealed class ContentSecurityPolicyBuilder
         return this;
     }
 
-    /// <summary>
-    /// Allows inline scripts with specific hashes for essential functionality.
-    /// This is much safer than 'unsafe-inline' as it only allows specific scripts.
-    /// </summary>
-    /// <param name="scriptHashes">SHA256 hashes of allowed inline scripts</param>
-    /// <returns>The builder instance for method chaining</returns>
     public ContentSecurityPolicyBuilder AllowInlineScriptHashes(params string[] scriptHashes)
     {
         foreach (var hash in scriptHashes)
@@ -241,12 +189,6 @@ internal sealed class ContentSecurityPolicyBuilder
         return this;
     }
 
-    /// <summary>
-    /// Adds a directive with one or more values to the CSP policy.
-    /// </summary>
-    /// <param name="directive">The CSP directive name (e.g., "script-src")</param>
-    /// <param name="values">The values for this directive</param>
-    /// <returns>The builder instance for method chaining</returns>
     public ContentSecurityPolicyBuilder AddDirective(string directive, params string[] values)
     {
         if (!_directives.TryGetValue(directive, out var directiveValues))
@@ -263,23 +205,12 @@ internal sealed class ContentSecurityPolicyBuilder
         return this;
     }
 
-    /// <summary>
-    /// Removes a directive from the CSP policy.
-    /// </summary>
-    /// <param name="directive">The directive to remove</param>
-    /// <returns>The builder instance for method chaining</returns>
     public ContentSecurityPolicyBuilder RemoveDirective(string directive)
     {
         _directives.Remove(directive);
         return this;
     }
 
-    /// <summary>
-    /// Removes specific values from a directive.
-    /// </summary>
-    /// <param name="directive">The directive to modify</param>
-    /// <param name="values">The values to remove</param>
-    /// <returns>The builder instance for method chaining</returns>
     public ContentSecurityPolicyBuilder RemoveFromDirective(string directive, params string[] values)
     {
         if (_directives.TryGetValue(directive, out var directiveValues))
@@ -293,10 +224,6 @@ internal sealed class ContentSecurityPolicyBuilder
         return this;
     }
 
-    /// <summary>
-    /// Builds the final CSP header value.
-    /// </summary>
-    /// <returns>The complete CSP policy string</returns>
     public string Build()
     {
         var policy = string.Join("; ", _directives
@@ -306,10 +233,6 @@ internal sealed class ContentSecurityPolicyBuilder
         return policy;
     }
 
-    /// <summary>
-    /// Validates the current CSP policy for common security issues.
-    /// </summary>
-    /// <returns>A list of validation warnings</returns>
     public IReadOnlyList<string> Validate()
     {
         var warnings = new List<string>();
@@ -354,9 +277,6 @@ internal sealed class ContentSecurityPolicyBuilder
         return warnings.AsReadOnly();
     }
 
-    /// <summary>
-    /// Initializes default CSP directives for a basic secure configuration.
-    /// </summary>
     private void InitializeDefaults()
     {
         AddDirective("default-src", "'self'");

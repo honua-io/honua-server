@@ -5,6 +5,7 @@ using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Hosting;
 using StackExchange.Redis;
 
@@ -21,11 +22,26 @@ internal interface IAdminApiKeyStore
         string? createdBy,
         CancellationToken cancellationToken);
 
+    // Restrictions are stored in the same write as the key so it never exists unrestricted; null or empty lists leave it unrestricted.
+    Task<AdminApiKeyCreateResult> CreateAsync(
+        string name,
+        IReadOnlyList<string> permissions,
+        DateTimeOffset? expiresAt,
+        string? createdBy,
+        AdminApiKeyRestrictions? restrictions,
+        CancellationToken cancellationToken);
+
     Task<AdminApiKeyRecord?> GetAsync(Guid id, CancellationToken cancellationToken);
 
     Task<AdminApiKeyCreateResult?> RotateAsync(Guid id, CancellationToken cancellationToken);
 
     Task<AdminApiKeyRecord?> RevokeAsync(Guid id, CancellationToken cancellationToken);
+
+    // An approved-operation credential is not a managed key, so a restriction update returns null and leaves its material unchanged.
+    Task<AdminApiKeyRecord?> UpdateRestrictionsAsync(
+        Guid id,
+        AdminApiKeyRestrictions restrictions,
+        CancellationToken cancellationToken);
 
     Task<AdminApiKeyValidationResult?> ValidateAsync(string keyMaterial, CancellationToken cancellationToken);
 }
@@ -42,7 +58,20 @@ internal sealed record AdminApiKeyRecord(
     DateTimeOffset? LastUsedAt,
     DateTimeOffset? RotatedAt,
     DateTimeOffset? RevokedAt,
-    string? CreatedBy);
+    string? CreatedBy,
+    // Optional request restrictions (null = unrestricted). Omitted from JSON when null so a
+    // record without restrictions serializes byte-for-byte as it did before they existed:
+    // the Redis store's conditional usage write compares those bytes.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? AllowedReferrers = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? AllowedIpRanges = null);
+
+internal sealed record AdminApiKeyRestrictions(
+    IReadOnlyList<string>? AllowedReferrers,
+    IReadOnlyList<string>? AllowedIpRanges)
+{
+    internal static IReadOnlyList<string>? Normalize(IReadOnlyList<string>? values)
+        => values is { Count: > 0 } ? values.ToArray() : null;
+}
 
 internal sealed record AdminApiKeyCreateResult(AdminApiKeyRecord Record, string Key);
 
@@ -73,6 +102,15 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
         DateTimeOffset? expiresAt,
         string? createdBy,
         CancellationToken cancellationToken)
+        => CreateAsync(name, permissions, expiresAt, createdBy, restrictions: null, cancellationToken);
+
+    public Task<AdminApiKeyCreateResult> CreateAsync(
+        string name,
+        IReadOnlyList<string> permissions,
+        DateTimeOffset? expiresAt,
+        string? createdBy,
+        AdminApiKeyRestrictions? restrictions,
+        CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -90,7 +128,9 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
             LastUsedAt: null,
             RotatedAt: null,
             RevokedAt: null,
-            createdBy);
+            createdBy,
+            AdminApiKeyRestrictions.Normalize(restrictions?.AllowedReferrers),
+            AdminApiKeyRestrictions.Normalize(restrictions?.AllowedIpRanges));
 
         if (!_keys.TryAdd(record.Id, record))
         {
@@ -169,6 +209,35 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
         }
     }
 
+    public Task<AdminApiKeyRecord?> UpdateRestrictionsAsync(
+        Guid id,
+        AdminApiKeyRestrictions restrictions,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(restrictions);
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!_keys.TryGetValue(id, out var existing)
+                || existing.Permissions.Any(AdminApiKeyPermission.IsApprovedOperationGrant))
+            {
+                return Task.FromResult<AdminApiKeyRecord?>(null);
+            }
+
+            var updated = existing with
+            {
+                UpdatedAt = _timeProvider.GetUtcNow(),
+                AllowedReferrers = AdminApiKeyRestrictions.Normalize(restrictions.AllowedReferrers),
+                AllowedIpRanges = AdminApiKeyRestrictions.Normalize(restrictions.AllowedIpRanges),
+            };
+
+            if (_keys.TryUpdate(id, updated, existing))
+            {
+                return Task.FromResult<AdminApiKeyRecord?>(updated);
+            }
+        }
+    }
+
     public Task<AdminApiKeyValidationResult?> ValidateAsync(string keyMaterial, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -221,17 +290,14 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
         return normalized.Length == 0 ? ["admin:*"] : normalized;
     }
 
-    /// <summary>
-    /// Stores caller-supplied key material. Tests use this to present a fixed credential
-    /// whose bytes trip content heuristics (for example "--" or "/*"). Issuance stays on
-    /// <see cref="CreateAsync"/>.
-    /// </summary>
+    // This stores caller-supplied key material so a test can present bytes that trip content heuristics; issuance does not use it.
     internal AdminApiKeyCreateResult RegisterKnownMaterial(
         string keyMaterial,
         string name,
         IReadOnlyList<string> permissions,
         DateTimeOffset? expiresAt,
-        string? createdBy)
+        string? createdBy,
+        AdminApiKeyRestrictions? restrictions = null)
     {
         if (string.IsNullOrWhiteSpace(keyMaterial))
         {
@@ -251,7 +317,9 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
             LastUsedAt: null,
             RotatedAt: null,
             RevokedAt: null,
-            createdBy);
+            createdBy,
+            AdminApiKeyRestrictions.Normalize(restrictions?.AllowedReferrers),
+            AdminApiKeyRestrictions.Normalize(restrictions?.AllowedIpRanges));
 
         if (!_keys.TryAdd(record.Id, record))
         {
@@ -281,7 +349,6 @@ internal sealed class InMemoryAdminApiKeyStore(TimeProvider? timeProvider = null
     private static byte[] HashKey(string keyMaterial) => SHA256.HashData(Encoding.UTF8.GetBytes(keyMaterial));
 }
 
-/// <summary>Redis-backed admin-key registry shared by all server instances.</summary>
 internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimeProvider? timeProvider = null) : IAdminApiKeyStore
 {
     private const string Prefix = "honua:auth:admin-api-key:";
@@ -320,12 +387,16 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
         return values.Select(Read).Where(static value => value is not null).Cast<AdminApiKeyRecord>().OrderBy(key => key.CreatedAt).ToArray();
     }
 
-    public async Task<AdminApiKeyCreateResult> CreateAsync(string name, IReadOnlyList<string> permissions, DateTimeOffset? expiresAt, string? createdBy, CancellationToken cancellationToken)
+    public Task<AdminApiKeyCreateResult> CreateAsync(string name, IReadOnlyList<string> permissions, DateTimeOffset? expiresAt, string? createdBy, CancellationToken cancellationToken)
+        => CreateAsync(name, permissions, expiresAt, createdBy, restrictions: null, cancellationToken);
+
+    public async Task<AdminApiKeyCreateResult> CreateAsync(string name, IReadOnlyList<string> permissions, DateTimeOffset? expiresAt, string? createdBy, AdminApiKeyRestrictions? restrictions, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var now = _timeProvider.GetUtcNow();
         var key = InMemoryAdminApiKeyStore.GenerateForDurableStore();
-        var record = new AdminApiKeyRecord(Guid.NewGuid(), name, key[..Math.Min(12, key.Length)], SHA256.HashData(Encoding.UTF8.GetBytes(key)), permissions.Select(p => p.Trim()).Where(p => p.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).DefaultIfEmpty("admin:*").ToArray(), now, now, expiresAt, null, null, null, createdBy);
+        var record = new AdminApiKeyRecord(Guid.NewGuid(), name, key[..Math.Min(12, key.Length)], SHA256.HashData(Encoding.UTF8.GetBytes(key)), permissions.Select(p => p.Trim()).Where(p => p.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).DefaultIfEmpty("admin:*").ToArray(), now, now, expiresAt, null, null, null, createdBy,
+            AdminApiKeyRestrictions.Normalize(restrictions?.AllowedReferrers), AdminApiKeyRestrictions.Normalize(restrictions?.AllowedIpRanges));
         await _database.StringSetAsync(BuildKey(record.Id), JsonSerializer.Serialize(record, AdminApiKeyStoreJsonContext.Default.AdminApiKeyRecord), ResolveTtl(record), When.NotExists).ConfigureAwait(false);
         await PinApprovedExpiryAsync(_database, BuildKey(record.Id), record).ConfigureAwait(false);
         await WriteHashIndexAsync(record).ConfigureAwait(false);
@@ -394,7 +465,37 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
         throw new InvalidOperationException($"Admin API key {id:D} changed on every revocation attempt.");
     }
 
-    /// <summary>Writes <paramref name="updated"/> only if the stored bytes still equal <paramref name="snapshot"/>.</summary>
+    public async Task<AdminApiKeyRecord?> UpdateRestrictionsAsync(
+        Guid id,
+        AdminApiKeyRestrictions restrictions,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(restrictions);
+        for (var attempt = 0; attempt < WriteAttempts; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var snapshot = await _database.StringGetAsync(BuildKey(id)).ConfigureAwait(false);
+            var existing = Read(snapshot);
+            if (existing is null || existing.Permissions.Any(AdminApiKeyPermission.IsApprovedOperationGrant))
+            {
+                return null;
+            }
+
+            var updated = existing with
+            {
+                UpdatedAt = _timeProvider.GetUtcNow(),
+                AllowedReferrers = AdminApiKeyRestrictions.Normalize(restrictions.AllowedReferrers),
+                AllowedIpRanges = AdminApiKeyRestrictions.Normalize(restrictions.AllowedIpRanges),
+            };
+            if (await TryReplaceAsync(id, snapshot, updated).ConfigureAwait(false))
+            {
+                return updated;
+            }
+        }
+
+        throw new InvalidOperationException($"Admin API key {id:D} changed on every restriction update.");
+    }
+
     private async Task<bool> TryReplaceAsync(Guid id, RedisValue snapshot, AdminApiKeyRecord updated)
     {
         var key = BuildKey(id);
@@ -473,14 +574,11 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
         latest.ExpiresAt == compared.ExpiresAt &&
         latest.RotatedAt == compared.RotatedAt &&
         latest.RevokedAt == compared.RevokedAt &&
-        string.Equals(latest.CreatedBy, compared.CreatedBy, StringComparison.Ordinal);
+        string.Equals(latest.CreatedBy, compared.CreatedBy, StringComparison.Ordinal) &&
+        (latest.AllowedReferrers ?? []).SequenceEqual(compared.AllowedReferrers ?? [], StringComparer.Ordinal) &&
+        (latest.AllowedIpRanges ?? []).SequenceEqual(compared.AllowedIpRanges ?? [], StringComparer.Ordinal);
 
-    /// <summary>
-    /// Builds <c>hash → id</c> entries for registry ids no instance has indexed yet: a record
-    /// written before this index existed, one written by an old instance mid-rollout, or one
-    /// restored directly. Runs on a timer, never on the authentication path.
-    /// </summary>
-    /// <param name="cancellationToken">Cancellation token.</param>
+    // Hash-to-id entries are backfilled off the authentication path for records stored without that index.
     internal async Task ReconcileHashIndexAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -546,8 +644,6 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
     private static AdminApiKeyRecord? Read(RedisValue value) => value.HasValue ? JsonSerializer.Deserialize((string)value!, AdminApiKeyStoreJsonContext.Default.AdminApiKeyRecord) : null;
     private static string BuildKey(Guid id) => $"{Prefix}{id:D}";
 
-    /// <summary>Redis key for <c>honua:auth:admin-api-key:hash:{sha256}</c> → key id.</summary>
-    /// <param name="hash">SHA-256 of the presented or stored key material.</param>
     internal static RedisKey HashIndexKey(byte[] hash)
     {
         ArgumentNullException.ThrowIfNull(hash);
@@ -590,25 +686,28 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
     }
 }
 
-/// <summary>
-/// Backfills the admin API-key hash index off the request path. Authentication reads one
-/// hash entry; this loop is what catches records written before that index existed.
-/// </summary>
-internal sealed class RedisAdminApiKeyIndexMaintenance : BackgroundService
+internal sealed partial class RedisAdminApiKeyIndexMaintenance : BackgroundService
 {
-    private static readonly TimeSpan Interval = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan DefaultInterval = TimeSpan.FromMinutes(1);
     private readonly IAdminApiKeyStore _store;
+    private readonly ILogger<RedisAdminApiKeyIndexMaintenance> _logger;
+    private readonly TimeSpan _interval;
 
-    /// <summary>
-    /// Creates the maintenance loop.
-    /// </summary>
-    /// <param name="store">The registered admin API-key store.</param>
-    public RedisAdminApiKeyIndexMaintenance(IAdminApiKeyStore store)
+    public RedisAdminApiKeyIndexMaintenance(IAdminApiKeyStore store, ILogger<RedisAdminApiKeyIndexMaintenance> logger)
+        : this(store, logger, DefaultInterval)
     {
-        _store = store;
     }
 
-    /// <inheritdoc />
+    internal RedisAdminApiKeyIndexMaintenance(
+        IAdminApiKeyStore store,
+        ILogger<RedisAdminApiKeyIndexMaintenance> logger,
+        TimeSpan interval)
+    {
+        _store = store;
+        _logger = logger;
+        _interval = interval;
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (_store is not RedisAdminApiKeyStore redis)
@@ -626,18 +725,20 @@ internal sealed class RedisAdminApiKeyIndexMaintenance : BackgroundService
             {
                 break;
             }
-            catch (RedisException)
+            // Intentional catch-all (honua-server#6558, same rule as #4815). An exception that
+            // escapes ExecuteAsync stops the whole serving host under
+            // BackgroundServiceExceptionBehavior.StopHost. After a Lambda freeze/thaw,
+            // StackExchange.Redis abandons the commands it had in flight as TaskCanceledException
+            // (not RedisException or TimeoutException), and that exception alone took the demo
+            // cell's serving process down. A missed backfill tick is retried on the next one.
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
-                // The next tick retries. A registry backfill must not take the host down.
-            }
-            catch (TimeoutException)
-            {
-                // Redis command timeouts are TimeoutException, not RedisException. The next tick retries.
+                LogReconcileFailed(_logger, ex.GetType().Name, ex);
             }
 
             try
             {
-                await Task.Delay(Interval, stoppingToken).ConfigureAwait(false);
+                await Task.Delay(_interval, stoppingToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -645,4 +746,8 @@ internal sealed class RedisAdminApiKeyIndexMaintenance : BackgroundService
             }
         }
     }
+
+    [LoggerMessage(EventId = 4148, Level = LogLevel.Warning,
+        Message = "Admin API-key hash index backfill failed ({ExceptionType}); retrying on the next tick")]
+    private static partial void LogReconcileFailed(ILogger logger, string exceptionType, Exception exception);
 }

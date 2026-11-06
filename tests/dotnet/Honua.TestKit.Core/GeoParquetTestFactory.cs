@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Core.Features.Infrastructure.Crs;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
 using Parquet;
@@ -52,7 +53,8 @@ public static class GeoParquetTestFactory
         CrsStyle crs = CrsStyle.ProjJson,
         int rowCount = 1,
         bool includeNullGeometryRow = false,
-        int? rowGroupSize = null)
+        int? rowGroupSize = null,
+        bool nullGeometryFirst = false)
     {
         var objectIdField = new DataField<long?>("objectid");
         var nameField = new DataField<string>("name", true);
@@ -100,6 +102,12 @@ public static class GeoParquetTestFactory
             ids[totalRows - 1] = totalRows;
             names[totalRows - 1] = "No Geometry";
             geoms[totalRows - 1] = null;
+            if (nullGeometryFirst && totalRows > 1)
+            {
+                (ids[0], ids[totalRows - 1]) = (ids[totalRows - 1], ids[0]);
+                (names[0], names[totalRows - 1]) = (names[totalRows - 1], names[0]);
+                (geoms[0], geoms[totalRows - 1]) = (geoms[totalRows - 1], geoms[0]);
+            }
         }
 
         var stream = new MemoryStream();
@@ -596,14 +604,7 @@ public static class GeoParquetTestFactory
     {
         return crs switch
         {
-            CrsStyle.ProjJson => new Dictionary<string, object?>(StringComparer.Ordinal)
-            {
-                ["id"] = new Dictionary<string, object?>(StringComparer.Ordinal)
-                {
-                    ["authority"] = "EPSG",
-                    ["code"] = 4326
-                }
-            },
+            CrsStyle.ProjJson => BuildAuthoritativeCrs(),
             CrsStyle.PropertiesName => new Dictionary<string, object?>(StringComparer.Ordinal)
             {
                 ["type"] = "name",
@@ -612,14 +613,7 @@ public static class GeoParquetTestFactory
                     ["name"] = "EPSG:4326"
                 }
             },
-            CrsStyle.OgcCrs84ProjJson => new Dictionary<string, object?>(StringComparer.Ordinal)
-            {
-                ["id"] = new Dictionary<string, object?>(StringComparer.Ordinal)
-                {
-                    ["authority"] = "OGC",
-                    ["code"] = "CRS84"
-                }
-            },
+            CrsStyle.OgcCrs84ProjJson => BuildAuthoritativeCrs(crs84: true),
             CrsStyle.OgcCrs84PropertiesName => new Dictionary<string, object?>(StringComparer.Ordinal)
             {
                 ["type"] = "name",
@@ -628,16 +622,30 @@ public static class GeoParquetTestFactory
                     ["name"] = "OGC:CRS84"
                 }
             },
-            CrsStyle.ProjJsonStringCode => new Dictionary<string, object?>(StringComparer.Ordinal)
-            {
-                ["id"] = new Dictionary<string, object?>(StringComparer.Ordinal)
-                {
-                    ["authority"] = "EPSG",
-                    ["code"] = "4326" // String code per PROJJSON spec
-                }
-            },
+            CrsStyle.ProjJsonStringCode => BuildAuthoritativeCrs(stringCode: true),
             _ => throw new ArgumentOutOfRangeException(nameof(crs))
         };
+    }
+
+    private static Dictionary<string, object?> BuildAuthoritativeCrs(bool crs84 = false, bool stringCode = false)
+    {
+        string definition;
+        if (crs84)
+        {
+            definition = GeoParquetProjJsonCatalog.Crs84ProjJson;
+        }
+        else if (!GeoParquetProjJsonCatalog.TryGetProjJson(4326, out definition!))
+        {
+            throw new InvalidOperationException("Authoritative EPSG:4326 test definition is missing.");
+        }
+        using var document = JsonDocument.Parse(definition);
+        var result = document.RootElement.EnumerateObject()
+            .ToDictionary(property => property.Name, property => (object?)property.Value.Clone(), StringComparer.Ordinal);
+        if (stringCode)
+        {
+            result["id"] = new Dictionary<string, object?> { ["authority"] = "EPSG", ["code"] = "4326" };
+        }
+        return result;
     }
 
     private static Dictionary<string, string> BuildGeoMetadata(

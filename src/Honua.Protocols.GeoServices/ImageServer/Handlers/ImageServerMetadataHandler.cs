@@ -19,25 +19,18 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
-/// <summary>
-/// Handler for Image Server metadata operations.
-/// Provides service information and capabilities for raster layers.
-/// </summary>
 internal sealed class ImageServerMetadataHandler
 {
-    /// <summary>Minimum pixel size advertised in service metadata (finest resolution).</summary>
-    private const double MinPixelSize = 0.1;
+    // A minimum pixel size of zero matches ArcGIS Server and means no zoom-in limit; a positive value is in raster units and hides a geographic layer at ordinary map scales.
+    private const double MinPixelSize = 0;
 
-    /// <summary>Maximum pixel size advertised in service metadata (coarsest resolution).</summary>
-    private const double MaxPixelSize = 1000.0;
+    // A maximum pixel size of zero matches ArcGIS Server and means no zoom-out limit.
+    private const double MaxPixelSize = 0;
 
-    /// <summary>Maximum image height in pixels for export requests.</summary>
     private const int MaxImageHeight = 4096;
 
-    /// <summary>Maximum image width in pixels for export requests.</summary>
     private const int MaxImageWidth = 4096;
 
-    /// <summary>Maximum number of records returned in catalog queries.</summary>
     private const int MaxRecordCount = 1000;
 
     private readonly IMetadataV2GraphProvider _graphProvider;
@@ -57,9 +50,6 @@ internal sealed class ImageServerMetadataHandler
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// Gets comprehensive service metadata for an Image Server.
-    /// </summary>
     public async Task<IResult> GetServiceInfoAsync(
         HttpContext context,
         int layerId,
@@ -113,7 +103,6 @@ internal sealed class ImageServerMetadataHandler
             // the whole metadata response instead of just omitting statistics (#2991).
             var rasterIds = rasters.Select(r => r.Id).ToArray();
             var schemaName = context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema;
-            var statisticsBudgetExceeded = false;
             var statistics = await ImageServerStatisticsBudget.ResolveAsync(
                 context.RequestServices.GetRequiredService<IServiceScopeFactory>(),
                 ImageServerStatisticsBudget.CreateStatisticsOperationKey(
@@ -130,20 +119,8 @@ internal sealed class ImageServerMetadataHandler
                             mergeStrategy,
                             cancellationToken: ct);
                 },
-                onBudgetExceeded: () =>
-                {
-                    statisticsBudgetExceeded = true;
-                    ImageServerLog.StatisticsComputeBudgetExceeded(
-                        _logger, layerId, ImageServerStatisticsBudget.Timeout.TotalSeconds);
-                },
+                onBudgetExceeded: ImageServerStatisticsBudget.MarkResponseIncomplete(context.Response, _logger, layerId),
                 cancellationToken);
-            if (statisticsBudgetExceeded)
-            {
-                // Do not let the output-cache middleware persist the deliberately
-                // incomplete fallback. The background backfill may finish immediately
-                // after this response, so a subsequent request must be allowed to see it.
-                context.Response.Headers.CacheControl = "no-store";
-            }
 
             // A registered multidimensional coverage is the raster the slices come from.
             // Describe that grid instead of a co-registered base raster (#6493).
@@ -215,6 +192,12 @@ internal sealed class ImageServerMetadataHandler
                 PixelType = MapPixelType(referenceRaster.PixelType),
                 MinPixelSize = MinPixelSize,
                 MaxPixelSize = MaxPixelSize,
+                // ArcGIS Pro will not draw outside these. Zero is the Esri "no limit" sentinel
+                // (SOAP GetServiceInfo already advertises it). Omitting the scales, or publishing
+                // a positive minPixelSize, leaves the layer in the contents pane with a legend
+                // and no pixels (#6563).
+                MinScale = 0,
+                MaxScale = 0,
                 CopyrightText = resolved.Description ?? "",
                 ServiceDataType = "esriImageServiceDataTypeGeneric",
                 MinValues = statistics.Select(s => s.MinValue ?? 0).ToArray(),
@@ -341,11 +324,6 @@ internal sealed class ImageServerMetadataHandler
         };
     }
 
-    /// <summary>
-    /// Builds the Esri-conformant <c>timeInfo</c> block when the V2 resource declares
-    /// temporal fields that exist in the raster catalog, or when the catalog carries
-    /// acquisition timestamps. Hints naming absent fields are not advertised.
-    /// </summary>
     private static ImageServerTimeInfo? BuildTimeInfo(
         (string? StartTimeField, string? EndTimeField, string? TrackIdField) timeHints,
         IReadOnlyList<RasterInfo> rasters)

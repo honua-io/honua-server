@@ -7,10 +7,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Features.Protocols.Coverages.Multidimensional;
 
-/// <summary>
-/// Structured logging for cloud-optimized HDF5 / NetCDF4 coverage operations.
-/// Event ID range: 8000-8049.
-/// </summary>
 internal static partial class MultidimensionalCoverageLog
 {
     [LoggerMessage(

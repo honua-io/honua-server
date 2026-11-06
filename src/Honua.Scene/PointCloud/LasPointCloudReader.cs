@@ -19,8 +19,8 @@ namespace Honua.Core.Features.Scene.PointCloud;
 /// 6, 7, and 8 (the formats produced by the overwhelming majority of LiDAR and
 /// drone-photogrammetry exporters). Compressed LAZ and Cloud-Optimized Point
 /// Cloud (COPC) inputs are detected and rejected with a clear error so callers
-/// can surface a problem-detail rather than mis-parsing chunked data; native
-/// LAZ/COPC decompression is a tracked follow-up.
+/// route them through the existing out-of-process point-cloud worker for
+/// LAZ/COPC decompression before managed tiling.
 /// </para>
 /// <para>
 /// The reader is deterministic and allocation-conscious: it reads point records
@@ -48,19 +48,18 @@ public static class LasPointCloudReader
                 "LAS file is shorter than the minimum public header block.");
         }
 
-        if (source[0] != (byte)'L' || source[1] != (byte)'A' || source[2] != (byte)'S' || source[3] != (byte)'F')
+        if (!LasPublicHeader.TryRead(source, out var publicHeader))
         {
             throw new LasFormatException(
                 SceneGenerationErrorCodes.ModelAssetInvalid,
                 "LAS signature 'LASF' not found; the file is not a LAS point cloud.");
         }
 
-        var versionMajor = source[24];
-        var versionMinor = source[25];
+        var versionMajor = publicHeader.VersionMajor;
+        var versionMinor = publicHeader.VersionMinor;
 
-        var headerSize = BinaryPrimitives.ReadUInt16LittleEndian(source.Slice(94, 2));
+        var headerSize = publicHeader.HeaderSize;
         var offsetToPointData = BinaryPrimitives.ReadUInt32LittleEndian(source.Slice(96, 4));
-        var rawPointFormat = source[104];
 
         // Bit 7 (0x80) of the point data record format byte is the LAZ
         // compression flag set by laszip. The pure-managed reader does not decode
@@ -69,7 +68,7 @@ public static class LasPointCloudReader
         // (PDAL, #1854), which emits uncompressed LAS that flows back through this
         // same reader. So a compressed buffer reaching the managed reader directly
         // is rejected with a stable code the caller maps to the worker route.
-        var isCompressed = (rawPointFormat & 0x80) != 0 || (rawPointFormat & 0x40) != 0;
+        var isCompressed = publicHeader.IsCompressed;
         if (isCompressed)
         {
             throw new LasFormatException(
@@ -78,7 +77,7 @@ public static class LasPointCloudReader
                 "(pcloud.translate) before managed tiling; this reader accepts uncompressed LAS only.");
         }
 
-        var pointFormat = (byte)(rawPointFormat & 0x3F);
+        var pointFormat = publicHeader.PointFormat;
         if (!IsSupportedFormat(pointFormat))
         {
             throw new LasFormatException(

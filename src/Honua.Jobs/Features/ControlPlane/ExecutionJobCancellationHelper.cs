@@ -65,16 +65,6 @@ internal static class ExecutionJobCancellationHelper
             or ExecutionJobStatus.Failed
             or ExecutionJobStatus.Cancelled;
 
-    /// <summary>
-    /// Returns <c>true</c> when the job has a live provider-side counterpart that a remote
-    /// cancel should target. A failed remote job that was requeued for retry sits at
-    /// <see cref="ExecutionJobStatus.Queued"/> with <see cref="ExecutionJobRecord.AttemptCount"/> &gt; 0,
-    /// no <see cref="ExecutionJobRecord.ProviderOperationId"/>, and a populated
-    /// <see cref="ExecutionJobRecord.NextRetryAt"/>; calling the backend against that stale
-    /// attempt (whose provider object may already be terminal or TTL-cleaned) would surface a
-    /// false terminal conflict, so treat it as not-yet-submitted and route to the
-    /// pre-submission cancel path. Mirrors the reconciler's submission-gate predicate.
-    /// </summary>
     public static bool HasSubmittedProviderMarker(ExecutionJobRecord job)
         => !string.IsNullOrEmpty(job.ProviderOperationId)
             || (job.AttemptCount > 0 && !job.NextRetryAt.HasValue);
@@ -207,16 +197,7 @@ internal static class ExecutionJobCancellationHelper
         return new(ExecutionJobCancellationState.Unconfirmed, current);
     }
 
-    /// <summary>
-    /// Durable pre-cancel signal: stamps <see cref="ExecutionJobRecord.CancellationRequestedAt"/>
-    /// before the first <c>backend.CancelAsync</c> call so a concurrent or repeated
-    /// remote cancel that races ahead and sees the provider object already gone maps
-    /// NotFound → Cancelled (via <c>BuildObservationForMissingJob</c>'s cancellation-intent
-    /// branch) rather than reclassifying the record as Failed. Without this stamp, two
-    /// callers that both observe the same pre-cancel snapshot can have the "saw the delete"
-    /// observation lose a CAS race to the "saw NotFound" observation, and the durable
-    /// record ends up Failed even though the provider job was successfully cancelled.
-    /// </summary>
+    // CancellationRequestedAt is stamped before the first remote cancel so a NotFound race is recorded as cancelled rather than failed.
     public static async Task<RemoteCancelStampResult> TryStampRemoteCancelRequestedAtAsync(
         IExecutionJobStore jobStore,
         ExecutionJobRecord job,
@@ -272,14 +253,7 @@ internal static class ExecutionJobCancellationHelper
         return new(RemoteCancelStampOutcome.Unconfirmed, current);
     }
 
-    /// <summary>
-    /// Merges a backend cancel observation onto an execution-job record using the same
-    /// no-op invariant as the reconciler's <c>ApplyObservation</c>: when the observable
-    /// fields are unchanged and a durable <see cref="ExecutionJobRecord.CancellationRequestedAt"/>
-    /// already exists, the original record is returned so repeated idempotent cancel
-    /// attempts do not refresh <see cref="ExecutionJobRecord.UpdatedAt"/> and extend the
-    /// missing-registration grace window.
-    /// </summary>
+    // An unchanged cancel observation keeps the original record so UpdatedAt does not extend the missing-registration grace window.
     public static ExecutionJobRecord MergeBackendCancelObservation(
         ExecutionJobRecord job,
         BatchComputeObservation observation,
@@ -323,13 +297,6 @@ internal static class ExecutionJobCancellationHelper
         };
     }
 
-    /// <summary>
-    /// Applies a backend cancel observation to the durable job record with a CAS retry,
-    /// preserving <c>UpdatedAt</c> for no-op observations and emitting the canonical
-    /// execution-job transition telemetry for status changes. Centralizes the API-side
-    /// remote cancel flow used by the geoprocessing service, admin operations, and the
-    /// OGC Processes dismiss endpoint.
-    /// </summary>
     public static async Task<BackendCancelApplyResult> TryApplyBackendCancelAsync(
         IExecutionJobStore jobStore,
         ExecutionJobRecord job,

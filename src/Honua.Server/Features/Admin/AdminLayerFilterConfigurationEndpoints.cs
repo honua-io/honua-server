@@ -15,16 +15,10 @@ using PermanentFilterLanguages = Honua.Core.Features.Metadata.Domain.V2.Metadata
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for persisted layer permanent filter configuration.
-/// </summary>
 internal static class AdminLayerFilterConfigurationEndpoints
 {
     private const int MaxFilterExpressionLength = 4096;
 
-    /// <summary>
-    /// Maps layer permanent filter configuration endpoints to the admin metadata API group.
-    /// </summary>
     public static void MapAdminLayerFilterConfigurationEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/metadata/layers")
@@ -176,19 +170,19 @@ internal static class AdminLayerFilterConfigurationEndpoints
         out string canonicalLanguage,
         out FilterLanguage filterLanguage)
     {
-        canonicalLanguage = PermanentFilterLanguages.ArcGisSql;
-        filterLanguage = FilterLanguage.ArcGisSql;
-        var normalized = (language ?? PermanentFilterLanguages.ArcGisSql)
+        canonicalLanguage = PermanentFilterLanguages.GeoServicesSql;
+        filterLanguage = FilterLanguage.GeoServicesSql;
+        var normalized = (language ?? PermanentFilterLanguages.GeoServicesSql)
             .Trim()
             .ToLowerInvariant();
 
         switch (normalized)
         {
-            case PermanentFilterLanguages.ArcGisSql:
+            case PermanentFilterLanguages.GeoServicesSql:
             case "arcgis":
             case "geoservices-sql":
-                canonicalLanguage = PermanentFilterLanguages.ArcGisSql;
-                filterLanguage = FilterLanguage.ArcGisSql;
+                canonicalLanguage = PermanentFilterLanguages.GeoServicesSql;
+                filterLanguage = FilterLanguage.GeoServicesSql;
                 return true;
             case PermanentFilterLanguages.Cql2Text:
             case "cql2":

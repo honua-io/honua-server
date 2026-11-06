@@ -1,11 +1,11 @@
 ---
 type: index
 title: "Honua Server"
-description: "Honua is a cloud-native geospatial server that speaks every major GIS protocol — ArcGIS-compatible REST, OGC APIs, WMS/WFS/WMTS, OData, vector tiles, STAC — from one container on your PostGIS database."
+description: "Honua is a cloud-native geospatial server that speaks every major GIS protocol — GeoServices REST, OGC APIs, WMS/WFS/WMTS, OData, vector tiles, STAC — from one container on your PostGIS database."
 ---
 # Honua Server
 
-Honua is a cloud-native geospatial server that speaks every major GIS protocol — ArcGIS-compatible REST, OGC APIs, WMS/WFS/WMTS, OData, vector tiles, STAC — from one container on your PostGIS database. No GDAL toolchain to install, no ETL pipelines, no Esri complexity.
+Honua is a cloud-native geospatial server that speaks every major GIS protocol — GeoServices REST, OGC APIs, WMS/WFS/WMTS, OData, vector tiles, STAC — from one container on your PostGIS database. No GDAL toolchain to install and no ETL pipelines to maintain.
 
 ## Start with your agent
 
@@ -35,16 +35,16 @@ explains the shared meanings and verification behind the agent's actions.
 | Publish files, databases, rasters, or tiles | [Publish data](guides/README.md#publish-data) |
 | Style layers and maps | [Style maps](guides/README.md#style-maps) |
 | Query, analyze, and export features | [Query and analyze](guides/README.md#query-and-analyze) |
-| Connect QGIS, ArcGIS Pro, Excel, web maps, or AI agents | [Connect clients](guides/README.md#connect-clients) |
+| Connect QGIS, Excel, web maps, or AI agents | [Connect clients](guides/README.md#connect-clients) |
 | Edit features and react to changes | [Edit data](guides/README.md#edit-data) |
 | Lock down authentication and access | [Secure](guides/README.md#secure) |
 | Deploy, monitor, back up, and scale | [Operating Honua](guides/operate/README.md) · [Deploy and operate](guides/README.md#deploy-and-operate) |
-| **Migrate from ArcGIS Server or GeoServer** — discover services, dry-run, import with parity evidence | [Migrate from Esri or GeoServer](guides/README.md#migrate-from-esri-or-geoserver) |
+| **Migrate services or data** — discover services, dry-run, import with parity evidence | [Migration guides](guides/README.md#migrate-services) |
 
 ## Why teams trust it
 
 - **Recorded OGC conformance evidence** — [current snapshot and run receipt](cite-status.md); this records the tested revision, not a new test of every later build.
-- **Works with the clients you already use** — ArcGIS Pro, QGIS, Excel, Power BI, MapLibre, GDAL — [client compatibility](reference/compatibility/clients.md)
+- **Works with the clients you already use** — QGIS, Excel, Power BI, MapLibre, GDAL — [client compatibility](reference/compatibility/clients.md)
 
 ## Ecosystem
 

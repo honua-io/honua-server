@@ -7,9 +7,6 @@ using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.WorkflowPackages;
 
-/// <summary>
-/// Source-generated JSON context for Console workflow package endpoints.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

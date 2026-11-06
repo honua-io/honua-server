@@ -25,7 +25,8 @@ internal sealed partial class StreamingFileImportService
         Stream? Stream,
         int? DetectedSrid,
         string[] Warnings,
-        string? ErrorMessage);
+        string? ErrorMessage,
+        double? CoordinateEpoch = null);
 
     /// <summary>
     /// Buffers and validates a GeoParquet source: extracts metadata, enforces row-group
@@ -51,33 +52,61 @@ internal sealed partial class StreamingFileImportService
                 null, null, null, warnings, "Failed to buffer GeoParquet file for reading.");
         }
 
-        var scratchStream = scratch.Stream;
-
-        GeoParquetReader.GeoParquetFileMetadata parquetMeta;
         try
         {
-            parquetMeta = await GeoParquetReader.ExtractMetadataAsync(scratchStream, cancellationToken);
+            var scratchStream = scratch.Stream;
+
+            GeoParquetReader.GeoParquetFileMetadata parquetMeta;
+            try
+            {
+                parquetMeta = await GeoParquetReader.ExtractMetadataAsync(scratchStream, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or ArgumentException)
+            {
+                // Preserve specific validation messages after stripping unsafe environment details.
+                ImportLog.ImportFailedWithException(_logger, ex, jobId, tableName);
+                return new GeoParquetPrepResult(scratch, null, null, warnings, SanitizeImportValidationMessage(ex));
+            }
+
+            var updatedWarnings = parquetMeta.Warnings;
+
+            // Refuse unsupported source semantics before database access.
+            if (parquetMeta.UnsupportedReason is { } unsupportedReason)
+            {
+                return new GeoParquetPrepResult(
+                    scratch, null, null, updatedWarnings, unsupportedReason);
+            }
+
+            // Validate every bounded source row before opening the target write path. A late unsupported
+            // nested value or malformed geometry must not leave earlier append/upsert batches committed.
+            try
+            {
+                await foreach (var feature in GeoParquetReader.ReadStreamingAsync(scratchStream, _limits, cancellationToken))
+                {
+                    _ = feature;
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or ArgumentException)
+            {
+                ImportLog.ImportFailedWithException(_logger, ex, jobId, tableName);
+                return new GeoParquetPrepResult(scratch, null, null, updatedWarnings, SanitizeImportValidationMessage(ex));
+            }
+            scratchStream.Position = 0;
+            return new GeoParquetPrepResult(scratch, scratchStream, parquetMeta.Srid, updatedWarnings, null, parquetMeta.CoordinateEpoch);
         }
-        catch (OperationCanceledException)
+        catch
         {
+            // Ownership reaches the caller only when preparation returns, including validation failures.
+            CleanupGeoParquetScratch(scratch);
             throw;
         }
-        catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or ArgumentException)
-        {
-            // Preserve specific validation messages after stripping unsafe environment details.
-            ImportLog.ImportFailedWithException(_logger, ex, jobId, tableName);
-            return new GeoParquetPrepResult(scratch, null, null, warnings, SanitizeImportValidationMessage(ex));
-        }
-
-        var updatedWarnings = parquetMeta.Warnings;
-
-        // Hard-reject non-WKB encoding before any further processing
-        if (!parquetMeta.IsWkbEncoding)
-        {
-            return new GeoParquetPrepResult(
-                scratch, null, null, updatedWarnings, GeoParquetReader.UnsupportedEncodingMessage);
-        }
-
-        return new GeoParquetPrepResult(scratch, scratchStream, parquetMeta.Srid, updatedWarnings, null);
     }
 }

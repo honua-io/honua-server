@@ -12,19 +12,11 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Features.Protocols.Cog;
 
-/// <summary>
-/// Resolves tile coordinates to cloud range reads for direct COG tile serving.
-/// Caches parsed metadata in memory under the cloud object ETag and persists scan summaries.
-/// </summary>
 internal sealed class CogTileResolver : ICogTileResolver
 {
     private static readonly TimeSpan MetadataCacheDuration = TimeSpan.FromMinutes(30);
     internal const int MaxCompressedTileBytes = 128 * 1024 * 1024;
 
-    /// <summary>
-    /// Builds the memory-cache key for a registration's COG metadata.
-    /// Shared with <see cref="CogEndpoints"/> for cache eviction on refresh.
-    /// </summary>
     internal static string MetadataCacheKey(long registrationId) => $"cog:metadata:{registrationId}";
 
     private readonly IEnumerable<ICloudRangeReader> _rangeReaders;
@@ -50,7 +42,6 @@ internal sealed class CogTileResolver : ICogTileResolver
         _logger = logger;
     }
 
-    /// <inheritdoc />
     public async Task<RasterResult?> GetTileAsync(
         CogRegistration registration,
         int level,
@@ -215,7 +206,6 @@ internal sealed class CogTileResolver : ICogTileResolver
         };
     }
 
-    /// <inheritdoc />
     public async Task<CogTileLookup> GetTileForLayerAsync(
         int layerId,
         int level,

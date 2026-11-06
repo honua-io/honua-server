@@ -11,11 +11,6 @@ using Proto = Geospatial.V1;
 
 namespace Honua.Server.Features.Spec;
 
-/// <summary>
-/// gRPC adapter for the spec plan / apply engine. Uses the same
-/// <see cref="ISpecPlanner"/> and <see cref="ISpecApplyEngine"/> instances as
-/// the REST surface — the event sequence shape is identical.
-/// </summary>
 internal sealed class HonuaSpecService : Proto.SpecService.SpecServiceBase
 {
     private readonly ISpecPlanner _planner;
@@ -181,20 +176,7 @@ internal sealed class HonuaSpecService : Proto.SpecService.SpecServiceBase
         }
     }
 
-    /// <summary>
-    /// Cooperatively cancels an in-flight apply run.
-    /// </summary>
-    /// <remarks>
-    /// Geospatial.Grpc 0.2.0-alpha.1 converged this RPC onto the shared job-control messages:
-    /// it now takes <c>CancelJobRequest.job_id</c> (the value previously sent as
-    /// <c>apply_token</c>) and returns <c>CancelJobResponse</c>, which carries a
-    /// <c>JobState</c> instead of the old <c>bool cancelled</c>. There is no boolean left to
-    /// carry "no such run", so an accepted cancellation reports
-    /// <c>JOB_STATE_CANCELLED</c> and an unknown or already-terminal run reports
-    /// <c>JOB_STATE_UNSPECIFIED</c> — the server declines to assert a state for a run it does
-    /// not hold. The call stays non-faulting either way, matching the previous
-    /// <c>cancelled = false</c> behaviour rather than turning a no-op cancel into a NotFound.
-    /// </remarks>
+    // An unknown or already-terminal cancellation stays non-faulting and returns an unspecified state instead of asserting a state the server does not hold.
     public override Task<Proto.CancelJobResponse> CancelApply(
         Proto.CancelJobRequest request,
         ServerCallContext context)

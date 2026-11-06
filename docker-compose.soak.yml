@@ -81,10 +81,15 @@ services:
       Limits__Connections__MaxConnectionPoolSize: "100"
       Limits__Connections__MinConnectionPoolSize: "10"
       Limits__Connections__ConnectionAcquisitionTimeoutSeconds: "15"
-      # The declared envelope's GP dimension: one worker (gpWorkers=1).
+      # The declared envelope's GP dimensions. Admission counts every ACTIVE job, queued and
+      # executing, so the limit that admits the envelope is gpWorkers + gpQueueDepth (101 for the
+      # frozen 1 + 100). The workflow derives it from the lock (scripts/soak/envelope_config.py);
+      # there is no default, because the old `gpWorkers` value (1) capped the queue at zero and
+      # refused 108,842 submissions in candidate run 40542363841. The single server replica runs
+      # one sequential job claim loop: that is the one declared worker.
       ExecutionAdmission__Enabled: "true"
-      ExecutionAdmission__MaxConcurrentJobsGlobal: "${SOAK_GP_WORKERS:-1}"
-      ExecutionAdmission__MaxConcurrentJobsPerPartition: "${SOAK_GP_WORKERS:-1}"
+      ExecutionAdmission__MaxConcurrentJobsGlobal: "${SOAK_GP_ACTIVE_JOBS:?Set SOAK_GP_ACTIVE_JOBS to gpWorkers + gpQueueDepth from the lock}"
+      ExecutionAdmission__MaxConcurrentJobsPerPartition: "${SOAK_GP_ACTIVE_JOBS:?Set SOAK_GP_ACTIVE_JOBS to gpWorkers + gpQueueDepth from the lock}"
       # The soak submits geoprocessing work continuously from one principal; the per-principal
       # submission rate gate is not part of the declared envelope, so it is not the thing under
       # test here.

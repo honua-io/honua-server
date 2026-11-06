@@ -583,11 +583,14 @@ run_bi_lane() {
     "200" \
     '(.value | length) == 1' || lane_failed=1
 
+  # A client $top bounds the whole requested collection (OData 4.01 Part 1
+  # 11.2.6.3), so a page that spends it carries no @odata.nextLink (#5464,
+  # #5483). CERT-PAGE-02 walks the next page with an explicit $skip.
   request_json \
     "odata-features-first-page" \
     "${BASE_URL}/odata/Features(${LAYER_ID})?\$top=3" \
     "200" \
-    '(.value | length) == 3 and (."@odata.nextLink" != null)' || lane_failed=1
+    '(.value | length) == 3 and (."@odata.nextLink" == null)' || lane_failed=1
 
   request_json \
     "odata-features-second-page" \
@@ -1031,10 +1034,13 @@ run_full_odata() {
   record_na_with_lane "odata-qflt-02" "$proto" "CERT-QFLT-02" "Spatial bbox not applicable to OData"
 
   # CERT-PAGE-01: First page
+  # A client $top bounds the whole requested collection (OData 4.01 Part 1
+  # 11.2.6.3), so a page that spends it carries no @odata.nextLink (#5464,
+  # #5483). CERT-PAGE-02 walks the next page with an explicit $skip.
   request_json \
     "odata-features-first-page" \
     "${BASE_URL}/odata/Features(${LAYER_ID})?\$top=3" "200" \
-    '(.value | length) == 3 and (."@odata.nextLink" != null)' || failed=1
+    '(.value | length) == 3 and (."@odata.nextLink" == null)' || failed=1
   local page01_count=""
   if [[ -f "$LAST_BODY_PATH" ]]; then
     page01_count=$(jq -r '.value | length' "$LAST_BODY_PATH" 2>/dev/null || echo "")

@@ -26,7 +26,7 @@ public readonly record struct ResolvedScene(SceneDatasetRecord? Record, SceneDat
 /// surface (<c>SceneDiscoveryEndpoints.HandleListScenes</c>) and the gRPC
 /// <c>SceneService.ListScenes</c> adapter consume this single helper so the
 /// active-scene set, the database-over-configuration dedup precedence, and the
-/// ordering stay identical across protocols (per the CLAUDE.md DRY / shared
+/// ordering stay identical across protocols (per the AGENTS.md DRY / shared
 /// catalog rules). Each adapter maps the returned <see cref="ResolvedScene"/>
 /// sequence into its own wire DTO and applies only protocol-specific projection
 /// (capability filtering, spatial-extent filtering, paging).

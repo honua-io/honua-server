@@ -21,14 +21,14 @@ exclusions are not automatically endorsed by this first audit.
 
 | Reopened claim | Cells | Why the exclusion is insufficient |
 |---|---:|---|
-| Generic ArcPy module-list citation | 38 | A module list is not operation-specific evidence. The WCS exclusion is not accepted on that citation. Detail stays in honua-esri-compat. |
-| ArcPy `Map.addDataFromPath` service-type probe | 3 | One entry point does not close the cell. Detail stays in honua-esri-compat. |
+| Generic ArcPy module-list citation | 38 | A module list is not operation-specific evidence. The WCS exclusion is not accepted on that citation. Detail is not retained in this repository. |
+| ArcPy `Map.addDataFromPath` service-type probe | 3 | One entry point does not close the cell. Detail is not retained in this repository. |
 | Unnamed missing QGIS provider | 30 | The citation supplies neither the provider name nor a receipt. Shared GDAL/OGR drivers must be considered; the installed GDAL exposes OGCAPI. |
 | QGIS WCS 2.0.1 excluded using the dedicated WCS provider | 6 | The stock GDAL provider successfully loads WCS 2.0.1 and reads a pixel; the dedicated provider does not define the entire client surface. |
 | Pro WCS 1.0 superseded by default negotiation | 3 | A default preference for 2.0.1 does not establish that explicitly selecting 1.0.0 is impossible. |
 | Pro OGC API Tiles vector-only fixture | 2 | Pro documents map tiles support. Missing map tiles in a fixture is a setup or server metadata problem to investigate. |
 | Pro OData excluded using an OGC classic service list | 2 | OData is not an OGC classic service; the citation cannot establish absence. |
-| ArcPy SOAP excluded using a REST-only claim | 1 | A REST-only citation does not close the SOAP cell. Detail stays in honua-esri-compat. |
+| ArcPy SOAP excluded using a REST-only claim | 1 | A REST-only citation does not close the SOAP cell. Detail is not retained in this repository. |
 
 ## Evidence identifiers
 

@@ -8,61 +8,16 @@ using Honua.Protocols.GeoServices.ImageServer.Models;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
-/// <summary>
-/// Validates and walks Esri raster function chain documents. The MVP supports
-/// the three function names that ArcGIS Pro consistently emits when applying a
-/// stretch with an AOI clip on a single-band raster: <c>Identity</c>,
-/// <c>Stretch</c>, and <c>Clip</c>. Unsupported functions surface as a 400 with
-/// an explicit reason rather than failing silently.
-/// </summary>
 internal interface IImageServerRasterFunctionPlanner
 {
-    /// <summary>
-    /// Walks the function chain and produces a normalised plan describing the
-    /// depth, the functions executed in depth-first order, and the output pixel type.
-    /// </summary>
-    /// <exception cref="ImageServerRasterFunctionException">
-    /// Thrown when the chain references an unknown function or when validation fails.
-    /// </exception>
     RasterFunctionPlan Plan(RasterFunctionDocument document);
 }
 
-/// <summary>
-/// Result of <see cref="IImageServerRasterFunctionPlanner.Plan"/>.
-/// </summary>
 internal readonly record struct RasterFunctionPlan(
     int ChainDepth,
     string[] ExecutedFunctions,
     string OutputPixelType);
 
-/// <summary>
-/// Outcome of translating an Esri <c>renderingRule</c> chain into the canonical
-/// <see cref="RasterStretch"/> the raster store executes.
-/// </summary>
-/// <param name="Supported">
-/// <c>true</c> when the chain is executable. <see cref="Stretch"/> is the resolved
-/// stretch, or <c>null</c> when the chain is a no-op (e.g. <c>Identity</c> only).
-/// </param>
-/// <param name="Stretch">The resolved display stretch, when one applies.</param>
-/// <param name="Colormap">The resolved pseudocolour colormap, when one applies.</param>
-/// <param name="ClipRegion">The resolved clip area-of-interest, when a <c>Clip</c> applies.</param>
-/// <param name="Bands">
-/// The resolved 1-based band selection/order from an <c>ExtractBand</c> function, when
-/// one applies; <c>null</c> when no band extraction is in the chain.
-/// </param>
-/// <param name="BandArithmetic">
-/// The resolved two-band arithmetic operation (e.g. NDVI) from a <c>BandArithmetic</c>
-/// function, when one applies; <c>null</c> when no band arithmetic is in the chain.
-/// </param>
-/// <param name="Terrain">
-/// The resolved inline terrain function (hillshade/slope/aspect) from a <c>Hillshade</c>,
-/// <c>Slope</c>, or <c>Aspect</c> function, when one applies; <c>null</c> otherwise.
-/// </param>
-/// <param name="Reason">Explanation surfaced to the client when not supported.</param>
-/// <param name="IsNotImplemented">
-/// When unsupported, distinguishes a recognized-but-unimplemented function/option
-/// (HTTP 501) from a malformed or unknown chain (HTTP 400).
-/// </param>
 internal readonly record struct RenderingRuleMapping(
     bool Supported,
     RasterStretch? Stretch,
@@ -90,9 +45,6 @@ internal readonly record struct RenderingRuleMapping(
         => new(false, null, null, null, null, null, null, reason, true);
 }
 
-/// <summary>
-/// Surfaces a raster function chain validation failure to the calling endpoint as a 400.
-/// </summary>
 internal sealed class ImageServerRasterFunctionException : Exception
 {
     public ImageServerRasterFunctionException(string message)
@@ -101,13 +53,8 @@ internal sealed class ImageServerRasterFunctionException : Exception
     }
 }
 
-/// <summary>
-/// Default <see cref="IImageServerRasterFunctionPlanner"/>. The chain depth is
-/// capped to keep recursive payloads bounded.
-/// </summary>
 internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunctionPlanner
 {
-    /// <summary>Maximum depth permitted for nested raster function chains.</summary>
     public const int MaxChainDepth = 8;
 
     private static readonly HashSet<string> SupportedFunctions = new(StringComparer.OrdinalIgnoreCase)
@@ -319,17 +266,6 @@ internal sealed class ImageServerRasterFunctionPlanner : IImageServerRasterFunct
     private const int StretchTypeMinMax = 5;
     private const int StretchTypePercentClip = 6;
 
-    /// <summary>
-    /// Translates a validated raster function <paramref name="document"/> into the
-    /// canonical knobs (<see cref="RasterStretch"/>, <see cref="RasterColormap"/>,
-    /// <see cref="RasterClipRegion"/>, a band selection, and a <see cref="RasterBandArithmetic"/>)
-    /// the shared raster export pipeline executes. Walks an
-    /// <c>Identity</c>/<c>Stretch</c>/<c>Colormap</c>/<c>Clip</c>/<c>ExtractBand</c>/<c>BandArithmetic</c>
-    /// chain (nested via the <c>Raster</c> argument); an <c>Identity</c>-only chain is
-    /// an executable no-op. Recognized-but-unimplemented options
-    /// (clip-inside, histogram-equalize/sigmoid stretches, named colour ramps) return a
-    /// not-implemented result; unknown functions return an invalid result.
-    /// </summary>
     public static RenderingRuleMapping MapRenderingRule(RasterFunctionDocument document)
     {
         ArgumentNullException.ThrowIfNull(document);

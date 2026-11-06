@@ -19,13 +19,17 @@ inputs still fail. Generator implementation and serialization are unchanged.
 | `docs/gis/data/geoservices-rest-parity.json` | `scripts/generate-geoservices-parity.sh` → `GeoServicesParityEmitter` / `GeoServicesParityGenerator` | Nightly / on demand |
 | `docs/gis/data/capability-matrix.v1.json` | `scripts/ci/generate-capability-matrix.py` (after catalog and parity) | Nightly / on demand |
 | `docs/okf/capabilities` | `scripts/ci/generate-capability-concepts.py` (after the capability matrix) | Nightly / on demand |
-| `docs/okf/domain-graph.v1.json` | `scripts/ci/generate-okf-graph.py` (after all generated capability pages) | Nightly / on demand |
 | `examples/manifest.json` | `scripts/examples/generate-manifest.py` | Nightly / on demand |
 | `src/Honua.Core/Features/Infrastructure/Crs/Resources/geoparquet-crs-projjson.json` | `scripts/geoparquet/generate-projjson-catalog.py` | Explicit CRS/PROJ dependency update; depends on external pyproj/PROJ data, not trunk evidence |
 | `docs/gis/gap-report.md`, `docs/internal/compatibility/cross-server-consume-gap-report.md` | `scripts/client-compat/diff-baselines.py`, `scripts/ci/generate-cross-server-gap-report.sh` | Evidence-run snapshots; require measured results, external checkouts or live servers |
 | `tests/fixtures/curated-edge-corpus/v1/sea-surface-temperature.zarr/temperature/0.0.0` | `scripts/test-data/generate-curated-corpus-zarr.py` | Explicit refresh of fixed sample values |
 | `tests/fixtures/external-format-corpus/v1/*` binary fixtures | `scripts/test-data/generate-external-format-corpus.sh` | Explicit GDAL/OGR fixture refresh from authored GeoJSON inputs |
 | `tests/dotnet/Honua.Core.Tests/Raster/CogParser/Fixtures/*` TIFF/pixel fixtures | `scripts/raster/generate-cog-fixtures.py` | Explicit rasterio/GDAL fixture refresh |
+
+The OKF agent graph is generated locally at `docs/okf/domain-graph.v1.json`,
+ignored by Git, and uploaded by Docs Link Gate from the exact PR head. Its
+`bundleDigest` still commits to the bundle manifest, source documents and
+interface bindings; release packaging derives it from a pinned source revision.
 
 There are **no tracked `*.generated.*` files**. Compiler-generated JSON/logging,
 OpenAPI runtime output and SDK bindings are build artifacts or package inputs.

@@ -12,28 +12,8 @@ using NetTopologySuite.Operation.Overlay.Snap;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// Production <see cref="IJobExecutor"/> for the <c>geometry.snap</c>
-/// process. Slice 5 of #1031 — completes the vertex-conditioning trio
-/// alongside <see cref="GeometrySimplifyJobExecutor"/> and
-/// <see cref="GeometryDissolveJobExecutor"/>.
-///
-/// Snaps the vertices of the input geometry to those of a reference
-/// geometry whenever the distance between two candidates falls within the
-/// supplied tolerance, using NetTopologySuite's
-/// <see cref="GeometrySnapper.SnapTo(Geometry, double)"/>. The classic use
-/// case is reconciling adjacent dataset boundaries (e.g., aligning a
-/// freshly-digitized parcel with the authoritative cadaster) before
-/// running overlay operations that would otherwise produce sliver
-/// polygons. The reference geometry is consumed for vertex
-/// reference only; only the input geometry's coordinates are mutated.
-/// </summary>
 internal sealed partial class GeometrySnapJobExecutor : IProcessExecutor
 {
-    /// <summary>
-    /// The single process id this executor handles. Matches the catalog
-    /// entry in <see cref="BuiltInProcessCatalog"/>.
-    /// </summary>
     internal const string HandledProcessId = "geometry.snap";
 
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _options;
@@ -47,10 +27,6 @@ internal sealed partial class GeometrySnapJobExecutor : IProcessExecutor
         _logger = logger;
     }
 
-    /// <summary>
-    /// The single process id this executor handles, surfaced through
-    /// <see cref="IProcessExecutor"/> so the dispatcher auto-registers it (#2122).
-    /// </summary>
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 

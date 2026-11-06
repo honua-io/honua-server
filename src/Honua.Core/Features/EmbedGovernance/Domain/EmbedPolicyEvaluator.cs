@@ -3,24 +3,10 @@
 
 namespace Honua.Core.Features.EmbedGovernance.Domain;
 
-/// <summary>
-/// Pure evaluation of embed key scope against a request. This is the
-/// authoritative server-side decision: origin/domain (CORS), service, content,
-/// tenant, and rate-limit checks. It has no I/O so it can be unit tested in
-/// isolation and reused by every protocol surface.
-/// </summary>
 public static class EmbedPolicyEvaluator
 {
-    /// <summary>Default capabilities advertised to embeds.</summary>
     private static readonly string[] _defaultCapabilities = ["view", "search", "identify"];
 
-    /// <summary>
-    /// Evaluates whether an embed request is permitted by a key.
-    /// </summary>
-    /// <param name="key">The embed key, including its scope.</param>
-    /// <param name="request">The request inputs.</param>
-    /// <param name="now">The reference instant for lifecycle checks.</param>
-    /// <returns>The policy decision.</returns>
     public static EmbedPolicyDecision Evaluate(EmbedKeyRecord key, EmbedPolicyRequest request, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(key);
@@ -74,12 +60,6 @@ public static class EmbedPolicyEvaluator
         return EmbedPolicyDecision.Allow;
     }
 
-    /// <summary>
-    /// Projects a key scope into the policy payload consumed by the embed
-    /// governance adapter.
-    /// </summary>
-    /// <param name="key">The embed key.</param>
-    /// <returns>The policy payload.</returns>
     public static EmbedPolicy BuildPolicy(EmbedKeyRecord key)
     {
         ArgumentNullException.ThrowIfNull(key);
@@ -102,12 +82,6 @@ public static class EmbedPolicyEvaluator
         };
     }
 
-    /// <summary>
-    /// Normalizes a browser origin to a comparable lowercase scheme+host[:port]
-    /// form, stripping any path/trailing slash.
-    /// </summary>
-    /// <param name="origin">The raw origin value.</param>
-    /// <returns>The normalized origin, or <c>null</c> when blank.</returns>
     public static string? NormalizeOrigin(string? origin)
     {
         if (string.IsNullOrWhiteSpace(origin))

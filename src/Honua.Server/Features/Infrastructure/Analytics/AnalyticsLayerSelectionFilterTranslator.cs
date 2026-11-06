@@ -7,14 +7,6 @@ using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Infrastructure.Analytics;
 
-/// <summary>
-/// The <see cref="ILayerSelectionFilterTranslator"/> used by the <c>source.honua-layer</c>
-/// geoprocessing connector. It delegates to <see cref="AnalyticsFeatureQueryFactory.TranslateAsync"/>,
-/// the same translation the synchronous spatial analytics endpoints use, so a layer-sourced
-/// job and its synchronous sibling select exactly the same rows for the same selectors (#4624).
-/// Registered scoped so the filter service and spatial-reference resolver come from the
-/// caller's scope.
-/// </summary>
 internal sealed class AnalyticsLayerSelectionFilterTranslator : ILayerSelectionFilterTranslator
 {
     private readonly IServiceProvider _services;
@@ -24,7 +16,6 @@ internal sealed class AnalyticsLayerSelectionFilterTranslator : ILayerSelectionF
         _services = services;
     }
 
-    /// <inheritdoc />
     public Task<LayerSelectionTranslation> TranslateAsync(
         LayerSelectionFilter selection,
         MetadataV2Resource resource,

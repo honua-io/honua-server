@@ -10,7 +10,6 @@ namespace Honua.Db.Postgres.Features.Migration;
 
 internal sealed partial class GeoservicesImportService
 {
-    private const string ArcGisSourceKind = "arcgis-geoservices-rest";
 
     /// <summary>
     /// Single-layer import has not run the separate relationship-apply stage. Retain every
@@ -50,7 +49,7 @@ internal sealed partial class GeoservicesImportService
         ArgumentNullException.ThrowIfNull(manifest);
         ArgumentNullException.ThrowIfNull(publishedLayerMap);
 
-        if (!string.Equals(manifest.SourceKind, ArcGisSourceKind, StringComparison.Ordinal))
+        if (!MigrationSourceKinds.IsGeoServicesRest(manifest.SourceKind))
         {
             // Other source kinds (geoserver-rest, ogc-wfs, etc.) do not currently
             // emit per-relationship records into the manifest. Returning an empty

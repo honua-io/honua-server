@@ -533,6 +533,30 @@ def routing_reasons(
     return reasons
 
 
+def bound_reason_evidence(reasons: dict[str, list[str]]) -> dict[str, dict[str, int | str]]:
+    """Replace per-class path lists with a count and a canonical digest.
+
+    The observation used to repeat every matched path in every risk class.
+    PR #6544 changed 8,054 paths and ``candidate.reasons`` alone was about
+    1.8 MB, which pushed the receipt over the auditor's 2 MiB member cap
+    (#6621). The auditor replays ``changed_paths``; it does not need these
+    lists. The digest is ``_sha256_json`` of the sorted unique paths, so a
+    reader who still has that list can recompute it. Routing itself still
+    uses the lists in-process. Editing this classifier starts a new policy
+    generation; older receipts become cohort drift, not integrity failures.
+    """
+    if set(reasons) != set(RISK_CLASSES):
+        raise PolicyError("routing reasons do not cover the risk classes")
+    bounded: dict[str, dict[str, int | str]] = {}
+    for name in RISK_CLASSES:
+        paths = reasons[name]
+        if not isinstance(paths, list) or not all(isinstance(path, str) for path in paths):
+            raise PolicyError(f"routing reasons for {name} are invalid")
+        ordered = sorted(set(paths))
+        bounded[name] = {"count": len(ordered), "sha256": _sha256_json(ordered)}
+    return bounded
+
+
 def image_input_selection(
     repo: Path, policy: dict[str, Any], paths: Iterable[str], *, normalized: bool = False
 ) -> dict[str, list[str]]:
@@ -591,7 +615,8 @@ def evaluate(
         re.fullmatch(r"[0-9a-f]{64}", value or "") is None for value in image_inputs.values()
     ):
         raise PolicyError("image input digests are incomplete")
-    reasons = routing_reasons(repo, policy, paths, normalized=True)
+    matched = routing_reasons(repo, policy, paths, normalized=True)
+    reasons = bound_reason_evidence(matched)
     serving_projects, serving_external = project_closure(
         repo, policy["roots"]["serving"], policy["global_projects"]
     )
@@ -601,7 +626,7 @@ def evaluate(
     worker_projects, worker_external = project_closure(
         repo, policy["roots"]["worker"], policy["global_projects"]
     )
-    risk_classes = {name: bool(reasons[name]) for name in RISK_CLASSES}
+    risk_classes = {name: bool(matched[name]) for name in RISK_CLASSES}
     serving_variants = {
         name: risk_classes[f"{name}_final_rootfs"] for name in SERVING_VARIANTS
     }
@@ -904,10 +929,9 @@ def markdown(report: dict[str, Any]) -> str:
         "|---|---:|---|",
     ]
     for name in RISK_CLASSES:
-        hits = candidate["reasons"][name]
-        rendered = "<br>".join(f"`{path}`" for path in hits[:8]) or "—"
-        if len(hits) > 8:
-            rendered += f"<br>… +{len(hits) - 8}"
+        evidence = candidate["reasons"][name]
+        count = evidence["count"]
+        rendered = "—" if count == 0 else f"`{count}` (`{evidence['sha256'][:12]}`)"
         lines.append(
             f"| `{name}` | `{str(candidate['risk_classes'][name]).lower()}` | {rendered} |"
         )

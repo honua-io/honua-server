@@ -9,9 +9,6 @@ using ConfigurationSection = Honua.Core.Configuration.ConfigurationSection;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// Publishes geoprocessing workspace configuration metadata to the admin config endpoint.
-/// </summary>
 internal sealed class GeoprocessingConfigurationDocumentationContributor : IConfigurationDocumentationContributor
 {
     private readonly IConfiguration _configuration;

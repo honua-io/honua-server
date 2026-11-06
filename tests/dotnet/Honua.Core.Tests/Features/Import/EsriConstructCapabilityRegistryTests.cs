@@ -12,26 +12,26 @@ public sealed class EsriConstructCapabilityRegistryTests
 {
     [Trait("Tier", "Fast")]
     [Theory]
-    [InlineData(EsriConstructCapabilityRegistry.Keys.ServiceIdentity, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, false)]
-    [InlineData(EsriConstructCapabilityRegistry.Keys.ServiceCapabilities, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, false)]
-    [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceIdentity, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, false)]
-    [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceCapabilities, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, false)]
-    [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceFields, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, false)]
-    [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceDomains, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, true)]
-    [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceSubtypes, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ArcGisSubtypesManualReview, false, false, true)]
-    [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceRelationships, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, true)]
-    [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceAttachments, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, true)]
-    [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceRenderers, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ManualReview, false, false, true)]
-    [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceTimeMetadata, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ArcGisTimeMetadataManualReview, false, false, true)]
-    [InlineData(EsriConstructCapabilityRegistry.Keys.FacadeFeatureService, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, false)]
-    [InlineData(EsriConstructCapabilityRegistry.Keys.FacadeMapService, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, false)]
-    [InlineData(EsriConstructCapabilityRegistry.Keys.FacadeImageService, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, false)]
-    [InlineData(EsriConstructCapabilityRegistry.Keys.GpVectorDeterministic, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, false)]
-    [InlineData(EsriConstructCapabilityRegistry.Keys.GpDestructiveDataManagement, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ManualReview, false, false, true)]
-    [InlineData(EsriConstructCapabilityRegistry.Keys.GpRasterSurface, MigrationFidelityAutomationStatuses.Assisted, ImportCompatibilityCodes.ManualReview, false, true, false)]
-    [InlineData(EsriConstructCapabilityRegistry.Keys.GpRasterConversion, MigrationFidelityAutomationStatuses.Assisted, ImportCompatibilityCodes.ManualReview, false, false, false)]
-    [InlineData(EsriConstructCapabilityRegistry.Keys.GpDataManagement, MigrationFidelityAutomationStatuses.Assisted, ImportCompatibilityCodes.ManualReview, false, false, false)]
-    [InlineData(EsriConstructCapabilityRegistry.Keys.GpUnsupported, MigrationFidelityAutomationStatuses.Unsupported, ImportCompatibilityCodes.ManualReview, false, false, false)]
+    [InlineData(GeoServicesConstructCapabilityRegistry.Keys.ServiceIdentity, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, false)]
+    [InlineData(GeoServicesConstructCapabilityRegistry.Keys.ServiceCapabilities, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, false)]
+    [InlineData(GeoServicesConstructCapabilityRegistry.Keys.ResourceIdentity, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, false)]
+    [InlineData(GeoServicesConstructCapabilityRegistry.Keys.ResourceCapabilities, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, false)]
+    [InlineData(GeoServicesConstructCapabilityRegistry.Keys.ResourceFields, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, false)]
+    [InlineData(GeoServicesConstructCapabilityRegistry.Keys.ResourceDomains, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, true)]
+    [InlineData(GeoServicesConstructCapabilityRegistry.Keys.ResourceSubtypes, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.GeoServicesSubtypesManualReview, false, false, true)]
+    [InlineData(GeoServicesConstructCapabilityRegistry.Keys.ResourceRelationships, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, true)]
+    [InlineData(GeoServicesConstructCapabilityRegistry.Keys.ResourceAttachments, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, true)]
+    [InlineData(GeoServicesConstructCapabilityRegistry.Keys.ResourceRenderers, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ManualReview, false, false, true)]
+    [InlineData(GeoServicesConstructCapabilityRegistry.Keys.ResourceTimeMetadata, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.GeoServicesTimeMetadataManualReview, false, false, true)]
+    [InlineData(GeoServicesConstructCapabilityRegistry.Keys.FacadeFeatureService, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, false)]
+    [InlineData(GeoServicesConstructCapabilityRegistry.Keys.FacadeMapService, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, false)]
+    [InlineData(GeoServicesConstructCapabilityRegistry.Keys.FacadeImageService, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, false)]
+    [InlineData(GeoServicesConstructCapabilityRegistry.Keys.GpVectorDeterministic, MigrationFidelityAutomationStatuses.Automated, ImportCompatibilityCodes.Compatible, true, true, false)]
+    [InlineData(GeoServicesConstructCapabilityRegistry.Keys.GpDestructiveDataManagement, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ManualReview, false, false, true)]
+    [InlineData(GeoServicesConstructCapabilityRegistry.Keys.GpRasterSurface, MigrationFidelityAutomationStatuses.Assisted, ImportCompatibilityCodes.ManualReview, false, true, false)]
+    [InlineData(GeoServicesConstructCapabilityRegistry.Keys.GpRasterConversion, MigrationFidelityAutomationStatuses.Assisted, ImportCompatibilityCodes.ManualReview, false, false, false)]
+    [InlineData(GeoServicesConstructCapabilityRegistry.Keys.GpDataManagement, MigrationFidelityAutomationStatuses.Assisted, ImportCompatibilityCodes.ManualReview, false, false, false)]
+    [InlineData(GeoServicesConstructCapabilityRegistry.Keys.GpUnsupported, MigrationFidelityAutomationStatuses.Unsupported, ImportCompatibilityCodes.ManualReview, false, false, false)]
     public void ResolveOrUnknown_KnownConstructKey_ReturnsSeededDescriptor(
         string constructKey,
         string expectedAutomationStatus,
@@ -40,7 +40,7 @@ public sealed class EsriConstructCapabilityRegistryTests
         bool expectedCanServe,
         bool expectedRequiresCheck)
     {
-        var registry = new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors);
+        var registry = new GeoServicesConstructCapabilityRegistry(GeoServicesConstructCapabilityRegistry.BuiltInDescriptors);
 
         var descriptor = registry.ResolveOrUnknown(constructKey);
 
@@ -55,19 +55,19 @@ public sealed class EsriConstructCapabilityRegistryTests
 
     [Trait("Tier", "Fast")]
     [Theory]
-    [InlineData(EsriConstructCapabilityRegistry.Keys.ServiceCapabilities, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ManualReview)]
-    [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceCapabilities, MigrationFidelityAutomationStatuses.Unsupported, ImportCompatibilityCodes.ArcGisQueryCapabilityMissing)]
-    [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceFields, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ManualReview)]
-    [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceDomains, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ArcGisDomainTruncated)]
-    [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceSubtypes, MigrationFidelityAutomationStatuses.Unsupported, ImportCompatibilityCodes.ArcGisSubtypesManualReview)]
-    [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceRelationships, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ArcGisRelationshipsManualReview)]
-    [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceAttachments, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ArcGisAttachments)]
+    [InlineData(GeoServicesConstructCapabilityRegistry.Keys.ServiceCapabilities, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ManualReview)]
+    [InlineData(GeoServicesConstructCapabilityRegistry.Keys.ResourceCapabilities, MigrationFidelityAutomationStatuses.Unsupported, ImportCompatibilityCodes.GeoServicesQueryCapabilityMissing)]
+    [InlineData(GeoServicesConstructCapabilityRegistry.Keys.ResourceFields, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ManualReview)]
+    [InlineData(GeoServicesConstructCapabilityRegistry.Keys.ResourceDomains, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.GeoServicesDomainTruncated)]
+    [InlineData(GeoServicesConstructCapabilityRegistry.Keys.ResourceSubtypes, MigrationFidelityAutomationStatuses.Unsupported, ImportCompatibilityCodes.GeoServicesSubtypesManualReview)]
+    [InlineData(GeoServicesConstructCapabilityRegistry.Keys.ResourceRelationships, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.GeoServicesRelationshipsManualReview)]
+    [InlineData(GeoServicesConstructCapabilityRegistry.Keys.ResourceAttachments, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.GeoServicesAttachments)]
     public void ResolveOrUnknown_ConditionalConstruct_ExposesUnsupportedFallback(
         string constructKey,
         string expectedFallbackStatus,
         string expectedFallbackCode)
     {
-        var registry = new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors);
+        var registry = new GeoServicesConstructCapabilityRegistry(GeoServicesConstructCapabilityRegistry.BuiltInDescriptors);
 
         var descriptor = registry.ResolveOrUnknown(constructKey);
 
@@ -83,11 +83,11 @@ public sealed class EsriConstructCapabilityRegistryTests
     [InlineData("RESOURCE.IDENTITY")]
     public void ResolveOrUnknown_UnknownKey_ReturnsManualReviewFallback(string constructKey)
     {
-        var registry = new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors);
+        var registry = new GeoServicesConstructCapabilityRegistry(GeoServicesConstructCapabilityRegistry.BuiltInDescriptors);
 
         var descriptor = registry.ResolveOrUnknown(constructKey);
 
-        descriptor.Should().BeSameAs(EsriConstructCapabilityRegistry.UnknownDescriptor);
+        descriptor.Should().BeSameAs(GeoServicesConstructCapabilityRegistry.UnknownDescriptor);
         descriptor.AutomationStatus.Should().Be(MigrationFidelityAutomationStatuses.ManualReview);
         descriptor.Code.Should().Be(ImportCompatibilityCodes.ManualReview);
         descriptor.CanTransform.Should().BeFalse();
@@ -99,31 +99,31 @@ public sealed class EsriConstructCapabilityRegistryTests
     [Fact]
     public void RegisteredConstructKeys_ContainsAllBuiltInKeys()
     {
-        var registry = new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors);
+        var registry = new GeoServicesConstructCapabilityRegistry(GeoServicesConstructCapabilityRegistry.BuiltInDescriptors);
 
         registry.RegisteredConstructKeys.Should().BeEquivalentTo(
         [
-            EsriConstructCapabilityRegistry.Keys.ServiceIdentity,
-            EsriConstructCapabilityRegistry.Keys.ServiceCapabilities,
-            EsriConstructCapabilityRegistry.Keys.ResourceIdentity,
-            EsriConstructCapabilityRegistry.Keys.ResourceCapabilities,
-            EsriConstructCapabilityRegistry.Keys.ResourceFields,
-            EsriConstructCapabilityRegistry.Keys.ResourceDomains,
-            EsriConstructCapabilityRegistry.Keys.ResourceSubtypes,
-            EsriConstructCapabilityRegistry.Keys.ResourceRelationships,
-            EsriConstructCapabilityRegistry.Keys.ResourceAttachments,
-            EsriConstructCapabilityRegistry.Keys.ResourceRenderers,
-            EsriConstructCapabilityRegistry.Keys.ResourceTimeMetadata,
-            EsriConstructCapabilityRegistry.Keys.FacadeFeatureService,
-            EsriConstructCapabilityRegistry.Keys.FacadeMapService,
-            EsriConstructCapabilityRegistry.Keys.FacadeImageService,
-            EsriConstructCapabilityRegistry.Keys.GpVectorDeterministic,
-            EsriConstructCapabilityRegistry.Keys.GpDestructiveDataManagement,
-            EsriConstructCapabilityRegistry.Keys.GpRasterSurface,
-            EsriConstructCapabilityRegistry.Keys.GpRasterConversion,
-            EsriConstructCapabilityRegistry.Keys.GpDataManagement,
-            EsriConstructCapabilityRegistry.Keys.GpImageryInference,
-            EsriConstructCapabilityRegistry.Keys.GpUnsupported
+            GeoServicesConstructCapabilityRegistry.Keys.ServiceIdentity,
+            GeoServicesConstructCapabilityRegistry.Keys.ServiceCapabilities,
+            GeoServicesConstructCapabilityRegistry.Keys.ResourceIdentity,
+            GeoServicesConstructCapabilityRegistry.Keys.ResourceCapabilities,
+            GeoServicesConstructCapabilityRegistry.Keys.ResourceFields,
+            GeoServicesConstructCapabilityRegistry.Keys.ResourceDomains,
+            GeoServicesConstructCapabilityRegistry.Keys.ResourceSubtypes,
+            GeoServicesConstructCapabilityRegistry.Keys.ResourceRelationships,
+            GeoServicesConstructCapabilityRegistry.Keys.ResourceAttachments,
+            GeoServicesConstructCapabilityRegistry.Keys.ResourceRenderers,
+            GeoServicesConstructCapabilityRegistry.Keys.ResourceTimeMetadata,
+            GeoServicesConstructCapabilityRegistry.Keys.FacadeFeatureService,
+            GeoServicesConstructCapabilityRegistry.Keys.FacadeMapService,
+            GeoServicesConstructCapabilityRegistry.Keys.FacadeImageService,
+            GeoServicesConstructCapabilityRegistry.Keys.GpVectorDeterministic,
+            GeoServicesConstructCapabilityRegistry.Keys.GpDestructiveDataManagement,
+            GeoServicesConstructCapabilityRegistry.Keys.GpRasterSurface,
+            GeoServicesConstructCapabilityRegistry.Keys.GpRasterConversion,
+            GeoServicesConstructCapabilityRegistry.Keys.GpDataManagement,
+            GeoServicesConstructCapabilityRegistry.Keys.GpImageryInference,
+            GeoServicesConstructCapabilityRegistry.Keys.GpUnsupported
         ]);
     }
 
@@ -131,29 +131,29 @@ public sealed class EsriConstructCapabilityRegistryTests
     [Fact]
     public void Constructor_DuplicateConstructKey_ThrowsInvalidOperationException()
     {
-        var duplicate = new EsriConstructCapabilityDescriptor
+        var duplicate = new GeoServicesConstructCapabilityDescriptor
         {
-            ConstructKey = EsriConstructCapabilityRegistry.Keys.ResourceIdentity,
+            ConstructKey = GeoServicesConstructCapabilityRegistry.Keys.ResourceIdentity,
             AutomationStatus = MigrationFidelityAutomationStatuses.Automated,
             Code = ImportCompatibilityCodes.Compatible,
             Reason = "duplicate"
         };
 
-        var act = () => _ = new EsriConstructCapabilityRegistry(
+        var act = () => _ = new GeoServicesConstructCapabilityRegistry(
         [
-            ..EsriConstructCapabilityRegistry.BuiltInDescriptors,
+            ..GeoServicesConstructCapabilityRegistry.BuiltInDescriptors,
             duplicate
         ]);
 
         act.Should().Throw<InvalidOperationException>()
-            .WithMessage($"*Duplicate*'{EsriConstructCapabilityRegistry.Keys.ResourceIdentity}'*");
+            .WithMessage($"*Duplicate*'{GeoServicesConstructCapabilityRegistry.Keys.ResourceIdentity}'*");
     }
 
     [Trait("Tier", "Fast")]
     [Fact]
     public void Constructor_DescriptorWithEmptyConstructKey_ThrowsInvalidOperationException()
     {
-        var invalid = new EsriConstructCapabilityDescriptor
+        var invalid = new GeoServicesConstructCapabilityDescriptor
         {
             ConstructKey = "  ",
             AutomationStatus = MigrationFidelityAutomationStatuses.Automated,
@@ -161,7 +161,7 @@ public sealed class EsriConstructCapabilityRegistryTests
             Reason = "blank key"
         };
 
-        var act = () => _ = new EsriConstructCapabilityRegistry([invalid]);
+        var act = () => _ = new GeoServicesConstructCapabilityRegistry([invalid]);
 
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*non-empty ConstructKey*");

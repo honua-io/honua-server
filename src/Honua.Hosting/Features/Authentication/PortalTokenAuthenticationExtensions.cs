@@ -14,33 +14,13 @@ using Honua.Infrastructure.Models;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Wiring extensions for the ArcGIS-compatible portal-token authentication scheme.
-/// </summary>
-/// <remarks>
-/// The scheme is registered alongside the existing API-key authentication so that
-/// FeatureServer/MapServer endpoints (which use <c>AllowAnonymous</c> route metadata
-/// and authorize per-resource) can observe portal-token credentials carried as
-/// <c>?token=</c>, <c>Authorization: Bearer ...</c>, <c>X-Esri-Authorization: Bearer ...</c>,
-/// or a form-encoded POST <c>token</c> field.
-/// A small middleware bridges anonymous requests by authenticating the scheme on
-/// demand and projecting the resulting principal onto <see cref="HttpContext.User"/>.
-/// </remarks>
 public static class PortalTokenAuthenticationExtensions
 {
     internal static readonly object AuthenticationFailureKey = new();
-    /// <summary>
-    /// Authentication scheme name for ArcGIS-compatible portal tokens.
-    /// </summary>
+
+    internal static readonly object QueryCredentialKey = new();
     public const string PortalTokenScheme = PortalTokenIssuer.AuthSchemeName;
 
-    /// <summary>
-    /// Registers the portal-token issuer, options, default credential verifier, and
-    /// authentication scheme.
-    /// </summary>
-    /// <param name="services">The service collection.</param>
-    /// <param name="configuration">The host configuration.</param>
-    /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddPortalTokenAuthentication(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -72,25 +52,14 @@ public static class PortalTokenAuthenticationExtensions
         return services;
     }
 
-    /// <summary>
-    /// Inserts the portal-token bridge middleware into the request pipeline.
-    /// Must run after <c>UseAuthentication</c>/<c>UseApiKeyAuthentication</c> so it can
-    /// observe the default-scheme authentication result, and before the tenant-context
-    /// middleware so downstream handlers see the hydrated principal.
-    /// </summary>
-    /// <param name="app">The application builder.</param>
-    /// <returns>The application builder for chaining.</returns>
+    // This middleware runs after authentication and before tenant resolution so downstream handlers see the hydrated principal.
     public static IApplicationBuilder UsePortalTokenAuthentication(this IApplicationBuilder app)
     {
         ArgumentNullException.ThrowIfNull(app);
         return app.UseMiddleware<PortalTokenAuthenticationMiddleware>();
     }
 
-    /// <summary>
-    /// Rejects invalid portal tokens after the shared audit and rate-limit middleware has
-    /// entered the request. This preserves the Esri 498 response while ensuring repeated
-    /// invalid credentials consume the configured source-IP rate-limit bucket.
-    /// </summary>
+    // An invalid portal token is rejected after the shared rate limiter has entered the request, so repeated bad credentials still consume the source-IP bucket, and the response stays the GeoServices 498.
     public static IApplicationBuilder UsePortalTokenAuthenticationRejection(this IApplicationBuilder app)
     {
         ArgumentNullException.ThrowIfNull(app);
@@ -128,11 +97,7 @@ public static class PortalTokenAuthenticationExtensions
         }
     }
 
-    /// <summary>
-    /// Registers the custom-code geoprocessing scoped-job token issuer (Phase 0
-    /// auth spine). A separate singleton from the portal-token issuer so the ArcGIS
-    /// portal token is never overloaded to carry job-bound attenuation.
-    /// </summary>
+    // The scoped-job issuer is a separate singleton so a portal token is never asked to carry a job-bound attenuation.
     private static void TryAddSingletonScopedJobTokenIssuer(this IServiceCollection services)
     {
         if (!services.Any(d => d.ServiceType == typeof(IScopedJobTokenIssuer)))
@@ -246,27 +211,16 @@ public static class PortalTokenAuthenticationExtensions
     }
 }
 
-/// <summary>
-/// Configuration keys for the Portal access/visibility projection (#1370).
-/// </summary>
 public static class PortalAccessProjectionConfiguration
 {
-    /// <summary>
-    /// Configuration section binding root for the projection gate.
-    /// </summary>
     public const string SectionName = "Authentication:PortalAccessProjection";
 }
 
-/// <summary>
-/// Bridges anonymous requests that carry an ArcGIS-style portal token into the
-/// default authentication pipeline by attempting <see cref="PortalTokenAuthenticationHandler"/>
-/// authentication and projecting any resulting principal onto <see cref="HttpContext.User"/>.
-/// </summary>
 internal sealed class PortalTokenAuthenticationMiddleware(
     RequestDelegate next,
     IOptionsMonitor<PortalTokenAuthenticationOptions> options)
 {
-    private const string EsriAuthorizationHeader = "X-Esri-Authorization";
+    private const string GeoServicesAuthorizationHeader = "X-Esri-Authorization";
 
     private readonly RequestDelegate _next = next;
     private readonly IOptionsMonitor<PortalTokenAuthenticationOptions> _options = options;
@@ -281,6 +235,18 @@ internal sealed class PortalTokenAuthenticationMiddleware(
             if (result.Succeeded && result.Principal is not null)
             {
                 context.User = result.Principal;
+                if (context.Items.ContainsKey(PortalTokenAuthenticationExtensions.QueryCredentialKey))
+                {
+                    // RFC 6750 §2.3: a response to a request whose credential was in the URI
+                    // must be Cache-Control: private. OnStarting runs after the endpoint (and
+                    // any endpoint-registered callback) has set its own policy, so the merge
+                    // sees the final value on every route, tiles and OGC included.
+                    context.Response.OnStarting(static state =>
+                    {
+                        Honua.Infrastructure.Caching.UriCredentialResponseCachePolicy.Apply(((HttpContext)state).Response);
+                        return Task.CompletedTask;
+                    }, context);
+                }
             }
             else if (!result.Succeeded && result.Failure is not null && IsGeoServicesPortalRequest(context))
             {
@@ -301,7 +267,7 @@ internal sealed class PortalTokenAuthenticationMiddleware(
             return true;
         }
 
-        if (context.Request.Headers.TryGetValue(EsriAuthorizationHeader, out var esri) &&
+        if (context.Request.Headers.TryGetValue(GeoServicesAuthorizationHeader, out var esri) &&
             HasBearerPrefix(esri))
         {
             return true;

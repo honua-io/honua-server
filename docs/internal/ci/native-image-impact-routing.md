@@ -36,11 +36,17 @@ the canonical gate run, trusted policy commit, individual Git blob IDs for the
 selector, routing policy, resolver, observer workflow, PR Gate, Serving Image
 Boundary, and GDAL Worker Image workflows, a digest over that fixed input
 manifest, base/head SHAs, exact project lists, graph fingerprints, normalized
-changed-path digest, matched reasons, and `mutation: none`. It also binds one
+changed-path digest, per-class reason counts and digests, and `mutation: none`.
+It also binds one
 content digest per image class (`serving_generic`, `serving_lambda`,
 `serving_functions`, `worker`) over that class's exact build-input file set, so
 two heads that would consume byte-identical inputs are recognisable without
-rebuilding either of them. Neither expensive
+rebuilding either of them. Reason evidence is a count and the canonical
+SHA-256 of the sorted paths for that class, not the path list. Repeating every
+matched path in every risk class put the 8,054-path #6544 receipt over the
+ledger's 2 MiB cap (#6621). Changing this classifier starts a new policy
+generation; receipts from the previous classifier are cohort drift, not
+integrity failures. Neither expensive
 image workflow reads it. The authoritative workflow blobs come from the exact
 observed PR head and must equal the current default-branch blobs before the
 ledger counts them. Validation parses the serving workflow's actual Bash case

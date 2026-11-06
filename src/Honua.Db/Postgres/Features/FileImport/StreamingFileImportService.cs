@@ -48,6 +48,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     private readonly Honua.Core.Features.Infrastructure.Abstractions.ICloudFileStorage? _cloudStorage;
     private readonly PostgresSchemaConfiguration _schemaConfiguration;
     private readonly IDatumTransformationCatalog? _datumTransformationCatalog;
+    private readonly PostgresSessionLockConnections _sessionLockConnections;
 
     private const string CreateImportTableSql = "SELECT honua.create_import_table(@schema_name, @table_name, @target_srid)";
     private const string EnsureImportTableSql = "SELECT honua.ensure_import_table(@schema_name, @table_name, @target_srid)";
@@ -76,8 +77,6 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     private static readonly string _kmzScratchRoot = Path.Join(Path.GetTempPath(), "honua-kmz");
     private static readonly string _fileGdbScratchRoot = Path.Join(Path.GetTempPath(), "honua-filegdb");
     private static readonly string _geoParquetScratchRoot = Path.Join(Path.GetTempPath(), "honua-geoparquet");
-    private static readonly CompositeFormat _nullGeometryWarningFormat =
-        CompositeFormat.Parse("{0} row(s) were skipped because geometry was null.");
     private static readonly CompositeFormat _partialImportWarningFormat =
         CompositeFormat.Parse("{0} row(s) failed while continue-on-error was enabled; previously imported rows were retained.");
     private static readonly CompositeFormat _csvUnparseableGeometryWarningFormat =
@@ -106,7 +105,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         ImportLimits? limits = null,
         Honua.Core.Features.Infrastructure.Abstractions.ICloudFileStorage? cloudStorage = null,
         PostgresSchemaConfiguration? schemaConfiguration = null,
-        IDatumTransformationCatalog? datumTransformationCatalog = null)
+        IDatumTransformationCatalog? datumTransformationCatalog = null,
+        Microsoft.Extensions.Options.IOptions<PostgresSessionLockConnections>? sessionLockConnections = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _crsDetectionService = crsDetectionService ?? throw new ArgumentNullException(nameof(crsDetectionService));
@@ -121,6 +121,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             PostgresSchemaConfiguration.DefaultDataSchema,
             [PostgresSchemaConfiguration.DefaultDataSchema, "public"]);
         _datumTransformationCatalog = datumTransformationCatalog;
+        _sessionLockConnections = sessionLockConnections?.Value ?? PostgresSessionLockConnections.Pooled;
     }
 
     /// <summary>
@@ -307,6 +308,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         KmzScratch? kmzScratch = null;
         FileGdbScratch? fileGdbScratch = null;
         GeoParquetScratch? geoParquetScratch = null;
+        double? coordinateEpoch = null;
         FileStream? fgbTempStream = null;
 
         ImportLog.ImportStarted(_logger, jobId, request.TableName, formatName, mode, totalBytes);
@@ -444,6 +446,7 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 }
 
                 detectedSrid = prep.DetectedSrid;
+                coordinateEpoch = prep.CoordinateEpoch;
 
                 // If scratch created a new stream (non-seekable input), dispose the original
                 if (geoParquetScratch!.ScratchDir != null && shouldDisposeStream)
@@ -527,6 +530,15 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 return result;
             }
 
+            if (coordinateEpoch.HasValue &&
+                (!detectedSrid.HasValue || sourceSrid.Value != request.TargetSrid ||
+                 sourceSrid.Value != detectedSrid.Value))
+            {
+                return ImportResult.CreateFailure(request.TableName, format.Value,
+                    "Coordinate epoch requires a known source CRS and cannot be preserved through this CRS override or transformation; use the source storage CRS.",
+                    stopwatch.Elapsed, warnings);
+            }
+
             var sridValidationErrors = await ValidateImportSridsAsync(
                 sourceSrid.Value,
                 request.TargetSrid,
@@ -605,7 +617,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             int repairedCount;
             string physicalTableName;
             bool replacementBlocked;
-            (importedCount, failedCount, repairedCount, warnings, rowIssues, physicalTableName, replacementBlocked) = await ImportStreamingAsync(
+            IReadOnlyList<ImportTypedColumn> typedColumns;
+            (importedCount, failedCount, repairedCount, warnings, rowIssues, physicalTableName, replacementBlocked, typedColumns) = await ImportStreamingAsync(
                 request,
                 fileStream,
                 format.Value,
@@ -615,7 +628,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 jobId,
                 cancellationToken,
                 shapefileScratch,
-                fileGdbScratch);
+                fileGdbScratch,
+                coordinateEpoch);
 
             // A replace whose load dropped rows against an already-populated target never
             // promoted its staging sibling (see ImportStreamingAsync) — the live target is
@@ -674,12 +688,14 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 schema: ResolveTargetSchema(request.TargetSchema),
                 repairedGeometryCount: repairedCount) with
             {
+                StorageCrsCoordinateEpoch = coordinateEpoch,
                 // Per-row issues (e.g. CSV address rows that failed to geocode, or GeoJSON
                 // geometries repaired by the validity gate) that did not block the import but should
                 // be relayed to the caller alongside the warnings.
                 ValidationErrors = preflightWarnings.Length == 0
                     ? rowIssues
-                    : [.. preflightWarnings, .. rowIssues]
+                    : [.. preflightWarnings, .. rowIssues],
+                TypedColumns = typedColumns
             };
             return result;
         }
@@ -727,6 +743,21 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 warnings,
                 ImportValidationErrorCodes.GeometryTooLarge,
                 geometryTooLargeIssues);
+            return result;
+        }
+        catch (ImportTableOwnershipException ex)
+        {
+            // Map before the generic handler. A missing code becomes "Import failed."
+            // and the synchronous upload answers 200 instead of 409.
+            ImportLog.ImportFailedWithException(_logger, ex, jobId, request.TableName);
+            errorMessage = ImportTableOwnershipException.CreateSafeMessage(request.TableName);
+            result = ImportResult.CreateFailure(
+                request.TableName,
+                format ?? SupportedFileFormat.GeoJson,
+                errorMessage,
+                stopwatch.Elapsed,
+                warnings,
+                errorCode: ImportTableOwnershipException.Code);
             return result;
         }
         catch (InvalidDataException ex)

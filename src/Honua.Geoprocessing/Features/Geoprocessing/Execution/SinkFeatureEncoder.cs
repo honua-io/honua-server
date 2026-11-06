@@ -8,22 +8,10 @@ using NetTopologySuite.Features;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// Shared encoding helper for PostGIS-family sinks: turns an NTS <see cref="IFeature"/>'s
-/// attributes into the canonical JSONB object every sink row carries, tagged with the
-/// reserved <see cref="BatchIdPropertyKey"/> for soft-delete rollback. Centralising it
-/// keeps the row wire-format identical across the external-PostGIS sink and the catalog
-/// honua-layer sink instead of duplicating the per-type JSON projection.
-/// </summary>
 internal static class SinkFeatureEncoder
 {
-    /// <summary>Reserved attribute key tagging every row with its run batch id.</summary>
     public const string BatchIdPropertyKey = "__pipeline_batch_id";
 
-    /// <summary>
-    /// Builds the attributes JSON object for a feature, writing the reserved batch-id key
-    /// first followed by the feature's own attributes.
-    /// </summary>
     public static string BuildAttributesJson(IFeature feature, string batchId)
     {
         using var stream = new MemoryStream();

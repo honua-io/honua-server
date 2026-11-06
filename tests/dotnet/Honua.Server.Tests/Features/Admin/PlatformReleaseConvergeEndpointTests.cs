@@ -136,6 +136,82 @@ public sealed class PlatformReleaseConvergeEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/platform-release/converge")]
+    public async Task Converge_AfterCompatibleRemoteRollbackWithoutRestore_IsNotBlocked()
+    {
+        _ladder.Tier = GuardrailTier.DirectExecute;
+        SeedSucceededDeploy("srv-divergent", "rc1");
+        var first = await ConvergeAndReadTargetOperationId("srv-divergent");
+        first.Should().NotBeNullOrWhiteSpace();
+        SeedSucceededDeploy("srv-divergent", "rc1", "backup-verified");
+        var second = await ConvergeAndReadTargetOperationId("srv-divergent");
+        second.Should().NotBeNullOrWhiteSpace().And.NotBe(first);
+        (await ConvergeAndReadTargetOperationId("srv-divergent")).Should().Be(second);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/platform-release/converge")]
+    public async Task Converge_AfterRestore_CreatesFreshOperationAndRetriesAreStable()
+    {
+        _ladder.Tier = GuardrailTier.DirectExecute;
+        SeedSucceededDeploy("srv-divergent", "rc1");
+        var first = await ConvergeAndReadTargetOperationId("srv-divergent");
+        first.Should().NotBeNullOrWhiteSpace();
+
+        // Record completion as the workflow store would after the candidate and rollback.
+        var now = DateTimeOffset.UtcNow;
+        var candidate = await _workflowStore.GetAsync(first!);
+        candidate.Should().NotBeNull();
+        _workflowStore.Seed(candidate! with
+        {
+            Status = WorkflowOperationStatus.Succeeded,
+            UpdatedAt = now.AddSeconds(-1),
+            CompletedAt = now.AddSeconds(-1)
+        });
+        (await ConvergeAndReadTargetOperationId("srv-divergent")).Should().BeNull("the candidate is already serving");
+        _workflowStore.Seed(new WorkflowOperationRecord
+        {
+            OperationId = "rollback-child",
+            Kind = WorkflowOperationKind.Deploy,
+            Status = WorkflowOperationStatus.Succeeded,
+            CreatedAt = now,
+            UpdatedAt = now,
+            CompletedAt = now,
+            Audit = new OperationAuditInfo { IdempotencyKey = "restore-rollback" },
+            Deploy = new DeployOperationSpec
+            {
+                TargetId = "srv-divergent",
+                TargetKind = DeployTargetKind.Kubernetes,
+                Backend = "honua-gitops-kubernetes",
+                Environment = "production",
+                TargetName = "honua-server",
+                DesiredRevision = "rc1",
+                PreMigrationBackupId = "candidate-backup",
+                Parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+            }
+        });
+        _workflowStore.Seed(new WorkflowOperationRecord
+        {
+            OperationId = "restore-rollback",
+            Kind = WorkflowOperationKind.PreMigrationRestore,
+            Status = WorkflowOperationStatus.Succeeded,
+            CreatedAt = now,
+            UpdatedAt = now,
+            CompletedAt = now,
+            PreMigrationRestore = new PreMigrationRestoreContext
+            {
+                Payload = "{}",
+                Phase = "completed",
+                ApprovedBy = "approver",
+                DeployOperationId = "rollback-child"
+            }
+        });
+        var second = await ConvergeAndReadTargetOperationId("srv-divergent");
+        second.Should().NotBeNullOrWhiteSpace().And.NotBe(first);
+        (await ConvergeAndReadTargetOperationId("srv-divergent")).Should().Be(second);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/platform-release/converge")]
     public async Task Converge_RoutesThroughApprovalGateway_WithoutDirectExecuteBypass()
     {
         // The guardrail tier requires approval: converge must create a PROPOSAL, never execute directly.
@@ -313,7 +389,7 @@ public sealed class PlatformReleaseConvergeEndpointTests : IAsyncLifetime
         return target.TryGetProperty("operationId", out var opId) ? opId.GetString() : null;
     }
 
-    private void SeedSucceededDeploy(string targetId, string desiredRevision)
+    private void SeedSucceededDeploy(string targetId, string desiredRevision, string? preMigrationBackupId = null)
     {
         var now = DateTimeOffset.UtcNow;
         _workflowStore.Seed(new WorkflowOperationRecord
@@ -332,6 +408,7 @@ public sealed class PlatformReleaseConvergeEndpointTests : IAsyncLifetime
                 Environment = "production",
                 TargetName = "honua-server",
                 DesiredRevision = desiredRevision,
+                PreMigrationBackupId = preMigrationBackupId,
                 Parameters = new Dictionary<string, string>(StringComparer.Ordinal)
             }
         });

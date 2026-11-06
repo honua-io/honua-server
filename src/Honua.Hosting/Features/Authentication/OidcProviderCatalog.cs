@@ -19,10 +19,7 @@ internal static class OidcProviderCatalog
 {
     private static IOidcRuntimeProviderSource? _runtime;
 
-    /// <summary>
-    /// Attaches the process-lifetime provider source. Catalog readers that do not receive
-    /// a source argument still see admin-registered providers.
-    /// </summary>
+    // Attaching the process-lifetime source lets a catalog reader that takes no source argument see admin-registered providers.
     public static void Attach(IOidcRuntimeProviderSource? runtime) => _runtime = runtime;
 
     public static IReadOnlyList<OidcProviderRegistration> GetProviders(OidcAuthenticationOptions options)

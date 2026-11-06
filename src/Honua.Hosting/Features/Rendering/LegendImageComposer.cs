@@ -6,9 +6,6 @@ using SkiaSharp;
 
 namespace Honua.Infrastructure.Rendering;
 
-/// <summary>
-/// Composes classified legend entries into a single raster legend image.
-/// </summary>
 internal static class LegendImageComposer
 {
     private const float EntryGap = 4f;
@@ -17,31 +14,14 @@ internal static class LegendImageComposer
     private const float MaxLabelWidth = 320f;
     private const float OuterPadding = 4f;
 
-    /// <summary>
-    /// One legend row: the style layer to draw, and the class whose label is drawn
-    /// beside the swatch and whose attributes resolve the symbology.
-    /// </summary>
     internal readonly record struct LegendImageEntry(MapLibreStyleLayer StyleLayer, LegendClass Class);
 
-    /// <summary>Whether the shared raster renderer paints this style layer's symbology.</summary>
     internal static bool IsRenderableStyleLayer(MapLibreStyleLayer styleLayer)
         => styleLayer.Type is "fill" or "line" or "circle";
 
-    /// <summary>Whether the resolved map style has swatches the shared legend renderer can paint.</summary>
     internal static bool SupportsStylePlan(RasterMapRenderingPipeline.RasterStylePlan stylePlan)
         => stylePlan.StyleLayers.Length == 0 || stylePlan.StyleLayers.Any(IsRenderableStyleLayer);
 
-    /// <summary>
-    /// Renders stacked swatch/label rows into one image.
-    ///
-    /// Each swatch is drawn by <see cref="SkiaMapRenderer.DrawLegendSwatch"/> against the
-    /// entry's synthetic attributes, so the symbology is produced by the same style
-    /// resolution path GetMap uses.
-    ///
-    /// Labels are best-effort: where no usable typeface is available (the Lambda
-    /// fontconfig/freetype surface from #1728) the swatch column still renders and the
-    /// text is omitted rather than failing the request.
-    /// </summary>
     internal static byte[] Compose(
         IReadOnlyList<LegendImageEntry> entries,
         MetadataV2GeometryType geometryType,
@@ -52,7 +32,6 @@ internal static class LegendImageComposer
             (canvas, index) => SkiaMapRenderer.DrawLegendSwatch(canvas, entries[index].StyleLayer,
                 geometryType, swatchWidth, swatchHeight, entries[index].Class.Properties), format);
 
-    /// <summary>Composes already-rendered PNG swatches with their labels using the shared legend layout.</summary>
     internal static byte[] ComposeSwatches(
         IReadOnlyList<(string Label, byte[] Png)> entries,
         int swatchWidth,
@@ -116,10 +95,6 @@ internal static class LegendImageComposer
             ?? throw new InvalidOperationException("Skia failed to encode the legend image.");
     }
 
-    /// <summary>
-    /// Measures the exact raster produced by <see cref="Compose"/> for the same
-    /// entries and swatch dimensions.
-    /// </summary>
     internal static (int Width, int Height) Measure(
         IReadOnlyList<LegendImageEntry> entries,
         int swatchWidth,
@@ -164,6 +139,7 @@ internal static class LegendImageComposer
         }
         catch (Exception ex) when (ex is InvalidOperationException or TypeInitializationException or DllNotFoundException)
         {
+            // Missing Lambda font support drops the label and still renders the swatch, which is why this failure returns no font.
             return null;
         }
     }

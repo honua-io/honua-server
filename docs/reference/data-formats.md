@@ -22,10 +22,10 @@ Uploaded via `POST /api/v1/admin/import/upload` (or `upload-url`, with `preview`
 | WKT | `.wkt` | Well-known text geometries. |
 | CSV | `.csv` | Needs lon/lat columns or a WKT geometry column. WKT geometry preserves XY, Z and M ordinates on import and bulk export. Bulk, OGC API Features and WFS CSV output share null/empty string escaping. |
 | FlatGeobuf | `.fgb` | Compact binary format. |
-| File Geodatabase | `.gdb.zip` | Zipped Esri `.gdb` directory. |
-| GeoParquet | `.parquet`, `.geoparquet` | Apache Parquet with WKB geometry encoding. |
+| File Geodatabase | `.gdb.zip` | Zipped File Geodatabase (`.gdb`) directory. |
+| GeoParquet | `.parquet`, `.geoparquet` | GeoParquet 1.0.0/1.1.0, one WKB geometry column, planar edges; null-geometry rows retain attributes. CRS validation and outstanding nested/epoch/dimension fidelity work are described in the [input contract](../guides/publish/import-files.md#geoparquet-input-contract). |
 
-New import tables retain the source geometry's ordinate dimensions (for example GPX elevations) while enforcing the requested SRID; existing append/upsert tables keep their declared geometry constraints.
+New import tables enforce the requested SRID; existing append/upsert tables keep their declared geometry constraints. Dimension preservation is format-specific (for example, GPX elevations above); GeoParquet declared empty-geometry dimensions remain under verification in the linked input contract.
 
 Format detection uses the extension plus content magic numbers (ZIP, SQLite, FlatGeobuf, Parquet signatures), so mislabeled files are caught early.
 
@@ -60,19 +60,23 @@ Cloud-optimized HDF5 (`.h5`/`.hdf5`) and NetCDF4 multidimensional coverages are 
 
 | `f` value | Media type | Notes |
 | --- | --- | --- |
-| `json`, `pjson` | `application/json` | Esri JSON feature sets (default). |
+| `json`, `pjson` | `application/json` | GeoServices REST JSON feature sets (default). |
 | `geojson` | `application/geo+json` | GeoJSON FeatureCollection. |
-| `pbf` | `application/x-protobuf` | Esri FeatureCollection protocol buffers. |
+| `pbf` | `application/x-protobuf` | GeoServices REST FeatureCollection protocol buffers. |
 | `fgb` | FlatGeobuf | Encoded export; PostGIS-backed layers, including source-backed (provider-routed) layers. |
 | `geobuf` | `application/geobuf` | Encoded export; PostGIS-backed layers, including source-backed (provider-routed) layers. |
 | `parquet` | `application/vnd.apache.parquet` | GeoParquet 1.1.0, WKB geometry + authoritative PROJJSON `geo` metadata. Honors resolved `outSR` values (EPSG:4326 returns OGC:CRS84); rejects unresolvable `outSR`. `returnGeometry=false` short-circuits feature re-projection. Requires a glibc-based runtime image (see [runtime requirement](#geoparquet-runtime-requirement)). |
 | `arrow` | `application/vnd.apache.arrow.stream` | Arrow IPC stream with `geoarrow.wkb` extension type and GeoParquet-style `geo` schema metadata. Pure-managed encoder (Apache.Arrow); no native runtime dependency. |
 
-`fgb`, `geobuf`, `parquet`, and `arrow` are advertised in `supportedQueryFormats` only when the backing feature store can emit encoded output (PostGIS); other providers return HTTP 400 for them. `fgb`/`geobuf` work on both natively-stored and source-backed (provider-routed) PostGIS layers — the storage-mapped reader builds `ST_AsFlatGeobuf`/`ST_AsGeobuf` over the mapped table. Content negotiation via `Accept` headers maps to the same formats. Binary formats carry no `exceededTransferLimit` flag — page with `resultOffset`/`resultRecordCount` for complete exports.
+`fgb`, `geobuf`, `parquet`, and `arrow` are advertised in `supportedQueryFormats` only when the backing feature store can emit encoded output (PostGIS); other providers return HTTP 400 for them. `fgb`/`geobuf` work on both natively-stored and source-backed (provider-routed) PostGIS layers. FlatGeobuf encodes the authorized query result through a shared writer; Geobuf uses `ST_AsGeobuf` over the mapped table. Content negotiation via `Accept` headers maps to the same formats. Binary formats carry no `exceededTransferLimit` flag — page with `resultOffset`/`resultRecordCount` for complete exports.
+
+GeoParquet (`f=parquet` and OData `$format=parquet`) and GeoArrow (`f=arrow`) DateTime columns are Arrow timestamps in UTC with microsecond resolution, matching PostgreSQL `timestamptz`. Integer attributes that already mean Unix epoch milliseconds stay milliseconds. Time-of-day columns stay Time32 milliseconds, the finest unit that type stores.
+
+FlatGeobuf responses include a readable header even when no rows match. The header describes the selected fields and the CRS of the returned coordinates. Null attributes retain their column identities. A DateTime column carries UTC ISO-8601 text ending in `Z` with seven fractional digits (28 bytes), which stays inside the 32-byte value GDAL's FlatGeobuf reader accepts. Standalone times and UUIDs use strings. Null and empty geometries retain their rows. Responses include a packed spatial index when every returned geometry has a nonempty, finite bounding box; otherwise the index is omitted.
 
 #### GeoParquet runtime requirement
 
-`f=parquet` (and OData `$format=parquet`) is encoded by the native ParquetSharp Arrow library (`ParquetSharpNative`). It ships only glibc binaries (`linux-x64`, `linux-arm64`) and needs `libatomic.so.1`. Every published server image is glibc-based and includes that library: the native-AOT serving image (`docker/Dockerfile.aot`, Ubuntu `runtime-deps:10.0`, RID `linux-x64`/`linux-arm64`), the Lambda native-AOT image, and the JIT image. Each image build fails if the library cannot resolve its dependencies, and the nightly AOT build requests `f=parquet` from the candidate before it publishes any tag. A custom Alpine/musl build (RID `linux-musl-x64`) cannot load the library. Instead of an unhandled HTTP 500, the server detects the native-load failure and returns a clean **HTTP 501 Not Implemented** capability response (`GeoParquet (f=parquet) output is unavailable on this runtime image...`). `f=arrow` is unaffected because GeoArrow is encoded with the pure-managed Apache.Arrow IPC writer. To serve GeoParquet from a custom image, build it on glibc and install `libatomic1`.
+`f=parquet` (and OData `$format=parquet`) is encoded by the native ParquetSharp Arrow library (`ParquetSharpNative`). It ships only glibc binaries (`linux-x64`, `linux-arm64`) and needs `libatomic.so.1`. Every published server image is glibc-based and includes that library: the native-AOT serving image (`docker/Dockerfile.aot`, Ubuntu `runtime-deps:10.0`, RID `linux-x64`/`linux-arm64`), the Lambda native-AOT image, and the JIT image. Each image build fails if the library cannot resolve its dependencies, and the nightly AOT build requests `f=parquet` from the candidate before it publishes any tag. A custom Alpine/musl build (RID `linux-musl-x64`) cannot load the library. Instead of an unhandled HTTP 500, the server detects the native-load failure and returns a clean **HTTP 501 Not Implemented** capability response (`GeoParquet (f=parquet) output is unavailable on this runtime image...`). `f=arrow` is unaffected because GeoArrow is encoded with the pure-managed Apache.Arrow IPC writer. To serve GeoParquet from a custom image, build it on glibc and install `libatomic1`. OData `$format=parquet` keeps a Z ordinate when the stored WKB declares one. Measures are omitted. FeatureServer `f=parquet` still follows the request `returnZ` flag. GeoParquet time-of-day columns are Arrow Time64 values with microsecond resolution, matching PostgreSQL `time`. GeoArrow time columns use that same type.
 
 ### OGC API Features (`/ogc/features/collections/{id}/items`, `f=` parameter or `Accept`)
 
@@ -92,7 +96,6 @@ Cloud-optimized HDF5 (`.h5`/`.hdf5`) and NetCDF4 multidimensional coverages are 
 | GeoJSON | `application/geo+json`. |
 | JSON | `application/json`. |
 | CSV | `text/csv` (or `csv`). Uses shared CSV escaping: null is an unquoted blank; an empty string is `""`. |
-
 
 ### OData v4 (`/odata`)
 

@@ -17,12 +17,6 @@ using Microsoft.Net.Http.Headers;
 
 namespace Honua.Server.Features.Identity.Scim;
 
-/// <summary>
-/// SCIM 2.0 provisioning endpoints (#510). Exposes <c>/scim/v2/Users</c> and
-/// <c>/scim/v2/Groups</c> CRUD so an external identity provider can provision and
-/// deprovision users and map groups to Honua RBAC roles. Authenticated by a static bearer
-/// token (<see cref="ScimProvisioningOptions.BearerToken"/>) presented by the IdP.
-/// </summary>
 internal static partial class ScimEndpoints
 {
     private const string BearerPrefix = "Bearer ";
@@ -34,14 +28,8 @@ internal static partial class ScimEndpoints
     private const int MaxGroupDisplayNameLength = 256;
     private const int MaxGroupMemberValueLength = 256;
 
-    /// <summary>Log category for SCIM endpoints.</summary>
     internal sealed class ScimEndpointsLog;
 
-    /// <summary>
-    /// Maps the SCIM 2.0 provisioning endpoints. Authentication is enforced per-request
-    /// against the configured bearer token rather than the admin authorization policy, so an
-    /// IdP service-account token does not need an interactive admin session.
-    /// </summary>
     public static void MapScimEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
@@ -537,10 +525,6 @@ internal static partial class ScimEndpoints
 
     // ---- Authentication ---------------------------------------------------------------
 
-    /// <summary>
-    /// Validates the SCIM bearer token in constant time. Returns <see langword="false"/> when
-    /// provisioning is disabled (no token configured) or the presented token does not match.
-    /// </summary>
     private static bool Authenticate(HttpContext context, ScimProvisioningOptions options)
     {
         var configured = options.BearerToken;
@@ -840,11 +824,6 @@ internal static partial class ScimEndpoints
         return (startIndex, count);
     }
 
-    /// <summary>
-    /// Parses a SCIM <c>filter</c> of the form <c>attribute eq "value"</c> for a single
-    /// supported attribute. Returns null when the filter is absent or not an equality match on
-    /// the requested attribute (broader filter grammar is intentionally unsupported).
-    /// </summary>
     private static string? ParseEqFilter(string? filter, string attribute)
     {
         if (string.IsNullOrWhiteSpace(filter))

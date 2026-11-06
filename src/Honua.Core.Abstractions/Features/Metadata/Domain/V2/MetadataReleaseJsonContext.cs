@@ -7,9 +7,6 @@ using Honua.Core.Features.Console.Domain;
 
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
-/// <summary>
-/// JSON serialization context for Metadata v2 release package contracts.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

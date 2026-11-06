@@ -42,9 +42,6 @@ internal static partial class MapServerEndpoints
         MetadataV2Resource Resource,
         string? DefinitionExpression);
 
-    /// <summary>
-    /// Handle MapServer find (cross-layer text search) requests.
-    /// </summary>
     private static async Task<IResult> HandleFind(HttpContext context)
     {
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
@@ -460,12 +457,7 @@ internal static partial class MapServerEndpoints
             .Any(trimmed => !int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out _));
     }
 
-    /// <summary>
-    /// Resolves the string fields find searches. Publisher-hidden fields are never searched:
-    /// a match (and its <c>foundFieldName</c>) would disclose the hidden value (#6098).
-    /// When the caller omits <c>searchFields</c>, fields masked for this principal are
-    /// dropped as well so the pushed-down predicate cannot trip field-level security (#6148).
-    /// </summary>
+    // Publisher-hidden fields are never searched, and when searchFields is omitted the caller's masked fields are dropped too, so a match cannot disclose a hidden value.
     private static MetadataV2Field[] ResolveSearchFields(
         MetadataV2Resource resource,
         HashSet<string>? requestedFields,
@@ -499,10 +491,6 @@ internal static partial class MapServerEndpoints
             : masked.ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// True when an explicit <c>searchFields</c> list names a visible schema field that is
-    /// masked for the caller. Publisher-hidden fields stay on the silent-omission path.
-    /// </summary>
     private static bool TryFindExplicitMaskedSearchField(
         MetadataV2Resource resource,
         HashSet<string> requestedFields,
@@ -557,27 +545,14 @@ internal static partial class MapServerEndpoints
             .ToList();
     }
 
-    /// <summary>
-    /// Escapes single quotes for SQL string literals ('' escaping).
-    /// </summary>
     private static string EscapeSqlStringLiteral(string value)
         => value.Replace("'", "''", StringComparison.Ordinal);
 
-    /// <summary>
-    /// Escapes LIKE wildcard characters (backslash, % and _) in a value that is
-    /// already quote-escaped, so they are treated as literal characters.
-    /// </summary>
     private static string EscapeLikeWildcards(string value)
         => value.Replace("\\", "\\\\", StringComparison.Ordinal)
             .Replace("%", "\\%", StringComparison.Ordinal)
             .Replace("_", "\\_", StringComparison.Ordinal);
 
-    /// <summary>
-    /// Builds an ArcGIS SQL where clause that ORs a case-insensitive match of
-    /// <paramref name="searchText"/> across the searched string fields, or returns
-    /// <c>null</c> when any field name is not a plain identifier (the caller then
-    /// falls back to the capped in-memory scan).
-    /// </summary>
     private static string? BuildFindSearchWhereClause(
         MetadataV2Field[] fieldsToSearch,
         string searchText,
@@ -620,7 +595,7 @@ internal static partial class MapServerEndpoints
         out SqlFragment? sqlFilter)
     {
         sqlFilter = null;
-        var parseResult = filterExpressionService.Parse(FilterLanguage.ArcGisSql, whereClause);
+        var parseResult = filterExpressionService.Parse(FilterLanguage.GeoServicesSql, whereClause);
         if (!parseResult.IsSuccess)
         {
             return false;

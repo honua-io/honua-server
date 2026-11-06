@@ -126,22 +126,32 @@ internal sealed class DatabricksSqlFilterTranslator : SqlFilterExpressionVisitor
         var left = TranslateGeometryExpression(spatial.Left, context);
         var right = TranslateGeometryExpression(spatial.Right, context);
 
-        // Spark SQL spatial relationship functions (DBSQL geospatial). The provider already
-        // documents that ST_* availability depends on the warehouse runtime.
-        return spatial.Operator switch
-        {
-            SpatialOperator.Intersects => $"st_intersects({left}, {right})",
-            SpatialOperator.Contains => $"st_contains({left}, {right})",
-            SpatialOperator.Within => $"st_within({left}, {right})",
-            SpatialOperator.Crosses => $"st_crosses({left}, {right})",
-            SpatialOperator.Touches => $"st_touches({left}, {right})",
-            SpatialOperator.Overlaps => $"st_overlaps({left}, {right})",
-            SpatialOperator.Disjoint => $"st_disjoint({left}, {right})",
-            SpatialOperator.Equals => $"st_equals({left}, {right})",
-            _ => throw new NotSupportedException(
-                $"Spatial operator '{spatial.Operator}' is not supported by the Databricks provider."),
-        };
+        // One operator table for CQL predicates and FeatureServer geometry= filters.
+        // ST_* availability depends on the DBSQL runtime; see the provider docs.
+        return FormatSpatialPredicate(spatial.Operator, left, right);
     }
+
+    /// <summary>
+    /// Formats a Spark SQL spatial relationship from the provider's operator table.
+    /// Callers choose operand order; Within and Contains must lead with the filter geometry.
+    /// </summary>
+    /// <param name="op">Spatial relationship to emit.</param>
+    /// <param name="left">Already-rendered left geometry expression.</param>
+    /// <param name="right">Already-rendered right geometry expression.</param>
+    /// <returns>A <c>st_*</c> call.</returns>
+    internal static string FormatSpatialPredicate(SpatialOperator op, string left, string right) => op switch
+    {
+        SpatialOperator.Intersects => $"st_intersects({left}, {right})",
+        SpatialOperator.Contains => $"st_contains({left}, {right})",
+        SpatialOperator.Within => $"st_within({left}, {right})",
+        SpatialOperator.Crosses => $"st_crosses({left}, {right})",
+        SpatialOperator.Touches => $"st_touches({left}, {right})",
+        SpatialOperator.Overlaps => $"st_overlaps({left}, {right})",
+        SpatialOperator.Disjoint => $"st_disjoint({left}, {right})",
+        SpatialOperator.Equals => $"st_equals({left}, {right})",
+        _ => throw new NotSupportedException(
+            $"Spatial operator '{op}' is not supported by the Databricks provider."),
+    };
 
     protected override string TranslateSpatialDistance(SpatialDistancePredicate spatial, FilterTranslationContext context)
         => throw new NotSupportedException(

@@ -45,19 +45,11 @@ internal static partial class SchemaSearchPath
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Returns <see langword="true"/> when <paramref name="value"/> is a safe SQL identifier
-    /// (one to 63 ASCII characters; starts with a letter or underscore, followed by
-    /// letters, digits, or underscores). Identity is never trimmed or truncated.
-    /// </summary>
     public static bool IsValidIdentifier(string value)
     {
         return !string.IsNullOrWhiteSpace(value) && _schemaNameRegex.IsMatch(value);
     }
 
-    /// <summary>
-    /// Validates a schema name against the safe identifier pattern.
-    /// </summary>
     public static string ValidateAndQuote(string schemaName)
     {
         if (!IsValidIdentifier(schemaName))
@@ -68,10 +60,6 @@ internal static partial class SchemaSearchPath
         return QuoteIdentifier(schemaName);
     }
 
-    /// <summary>
-    /// Builds a fully qualified table name with schema validation.
-    /// Defaults to "honua" schema if none is specified.
-    /// </summary>
     public static string QualifyTable(string tableName, string? schemaName = null)
     {
         var quotedSchema = ValidateAndQuote(

@@ -5,9 +5,6 @@ using System.Text.RegularExpressions;
 
 namespace Honua.Infrastructure.Monitoring;
 
-/// <summary>
-/// Sanitizes error messages to avoid exposing sensitive data in recent error summaries.
-/// </summary>
 internal static class RecentErrorSanitizer
 {
     private const int MaxMessageLength = 240;

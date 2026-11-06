@@ -101,7 +101,7 @@ internal static partial class FeatureServerEndpoints
         if (!string.IsNullOrWhiteSpace(where))
         {
             var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
-            var parseResult = filterService.Parse(FilterLanguage.ArcGisSql, where);
+            var parseResult = filterService.Parse(FilterLanguage.GeoServicesSql, where);
             if (!parseResult.IsSuccess)
             {
                 return StandardErrorHelpers.CreateBadRequest(context,
@@ -213,12 +213,6 @@ internal static partial class FeatureServerEndpoints
             "Time-filtered vector tiles");
     }
 
-    /// <summary>
-    /// V2 overload of the time-parameter helper. Resolves the opt-in temporal
-    /// fields off <see cref="MetadataV2Resource"/> and infers the property type
-    /// (Date vs DateTime) from the resolved schema field's
-    /// <see cref="MetadataV2FieldType"/> entry.
-    /// </summary>
     private static bool TryBuildTileTemporalFilterV2(
         MetadataV2Resource resource,
         string timeParam,

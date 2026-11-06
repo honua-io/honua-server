@@ -14,6 +14,7 @@ using Honua.ControlPlane;
 using Honua.ControlPlane.Executors;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.ControlPlane.Restore;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Observability.Abstractions;
@@ -32,10 +33,6 @@ using Microsoft.AspNetCore.Http;
 
 namespace Honua.Infrastructure.Monitoring;
 
-/// <summary>
-/// Server adapter that backs the platform-release and deploy-operation MCP
-/// tools with the same admin DTOs and control-plane gateway used by REST.
-/// </summary>
 internal sealed class McpPlatformOpsReader(
     IOptionsMonitor<ControlPlaneOptions> controlPlaneOptions,
     DeployWorkflowService deployWorkflowService,
@@ -59,20 +56,10 @@ internal sealed class McpPlatformOpsReader(
     {
         await EnsureOpsReadAsync(principal, cancellationToken).ConfigureAwait(false);
 
-        var skew = PlatformReleaseSkewProjector.Build(_controlPlaneOptions.CurrentValue);
-        var observedAt = DateTimeOffset.UtcNow;
-        var response = new DeployPreflightPlatformRelease
-        {
-            EvidencePosture = EvidencePostureFactory.Build(observedAt,
-                EvidencePostureFactory.Complete(EvidencePostureVocabulary.SourceIds.PlatformReleaseStatus,
-                    EvidencePostureVocabulary.BackendKinds.ConfigProjection, "control-plane-options", observedAt, TimeSpan.FromMinutes(5))),
-            ReleaseVersion = skew.ReleaseVersion,
-            ReleaseDeclared = skew.ReleaseDeclared,
-            IsCoVersioned = skew.IsCoVersioned,
-            Serving = skew.Serving.Select(MapPlaneProjection).ToArray(),
-            Execution = skew.Execution.Select(MapPlaneProjection).ToArray(),
-            SkewedIds = skew.SkewedIds
-        };
+        var observer = _services.GetService<IManagedComposeObserver>();
+        var targets = observer is null ? [] : await observer.ReadAsync(cancellationToken).ConfigureAwait(false);
+        var response = ManagedComposeObserver.ProjectRelease(_controlPlaneOptions.CurrentValue, targets,
+            evaluatedAt: (_services.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow());
 
         return Serialize(response, DeployControlJsonContext.Default.DeployPreflightPlatformRelease);
     }
@@ -168,12 +155,36 @@ internal sealed class McpPlatformOpsReader(
                 cancellationToken)
             .ConfigureAwait(false);
 
+        var backupId = Clean(argument.BackupId);
+        var isLocal = _controlPlaneOptions.CurrentValue.DeployTargets.Any(target =>
+            target.TargetKind == DeployTargetKind.LocalCompose && string.Equals(target.TargetId, targetId, StringComparison.Ordinal));
+        if (isLocal && backupId is null)
+        {
+            var compose = _services.GetService<IComposeExecutorClient>();
+            var preview = compose is null ? null : await compose.ExecuteAsync(new ComposeExecutorRequest
+            {
+                Op = "plan-rollback",
+                Image = selection.DesiredRevision,
+                RequestId = "rollback-proposal"
+            }, cancellationToken).ConfigureAwait(false);
+            if (preview is not { Ok: true, ReadbackComplete: true } || string.IsNullOrWhiteSpace(preview.BackupId))
+                return new McpProposeOperationOutput
+                {
+                    Outcome = "Blocked",
+                    SupportedKinds = ResolveSupportedKinds(),
+                    Message = preview?.Code ?? PreMigrationRestoreCodes.TransportUnavailable
+                };
+            backupId = preview.BackupId;
+        }
+
         var payload = new DeployExecutionPayload
         {
             TargetId = targetId,
             DesiredRevision = selection.DesiredRevision,
             CurrentRevision = selection.CurrentRevision,
             ParameterOverrides = argument.ParameterOverrides,
+            Rollback = true,
+            BackupId = backupId,
         }.Serialize();
 
         return await SealProposalAsync(principal, OperationClass.Deploy, payload,
@@ -210,11 +221,22 @@ internal sealed class McpPlatformOpsReader(
             }).ConfigureAwait(false);
     }
 
+    // The refusal names the field to read and does not echo the candidate value.
+    internal const string FindingCandidateMismatchMessage =
+        "Finding action target does not match the certified candidate: for this finding, candidateId must be the finding's subject.targetId (the deploy target its recommended action acts on).";
+
     internal static void ValidateFindingCandidateBinding(
         OperationClass kind,
         string executionPayload,
         string candidateId)
     {
+        if (kind == OperationClass.AdminConfigChange)
+        {
+            var action = OpsActionRequest.Parse(executionPayload);
+            if (action.Name == OpsActionNames.ComposeRestartService && action.Target != candidateId)
+                throw new GeoprocessingValidationException(FindingCandidateMismatchMessage);
+            return;
+        }
         if (kind != OperationClass.Deploy)
         {
             return;
@@ -223,7 +245,7 @@ internal sealed class McpPlatformOpsReader(
         var payload = DeployExecutionPayload.Parse(executionPayload);
         if (payload is null || !string.Equals(payload.TargetId, candidateId, StringComparison.Ordinal))
         {
-            throw new GeoprocessingValidationException("Finding action target does not match the certified candidate.");
+            throw new GeoprocessingValidationException(FindingCandidateMismatchMessage);
         }
     }
 
@@ -293,6 +315,8 @@ internal sealed class McpPlatformOpsReader(
 
         var targets = options.DeployTargets.Where(candidate => !string.IsNullOrWhiteSpace(candidate.TargetId)).ToArray();
         if (targets.Length == 0) throw new GeoprocessingPreconditionFailedException("No serving deploy target is configured.");
+        var observer = _services.GetService<IManagedComposeObserver>();
+        var liveTargets = observer is null ? [] : await observer.ReadAsync(cancellationToken).ConfigureAwait(false);
         var outcomes = new List<McpConvergenceTargetOutput>();
         foreach (var target in targets)
         {
@@ -301,7 +325,13 @@ internal sealed class McpPlatformOpsReader(
                 outcomes.Add(new() { TargetId = target.TargetId, Outcome = "skipped-pinned", Message = "Target pins an explicit artifact that diverges from the release." });
                 continue;
             }
-            var lastApplied = (await _deployWorkflowService.GetMostRecentSucceededDeployAsync(target.TargetId, cancellationToken).ConfigureAwait(false))?.Deploy?.DesiredRevision;
+            var liveTarget = liveTargets.SingleOrDefault(live => live.TargetId == target.TargetId);
+            WorkflowOperationRecord? lastDeployment = null;
+            if (target.TargetKind != DeployTargetKind.LocalCompose)
+                lastDeployment = await _deployWorkflowService.GetMostRecentSucceededDeployAsync(target.TargetId, cancellationToken).ConfigureAwait(false);
+            var lastApplied = target.TargetKind == DeployTargetKind.LocalCompose
+                ? liveTarget?.RunningImage
+                : lastDeployment?.Deploy?.DesiredRevision;
             if (string.Equals(lastApplied, desiredRevision, StringComparison.Ordinal))
             {
                 outcomes.Add(new() { TargetId = target.TargetId, Outcome = "already-converged" });
@@ -309,9 +339,22 @@ internal sealed class McpPlatformOpsReader(
             }
             var payload = new DeployExecutionPayload { TargetId = target.TargetId, DesiredRevision = desiredRevision }.Serialize();
             var requestedKey = Clean(argument.IdempotencyKey);
+            string? defaultKey = null;
+            if (requestedKey is null)
+            {
+                if (target.TargetKind == DeployTargetKind.LocalCompose)
+                    lastDeployment = await _deployWorkflowService.GetMostRecentSucceededDeployAsync(target.TargetId, cancellationToken).ConfigureAwait(false);
+                defaultKey = await PlatformConvergenceKey.ResolveAsync(_deployWorkflowService, release.Version, target.TargetId,
+                    target.TargetKind, liveTarget?.ServingIncarnation, lastDeployment, cancellationToken).ConfigureAwait(false);
+                if (defaultKey is null)
+                {
+                    outcomes.Add(new() { TargetId = target.TargetId, Outcome = "blocked", Message = "The restore has not completed successfully." });
+                    continue;
+                }
+            }
             var proposal = await SealProposalAsync(principal, OperationClass.Deploy, payload,
                 Clean(argument.Reason) ?? $"Converge serving targets to platform release {release.Version}.",
-                requestedKey is null ? $"converge:{release.Version}:{target.TargetId}" : $"{requestedKey}:{target.TargetId}", cancellationToken).ConfigureAwait(false);
+                requestedKey is null ? defaultKey! : $"{requestedKey}:{target.TargetId}", cancellationToken).ConfigureAwait(false);
             outcomes.Add(new() { TargetId = target.TargetId, Outcome = proposal.Outcome, ProposalId = proposal.ProposalId, Message = proposal.Message });
         }
         return new McpProposeOperationOutput { Outcome = "completed", RequiresApproval = outcomes.Any(item => item.ProposalId is not null), Targets = outcomes.ToArray(), SupportedKinds = ResolveSupportedKinds() };
@@ -436,6 +479,7 @@ internal sealed class McpPlatformOpsReader(
         var target = kind switch
         {
             OperationClass.Deploy => DeployExecutionPayload.Parse(payload)?.TargetId,
+            OperationClass.AdminConfigChange => OpsActionRequest.Parse(payload).Target,
             OperationClass.MetadataRelease => MetadataReleaseExecutionPayload.ParseAndValidate(payload).Payload?.TargetEnvironment,
             _ => null,
         };
@@ -512,10 +556,14 @@ internal sealed class McpPlatformOpsReader(
                     cancellationToken)
                 .ConfigureAwait(false);
 
-            matches.AddRange(result.Items.Where(operation =>
-                operation.Deploy is not null &&
-                string.Equals(operation.Deploy.TargetId, targetId, StringComparison.Ordinal) &&
-                !string.IsNullOrWhiteSpace(operation.Deploy.DesiredRevision)));
+            foreach (var operation in result.Items)
+            {
+                if (operation.Deploy is not null &&
+                    string.Equals(operation.Deploy.TargetId, targetId, StringComparison.Ordinal) &&
+                    !string.IsNullOrWhiteSpace(operation.Deploy.DesiredRevision) &&
+                    !matches.Any(match => string.Equals(match.Deploy!.DesiredRevision, operation.Deploy.DesiredRevision, StringComparison.Ordinal)))
+                    matches.Add(operation);
+            }
 
             if (!result.HasMore || result.Items.Count == 0)
             {
@@ -580,16 +628,6 @@ internal sealed class McpPlatformOpsReader(
             .OrderBy(name => name, StringComparer.Ordinal)
             .ToArray();
     }
-
-    private static DeployPreflightPlaneProjection MapPlaneProjection(PlatformReleasePlaneProjection projection)
-        => new()
-        {
-            Id = projection.Id,
-            RuntimeProfile = projection.RuntimeProfile,
-            EffectiveArtifactReference = projection.EffectiveArtifactReference,
-            ProjectedFromRelease = projection.ProjectedFromRelease,
-            Skewed = projection.Skewed
-        };
 
     private static TEnum? ParseOptionalEnum<TEnum>(string? value, string fieldName)
         where TEnum : struct, Enum

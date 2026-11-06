@@ -89,7 +89,7 @@ public sealed class SharingOAuth2CallbackE2ETests : IAsyncLifetime
     [InlineData("client--state_xyz", "callback--e2e-pkce-verifier-value-abcdefghijklmnopqrstuvwx-193")]
     [Operation(Operations.Security)]
     [Endpoint("GET /sharing/rest/oauth2/callback")]
-    public async Task Callback_FullIdpRoundTrip_IssuesArcGisCodeAndMintsToken(string clientState, string verifier)
+    public async Task Callback_FullIdpRoundTrip_IssuesGeoServicesCodeAndMintsToken(string clientState, string verifier)
     {
         using var client = _fixture.CreateClient(allowAutoRedirect: false);
 

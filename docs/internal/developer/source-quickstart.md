@@ -44,12 +44,16 @@ The preceding command waits for every Compose health check. Confirm the services
 docker compose ps
 ```
 
-4. Optional Console dashboard: once a compatible `honua-console` image is published, start the profiled Console service and open <http://localhost:5174/operate>. The same service also serves <http://localhost:5174/operate/health> and <http://localhost:5174/operate/copilot>. Console binds to the local server with the quickstart admin key, so admin-only Operate reads work without another deploy step.
+4. Optional Console: start the pinned release-manifest image and open <http://localhost:5174>. Studio is available at <http://localhost:5174/studio>.
 
-<!-- docs-validation:quickstart.console mode=skip reason=optional-profile-requires-a-compatible-image -->
+<!-- docs-validation:quickstart.console mode=skip reason=optional-console-profile -->
 ```bash
-HONUA_CONSOLE_IMAGE=ghcr.io/honua-io/honua-console:replace-with-compatible-tag docker compose --profile console up -d
+docker compose --profile console up -d
 ```
+
+The local-only Console development login opens the shell; it does not grant access to server data or interactive operations. To sign in as an operator, configure an OIDC provider on the server, map its admin role, and register `http://localhost:5174/admin/auth/callback` with the provider. Set `OIDC_ENABLED=true`, `OIDC_GENERIC_ENABLED=true`, `OIDC_GENERIC_AUTHORITY`, `OIDC_GENERIC_CLIENT_ID`, and `OIDC_GENERIC_CLIENT_SECRET` in the private `.env` file before starting the stack. Sign in to the server from Console's configured environment profile. The Console's internal server URL is `http://honua:8080`. Set `HONUA_PUBLIC_BASE_URL=http://localhost:5174` for the local callback, adjusting it to match any changed Console port or browser host. This also changes server-generated public links for the local evaluation. Provider policies must permit the local HTTP callback.
+
+For a deployed installation use HTTPS, an authenticated trusted edge for Console, and the [OIDC configuration guide](../../guides/secure/authentication.md). Keep the public API origin in `HONUA_PUBLIC_BASE_URL` and set the server's `Oidc__AdminAuthCallbackUri` to the external HTTPS Console callback using a Compose override. Do not expose the development login or default credentials. Console's built-in BFF exchanges the operator's server session; the shared admin key is not an interactive operator credential. See [Console authentication](https://github.com/honua-io/honua-console/blob/a0c04a684cf1721ac87027c8090bfb0a8ba1bc95/docs/console-authentication.md).
 
 For headless local runs after enabling the profile, leave Redis enabled and disable only the dashboard:
 

@@ -24,4 +24,4 @@ The facts above come from the server's capability registry and capability matrix
 
 ## Documented in
 
-- [Connect ArcGIS Pro to Honua](../../guides/connect/arcgis-pro.md)
+- [Connect a GeoServices REST desktop client to Honua](../../guides/connect/geoservices-desktop-clients.md)

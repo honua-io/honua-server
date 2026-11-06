@@ -9,13 +9,6 @@ using Honua.Core.Features.Spec.Domain;
 
 namespace Honua.Server.Features.Spec;
 
-/// <summary>
-/// S1 compute executor. Produces a deterministic JSON payload whose bytes are
-/// stable for a given content hash; downstream artifact consumers treat the
-/// output as opaque bytes. The executor does not attempt to invoke the real
-/// process family — that integration is ticket #790 — but its output shape is
-/// stable enough to prove cache identity end-to-end.
-/// </summary>
 internal sealed class SpecComputeExecutor : ISpecComputeExecutor
 {
     public Task<SpecComputeResult> ExecuteAsync(

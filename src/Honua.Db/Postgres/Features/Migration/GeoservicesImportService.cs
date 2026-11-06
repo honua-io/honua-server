@@ -20,8 +20,9 @@ namespace Honua.Db.Postgres.Features.Migration;
 /// </summary>
 internal sealed partial class GeoservicesImportService : IGeoservicesImportService
 {
-    private readonly ArcGisRestClient _restClient;
+    private readonly GeoServicesRestClient _restClient;
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
+    private readonly PostgresSessionLockConnections _sessionLockConnections;
     private readonly ICrsRegistry _crsRegistry;
     private readonly IEsriConstructCapabilityRegistry _constructCapabilityRegistry;
     private readonly IAttachmentStore? _attachmentStore;
@@ -31,7 +32,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
     private readonly PostgresSchemaConfiguration _schemaConfiguration;
 
     public GeoservicesImportService(
-        ArcGisRestClient restClient,
+        GeoServicesRestClient restClient,
         IAdoNetDatabaseConnectionProvider connectionProvider,
         ICrsRegistry crsRegistry,
         IEsriConstructCapabilityRegistry constructCapabilityRegistry,
@@ -39,8 +40,10 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         GeoservicesLayerPublicationService layerPublicationService,
         IAttachmentStore? attachmentStore = null,
         IMigrationCatalogWriter? catalogWriter = null,
-        PostgresSchemaConfiguration? schemaConfiguration = null)
+        PostgresSchemaConfiguration? schemaConfiguration = null,
+        Microsoft.Extensions.Options.IOptions<PostgresSessionLockConnections>? sessionLockConnections = null)
     {
+        _sessionLockConnections = sessionLockConnections?.Value ?? PostgresSessionLockConnections.Pooled;
         _restClient = restClient ?? throw new ArgumentNullException(nameof(restClient));
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _crsRegistry = crsRegistry ?? throw new ArgumentNullException(nameof(crsRegistry));

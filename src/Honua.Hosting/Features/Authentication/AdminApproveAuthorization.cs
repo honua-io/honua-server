@@ -5,9 +5,6 @@ using Microsoft.AspNetCore.Authorization;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Narrow authorization requirement for deciding an existing operation proposal.
-/// </summary>
 internal sealed class AdminApproveRequirement : IAuthorizationRequirement;
 
 internal sealed class AdminApproveAuthorizationHandler : AuthorizationHandler<AdminApproveRequirement>

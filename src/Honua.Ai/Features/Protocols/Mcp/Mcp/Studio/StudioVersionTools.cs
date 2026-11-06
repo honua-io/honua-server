@@ -14,7 +14,6 @@ using Honua.Geoprocessing;
 
 namespace Honua.Ai.Protocols.Mcp.Studio;
 
-/// <summary>Save and reopen adapters use the same authorized, durable runtime as Studio REST.</summary>
 internal abstract class StudioVersionToolBase(IGeoprocessingJobService jobService, ILogger logger)
     : StudioDraftToolBase(jobService, logger)
 {
@@ -135,10 +134,6 @@ internal sealed class ReopenStudioVersionTool(IGeoprocessingJobService jobServic
     }
 }
 
-/// <summary>
-/// Reads one saved Studio version. Returns top-level <c>versionId</c> and <c>contentHash</c>
-/// and does not advance the draft generation.
-/// </summary>
 internal sealed class GetStudioVersionTool(IGeoprocessingJobService jobService, ILogger<GetStudioVersionTool> logger)
     : StudioVersionToolBase(jobService, logger), IMcpTool
 {

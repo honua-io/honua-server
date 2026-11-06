@@ -43,13 +43,6 @@ using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.Servic
 
 namespace Honua.Protocols.Ogc.Classic.Wfs20.Services;
 
-/// <summary>
-/// Core handler for WFS 2.0 operations backed by the shared catalog and feature stores.
-/// </summary>
-/// <remarks>
-/// CITE conformance: 167/167 (WFS 2.0 `basic` profile, run 33583116921).
-/// Authoritative status: <see href="../../../../../../../docs/cite-status.md">docs/cite-status.md</see>.
-/// </remarks>
 internal sealed partial class Wfs20Handler
 {
     private const string FeatureNamespacePrefix = "honua";
@@ -121,11 +114,6 @@ internal sealed partial class Wfs20Handler
             "id");
     }
 
-    /// <summary>
-    /// Processes WFS 2.0 Transaction requests by translating XML actions into the shared edit pipeline.
-    /// Behavior reference: ../Honua.Server/src/domain/ogc/wfs/WfsTransactionHandlers.cs
-    /// Preserves request order and carries insert handles into InsertResults.
-    /// </summary>
     private async Task<LayerQueryPlanSet> BuildLayerQueryPlansAsync(
         IReadOnlyList<WfsFeatureTypeDescriptor> featureTypes,
         string? propertyName,
@@ -288,12 +276,6 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    /// <summary>
-    /// Client-facing text for a request validation failure. A filter parse failure carries an
-    /// authored reason (for example the unsupported operator's name), which is returned as is.
-    /// Other validation exceptions can originate deeper in the stack, so their message stays in
-    /// the server log and the client gets fixed text.
-    /// </summary>
     internal static string DescribeValidationFailure(Exception exception)
         => exception switch
         {
@@ -797,16 +779,6 @@ internal sealed partial class Wfs20Handler
             : AxisOrder.EastNorth;
     }
 
-    /// <summary>
-    /// Determines whether a requested <c>srsName</c> names CRS84 (WGS 84 with an
-    /// explicit longitude/latitude axis order) in any of its accepted spellings.
-    /// </summary>
-    /// <remarks>
-    /// The shared CRS parser accepts the supported CRS84 spellings with anchored
-    /// patterns. CRS84 is the only CRS it maps to WGS 84 with an EastNorth axis
-    /// order, so the pair uniquely identifies it without accepting arbitrary
-    /// strings that merely contain <c>CRS84</c>.
-    /// </remarks>
     private static bool IsCrs84Request(string? srsName)
         => SpatialReferenceHelpers.TryParseCrsDefinition(srsName, out var definition) &&
            definition.Srid == SpatialReference.WGS84.Wkid &&
@@ -1284,21 +1256,7 @@ internal sealed partial class Wfs20Handler
         return (Results.Content(csv.ToString(), MediaTypes.Csv, Encoding.UTF8), rows.Count);
     }
 
-    /// <summary>
-    /// Relabels the CRS identifier stamped on a serialized GML geometry when the
-    /// client asked for CRS84.
-    /// </summary>
-    /// <remarks>
-    /// PostGIS <c>ST_AsGML</c> can only emit the EPSG spelling of a CRS URN, so a
-    /// CRS84 request came back with longitude/latitude ordinates labelled
-    /// <c>urn:ogc:def:crs:EPSG::4326</c> -- a URN that declares latitude first.
-    /// A conforming GML reader decodes that document's longitude as a latitude and
-    /// puts the feature in the wrong hemisphere. Which CRS identifier the client
-    /// sees is a protocol-presentation concern, so the substitution belongs in the
-    /// adapter rather than in the storage layer's GML expression. Only the WFS 2.0
-    /// GML path routes through here; WFS 1.0.0/1.1.0 serialize geometry themselves
-    /// and are labelled at that writer.
-    /// </remarks>
+    // PostGIS ST_AsGML can only emit the EPSG URN, so a CRS84 request is relabelled here or a conforming reader treats longitude as latitude.
     private static string RelabelCrs84SrsName(
         string geometryGml,
         FeatureQuery query,
@@ -1800,21 +1758,8 @@ internal sealed partial class Wfs20Handler
         => resource.FindPrimaryGeometryField() is not null ||
            resource.ReadGeometryType() != MetadataV2GeometryType.None;
 
-    /// <summary>
-    /// Default WFS geometry property local name used when a spatial resource declares a
-    /// geometry type but carries no explicit geometry schema field. Matches the storage
-    /// binding's <c>geometryColumn</c> and the OGC API Features <c>geometry</c> element so
-    /// the same point/line/polygon layer exposes geometry consistently across protocols.
-    /// </summary>
     private const string DefaultGeometryPropertyName = "geometry";
 
-    /// <summary>
-    /// Resolves the WFS geometry property name for a spatial resource. Prefers the explicit
-    /// primary geometry schema field; falls back to <see cref="DefaultGeometryPropertyName"/>
-    /// when the resource declares a geometry type but no geometry field is registered (for
-    /// example FeatureServer layers seeded with only attribute fields). Returns <c>null</c>
-    /// only for non-spatial resources so callers omit geometry entirely.
-    /// </summary>
     private static string? ResolveGeometryPropertyName(MetadataV2Resource resource)
     {
         var geometryField = resource.FindPrimaryGeometryField();
@@ -1828,12 +1773,6 @@ internal sealed partial class Wfs20Handler
             : null;
     }
 
-    /// <summary>
-    /// Determines whether an attribute value represents SQL/JSON null. Treats both a CLR
-    /// <c>null</c> and a <see cref="JsonElement"/> whose kind is <c>Null</c> or <c>Undefined</c>
-    /// as null so a JSONB null in the shared attributes column is surfaced as
-    /// <c>xsi:nil="true"</c> rather than an empty string or the literal text <c>null</c>.
-    /// </summary>
     private static bool IsNullValue(object? value)
         => value is null ||
            (value is JsonElement element &&
@@ -2026,11 +1965,6 @@ internal sealed partial class Wfs20Handler
             && selectedTypes.Count == 1
             && maxFeatures > 0;
 
-    /// <summary>
-    /// True when <paramref name="reader"/> can serve the paged GetFeature fast path for
-    /// <paramref name="normalizedFormat"/>. Callers must pass the reader the request will
-    /// actually query, not the injected store.
-    /// </summary>
     internal static bool ReaderSupportsPagedGetFeatureFastPath(IFeatureReader reader, string normalizedFormat)
     {
         ArgumentNullException.ThrowIfNull(reader);

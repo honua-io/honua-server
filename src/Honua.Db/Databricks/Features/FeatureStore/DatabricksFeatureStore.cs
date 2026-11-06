@@ -220,7 +220,7 @@ internal sealed class DatabricksFeatureStore : IFeatureDataProvider, IFeatureRea
                 .ConfigureAwait(false);
         }
 
-        return _mappings.Resolve(layerId);
+        return _mappings.Resolve(layerId, _binding);
     }
 
     private static NotSupportedException NotSupported(string operation, int layerId)

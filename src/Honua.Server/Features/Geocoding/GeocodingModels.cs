@@ -11,12 +11,6 @@ internal sealed record GeocodeProviderCapabilities(
     bool SupportsStructuredInput,
     bool SupportsBiasing);
 
-/// <summary>
-/// The category tokens GeocodeServer advertises for <c>category</c> filtering. They mirror the
-/// address-type families Honua's backing providers classify candidates and suggestions into
-/// (see each provider's <c>GetAddressType</c> mapping), so filtering only ever matches data the
-/// provider already returns.
-/// </summary>
 internal static class GeocodeSupportedCategories
 {
     public static readonly string[] All =
@@ -81,9 +75,9 @@ internal sealed record GeocodeSuggestion(
 internal sealed record GeocodeServerInfoResponse
 {
     // No ArcGIS Server version (currentVersion/fullVersion) is advertised. Honua is an
-    // independent, Esri-compatible server and must not impersonate a specific ArcGIS Server
+    // independent GeoServices REST server and must not impersonate a specific ArcGIS Server
     // release. Do NOT add a currentVersion/fullVersion field (guarded by
-    // NoHonuaServerArcGisVersionTests / NoArcGisServerVersionTests).
+    // NoHonuaServerGeoServicesVersionTests / NoGeoServicesServerVersionTests).
 
     [JsonPropertyName("serviceDescription")]
     public string ServiceDescription { get; init; } = "Honua GeocodeServer";

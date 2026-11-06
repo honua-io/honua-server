@@ -7,29 +7,21 @@ using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-/// <summary>
-/// Server-implemented adapter for admin-gated platform-release and deploy-operation
-/// projections exposed through MCP platform-ops tools.
-/// </summary>
 internal interface IMcpPlatformOpsReader
 {
-    /// <summary>Gets the declared platform-release status projection.</summary>
     Task<JsonElement> GetPlatformReleaseStatusAsync(
         ClaimsPrincipal principal,
         CancellationToken cancellationToken);
 
-    /// <summary>Lists deploy operations or fetches one deploy operation by id.</summary>
     Task<JsonElement> GetDeployOperationsAsync(
         ClaimsPrincipal principal,
         McpDeployOperationsArgument argument,
         CancellationToken cancellationToken);
 
-    /// <summary>Gets the live operation-executor kind catalog.</summary>
     Task<McpSupportedOperationKindsOutput> GetSupportedOperationKindsAsync(
         ClaimsPrincipal principal,
         CancellationToken cancellationToken);
 
-    /// <summary>Proposes a forward deploy to a prior revision as a rollback.</summary>
     Task<McpProposeOperationOutput> ProposeRollbackAsync(
         ClaimsPrincipal principal,
         McpProposeRollbackArgument argument,

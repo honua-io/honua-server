@@ -52,6 +52,45 @@ public sealed class EventJournalTests : IDisposable
     }
 
     [Fact]
+    public void Records_CarryCorrelationAndTraceWhenSupplied()
+    {
+        const string trace = "4bf92f3577b34da6a3ce929d0e0e4736";
+        using (var journal = new EventJournal(JournalPath, correlation: "corr-admitted", trace: trace))
+        {
+            journal.Phase("execute");
+            journal.Terminal("succeeded", 0);
+        }
+
+        var records = Lines(JournalPath);
+        records.Should().OnlyContain(record =>
+            record["correlation"]!.GetValue<string>() == "corr-admitted"
+            && record["trace"]!.GetValue<string>() == trace);
+    }
+
+    [Fact]
+    public void UnsafeCorrelationAndInvalidTrace_AreOmitted()
+    {
+        using (var journal = new EventJournal(JournalPath, correlation: "password=hunter2", trace: "not-a-trace"))
+        {
+            journal.Phase("execute");
+        }
+
+        var record = Lines(JournalPath)[0];
+        record.ContainsKey("correlation").Should().BeFalse();
+        record.ContainsKey("trace").Should().BeFalse();
+        EventJournal.CorrelationFromEnvironment(new Dictionary<string, string?> { ["HONUA_CORRELATION_ID"] = " corr-1 " })
+            .Should().Be("corr-1");
+        EventJournal.TraceFromEnvironment(new Dictionary<string, string?>
+        {
+            ["HONUA_TRACEPARENT"] = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+        }).Should().Be("4bf92f3577b34da6a3ce929d0e0e4736");
+        EventJournal.TraceFromEnvironment(new Dictionary<string, string?>
+        {
+            ["TRACEPARENT"] = "00-" + new string('0', 32) + "-" + new string('1', 16) + "-01"
+        }).Should().BeNull();
+    }
+
+    [Fact]
     public void EventCap_DisclosesDroppedCount_AndKeepsTerminal()
     {
         using (var journal = new EventJournal(JournalPath, maxEvents: 5))

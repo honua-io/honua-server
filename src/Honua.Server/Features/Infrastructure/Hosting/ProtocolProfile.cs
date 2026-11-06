@@ -6,12 +6,7 @@ using Honua.Core.Features.Capabilities;
 
 namespace Honua.Infrastructure.Hosting;
 
-/// <summary>
-/// Compiled protocol profile. The symbols come from eng/Honua.ProtocolProfiles.props.
-/// Runtime configuration cannot turn an excluded module back on. A non-empty
-/// <c>Protocols:Enabled</c> list must name every compiled module; registration does
-/// not yet honor a narrower allowlist, so startup rejects one.
-/// </summary>
+// Runtime configuration cannot turn an excluded module back on, and a non-empty enabled list must name every compiled module.
 internal static class ProtocolProfile
 {
     public const string Format = "honua.protocol-profile/v1";
@@ -84,7 +79,6 @@ internal static class ProtocolProfile
     public const bool IncludesMcp = true;
 #endif
 
-    /// <summary>Contract names in release/component-versions.json that this profile does not serve.</summary>
     public static IReadOnlySet<string> ExcludedContractNames { get; } = CreateExcludedContracts();
 
     public static bool IncludesModule(string module) => module switch
@@ -101,10 +95,6 @@ internal static class ProtocolProfile
         _ => false,
     };
 
-    /// <summary>
-    /// True when <paramref name="capabilityId"/> is protocol-neutral or its module is compiled in.
-    /// Prefixes match eng/protocol-profiles.v1.json.
-    /// </summary>
     public static bool IsCapabilityCompiled(string capabilityId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(capabilityId);
@@ -341,7 +331,6 @@ internal static class ProtocolProfile
     }
 }
 
-/// <summary>Reads the one-line receipt written next to the build and publish output.</summary>
 internal static class ProtocolProfileReceipt
 {
     public static void Check(string expectedProfile, string receiptJson)

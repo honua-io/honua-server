@@ -26,9 +26,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for deploy coordination primitives.
-/// </summary>
 internal static class DeployControlEndpoints
 {
     private const string DeployControlUnavailableMessage = "Deploy control is temporarily unavailable.";
@@ -109,6 +106,9 @@ internal static class DeployControlEndpoints
     {
         var snapshot = await deployPreflightProbe.ProbeAsync(context.RequestAborted).ConfigureAwait(false);
         var includeDiagnostics = ShouldIncludeDiagnostics(context);
+        var observer = includeDiagnostics ? context.RequestServices.GetService<IManagedComposeObserver>() : null;
+        var managedTargets = observer is null ? [] : await observer.ReadAsync(context.RequestAborted).ConfigureAwait(false);
+        var generatedAt = (context.RequestServices.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow();
 
         var response = new DeployPreflightResponse
         {
@@ -121,7 +121,7 @@ internal static class DeployControlEndpoints
             Environment = includeDiagnostics ? hostEnvironment.EnvironmentName : null,
             DeploymentMode = includeDiagnostics ? deploymentOptions.Value.Mode.ToString() : null,
             InstanceName = includeDiagnostics ? Environment.MachineName : null,
-            GeneratedAt = DateTimeOffset.UtcNow,
+            GeneratedAt = generatedAt,
             Readiness = includeDiagnostics
                 ? new DeployPreflightReadiness
                 {
@@ -169,7 +169,7 @@ internal static class DeployControlEndpoints
                 ? BuildSessionSettingsView(snapshot.DatabaseSessionSettings)
                 : null,
             PlatformRelease = includeDiagnostics
-                ? BuildPlatformReleaseView(controlPlaneOptions.CurrentValue)
+                ? ManagedComposeObserver.ProjectRelease(controlPlaneOptions.CurrentValue, managedTargets, evaluatedAt: generatedAt)
                 : null
         };
 
@@ -191,57 +191,6 @@ internal static class DeployControlEndpoints
             Role = snapshot.Role,
             Remediation = snapshot.Drift.Select(drift => drift.Remediation).ToArray(),
             Message = snapshot.Message,
-        };
-
-    private static DeployPreflightPlatformRelease BuildPlatformReleaseView(ControlPlaneOptions options)
-    {
-        var release = options.PlatformRelease.ToDefinition();
-
-        var servingEntries = options.DeployTargets
-            .Where(target => !string.IsNullOrWhiteSpace(target.TargetId))
-            .Select(target => new PlatformReleasePlaneEntry
-            {
-                Id = target.TargetId,
-                RuntimeProfile = target.RuntimeProfile,
-                ExplicitArtifactReference = target.ArtifactReference
-            })
-            .ToArray();
-
-        var executionEntries = options.ExecutionWorkloads
-            .Where(workload => !string.IsNullOrWhiteSpace(workload.WorkloadId))
-            .Select(workload => new PlatformReleasePlaneEntry
-            {
-                Id = workload.WorkloadId,
-                RuntimeProfile = workload.RuntimeProfile,
-                ExplicitArtifactReference = workload.ArtifactReference
-            })
-            .ToArray();
-
-        var skew = PlatformReleaseProjection.BuildSkewSnapshot(release, servingEntries, executionEntries);
-
-        var observedAt = DateTimeOffset.UtcNow;
-        return new DeployPreflightPlatformRelease
-        {
-            EvidencePosture = EvidencePostureFactory.Build(observedAt,
-                EvidencePostureFactory.Complete(EvidencePostureVocabulary.SourceIds.PlatformReleaseStatus,
-                    EvidencePostureVocabulary.BackendKinds.ConfigProjection, "control-plane-options", observedAt, TimeSpan.FromMinutes(5))),
-            ReleaseVersion = skew.ReleaseVersion,
-            ReleaseDeclared = skew.ReleaseDeclared,
-            IsCoVersioned = skew.IsCoVersioned,
-            Serving = skew.Serving.Select(MapPlaneProjection).ToArray(),
-            Execution = skew.Execution.Select(MapPlaneProjection).ToArray(),
-            SkewedIds = skew.SkewedIds
-        };
-    }
-
-    private static DeployPreflightPlaneProjection MapPlaneProjection(PlatformReleasePlaneProjection projection)
-        => new()
-        {
-            Id = projection.Id,
-            RuntimeProfile = projection.RuntimeProfile,
-            EffectiveArtifactReference = projection.EffectiveArtifactReference,
-            ProjectedFromRelease = projection.ProjectedFromRelease,
-            Skewed = projection.Skewed
         };
 
     private static bool ShouldIncludeDiagnostics(HttpContext context)
@@ -758,17 +707,6 @@ internal static class DeployControlEndpoints
     private const string PlatformReleaseWorkerNote =
         "Worker images are not deployed by converge; they converge at the next geoprocessing dispatch via PlatformReleaseProjection.ResolveWorkerArtifact.";
 
-    /// <summary>
-    /// Actuates the declared platform release across the serving deploy targets (ADR-0060 WS2, #2564).
-    /// Takes no version argument: it always converges to the release declared in
-    /// <c>ControlPlane:PlatformRelease</c>. Per-target divergence is decided against the pinned
-    /// contract — a target's last-applied revision is the <c>DesiredRevision</c> of its most recent
-    /// terminal-Succeeded deploy operation; a target with no such operation is unknown and treated as
-    /// divergent. Config-pinned targets (an explicit artifact diverging from the release) are skipped.
-    /// Each divergent target's deploy routes through the guardrail gateway like any other Deploy, keyed
-    /// by <c>converge:{version}:{targetId}</c> so a repeated converge folds onto the in-flight operation.
-    /// Worker images are not deployed here.
-    /// </summary>
     private static async Task<IResult> HandleConvergePlatformRelease(
         [FromBody] PlatformReleaseConvergeRequest? request,
         [FromServices] IOptionsMonitor<ControlPlaneOptions> controlPlaneOptions,
@@ -855,6 +793,8 @@ internal static class DeployControlEndpoints
 
         var outcomes = new List<PlatformReleaseConvergeTargetOutcome>();
         var actuated = false;
+        var observer = context.RequestServices.GetService<IManagedComposeObserver>();
+        var liveTargets = observer is null ? [] : await observer.ReadAsync(context.RequestAborted).ConfigureAwait(false);
 
         foreach (var target in options.DeployTargets.Where(candidate => !string.IsNullOrWhiteSpace(candidate.TargetId)))
         {
@@ -896,12 +836,26 @@ internal static class DeployControlEndpoints
                 continue;
             }
 
+            var liveTarget = liveTargets.SingleOrDefault(live => live.TargetId == target.TargetId);
+            var idempotencyKey = await PlatformConvergenceKey.ResolveAsync(deployWorkflowService, declaredVersion,
+                target.TargetId, target.TargetKind, liveTarget?.ServingIncarnation, lastOp, context.RequestAborted).ConfigureAwait(false);
+            if (idempotencyKey is null)
+            {
+                outcomes.Add(new PlatformReleaseConvergeTargetOutcome
+                {
+                    TargetId = target.TargetId,
+                    Outcome = ConvergeOutcomes.Blocked,
+                    LastAppliedRevision = lastApplied,
+                    Message = "The restore has not completed successfully."
+                });
+                continue;
+            }
             var isUnknown = string.IsNullOrWhiteSpace(lastApplied);
             var outcome = await RouteConvergeDeployAsync(
                     gateway,
                     target.TargetId,
                     declaredServing,
-                    declaredVersion,
+                    idempotencyKey,
                     requestedBy,
                     reason,
                     request?.CorrelationId,
@@ -934,7 +888,7 @@ internal static class DeployControlEndpoints
         IOperationGateway gateway,
         string targetId,
         string declaredServing,
-        string declaredVersion,
+        string idempotencyKey,
         string? requestedBy,
         string reason,
         string? correlationId,
@@ -954,8 +908,8 @@ internal static class DeployControlEndpoints
             RequestedBy = requestedBy,
             Reason = reason,
             CorrelationId = correlationId,
-            // Stable idempotency key so a double-converge folds onto one operation/proposal per target.
-            IdempotencyKey = $"converge:{declaredVersion}:{targetId}",
+            // Stable for retries, but changes after a completed restore.
+            IdempotencyKey = idempotencyKey,
             ExecutionPayload = payload,
         };
 
@@ -1031,12 +985,7 @@ internal static class DeployControlEndpoints
     internal static DeployOperationResponse MapOperationResponse(WorkflowOperationRecord operation)
         => MapOperationResponse(operation, redactRecoveryGrantIdentity: false);
 
-    /// <summary>
-    /// Whether a reader may see a recovery grant's sealed identity (<c>grantId</c>, <c>actor</c>,
-    /// <c>tenantId</c>). A principal without platform deploy authority can actuate no compensation, so it
-    /// has no use for those terms, and publishing them told a tenant-bound reader another tenant's grant
-    /// and the principal it is sealed to (honua-server#4987).
-    /// </summary>
+    // A principal without platform deploy authority must not receive a recovery grant's sealed identity, because that publishes another tenant's grant.
     internal static bool ShouldRedactRecoveryGrantIdentity(ClaimsPrincipal principal, TenantContextOptions? tenantOptions)
         => !PlatformDeployAuthority.IsAuthorized(principal, tenantOptions);
 
@@ -1170,11 +1119,6 @@ internal static class DeployControlEndpoints
         return Enum.TryParse(rawPriority, ignoreCase: true, out priority);
     }
 
-    /// <summary>
-    /// Reads the rollback body, treating an absent or empty body as "no fence supplied" so pre-#4958
-    /// callers that POST nothing keep working. A body that is present but malformed — including one
-    /// carrying a property this server does not recognise — throws and is refused.
-    /// </summary>
     private static async Task<RollbackDeployOperationRequest?> ReadRollbackRequestAsync(HttpContext context)
     {
         if (context.Request.ContentLength == 0 || !context.Request.HasJsonContentType())
@@ -1187,10 +1131,7 @@ internal static class DeployControlEndpoints
             .ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Operator-facing detail for a rejected rollback body. The JSON path is echoed because it names the
-    /// offending property, which is the whole point of refusing rather than dropping it.
-    /// </summary>
+    // The rejected rollback detail echoes the JSON path because that path is the property the server refused to drop.
     private static string DescribeRollbackBodyRejection(JsonException exception)
         => string.IsNullOrWhiteSpace(exception.Path)
             ? "The rollback request body could not be read. A recovery fence is never partially applied, " +

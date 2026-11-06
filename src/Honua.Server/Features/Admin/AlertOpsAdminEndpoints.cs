@@ -13,12 +13,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for the alert dispatch self-healing actuators (#2561): dead-letter
-/// redrive and per-channel pause/resume. These operate the delivery outbox directly and
-/// mirror the ops actions exposed through the operation gateway; each is idempotent and
-/// audited (the audit event surfaces on the Operate timeline).
-/// </summary>
 internal static class AlertOpsAdminEndpoints
 {
     private const int MaxRedriveBatchLimit = 5000;
@@ -181,43 +175,33 @@ internal static class AlertOpsAdminEndpoints
             statusCode: StatusCodes.Status400BadRequest);
 }
 
-/// <summary>Result of a dead-letter redrive.</summary>
 public sealed record AlertDispatchRedriveResponse
 {
-    /// <summary>Number of dead-lettered dispatch rows re-enqueued.</summary>
     [JsonPropertyName("redriven")]
     public required int Redriven { get; init; }
 }
 
-/// <summary>Pause state of an alert delivery channel.</summary>
 public sealed record AlertChannelStateResponse
 {
-    /// <summary>Canonical channel name.</summary>
     [JsonPropertyName("channel")]
     public required string Channel { get; init; }
 
-    /// <summary>Whether delivery on the channel is paused.</summary>
     [JsonPropertyName("paused")]
     public required bool Paused { get; init; }
 }
 
-/// <summary>Structured audit detail for alert-ops admin actions.</summary>
 internal sealed record AlertOpsAuditDetails
 {
-    /// <summary>Channel name for pause/resume actions.</summary>
     [JsonPropertyName("channel")]
     public string? Channel { get; init; }
 
-    /// <summary>Pause flag for pause/resume actions.</summary>
     [JsonPropertyName("paused")]
     public bool? Paused { get; init; }
 
-    /// <summary>Redriven row count for the redrive action.</summary>
     [JsonPropertyName("redriven")]
     public int? Redriven { get; init; }
 }
 
-/// <summary>Source-generated JSON context for the alert-ops admin endpoints.</summary>
 [JsonSourceGenerationOptions(JsonSerializerDefaults.Web)]
 [JsonSerializable(typeof(ApiResponse<AlertDispatchRedriveResponse>))]
 [JsonSerializable(typeof(ApiResponse<AlertChannelStateResponse>))]

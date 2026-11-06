@@ -6,13 +6,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// RFC 7662 token introspection for the OAuth2 surface (ADR-0068, #1890). Answers
-/// for both token formats Honua issues: the opaque, cache-backed portal token (the
-/// default) and the optional signed JWT. Both ultimately resolve to a cache entry,
-/// so a revoked (evicted) or expired token always introspects as inactive — the
-/// single-source-of-truth revocation model (ADR-0049/0053) is preserved.
-/// </summary>
 internal sealed class PortalTokenIntrospectionService(
     IPortalTokenIssuer tokenIssuer,
     PortalJwtAccessTokenService jwtService,
@@ -22,16 +15,9 @@ internal sealed class PortalTokenIntrospectionService(
     private readonly PortalJwtAccessTokenService _jwtService = jwtService;
     private readonly PortalTokenAuthenticationOptions _tokenOptions = tokenOptions.Value;
 
-    /// <summary>Whether the introspection endpoint is enabled.</summary>
     public bool IntrospectionEnabled => _tokenOptions.OAuth2.Jwt.EnableIntrospection;
 
-    /// <summary>
-    /// Introspects a presented access token. Returns the active-token metadata, or
-    /// <see langword="null"/> when the token is unknown, expired, revoked, or (for a
-    /// JWT) fails signature/issuer/audience/lifetime validation. RFC 7662 §2.2
-    /// requires that an inactive token leaks nothing beyond <c>active=false</c>, so
-    /// every failure mode collapses to a single null result here.
-    /// </summary>
+    // Every inactive or invalid token collapses to one empty result so introspection leaks nothing beyond inactive.
     public async Task<PortalTokenIntrospection?> IntrospectAsync(
         string token,
         CancellationToken cancellationToken)

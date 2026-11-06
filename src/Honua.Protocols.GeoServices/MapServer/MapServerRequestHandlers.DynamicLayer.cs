@@ -31,9 +31,6 @@ internal static partial class MapServerEndpoints
         string? Name,
         DynamicLayerJoinDefinition? Join = null);
 
-    /// <summary>
-    /// Handle MapServer dynamicLayer metadata resource requests.
-    /// </summary>
     private static async Task<IResult> HandleDynamicLayerResource(HttpContext context)
     {
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
@@ -368,12 +365,7 @@ internal static partial class MapServerEndpoints
             : null;
     }
 
-    /// <summary>
-    /// Builds the Esri field definitions for a join's right (secondary) source. Each field is
-    /// qualified as <c>{qualifier}.{field}</c> to match the joined attribute names emitted by the
-    /// identify/export merge. Geometry and declared-Hidden fields are excluded so the right layer's
-    /// geometry column and sensitive fields are never surfaced through the join.
-    /// </summary>
+    // Geometry and publisher-hidden fields are left off the joined field list so the right layer cannot surface them through the join.
     private static List<MapServerFieldInfo> BuildJoinedFields(
         MetadataV2Resource rightResource,
         string qualifier)

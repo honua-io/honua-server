@@ -6,11 +6,6 @@ using Honua.Protocols.SensorThings.Models;
 
 namespace Honua.Protocols.SensorThings;
 
-/// <summary>
-/// Source-generated JSON serialization context for OGC SensorThings API wire DTOs.
-/// Property names are controlled per-member with <c>[JsonPropertyName]</c> (STA uses
-/// <c>@iot.*</c> annotation members), so no naming policy is applied here.
-/// </summary>
 [JsonSourceGenerationOptions(DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(StaServiceDocument))]
 [JsonSerializable(typeof(StaEntitySet<StaThing>))]

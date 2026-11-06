@@ -234,7 +234,9 @@
       "surface": "printing-tools",
       "operation": "POST /rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/execute",
       "test_ids": ["PrintingToolsEndpointTests.Execute_PdfFormat_ReturnsPdfDocument"],
-      "scenario_facets": ["positive", "media-schema"]
+      "scenario_facets": ["positive", "media-schema"],
+      "maturity": "preview",
+      "required_tier": "release"
     },
     {
       "capability_key": "serve.geoservices-vectortileserver",

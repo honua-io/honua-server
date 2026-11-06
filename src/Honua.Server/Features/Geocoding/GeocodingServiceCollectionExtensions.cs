@@ -23,8 +23,12 @@ internal static class GeocodingServiceCollectionExtensions
         // Add core geocoding services
         services.AddGeocodingCore(configuration);
 
-        // Always register Nominatim by default (maintains backwards compatibility with trunk)
-        services.AddNominatimGeocodeProvider(configuration);
+        // Nominatim stays the default when the flag is absent. An explicit false removes
+        // it from the host so a deployment can refuse public geocoding (#6601).
+        if (configuration.GetValue<bool?>("Geocoding:Providers:Nominatim:Enabled") != false)
+        {
+            services.AddNominatimGeocodeProvider(configuration);
+        }
 
         // Add other providers based on configuration
         var geocodingConfig = configuration.GetSection("Geocoding");

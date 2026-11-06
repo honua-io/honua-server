@@ -7,13 +7,6 @@ using Honua.Server.Features.Console.Models;
 
 namespace Honua.Server.Features.Console;
 
-/// <summary>
-/// Pure projection helpers that map Console open-data page state (joined with the
-/// content item and its effective share tier) into DCAT-US 3.0/data.json, STAC
-/// catalog/collection/item, and Schema.org Dataset shapes, and that evaluate
-/// open-data eligibility and DCAT validation. No I/O — endpoints supply the
-/// already-resolved state and these helpers shape the wire response.
-/// </summary>
 internal static class ConsoleOpenDataMapper
 {
     // Stable machine reason codes for the eligibility decision.
@@ -21,11 +14,6 @@ internal static class ConsoleOpenDataMapper
     public const string ReasonNotDistributable = "not-distributable-type";
     public const string ReasonNotPublicIndexed = "not-public-indexed";
 
-    /// <summary>
-    /// Item types that can be distributed as open data. Compositions (saved maps,
-    /// dashboards, reports, generated apps) are not open-data datasets. Mirrors
-    /// the distributable-type rule used by the Share projection.
-    /// </summary>
     public static bool IsDistributableType(ConsoleContentItemType itemType) => itemType switch
     {
         ConsoleContentItemType.Layer
@@ -34,11 +22,6 @@ internal static class ConsoleOpenDataMapper
         _ => false,
     };
 
-    /// <summary>
-    /// Evaluates whether an item may be published as open data, returning a stable
-    /// reason code and a human-readable explanation. Open data requires a
-    /// distributable item type that is public-indexed (publicly readable).
-    /// </summary>
     public static ConsoleOpenDataEligibilityResponse EvaluateEligibility(
         ConsoleContentItem item,
         ConsoleShareAccessTier effectiveTier,
@@ -84,11 +67,6 @@ internal static class ConsoleOpenDataMapper
         };
     }
 
-    /// <summary>
-    /// Builds the page projection surfaced to Console, filling presentation
-    /// defaults from the content item where the page leaves a field blank. The
-    /// returned page is a read view; persisted writes go through the store.
-    /// </summary>
     public static ConsoleOpenDataPage BuildPageProjection(ConsoleContentItem item, ConsoleOpenDataPage? stored)
     {
         if (stored is null)
@@ -112,12 +90,7 @@ internal static class ConsoleOpenDataMapper
         };
     }
 
-    /// <summary>
-    /// Validates a page's readiness for a DCAT/data.json export. Required fields
-    /// (title, description, publisher, contact, license) produce <c>error</c>
-    /// findings that fail the export; recommended fields produce <c>warning</c>
-    /// findings that document validation exceptions without blocking.
-    /// </summary>
+    // Missing required DCAT fields fail the export; recommended fields are warnings and do not block.
     public static ConsoleOpenDataValidationResult ValidateForDcat(ConsoleOpenDataPage page)
     {
         var issues = new List<ConsoleOpenDataValidationIssue>();
@@ -194,9 +167,6 @@ internal static class ConsoleOpenDataMapper
         };
     }
 
-    /// <summary>
-    /// Builds a single-dataset DCAT-US 3.0 / data.json catalog from a page.
-    /// </summary>
     public static DcatCatalog BuildDcatCatalog(ConsoleOpenDataPage page)
         => new()
         {
@@ -236,9 +206,6 @@ internal static class ConsoleOpenDataMapper
                     .ToArray(),
         };
 
-    /// <summary>
-    /// Builds a STAC Collection projection for a published item.
-    /// </summary>
     public static StacProjectionCollection BuildStacCollection(
         ConsoleOpenDataPage page,
         ConsoleStacPublicationState publication,
@@ -265,9 +232,6 @@ internal static class ConsoleOpenDataMapper
         };
     }
 
-    /// <summary>
-    /// Builds the representative STAC Item projection for a published item.
-    /// </summary>
     public static StacProjectionItem BuildStacItem(
         ConsoleOpenDataPage page,
         ConsoleStacPublicationState publication,
@@ -311,9 +275,6 @@ internal static class ConsoleOpenDataMapper
         };
     }
 
-    /// <summary>
-    /// Builds the STAC Catalog root projection over the supplied published items.
-    /// </summary>
     public static StacProjectionCatalog BuildStacCatalog(
         IReadOnlyList<(ConsoleStacPublicationState Publication, ConsoleOpenDataPage Page)> published,
         string basePath)
@@ -343,9 +304,6 @@ internal static class ConsoleOpenDataMapper
         };
     }
 
-    /// <summary>
-    /// Builds a Schema.org Dataset JSON-LD projection from a page.
-    /// </summary>
     public static SchemaOrgDataset BuildSchemaOrgDataset(ConsoleOpenDataPage page)
         => new()
         {

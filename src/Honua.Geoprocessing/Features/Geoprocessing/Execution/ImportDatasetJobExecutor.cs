@@ -20,60 +20,18 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// Production <see cref="IJobExecutor"/> for the <c>import.dataset</c> process (#1630).
-///
-/// Owns the full import pipeline as one durable, async GP job rather than the
-/// half-orchestrated remote-import endpoint that only wrote a generic
-/// <c>imported_&lt;table&gt;</c>. This executor ORCHESTRATES the existing
-/// per-step services — it does not re-implement any of them — in this order:
-///
-/// <list type="number">
-///   <item><description><b>fetch/stage</b> — resolves the catalog connection and validates the staged source path.</description></item>
-///   <item><description><b>validate + chunk</b> — delegated to <see cref="IFileImportService"/>, which runs the
-///     <c>ImportGeometrySizeGuard</c> vertex/ring guard per feature during streaming import (#1626).</description></item>
-///   <item><description><b>import</b> — <see cref="IFileImportService.ImportFileAsync(ImportRequest, IProgress{ImportProgress}?, CancellationToken)"/>
-///     streams the source into the generic <c>imported_&lt;table&gt;</c>.</description></item>
-///   <item><description><b>flatten</b> — <see cref="ILayerPublishingService.PublishLayerAsync"/> introspects the imported
-///     table and materializes the typed layer schema; the same call rebuilds the MVT materialization (#1628).</description></item>
-///   <item><description><b>tile</b> — when a raster layer is supplied,
-///     <see cref="IRasterImportService.ImportAsync"/> loads the raster, computes statistics, and pre-generates tiles/overviews (#1625).</description></item>
-///   <item><description><b>extent + MVT refresh</b> — <see cref="ILayerPublishingService.RefreshLayerExtentsAsync(string,string,CancellationToken)"/>
-///     recomputes the layer and service extents from the now-typed source.</description></item>
-///   <item><description><b>provenance</b> — a structured provenance record is appended to the execution log and
-///     published as a JSON data-URI artifact (source, table, layer, counts, timings).</description></item>
-/// </list>
-///
-/// Like <c>sink.external-postgis</c>, the executor resolves provider services
-/// (which live in the active data-provider assembly, not in Honua.Geoprocessing)
-/// at execution time through an <see cref="IServiceScopeFactory"/> scope. The job
-/// runs through the canonical durable substrate (ADR-0031), so progress polling,
-/// heartbeats, retry, cancellation, and the #1624 in-memory single-node fallback
-/// are inherited rather than reimplemented.
-///
-/// <para>
-/// Scope realism (#1630): this lands the durable job SKELETON that runs every
-/// step end-to-end in order with progress reporting and provenance. Full
-/// mid-step resume (re-entering a partially-completed import after a crash)
-/// re-runs from the staged source under <c>OverwriteExisting</c> idempotency
-/// rather than checkpointing each row; finer-grained resume is deferred.
-/// </para>
-/// </summary>
 internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
 {
-    /// <summary>
-    /// The single process id this executor handles. Matches the catalog entry
-    /// in <see cref="BuiltInProcessCatalog"/>.
-    /// </summary>
     internal const string HandledProcessId = "import.dataset";
 
     private const string ProvenanceDataUriPrefix = "data:application/json;base64,";
 
-    // The fixed shape honua.create_import_table materializes for the generic
-    // imported_<table> (id SERIAL PRIMARY KEY, geometry GEOMETRY, properties JSONB).
+    // honua.create_import_table materializes id, geometry, properties, and created_at.
+    // A later promotion adds nullable typed columns for source attributes. Publish
+    // lists those columns explicitly so created_at stays unpublished.
     private const string ImportTableGeometryColumn = "geometry";
     private const string ImportTablePrimaryKey = "id";
-    private static readonly string[] ImportTableFields = ["id", "properties"];
+    private const string ImportTablePropertiesColumn = "properties";
 
     private readonly IServiceScopeFactory _serviceScopeFactory;
     private readonly ILogger<ImportDatasetJobExecutor> _logger;
@@ -89,12 +47,28 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
         _executorOptions = executorOptions;
     }
 
-    /// <summary>
-    /// The single process id this executor handles, surfaced through
-    /// <see cref="IProcessExecutor"/> so the dispatcher auto-registers it (#2122).
-    /// </summary>
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
+
+    private static string[] BuildPublishedImportFields(IReadOnlyList<ImportTypedColumn> typedColumns)
+    {
+        var fields = new List<string>(typedColumns.Count + 2) { ImportTablePrimaryKey };
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ImportTablePrimaryKey,
+            ImportTablePropertiesColumn
+        };
+        foreach (var column in typedColumns)
+        {
+            if (column.Name.Length > 0 && seen.Add(column.Name))
+            {
+                fields.Add(column.Name);
+            }
+        }
+
+        fields.Add(ImportTablePropertiesColumn);
+        return fields.ToArray();
+    }
 
     public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
 
@@ -227,11 +201,11 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
         warnings.AddRange(importResult.Warnings);
         await context.ReportProgressAsync(45, "Imported source rows", cancellationToken).ConfigureAwait(false);
 
-        // Step 4 — flatten to typed schema. PublishLayerAsync introspects the
-        // imported table and materializes the typed layer; the same call rebuilds
-        // the MVT materialization (#1628).
+        // Step 4 — publish. PublishLayerAsync introspects the imported table and publishes
+        // it as a layer. Typed columns promoted from source attributes are included with
+        // id and properties (honua-server#6640). The same call rebuilds the MVT materialization (#1628).
         cancellationToken.ThrowIfCancellationRequested();
-        await context.ReportProgressAsync(55, "Flattening to typed layer", cancellationToken).ConfigureAwait(false);
+        await context.ReportProgressAsync(55, "Publishing imported layer", cancellationToken).ConfigureAwait(false);
         // Fence again immediately before publish; a lost claim must not overwrite the layer (#6154).
         await context.ThrowIfExecutionLeaseLostAsync(cancellationToken).ConfigureAwait(false);
 
@@ -254,11 +228,8 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
         PublishedLayerSummary publishedLayer;
         try
         {
-            // The streaming importer materializes the generic imported_<table> with a
-            // fixed shape (id SERIAL PRIMARY KEY, geometry GEOMETRY(Geometry, srid),
-            // properties JSONB) via honua.create_import_table. Pass those known
-            // conventions through to publish so the flatten step does not depend on
-            // best-effort column auto-discovery; an explicit caller override still wins.
+            // Pass the physical primary key, each promoted attribute, and the properties
+            // jsonb column. An empty field list would also publish created_at.
             var publishRequest = new LayerPublishRequest
             {
                 Schema = resolvedSchema,
@@ -269,8 +240,9 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
                     ? ImportTableGeometryColumn
                     : request.GeometryColumn,
                 PrimaryKey = ImportTablePrimaryKey,
-                Fields = ImportTableFields,
+                Fields = BuildPublishedImportFields(importResult.TypedColumns),
                 Srid = detectedSrid,
+                StorageCrsCoordinateEpoch = importResult.StorageCrsCoordinateEpoch,
                 ServiceName = request.ServiceName,
                 ConnectionId = Guid.TryParse(request.ConnectionRef, out var pubConnectionId)
                     ? pubConnectionId

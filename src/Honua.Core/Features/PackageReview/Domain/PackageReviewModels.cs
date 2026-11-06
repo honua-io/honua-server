@@ -92,45 +92,47 @@ public sealed class PackageReviewRequest
 }
 
 /// <summary>
-/// Shared validation requirements independent of protocol or client.
+/// Shared validation requirements independent of protocol or client. Every list is non-null: a
+/// list omitted from or null in the request reads as empty. Source-generated System.Text.Json
+/// assigns <c>default</c> to omitted init-only members, which overwrote the <c>[]</c> initializers.
 /// </summary>
 public sealed class PackageReviewRequirements
 {
     /// <summary>Data bindings required by the package.</summary>
-    public IReadOnlyList<PackageDataBindingRequirement> DataBindings { get; init; } = [];
+    public IReadOnlyList<PackageDataBindingRequirement> DataBindings { get; init => field = value ?? []; } = [];
 
     /// <summary>Permissions required by the package.</summary>
-    public IReadOnlyList<PackagePermissionRequirement> Permissions { get; init; } = [];
+    public IReadOnlyList<PackagePermissionRequirement> Permissions { get; init => field = value ?? []; } = [];
 
     /// <summary>Schema requirements for package inputs or outputs.</summary>
-    public IReadOnlyList<PackageSchemaRequirement> Schemas { get; init; } = [];
+    public IReadOnlyList<PackageSchemaRequirement> Schemas { get; init => field = value ?? []; } = [];
 
     /// <summary>Field requirements for package inputs or outputs.</summary>
-    public IReadOnlyList<PackageFieldRequirement> Fields { get; init; } = [];
+    public IReadOnlyList<PackageFieldRequirement> Fields { get; init => field = value ?? []; } = [];
 
     /// <summary>Domain requirements for coded values or constraints.</summary>
-    public IReadOnlyList<PackageDomainRequirement> Domains { get; init; } = [];
+    public IReadOnlyList<PackageDomainRequirement> Domains { get; init => field = value ?? []; } = [];
 
     /// <summary>Coordinate reference system requirements.</summary>
-    public IReadOnlyList<PackageCrsRequirement> Crs { get; init; } = [];
+    public IReadOnlyList<PackageCrsRequirement> Crs { get; init => field = value ?? []; } = [];
 
     /// <summary>Geometry type requirements.</summary>
-    public IReadOnlyList<PackageGeometryRequirement> Geometry { get; init; } = [];
+    public IReadOnlyList<PackageGeometryRequirement> Geometry { get; init => field = value ?? []; } = [];
 
     /// <summary>Temporal requirements.</summary>
-    public IReadOnlyList<PackageTemporalRequirement> Temporal { get; init; } = [];
+    public IReadOnlyList<PackageTemporalRequirement> Temporal { get; init => field = value ?? []; } = [];
 
     /// <summary>Service or server capability requirements.</summary>
-    public IReadOnlyList<PackageCapabilityRequirement> Capabilities { get; init; } = [];
+    public IReadOnlyList<PackageCapabilityRequirement> Capabilities { get; init => field = value ?? []; } = [];
 
     /// <summary>Package dependency requirements.</summary>
-    public IReadOnlyList<PackageDependencyRequirement> Dependencies { get; init; } = [];
+    public IReadOnlyList<PackageDependencyRequirement> Dependencies { get; init => field = value ?? []; } = [];
 
     /// <summary>Package format requirements.</summary>
-    public IReadOnlyList<PackageFormatRequirement> Formats { get; init; } = [];
+    public IReadOnlyList<PackageFormatRequirement> Formats { get; init => field = value ?? []; } = [];
 
     /// <summary>Approval or admission-control requirements.</summary>
-    public IReadOnlyList<PackageApprovalRequirement> Approvals { get; init; } = [];
+    public IReadOnlyList<PackageApprovalRequirement> Approvals { get; init => field = value ?? []; } = [];
 }
 
 /// <summary>

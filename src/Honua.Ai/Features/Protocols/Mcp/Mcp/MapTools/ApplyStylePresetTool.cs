@@ -20,14 +20,8 @@ using Honua.Ai.Protocols.Mcp.Tools;
 
 namespace Honua.Ai.Protocols.Mcp.MapTools;
 
-/// <summary>
-/// Applies a catalog preset through the canonical operation runtime. REST admin
-/// authorization and operator approval precede submission; the operation policy
-/// and durable audit boundary own actuation and approval replay.
-/// </summary>
 internal sealed class ApplyStylePresetTool : IMcpTool
 {
-    /// <summary>The advertised <c>tools/list</c> name of this tool.</summary>
     public const string ToolName = "honua_apply_style_preset";
 
     private const string ToolDescription =
@@ -49,13 +43,10 @@ internal sealed class ApplyStylePresetTool : IMcpTool
         _logger = logger;
     }
 
-    /// <inheritdoc />
     public string Name => ToolName;
 
-    /// <inheritdoc />
     public string WorkflowFamily => McpTelemetry.WorkflowFamily.Execution;
 
-    /// <inheritdoc />
     public McpToolDescriptor Describe() => new()
     {
         Name = ToolName,
@@ -69,7 +60,6 @@ internal sealed class ApplyStylePresetTool : IMcpTool
         Annotations = McpToolAnnotationSets.Write("Apply style preset", destructive: false, idempotent: true)
     };
 
-    /// <inheritdoc />
     public async Task<McpToolsCallResult> InvokeAsync(
         HttpContext httpContext,
         JsonElement? arguments,

@@ -8,24 +8,6 @@ using Amazon.Lambda.Serialization.SystemTextJson;
 
 namespace Honua.ControlPlane.Lambda;
 
-/// <summary>
-/// Thin AWS Lambda entrypoint for the cloud (event-driven) control-plane reconcile. Three handlers,
-/// selected by the <c>HONUA_CONTROL_PLANE_LAMBDA_HANDLER</c> environment variable so a single image
-/// serves every EventBridge target:
-/// <list type="bullet">
-/// <item><c>batch-event</c>: deserializes an EventBridge "Batch Job State Change" event, extracts
-/// <c>detail.jobId</c>, and drives one execution-job reconcile, then exits.</item>
-/// <item><c>backstop</c>: invoked by EventBridge Scheduler on a coarse timer; runs one backstop
-/// sweep (reconcile stale non-terminal ops) and exits.</item>
-/// <item><c>scheduled-tick</c>: invoked by EventBridge Scheduler with <c>{"kind": "..."}</c>; runs
-/// that periodic tick once and exits.</item>
-/// </list>
-/// An unrecognised selector fails the bootstrap at start-up rather than running the wrong handler.
-/// The API image serves the same selector values in-process at the web adapter's <c>/events</c>
-/// path (<c>ControlPlaneLambdaEventEndpoint</c> in Honua.Server).
-/// Each invocation cold-starts (or warm-reuses), reconciles exactly once via the in-process
-/// Honua.Server host (LWA), and returns — there is no always-on control-plane host.
-/// </summary>
 internal static class Function
 {
     internal const string HandlerEnvVar = "HONUA_CONTROL_PLANE_LAMBDA_HANDLER";
@@ -103,11 +85,6 @@ internal static class Function
         await bootstrap.RunAsync().ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Normalises the selector to one of the handler constants: unset means <c>batch-event</c> (the
-    /// image default), <c>reconcile</c> is an alias for it, and anything unrecognised is
-    /// <see langword="null"/>.
-    /// </summary>
     internal static string? ResolveHandler(string? configured)
     {
         var value = configured?.Trim();
@@ -128,10 +105,6 @@ internal static class Function
             : null;
     }
 
-    /// <summary>
-    /// Forwards one scheduled tick. A payload without a kind is a mis-wired schedule, so it fails the
-    /// invocation (visible in the function's error metric) instead of silently doing nothing.
-    /// </summary>
     internal static Task RunScheduledTickAsync(
         ReconcileForwarder forwarder,
         ScheduledTickEvent? evt,
@@ -169,14 +142,9 @@ internal static class Function
     }
 }
 
-/// <summary>Helper extension to derive a cancellation token from a Lambda invocation's deadline.</summary>
 internal static class LambdaContextExtensions
 {
-    /// <summary>
-    /// Creates a linked <see cref="CancellationTokenSource"/> that trips shortly before the Lambda
-    /// deadline so a reconcile that overruns is cancelled cleanly rather than killed mid-flight by the
-    /// runtime. The caller owns the returned source and must dispose it.
-    /// </summary>
+    // The linked token fires shortly before the Lambda deadline so a reconcile is cancelled instead of being killed mid-flight.
     public static CancellationTokenSource CreateDeadlineTokenSource(this ILambdaContext context)
     {
         var remaining = context.RemainingTime;

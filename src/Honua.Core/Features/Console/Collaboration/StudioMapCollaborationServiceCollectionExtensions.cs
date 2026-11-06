@@ -8,16 +8,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Core.Features.Console.Collaboration;
 
-/// <summary>
-/// Dependency injection helpers for the durable Studio map collaboration slice
-/// (honua-server#1278): comment threads + activity feed.
-/// </summary>
 public static class StudioMapCollaborationServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers the in-memory collaboration store as the default. A Postgres-backed
-    /// store overrides it when Postgres persistence is active.
-    /// </summary>
     public static IServiceCollection AddStudioMapCollaboration(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);

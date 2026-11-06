@@ -2,7 +2,6 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
-using System.Text.RegularExpressions;
 using Amazon.Lambda.Model;
 using Amazon.Runtime;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -18,8 +17,6 @@ internal sealed partial class AwsLambdaGitOpsDeployBackend(
     ILogger<AwsLambdaGitOpsDeployBackend> logger,
     IRollbackDataPlaneProbe? dataPlaneProbe = null) : IDeployBackend
 {
-    private static readonly Regex LambdaArnRegionPattern = new("^arn:(aws[a-zA-Z-]*)?:lambda:(?<region>[^:]+):", RegexOptions.Compiled);
-
     public string BackendName => "honua-gitops-aws-lambda";
 
     public DeployTargetKind TargetKind => DeployTargetKind.AwsLambda;
@@ -418,44 +415,19 @@ internal sealed partial class AwsLambdaGitOpsDeployBackend(
     }
 
     private static string ResolveFunctionName(DeployOperationSpec spec)
-        => GetParameter(spec.Parameters, "aws.lambda.function_name")
-           ?? GetParameter(spec.Parameters, "lambda.function_name")
-           ?? GetParameter(spec.Parameters, "lambda.alias_function_name")
-           ?? spec.TargetName;
+        => LambdaTargetAddress.ResolveFunctionName(spec.TargetName, spec.Parameters);
 
     private static string ResolveAliasName(IReadOnlyDictionary<string, string> parameters)
-        => GetParameter(parameters, "aws.lambda.alias_name")
-           ?? GetParameter(parameters, "lambda.alias_name")
-           ?? GetParameter(parameters, "lambda.alias")
-           ?? "live";
+        => LambdaTargetAddress.ResolveAliasName(parameters);
 
     private static string? ResolveRegion(IReadOnlyDictionary<string, string> parameters)
-    {
-        var explicitRegion = GetParameter(parameters, "aws.region")
-            ?? GetParameter(parameters, "lambda.region");
-        if (!string.IsNullOrWhiteSpace(explicitRegion))
-        {
-            return explicitRegion;
-        }
-
-        var resourceId = GetParameter(parameters, "target.resource_id")
-            ?? GetParameter(parameters, "lambda.function_arn")
-            ?? GetParameter(parameters, "lambda.alias_arn");
-        if (string.IsNullOrWhiteSpace(resourceId))
-        {
-            return null;
-        }
-
-        var match = LambdaArnRegionPattern.Match(resourceId);
-        return match.Success ? match.Groups["region"].Value : null;
-    }
+        => LambdaTargetAddress.ResolveRegion(parameters);
 
     // Opt-in, config-driven endpoint override. When set (for example to a LocalStack Community
     // Lambda endpoint such as http://localhost:4566) it is forwarded to the SDK as a ServiceURL;
     // when unset the SDK uses the default regional endpoint, so production behaviour is unchanged.
     private static string? ResolveServiceUrl(IReadOnlyDictionary<string, string> parameters)
-        => GetParameter(parameters, "aws.service_url")
-            ?? GetParameter(parameters, "lambda.service_url");
+        => LambdaTargetAddress.ResolveServiceUrl(parameters);
 
     private static string? GetParameter(IReadOnlyDictionary<string, string> parameters, string key)
         => parameters.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)

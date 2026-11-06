@@ -3,9 +3,6 @@
 
 namespace Honua.Server.Features.Admin.TileOperations;
 
-/// <summary>
-/// Background worker that executes queued tile jobs.
-/// </summary>
 internal sealed class TileOperationBackgroundService(
     ITileOperationJobService tileOperationJobService,
     ILogger<TileOperationBackgroundService> logger) : BackgroundService

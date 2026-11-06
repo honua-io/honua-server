@@ -11,17 +11,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.Scene;
 
-/// <summary>
-/// HMAC-SHA256 signed scene access envelope issuer/verifier.
-/// </summary>
-/// <remarks>
-/// Wire format: <c>{base64url(payload_json)}.{hmac_sha256_hex}</c> where the
-/// canonical signing string is <c>{sceneId}\n{expiresAtUnixSeconds}</c>. Scene
-/// id is bound at the envelope (not asset path) level because a Cesium session
-/// cascades through thousands of asset URLs under one scene root and per-asset
-/// signing would require a server round-trip per tile. Path-traversal safety
-/// is enforced by <see cref="SceneAssetResolver"/> further down the pipeline.
-/// </remarks>
+// The signature binds the scene id rather than each asset path, because one Cesium session requests thousands of tiles under that scene.
 internal sealed class SceneAccessEnvelopeService : ISceneAccessEnvelopeService
 {
     private static readonly IReadOnlyList<string> AllowedMethods = new[] { "GET", "HEAD" };
@@ -40,15 +30,6 @@ internal sealed class SceneAccessEnvelopeService : ISceneAccessEnvelopeService
         _timeProvider = timeProvider;
     }
 
-    /// <summary>
-    /// Reads and validates the current signing options from the monitor.
-    /// All bounds checks throw <see cref="InvalidOperationException"/> so the
-    /// scene endpoints' <c>catch (InvalidOperationException)</c> blocks surface
-    /// a structured 500 + OptionsMisconfigured log on misconfigured deployments.
-    /// Reading <see cref="IOptionsMonitor{T}.CurrentValue"/> on every call means
-    /// key rotation takes effect on the next request without a process restart,
-    /// honoring the documented revocation contract.
-    /// </summary>
     private (byte[] signingKey, TimeSpan ttl, double refreshFraction) GetCurrentOptions()
     {
         var value = _optionsMonitor.CurrentValue;

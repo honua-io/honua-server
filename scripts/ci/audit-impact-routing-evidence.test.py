@@ -1821,6 +1821,37 @@ def test_tombstones_quarantine_explicitly_and_expire() -> None:
         raise AssertionError("an unowned or undated tombstone must fail closed")
 
 
+def test_oversized_receipt_member_is_named_and_still_fails() -> None:
+    """#6621: an over-cap receipt is an integrity failure with its own reason."""
+    blobs = MODULE.current_blobs(REPOSITORY_ROOT)
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        archives = root / "archives"
+        oversized = pr_gate_receipt(blobs)
+        oversized["padding"] = "x" * (MODULE.MAX_RECEIPT_BYTES + 1)
+        archive(archives, 301, MODULE.PR_GATE_STREAM, oversized)
+        pages(root / "serving", "workflow_runs", [])
+        pages(root / "worker", "workflow_runs", [])
+        ledger = MODULE.summarize(
+            {
+                "contract": MODULE.INDEX_CONTRACT,
+                "artifacts": [entry(MODULE.PR_GATE_STREAM, 301, 1)],
+                "exclusions": [],
+                "receipt_emission": emission(),
+                "integrity_failures": [],
+            },
+            archives,
+            root / "serving",
+            root / "worker",
+            policy(),
+            REPOSITORY_ROOT,
+        )
+        reasons = {item["producer_run_id"]: item["reason"] for item in ledger["integrity_failures"]}
+        assert ledger["gates"]["integrity_clean"] is False
+        assert "over the 2097152-byte receipt cap" in reasons[1], reasons
+        assert "unsafe" not in reasons[1], reasons
+
+
 def test_repeated_audits_are_idempotent_and_retries_do_not_double_count() -> None:
     """The receipt store is append-only; reading it must be a pure function.
 
@@ -2079,6 +2110,7 @@ test_malformed_image_input_evidence_fails_closed()
 test_full_mode_pr_gate_receipts_are_not_receipt_loss()
 test_loss_separates_missing_from_not_yet_indexed()
 test_tombstones_quarantine_explicitly_and_expire()
+test_oversized_receipt_member_is_named_and_still_fails()
 test_repeated_audits_are_idempotent_and_retries_do_not_double_count()
 test_trend_measures_the_consecutive_green_promotion_gate()
 print("impact-routing-evidence-ledger=ok mode=report-only")

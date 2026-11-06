@@ -32,10 +32,6 @@ internal static partial class MapServerEndpoints
 {
     private const string DefaultMapServerCapabilities = "Map,Query,Data,Extract";
 
-    /// <summary>
-    /// Spatial reference of the WebMercatorQuad cache advertised by every MapServer.
-    /// Service <c>spatialReference</c>, extents, and omitted export SR parameters use it.
-    /// </summary>
     internal const int CachedMapSpatialReferenceId = 3857;
 
     internal sealed record MapServerMetadataLayerDescriptor(
@@ -45,9 +41,6 @@ internal static partial class MapServerEndpoints
         MetadataV2Publication Publication,
         MetadataV2Resource Resource);
 
-    /// <summary>
-    /// Handle MapServer service metadata requests.
-    /// </summary>
     private static async Task<IResult> HandleGetServiceMetadata(HttpContext context)
     {
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
@@ -147,9 +140,6 @@ internal static partial class MapServerEndpoints
         }
     }
 
-    /// <summary>
-    /// Handle MapServer layer metadata requests.
-    /// </summary>
     private static async Task<IResult> HandleGetLayerMetadata(HttpContext context)
     {
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
@@ -278,7 +268,7 @@ internal static partial class MapServerEndpoints
     internal static MapServerResponse MapServiceToMapServerResponse(
         MetadataV2Service service,
         IReadOnlyList<MapServerMetadataLayerDescriptor> layers,
-        EsriExtent serviceExtent,
+        GeoServicesExtent serviceExtent,
         int maxRecordCount,
         int maxTileZoom,
         int maxExportTilesCount,
@@ -422,7 +412,7 @@ internal static partial class MapServerEndpoints
                 X = -webMercatorOrigin,
                 Y = webMercatorOrigin
             },
-            SpatialReference = new EsriSpatialReference
+            SpatialReference = new SpatialReferenceJson
             {
                 Wkid = 3857,
                 LatestWkid = 3857
@@ -437,7 +427,7 @@ internal static partial class MapServerEndpoints
         MetadataV2Resource resource,
         MetadataV2GraphSnapshot snapshot,
         int maxRecordCount,
-        EsriExtent mapExtent,
+        GeoServicesExtent mapExtent,
         JsonElement? drawingInfo = null,
         int? publicLayerIdOverride = null,
         string? layerNameOverride = null,
@@ -557,10 +547,6 @@ internal static partial class MapServerEndpoints
         };
     }
 
-    /// <summary>
-    /// Resolves one layer's optional time metadata without allowing malformed provider data
-    /// to fail the service or layer metadata document. Cancellation remains request-fatal.
-    /// </summary>
     private static async Task<FeatureServerTimeInfo?> BuildTimeInfoSafeAsync(
         MetadataV2Resource resource,
         MetadataV2Publication publication,
@@ -652,12 +638,8 @@ internal static partial class MapServerEndpoints
         return [.. formats.Select(static format => format.ToUpperInvariant()).Distinct(StringComparer.OrdinalIgnoreCase)];
     }
 
-    /// <summary>
-    /// Unions accessible resource bboxes and projects them into the advertised tile CRS.
-    /// A bbox that cannot be projected is left out. When none remain, the tile-scheme
-    /// world is used so the extent stays in the same spatial reference as <c>tileInfo</c>.
-    /// </summary>
-    private static async Task<EsriExtent> ResolveCachedServiceExtentAsync(
+    // A bbox that cannot be projected into the tile CRS is left out, and when none remain the tile-scheme world is used so the extent matches tileInfo.
+    private static async Task<GeoServicesExtent> ResolveCachedServiceExtentAsync(
         MetadataV2Service service,
         IReadOnlyList<MapServerMetadataLayerDescriptor> layers,
         ICoordinateTransformService transformService,
@@ -665,13 +647,13 @@ internal static partial class MapServerEndpoints
         => await ResolveCachedExtentAsync(service, layers.Select(static layer => layer.Resource),
             transformService, cancellationToken).ConfigureAwait(false);
 
-    internal static async Task<EsriExtent> ResolveCachedExtentAsync(
+    internal static async Task<GeoServicesExtent> ResolveCachedExtentAsync(
         MetadataV2Service service,
         IEnumerable<MetadataV2Resource> resources,
         ICoordinateTransformService transformService,
         CancellationToken cancellationToken)
     {
-        var spatialReference = new EsriSpatialReference
+        var spatialReference = new SpatialReferenceJson
         {
             Wkid = CachedMapSpatialReferenceId,
             LatestWkid = CachedMapSpatialReferenceId
@@ -696,7 +678,7 @@ internal static partial class MapServerEndpoints
             && double.IsFinite(extent.Ymax))
         {
             var limit = SpatialConstants.WebMercatorExtent;
-            return new EsriExtent
+            return new GeoServicesExtent
             {
                 Xmin = Math.Clamp(extent.Xmin, -limit, limit),
                 Ymin = Math.Clamp(extent.Ymin, -limit, limit),
@@ -707,7 +689,7 @@ internal static partial class MapServerEndpoints
         }
 
         var world = SpatialConstants.WebMercatorExtent;
-        return new EsriExtent
+        return new GeoServicesExtent
         {
             Xmin = -world,
             Ymin = -world,
@@ -717,7 +699,7 @@ internal static partial class MapServerEndpoints
         };
     }
 
-    private static EsriExtent? ResolveLayerExtent(MetadataV2Resource resource, EsriExtent? serviceExtent)
+    private static GeoServicesExtent? ResolveLayerExtent(MetadataV2Resource resource, GeoServicesExtent? serviceExtent)
     {
         var layerSpatialReference = ResolveLayerSpatialReference(resource);
         var bbox = resource.ReadBbox();
@@ -734,7 +716,7 @@ internal static partial class MapServerEndpoints
         return null;
     }
 
-    private static EsriExtent? ResolveServiceExtent(
+    private static GeoServicesExtent? ResolveServiceExtent(
         IReadOnlyList<MapServerMetadataLayerDescriptor> layers,
         MetadataV2SpatialReference spatialReference)
     {
@@ -757,7 +739,7 @@ internal static partial class MapServerEndpoints
         }
 
         return west.HasValue && south.HasValue && east.HasValue && north.HasValue
-            ? new EsriExtent
+            ? new GeoServicesExtent
             {
                 Xmin = west.Value,
                 Ymin = south.Value,
@@ -768,7 +750,7 @@ internal static partial class MapServerEndpoints
             : null;
     }
 
-    private static EsriExtent ToEsriExtent(
+    private static GeoServicesExtent ToEsriExtent(
         MetadataV2Bbox bbox,
         MetadataV2SpatialReference spatialReference)
         => new()
@@ -811,7 +793,7 @@ internal static partial class MapServerEndpoints
     private static MetadataV2SpatialReference ResolveLayerSpatialReference(MetadataV2Resource resource)
         => resource.Spatial?.SpatialReference ?? MetadataV2SpatialReference.Wgs84;
 
-    private static EsriSpatialReference ToEsriSpatialReference(MetadataV2SpatialReference spatialReference)
+    private static SpatialReferenceJson ToEsriSpatialReference(MetadataV2SpatialReference spatialReference)
         => new()
         {
             Wkid = spatialReference.ResolveSrid() ?? SpatialReference.WGS84.Wkid

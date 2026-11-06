@@ -6,24 +6,11 @@ using Honua.Core.Features.Observability.Abstractions;
 
 namespace Honua.Infrastructure.Monitoring;
 
-/// <summary>
-/// Point-in-time database connection-pool pressure signal consumed by the
-/// <c>db-bounded-admission-pressure</c> ops-findings rule. Abstracted behind an interface (rather than
-/// depending on <see cref="ProductionMetricsCollector"/> directly) so the rule can be unit-tested with a
-/// fake seam, matching the pattern already used for alert-dispatch health and deploy preflight.
-/// </summary>
 internal interface IOpsDatabasePressureSignal
 {
-    /// <summary>Reads the current database connection-pool pressure snapshot.</summary>
     DatabasePressureSnapshot GetSnapshot();
 }
 
-/// <summary>A single database connection-pool pressure reading.</summary>
-/// <param name="HasConnectionPoolUtilization">Whether pool utilization telemetry is available.</param>
-/// <param name="ConnectionPoolUtilization">Connection-pool utilization ratio (0.0-1.0), when available.</param>
-/// <param name="ConnectionAcquisitionTimeouts">Connection-acquisition timeout count over the pressure window.</param>
-/// <param name="ConnectionAcquisitionFailures">Connection-acquisition failure count.</param>
-/// <param name="QueuedWaiters">Number of callers currently queued waiting for an admission slot.</param>
 internal readonly record struct DatabasePressureSnapshot(
     bool HasConnectionPoolUtilization,
     double ConnectionPoolUtilization,
@@ -31,10 +18,6 @@ internal readonly record struct DatabasePressureSnapshot(
     long ConnectionAcquisitionFailures,
     int QueuedWaiters = 0);
 
-/// <summary>
-/// Default <see cref="IOpsDatabasePressureSignal"/> backed by the shared <see cref="ProductionMetricsCollector"/>
-/// singleton (the same source the ops-health snapshot's database view reads).
-/// </summary>
 internal sealed class ProductionMetricsDatabasePressureSignal(ProductionMetricsCollector metricsCollector)
     : IOpsDatabasePressureSignal
 {
@@ -49,14 +32,7 @@ internal sealed class ProductionMetricsDatabasePressureSignal(ProductionMetricsC
     }
 }
 
-/// <summary>
-/// <see cref="IOpsDatabasePressureSignal"/> sourced from the real database admission gate (#2805). The
-/// <c>db-bounded-admission-pressure</c> finding previously read <see cref="ProductionMetricsCollector"/>
-/// counters that had NO production writer (utilization was always "unavailable" and the timeout/failure
-/// totals were always zero), so it could never fire during a real exhaustion. The gate is the actual
-/// throttle in <c>CachingDatabaseConnectionProvider.OpenConnectionAsync</c>: it knows the live in-flight
-/// count, the current admission limit, the queued waiters, and a WINDOWED acquisition-timeout count.
-/// </summary>
+// The pressure reading comes from the admission gate, which has the live in-flight count and the windowed timeout count.
 internal sealed class AdmissionGateDatabasePressureSignal(IRuntimeTunableAdmissionGate admissionGate)
     : IOpsDatabasePressureSignal
 {
@@ -72,32 +48,17 @@ internal sealed class AdmissionGateDatabasePressureSignal(IRuntimeTunableAdmissi
     }
 }
 
-/// <summary>
-/// Bundles the ops-findings engine's data-source collaborators that are ONLY wired in certain
-/// topologies (Postgres-only telemetry, the durable-backend-gated rollup store) behind one
-/// constructor parameter. <see cref="OpsFindingsService"/> already carries the durable
-/// control-plane collaborators (gateway/workflow store/job store) plus several always-present
-/// seams; collapsing this group into a snapshot keeps the constructor under the
-/// architecture-enforced collaborator ceiling (<c>DependencyInjectionLimitsTests</c>) instead of
-/// growing it per new rule.
-/// </summary>
 internal sealed class OpsFindingsExtendedSignals
 {
-    /// <summary>Database connection-pool pressure signal (Postgres only), or null when unavailable.</summary>
+    public IManagedComposeObserver? ManagedComposeObserver { get; init; }
+
     public IOpsDatabasePressureSignal? DatabasePressureSignal { get; init; }
 
-    /// <summary>Runtime-tunable bounded database admission gate (Postgres only), or null when unavailable.</summary>
     public IRuntimeTunableAdmissionGate? AdmissionGate { get; init; }
 
-    /// <summary>Persisted ops-health rollup store (#2553, Postgres only), or null when unavailable.</summary>
     public IOpsHealthRollupStore? RollupStore { get; init; }
 
-    /// <summary>
-    /// Process-lifetime record of each store source's last successful collection (#4840), or null to
-    /// use a ledger private to the engine instance.
-    /// </summary>
     public OpsFindingsCollectionLedger? CollectionLedger { get; init; }
 
-    /// <summary>Clock for evaluation and collection times, or null for the system clock.</summary>
     public TimeProvider? TimeProvider { get; init; }
 }

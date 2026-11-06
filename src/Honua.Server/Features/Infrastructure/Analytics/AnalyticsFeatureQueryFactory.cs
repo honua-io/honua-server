@@ -21,63 +21,9 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Infrastructure.Analytics;
 
-/// <summary>
-/// Builds the shared <see cref="FeatureQuery"/> consumed by every spatial analytics
-/// endpoint from the GeoServices-style filter bundle the SpatialAnalytics handlers
-/// receive. The implementation intentionally lives in the Infrastructure namespace so
-/// the filter-parsing glue can reference shared GeoServices query types
-/// (<see cref="GeoServicesGeometry"/>, <see cref="QueryParameters"/>)
-/// without pulling SpatialAnalytics into a
-/// direct cross-feature reference — the vertical-slice architecture test treats
-/// Infrastructure as an exempt shared-services layer, so helper state machines
-/// declared here never trigger a violation.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The async state machine generated for the factory overloads lives under
-/// <c>Honua.Infrastructure.Analytics.AnalyticsFeatureQueryFactory+&lt;TryBuildAsync&gt;d__N</c>,
-/// which <c>VerticalSliceIsolationTests</c> skips because the checker iterates
-/// <c>_featureNames.Where(f =&gt; f is not ("Infrastructure" or "Ogc" or "Wfs20"))</c>.
-/// The callers in SpatialAnalytics only observe the <see cref="FeatureQuery"/> /
-/// <see cref="IResult"/> tuple so their own state machines stay clean of
-/// protocol-specific service captures.
-/// </para>
-/// <para>
-/// Supported parameters:
-/// <list type="bullet">
-///   <item><c>where</c> — ArcGIS SQL filter folded into
-///     <see cref="FeatureQuery.SqlFilter"/>.</item>
-///   <item><c>time</c>/<c>timeRelation</c> — FeatureServer-style temporal filter,
-///     ANDed with the where clause and translated through the same
-///     <see cref="IFilterExpressionService"/> the main query handler uses.</item>
-///   <item><c>objectIds</c> — comma-separated long list mapped to
-///     <see cref="FeatureQuery.ObjectIds"/>.</item>
-///   <item><c>geometry</c>/<c>geometryType</c>/<c>inSR</c>/<c>spatialRel</c>
-///     — GeoServices-style spatial filter mapped to
-///     <see cref="FeatureQuery.SpatialFilter"/>. Distance-based relationships
-///     (<c>withinDistance</c>/<c>beyondDistance</c>)
-///     are rejected because the analytics endpoints already overload
-///     <c>distance</c> for spatial-join (DWithin radius) and buffer-aggregate
-///     (buffer radius); reusing the same key for two different concepts would
-///     hide caller errors.</item>
-/// </list>
-/// </para>
-/// <para>
-/// <see cref="TranslateAsync"/> is the single interpretation of that bundle: the HTTP
-/// endpoints call it through <see cref="TryBuildAsync"/>, and layer-sourced geoprocessing
-/// jobs call it through <see cref="AnalyticsLayerSelectionFilterTranslator"/> (#4624), so
-/// a selector cannot mean one thing synchronously and another inside a job.
-/// </para>
-/// </remarks>
+// Distance-based relationships are rejected because these endpoints already use distance for two different radii.
 internal static class AnalyticsFeatureQueryFactory
 {
-    /// <summary>
-    /// Parses the shared analytics filter bundle from <paramref name="values"/> and
-    /// returns either the populated <see cref="FeatureQuery"/> or a pre-shaped
-    /// HTTP 400 <see cref="IResult"/> describing the validation failure. Callers
-    /// pattern-match on the tuple: when <c>Error</c> is non-null they should return
-    /// it directly, otherwise <c>Query</c> is the value to hand to the SQL builder.
-    /// </summary>
     public static async Task<(FeatureQuery? Query, IResult? Error)> TryBuildAsync(
         HttpContext context,
         IReadOnlyDictionary<string, StringValues> values,
@@ -112,11 +58,6 @@ internal static class AnalyticsFeatureQueryFactory
                 [translation.ErrorDetail ?? "Invalid filter syntax."]));
     }
 
-    /// <summary>
-    /// Translates the shared analytics selection bundle against <paramref name="resource"/>.
-    /// <paramref name="services"/> supplies the scoped <see cref="IFilterExpressionService"/>
-    /// and (only when a geometry filter is present) the <see cref="SpatialReferenceResolver"/>.
-    /// </summary>
     internal static async Task<LayerSelectionTranslation> TranslateAsync(
         LayerSelectionFilter selection,
         MetadataV2Resource resource,
@@ -135,7 +76,7 @@ internal static class AnalyticsFeatureQueryFactory
         FilterExpression? whereExpression = null;
         if (!string.IsNullOrWhiteSpace(where))
         {
-            var parseResult = filterService.Parse(FilterLanguage.ArcGisSql, where);
+            var parseResult = filterService.Parse(FilterLanguage.GeoServicesSql, where);
             if (!parseResult.IsSuccess)
             {
                 return LayerSelectionTranslation.Failure(
@@ -267,9 +208,6 @@ internal static class AnalyticsFeatureQueryFactory
         });
     }
 
-    /// <summary>
-    /// Enriches parsed statistic definitions with field type metadata from a v2 resource schema.
-    /// </summary>
     public static ImmutableArray<StatisticDefinition>? ApplyStatisticFieldTypes(
         ImmutableArray<StatisticDefinition>? outStatistics,
         MetadataV2Resource resource)
@@ -316,12 +254,6 @@ internal static class AnalyticsFeatureQueryFactory
         return false;
     }
 
-    /// <summary>
-    /// Parses a comma-separated list of long feature identifiers. Whitespace
-    /// is trimmed and empty entries are skipped; the method returns false if
-    /// any non-empty entry fails to parse so the handler can surface an
-    /// HTTP 400 with a clear message instead of silently dropping IDs.
-    /// </summary>
     private static bool TryParseObjectIds(string raw, out ImmutableArray<long> objectIds)
     {
         var parts = raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
@@ -347,11 +279,6 @@ internal static class AnalyticsFeatureQueryFactory
         return true;
     }
 
-    /// <summary>
-    /// Returns true when the supplied <c>spatialRel</c> would otherwise build a
-    /// distance-based spatial filter. The analytics endpoints reject these so the
-    /// <c>distance</c> parameter has a single, unambiguous meaning per operation.
-    /// </summary>
     private static bool IsDistanceBasedSpatialRelationship(string? spatialRel)
     {
         if (string.IsNullOrWhiteSpace(spatialRel))

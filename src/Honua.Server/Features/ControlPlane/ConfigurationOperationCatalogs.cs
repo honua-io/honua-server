@@ -7,9 +7,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Configuration-backed deploy target registry for control-plane workflows.
-/// </summary>
 internal sealed class ConfigurationDeployTargetRegistry(IOptionsMonitor<ControlPlaneOptions> options) : IDeployTargetRegistry
 {
     public Task<IReadOnlyList<DeployTargetDefinition>> ListAsync(CancellationToken cancellationToken = default)
@@ -48,9 +45,6 @@ internal sealed class ConfigurationDeployTargetRegistry(IOptionsMonitor<ControlP
     }
 }
 
-/// <summary>
-/// Configuration-backed workload catalog for specialized compute jobs.
-/// </summary>
 internal sealed class ConfigurationExecutionJobDefinitionRegistry(IOptionsMonitor<ControlPlaneOptions> options)
     : IExecutionJobDefinitionRegistry
 {
@@ -94,25 +88,9 @@ internal sealed class ConfigurationExecutionJobDefinitionRegistry(IOptionsMonito
     }
 }
 
-/// <summary>
-/// Activation gate for configuration-declared execution workloads.
-/// </summary>
-/// <remarks>
-/// An AWS Batch workload is only usable once the operator supplies the substrate
-/// ARNs the <c>AwsBatchComputeBackend</c> requires at submit time: the job-queue ARN
-/// plus at least one job-definition ARN (either the single
-/// <c>batch.job_definition_arn</c> or one of the per-tier
-/// <c>batch.job_definition_arn.{s,m,l,xl}</c> keys). A workload row committed with
-/// empty placeholder ARNs (so the entry is discoverable in base appsettings) is
-/// therefore dropped here until those parameters are provided through an environment
-/// or appsettings override — which means submit routing cleanly falls back to the
-/// local/Kubernetes baseline workload and existing deploys (and tests) are unaffected.
-/// The parameter keys are matched as literal contract strings rather than via
-/// <c>AwsBatchParameterKeys</c> so this gate does not take a hard dependency on the
-/// optionally-excluded <c>Honua.Aws</c> assembly (HonuaIncludeAws / HONUA_EXCLUDE_AWS).
-/// </remarks>
 internal static class ExecutionWorkloadGate
 {
+    // The parameter keys are literal contract strings so this gate does not reference the optionally excluded Honua.Aws assembly.
     private const string JobQueueArnKey = "batch.job_queue_arn";
     private const string JobDefinitionArnKey = "batch.job_definition_arn";
     private const string JobDefinitionArnTierPrefix = JobDefinitionArnKey + ".";

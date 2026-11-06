@@ -6,9 +6,6 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Infrastructure.Abstractions;
 
-/// <summary>
-/// Shared feature query execution abstraction used by non-FeatureServer protocols.
-/// </summary>
 internal interface IFeatureQueryDispatcher
 {
     Task<IResult> HandleQueryFeaturesAsync(

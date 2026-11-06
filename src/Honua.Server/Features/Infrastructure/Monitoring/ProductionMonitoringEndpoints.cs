@@ -19,15 +19,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Infrastructure.Monitoring;
 
-/// <summary>
-/// Endpoints for production monitoring, metrics, and health checks.
-/// </summary>
 internal static class ProductionMonitoringEndpoints
 {
-    /// <summary>
-    /// Maps production monitoring endpoints.
-    /// </summary>
-    /// <param name="app">The web application.</param>
     public static void MapProductionMonitoringEndpoints(this WebApplication app)
     {
         var group = app.MapGroup("/monitoring")
@@ -85,12 +78,6 @@ internal static class ProductionMonitoringEndpoints
             .WithDescription("Returns database circuit breaker and connection metrics");
     }
 
-    /// <summary>
-    /// Gets comprehensive production health metrics.
-    /// </summary>
-    /// <param name="metricsCollector">Production metrics collector.</param>
-    /// <param name="licenseEntitlementService">Runtime license entitlement snapshot provider.</param>
-    /// <returns>Production health metrics.</returns>
     private static IResult GetProductionHealth(
         [FromServices] ProductionMetricsCollector metricsCollector,
         [FromServices] ILicenseEntitlementService licenseEntitlementService)
@@ -111,12 +98,6 @@ internal static class ProductionMonitoringEndpoints
         return Results.Json(response, MetricsJsonContext.Default.ProductionHealthResponse);
     }
 
-    /// <summary>
-    /// Gets database connection pool metrics.
-    /// </summary>
-    /// <param name="connectionPoolMetrics">Connection pool metrics.</param>
-    /// <param name="serviceProvider">Service provider used to resolve optional provider-specific metrics.</param>
-    /// <returns>Connection pool metrics.</returns>
     private static IResult GetConnectionPoolMetrics(
         [FromServices] ConnectionPoolMetrics connectionPoolMetrics,
         [FromServices] IServiceProvider serviceProvider)
@@ -146,11 +127,6 @@ internal static class ProductionMonitoringEndpoints
         return Results.Json(response, MetricsJsonContext.Default.ConnectionPoolMetricsResponse);
     }
 
-    /// <summary>
-    /// Gets cache performance metrics.
-    /// </summary>
-    /// <param name="metricsCollector">Production metrics collector.</param>
-    /// <returns>Cache performance metrics.</returns>
     private static IResult GetCacheMetrics(
         [FromServices] ProductionMetricsCollector metricsCollector)
     {
@@ -168,11 +144,6 @@ internal static class ProductionMonitoringEndpoints
         return Results.Json(response, MetricsJsonContext.Default.CacheMetricsResponse);
     }
 
-    /// <summary>
-    /// Gets system resource usage metrics.
-    /// </summary>
-    /// <param name="metricsCollector">Production metrics collector.</param>
-    /// <returns>System resource metrics.</returns>
     private static IResult GetResourceMetrics(
         [FromServices] ProductionMetricsCollector metricsCollector)
     {
@@ -191,11 +162,6 @@ internal static class ProductionMonitoringEndpoints
         return Results.Json(response, MetricsJsonContext.Default.ResourceMetricsResponse);
     }
 
-    /// <summary>
-    /// Gets active alert conditions.
-    /// </summary>
-    /// <param name="metricsCollector">Production metrics collector.</param>
-    /// <returns>Active alert conditions.</returns>
     private static IResult GetActiveAlerts(
         [FromServices] ProductionMetricsCollector metricsCollector)
     {
@@ -218,11 +184,6 @@ internal static class ProductionMonitoringEndpoints
         return Results.Json(response, MetricsJsonContext.Default.AlertsResponse);
     }
 
-    /// <summary>
-    /// Gets file upload queue metrics.
-    /// </summary>
-    /// <param name="uploadQueueMetricsProvider">Upload queue metrics provider.</param>
-    /// <returns>Upload queue metrics.</returns>
     private static IResult GetUploadQueueMetrics(
         [FromServices] Abstractions.IUploadQueueMetricsProvider uploadQueueMetricsProvider)
     {
@@ -242,11 +203,6 @@ internal static class ProductionMonitoringEndpoints
         return Results.Json(response, MetricsJsonContext.Default.UploadQueueMetricsResponse);
     }
 
-    /// <summary>
-    /// Gets cache performance recommendations.
-    /// </summary>
-    /// <param name="hitRatio">Current hit ratio.</param>
-    /// <returns>List of recommendations.</returns>
     private static List<string> GetCacheRecommendations(double hitRatio)
     {
         var recommendations = new List<string>();
@@ -265,10 +221,6 @@ internal static class ProductionMonitoringEndpoints
         return recommendations;
     }
 
-    /// <summary>
-    /// Gets garbage collection information.
-    /// </summary>
-    /// <returns>GC information.</returns>
     private static ResourceGcInfoResponse GetGcInfo()
     {
         return new ResourceGcInfoResponse
@@ -281,11 +233,6 @@ internal static class ProductionMonitoringEndpoints
         };
     }
 
-    /// <summary>
-    /// Determines alert severity based on condition text.
-    /// </summary>
-    /// <param name="condition">Alert condition text.</param>
-    /// <returns>Alert severity.</returns>
     private static string DetermineAlertSeverity(string condition)
     {
         return condition.ToLowerInvariant() switch
@@ -297,12 +244,6 @@ internal static class ProductionMonitoringEndpoints
         };
     }
 
-    /// <summary>
-    /// Gets comprehensive health status from all production health checks.
-    /// </summary>
-    /// <param name="healthCheckService">Health check service.</param>
-    /// <param name="loggerFactory">Logger factory.</param>
-    /// <returns>Comprehensive health status.</returns>
     private static async Task<IResult> GetComprehensiveHealth(
         [FromServices] Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckService healthCheckService,
         [FromServices] ILoggerFactory loggerFactory)
@@ -344,13 +285,6 @@ internal static class ProductionMonitoringEndpoints
         }
     }
 
-    /// <summary>
-    /// Gets database resilience and circuit breaker metrics.
-    /// </summary>
-    /// <param name="connectionPoolMetrics">Connection pool metrics.</param>
-    /// <param name="metricsCollector">Production metrics collector.</param>
-    /// <param name="loggerFactory">Logger factory.</param>
-    /// <returns>Database resilience metrics.</returns>
     private static IResult GetDatabaseResilienceMetrics(
         [FromServices] ConnectionPoolMetrics connectionPoolMetrics,
         [FromServices] ProductionMetricsCollector metricsCollector,
@@ -406,13 +340,6 @@ internal static class ProductionMonitoringEndpoints
         }
     }
 
-    /// <summary>
-    /// Gets database-specific alerts based on metrics.
-    /// </summary>
-    /// <param name="hasPoolUtilization">Whether pool utilization data is available.</param>
-    /// <param name="poolUtilization">Pool utilization ratio.</param>
-    /// <param name="errorRate">Query error rate.</param>
-    /// <returns>List of database alerts.</returns>
     private static List<string> GetDatabaseAlerts(bool hasPoolUtilization, double poolUtilization, double errorRate)
     {
         var alerts = new List<string>();
@@ -461,14 +388,7 @@ internal static class ProductionMonitoringEndpoints
         return utilization <= 0.8 ? "Healthy" : "Degraded";
     }
 
-    /// <summary>
-    /// Projects a health check's <c>Data</c> bag onto source-generated JSON values.
-    /// </summary>
-    /// <remarks>
-    /// Internal rather than private so the reflection-safety regression test can exercise the
-    /// projection directly; the test host runs with reflection enabled, so only a direct assertion
-    /// on this projection (plus the call-site scan beside it) can hold the AOT contract.
-    /// </remarks>
+    // The projection is internal so the AOT regression test can call it directly.
     internal static Dictionary<string, JsonElement>? SanitizeHealthCheckData(
         IReadOnlyDictionary<string, object>? data)
     {
@@ -505,17 +425,7 @@ internal static class ProductionMonitoringEndpoints
                normalized.EndsWith("connectionstring", StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// Projects one health-check <c>Data</c> value onto a <see cref="JsonElement"/>.
-    /// </summary>
-    /// <remarks>
-    /// Every arm MUST pass its <see cref="MetricsJsonContext"/> type info. The parameterless
-    /// <c>SerializeToElement</c> overloads are reflection-based, and reflection serialization is
-    /// disabled under native AOT — which is what the shipped image is built with. Using them here
-    /// threw <see cref="InvalidOperationException"/> inside the projection, before the endpoint's
-    /// own source-generated write, so <c>/monitoring/health/comprehensive</c> returned 500 on every
-    /// AOT deployment while passing under JIT-hosted tests.
-    /// </remarks>
+    // Each arm passes its type info, because the parameterless serializer uses reflection and returns 500 under native AOT.
     private static JsonElement SanitizeHealthValue(object? value)
         => value switch
         {
@@ -537,188 +447,95 @@ internal static class ProductionMonitoringEndpoints
         };
 }
 
-/// <summary>
-/// Response model for production health metrics.
-/// </summary>
 internal sealed class ProductionHealthResponse
 {
-    /// <summary>
-    /// Gets or sets a value indicating whether the system is healthy.
-    /// </summary>
     [JsonPropertyName("isHealthy")]
     public required bool IsHealthy { get; set; }
 
-    /// <summary>
-    /// Gets or sets the overall status.
-    /// </summary>
     [JsonPropertyName("overallStatus")]
     public required string OverallStatus { get; set; }
 
-    /// <summary>
-    /// Gets or sets the detailed metrics.
-    /// </summary>
     [JsonPropertyName("metrics")]
     public required ProductionHealthMetrics Metrics { get; set; }
 
-    /// <summary>
-    /// Gets or sets active alert conditions.
-    /// </summary>
     [JsonPropertyName("alertConditions")]
     public required List<string> AlertConditions { get; set; }
 
-    /// <summary>
-    /// Gets or sets the active license summary.
-    /// </summary>
     [JsonPropertyName("license")]
     public required LicenseHealthSummary License { get; set; }
 
-    /// <summary>
-    /// Gets or sets the last updated timestamp.
-    /// </summary>
     [JsonPropertyName("lastUpdated")]
     public required DateTimeOffset LastUpdated { get; set; }
 }
 
-/// <summary>
-/// Response model for connection pool metrics.
-/// </summary>
 internal sealed class ConnectionPoolMetricsResponse
 {
-    /// <summary>
-    /// Gets or sets the utilization ratio.
-    /// </summary>
     [JsonPropertyName("utilization")]
     public required double Utilization { get; set; }
 
-    /// <summary>
-    /// Gets or sets a value indicating whether utilization data is available.
-    /// </summary>
     [JsonPropertyName("hasUtilizationData")]
     public required bool HasUtilizationData { get; set; }
 
-    /// <summary>
-    /// Gets or sets the utilization availability status.
-    /// </summary>
     [JsonPropertyName("utilizationStatus")]
     public required string UtilizationStatus { get; set; }
 
-    /// <summary>
-    /// Gets or sets the utilization percentage string.
-    /// </summary>
     [JsonPropertyName("utilizationPercentage")]
     public required string UtilizationPercentage { get; set; }
 
-    /// <summary>
-    /// Gets or sets the total failures count.
-    /// </summary>
     [JsonPropertyName("totalFailures")]
     public required long TotalFailures { get; set; }
 
-    /// <summary>
-    /// Gets or sets the total timeouts count.
-    /// </summary>
     [JsonPropertyName("totalTimeouts")]
     public required long TotalTimeouts { get; set; }
 
-    /// <summary>
-    /// Gets or sets the connection pool health status.
-    /// </summary>
     [JsonPropertyName("healthStatus")]
     public required string HealthStatus { get; set; }
 
-    /// <summary>
-    /// Gets or sets a value indicating whether the connection pool is healthy.
-    /// </summary>
     [JsonPropertyName("isHealthy")]
     public required bool IsHealthy { get; set; }
 
-    /// <summary>
-    /// Gets query admission-control telemetry when the active provider exposes it.
-    /// </summary>
     [JsonPropertyName("queryAdmission")]
     public QueryAdmissionMetricsResponse? QueryAdmission { get; set; }
 
-    /// <summary>
-    /// Gets or sets the timestamp.
-    /// </summary>
     [JsonPropertyName("timestamp")]
     public required DateTimeOffset Timestamp { get; set; }
 }
 
-/// <summary>
-/// Response model for provider-level query admission metrics.
-/// </summary>
 internal sealed class QueryAdmissionMetricsResponse
 {
-    /// <summary>
-    /// Gets a value indicating whether adaptive admission is enabled.
-    /// </summary>
     [JsonPropertyName("adaptiveEnabled")]
     public required bool AdaptiveEnabled { get; set; }
 
-    /// <summary>
-    /// Gets the current logical concurrent query limit.
-    /// </summary>
     [JsonPropertyName("currentLimit")]
     public required int CurrentLimit { get; set; }
 
-    /// <summary>
-    /// Gets the minimum adaptive logical query limit.
-    /// </summary>
     [JsonPropertyName("minLimit")]
     public required int MinLimit { get; set; }
 
-    /// <summary>
-    /// Gets the maximum logical query limit.
-    /// </summary>
     [JsonPropertyName("maxLimit")]
     public required int MaxLimit { get; set; }
 
-    /// <summary>
-    /// Gets the number of requests currently holding a query slot.
-    /// </summary>
     [JsonPropertyName("inFlight")]
     public required int InFlight { get; set; }
 
-    /// <summary>
-    /// Gets the number of query slots currently available.
-    /// </summary>
     [JsonPropertyName("availableSlots")]
     public required int AvailableSlots { get; set; }
 
-    /// <summary>
-    /// Gets the number of requests waiting on a query slot.
-    /// </summary>
     [JsonPropertyName("queuedWaiters")]
     public required int QueuedWaiters { get; set; }
 
-    /// <summary>
-    /// Gets the adaptive controller target database lease duration in milliseconds.
-    /// </summary>
     [JsonPropertyName("targetDurationMs")]
     public required double TargetDurationMs { get; set; }
 
-    /// <summary>
-    /// Gets the observed database lease duration EWMA in milliseconds.
-    /// </summary>
     [JsonPropertyName("durationEwmaMs")]
     public required double DurationEwmaMs { get; set; }
 
-    /// <summary>
-    /// Gets the observed admission queue wait EWMA in milliseconds.
-    /// </summary>
     [JsonPropertyName("queueWaitEwmaMs")]
     public required double QueueWaitEwmaMs { get; set; }
 
-    /// <summary>
-    /// Gets the number of logical target-limit changes.
-    /// </summary>
     [JsonPropertyName("adjustmentCount")]
     public required long AdjustmentCount { get; set; }
 
-    /// <summary>
-    /// Gets the most recent target-limit adjustment direction.
-    /// </summary>
     [JsonPropertyName("lastAdjustmentDirection")]
     public required string LastAdjustmentDirection { get; set; }
 
@@ -740,410 +557,206 @@ internal sealed class QueryAdmissionMetricsResponse
         };
 }
 
-/// <summary>
-/// Response model for cache metrics.
-/// </summary>
 internal sealed class CacheMetricsResponse
 {
-    /// <summary>
-    /// Gets or sets the cache hit ratio.
-    /// </summary>
     [JsonPropertyName("hitRatio")]
     public required double HitRatio { get; set; }
 
-    /// <summary>
-    /// Gets or sets the hit ratio percentage string.
-    /// </summary>
     [JsonPropertyName("hitRatioPercentage")]
     public required string HitRatioPercentage { get; set; }
 
-    /// <summary>
-    /// Gets or sets a value indicating whether the cache is healthy.
-    /// </summary>
     [JsonPropertyName("isHealthy")]
     public required bool IsHealthy { get; set; }
 
-    /// <summary>
-    /// Gets or sets cache recommendations.
-    /// </summary>
     [JsonPropertyName("recommendations")]
     public required List<string> Recommendations { get; set; }
 
-    /// <summary>
-    /// Gets or sets the timestamp.
-    /// </summary>
     [JsonPropertyName("timestamp")]
     public required DateTimeOffset Timestamp { get; set; }
 }
 
-/// <summary>
-/// Response model for resource metrics.
-/// </summary>
 internal sealed class ResourceMetricsResponse
 {
-    /// <summary>
-    /// Gets or sets memory usage in bytes.
-    /// </summary>
     [JsonPropertyName("memoryUsageBytes")]
     public required long MemoryUsageBytes { get; set; }
 
-    /// <summary>
-    /// Gets or sets memory usage in megabytes.
-    /// </summary>
     [JsonPropertyName("memoryUsageMB")]
     public required long MemoryUsageMB { get; set; }
 
-    /// <summary>
-    /// Gets or sets memory pressure level.
-    /// </summary>
     [JsonPropertyName("memoryPressureLevel")]
     public required string MemoryPressureLevel { get; set; }
 
-    /// <summary>
-    /// Gets or sets garbage collection information.
-    /// </summary>
     [JsonPropertyName("gcInfo")]
     public required ResourceGcInfoResponse GcInfo { get; set; }
 
-    /// <summary>
-    /// Gets or sets a value indicating whether resources are healthy.
-    /// </summary>
     [JsonPropertyName("isHealthy")]
     public required bool IsHealthy { get; set; }
 
-    /// <summary>
-    /// Gets or sets the timestamp.
-    /// </summary>
     [JsonPropertyName("timestamp")]
     public required DateTimeOffset Timestamp { get; set; }
 }
 
-/// <summary>
-/// Response model for garbage collection metrics.
-/// </summary>
 internal sealed class ResourceGcInfoResponse
 {
-    /// <summary>
-    /// Gets or sets the number of generation 0 collections.
-    /// </summary>
     [JsonPropertyName("gen0Collections")]
     public required int Gen0Collections { get; set; }
 
-    /// <summary>
-    /// Gets or sets the number of generation 1 collections.
-    /// </summary>
     [JsonPropertyName("gen1Collections")]
     public required int Gen1Collections { get; set; }
 
-    /// <summary>
-    /// Gets or sets the number of generation 2 collections.
-    /// </summary>
     [JsonPropertyName("gen2Collections")]
     public required int Gen2Collections { get; set; }
 
-    /// <summary>
-    /// Gets or sets the total memory observed during the snapshot.
-    /// </summary>
     [JsonPropertyName("totalMemory")]
     public required long TotalMemory { get; set; }
 
-    /// <summary>
-    /// Gets or sets the timestamp when the GC snapshot was captured.
-    /// </summary>
     [JsonPropertyName("lastGen0Time")]
     public required DateTimeOffset LastGen0Time { get; set; }
 }
 
-/// <summary>
-/// Response model for alerts.
-/// </summary>
 internal sealed class AlertsResponse
 {
-    /// <summary>
-    /// Gets or sets a value indicating whether there are active alerts.
-    /// </summary>
     [JsonPropertyName("hasActiveAlerts")]
     public required bool HasActiveAlerts { get; set; }
 
-    /// <summary>
-    /// Gets or sets the alert count.
-    /// </summary>
     [JsonPropertyName("alertCount")]
     public required int AlertCount { get; set; }
 
-    /// <summary>
-    /// Gets or sets the list of alerts.
-    /// </summary>
     [JsonPropertyName("alerts")]
     public required List<AlertCondition> Alerts { get; set; }
 
-    /// <summary>
-    /// Gets or sets the timestamp.
-    /// </summary>
     [JsonPropertyName("timestamp")]
     public required DateTimeOffset Timestamp { get; set; }
 }
 
-/// <summary>
-/// Alert condition model.
-/// </summary>
 internal sealed class AlertCondition
 {
-    /// <summary>
-    /// Gets or sets the alert condition text.
-    /// </summary>
     [JsonPropertyName("condition")]
     public required string Condition { get; set; }
 
-    /// <summary>
-    /// Gets or sets the alert severity.
-    /// </summary>
     [JsonPropertyName("severity")]
     public required string Severity { get; set; }
 
-    /// <summary>
-    /// Gets or sets the timestamp.
-    /// </summary>
     [JsonPropertyName("timestamp")]
     public required DateTimeOffset Timestamp { get; set; }
 }
 
-/// <summary>
-/// Response model for upload queue metrics.
-/// </summary>
 internal sealed class UploadQueueMetricsResponse
 {
-    /// <summary>
-    /// Gets or sets the current queue depth.
-    /// </summary>
     [JsonPropertyName("queueDepth")]
     public required int QueueDepth { get; set; }
 
-    /// <summary>
-    /// Gets or sets the maximum queue depth.
-    /// </summary>
     [JsonPropertyName("maxQueueDepth")]
     public required int MaxQueueDepth { get; set; }
 
-    /// <summary>
-    /// Gets or sets the number of active uploads.
-    /// </summary>
     [JsonPropertyName("activeUploads")]
     public required int ActiveUploads { get; set; }
 
-    /// <summary>
-    /// Gets or sets the maximum concurrent uploads.
-    /// </summary>
     [JsonPropertyName("maxConcurrentUploads")]
     public required int MaxConcurrentUploads { get; set; }
 
-    /// <summary>
-    /// Gets or sets the queue utilization ratio.
-    /// </summary>
     [JsonPropertyName("queueUtilization")]
     public required double QueueUtilization { get; set; }
 
-    /// <summary>
-    /// Gets or sets a value indicating whether the upload queue is healthy.
-    /// </summary>
     [JsonPropertyName("isHealthy")]
     public required bool IsHealthy { get; set; }
 
-    /// <summary>
-    /// Gets or sets the timestamp.
-    /// </summary>
     [JsonPropertyName("timestamp")]
     public required DateTimeOffset Timestamp { get; set; }
 }
 
-/// <summary>
-/// Response model for comprehensive health status.
-/// </summary>
 internal sealed class ComprehensiveHealthResponse
 {
-    /// <summary>
-    /// Gets or sets the overall health status.
-    /// </summary>
     [JsonPropertyName("status")]
     public required string Status { get; set; }
 
-    /// <summary>
-    /// Gets or sets the total duration of health checks.
-    /// </summary>
     [JsonPropertyName("totalDuration")]
     public required TimeSpan TotalDuration { get; set; }
 
-    /// <summary>
-    /// Gets or sets the health check entries.
-    /// </summary>
     [JsonPropertyName("entries")]
     public required Dictionary<string, HealthCheckEntryResponse> Entries { get; set; }
 
-    /// <summary>
-    /// Gets or sets the timestamp.
-    /// </summary>
     [JsonPropertyName("timestamp")]
     public required DateTimeOffset Timestamp { get; set; }
 }
 
-/// <summary>
-/// Response model for individual health check entry.
-/// </summary>
 internal sealed class HealthCheckEntryResponse
 {
-    /// <summary>
-    /// Gets or sets the health status.
-    /// </summary>
     [JsonPropertyName("status")]
     public required string Status { get; set; }
 
-    /// <summary>
-    /// Gets or sets the check duration.
-    /// </summary>
     [JsonPropertyName("duration")]
     public required TimeSpan Duration { get; set; }
 
-    /// <summary>
-    /// Gets or sets the description.
-    /// </summary>
     [JsonPropertyName("description")]
     public string? Description { get; set; }
 
-    /// <summary>
-    /// Gets or sets the exception message if any.
-    /// </summary>
     [JsonPropertyName("exception")]
     public string? Exception { get; set; }
 
-    /// <summary>
-    /// Gets or sets additional data.
-    /// </summary>
     [JsonPropertyName("data")]
     public Dictionary<string, JsonElement>? Data { get; set; }
 }
 
-/// <summary>
-/// Response model for database resilience metrics.
-/// </summary>
 internal sealed class DatabaseResilienceMetricsResponse
 {
-    /// <summary>
-    /// Gets or sets connection pool metrics.
-    /// </summary>
     [JsonPropertyName("connectionPool")]
     public required DatabaseConnectionPoolMetrics ConnectionPool { get; set; }
 
-    /// <summary>
-    /// Gets or sets resilience status.
-    /// </summary>
     [JsonPropertyName("resilience")]
     public required DatabaseResilienceStatus Resilience { get; set; }
 
-    /// <summary>
-    /// Gets or sets alert conditions.
-    /// </summary>
     [JsonPropertyName("alerts")]
     public required List<string> Alerts { get; set; }
 
-    /// <summary>
-    /// Gets or sets the timestamp.
-    /// </summary>
     [JsonPropertyName("timestamp")]
     public required DateTimeOffset Timestamp { get; set; }
 }
 
-/// <summary>
-/// Database connection pool metrics.
-/// </summary>
 internal sealed class DatabaseConnectionPoolMetrics
 {
-    /// <summary>
-    /// Gets or sets the utilization ratio.
-    /// </summary>
     [JsonPropertyName("utilization")]
     public required double Utilization { get; set; }
 
-    /// <summary>
-    /// Gets or sets a value indicating whether utilization data is available.
-    /// </summary>
     [JsonPropertyName("hasUtilizationData")]
     public required bool HasUtilizationData { get; set; }
 
-    /// <summary>
-    /// Gets or sets the utilization availability status.
-    /// </summary>
     [JsonPropertyName("utilizationStatus")]
     public required string UtilizationStatus { get; set; }
 
-    /// <summary>
-    /// Gets or sets the utilization percentage.
-    /// </summary>
     [JsonPropertyName("utilizationPercentage")]
     public required string UtilizationPercentage { get; set; }
 
-    /// <summary>
-    /// Gets or sets the number of active connections.
-    /// </summary>
     [JsonPropertyName("activeConnections")]
     public required int ActiveConnections { get; set; }
 
-    /// <summary>
-    /// Gets or sets the total failures.
-    /// </summary>
     [JsonPropertyName("totalFailures")]
     public required long TotalFailures { get; set; }
 
-    /// <summary>
-    /// Gets or sets the total timeouts.
-    /// </summary>
     [JsonPropertyName("totalTimeouts")]
     public required long TotalTimeouts { get; set; }
 
-    /// <summary>
-    /// Gets or sets the connection pool health status.
-    /// </summary>
     [JsonPropertyName("healthStatus")]
     public required string HealthStatus { get; set; }
 
-    /// <summary>
-    /// Gets or sets whether the connection pool is healthy.
-    /// </summary>
     [JsonPropertyName("isHealthy")]
     public required bool IsHealthy { get; set; }
 }
 
-/// <summary>
-/// Database resilience status.
-/// </summary>
 internal sealed class DatabaseResilienceStatus
 {
-    /// <summary>
-    /// Gets or sets whether circuit breakers are enabled.
-    /// </summary>
     [JsonPropertyName("circuitBreakerEnabled")]
     public required bool CircuitBreakerEnabled { get; set; }
 
-    /// <summary>
-    /// Gets or sets the connection failures count.
-    /// </summary>
     [JsonPropertyName("connectionFailures")]
     public required long ConnectionFailures { get; set; }
 
-    /// <summary>
-    /// Gets or sets the query failures count.
-    /// </summary>
     [JsonPropertyName("queryFailures")]
     public required long QueryFailures { get; set; }
 
-    /// <summary>
-    /// Gets or sets the error rate.
-    /// </summary>
     [JsonPropertyName("errorRate")]
     public required double ErrorRate { get; set; }
 
-    /// <summary>
-    /// Gets or sets the error rate percentage.
-    /// </summary>
     [JsonPropertyName("errorRatePercentage")]
     public required string ErrorRatePercentage { get; set; }
 }

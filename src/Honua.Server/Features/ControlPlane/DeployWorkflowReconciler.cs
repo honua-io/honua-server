@@ -8,9 +8,6 @@ using Microsoft.Extensions.Hosting;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Reconciles durable deploy workflow operations against provider backends.
-/// </summary>
 internal sealed partial class DeployWorkflowReconciler(
     IWorkflowOperationStore workflowStore,
     IDeployTargetRegistry targetRegistry,
@@ -18,6 +15,132 @@ internal sealed partial class DeployWorkflowReconciler(
     IDeployTelemetrySignalEvaluator telemetrySignalEvaluator,
     ILogger<DeployWorkflowReconciler> logger) : IWorkflowOperationReconciler
 {
+    private async Task ReconcileCheckpointAsync(
+        WorkflowOperationRecord operation, ICheckpointedDeployBackend backend, CancellationToken cancellationToken)
+    {
+        if (operation.CurrentPhase == ICheckpointedDeployBackend.PendingPhase)
+        {
+            // The marker is committed before migration starts. An interrupted migration is never
+            // automatically repeated because its outcome may be unknown.
+            var preparing = operation with { CurrentPhase = ICheckpointedDeployBackend.PreparingPhase, UpdatedAt = DateTimeOffset.UtcNow };
+            if (!await workflowStore.TrySetAsync(preparing, cancellationToken: cancellationToken).ConfigureAwait(false)) return;
+            var claimed = await workflowStore.GetAsync(operation.OperationId, cancellationToken).ConfigureAwait(false);
+            if (claimed is null || claimed.CurrentPhase != ICheckpointedDeployBackend.PreparingPhase) return;
+            var checkpoint = await backend.PrepareCheckpointAsync(claimed, cancellationToken).ConfigureAwait(false);
+            var prepared = claimed with
+            {
+                CurrentPhase = ICheckpointedDeployBackend.PreparedPhase,
+                ProviderOperationId = checkpoint.CandidateRevision,
+                ObservedState = checkpoint.OriginalServiceRevision,
+                Deploy = claimed.Deploy! with { CurrentRevision = checkpoint.StableRevision },
+                UpdatedAt = DateTimeOffset.UtcNow
+            };
+            await workflowStore.TrySetAsync(prepared, cancellationToken: cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        if (operation.CurrentPhase == ICheckpointedDeployBackend.RampPhase)
+        {
+            var step = await ((IDeployBackend)backend).StartAsync(operation, cancellationToken).ConfigureAwait(false);
+            if (step.Status == WorkflowOperationStatus.Failed)
+            {
+                var rollback = await ((IDeployBackend)backend).RollbackAsync(operation, cancellationToken).ConfigureAwait(false);
+                var status = rollback.Status is WorkflowOperationStatus.RollbackRequested or WorkflowOperationStatus.RolledBack
+                    ? rollback.Status : WorkflowOperationStatus.ManualInterventionRequired;
+                var recovering = operation with
+                {
+                    Status = status,
+                    CurrentPhase = rollback.Message ?? "Canary ramp failed; rollback requested.",
+                    UpdatedAt = DateTimeOffset.UtcNow,
+                    CompletedAt = status == WorkflowOperationStatus.ManualInterventionRequired ? DateTimeOffset.UtcNow : null
+                };
+                await workflowStore.TrySetAsync(recovering, cancellationToken: cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
+            var ramp = operation.Deploy?.CanaryRamp ?? throw new InvalidOperationException("Canary ramp is missing.");
+            var advanced = operation with
+            {
+                Status = WorkflowOperationStatus.Reconciling,
+                CurrentPhase = step.Message ?? "Canary step submitted.",
+                UpdatedAt = DateTimeOffset.UtcNow,
+                Deploy = operation.Deploy! with { CanaryRamp = ramp with { CurrentStepStartedAt = DateTimeOffset.UtcNow } }
+            };
+            await workflowStore.TrySetAsync(advanced, cancellationToken: cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        if (operation.CurrentPhase == ICheckpointedDeployBackend.CutoverPhase)
+        {
+            var cutover = await ((IDeployBackend)backend).PromoteAsync(operation, cancellationToken).ConfigureAwait(false);
+            if (cutover.RollbackRecommended)
+            {
+                var rollback = await ((IDeployBackend)backend).RollbackAsync(operation, cancellationToken).ConfigureAwait(false);
+                var status = rollback.Status is WorkflowOperationStatus.RollbackRequested or WorkflowOperationStatus.RolledBack
+                    ? rollback.Status : WorkflowOperationStatus.ManualInterventionRequired;
+                var recovering = operation with
+                {
+                    Status = status,
+                    CurrentPhase = rollback.Message ?? "Cutover failed; rollback requested.",
+                    UpdatedAt = DateTimeOffset.UtcNow,
+                    CompletedAt = status == WorkflowOperationStatus.ManualInterventionRequired ? DateTimeOffset.UtcNow : null,
+                    Deploy = operation.Deploy! with { TrafficExposedAt = operation.Deploy.TrafficExposedAt ?? DateTimeOffset.UtcNow }
+                };
+                await workflowStore.TrySetAsync(recovering, cancellationToken: cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
+            var exposed = operation with
+            {
+                Status = cutover.Status,
+                CurrentPhase = cutover.Message ?? "Deploy traffic shift submitted.",
+                UpdatedAt = DateTimeOffset.UtcNow,
+                CompletedAt = IsTerminal(cutover.Status) ? DateTimeOffset.UtcNow : null,
+                Deploy = operation.Deploy! with
+                {
+                    TrafficExposedAt = cutover.Status == WorkflowOperationStatus.Reconciling
+                        ? operation.Deploy.TrafficExposedAt ?? DateTimeOffset.UtcNow : operation.Deploy.TrafficExposedAt
+                }
+            };
+            await workflowStore.TrySetAsync(exposed, cancellationToken: cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        if (operation.CurrentPhase == ICheckpointedDeployBackend.PreparedPhase)
+        {
+            var result = await backend.ActivateCheckpointAsync(operation, cancellationToken).ConfigureAwait(false);
+            var activated = operation with
+            {
+                Status = result.Status,
+                CurrentPhase = result.Status is WorkflowOperationStatus.Submitted or WorkflowOperationStatus.Reconciling
+                    ? ICheckpointedDeployBackend.ActivatedPhase : result.Message ?? operation.CurrentPhase,
+                ErrorMessage = result.Status == WorkflowOperationStatus.Failed ? result.Message : null,
+                Deploy = operation.Deploy! with
+                {
+                    TrafficExposedAt = result.Status == WorkflowOperationStatus.Reconciling
+                        ? operation.Deploy.TrafficExposedAt ?? DateTimeOffset.UtcNow
+                        : operation.Deploy.TrafficExposedAt
+                },
+                UpdatedAt = DateTimeOffset.UtcNow,
+                CompletedAt = result.Status is WorkflowOperationStatus.Failed or WorkflowOperationStatus.ManualInterventionRequired
+                    ? DateTimeOffset.UtcNow : null
+            };
+            await workflowStore.TrySetAsync(activated, cancellationToken: cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        // Unknown preparation outcomes cannot safely be replayed, including a process loss after
+        // a migrate task started but before its result was durably recorded.
+        var uncertain = operation with
+        {
+            Status = WorkflowOperationStatus.ManualInterventionRequired,
+            CurrentPhase = "Deploy preparation was interrupted; verify migration and provider state.",
+            UpdatedAt = DateTimeOffset.UtcNow,
+            CompletedAt = DateTimeOffset.UtcNow
+        };
+        await workflowStore.TrySetAsync(uncertain, cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
     private static readonly TimeSpan DefaultLeaseDuration = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan DefaultLeaseRenewInterval = TimeSpan.FromSeconds(10);
     private readonly Dictionary<(string Backend, DeployTargetKind TargetKind), IDeployBackend> _backends = backends.ToDictionary(
@@ -78,6 +201,17 @@ internal sealed partial class DeployWorkflowReconciler(
             }
             else
             {
+                if (backend is ICheckpointedDeployBackend checkpointed &&
+                    checkpointed.RequiresCheckpoint(operation) &&
+                    operation.Status != WorkflowOperationStatus.RollbackRequested &&
+                    operation.CurrentPhase is ICheckpointedDeployBackend.PendingPhase or
+                        ICheckpointedDeployBackend.PreparingPhase or ICheckpointedDeployBackend.PreparedPhase or
+                        ICheckpointedDeployBackend.CutoverPhase or ICheckpointedDeployBackend.RampPhase)
+                {
+                    await ReconcileCheckpointAsync(operation, checkpointed, reconciliationCancellation.Token).ConfigureAwait(false);
+                    return;
+                }
+
                 var observation = await backend.ObserveAsync(operation, reconciliationCancellation.Token).ConfigureAwait(false);
                 var stagesCandidateWithoutTraffic = await backend.GetCapabilitiesAsync(reconciliationCancellation.Token).ConfigureAwait(false)
                     is { StagesCandidateWithoutTraffic: true };
@@ -228,16 +362,7 @@ internal sealed partial class DeployWorkflowReconciler(
         }
     }
 
-    /// <summary>
-    /// Stamps the first observation that the candidate is serving (Reconciling, or a backend that cuts
-    /// over straight to Succeeded) as the traffic-exposure moment, so the telemetry gate's warmup/bake
-    /// window anchors on actual exposure rather than operation creation (#4617). The stamp is persisted
-    /// with the operation and never moved, so it survives controller restarts and lease hand-offs. An
-    /// operation that was already serving before exposure tracking existed keeps its prior CreatedAt
-    /// anchor rather than having its bake window restarted by an upgrade. A backend that stages the
-    /// candidate without traffic reports Reconciling while nothing reaches the candidate, so its exposure
-    /// is stamped at the promotion cutover instead (<see cref="BeginPostActivationObservationIfPromoted"/>).
-    /// </summary>
+    // The exposure stamp stays on the operation, and an operation already serving before exposure tracking keeps its CreatedAt anchor so an upgrade does not restart the bake window.
     private static DateTimeOffset? StampTrafficExposure(
         WorkflowOperationRecord operation,
         WorkflowOperationStatus observedStatus,
@@ -288,12 +413,14 @@ internal sealed partial class DeployWorkflowReconciler(
 
         if (current.Status is WorkflowOperationStatus.Submitted or WorkflowOperationStatus.Reconciling or WorkflowOperationStatus.Succeeded)
         {
+            var checkpointStaged = backend is ICheckpointedDeployBackend checkpointed &&
+                checkpointed.RequiresCheckpoint(current) && current.Deploy?.TrafficExposedAt is null;
             // When a progressive canary ramp is configured the current step must finish its
             // bake window before the telemetry gate is evaluated. Holding here keeps each step
             // independent of the operation-wide warmup window and preserves single-step behavior
             // (the default) when no ramp is configured. A backend-recommended rollback bypasses
             // the hold so provider-detected failures still settle promptly.
-            if (string.IsNullOrWhiteSpace(rollbackReason) && current.Deploy?.Protection == null)
+            if (!checkpointStaged && string.IsNullOrWhiteSpace(rollbackReason) && current.Deploy?.Protection == null)
             {
                 var rampBakeHold = GetCanaryRampBakeHold(current);
                 if (rampBakeHold != null)
@@ -310,12 +437,15 @@ internal sealed partial class DeployWorkflowReconciler(
             // A backend that stages the candidate without traffic gives the metrics gate nothing to measure
             // before cutover (#4617): until exposure only the pre-cutover checks run, and the full gate runs
             // from cutover inside the post-activation observation window.
-            var stagedBeforeExposure = stagesCandidateWithoutTraffic &&
+            var stagedBeforeExposure = (stagesCandidateWithoutTraffic || checkpointStaged) &&
                 current.Deploy is { TrafficExposedAt: null, Protection: null } &&
                 current.Status is WorkflowOperationStatus.Submitted or WorkflowOperationStatus.Reconciling;
-            var telemetryDecision = stagedBeforeExposure
-                ? await telemetrySignalEvaluator.EvaluateStagedCandidateAsync(current, promotionRecommended, cancellationToken).ConfigureAwait(false)
-                : await telemetrySignalEvaluator.EvaluateAsync(current, cancellationToken).ConfigureAwait(false);
+            // Provider-detected failure must not wait on telemetry before restoring traffic.
+            var telemetryDecision = !string.IsNullOrWhiteSpace(rollbackReason)
+                ? null
+                : stagedBeforeExposure
+                    ? await telemetrySignalEvaluator.EvaluateStagedCandidateAsync(current, promotionRecommended, cancellationToken).ConfigureAwait(false)
+                    : await telemetrySignalEvaluator.EvaluateAsync(current, cancellationToken).ConfigureAwait(false);
             if (telemetryDecision != null)
             {
                 // Persist any parameter updates the evaluator carried back (e.g. the anti-flap
@@ -379,7 +509,8 @@ internal sealed partial class DeployWorkflowReconciler(
                 if (!telemetryDecision.RollbackRecommended &&
                     !telemetryDecision.WaitForMoreTelemetry &&
                     promotionRecommended &&
-                    current.Status == WorkflowOperationStatus.Reconciling &&
+                    (current.Status == WorkflowOperationStatus.Reconciling ||
+                        (checkpointStaged && current.Status == WorkflowOperationStatus.Submitted)) &&
                     promotionGate != DeployPromotionGateMode.Manual &&
                     current.Deploy?.Protection == null)
                 {
@@ -396,7 +527,8 @@ internal sealed partial class DeployWorkflowReconciler(
                 promotionGate == DeployPromotionGateMode.Health &&
                 string.IsNullOrWhiteSpace(rollbackReason) &&
                 promotionRecommended &&
-                current.Status == WorkflowOperationStatus.Reconciling &&
+                (current.Status == WorkflowOperationStatus.Reconciling ||
+                    (checkpointStaged && current.Status == WorkflowOperationStatus.Submitted)) &&
                 // codeql[cs/constant-condition]: Protection is nullable; null means no observation window is open
                 current.Deploy?.Protection == null)
             {
@@ -551,30 +683,14 @@ internal sealed partial class DeployWorkflowReconciler(
         };
     }
 
-    /// <summary>
-    /// Reserved deploy-spec parameter key carrying the count of consecutive transient rollback
-    /// failures between reconcile cycles. The reconciler persists the updated spec parameters, so the
-    /// attempt budget survives without a separate store (mirroring the telemetry breach-streak key).
-    /// </summary>
+    // The rollback-failure count is carried in the deploy parameters so the attempt budget survives without a separate store.
     internal const string RollbackTransientAttemptsParameterKey = "deployment.rollback.transient_attempts";
 
-    /// <summary>
-    /// Reserved deploy-spec parameter key carrying the timestamp at which provider observations
-    /// first entered the rollback-settling state.
-    /// </summary>
     internal const string RollbackObservationStartedAtParameterKey = "deployment.rollback.observation_started_at";
 
-    /// <summary>
-    /// Optional deploy-spec parameter controlling the maximum rollback-settling duration. The value
-    /// is clamped so provider polling can never become unbounded.
-    /// </summary>
+    // The rollback-settling duration is clamped so provider polling cannot become unbounded.
     internal const string RollbackObservationTimeoutSecondsParameterKey = "deployment.rollback.observation_timeout_seconds";
 
-    /// <summary>
-    /// Reserved deploy-spec parameter key bounding how many consecutive transient rollback failures
-    /// are retried before the reconciler escalates to manual intervention. Defaults to
-    /// <see cref="DefaultRollbackRetryBudget"/>; clamped to <see cref="MaximumRollbackRetryBudget"/>.
-    /// </summary>
     internal const string RollbackRetryBudgetParameterKey = "deployment.rollback.retry_budget";
 
     private const int DefaultRollbackRetryBudget = 3;
@@ -631,34 +747,14 @@ internal sealed partial class DeployWorkflowReconciler(
         };
     }
 
-    /// <summary>
-    /// Optional deploy-spec parameter controlling how long a fully-promoted candidate is observed
-    /// before the post-activation protection window closes and the previous revision's retained
-    /// recovery capacity is retired. Clamped to <see cref="MaximumProtectionObservationWindow"/> so
-    /// old-revision retention (and the deterministic-rollback safety net it enables) is always bounded.
-    /// </summary>
+    // Old-revision retention is clamped so the recovery window is always bounded.
     internal const string ProtectionObservationWindowSecondsParameterKey = "deployment.protection.observation_window_seconds";
 
-    /// <summary>
-    /// Protection reason code recorded while the telemetry gate is still waiting for evidence inside an
-    /// open observation window (honua-server#4617). The window does not commit while it is set.
-    /// </summary>
     internal const string TelemetryEvidencePendingReasonCode = "telemetry-evidence-pending";
 
     private static readonly TimeSpan DefaultProtectionObservationWindow = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan MaximumProtectionObservationWindow = TimeSpan.FromHours(24);
 
-    /// <summary>
-    /// Begins the durable post-activation observation window (honua-server#4618) once a candidate has
-    /// been fully promoted, whether by the reconciler's own promotion decision or by an operator's
-    /// manual promote call (<see cref="DeployWorkflowService.PromoteAsync"/> calls this directly since it
-    /// drives the backend outside the reconcile loop). Forces the operation back into
-    /// <see cref="WorkflowOperationStatus.Reconciling"/> so terminal deploys stop dropping out of
-    /// reconciliation the moment cutover completes, which previously let a self-hosted backend retire
-    /// its old replica before the advertised rollback protection window elapsed. Also stamps
-    /// <see cref="DeployOperationSpec.TrafficExposedAt"/> when it is still unset: for a backend that
-    /// stages the candidate without traffic, the cutover is the moment of exposure (#4617).
-    /// </summary>
     internal static WorkflowOperationRecord BeginPostActivationObservationIfPromoted(WorkflowOperationRecord promoted)
     {
         var deploy = promoted.Deploy;
@@ -702,15 +798,6 @@ internal sealed partial class DeployWorkflowReconciler(
         };
     }
 
-    /// <summary>
-    /// Advances or closes an open post-activation observation window (honua-server#4618). Called after
-    /// <see cref="ApplyRollbackSignalsAsync"/> and <see cref="ApplyRollbackObservationTimeout"/> so a
-    /// rollback triggered this cycle (status no longer <see cref="WorkflowOperationStatus.Reconciling"/>)
-    /// always wins over window bookkeeping. While the window is open and no rollback fired, holds the
-    /// operation non-terminal until the deadline, then finalizes through
-    /// <see cref="IDeployBackend.CompleteProtectionAsync"/> so any capacity a backend retained purely for
-    /// recovery is retired deterministically rather than left to a caller-side timer.
-    /// </summary>
     private static async Task<WorkflowOperationRecord> ApplyPostActivationProtectionWindowAsync(
         WorkflowOperationRecord current,
         IDeployBackend backend,
@@ -750,7 +837,18 @@ internal sealed partial class DeployWorkflowReconciler(
         }
 
         var finalize = await backend.CompleteProtectionAsync(current, cancellationToken).ConfigureAwait(false);
-        if (finalize.Status == WorkflowOperationStatus.Failed)
+        if (finalize.Status is WorkflowOperationStatus.Submitted or WorkflowOperationStatus.Reconciling)
+        {
+            return current with
+            {
+                Status = WorkflowOperationStatus.Reconciling,
+                UpdatedAt = now,
+                CompletedAt = null,
+                CurrentPhase = finalize.Message ?? "Post-activation handoff is still in progress."
+            };
+        }
+
+        if (finalize.Status is WorkflowOperationStatus.Failed or WorkflowOperationStatus.ManualInterventionRequired)
         {
             return current with
             {
@@ -789,13 +887,7 @@ internal sealed partial class DeployWorkflowReconciler(
         return DefaultProtectionObservationWindow;
     }
 
-    /// <summary>
-    /// Stable digest of the safety-policy inputs in effect when a candidate is activated: the resolved
-    /// promotion gate, the target kind, and every <c>deployment.*</c>/<c>telemetry.*</c> parameter that
-    /// governs rollback or observation behavior, sorted for determinism. Recovery always replays this
-    /// approved policy rather than re-deciding it (AC: "no second model decision is required"), and
-    /// persisting the digest lets an operator detect policy drift mid-window.
-    /// </summary>
+    // Recovery replays the policy digest captured at activation rather than deciding the policy again.
     private static string ComputePolicyDigest(DeployOperationSpec spec)
     {
         var relevantParameters = spec.Parameters
@@ -815,12 +907,7 @@ internal sealed partial class DeployWorkflowReconciler(
         return Convert.ToHexString(hash);
     }
 
-    /// <summary>
-    /// Derives the stable recovery-grant identity for a protected activation (honua-server#4958).
-    /// Bound to the operation, its target, the prior/candidate revision pair, the policy digest that
-    /// was actually in effect and the exposure instant, so a re-activation of the same revisions mints
-    /// a different grant and a grant quoted from a superseded window can never satisfy the fence.
-    /// </summary>
+    // The recovery grant is bound to the revision pair, the policy digest, and the exposure instant, so a grant from a superseded window cannot satisfy the fence.
     private static string ComputeRecoveryGrantId(
         string operationId,
         string targetId,
@@ -841,13 +928,6 @@ internal sealed partial class DeployWorkflowReconciler(
         return "grant-" + Convert.ToHexString(hash)[..32].ToLowerInvariant();
     }
 
-    /// <summary>
-    /// Transitions an open post-activation protection window to a new phase (honua-server#4618).
-    /// Internal (not private) so <see cref="DeployWorkflowService"/> can keep the record's
-    /// <c>Deploy.Protection</c> state consistent when it drives a rollback out-of-band (manual/
-    /// coordinated-release-triggered), not only when the reconciler itself decides to roll back through
-    /// <see cref="ApplyRollbackSignalsAsync"/>. No-ops when no window is open.
-    /// </summary>
     internal static DeployOperationSpec WithProtectionPhase(
         DeployOperationSpec spec,
         DeployProtectionPhase phase,
@@ -870,18 +950,12 @@ internal sealed partial class DeployWorkflowReconciler(
         };
     }
 
-    /// <summary>
-    /// A settled <see cref="WorkflowOperationStatus.RolledBack"/> never carries a protection window
-    /// (honua-server#4989). Applied after every reconcile step so no settle path, whichever cycle or
-    /// caller requested the rollback, can leave a terminal operation reporting a recovery in flight
-    /// (<c>recovering</c>) or a live observation window (<c>observing</c>).
-    /// </summary>
+    // A settled rollback never carries a protection window.
     private static WorkflowOperationRecord ClearProtectionOnSettledRollback(WorkflowOperationRecord current)
         => current is { Status: WorkflowOperationStatus.RolledBack, Deploy.Protection: not null }
             ? current with { Deploy = WithoutProtection(current.Deploy) }
             : current;
 
-    /// <summary>Clears an open post-activation protection window (honua-server#4618); see <see cref="WithProtectionPhase"/>.</summary>
     internal static DeployOperationSpec WithoutProtection(DeployOperationSpec spec)
         => spec.Protection == null ? spec : spec with { Protection = null };
 
@@ -956,19 +1030,8 @@ internal sealed partial class DeployWorkflowReconciler(
         return spec with { Parameters = parameters };
     }
 
-    /// <summary>
-    /// Generic backend-neutral key the deploy backends read to resolve the desired canary
-    /// traffic share. The progressive ramp drives stepped weights through this key so the
-    /// existing <see cref="IDeployBackend"/> contract does not need a weight argument.
-    /// </summary>
     private const string CanaryWeightParameterKey = "deployment.canary_weight_percentage";
 
-    /// <summary>
-    /// Holds the current ramp step until its bake window elapses. Returns null when no ramp is
-    /// configured (single-step default), the ramp is invalid, or the step has finished baking.
-    /// Lazily initializes the first step's bake clock and synchronizes the canary weight
-    /// parameter so the backend applies the configured step weight.
-    /// </summary>
     private static WorkflowOperationRecord? GetCanaryRampBakeHold(WorkflowOperationRecord current)
     {
         var deploy = current.Deploy;
@@ -1016,19 +1079,26 @@ internal sealed partial class DeployWorkflowReconciler(
         };
     }
 
-    /// <summary>
-    /// Advances the progressive canary ramp to the next step (applying the next weight through
-    /// <see cref="IDeployBackend.StartAsync"/>) or promotes the deploy to full traffic at the
-    /// terminal step. Without a configured ramp this preserves the single-step default by calling
-    /// <see cref="IDeployBackend.PromoteAsync"/> once.
-    /// </summary>
-    private static async Task<WorkflowOperationRecord> AdvanceOrPromoteAsync(
+    internal static async Task<WorkflowOperationRecord> AdvanceOrPromoteAsync(
         WorkflowOperationRecord current,
         IDeployBackend backend,
         CancellationToken cancellationToken)
     {
         var deploy = current.Deploy;
         var ramp = deploy?.CanaryRamp;
+
+        if (deploy is { TrafficExposedAt: null } && backend is ICheckpointedDeployBackend checkpointed &&
+            checkpointed.RequiresCheckpoint(current))
+        {
+            // Persist the gate decision before the routing write. The next leased reconciliation
+            // performs the idempotent cutover, including after process loss.
+            return current with
+            {
+                Status = WorkflowOperationStatus.Submitted,
+                CurrentPhase = ICheckpointedDeployBackend.CutoverPhase,
+                UpdatedAt = DateTimeOffset.UtcNow
+            };
+        }
 
         if (deploy != null && ramp != null && ramp.IsValid && !ramp.IsFinalStep)
         {
@@ -1044,6 +1114,16 @@ internal sealed partial class DeployWorkflowReconciler(
                 }
             };
             var rampedOperation = current with { Deploy = rampedSpec };
+            if (backend is ICheckpointedDeployBackend rampCheckpoint && rampCheckpoint.RequiresCheckpoint(current))
+            {
+                return rampedOperation with
+                {
+                    Status = WorkflowOperationStatus.Reconciling,
+                    CurrentPhase = ICheckpointedDeployBackend.RampPhase,
+                    UpdatedAt = DateTimeOffset.UtcNow,
+                    Deploy = rampedSpec with { CanaryRamp = rampedSpec.CanaryRamp! with { CurrentStepStartedAt = null } }
+                };
+            }
 
             // Re-apply the deploy at the next step weight. StartAsync resolves the canary share
             // from the synchronized parameter, so backends shift traffic without a new contract.
@@ -1117,9 +1197,6 @@ internal sealed partial class DeployWorkflowReconciler(
     }
 }
 
-/// <summary>
-/// Background worker that continuously reconciles active deploy workflow operations.
-/// </summary>
 internal sealed class DeployWorkflowReconcilerBackgroundService(
     IWorkflowOperationStore workflowStore,
     IWorkflowOperationReconciler reconciler,

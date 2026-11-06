@@ -10,15 +10,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Handles <c>POST /sharing/rest/oauth2/token</c> grants for the ArcGIS OAuth2
-/// named-user bridge (#1242): validates the Honua-issued authorization code (with
-/// PKCE) or a refresh token, then mints the Esri-shaped access token through the
-/// shared <see cref="IPortalTokenIssuer"/> (ADR-0049). The bridge never holds a
-/// second token store — the access token is the same opaque, cache-backed portal
-/// token that <c>generateToken</c> issues, so it validates on the request path via
-/// the existing <c>PortalTokenAuthenticationHandler</c>.
-/// </summary>
+// The bridge does not keep a second token store; the access token is the same cache-backed portal token generateToken issues.
 internal sealed class PortalOAuthTokenService(
     IPortalTokenIssuer tokenIssuer,
     PortalOAuthStore store,
@@ -60,7 +52,6 @@ internal sealed class PortalOAuthTokenService(
             ? await _jwtService.IssueAsync(issueRequest, cancellationToken).ConfigureAwait(false)
             : await _tokenIssuer.IssueAsync(issueRequest, cancellationToken).ConfigureAwait(false);
 
-    /// <summary>Exchanges a grant for an Esri-shaped token envelope.</summary>
     public async Task<PortalOAuthTokenResult> ExchangeAsync(
         PortalOAuthTokenRequest request,
         string requestBinding,
@@ -140,7 +131,7 @@ internal sealed class PortalOAuthTokenService(
             // cannot hold, is refused rather than having its permission labels
             // turned into roles. Refusal happens before federation so the key is not
             // disclosed to the IdP.
-            var keyRoles = ManagedKeyExchangeAuthority.ResolveTokenRoles(validation.Record.Permissions);
+            var keyRoles = ManagedKeyExchangeAuthority.ResolveTokenRoles(validation.Record);
             if (keyRoles is null)
             {
                 return PortalOAuthTokenResult.Failure(
@@ -684,7 +675,6 @@ internal sealed class PortalOAuthTokenService(
     }
 }
 
-/// <summary>Inputs parsed from <c>POST /sharing/rest/oauth2/token</c>.</summary>
 internal sealed record PortalOAuthTokenRequest(
     string GrantType,
     string? Code,
@@ -699,7 +689,6 @@ internal sealed record PortalOAuthTokenRequest(
     string? Scope = null,
     string? ClientIp = null);
 
-/// <summary>Result of a token exchange, ready to serialize as the Esri envelope.</summary>
 internal sealed record PortalOAuthTokenResult(
     bool Succeeded,
     string? AccessToken,
@@ -712,11 +701,9 @@ internal sealed record PortalOAuthTokenResult(
     string? Scope = null,
     string? Username = null)
 {
-    /// <summary>Builds a successful token result.</summary>
     public static PortalOAuthTokenResult Success(string accessToken, long expiresInSeconds, string? refreshToken, string? scope = null, string? username = null)
         => new(true, accessToken, expiresInSeconds, refreshToken, null, null, scope, username);
 
-    /// <summary>Builds an OAuth2 error result.</summary>
     public static PortalOAuthTokenResult Failure(string error, string description)
         => new(false, null, 0, null, error, description);
 }

@@ -8,22 +8,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Alerts;
 
-/// <summary>
-/// Surfaces the alert <b>evaluation</b> loop's liveness through the <see cref="HealthCheckService"/>
-/// roll-up (and, via <c>ReadinessCheckService</c>, the paged readiness path). The evaluator is the
-/// half of the alert pipeline with no prior health coverage: leader election handles crash failover,
-/// but a hung leader or a fleet-wide inability to acquire the lease (the "no-leader" stall) left
-/// evaluation silently halted. This check reports:
-/// <list type="bullet">
-///   <item><b>Healthy</b> when disabled (an operating choice, not a fault), or when the loop is
-///   running and either following a healthy leader or leading with a fresh heartbeat;</item>
-///   <item><b>Unhealthy</b> when the loop is not running, when no node can acquire the lease beyond
-///   <see cref="AlertEvaluationOptions.NoLeaderThreshold"/>, or when this node leads but its last
-///   productive pass has aged past <see cref="AlertEvaluationOptions.HeartbeatStalenessThreshold"/>.</item>
-/// </list>
-/// A follower whose <c>LastLeaderPassAt</c> is stale is <i>not</i> a fault — only the current leader's
-/// heartbeat staleness matters, so idle followers never trip the check.
-/// </summary>
+// A stale follower is not a fault; only a hung leader or a fleet that cannot acquire the lease is unhealthy, and a disabled loop is healthy.
 internal sealed class AlertEvaluationHealthCheck : IHealthCheck
 {
     private readonly IAlertEvaluationHealth _evaluationHealth;

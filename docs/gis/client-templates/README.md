@@ -1,7 +1,7 @@
 # Client Template Sources
 
 These sources feed the QGIS and BI templates used by the manual smoke runbook.
-ArcGIS Pro project construction stays in private `honua-esri-compat`. The file
+ArcGIS Pro project construction is not certified in this repository. The file
 under `arcgis-pro/` is a name-only evidence pointer, not a build recipe.
 
 Most source files live in this directory. The QGIS project template currently lives in [`docs/user/client-templates/qgis`](../../user/client-templates/qgis). The `client-compat-smoke-nightly.yml` workflow assembles both locations into one canonical pack under:

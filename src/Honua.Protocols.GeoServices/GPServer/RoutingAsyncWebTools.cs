@@ -10,7 +10,6 @@ using Honua.Geoprocessing;
 
 namespace Honua.Protocols.GeoServices.GPServer;
 
-/// <summary>Adapts documented routing GP inputs and outputs to the canonical managed processes.</summary>
 internal static class RoutingAsyncWebTools
 {
     internal static bool IsTask(string? taskName)

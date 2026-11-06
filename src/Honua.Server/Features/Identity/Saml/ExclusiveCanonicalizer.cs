@@ -6,28 +6,11 @@ using System.Xml.Linq;
 
 namespace Honua.Server.Features.Identity.Saml;
 
-/// <summary>
-/// Exclusive XML Canonicalization (Exclusive C14N, RFC 3741) for an <see cref="XElement"/>
-/// subtree, without comments. Implemented over <see cref="System.Xml.Linq"/> so SAML signature
-/// verification needs no dependency on <c>System.Security.Cryptography.Xml</c> (which is not in
-/// the in-box shared framework and is not AOT/trim-friendly).
-/// </summary>
-/// <remarks>
-/// Implements the rules that matter for SAML enveloped signatures: UTF-8 output, namespace
-/// nodes rendered only when visibly utilized (or named in <c>InclusiveNamespaces</c>),
-/// lexicographic ordering of namespaces (by prefix) and attributes (by namespace URI then
-/// local name), <c>&amp;</c>/<c>&lt;</c>/<c>&gt;</c>/<c>"</c> escaping in attribute values and
-/// <c>&amp;</c>/<c>&lt;</c>/<c>&gt;</c>/CR escaping in text, and empty elements rendered with an
-/// explicit start/end tag pair.
-/// </remarks>
+// SAML verification uses this exclusive canonicalization because the framework signed-XML types are not trim-friendly.
 internal static class ExclusiveCanonicalizer
 {
     private static readonly XNamespace XmlNs = "http://www.w3.org/XML/1998/namespace";
 
-    /// <summary>
-    /// Canonicalizes <paramref name="element"/> (in the namespace context of its live ancestors)
-    /// and returns the UTF-8 bytes.
-    /// </summary>
     public static byte[] Canonicalize(XElement element, IReadOnlyList<string> inclusivePrefixes)
     {
         ArgumentNullException.ThrowIfNull(element);
@@ -251,7 +234,6 @@ internal static class ExclusiveCanonicalizer
         }
     }
 
-    /// <summary>Orders namespace declarations by prefix; the default namespace ("") sorts first.</summary>
     private sealed class PrefixComparer : IComparer<string>
     {
         public static readonly PrefixComparer Instance = new();
@@ -259,7 +241,6 @@ internal static class ExclusiveCanonicalizer
         public int Compare(string? x, string? y) => string.CompareOrdinal(x, y);
     }
 
-    /// <summary>Orders attributes by namespace URI then local name (Exclusive C14N rule).</summary>
     private sealed class AttributeComparer : IComparer<XAttribute>
     {
         public static readonly AttributeComparer Instance = new();

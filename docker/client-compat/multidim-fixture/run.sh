@@ -17,6 +17,10 @@ printf '%s' "$github_packages_actor" > "$build_secret_dir/github-actor"
 printf '%s' "$github_packages_token" > "$build_secret_dir/github-token"
 export HONUA_GITHUB_ACTOR_SECRET_FILE="$build_secret_dir/github-actor"
 export HONUA_GITHUB_TOKEN_SECRET_FILE="$build_secret_dir/github-token"
+# Compose builds through buildx bake on newer runners, and bake refuses to read the
+# secret files outside the working directory without an fs.read entitlement. The
+# files are build secrets, never part of the build context, so allow the read.
+export BUILDX_BAKE_ENTITLEMENTS_FS=0
 
 export HONUA_CLIENT_COMPAT_ENVIRONMENT=Development
 export HONUA_CLIENT_COMPAT_DEV_GRANT_EDITION=Pro

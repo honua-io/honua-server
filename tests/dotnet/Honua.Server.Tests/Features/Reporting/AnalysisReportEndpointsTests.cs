@@ -167,8 +167,8 @@ public sealed class AnalysisReportEndpointsHappyPathTests : IAsyncLifetime
 
     /// <summary>
     /// Minimal <see cref="IGeoprocessingJobService"/> test double that only implements the
-    /// two members <c>AnalysisReportService</c> actually calls (authorization pass-through +
-    /// result-package lookup); every other member throws <see cref="NotSupportedException"/>
+    /// three members <c>AnalysisReportService</c> actually calls (authorization pass-through,
+    /// authorized job identity and result-package lookup); every other member throws <see cref="NotSupportedException"/>
     /// since the reporting surface never calls them (mirrors the pattern already used by
     /// <c>OgcProcessesJobResultsTestsFixture.ArtifactBackedJobService</c>).
     /// </summary>
@@ -205,7 +205,23 @@ public sealed class AnalysisReportEndpointsHappyPathTests : IAsyncLifetime
             string jobId,
             ClaimsPrincipal principal,
             CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
+        {
+            jobId.Should().Be(JobId);
+            return Task.FromResult(new ExecutionJobRecord
+            {
+                OperationId = JobId,
+                Status = ExecutionJobStatus.Succeeded,
+                CreatedAt = DateTimeOffset.UnixEpoch,
+                UpdatedAt = DateTimeOffset.UnixEpoch,
+                Spec = new ExecutionJobSpec
+                {
+                    Kind = ExecutionJobKind.Geoprocessing,
+                    TargetKind = BatchComputeTargetKind.KubernetesJob,
+                    Backend = "local",
+                    WorkloadName = "reporting-happy-path"
+                }
+            });
+        }
 
         public Task<GeoprocessingJobListPage> ListJobsAsync(
             GeoprocessingJobListFilter filter,
@@ -217,7 +233,10 @@ public sealed class AnalysisReportEndpointsHappyPathTests : IAsyncLifetime
             string jobId,
             ClaimsPrincipal principal,
             CancellationToken cancellationToken = default)
-            => Task.FromResult(ReportingFixtures.BufferAggregatePackage() with { ResultPackageId = $"{jobId}:v1" });
+        {
+            jobId.Should().Be(JobId);
+            return Task.FromResult(ReportingFixtures.BufferAggregatePackage() with { ResultPackageId = $"{JobId}:v1" });
+        }
 
         public Task CancelJobAsync(
             string jobId,

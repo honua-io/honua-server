@@ -154,8 +154,8 @@ Accepted cost (the "container layering" complexity this ADR anticipated):
   on the browse path).
 
 Implementation shape: a `gdalmdiminfo --json` → `MultidimensionalCoverageMetadata`
-mapper (pure, in `Honua.Core`), a `GdalNetCdfToZarrConvertJobExecutor` in the
-worker (runs `gdalmdiminfo` + `gdal_translate -of Zarr`), registered in
+mapper (pure, in `Honua.Core`), a `GdalMultidimCoverageMetadataJobExecutor` in the
+worker (runs `gdalmdiminfo` + `gdalmdimtranslate -of Zarr`), registered in
 `GdalDispatchJobExecutor`; the refresh/scan endpoint dispatches the job and the
 result populates the registration metadata. `raster.multidim-coverage` Pro
 entitlement gates the surface.

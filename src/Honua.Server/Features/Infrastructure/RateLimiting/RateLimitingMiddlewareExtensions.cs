@@ -10,17 +10,8 @@ using StackExchange.Redis;
 
 namespace Honua.Infrastructure.RateLimiting;
 
-/// <summary>
-/// Extension methods for configuring rate limiting middleware and services.
-/// </summary>
 public static class RateLimitingMiddlewareExtensions
 {
-    /// <summary>
-    /// Adds rate limiting services to the dependency injection container.
-    /// </summary>
-    /// <param name="services">The service collection</param>
-    /// <param name="configuration">The application configuration</param>
-    /// <returns>The service collection for method chaining</returns>
     public static IServiceCollection AddRateLimiting(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -39,13 +30,6 @@ public static class RateLimitingMiddlewareExtensions
         return services;
     }
 
-    /// <summary>
-    /// Adds the rate limiting middleware to the application pipeline.
-    /// Should be registered after authentication and tenant resolution so request buckets
-    /// partition by tenant and authenticated user/API-key identity.
-    /// </summary>
-    /// <param name="app">The application builder</param>
-    /// <returns>The application builder for method chaining</returns>
     public static IApplicationBuilder UseRateLimiting(this IApplicationBuilder app)
     {
         ArgumentNullException.ThrowIfNull(app);
@@ -70,9 +54,6 @@ public static class RateLimitingMiddlewareExtensions
     }
 }
 
-/// <summary>
-/// Validator for rate limiting options to ensure secure configuration.
-/// </summary>
 internal sealed class RateLimitingOptionsValidator : IValidateOptions<RateLimitingOptions>
 {
     public ValidateOptionsResult Validate(string? name, RateLimitingOptions options)

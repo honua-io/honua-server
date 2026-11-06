@@ -196,6 +196,17 @@ public sealed class AdminAuthorizationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/observability/audit/gap-attestations")]
+    public async Task AttestAuditChainGap_WithoutAuth_Returns401()
+    {
+        using var content = new StringContent(
+            """{"gapFirstAuditId":1,"reason":"rollback"}""", System.Text.Encoding.UTF8, "application/json");
+        var response = await _unauthenticatedClient.PostAsync(
+            "/api/v1/admin/observability/audit/gap-attestations", content);
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/observability/migrations")]
     public async Task GetMigrationStatus_WithoutAuth_Returns401()
     {

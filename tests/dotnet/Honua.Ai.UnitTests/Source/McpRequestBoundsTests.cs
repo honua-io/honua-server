@@ -42,6 +42,32 @@ public sealed class McpRequestBoundsTests
     }
 
     [UnitTest]
+    public async Task AnonymousBatch_AboveAnonymousBound_IsRejectedWholeEvenBelowGeneralBound()
+    {
+        var source = new CountingToolSource();
+        var context = CreateContext(source, new McpOptions { MaxBatchSize = 50, MaxAnonymousBatchSize = 2 }, BatchOf(3));
+
+        await McpEndpointExtensions.HandlePostAsync(context, CancellationToken.None);
+
+        using var document = ReadResponse(context);
+        var root = document.RootElement;
+        root.ValueKind.Should().Be(JsonValueKind.Object);
+        root.GetProperty("error").GetProperty("code").GetInt32().Should().Be(-32600);
+        source.Calls.Should().Be(0, "an anonymous batch past the anonymous bound dispatches nothing");
+    }
+
+    [UnitTest]
+    public async Task AnonymousBatch_AtAnonymousBound_DispatchesEveryElement()
+    {
+        var source = new CountingToolSource();
+        var context = CreateContext(source, new McpOptions { MaxBatchSize = 50, MaxAnonymousBatchSize = 2 }, BatchOf(2));
+
+        await McpEndpointExtensions.HandlePostAsync(context, CancellationToken.None);
+
+        source.Calls.Should().Be(2);
+    }
+
+    [UnitTest]
     public async Task Batch_AtConfiguredLength_DispatchesEveryElement()
     {
         var source = new CountingToolSource();
@@ -61,6 +87,7 @@ public sealed class McpRequestBoundsTests
         var options = new McpOptions();
 
         options.MaxBatchSize.Should().Be(50);
+        options.MaxAnonymousBatchSize.Should().Be(5);
         options.MaxRequestBodyBytes.Should().Be(10L * 1024 * 1024);
         options.MaxAnonymousSessions.Should().Be(1_000);
         options.MaxSessionsPerPrincipal.Should().Be(McpOptions.DefaultMaxSessionsPerPrincipal);

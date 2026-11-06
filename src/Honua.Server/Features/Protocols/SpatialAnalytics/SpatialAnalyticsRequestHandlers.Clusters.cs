@@ -19,13 +19,6 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Server.Features.Protocols.SpatialAnalytics;
 
-/// <summary>
-/// Clustering handler (DBSCAN / K-Means). REST entry:
-/// <c>POST /rest/services/{serviceId}/FeatureServer/{layerId}/queryClusters</c>.
-/// OGC mirror: <c>POST /ogc/features/collections/{collectionId}/clusters</c>.
-/// Both entries delegate to <see cref="HandleClustersCoreAsync"/> so REST and
-/// OGC callers receive identical payloads.
-/// </summary>
 internal static partial class SpatialAnalyticsRequestHandlers
 {
     private const string ClusterOperation = "cluster";

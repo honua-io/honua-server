@@ -164,7 +164,7 @@ def main() -> None:
     # failure on enforced attempt 1 also blocks its dependent consumer job.
     for source, names in [
         (build_test_job, ["Setup .NET", "Plan managed test producer", "Lean gate (managed build producer)", "Publish pristine managed test outputs"]),
-        (consumer_job, ["Setup .NET", "Plan managed test consumer", "Restore verified managed test outputs", "Build missing managed test outputs"]),
+        (consumer_job, ["Start freeing runtime proof disk space", "Setup .NET", "Wait for runtime proof disk cleanup", "Plan managed test consumer", "Restore verified managed test outputs", "Build missing managed test outputs"]),
     ]:
         for name in names:
             step = source.split(f"- name: {name}", 1)[1].split("- name:", 1)[0]
@@ -189,7 +189,7 @@ def main() -> None:
     require(pr_gate, "  statuses: read", "attempt 2 needs bounded read access to Review Gate status")
     for source, label, expensive_name in [
         (build_test_job, "producer", "Free disk space"),
-        (consumer_job, "consumer", "Setup .NET"),
+        (consumer_job, "consumer", "Start freeing runtime proof disk space"),
     ]:
         before_name = "Revalidate exact-head review before verification"
         after_name = "Revalidate exact-head review before success"
@@ -312,7 +312,7 @@ def main() -> None:
     )
     require(
         review_gate,
-        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+        "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
         "trusted review workflow must pin the artifact writer",
     )
     require(
@@ -488,7 +488,7 @@ def main() -> None:
     )
     require(
         evidence_ledger,
-        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+        "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
         "evidence ledger must pin the artifact writer",
     )
     require(

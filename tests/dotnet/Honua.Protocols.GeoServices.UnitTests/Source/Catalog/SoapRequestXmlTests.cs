@@ -17,7 +17,7 @@ public sealed class SoapRequestXmlTests
     [Theory]
     [InlineData("http://schemas.xmlsoap.org/soap/envelope/")]
     [InlineData("http://www.w3.org/2003/05/soap-envelope")]
-    public async Task Read_ValidEnvelopeWithArcGisHeaderAndOperation_Accepts(string soapNamespace)
+    public async Task Read_ValidEnvelopeWithGeoServicesHeaderAndOperation_Accepts(string soapNamespace)
     {
         var xml = $"""
             <soap:Envelope xmlns:soap="{soapNamespace}" xmlns:gis="http://www.esri.com/schemas/ArcGIS/10.8">
@@ -34,7 +34,7 @@ public sealed class SoapRequestXmlTests
     [Theory]
     [InlineData("http://schemas.xmlsoap.org/soap/envelope/")]
     [InlineData("http://www.w3.org/2003/05/soap-envelope")]
-    public async Task Read_ArcGisTypedPayload_AcceptsWithoutFetchingPayloadSchemas(string soapNamespace)
+    public async Task Read_GeoServicesTypedPayload_AcceptsWithoutFetchingPayloadSchemas(string soapNamespace)
     {
         var xml = $"""
             <soap:Envelope xmlns:soap="{soapNamespace}" xmlns:gis="http://www.esri.com/schemas/ArcGIS/10.8"

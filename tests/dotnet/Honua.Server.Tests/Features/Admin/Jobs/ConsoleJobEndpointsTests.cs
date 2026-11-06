@@ -4,13 +4,17 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using NSubstitute;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
 using Honua.ControlPlane;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.CustomCode;
@@ -1042,6 +1046,77 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/jobs/{jobId}/diagnostics")]
+    public async Task GetJobDiagnostics_ProjectsAdmittedHarnessIdentity()
+    {
+        const string traceId = "4bf92f3577b34da6a3ce929d0e0e4736";
+        var bytes = Encoding.UTF8.GetBytes("""
+            {"v":1,"kind":"phase","seq":0,"attempt":"untrusted","correlation":"forged-corr","trace":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","phase":"execute"}
+            {"v":1,"kind":"terminal","seq":1,"attempt":"untrusted","correlation":"forged-corr","status":"failed","exitCode":1}
+            """);
+        var now = DateTimeOffset.UtcNow;
+        var job = CreateJob("job-diag-harness-identity", ExecutionJobStatus.Failed, now.AddMinutes(-5), "corr-admitted") with
+        {
+            CompletedAt = now.AddMinutes(-4),
+            AttemptCount = 3,
+            ErrorMessage = "tool failed",
+            Audit = new OperationAuditInfo
+            {
+                RequestedBy = "alice",
+                CorrelationId = "corr-admitted",
+                TraceParent = "00-" + traceId + "-00f067aa0ba902b7-01"
+            },
+            Spec = CreateSpec("customcode-workload", new Dictionary<string, string>
+            {
+                [ExecutionJobParameterKeys.TraceId] = traceId
+            })
+        };
+        var artifact = new CustomCodeArtifactDescriptor
+        {
+            JobId = job.OperationId,
+            Attempt = 3,
+            Name = HarnessEvents.FileName,
+            ObjectKey = "server-owned/journal",
+            ContentType = "application/x-ndjson",
+            Provider = CloudStorageProvider.AwsS3,
+            SizeBytes = bytes.Length,
+            Sha256 = Convert.ToHexStringLower(SHA256.HashData(bytes)),
+            State = "available"
+        };
+        job = job with { ArtifactReferences = [artifact.Serialize()] };
+        _jobStore.Set(job);
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.Provider.Returns(CloudStorageProvider.AwsS3);
+        storage.DownloadAsync(artifact.ObjectKey, Arg.Any<CancellationToken>()).Returns(_ => new MemoryStream(bytes));
+        using var services = new ServiceCollection()
+            .AddSingleton<IExecutionJobStore>(_jobStore)
+            .AddSingleton<IExecutionLogStore>(_logStore)
+            .AddSingleton(storage)
+            .BuildServiceProvider();
+        var ingestor = new CustomCodeArtifactIngestor(services);
+        await ingestor.IngestAsync(job, artifact, CancellationToken.None);
+        await ingestor.IngestAsync(job, artifact, CancellationToken.None);
+
+        var response = await _client.GetAsync("/api/v1/admin/jobs/job-diag-harness-identity/diagnostics");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var rawBody = await response.Content.ReadAsStringAsync();
+        rawBody.Should().NotContain("forged-corr").And.NotContain("untrusted")
+            .And.NotContain("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        using var doc = JsonDocument.Parse(rawBody);
+        var root = doc.RootElement;
+        root.GetProperty("correlationId").GetString().Should().Be("corr-admitted");
+        root.GetProperty("traceId").GetString().Should().Be(traceId);
+        root.GetProperty("attempt").GetProperty("number").GetInt32().Should().Be(3);
+        var events = root.GetProperty("events");
+        events.GetProperty("totalCount").GetInt32().Should().Be(2);
+        events.GetProperty("items").EnumerateArray().Should().OnlyContain(item =>
+            item.GetProperty("metadata").GetProperty(HarnessEvents.AttemptKey).GetString() == "3"
+            && item.GetProperty("metadata").GetProperty(JobEventIdentity.JobMetadataKey).GetString() == job.OperationId
+            && item.GetProperty("metadata").GetProperty(JobEventIdentity.CorrelationMetadataKey).GetString() == "corr-admitted"
+            && item.GetProperty("metadata").GetProperty(JobEventIdentity.TraceMetadataKey).GetString() == traceId);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}/diagnostics")]
     public async Task GetJobDiagnostics_ScopedReadKey_ReceivesOwnerViewWithoutInfrastructureIdentities()
     {
         // Same gated-fixture pattern as the scoped admin read-key test above: a read-only
@@ -1237,6 +1312,148 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
             });
     }
 
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}/diagnostics")]
+    public async Task GetJobDiagnostics_NamesFailedPhaseAndAdmittedTrace()
+    {
+        const string traceId = "4bf92f3577b34da6a3ce929d0e0e4736";
+        var now = DateTimeOffset.UtcNow;
+        _jobStore.Set(
+            CreateJob("job-diag-input", ExecutionJobStatus.Failed, now.AddMinutes(-10), "corr-input") with
+            {
+                CompletedAt = now.AddMinutes(-9),
+                CurrentPhase = "Failed",
+                ErrorMessage = "missing or invalid input 'srid'; expected a positive integer",
+                Audit = new OperationAuditInfo
+                {
+                    RequestedBy = "alice",
+                    CorrelationId = "corr-input",
+                    TraceParent = "00-" + traceId + "-00f067aa0ba902b7-01"
+                }
+            },
+            CreateJob("job-diag-startup", ExecutionJobStatus.Failed, now.AddMinutes(-8), "corr-startup") with
+            {
+                CompletedAt = now.AddMinutes(-8),
+                CurrentPhase = "Failed (submission)",
+                ErrorMessage = "Submission failed."
+            },
+            CreateJob("job-diag-timed-out", ExecutionJobStatus.Failed, now.AddMinutes(-7), "corr-timeout") with
+            {
+                CompletedAt = now.AddMinutes(-6),
+                CurrentPhase = "Failed (timeout)",
+                ErrorMessage = "Execution timed out after 00:05:00."
+            },
+            CreateJob("job-diag-upload", ExecutionJobStatus.Failed, now.AddMinutes(-5), "corr-upload") with
+            {
+                CompletedAt = now.AddMinutes(-4),
+                CurrentPhase = "Failed",
+                ErrorMessage = "Failed to persist analysis-content artifacts; results would be incomplete."
+            },
+            CreateJob("job-diag-native", ExecutionJobStatus.Failed, now.AddMinutes(-4), "corr-native") with
+            {
+                CompletedAt = now.AddMinutes(-3),
+                CurrentPhase = "Failed",
+                ErrorMessage = "tool failed"
+            },
+            CreateJob("job-diag-expired", ExecutionJobStatus.Succeeded, now.AddMinutes(-3), "corr-expired") with
+            {
+                CompletedAt = now.AddMinutes(-2),
+                CurrentPhase = "Completed",
+                ArtifactReferences = ["expired"]
+            },
+            CreateJob("job-diag-license", ExecutionJobStatus.Failed, now.AddMinutes(-2), "corr-license") with
+            {
+                CompletedAt = now.AddMinutes(-1),
+                CurrentPhase = "Failed",
+                ErrorMessage = "license expired"
+            });
+        _logStore.SetLogs("job-diag-native", new ExecutionLogEntry
+        {
+            Timestamp = now.AddMinutes(-3),
+            Level = ExecutionLogLevel.Error,
+            Message = "failed (exit 7)",
+            Phase = "execute",
+            Metadata = new Dictionary<string, string> { ["honua.event.exitCode"] = "7" }
+        });
+
+        using (var doc = await ReadDiagnosticsAsync("job-diag-input"))
+        {
+            var root = doc.RootElement;
+            root.GetProperty("traceId").GetString().Should().Be(traceId);
+            root.GetProperty("evidence").GetProperty("missing").EnumerateArray().Select(e => e.GetString())
+                .Should().NotContain(m => m!.StartsWith("traceId:", StringComparison.Ordinal));
+            var failure = root.GetProperty("failure");
+            failure.GetProperty("classification").GetString().Should().Be("execution_failed");
+            failure.GetProperty("phase").GetString().Should().Be("executing");
+            failure.GetProperty("recovery").GetString().Should().Contain("input was rejected");
+        }
+
+        using (var doc = await ReadDiagnosticsAsync("job-diag-startup"))
+        {
+            var root = doc.RootElement;
+            if (root.TryGetProperty("traceId", out var trace))
+            {
+                trace.ValueKind.Should().Be(JsonValueKind.Null);
+            }
+            root.GetProperty("evidence").GetProperty("missing").EnumerateArray().Select(e => e.GetString())
+                .Should().Contain(m => m!.StartsWith("traceId:", StringComparison.Ordinal));
+            var failure = root.GetProperty("failure");
+            failure.GetProperty("classification").GetString().Should().Be("execution_failed");
+            failure.GetProperty("phase").GetString().Should().Be("starting-worker");
+            failure.GetProperty("recovery").GetString().Should().Contain("did not start");
+        }
+
+        using (var doc = await ReadDiagnosticsAsync("job-diag-timed-out"))
+        {
+            var failure = doc.RootElement.GetProperty("failure");
+            failure.GetProperty("classification").GetString().Should().Be("timeout");
+            failure.GetProperty("phase").GetString().Should().Be("executing");
+            failure.GetProperty("recovery").GetString().Should().Contain("timeout policy");
+        }
+
+        using (var doc = await ReadDiagnosticsAsync("job-diag-upload"))
+        {
+            var failure = doc.RootElement.GetProperty("failure");
+            failure.GetProperty("classification").GetString().Should().Be("execution_failed");
+            failure.GetProperty("phase").GetString().Should().Be("publishing-results");
+            failure.GetProperty("recovery").GetString().Should().Contain("not stored");
+        }
+
+        using (var doc = await ReadDiagnosticsAsync("job-diag-native"))
+        {
+            var failure = doc.RootElement.GetProperty("failure");
+            failure.GetProperty("classification").GetString().Should().Be("execution_failed");
+            failure.GetProperty("phase").GetString().Should().Be("execute");
+            failure.GetProperty("nativeExitCode").GetInt32().Should().Be(7);
+            failure.GetProperty("recovery").GetString().Should().Contain("native output");
+        }
+
+        using (var doc = await ReadDiagnosticsAsync("job-diag-expired"))
+        {
+            var root = doc.RootElement;
+            root.TryGetProperty("failure", out _).Should().BeFalse();
+            root.GetProperty("artifacts").GetProperty("expiredCount").GetInt32().Should().Be(1);
+            root.GetProperty("evidence").GetProperty("notes").EnumerateArray().Select(e => e.GetString())
+                .Should().Contain(n => n!.Contains("expired results", StringComparison.Ordinal));
+        }
+
+        using (var doc = await ReadDiagnosticsAsync("job-diag-license"))
+        {
+            var failure = doc.RootElement.GetProperty("failure");
+            failure.GetProperty("classification").GetString().Should().Be("execution_failed");
+            failure.GetProperty("phase").GetString().Should().Be("Failed");
+            failure.GetProperty("recovery").GetString().Should().NotContain("retention");
+        }
+    }
+
+    private async Task<JsonDocument> ReadDiagnosticsAsync(string jobId)
+    {
+        var response = await _client.GetAsync($"/api/v1/admin/jobs/{jobId}/diagnostics");
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        return JsonDocument.Parse(body);
+    }
+
     private static ExecutionJobRecord CreateJob(
         string id,
         ExecutionJobStatus status,
@@ -1363,11 +1580,24 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
 
         public void SetLogs(string operationId, params ExecutionLogEntry[] entries) => _logs[operationId] = entries;
 
+        private readonly Dictionary<string, HashSet<string>> _appendedOnce = new(StringComparer.Ordinal);
+
         public Task AppendAsync(string operationId, ExecutionLogEntry entry, CancellationToken cancellationToken = default)
         {
             var current = _logs.TryGetValue(operationId, out var entries) ? entries : Array.Empty<ExecutionLogEntry>();
             _logs[operationId] = current.Append(entry).ToArray();
             return Task.CompletedTask;
+        }
+
+        public Task AppendOnceAsync(string operationId, string eventId, ExecutionLogEntry entry, CancellationToken cancellationToken = default)
+        {
+            if (!_appendedOnce.TryGetValue(operationId, out var ids))
+            {
+                ids = new HashSet<string>(StringComparer.Ordinal);
+                _appendedOnce[operationId] = ids;
+            }
+
+            return ids.Add(eventId) ? AppendAsync(operationId, entry, cancellationToken) : Task.CompletedTask;
         }
 
         public Task<IReadOnlyList<ExecutionLogEntry>> GetLogsAsync(string operationId, CancellationToken cancellationToken = default)

@@ -12,29 +12,8 @@ using NetTopologySuite.Simplify;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// Production <see cref="IJobExecutor"/> for the <c>geometry.simplify</c>
-/// process. Slice 5 of #1031 — completes the per-feature vector "shape
-/// transform" set alongside <see cref="GeometryDissolveJobExecutor"/> and
-/// <see cref="GeometrySnapJobExecutor"/> by exposing the deterministic
-/// Douglas-Peucker simplification primitive.
-///
-/// Reduces vertex count by collapsing points within the supplied tolerance
-/// in the input CRS units. By default the executor uses NetTopologySuite's
-/// <see cref="TopologyPreservingSimplifier"/> — the same algorithm
-/// surfaced by PostGIS <c>ST_SimplifyPreserveTopology</c> — which avoids
-/// introducing self-intersections on collapsed rings. Callers may opt in
-/// to the faster, non-topology-preserving <see cref="DouglasPeuckerSimplifier"/>
-/// by setting <c>preserveTopology=false</c>; that path matches plain
-/// <c>ST_Simplify</c> and can produce invalid geometries on near-tolerance
-/// vertices, which is why preservation is the default.
-/// </summary>
 internal sealed partial class GeometrySimplifyJobExecutor : IProcessExecutor
 {
-    /// <summary>
-    /// The single process id this executor handles. Matches the catalog
-    /// entry in <see cref="BuiltInProcessCatalog"/>.
-    /// </summary>
     internal const string HandledProcessId = "geometry.simplify";
 
     private readonly IOptionsMonitor<GeoprocessingExecutorOptions> _options;
@@ -48,10 +27,6 @@ internal sealed partial class GeometrySimplifyJobExecutor : IProcessExecutor
         _logger = logger;
     }
 
-    /// <summary>
-    /// The single process id this executor handles, surfaced through
-    /// <see cref="IProcessExecutor"/> so the dispatcher auto-registers it (#2122).
-    /// </summary>
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 

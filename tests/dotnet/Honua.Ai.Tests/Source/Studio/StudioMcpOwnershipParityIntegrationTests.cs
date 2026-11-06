@@ -2,8 +2,6 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
-using System.Net.Http.Headers;
-using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
@@ -30,8 +28,6 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 [Protocol(TestProtocols.Mcp)]
 public sealed class StudioMcpOwnershipParityIntegrationTests : IAsyncLifetime
 {
-    private const string JsonMediaType = "application/json";
-
     private readonly WebAppFixture _fixture = new WebAppFixture()
         .ConfigureWebHost(builder =>
         {
@@ -73,10 +69,11 @@ public sealed class StudioMcpOwnershipParityIntegrationTests : IAsyncLifetime
             client => client.DefaultRequestHeaders.Add("X-API-Key", aliceKey.Key));
         using var bobClient = _fixture.CreateClient(
             client => client.DefaultRequestHeaders.Add("X-API-Key", bobKey.Key));
+        var aliceMcp = new StudioMcpHttpClient(aliceClient);
+        var bobMcp = new StudioMcpHttpClient(bobClient);
 
         // Explicit non-admin ownership assignment is rejected rather than silently ignored.
-        var rejectedCreate = await CallToolAsync(
-            aliceClient,
+        var rejectedCreate = await aliceMcp.CallToolRawAsync(
             "honua_studio_create_draft",
             $$"""
               {"packageKey":"owner-parity-map","family":"{{family}}","schemaVersion":"1.0","ownerId":"{{bobOwnerId}}"}
@@ -84,8 +81,7 @@ public sealed class StudioMcpOwnershipParityIntegrationTests : IAsyncLifetime
         AssertOwnerAssignmentToolDenial(rejectedCreate);
 
         // Omitting ownerId derives the canonical owner from the authenticated principal.
-        var created = await CallToolAsync(
-            aliceClient,
+        var created = await aliceMcp.CallToolRawAsync(
             "honua_studio_create_draft",
             $$"""{"packageKey":"owner-parity-map","family":"{{family}}","schemaVersion":"1.0"}""");
         var draftId = created.GetProperty("structuredContent").GetProperty("draftId").GetGuid();
@@ -96,8 +92,7 @@ public sealed class StudioMcpOwnershipParityIntegrationTests : IAsyncLifetime
         using var aliceRestResponse = await aliceClient.GetAsync(
             $"/api/v1/studio/package-drafts/{draftId:D}");
         aliceRestResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        var aliceMcpRead = await CallToolAsync(
-            aliceClient,
+        var aliceMcpRead = await aliceMcp.CallToolRawAsync(
             "honua_studio_get_draft",
             $$"""{"draftId":"{{draftId:D}}"}""");
         var aliceReadFailed = aliceMcpRead.TryGetProperty("isError", out var aliceReadError)
@@ -113,14 +108,12 @@ public sealed class StudioMcpOwnershipParityIntegrationTests : IAsyncLifetime
         restProblem.RootElement.GetProperty("code").GetString()
             .Should().Be(StudioAuthorizationService.CrossUserDeniedCode);
 
-        var bobMcpRead = await CallToolAsync(
-            bobClient,
+        var bobMcpRead = await bobMcp.CallToolRawAsync(
             "honua_studio_get_draft",
             $$"""{"draftId":"{{draftId:D}}"}""");
         AssertCrossUserToolDenial(bobMcpRead);
 
-        var bobMcpUpdate = await CallToolAsync(
-            bobClient,
+        var bobMcpUpdate = await bobMcp.CallToolRawAsync(
             "honua_studio_update_draft",
             $$"""
               {"draftId":"{{draftId:D}}","generation":1,"packageKey":"stolen-map","schemaVersion":"1.0","ownerId":"{{bobOwnerId}}"}
@@ -128,16 +121,14 @@ public sealed class StudioMcpOwnershipParityIntegrationTests : IAsyncLifetime
         AssertCrossUserToolDenial(bobMcpUpdate);
 
         // Alice may update, but an explicit transfer attempt is rejected.
-        var rejectedAliceTransfer = await CallToolAsync(
-            aliceClient,
+        var rejectedAliceTransfer = await aliceMcp.CallToolRawAsync(
             "honua_studio_update_draft",
             $$"""
               {"draftId":"{{draftId:D}}","generation":1,"packageKey":"owner-parity-map-v2","schemaVersion":"1.0","ownerId":"{{bobOwnerId}}"}
               """);
         AssertOwnerAssignmentToolDenial(rejectedAliceTransfer);
 
-        var aliceMcpUpdate = await CallToolAsync(
-            aliceClient,
+        var aliceMcpUpdate = await aliceMcp.CallToolRawAsync(
             "honua_studio_update_draft",
             $$"""{"draftId":"{{draftId:D}}","generation":1,"packageKey":"owner-parity-map-v2","schemaVersion":"1.0"}""");
         aliceMcpUpdate.GetProperty("structuredContent").GetProperty("ownerId").GetString()
@@ -160,31 +151,6 @@ public sealed class StudioMcpOwnershipParityIntegrationTests : IAsyncLifetime
         error.GetProperty("code").GetString().Should().Be("permission_denied");
         error.GetProperty("studioAuthorizationCode").GetString()
             .Should().Be(StudioAuthorizationService.OwnerAssignmentAdminRequiredCode);
-    }
-
-    private static async Task<JsonElement> CallToolAsync(
-        HttpClient client,
-        string toolName,
-        string argumentsJson)
-    {
-        var body = $$"""
-            {"jsonrpc":"2.0","id":"{{toolName}}","method":"tools/call","params":{"name":"{{toolName}}","arguments":{{argumentsJson}} } }
-            """;
-        using var request = new HttpRequestMessage(HttpMethod.Post, "/mcp")
-        {
-            Content = new StringContent(body, Encoding.UTF8)
-            {
-                Headers = { ContentType = new MediaTypeHeaderValue(JsonMediaType) },
-            },
-        };
-        using var response = await client.SendAsync(request);
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var hasProtocolError = document.RootElement.TryGetProperty("error", out var protocolError);
-        var protocolErrorText = hasProtocolError ? protocolError.GetRawText() : "(none)";
-        hasProtocolError.Should().BeFalse(
-            $"tool '{toolName}' should return a tool result, not JSON-RPC error: {protocolErrorText}");
-        return document.RootElement.GetProperty("result").Clone();
     }
 
     private sealed class AllowAllOperatorAuthorizationEvaluator : IOperatorAuthorizationEvaluator

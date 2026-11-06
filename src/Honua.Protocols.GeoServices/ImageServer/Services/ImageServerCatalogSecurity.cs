@@ -12,7 +12,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
-/// <summary>Shares field-policy enforcement across ImageServer catalog read surfaces.</summary>
 internal static class ImageServerCatalogSecurity
 {
     public static Task<ImmutableArray<string>> ResolveMasksAsync(

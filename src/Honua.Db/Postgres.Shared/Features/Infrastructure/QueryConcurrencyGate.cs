@@ -6,9 +6,6 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 
 namespace Honua.Db.Postgres.Features.Infrastructure;
 
-/// <summary>
-/// Singleton admission-control gate that limits concurrent database operations.
-/// </summary>
 internal sealed class QueryConcurrencyGate : IDisposable, IRuntimeTunableAdmissionGate
 {
     // Lowest admission target a runtime tune request may set. Independent of the
@@ -71,15 +68,8 @@ internal sealed class QueryConcurrencyGate : IDisposable, IRuntimeTunableAdmissi
         _acquisitionTimeout = TimeSpan.FromSeconds(limits.ConnectionAcquisitionTimeoutSeconds);
     }
 
-    /// <summary>
-    /// Acquisition timeout in whole seconds, used to populate the
-    /// <c>Retry-After</c> hint when a 503 is returned for a gate timeout.
-    /// </summary>
     public int AcquisitionTimeoutSeconds => (int)Math.Max(1, Math.Ceiling(_acquisitionTimeout.TotalSeconds));
 
-    /// <summary>
-    /// Waits for an available slot. Returns <see langword="false"/> if the timeout expires.
-    /// </summary>
     public async Task<bool> WaitAsync(CancellationToken cancellationToken)
     {
         QueuedWaiter waiter;
@@ -125,26 +115,16 @@ internal sealed class QueryConcurrencyGate : IDisposable, IRuntimeTunableAdmissi
         }
     }
 
-    /// <summary>
-    /// Releases one or more slots back to the gate.
-    /// </summary>
     public void Release(int count = 1)
     {
         ReleaseCore(count, leaseDuration: null);
     }
 
-    /// <summary>
-    /// Releases a slot and records how long the database lease was held.
-    /// </summary>
     public void Release(TimeSpan leaseDuration)
     {
         ReleaseCore(1, leaseDuration);
     }
 
-    /// <summary>
-    /// Adjusts the current logical admission target. Intended for tests and
-    /// future external controllers; the configured pool ceiling remains fixed.
-    /// </summary>
     internal void SetTargetLimit(int targetLimit)
     {
         lock (_sync)
@@ -155,9 +135,6 @@ internal sealed class QueryConcurrencyGate : IDisposable, IRuntimeTunableAdmissi
         }
     }
 
-    /// <summary>
-    /// Current logical concurrent query limit.
-    /// </summary>
     public int CurrentLimit
     {
         get
@@ -169,15 +146,10 @@ internal sealed class QueryConcurrencyGate : IDisposable, IRuntimeTunableAdmissi
         }
     }
 
-    /// <summary>
-    /// Hard ceiling for the logical gate, clamped to the configured Npgsql pool max.
-    /// </summary>
     public int MaxLimit => _maxLimit;
 
-    /// <inheritdoc />
     public int MinLimit => TunableFloor;
 
-    /// <inheritdoc />
     public bool TrySetLimit(int limit, out string? error)
     {
         var max = _maxLimit;
@@ -198,9 +170,6 @@ internal sealed class QueryConcurrencyGate : IDisposable, IRuntimeTunableAdmissi
         return true;
     }
 
-    /// <summary>
-    /// Number of slots currently available (for diagnostics/telemetry).
-    /// </summary>
     public int AvailableSlots
     {
         get
@@ -212,7 +181,6 @@ internal sealed class QueryConcurrencyGate : IDisposable, IRuntimeTunableAdmissi
         }
     }
 
-    /// <inheritdoc />
     public DatabaseAdmissionPressure GetPressure()
     {
         lock (_sync)
@@ -273,7 +241,6 @@ internal sealed class QueryConcurrencyGate : IDisposable, IRuntimeTunableAdmissi
         }
     }
 
-    /// <inheritdoc/>
     public void Dispose()
     {
         QueuedWaiter[] waiters;

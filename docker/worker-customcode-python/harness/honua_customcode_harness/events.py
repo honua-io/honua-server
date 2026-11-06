@@ -26,6 +26,8 @@ SCHEMA_VERSION = 1
 EVENTS_FILE_NAME = "honua-events.v1.jsonl"
 EVENTS_PATH_ENV = "CUSTOMCODE_EVENTS_PATH"
 ATTEMPT_ENVS = ("HONUA_JOB_ATTEMPT", "HONUA_ATTEMPT_ID", "AWS_BATCH_JOB_ATTEMPT")
+CORRELATION_ENV = "HONUA_CORRELATION_ID"
+TRACEPARENT_ENVS = ("HONUA_TRACEPARENT", "TRACEPARENT")
 DEFAULT_MAX_EVENTS = 1000
 DEFAULT_MAX_BYTES = 256 * 1024
 MESSAGE_LIMIT = 2000
@@ -42,6 +44,60 @@ def attempt_from_env(env: Any) -> str:
     return "1"
 
 
+def correlation_from_env(env: Any) -> str | None:
+    """The admitted correlation id, or ``None`` when the environment has none that is safe to record."""
+    value = env.get(CORRELATION_ENV) if env is not None else None
+    return _correlation(value)
+
+
+def trace_from_env(env: Any) -> str | None:
+    """The 32-hex trace id from ``HONUA_TRACEPARENT`` or ``TRACEPARENT``."""
+    if env is None:
+        return None
+    for name in TRACEPARENT_ENVS:
+        trace = _trace_id(env.get(name))
+        if trace:
+            return trace
+    return None
+
+
+def _correlation(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text or len(text) > 128:
+        return None
+    for character in text:
+        if character not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._:-":
+            return None
+    return text
+
+
+def _hex(value: str) -> bool:
+    return bool(value) and all(character in "0123456789abcdef" for character in value)
+
+
+def _bare_trace(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    if len(text) != 32 or not _hex(text) or text == "0" * 32:
+        return None
+    return text
+
+
+def _trace_id(value: Any) -> str | None:
+    """Accept a W3C traceparent and return its trace id. All-zero ids are rejected."""
+    if value is None:
+        return None
+    parts = str(value).strip().lower().split("-")
+    if len(parts) != 4 or parts[0] != "00" or len(parts[1]) != 32 or len(parts[2]) != 16 or len(parts[3]) != 2:
+        return None
+    if not all(_hex(part) for part in parts) or parts[1] == "0" * 32 or parts[2] == "0" * 16:
+        return None
+    return parts[1]
+
+
 def _limit(value: Any, length: int) -> str:
     text = str(value)
     return text if len(text) <= length else text[:length]
@@ -56,12 +112,15 @@ class EventJournal:
     to it (the production harness keeps its stderr text).
     """
 
-    def __init__(self, path: str | Path, *, attempt: str = "1", max_events: int = DEFAULT_MAX_EVENTS,
+    def __init__(self, path: str | Path, *, attempt: str = "1", correlation: str | None = None,
+                 trace: str | None = None, max_events: int = DEFAULT_MAX_EVENTS,
                  max_bytes: int = DEFAULT_MAX_BYTES, mirror: Any = None) -> None:
         if max_events <= 0 or max_bytes <= 0:
             raise ValueError("Event caps must be positive.")
         self.path = Path(path)
         self.attempt = _limit(attempt, 64)
+        self.correlation = _correlation(correlation)
+        self.trace = _bare_trace(trace)
         self.max_events = max_events
         self.max_bytes = max_bytes
         self.count = 0
@@ -86,8 +145,13 @@ class EventJournal:
                 "v": SCHEMA_VERSION, "seq": self.count,
                 "at": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
                 "elapsedMs": int((time.monotonic() - self._start) * 1000),
-                "attempt": self.attempt, "kind": kind,
+                "attempt": self.attempt,
             }
+            if self.correlation:
+                record["correlation"] = self.correlation
+            if self.trace:
+                record["trace"] = self.trace
+            record["kind"] = kind
             for key, value in fields.items():
                 if value is not None:
                     record[key] = value

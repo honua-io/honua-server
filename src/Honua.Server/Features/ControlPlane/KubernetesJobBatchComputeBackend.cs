@@ -9,17 +9,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Batch compute adapter that executes canonical execution jobs on a Kubernetes
-/// cluster by translating the <see cref="ExecutionJobRecord"/> into a
-/// <c>batch/v1</c> Job and projecting Job + Pod lifecycle back onto
-/// <see cref="ExecutionJobStatus"/>. The adapter keeps Jobs at
-/// <c>backoffLimit: 0</c> so a failed Pod surfaces terminally rather than being
-/// silently retried inside the cluster. Canonical retry orchestration remains in
-/// the shared <see cref="ExecutionJobReconciler"/>; the adapter uses
-/// attempt-specific Job names so each retry starts a fresh Kubernetes Job rather
-/// than colliding with the failed attempt's retained provider object.
-/// </summary>
+// Jobs stay at backoff limit zero so a failed pod surfaces terminally, and each retry uses a fresh job name.
 internal sealed partial class KubernetesJobBatchComputeBackend(
     IKubernetesJobClient jobClient,
     IOptionsMonitor<KubernetesExecutionOptions> options,
@@ -867,12 +857,6 @@ internal sealed partial class KubernetesJobBatchComputeBackend(
     }
 }
 
-/// <summary>
-/// Parameter keys consumed by the Kubernetes execution backend from
-/// <see cref="ExecutionJobSpec.Parameters"/>. Keys are chosen so the spec stays
-/// provider-agnostic at the canonical layer while giving operators full control
-/// over cluster-specific placement when they do target Kubernetes directly.
-/// </summary>
 internal static class KubernetesJobParameterKeys
 {
     public const string Namespace = "k8s.namespace";
@@ -888,49 +872,20 @@ internal static class KubernetesJobParameterKeys
     public const string ActiveDeadlineSeconds = "k8s.active_deadline_seconds";
     public const string TtlSecondsAfterFinished = "k8s.ttl_seconds_after_finished";
 
-    /// <summary>
-    /// Literal container environment variable: <c>k8s.env.&lt;NAME&gt;=&lt;value&gt;</c>. Wins over
-    /// <see cref="GenericEnvironmentPrefix"/>. Reserved execution-worker launch variables
-    /// (<see cref="ExecutionWorkerLaunchEnvironment.ReservedNames"/>) are never taken from a workload.
-    /// The value is written into the Job object, so never put a secret here — use
-    /// <see cref="SecretKeyRefSuffix"/> or <see cref="EnvFromSecretPrefix"/>.
-    /// </summary>
+    // Reserved launch variables are never taken from a workload, and a literal environment value must not carry a secret.
     public const string EnvironmentPrefix = "k8s.env.";
 
-    /// <summary>
-    /// Provider-agnostic literal passthrough <c>env.&lt;NAME&gt;=&lt;value&gt;</c>, shared with the other
-    /// batch backends.
-    /// </summary>
     public const string GenericEnvironmentPrefix = "env.";
 
-    /// <summary>
-    /// Suffix of <c>k8s.env.&lt;NAME&gt;.secretKeyRef=&lt;secretName&gt;:&lt;key&gt;</c>: one variable read by
-    /// the kubelet from a key of a Kubernetes Secret (<c>env[].valueFrom.secretKeyRef</c>). The server
-    /// only sees the Secret and key names.
-    /// </summary>
+    // The server sees only the Secret and key names.
     public const string SecretKeyRefSuffix = ".secretKeyRef";
 
-    /// <summary>
-    /// Suffix of <c>k8s.env.&lt;NAME&gt;.configMapKeyRef=&lt;configMapName&gt;:&lt;key&gt;</c>
-    /// (<c>env[].valueFrom.configMapKeyRef</c>).
-    /// </summary>
     public const string ConfigMapKeyRefSuffix = ".configMapKeyRef";
 
-    /// <summary>Prefix shared by the whole-object <c>envFrom</c> parameters.</summary>
     public const string EnvFromPrefix = "k8s.envFrom.";
 
-    /// <summary>
-    /// <c>k8s.envFrom.secret.&lt;n&gt;=&lt;secretName&gt;[:&lt;prefix&gt;]</c>: imports every key of a Secret
-    /// as environment variables (container <c>envFrom[].secretRef</c>). Entries are ordered by
-    /// <c>&lt;n&gt;</c> (numeric when integral) after the configured
-    /// <c>ControlPlane:Kubernetes:DefaultEnvFromSecrets</c>; later entries win on duplicate keys, and
-    /// explicit <c>env</c> entries (including the launch variables) always win over <c>envFrom</c>.
-    /// </summary>
+    // Later envFrom entries win on duplicate keys, and explicit environment entries always win over envFrom.
     public const string EnvFromSecretPrefix = "k8s.envFrom.secret.";
 
-    /// <summary>
-    /// <c>k8s.envFrom.configMap.&lt;n&gt;=&lt;configMapName&gt;[:&lt;prefix&gt;]</c> (container
-    /// <c>envFrom[].configMapRef</c>), ordered like <see cref="EnvFromSecretPrefix"/>.
-    /// </summary>
     public const string EnvFromConfigMapPrefix = "k8s.envFrom.configMap.";
 }

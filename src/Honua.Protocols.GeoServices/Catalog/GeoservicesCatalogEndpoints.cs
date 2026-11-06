@@ -29,9 +29,6 @@ using Microsoft.OpenApi;
 
 namespace Honua.Protocols.GeoServices.Catalog;
 
-/// <summary>
-/// GeoServices catalog endpoints for service discovery.
-/// </summary>
 internal static class GeoservicesCatalogEndpoints
 {
     private const string JsonFormat = "json";
@@ -50,9 +47,6 @@ internal static class GeoservicesCatalogEndpoints
     private const string Soap12EnvelopeNamespace = "http://www.w3.org/2003/05/soap-envelope";
     private const int MaxSoapRequestCharacters = 1_048_576;
 
-    /// <summary>
-    /// Maps root catalog endpoints under /rest.
-    /// </summary>
     public static IEndpointRouteBuilder MapGeoservicesCatalogEndpoints(this IEndpointRouteBuilder endpoints)
     {
         // ArcGIS Server answers the site root, the /rest prefix, and the /arcgis web-adaptor
@@ -130,7 +124,7 @@ internal static class GeoservicesCatalogEndpoints
 
         endpoints.MapPost("/services", HandlePostSoapCatalog)
             .WithDisplayName("ArcGIS SOAP Services Catalog")
-            .WithName("ArcGisSoapServicesCatalog")
+            .WithName("GeoServicesSoapServicesCatalog")
             .WithSummary("Discover supported ArcGIS services through SOAP")
             .WithDescription("Implements the protocol-wide ArcGIS Server SOAP catalog using the same principal-filtered projection as the REST services directory.")
             .WithTags("GeoServices Catalog")
@@ -157,7 +151,7 @@ internal static class GeoservicesCatalogEndpoints
 
         endpoints.MapGet("/services", HandleGetSoapCatalogWsdl)
             .WithDisplayName("ArcGIS SOAP Services Catalog WSDL")
-            .WithName("ArcGisSoapServicesCatalogWsdl")
+            .WithName("GeoServicesSoapServicesCatalogWsdl")
             .WithSummary("Get the ArcGIS SOAP services catalog WSDL")
             .WithDescription("Returns the SOAP 1.1 and SOAP 1.2 service-catalog contract for both the bare site-root form and the wsdl query flag.")
             .WithTags("GeoServices Catalog")
@@ -189,7 +183,7 @@ internal static class GeoservicesCatalogEndpoints
         XNamespace xs = "http://www.w3.org/2001/XMLSchema";
         XNamespace soap11 = "http://schemas.xmlsoap.org/wsdl/soap/";
         XNamespace soap12 = "http://schemas.xmlsoap.org/wsdl/soap12/";
-        XNamespace esri = ArcGisSoapNamespaces.Current;
+        XNamespace esri = GeoServicesSoapNamespaces.Current;
         var operations = new[]
         {
             "GetServiceDescriptions",
@@ -338,7 +332,7 @@ internal static class GeoservicesCatalogEndpoints
             operations.Select(operation => new XElement(
                 wsdl + "operation",
                 new XAttribute("name", operation),
-                new XElement(soap + "operation", new XAttribute("soapAction", $"{ArcGisSoapNamespaces.Current}/{operation}")),
+                new XElement(soap + "operation", new XAttribute("soapAction", $"{GeoServicesSoapNamespaces.Current}/{operation}")),
                 new XElement(wsdl + "input", new XElement(soap + "body", new XAttribute("use", "literal"))),
                 new XElement(wsdl + "output", new XElement(soap + "body", new XAttribute("use", "literal"))))));
 
@@ -365,7 +359,7 @@ internal static class GeoservicesCatalogEndpoints
         if (!IsSupportedSoapContentType(context.Request.ContentType))
         {
             var requestedSoap = RequestedSoapNamespace(context.Request);
-            return CreateSoapFault(
+            return GeoServicesSoapProtocol.CreateSoapFault(
                 "Content-Type must be text/xml or application/soap+xml.",
                 StatusCodes.Status415UnsupportedMediaType,
                 requestedSoap);
@@ -382,7 +376,7 @@ internal static class GeoservicesCatalogEndpoints
         }
         catch (Exception exception) when (exception is InvalidOperationException or XmlException or XmlSchemaValidationException)
         {
-            return CreateSoapFault(
+            return GeoServicesSoapProtocol.CreateSoapFault(
                 SoapRequestXml.GetSafeErrorMessage(exception),
                 StatusCodes.Status400BadRequest,
                 RequestedSoapNamespace(context.Request));
@@ -392,7 +386,7 @@ internal static class GeoservicesCatalogEndpoints
         if (request.Root?.Name.LocalName != "Envelope" ||
             (envelopeNamespace != Soap11EnvelopeNamespace && envelopeNamespace != Soap12EnvelopeNamespace))
         {
-            return CreateSoapFault(
+            return GeoServicesSoapProtocol.CreateSoapFault(
                 "Unsupported SOAP envelope namespace.",
                 StatusCodes.Status400BadRequest,
                 RequestedSoapNamespace(context.Request));
@@ -401,7 +395,7 @@ internal static class GeoservicesCatalogEndpoints
         var contentTypeSoap = RequestedSoapNamespace(context.Request);
         if (envelopeNamespace != contentTypeSoap)
         {
-            return CreateSoapFault(
+            return GeoServicesSoapProtocol.CreateSoapFault(
                 "Content-Type does not match the SOAP envelope version.",
                 StatusCodes.Status415UnsupportedMediaType,
                 contentTypeSoap);
@@ -411,7 +405,7 @@ internal static class GeoservicesCatalogEndpoints
         var bodies = request.Root.Elements(soap + "Body").Take(2).ToArray();
         if (bodies.Length != 1)
         {
-            return CreateSoapFault(
+            return GeoServicesSoapProtocol.CreateSoapFault(
                 "SOAP envelope must contain exactly one Body element.",
                 StatusCodes.Status400BadRequest,
                 soap);
@@ -420,18 +414,18 @@ internal static class GeoservicesCatalogEndpoints
         var operations = bodies[0].Elements().Take(2).ToArray();
         if (operations is not { Length: 1 })
         {
-            return CreateSoapFault(
+            return GeoServicesSoapProtocol.CreateSoapFault(
                 "SOAP body must contain exactly one catalog operation.",
                 StatusCodes.Status400BadRequest,
                 soap);
         }
 
-        var operation = ArcGisSoapProtocol.BindArgumentsByLocalName(operations[0]);
+        var operation = GeoServicesSoapProtocol.BindArgumentsByLocalName(operations[0]);
 
         var operationNamespace = operation.Name.Namespace;
-        if (!ArcGisSoapNamespaces.IsSupported(operationNamespace))
+        if (!GeoServicesSoapNamespaces.IsSupported(operationNamespace))
         {
-            return CreateSoapFault(
+            return GeoServicesSoapProtocol.CreateSoapFault(
                 "Unsupported ArcGIS SOAP operation namespace.",
                 StatusCodes.Status400BadRequest,
                 soap);
@@ -440,7 +434,7 @@ internal static class GeoservicesCatalogEndpoints
         var operationName = operation.Name.LocalName;
         if (!IsSupportedSoapCatalogOperation(operationName))
         {
-            return CreateSoapFault(
+            return GeoServicesSoapProtocol.CreateSoapFault(
                 $"Unsupported catalog operation '{operationName}'.",
                 StatusCodes.Status400BadRequest,
                 soap);
@@ -477,7 +471,7 @@ internal static class GeoservicesCatalogEndpoints
                         !string.Equals(argument.Name.LocalName, "FolderName", StringComparison.OrdinalIgnoreCase));
                     if (unsupportedArgument is not null)
                     {
-                        return CompleteSoapCatalogOperation(scope, CreateSoapFault(
+                        return CompleteSoapCatalogOperation(scope, GeoServicesSoapProtocol.CreateSoapFault(
                             $"GetServiceDescriptionsEx does not accept the '{unsupportedArgument.Name.LocalName}' argument; its only argument is FolderName.",
                             StatusCodes.Status400BadRequest,
                             soap));
@@ -485,7 +479,7 @@ internal static class GeoservicesCatalogEndpoints
 
                     if (arguments.Length > 1)
                     {
-                        return CompleteSoapCatalogOperation(scope, CreateSoapFault(
+                        return CompleteSoapCatalogOperation(scope, GeoServicesSoapProtocol.CreateSoapFault(
                             "GetServiceDescriptionsEx accepts at most one FolderName argument.",
                             StatusCodes.Status400BadRequest,
                             soap));
@@ -528,7 +522,7 @@ internal static class GeoservicesCatalogEndpoints
                         tokenOptions.Value.Enabled ? "1" : "0");
                     break;
                 default:
-                    return CompleteSoapCatalogOperation(scope, CreateSoapFault(
+                    return CompleteSoapCatalogOperation(scope, GeoServicesSoapProtocol.CreateSoapFault(
                         $"Unsupported catalog operation '{operation.Name.LocalName}'.",
                         StatusCodes.Status400BadRequest,
                         soap));
@@ -549,13 +543,13 @@ internal static class GeoservicesCatalogEndpoints
                             payload))));
 
             return CompleteSoapCatalogOperation(scope, Results.Content(
-                ArcGisSoapNamespaces.SerializeResponse(response),
+                GeoServicesSoapNamespaces.SerializeResponse(response),
                 contentType: SoapContentTypeFor(soap),
                 contentEncoding: Encoding.UTF8));
         }
         catch (SoapCatalogAccessException exception)
         {
-            return CompleteSoapCatalogOperation(scope, CreateSoapFault(
+            return CompleteSoapCatalogOperation(scope, GeoServicesSoapProtocol.CreateSoapFault(
                 exception.StatusCode == StatusCodes.Status401Unauthorized
                     ? "Authentication is required to discover these services."
                     : "The calling principal is not authorized to discover these services.",
@@ -572,7 +566,7 @@ internal static class GeoservicesCatalogEndpoints
                 logger,
                 operation.Name.LocalName,
                 exception);
-            var result = CompleteSoapCatalogOperation(scope, CreateSoapFault(
+            var result = CompleteSoapCatalogOperation(scope, GeoServicesSoapProtocol.CreateSoapFault(
                 "The SOAP services catalog is temporarily unavailable.",
                 StatusCodes.Status503ServiceUnavailable,
                 soap));
@@ -692,41 +686,6 @@ internal static class GeoservicesCatalogEndpoints
             SceneServerProtocolName => "Scene,Query",
             _ => string.Empty
         };
-
-    private static IResult CreateSoapFault(string message, int statusCode, XNamespace soap)
-    {
-        var isServerFault = statusCode >= StatusCodes.Status500InternalServerError;
-        var fault = soap == Soap12EnvelopeNamespace
-            ? new XElement(
-                soap + "Fault",
-                new XElement(
-                    soap + "Code",
-                    new XElement(soap + "Value", isServerFault ? "soap:Receiver" : "soap:Sender")),
-                new XElement(
-                    soap + "Reason",
-                    new XElement(
-                        soap + "Text",
-                        new XAttribute(XNamespace.Xml + "lang", "en"),
-                        message)))
-            : new XElement(
-                soap + "Fault",
-                new XElement("faultcode", isServerFault ? "soap:Server" : "soap:Client"),
-                new XElement("faultstring", message));
-        var response = new XDocument(
-            new XDeclaration("1.0", "utf-8", null),
-            new XElement(
-                soap + "Envelope",
-                new XAttribute(XNamespace.Xmlns + "soap", soap.NamespaceName),
-                new XElement(
-                    soap + "Body",
-                    fault)));
-
-        return Results.Content(
-            ArcGisSoapNamespaces.SerializeResponse(response),
-            contentType: SoapContentTypeFor(soap),
-            contentEncoding: Encoding.UTF8,
-            statusCode: statusCode);
-    }
 
     private static XNamespace RequestedSoapNamespace(HttpRequest request)
         => string.Equals(
@@ -1055,18 +1014,7 @@ internal static class GeoservicesCatalogEndpoints
         return Results.Json(response, GeoservicesCatalogJsonContext.Default.ServicesDirectoryResponse, contentType: JsonContentType);
     }
 
-    /// <summary>
-    /// One service's node in the catalogue: the folder-shaped document an Esri client
-    /// reads when it resolves a service URL.
-    /// </summary>
-    /// <remarks>
-    /// Reuses <see cref="BuildServiceDirectoryProjectionAsync"/> rather than enumerating
-    /// separately, so this node can never disagree with the catalogue root about what is
-    /// published or about who may see it - the projection already applies per-resource
-    /// access filtering scoped to the requested name. Denied folders retain their access
-    /// error; an unknown name answers the GeoServices not-found envelope;
-    /// the defect in #5158 was giving that answer for a service that does.
-    /// </remarks>
+    // This node reuses the catalogue projection so a service that exists is not reported as not-found, while a denied folder keeps its access error and an unknown name stays not-found.
     private static async Task<IResult> HandleGetServiceFolder(
         HttpContext context,
         string folderName,
@@ -1152,12 +1100,7 @@ internal static class GeoservicesCatalogEndpoints
         return Results.Json(response, GeoservicesCatalogJsonContext.Default.RestInfoResponse, contentType: JsonContentType);
     }
 
-    /// <summary>
-    /// Advertises the conventional GeoServices instance path (<c>/arcgis</c>) on a base that is
-    /// an origin with an empty path. A base that already ends with <c>/arcgis</c> is unchanged,
-    /// and a base that already has any other path is unchanged: the alias only strips a leading
-    /// <c>/arcgis</c>, so a second prefix would not route.
-    /// </summary>
+    // An empty path advertises /arcgis, a base that already ends with /arcgis is unchanged, and any other path stays unchanged because the alias only strips a leading /arcgis.
     private static string WithConventionalInstancePath(string baseUrl)
     {
         if (string.IsNullOrEmpty(baseUrl))
@@ -1183,11 +1126,6 @@ internal static class GeoservicesCatalogEndpoints
         return trimmed;
     }
 
-    /// <summary>
-    /// Whether the resolved public base URL is served over TLS. A configured absolute base URL
-    /// carries its own scheme and is authoritative; a relative or empty base means no public URL
-    /// was configured, so the request transport is the only signal available.
-    /// </summary>
     private static bool IsHttpsBaseUrl(string baseUrl, HttpContext context)
     {
         return Uri.TryCreate(baseUrl, UriKind.Absolute, out var absolute)
@@ -1195,15 +1133,6 @@ internal static class GeoservicesCatalogEndpoints
             : context.Request.IsHttps;
     }
 
-    /// <summary>
-    /// Maps every Esri-family protocol a service exposes to the directory-entry "type"
-    /// strings the GeoServices REST catalog advertises (FeatureServer, MapServer,
-    /// ImageServer, GPServer, VectorTileServer, SceneServer), preserving the service's declared
-    /// protocol order and de-duplicating. A service reachable under several Esri types
-    /// is listed once per type, matching ArcGIS Services Directory semantics (#1853).
-    /// Non-Esri protocols (OGC API Features, STAC, OData, etc.) are skipped because they
-    /// are surfaced through their own catalogs.
-    /// </summary>
     private static List<string> MapEsriDirectoryTypes(MetadataV2Service service)
     {
         return service.Protocols
@@ -1213,12 +1142,7 @@ internal static class GeoservicesCatalogEndpoints
             .ToList();
     }
 
-    /// <summary>
-    /// Maps an Esri-family protocol to the directory-entry "type" string the
-    /// GeoServices REST catalog exposes (FeatureServer, MapServer, ImageServer,
-    /// GPServer, VectorTileServer). Returns false for non-Esri protocols (OGC API Features, STAC, etc.)
-    /// which are surfaced through other catalogs.
-    /// </summary>
+    // Non-Esri protocols return no directory type because OGC API Features, STAC, and the other protocols have their own catalogs.
     private static bool TryMapServiceType(string? primaryProtocol, out string directoryType)
     {
         switch (primaryProtocol)
@@ -1252,21 +1176,6 @@ internal static class GeoservicesCatalogEndpoints
         }
     }
 
-    /// <summary>
-    /// Appends an Esri I3S <c>SceneServer</c> directory entry for every active
-    /// registered scene, addressed at the canonical
-    /// <c>/rest/services/{id}/SceneServer</c> GeoServices path (#1807). Returns
-    /// <see langword="true"/> when at least one entry was appended so the caller
-    /// can re-sort the directory.
-    /// </summary>
-    /// <remarks>
-    /// SceneServer is Enterprise-gated: for editions below
-    /// <see cref="HonuaEdition.Enterprise"/> this is a no-op, so open-core
-    /// catalogs omit SceneServer entirely (no 402, matching the serving
-    /// endpoints' 403). The scene registry seam is optional — when no
-    /// <see cref="ISceneRegistrationService"/> is registered (e.g. config-only
-    /// hosting) no scene entries are emitted.
-    /// </remarks>
     private static async Task<bool> AppendSceneServerEntriesAsync(
         HttpContext context,
         List<ServiceDirectoryEntry> entries,
@@ -1305,12 +1214,6 @@ internal static class GeoservicesCatalogEndpoints
         return true;
     }
 
-    /// <summary>
-    /// Finds the first publication on the given image service whose layer index
-    /// has at least one raster registered in the raster store. The catalog uses
-    /// the layer index (not the service name) as the route segment for
-    /// ImageServer entries.
-    /// </summary>
     private static async Task<ImageServerProbeResult> GetImageServerLayerIdAsync(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service,
@@ -1404,9 +1307,6 @@ internal static partial class GeoservicesCatalogEndpointLogging
     public static partial void LogGeocodeProjectionFailed(ILogger logger, Exception exception);
 }
 
-/// <summary>
-/// Logger category for GeoServices catalog endpoints.
-/// </summary>
 internal sealed class GeoservicesCatalogLog
 {
 }

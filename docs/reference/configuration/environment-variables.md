@@ -38,7 +38,7 @@ Honua is configured entirely through environment variables (or the equivalent `a
 | `Oracle__CommandTimeoutSeconds` | `60` | Oracle read command timeout. |
 | `MySql__ConnectionString` | — | MySQL/MariaDB connection string (when `DataSource__Provider=mysql`). |
 | `MySql__EngineFlavor` | `Mysql` | `Mysql` or `MariaDb` — controls WKB axis-order handling. |
-| `ArcGisRest__Enabled` | `true` | Register the federated ArcGIS REST read-through provider. |
+| `GeoServicesRest__Enabled` | `true` | Register the federated GeoServices REST read-through provider. The retired `ArcGisRest__*` names stop startup with a rename message. |
 
 Provider capabilities and versions: [data sources](data-sources/README.md).
 
@@ -59,7 +59,7 @@ Provider capabilities and versions: [data sources](data-sources/README.md).
 | `Authentication__ClientCertificates__TrustProfiles__N__*` | — | Trust-profile definitions (issuer subjects, SAN types, principal mappings, roles). |
 | `Authentication__ClientCertificates__ForwardedCertificate__Enabled` | `false` | Accept proxy-forwarded client certificates. |
 | `Authentication__ClientCertificates__ForwardedCertificate__TrustedProxyNetworks__N` | — | CIDR ranges allowed to forward certificates. |
-| `Authentication__PortalToken__OAuth2__AllowedRedirectUris__N` | — (empty rejects all) | Redirect-URI allow-list for the ArcGIS Portal OAuth2 bridge. |
+| `Authentication__PortalToken__OAuth2__AllowedRedirectUris__N` | — (empty rejects all) | Redirect-URI allow-list for the GeoServices REST Portal OAuth2 bridge. |
 | `Authentication__PortalToken__OAuth2__RequirePkce` | `true` | Require PKCE on every authorization-code flow. |
 | `Authentication__PortalToken__OAuth2__RotateRefreshTokens` | `true` | Rotate refresh tokens on each use. |
 | `SecurityHeaders__EnableHsts` | — | Emit HSTS headers (recommended `true` in production). |
@@ -142,7 +142,10 @@ After a successful upload, `<LicensePath>.uploaded` takes precedence at startup.
 | `Cache__JitterPercentage` | `0.2` | TTL jitter to avoid cache stampedes. |
 | `Cache__EnableFallback` | `true` | Use in-memory fallback when Redis is unavailable. |
 | `Cache__FallbackMaxEntries` | `1000` | Max entries in the in-memory fallback cache. |
-| `Cache__ResponseCachingEnabled` | `false` | Cache exact protocol responses separately from metadata. |
+| `Cache__ResponseCachingEnabled` | `false` | Cache exact public, non-spatial protocol responses (FeatureServer query, OGC API Features items, OData) separately from metadata. Off by default. Admission requires an empty principal. Cookies, a connection client certificate, and the forwarded client-certificate header count as credentials. The key includes the license fingerprint. Request or response `Cache-Control: no-cache` or `no-store` skips storage when those headers are already written. Ad hoc spatial reads and any non-default `gdbVersion` stay uncached. |
+| `Cache__ResponseCachingAllowInMemoryFallback` | `false` | Allow exact response caching while the cache is process-local (distributed memory or the in-memory fallback). Off by default. Set this only on a single server instance. |
+| `Cache__ResponseCacheMaxEntryBytes` | `1048576` | Skip storing a query response whose payload is larger than this many bytes. |
+| `Cache__ResponseCacheMaxBytes` | `67108864` | Skip storing a query response that would push this process over this total payload budget. |
 | `Cache__RetryIntervalSeconds` | `30` | Redis reconnect interval after a failure. |
 | `Cache__KeyPrefix` | `honua:` | Key prefix for shared Redis instances. |
 
@@ -191,6 +194,8 @@ When `ConnectionStrings__Redis` is set, MCP session records are shared through R
 | `Limits__Imports__MaxPreviewFeatures` | `100` | Max features returned by a preview. |
 | `Limits__Imports__BatchSize` | `1000` | Insert batch size for import writes. |
 | `LayerPublishing__MaterializationTimeoutSeconds` | `300` | PostgreSQL budget, in seconds (1–3600), for the canonical snapshot copy made when a layer is published or its snapshot is refreshed, such as automatic publication after a large import. It is a wall-clock and command budget for that copy only; ordinary query timeouts are unchanged and caller cancellation still applies. Expiry rolls the publication back, keeps the imported table, and reports the import as needing review. Out-of-range values fail at startup. |
+| `LayerPublishing__AsyncPublishRowThreshold` | `10000` | Nonnegative integer row threshold for a pollable publication job. Only sources strictly above the threshold queue: equality stays synchronous; zero queues every nonempty source. This changes operation observation, not its success criteria. Invalid values fail at startup. |
+| `LayerPublishing__MaterializationBatchSize` | `5000` | Positive integer row count per keyset snapshot statement within the publication transaction. Larger batches can increase memory use and lock pressure. Invalid values fail at startup. |
 | `Migration__AllowedServiceHostSuffixes__N` | — (unset) | Optional remote GIS migration/import source allowlist. Each entry matches the exact host or its subdomains. Unset permits any otherwise-safe public host; an explicitly empty array rejects all hosts. |
 | `Limits__MaxUploadSizeBytes` | `104857600` (100 MiB) | General upload ceiling. |
 | `Limits__GeoParquet__MaxRowsPerBatch` | `1024` | Maximum rows per Arrow batch and Parquet row group. |
@@ -313,20 +318,33 @@ Geoprocessing job admission and executor guardrails:
 `Limits__Tiles__MaxTileSize` defaults to `512000` bytes and accepts positive byte counts.
 It limits encoded MVT bytes before HTTP content compression; it does not set tile
 pixel dimensions. Managed and source-backed PostGIS reads check the byte length
-before allocating the response array. Oversized output is rejected without a
-partial tile or tile cache headers. OGC API Tiles returns HTTP 413 with an
-`application/problem+json` body (`status: 413`, `title: Payload Too Large`).
-GeoServices MVT routes return the documented HTTP 200 error envelope with
-`error.code: 413`. Request a higher zoom level or reduce the included data.
+before allocating the response array. A tile that would exceed the budget is
+re-encoded with progressively stricter simplification, snapping, sub-pixel
+dropping, and feature and attribute thinning until the encoded bytes fit. The
+response is never larger than the budget, and a tile that already fits is unchanged.
+OGC API Tiles returns HTTP 413 with an `application/problem+json` body
+(`status: 413`, `title: Payload Too Large`), and GeoServices MVT routes return the
+documented HTTP 200 error envelope with `error.code: 413`, only when the strictest
+pass — one feature, no attributes, and no grid snap — still exceeds the budget, or
+when that pass is empty because earlier snaps removed every geometry. A tile that
+was empty on the first pass still returns 204. Request a higher zoom level or raise
+the budget for that pathological tile. An operator-defined gridset snaps to its own
+resolution; the Web Mercator zoom table is only a floor for the built-in pyramid.
 Tile output-cache keys include the byte budget, so entries created before enforcement
 or under a larger cap cannot bypass the limit.
 
 Previously this option had no effect and its model default was 512 with pixel
 units. Explicitly configured values now mean bytes; review any existing value
-that was chosen as a pixel dimension. The database still encodes the tile under
-its existing feature and statement limits before the output length is known.
+that was chosen as a pixel dimension. A dense layer at zoom 0–2 is served within
+the budget. The database may encode more than one candidate before the fitting
+tile is returned.
 
 ## Studio AI proxy request budget
+
+For the built-in browser assistant, see [Studio assistant on Bedrock](../../guides/deploy/studio-assistant-bedrock.md).
+That guide covers `Studio__EndUserAuthorization__Enabled`, provider and disclosure settings,
+stable invocation admission configuration and explicit ledger activation. Provider configuration
+alone does not initialize or resume the ledger.
 
 `StudioAiProxy__MaxPromptCharacters` defaults to `128000` and accepts values
 from `1` to `500000`. It caps the UTF-16 characters in one
@@ -359,7 +377,6 @@ size, and oversized bodies get HTTP 413.
 - [Data sources](data-sources/README.md) — provider capability matrix and per-provider configuration.
 - [PostGIS configuration](data-sources/postgis.md) — connection strings, extensions, managed-Postgres notes.
 - [OpenAPI and the API explorer](../openapi-and-explorer.md) — `/docs` and the runtime spec endpoints.
-
 
 ### GeoParquet query memory budgets
 
@@ -397,3 +414,14 @@ lane independently reads full 10,000-row responses with PyArrow and GeoPandas an
 checks footer row-group bounds, IDs, values, nulls, CRS and bbox covering. Required
 consumer executions retain the existing no-skip receipt policy. Import byte guards
 and accepted multi-row-group imports are unchanged.
+
+## AI disclosure approvals
+
+Enabled remote AI transfers require exact operator approval rules. See [AI model disclosure approvals](ai-disclosure-policy.md) for configuration, secure defaults, migration and classification limits.
+
+## AI invocation admission
+
+Model calls require `AiExecutionAdmission__DeploymentId` (empty by default).
+`AiExecutionAdmission__Backend` accepts `auto` (default), `postgres` or `redis`.
+See [AI invocation admission](ai-execution-admission.md) for authoritative backend selection,
+policy fields, typed initialize/update/stop/resume controls and migration. Missing authority denies model calls.

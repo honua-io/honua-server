@@ -5,11 +5,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Server.Features.Reporting.Models;
 
-/// <summary>
-/// OpenAI-compatible chat completion request used by the reporting narrative
-/// provider. Distinct from the NL-query types so the reporting slice can evolve
-/// its prompt and request shape without coupling.
-/// </summary>
 internal sealed class ReportingOpenAiChatRequest
 {
     [JsonPropertyName("model")]
@@ -20,6 +15,10 @@ internal sealed class ReportingOpenAiChatRequest
 
     [JsonPropertyName("max_tokens")]
     public int? MaxTokens { get; set; }
+
+    [JsonPropertyName("service_tier")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ServiceTier { get; set; }
 
     [JsonPropertyName("temperature")]
     public double? Temperature { get; set; }
@@ -64,21 +63,12 @@ internal sealed class ReportingOpenAiChoice
     public string? FinishReason { get; set; }
 }
 
-/// <summary>
-/// Wire shape the OpenAI provider asks the model to return: a flat object of
-/// <c>slotId -&gt; paragraph</c>.
-/// </summary>
 internal sealed class NarrativeFillResponse
 {
     [JsonPropertyName("slots")]
     public Dictionary<string, string> Slots { get; set; } = new(StringComparer.Ordinal);
 }
 
-/// <summary>
-/// Wire shape the OpenAI provider sends as the user message: the structured
-/// view of the report draft so the model can author paragraphs without seeing
-/// raw .NET types.
-/// </summary>
 internal sealed class NarrativePromptPayload
 {
     [JsonPropertyName("templateId")]

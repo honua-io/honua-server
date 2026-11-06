@@ -1,4 +1,4 @@
-# Lambda GA certification lane
+# Lambda certification lane
 
 `lambda-preview-certification.yml` certifies the manifest's exact image digest and
 `awsLambdaArchitecture` (`x86_64` → OCI `amd64`, or `arm64`), using the matching

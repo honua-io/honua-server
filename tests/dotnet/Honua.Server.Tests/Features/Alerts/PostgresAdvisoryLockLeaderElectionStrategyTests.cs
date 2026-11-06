@@ -35,6 +35,8 @@ public sealed class PostgresAdvisoryLockLeaderElectionStrategyUnitTests
         var parsed = new NpgsqlConnectionStringBuilder(dedicated.ConnectionString);
 
         Assert.False(parsed.Multiplexing);
+        // Unpooled: a losing attempt must close its RDS Proxy-pinned session (#6760).
+        Assert.False(parsed.Pooling);
         Assert.True(parsed.KeepAlive >= 30);
         Assert.Equal(30, parsed.TcpKeepAliveTime);
         Assert.Contains("secret", dedicated.ConnectionString, StringComparison.Ordinal);
@@ -127,6 +129,57 @@ public sealed class PostgresAdvisoryLockLeaderElectionStrategyTests(DatabaseFixt
         Assert.False(await leader.TryAcquireAsync());
         Assert.False(leader.IsLeader);
         Assert.Equal(followerPid, await ReadLockPidAsync(shared));
+    }
+
+    [IntegrationTest(Timeout = 60000)]
+    public async Task TryAcquire_LosingAttempt_LeavesNoSessionBehind()
+    {
+        // Through RDS Proxy every lock attempt pins its session. A losing instance must close
+        // that session instead of pooling it, or each frozen Lambda holds a proxy backend (#6760).
+        var applicationName = "honua-6760-" + Guid.NewGuid().ToString("N")[..12];
+        var connection = new NpgsqlConnectionStringBuilder(database.ConnectionString)
+        {
+            PersistSecurityInfo = true,
+            ApplicationName = applicationName,
+        };
+        await using var shared = NpgsqlDataSource.Create(connection.ConnectionString);
+        await using var leader = new PostgresAdvisoryLockLeaderElectionStrategy(
+            shared,
+            NullLogger<PostgresAdvisoryLockLeaderElectionStrategy>.Instance);
+        await using var follower = new PostgresAdvisoryLockLeaderElectionStrategy(
+            shared,
+            NullLogger<PostgresAdvisoryLockLeaderElectionStrategy>.Instance);
+
+        Assert.True(await leader.TryAcquireAsync());
+        Assert.False(await follower.TryAcquireAsync());
+        Assert.False(await follower.TryAcquireAsync());
+
+        Assert.Equal(1, await WaitForSessionCountAsync(applicationName, expected: 1));
+
+        await leader.ReleaseAsync();
+        Assert.Equal(0, await WaitForSessionCountAsync(applicationName, expected: 0));
+    }
+
+    private async Task<long> WaitForSessionCountAsync(string applicationName, long expected)
+    {
+        long count = -1;
+        for (var attempt = 0; attempt < 50; attempt++)
+        {
+            await using var admin = new NpgsqlConnection(database.ConnectionString);
+            await admin.OpenAsync();
+            await using var command = new NpgsqlCommand(
+                "SELECT count(*) FROM pg_stat_activity WHERE application_name = @name", admin);
+            command.Parameters.AddWithValue("name", applicationName);
+            count = (long)(await command.ExecuteScalarAsync())!;
+            if (count == expected)
+            {
+                return count;
+            }
+
+            await Task.Delay(100);
+        }
+
+        return count;
     }
 
     private static async Task<int> ReadLockPidAsync(NpgsqlDataSource dataSource)

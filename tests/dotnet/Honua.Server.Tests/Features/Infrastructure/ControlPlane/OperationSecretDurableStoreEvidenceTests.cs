@@ -37,7 +37,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 [Collection(RedisFixture.CollectionName)]
 [Protocol(TestProtocols.Infrastructure)]
 [Operation(Operations.TestInfrastructure)]
-public sealed class OperationSecretDurableStoreEvidenceTests(RedisFixture redis)
+public sealed partial class OperationSecretDurableStoreEvidenceTests(RedisFixture redis)
 {
     /// <summary>Secret-returning access operations and the response field carrying the one-time value.</summary>
     private static readonly string RotateKeyId = Guid.NewGuid().ToString();
@@ -211,7 +211,8 @@ public sealed class OperationSecretDurableStoreEvidenceTests(RedisFixture redis)
     private static AdminOperateOperationExecutor BuildAccessExecutor(
         string operationId,
         HttpClient client,
-        IOperationSecretStore secretStore)
+        IOperationSecretStore secretStore,
+        Honua.Infrastructure.Authentication.IAdminApiKeyStore? adminApiKeyStore = null)
     {
         var factory = Substitute.For<IHttpClientFactory>();
         factory.CreateClient(AdminOperateOperationExecutor.HttpClientName).Returns(client);
@@ -227,7 +228,7 @@ public sealed class OperationSecretDurableStoreEvidenceTests(RedisFixture redis)
             AdminAccessOperationCatalog.Descriptors.Single(item => item.OperationId == operationId),
             factory,
             accessor,
-            null,
+            adminApiKeyStore,
             TimeProvider.System,
             new OperationLineageAttestationStore(TimeProvider.System),
             secretStore);
@@ -287,11 +288,12 @@ public sealed class OperationSecretDurableStoreEvidenceTests(RedisFixture redis)
     private sealed class RecordingAuditLog : IAuditLog
     {
         public List<AuditEvent> Events { get; } = [];
+        public string? FailAction { get; init; }
 
         public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
         {
             Events.Add(auditEvent);
-            return Task.FromResult<string?>($"audit-{Guid.NewGuid():N}");
+            return Task.FromResult<string?>(FailAction is not null && auditEvent.Action == FailAction ? null : $"audit-{Guid.NewGuid():N}");
         }
     }
 

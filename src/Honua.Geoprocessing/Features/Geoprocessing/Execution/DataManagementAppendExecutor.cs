@@ -6,23 +6,10 @@ using NetTopologySuite.Features;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// <c>data-management.append</c> executor (#2139). Appends the <c>append</c> source
-/// FeatureCollection INTO the schema of the <c>input</c> target, mirroring Esri's
-/// <c>Append</c>: the target's features are preserved verbatim and each source
-/// feature is projected onto the target's field set (only target fields are kept;
-/// missing source values become null). An optional <c>fieldMap</c> of
-/// <c>source:target</c> pairs (semicolon-separated) remaps source field names. The
-/// target field set is the union of attribute names across the target features (or
-/// the source field set when the target is empty). Distinct from
-/// <see cref="OverlayMergeExecutor"/>, which produces a new union-schema output.
-/// Pure managed NetTopologySuite — no GDAL/GEOS native dependency.
-/// </summary>
 internal sealed class DataManagementAppendExecutor(
     IOptionsMonitor<GeoprocessingExecutorOptions> options)
     : FeatureCollectionTransformExecutor(options)
 {
-    /// <summary>The canonical process id this executor handles.</summary>
     internal const string HandledProcessId = "data-management.append";
 
     protected override string ProcessId => HandledProcessId;

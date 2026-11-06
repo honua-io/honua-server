@@ -7,9 +7,6 @@ using StackExchange.Redis;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// The result of the one startup Redis durability inspection.
-/// </summary>
 internal sealed record RedisDurabilityAttestationResult(
     RedisDurabilityAttestation? Attestation,
     DurableJobSubstrateCause? FailureCause,
@@ -18,9 +15,6 @@ internal sealed record RedisDurabilityAttestationResult(
     public bool Accepted => Attestation is not null;
 }
 
-/// <summary>
-/// Reads the Redis policy that protects acknowledged control-plane writes.
-/// </summary>
 internal static class RedisDurabilityAttestor
 {
     public static async Task<RedisDurabilityAttestationResult> InspectAsync(

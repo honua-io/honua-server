@@ -78,7 +78,7 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
         UploadCancellationTokens[uploadId] = linkedCancellationSource;
 
         var initialProgress = UploadProgress.CreateInitial(uploadId, request.FileName, totalBytes, request.ContentType);
-        await ProgressStore.SetProgressAsync(uploadId, initialProgress, TimeSpan.FromHours(1), cancellationToken);
+        await TrySetUploadProgressAsync(uploadId, initialProgress, TimeSpan.FromHours(1), cancellationToken);
         ReportProgressToCaller(request.Progress, uploadId, initialProgress);
         SerializedUploadProgressWriter? progressWriter = null;
 
@@ -183,7 +183,7 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
                 await progressWriter.CloseAndDrainAsync().ConfigureAwait(false);
             }
 
-            await ProgressStore.SetProgressAsync(uploadId, completedProgress, TimeSpan.FromHours(1), cancellationToken);
+            await TrySetUploadProgressAsync(uploadId, completedProgress, TimeSpan.FromHours(1), cancellationToken);
             ReportProgressToCaller(request.Progress, uploadId, completedProgress);
 
             stopwatch.Stop();
@@ -257,16 +257,32 @@ internal sealed class AzureBlobFileStorage : CloudFileStorageBase
         }
     }
 
-    public override async Task<Stream?> DownloadAsync(string fileId, CancellationToken cancellationToken = default)
+    public override Task<Stream?> DownloadAsync(string fileId, CancellationToken cancellationToken = default)
+        => DownloadCoreAsync(fileId, expectedETag: null, cancellationToken);
+
+    public override Task<Stream?> DownloadIfMatchAsync(string fileId, string expectedETag, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedETag);
+        return DownloadCoreAsync(fileId, expectedETag, cancellationToken);
+    }
+
+    private async Task<Stream?> DownloadCoreAsync(string fileId, string? expectedETag, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
 
         try
         {
             var blobClient = _containerClient.GetBlobClient(fileId);
-            var response = await blobClient.DownloadStreamingAsync(cancellationToken: cancellationToken);
+            var response = await blobClient.DownloadStreamingAsync(new BlobDownloadOptions
+            {
+                Conditions = expectedETag is null ? null : new BlobRequestConditions { IfMatch = new ETag(expectedETag) }
+            }, cancellationToken);
             // Wrap the content stream so that disposing it also disposes the BlobDownloadStreamingResult
             return new BlobDownloadStream(response.Value);
+        }
+        catch (RequestFailedException ex) when (ex.Status == 412)
+        {
+            throw new CloudFileRevisionChangedException();
         }
         catch (RequestFailedException ex) when (ex.Status == 404)
         {

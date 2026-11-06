@@ -47,9 +47,9 @@ Both lists share one naming rule: every key is dot-namespaced lowercase,
     }
   ],
   "crosswalks": {
-    "esriAssess": [ { "assessKey": "feature-service", "capability": "serve.geoservices-featureserver" } ],
+    "geoservicesAssess": [ { "assessKey": "feature-service", "capability": "serve.geoservices-featureserver" } ],
     "interop": [ { "clientLane": "js", "protocol": "wms", "capability": "serve.wms" } ],
-    "esriCompatMatrix": [ { "serviceId": "feature-server", "capability": "serve.geoservices-featureserver" } ],
+    "geoservicesCompatMatrix": [ { "serviceId": "feature-server", "capability": "serve.geoservices-featureserver" } ],
     "geobench": [ { "scenario": "wms-getmap", "capability": "serve.wms" } ]
   }
 }
@@ -73,12 +73,12 @@ keys, because none of them carry a capability key of their own today:
 
 | Section | Source vocabulary | Row shape |
 |---|---|---|
-| `esriAssess` | `honua-esri-assess` verdict registry (`src/honua_esri_assess/verdict/registry.py` `CAPABILITY_REGISTRY`, read-only reference — this repo does not modify it) | `{ assessKey, capability, note? }` |
+| `geoservicesAssess` | `honua-esri-assess` verdict registry (`src/honua_esri_assess/verdict/registry.py` `CAPABILITY_REGISTRY`, read-only reference — this repo does not modify it) | `{ assessKey, capability, note? }` |
 | `interop` | Client-interop certification envelopes (`client_lane` × `protocol`, schema in [`CROSS_CLIENT_CERTIFICATION_EVIDENCE.md`](CROSS_CLIENT_CERTIFICATION_EVIDENCE.md)) | `{ clientLane, protocol, capability }` |
-| `esriCompatMatrix` | [`geoservices-rest-parity.json`](data/geoservices-rest-parity.json) `services[].id` | `{ serviceId, capability }` |
+| `geoservicesCompatMatrix` | [`geoservices-rest-parity.json`](data/geoservices-rest-parity.json) `services[].id` | `{ serviceId, capability }` |
 | `geobench` | [geobench](https://github.com/honua-io/geobench) benchmark scenario names | `{ scenario, capability }` |
 
-**Hard Esri lock-ins are never silently absent.** The `esriAssess` crosswalk
+**Hard Esri lock-ins are never silently absent.** The `geoservicesAssess` crosswalk
 intentionally omits the registry's `no-go` (`hard_lock_in`) tier keys
 (`utility-network`, `parcel-fabric`, `lrs`) — they instead appear in the
 separate [`capability-no-go-allowlist.v1.json`](data/capability-no-go-allowlist.v1.json)
@@ -145,7 +145,7 @@ flag) only when all four hold:
    proving evidence for GA).
 2. **Matrix-joined evidence where applicable.** Where an official conformance suite or
    parity crosswalk exists for the capability (OGC CITE, `geoservices-rest-parity.json`
-   via `esriCompatMatrix`), `capability-matrix.v1.json`'s `cite`/`parity` join for that
+   via `geoservicesCompatMatrix`), `capability-matrix.v1.json`'s `cite`/`parity` join for that
    key is non-empty and passing.
 3. **A factually correct `noSurface` allowlist reason.** If the capability has zero
    `feature-catalog.json` entries, its
@@ -215,7 +215,7 @@ per-key re-grade decision record produced by applying this bar (#2946).
    description).
 4. Every crosswalk row's `capability` resolves to a real key.
 5. Every `honua-esri-assess` `hard_lock_in` key appears in
-   `capability-no-go-allowlist.v1.json`, not in the `esriAssess` crosswalk.
+   `capability-no-go-allowlist.v1.json`, not in the `geoservicesAssess` crosswalk.
 6. Every `capability-maturity-overrides.v1.json` row names a real key, demotes
    (never promotes), carries a reason code / reason / decision, matches at least
    one `feature-catalog.json` entry, and is actually reflected in every entry of

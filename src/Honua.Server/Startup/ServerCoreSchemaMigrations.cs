@@ -5,11 +5,6 @@ using Honua.Db.Postgres.Features.Infrastructure.Migrations;
 
 namespace Honua.Server.Startup;
 
-/// <summary>
-/// Application-owned migration identities supplied to the PostgreSQL guard at the composition
-/// boundary. Keeping these identities beside the server migration root preserves the provider's
-/// dependency direction.
-/// </summary>
 internal static class ServerCoreSchemaMigrations
 {
     internal static readonly PostgresCoreSchemaMigrationManifest Manifest = new(

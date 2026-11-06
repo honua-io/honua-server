@@ -10,7 +10,7 @@ Insert, update, and delete features over HTTP using whichever protocol your clie
 
 **Prerequisites:** A running Honua server with a writable PostgreSQL-backed layer (DuckDB, SQL Server, and Oracle providers are read-only) and a JavaScript project with `@arcgis/core` installed. If the layer's access policy restricts writes, configure the ArcGIS Maps SDK with a credential carrying a write grant — see [Control access](../secure/access-control.md).
 
-All three protocols write to the same store and emit the same change events, so pick one per client and mix freely. The worked example uses the ArcGIS Maps SDK for JavaScript against FeatureServer; the [equivalence table](#do-the-same-with-ogc-api-features-or-odata) maps each operation to the other two protocols.
+All three protocols write to the same store and emit the same change events, so pick one per client and mix freely. The worked example uses the ArcGIS Maps SDK for JavaScript, which Honua works with, against FeatureServer; the [equivalence table](#do-the-same-with-ogc-api-features-or-odata) maps each operation to the other two protocols.
 
 ## Steps
 
@@ -118,3 +118,7 @@ More general failures: [Troubleshooting](../deploy/troubleshooting.md).
 - [Add attachments and query related records](attachments-and-related-records.md)
 - [React to feature changes](react-to-changes.md)
 - [Query features](../query-analyze/query-features.md)
+
+Esri, ArcGIS, and the Esri product names used here are trademarks, registered trademarks, or service
+marks of Esri in the United States and other countries. They identify the products Honua is compatible
+with; Honua is not affiliated with, sponsored by, or endorsed by Esri.

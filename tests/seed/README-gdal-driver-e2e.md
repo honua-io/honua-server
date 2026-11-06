@@ -15,7 +15,7 @@ shape GDAL needs to round-trip via the built-in `OAPIF:` stand-in driver:
 |---|---|---|
 | Service id | `test_service` | OGC API Features service URL prefix used by the workflow |
 | Collection id | `0` | Stable collection id the workflow asserts is present in `ogrinfo` output |
-| CRS | `EPSG:4326` | Round-trip CRS check: must survive the GeoPackage write |
+| CRS | SRID `4326`, advertised as storageCrs `OGC:CRS84` (lon/lat, #5040) | Round-trip CRS check: must survive the GeoPackage write |
 | Geometry type | `Point` | Simplest geometry type that exercises GeoJSON streaming and GeoPackage encoding |
 | Feature count | `10` | Non-zero, fits in a single page (default `limit=1000`) so paging is exercised but not stressed |
 | Attribute types | string, integer, double, boolean, datetime, date, time, uuid, JSON arrays | Exercises GDAL's OGR field type inference for the most common honua field types |
@@ -32,8 +32,11 @@ shape GDAL needs to round-trip via the built-in `OAPIF:` stand-in driver:
 3. `ogrinfo` against the produced GeoPackage reports a feature count equal to
    the source `numberReturned`. This guards the "without data loss" half of
    the acceptance criterion.
-4. `ogrinfo` against the produced GeoPackage reports `EPSG:4326` in the layer
-   SRS metadata. This guards the CRS-fidelity half of the acceptance criterion.
+4. The collection advertises storageCrs `OGC:CRS84`, and `ogrinfo` against
+   the produced GeoPackage reports `ID["OGC","CRS84"]` with axis mapping
+   `1,2` (longitude/latitude). This guards the CRS-fidelity half of the
+   acceptance criterion. An `EPSG:4326` lat/lon layer fails the check because
+   it would mean the #5040 axis-order fix regressed.
 
 ## Why this seed and not a new one
 

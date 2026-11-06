@@ -21,7 +21,11 @@ public static class LocalHarness
         var runDirectory = UnderRoot(Path.GetFullPath(outputDirectory), runId);
         var workDirectory = UnderRoot(runDirectory, "work");
         Directory.CreateDirectory(workDirectory);
-        using var journal = new EventJournal(UnderRoot(runDirectory, "events.jsonl"), attempt: "local");
+        using var journal = new EventJournal(
+            UnderRoot(runDirectory, "events.jsonl"),
+            attempt: "local",
+            correlation: EventJournal.CorrelationFromEnvironment(null),
+            trace: EventJournal.TraceFromEnvironment(null));
         var receipt = new JsonObject
         {
             ["schemaVersion"] = "1.0",

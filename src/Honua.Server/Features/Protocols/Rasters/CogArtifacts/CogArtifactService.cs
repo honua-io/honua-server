@@ -15,7 +15,6 @@ using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Server.Features.Protocols.Rasters.CogArtifacts;
 
-/// <summary>Outcome of a COG artifact publish.</summary>
 internal enum CogArtifactPublishStatus
 {
     Published,
@@ -39,28 +38,8 @@ internal sealed record CogArtifactSource(
 
 internal sealed record CogArtifactReadTarget(CloudFile File, CogArtifactSource Source);
 
-/// <summary>
-/// Exports a layer's primary raster as a Cloud Optimized GeoTIFF into the configured file
-/// storage and resolves published artifacts for the source-policy-aware range proxy.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Desktop clients (QGIS through GDAL <c>/vsicurl</c>, ArcGIS Pro, arcpy) read a COG with
-/// HTTP HEAD + Range requests against a plain URL. Nothing else in the server hands a client
-/// a rasters' bytes with range support: the ImageServer and WCS surfaces render on demand and
-/// the cloud-raster catalog consumes COGs server-side. This surface materialises the raster
-/// once (PostGIS <c>ST_AsGDALRaster(..., 'COG')</c>, the same export path the raster store
-/// already guards) under a deterministic object key and serves it through the same byte-range
-/// proxy the PMTiles publish uses.
-/// </para>
-/// <para>
-/// The object key is <c>cog/{layerId}/{rasterId}.tif</c>; re-publishing overwrites it, so one
-/// URL stays stable for a fixture or a deployment.
-/// </para>
-/// </remarks>
 internal sealed class CogArtifactService
 {
-    /// <summary>Media type registered for Cloud Optimized GeoTIFF (OGC 21-026).</summary>
     internal const string ContentType = "image/tiff; application=geotiff; profile=cloud-optimized";
     internal const string OperationMetadataKey = "operation";
     internal const string PublishOperationValue = "publish-cog";
@@ -124,7 +103,7 @@ internal sealed class CogArtifactService
                 new RasterQuery { OutputFormat = RasterFormat.COG },
                 cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or NotSupportedException)
         {
             CogArtifactLog.ExportFailed(_logger, layerId, raster.Id, ex);
             return new CogArtifactPublishOutcome(CogArtifactPublishStatus.ExportFailed, null, "COG export failed.");
@@ -181,11 +160,7 @@ internal sealed class CogArtifactService
         return new CogArtifactPublishOutcome(CogArtifactPublishStatus.Published, descriptor, null);
     }
 
-    /// <summary>
-    /// Resolves an artifact id to its stored metadata, accepting only objects this surface
-    /// published (media type, operation tag and unchanged source binding), so the proxy
-    /// never serves arbitrary files or rebinds an old artifact to a different resource.
-    /// </summary>
+    // The proxy accepts only objects this surface published, so it never serves an arbitrary file or rebinds an old artifact.
     public async Task<CogArtifactReadTarget?> ResolvePublishedAsync(string artifactId, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(artifactId))

@@ -37,6 +37,7 @@ internal static class PostgresDataSourceFactory
         limits.MinConnectionPoolSize = ReadInt(section, nameof(ConnectionLimits.MinConnectionPoolSize), limits.MinConnectionPoolSize);
         limits.ConnectionIdleLifetimeSeconds = ReadInt(section, nameof(ConnectionLimits.ConnectionIdleLifetimeSeconds), limits.ConnectionIdleLifetimeSeconds);
         limits.ConnectionPruningIntervalSeconds = ReadInt(section, nameof(ConnectionLimits.ConnectionPruningIntervalSeconds), limits.ConnectionPruningIntervalSeconds);
+        limits.ConnectionLifetimeSeconds = ReadInt(section, nameof(ConnectionLimits.ConnectionLifetimeSeconds), limits.ConnectionLifetimeSeconds);
         limits.CommandTimeoutSeconds = ReadInt(section, nameof(ConnectionLimits.CommandTimeoutSeconds), limits.CommandTimeoutSeconds);
         limits.BufferSizeBytes = ReadInt(section, nameof(ConnectionLimits.BufferSizeBytes), limits.BufferSizeBytes);
         limits.RequestTimeout = ReadTimeSpan(section, nameof(ConnectionLimits.RequestTimeout), limits.RequestTimeout);
@@ -53,13 +54,23 @@ internal static class PostgresDataSourceFactory
         limits.IdleInTransactionTimeout = ReadTimeSpan(section, nameof(ConnectionLimits.IdleInTransactionTimeout), limits.IdleInTransactionTimeout);
 
         // A Lambda instance is frozen between invocations, so Npgsql never prunes below
-        // MinPoolSize. The long-lived defaults (min 20, idle 600s) clamp the floor up to
-        // the cap (honua-iac sets only the cap; the 4 KB environment budget has no room
-        // for the floor). Every warm API instance then holds its whole pool, and the
-        // control-plane functions — cap 2 — still open that floor on top of their
-        // invocation. Leave an explicit operator value alone.
+        // MinPoolSize. The long-lived defaults (min 20, max 200, idle 600s) clamp the floor
+        // up to the cap (honua-iac sets only the cap; the 4 KB environment budget has no room
+        // for the floor). Every warm API instance then holds its whole pool, and a host that
+        // sets nothing inherits 200 per pool. One Lambda invocation serves one request, so an
+        // unset cap is a small ceiling. Leave an explicit operator value alone.
         if (ControlPlaneEventHandlerHost.IsLambda(configuration))
         {
+            if (string.IsNullOrWhiteSpace(section[nameof(ConnectionLimits.MaxConnectionPoolSize)]))
+            {
+                limits.MaxConnectionPoolSize = LambdaUnsetMaxConnectionPoolSize;
+            }
+
+            if (string.IsNullOrWhiteSpace(section[nameof(ConnectionLimits.MaxConcurrentQueries)]))
+            {
+                limits.MaxConcurrentQueries = LambdaUnsetMaxConnectionPoolSize;
+            }
+
             if (string.IsNullOrWhiteSpace(section[nameof(ConnectionLimits.MinConnectionPoolSize)]))
             {
                 limits.MinConnectionPoolSize = 0;
@@ -71,40 +82,51 @@ internal static class PostgresDataSourceFactory
                     LambdaIdleConnectionLifetimeSeconds,
                     limits.ConnectionPruningIntervalSeconds);
             }
+
+            // Idle pruning cannot keep a pooled connection inside the RDS Proxy idle-client
+            // timeout: it is sample-based (it closes only after the idle lifetime has fully
+            // elapsed) and its timer does not run while the sandbox is frozen. The proxy then
+            // closes the client socket first, and the next request that borrows it fails with
+            // EndOfStreamException (honua-server#6764: S10 publish answered 500). Npgsql checks
+            // Connection Lifetime against the wall clock at checkout, so it holds across freezes.
+            if (string.IsNullOrWhiteSpace(section[nameof(ConnectionLimits.ConnectionLifetimeSeconds)]))
+            {
+                limits.ConnectionLifetimeSeconds = LambdaConnectionLifetimeSeconds;
+            }
         }
 
         return limits;
     }
 
-    /// <summary>
-    /// Idle lifetime applied on Lambda when <c>Limits:Connections:ConnectionIdleLifetimeSeconds</c>
-    /// is unset. Matches the connection-string lifetime honua-iac puts on the RDS Proxy cell and
-    /// stays at or above the default pruning interval.
-    /// </summary>
     internal const int LambdaIdleConnectionLifetimeSeconds = 60;
+
+    // On Lambda the pooled connection lifetime stays under the RDS Proxy idle-client timeout so a handed-out connection is not one the proxy has already closed.
+    internal const int LambdaConnectionLifetimeSeconds = 45;
+
+    internal const int LambdaUnsetMaxConnectionPoolSize = 4;
 
     public static NpgsqlDataSource Create(
         string connectionString,
         bool schemaHeadersEnabled,
         ConnectionLimits limits,
         string? defaultSchema = null,
-        DatabaseSessionSettingsMode sessionSettingsMode = DatabaseSessionSettingsMode.Connection)
+        DatabaseSessionSettingsMode sessionSettingsMode = DatabaseSessionSettingsMode.Connection,
+        bool releaseSessionOnClose = false)
     {
         var builder = new NpgsqlDataSourceBuilder(connectionString);
-        Configure(builder, schemaHeadersEnabled, limits, defaultSchema, sessionSettingsMode);
+        Configure(builder, schemaHeadersEnabled, limits, defaultSchema, sessionSettingsMode, releaseSessionOnClose);
         return Track(builder.Build());
     }
 
-    /// <summary>
-    /// Builds a data source for a bound (secure-connection) source database. Bound sources
-    /// always use <see cref="DatabaseSessionSettingsMode.Connection"/>: their role is not the
-    /// primary database role an operator configures for <c>role-defaults</c>.
-    /// </summary>
-    public static NpgsqlDataSource CreateForBoundSource(string connectionString, ConnectionLimits limits)
+    // Bound sources use connection-level session settings. Their role is not the primary database role configured for role-defaults.
+    public static NpgsqlDataSource CreateForBoundSource(
+        string connectionString,
+        ConnectionLimits limits,
+        bool releaseSessionOnClose = false)
     {
         var builder = new NpgsqlDataSourceBuilder(connectionString);
         var sourceOptions = builder.ConnectionStringBuilder.Options;
-        Configure(builder, schemaHeadersEnabled: false, limits);
+        Configure(builder, schemaHeadersEnabled: false, limits, releaseSessionOnClose: releaseSessionOnClose);
         if (!string.IsNullOrWhiteSpace(sourceOptions) &&
             !string.Equals(sourceOptions, builder.ConnectionStringBuilder.Options, StringComparison.Ordinal))
         {
@@ -116,14 +138,6 @@ internal static class PostgresDataSourceFactory
         return Track(builder.Build());
     }
 
-    /// <summary>
-    /// Closes the idle physical connections of every data source this factory has built, plus
-    /// the connection-string pools that bare <see cref="NpgsqlConnection"/> instances use.
-    /// In-use connections are closed when returned instead of being reused, and every pool
-    /// stays usable (the next open connects afresh). A data source that was already disposed
-    /// is skipped.
-    /// </summary>
-    /// <returns>The number of data-source pools that were cleared.</returns>
     public static int ReleasePooledConnections()
     {
         var cleared = 0;
@@ -150,12 +164,14 @@ internal static class PostgresDataSourceFactory
         return dataSource;
     }
 
+    // A source that applies session settings with SET is unpooled on Lambda, because that SET pins an RDS Proxy backend and a frozen Lambda never prunes its pool.
     public static void Configure(
         NpgsqlDataSourceBuilder builder,
         bool schemaHeadersEnabled,
         ConnectionLimits limits,
         string? defaultSchema = null,
-        DatabaseSessionSettingsMode sessionSettingsMode = DatabaseSessionSettingsMode.Connection)
+        DatabaseSessionSettingsMode sessionSettingsMode = DatabaseSessionSettingsMode.Connection,
+        bool releaseSessionOnClose = false)
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(limits);
@@ -184,6 +200,10 @@ internal static class PostgresDataSourceFactory
         connectionStringBuilder.MinPoolSize = Math.Min(limits.MinConnectionPoolSize, connectionStringBuilder.MaxPoolSize);
         connectionStringBuilder.ConnectionIdleLifetime = limits.ConnectionIdleLifetimeSeconds;
         connectionStringBuilder.ConnectionPruningInterval = limits.ConnectionPruningIntervalSeconds;
+        // Always assigned, like the idle lifetime: an explicit 0 (unlimited) must reach Npgsql,
+        // whose own default is 3600.
+        connectionStringBuilder.ConnectionLifetime = limits.ConnectionLifetimeSeconds;
+
         connectionStringBuilder.CommandTimeout = limits.CommandTimeoutSeconds;
         connectionStringBuilder.WriteBufferSize = limits.BufferSizeBytes;
         connectionStringBuilder.ReadBufferSize = limits.BufferSizeBytes;
@@ -266,6 +286,12 @@ internal static class PostgresDataSourceFactory
         }
         else
         {
+            if (releaseSessionOnClose)
+            {
+                connectionStringBuilder.Pooling = false;
+                connectionStringBuilder.MinPoolSize = 0;
+            }
+
             var initializerSql = BuildSessionSettingsSql(limits, searchPathSchema);
             builder.UsePhysicalConnectionInitializer(
                 connection =>
@@ -283,13 +309,6 @@ internal static class PostgresDataSourceFactory
         }
     }
 
-    /// <summary>
-    /// Resolves the schema embedded in the default search_path, or <see langword="null"/>
-    /// when none applies. Schema-header mode owns search_path per request, and only
-    /// values that pass the <see cref="SchemaSearchPath.IsValidIdentifier"/> allow-list
-    /// are accepted (SQL-injection guard — the value is later interpolated as a quoted
-    /// identifier).
-    /// </summary>
     internal static string? ResolveSearchPathSchema(bool schemaHeadersEnabled, string? defaultSchema)
     {
         if (!schemaHeadersEnabled &&
@@ -302,12 +321,6 @@ internal static class PostgresDataSourceFactory
         return null;
     }
 
-    /// <summary>
-    /// Builds the libpq <c>options</c> startup parameter carrying the session settings.
-    /// Used only for multiplexing and schema-header modes — RDS Proxy and
-    /// transaction-mode poolers reject this startup parameter, so the default path uses
-    /// <see cref="BuildSessionSettingsSql"/> instead.
-    /// </summary>
     internal static string BuildSessionSettingsStartupOptions(ConnectionLimits limits, string? searchPathSchema)
     {
         ArgumentNullException.ThrowIfNull(limits);
@@ -324,12 +337,7 @@ internal static class PostgresDataSourceFactory
         return options;
     }
 
-    /// <summary>
-    /// Builds the <c>SET</c> batch executed by the physical-connection initializer on
-    /// the default (non-multiplexing) path. Plain SET statements after connect are
-    /// compatible with AWS RDS Proxy and pgbouncer, unlike the <c>options</c> startup
-    /// parameter (issue #1638).
-    /// </summary>
+    // Session settings are applied with SET after connect, because the options startup parameter is incompatible with RDS Proxy and pgbouncer.
     internal static string BuildSessionSettingsSql(ConnectionLimits limits, string? searchPathSchema)
     {
         ArgumentNullException.ThrowIfNull(limits);
@@ -357,15 +365,7 @@ internal static class PostgresDataSourceFactory
             (int)limits.StatementTimeout.TotalSeconds,
             (int)limits.IdleInTransactionTimeout.TotalSeconds);
 
-    /// <summary>
-    /// Resolves the effective multiplexing setting.
-    /// Schema headers always force multiplexing off regardless of config.
-    /// Accepted values are <c>"auto"</c>, <c>"true"</c>, and <c>"false"</c>
-    /// (case-insensitive). Null, empty, and unrecognized values fall back to
-    /// the documented default (<c>"false"</c>) so a typo cannot silently
-    /// enable multiplexing; the configuration validation system
-    /// rejects unrecognized values at startup as a paired fail-fast guard.
-    /// </summary>
+    // An unrecognized multiplexing value falls back to off, so a typo cannot turn multiplexing on.
     internal static bool ResolveMultiplexing(string? multiplexingSetting, bool schemaHeadersEnabled)
     {
         if (schemaHeadersEnabled)

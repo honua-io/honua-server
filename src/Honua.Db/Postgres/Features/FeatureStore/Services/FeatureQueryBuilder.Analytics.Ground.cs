@@ -111,6 +111,10 @@ internal sealed partial class FeatureQueryBuilder
     /// and the tiles then lie on the short arc. One plane uses the box centroid
     /// when the rows do not wrap, which is the same centre as
     /// <c>ST_Centroid(ST_Extent)</c>.
+    /// <c>plane_decision</c> is one row and stays MATERIALIZED. Inlined, its
+    /// extent, gap and scale expressions are copied into every per-row column
+    /// that reads them and evaluated once per feature, which made 100K-point
+    /// DBSCAN several times slower than the single-plane SQL it replaced.
     /// </summary>
     private static void AppendGroundPlaneCtes(StringBuilder sql, string geometryColumn)
     {
@@ -178,7 +182,7 @@ internal sealed partial class FeatureQueryBuilder
                         - 93.5 * cos(radians(3 * COALESCE(f.mid_lat, 0)))
                         + 0.118 * cos(radians(5 * COALESCE(f.mid_lat, 0)))) AS metres_per_degree_lon
                 FROM plane_frame f
-            ), plane_decision AS (
+            ), plane_decision AS MATERIALIZED (
                 SELECT s.*,
                     s.width_deg * GREATEST(s.metres_per_degree_lon, 0) AS width_m,
                     s.height_deg * s.metres_per_degree_lat AS height_m,

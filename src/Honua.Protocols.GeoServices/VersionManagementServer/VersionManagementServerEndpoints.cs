@@ -4,6 +4,7 @@
 using System.Globalization;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Infrastructure.Caching;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -23,34 +24,7 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.GeoServices.VersionManagementServer;
 
-/// <summary>
-/// Esri GeoServices VersionManagementServer protocol slice (#1272, ADR-0051). A thin protocol
-/// adapter over the canonical <see cref="IVersionManager"/>: it parses Esri-shaped requests,
-/// enforces the Pro branch-versioning entitlement and service write authorization, and maps
-/// version-manager results to the Esri wire shape. It owns no storage, read, write, reconcile, or
-/// post behavior — that all lives in the provider's <see cref="IVersionManager"/> implementation.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Branch versioning is Postgres-only and Pro-gated. When the active provider's
-/// <see cref="IVersionManager.SupportsVersioning"/> is false (DuckDB / SQL Server / MySQL), the
-/// mutating and lifecycle operations return a 501 not-supported response; the read-only
-/// <c>versions</c> / <c>versionInfo</c> operations report an empty version set. Service-info
-/// discovery additionally requires an accessible publication whose bound reader supports branches.
-/// </para>
-/// <para>
-/// In Honua's overlay/moment storage model a version read/edit carries its
-/// <see cref="VersionContext"/> per-request (resolved from <c>gdbVersion</c> on the FeatureServer
-/// surface), so there is no server-held read/edit session. The <c>startReading</c>/<c>stopReading</c>
-/// and <c>startEditing</c>/<c>stopEditing</c> operations are therefore stateless acknowledgements;
-/// this divergence from Esri's session-token model is intentional and documented here. They are not,
-/// however, no-ops: each resolves the named version, returns the version's durable branch generation
-/// as the read/edit <c>moment</c> (a stable cursor an Esri client can echo to pin a consistent
-/// snapshot), and <c>startEditing</c> refuses with a 409 in-progress when the version is
-/// mid-reconcile/post (locked). Reconcile/post delegate straight to the version manager, which owns
-/// the Redis-backed version lock and job runtime.
-/// </para>
-/// </remarks>
+// startReading and startEditing do not hold a server session: each returns the branch generation as the moment, and startEditing answers 409 while a reconcile or post holds the version; providers without branches return 501 for mutations and an empty set for reads.
 public static class VersionManagementServerEndpoints
 {
     private const string BasePath = "/rest/services/{serviceId}/VersionManagementServer";
@@ -60,11 +34,6 @@ public static class VersionManagementServerEndpoints
     // fixed GUID. IVersionManager does not list DEFAULT, so the adapter projects it (#5036).
     private static readonly Guid DefaultVersionId = new("BD3F4817-9A00-41AC-B0CC-58F78DBAE0A1");
 
-    /// <summary>
-    /// Maps the VersionManagementServer REST endpoints.
-    /// </summary>
-    /// <param name="endpoints">The endpoint route builder.</param>
-    /// <returns>The endpoint route builder for chaining.</returns>
     public static IEndpointRouteBuilder MapVersionManagementServerEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
@@ -263,13 +232,7 @@ public static class VersionManagementServerEndpoints
             contentType: "application/json");
     }
 
-    /// <summary>
-    /// The contract's <c>versionInfos</c> operation: DEFAULT first, then the versions visible to the
-    /// caller, in the contract's wire shape (<c>success</c>, <c>creationDate</c>,
-    /// <c>modifiedDate</c>). <c>ownerFilter</c> keeps only the versions of that owner; DEFAULT
-    /// belongs to <c>sde</c>. <c>includeHidden</c> is accepted and changes nothing, because Honua
-    /// has no hidden access level.
-    /// </summary>
+    // includeHidden is accepted and changes nothing, because Honua has no hidden access level, and DEFAULT is owned by sde.
     private static async Task<IResult> HandleVersionInfos(
         string serviceId,
         HttpContext context,
@@ -545,6 +508,7 @@ public static class VersionManagementServerEndpoints
             return StandardErrorHelpers.CreateNotFound(context, $"Version '{versionGuid}' was not found.");
         }
 
+        await ResponseCacheUtilities.InvalidateSharedQueryResponsesAsync(context).ConfigureAwait(false);
         return Moment(true);
     }
 
@@ -583,6 +547,7 @@ public static class VersionManagementServerEndpoints
             return StandardErrorHelpers.CreateNotFound(context, $"Version '{versionGuid}' was not found.");
         }
 
+        await ResponseCacheUtilities.InvalidateSharedQueryResponsesAsync(context).ConfigureAwait(false);
         return Moment(true);
     }
 
@@ -691,6 +656,7 @@ public static class VersionManagementServerEndpoints
                     : result.Conflicts.Select(ToConflictInfo).ToArray(),
             };
 
+            await ResponseCacheUtilities.InvalidateSharedQueryResponsesAsync(context).ConfigureAwait(false);
             return Results.Json(response, VersionManagementJsonContext.Default.ReconcileResponse,
                 contentType: "application/json");
         }
@@ -839,6 +805,7 @@ public static class VersionManagementServerEndpoints
                 BlockedByConflicts = result.BlockedByConflicts,
             };
 
+            await ResponseCacheUtilities.InvalidateSharedQueryResponsesAsync(context).ConfigureAwait(false);
             return Results.Json(response, VersionManagementJsonContext.Default.PostResponse,
                 contentType: "application/json");
         }
@@ -912,17 +879,6 @@ public static class VersionManagementServerEndpoints
 
     // ---- Shared adapter plumbing ---------------------------------------------------------------
 
-    /// <summary>
-    /// Handles the <c>startEditing</c>/<c>stopEditing</c> session acknowledgements (read sessions
-    /// use <see cref="AcknowledgeReadSessionAsync"/>). Honua threads the version per-request via <c>gdbVersion</c>
-    /// (overlay/moment model), so there is no server-held read/edit session to open or close. The
-    /// acknowledgement is nonetheless made meaningful: it resolves the named version, returns its
-    /// durable branch generation as the read/edit moment (a stable cursor an Esri client can echo on
-    /// subsequent reads), and — when the version is mid-reconcile/post (locked) — refuses an
-    /// edit-session open with a 409 in-progress instead of returning a false success. A
-    /// <paramref name="requireWritable"/> session against a transitional version is rejected; a
-    /// stop session reports the current moment regardless of state.
-    /// </summary>
     private static async Task<IResult> AcknowledgeSessionAsync(
         string serviceId,
         string versionGuid,
@@ -961,14 +917,7 @@ public static class VersionManagementServerEndpoints
         return Moment(version.BranchGeneration);
     }
 
-    /// <summary>
-    /// Read-session acknowledgement. A read session discloses no more than a <c>gdbVersion</c> read
-    /// of the same version, so it follows the read rule rather than the lifecycle rule: service read
-    /// access plus version visibility (DEFAULT, public and protected versions for any reader; a
-    /// private version for its owner and service administrators). A client opening a versioned
-    /// workspace starts one on DEFAULT, and one on every version it creates or switches to (#5036).
-    /// A version the caller cannot see answers 404, as version info does, so existence is not leaked.
-    /// </summary>
+    // A read session follows the read rule rather than the lifecycle rule, and a version the caller cannot see is 404 so its existence is not leaked.
     private static async Task<IResult> AcknowledgeReadSessionAsync(
         string serviceId,
         string versionGuid,
@@ -1084,10 +1033,6 @@ public static class VersionManagementServerEndpoints
             : new FeatureServerResourceValidationHelpers.ServiceValidationV2Result(false, null, accessError);
     }
 
-    /// <summary>
-    /// Pro-gates the version-management surface, enforces service write authorization, and
-    /// reads the request body. Returns a non-null gate result to short-circuit on any failure.
-    /// </summary>
     private static async Task<(IResult? Gate, IReadOnlyDictionary<string, StringValues>? Values)> AuthorizeAndReadAsync(
         string serviceId,
         HttpContext context,
@@ -1166,11 +1111,6 @@ public static class VersionManagementServerEndpoints
         return (null, values, versionId);
     }
 
-    /// <summary>
-    /// Loads the version with <paramref name="versionId"/> and verifies that the caller is its
-    /// owner or holds the administrator role. Returns a non-null error result when denied,
-    /// <see langword="null"/> when authorized.
-    /// </summary>
     private static async Task<IResult?> RequireVersionOwnerOrAdminAsync(
         HttpContext context,
         IVersionManager versionManager,
@@ -1282,12 +1222,6 @@ public static class VersionManagementServerEndpoints
             }).ToArray(),
     };
 
-    /// <summary>
-    /// Parses the reconcile auto-resolution policy from the request. Accepts Honua's named policies
-    /// (<c>none</c>/<c>lastWriteWins</c>/<c>versionWins</c>/<c>defaultWins</c>) on a <c>conflictResolution</c>
-    /// (or <c>resolutionPolicy</c>) parameter, and maps the Esri-style <c>abortIfConflicts</c> flag to
-    /// the manual (none) policy when set. Absent or empty resolves to <see cref="VersionReconcilePolicy.None"/>.
-    /// </summary>
     private static (VersionReconcilePolicy Policy, IResult? Error) ParseReconcilePolicy(
         HttpContext context,
         IReadOnlyDictionary<string, StringValues> values)
@@ -1320,13 +1254,6 @@ public static class VersionManagementServerEndpoints
         };
     }
 
-    /// <summary>
-    /// Parses the reconcile conflict-detection granularity from the <c>conflictDetection</c> parameter
-    /// (Esri conformance; #2135). Accepts Honua's short names (<c>byObject</c>/<c>byAttribute</c>), the
-    /// Esri tokens (<c>esriReconcileByObject</c>/<c>esriReconcileByAttribute</c>), and the bare
-    /// <c>object</c>/<c>attribute</c> forms. Absent or empty resolves to the
-    /// <see cref="VersionConflictDetection.ByAttribute"/> default (pre-#2135 behavior).
-    /// </summary>
     private static (VersionConflictDetection Detection, IResult? Error) ParseConflictDetection(
         HttpContext context,
         IReadOnlyDictionary<string, StringValues> values)
@@ -1348,20 +1275,12 @@ public static class VersionManagementServerEndpoints
         };
     }
 
-    /// <summary>
-    /// Whether a boolean request flag (e.g. <c>withPost</c>) is set to <c>true</c> (case-insensitive).
-    /// Absent or any other value is treated as false.
-    /// </summary>
     private static bool ParseFlag(IReadOnlyDictionary<string, StringValues> values, string name)
     {
         var raw = GeoServicesRequestValueHelpers.GetValueString(values, name);
         return string.Equals(raw?.Trim(), "true", StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Parses the per-feature resolution choices from the <c>conflicts</c> JSON-array parameter. Each
-    /// element is <c>{ "layerId": int, "objectId": long, "choice": "version|default|base" }</c>.
-    /// </summary>
     private static (IReadOnlyList<VersionConflictResolution>? Resolutions, IResult? Error) ParseResolutions(
         HttpContext context,
         IReadOnlyDictionary<string, StringValues> values)
@@ -1448,11 +1367,6 @@ public static class VersionManagementServerEndpoints
         }
     }
 
-    /// <summary>
-    /// Whether the caller requested asynchronous (job-wrapped) reconcile/post execution via an
-    /// <c>async=true</c> flag or <c>mode=async</c> parameter (#1553). Absent or any other value runs the
-    /// synchronous fast path.
-    /// </summary>
     private static bool ParseAsyncRequested(IReadOnlyDictionary<string, StringValues> values)
     {
         var asyncRaw = GeoServicesRequestValueHelpers.GetValueString(values, "async");
@@ -1465,9 +1379,6 @@ public static class VersionManagementServerEndpoints
         return string.Equals(modeRaw?.Trim(), "async", StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Builds the HTTP 202 Accepted response carrying the started job handle and its status-poll URL.
-    /// </summary>
     private static IResult AcceptedJob(HttpContext context, string serviceId, string versionGuid, VersionJob job)
     {
         var response = ToJobResponse(context, serviceId, versionGuid, job);
@@ -1475,10 +1386,6 @@ public static class VersionManagementServerEndpoints
             statusCode: StatusCodes.Status202Accepted, contentType: "application/json");
     }
 
-    /// <summary>
-    /// Maps a contended version lock to a 409 in-progress response so the caller knows another
-    /// reconcile/post for the same version is already running (#1553).
-    /// </summary>
     private static IResult InProgress(HttpContext context, VersionLockedException ex)
         => StandardErrorHelpers.CreateConflict(
             context,

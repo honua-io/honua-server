@@ -267,7 +267,7 @@ public sealed class ZarrPointSliceReader : IZarrPointSliceReader
                     cancellationToken)
                 .ConfigureAwait(false);
 
-            if (!ZarrValueDecoder.TryDecodeFirst(result, out var value))
+            if (!ZarrValueDecoder.TryDecodeWithFill(result.Data, result.DataType, array.FillValue, out var value))
             {
                 return CreateResult(
                     ZarrPointSliceReadStatus.InvalidSelection,

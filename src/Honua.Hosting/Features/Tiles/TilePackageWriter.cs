@@ -8,69 +8,23 @@ using System.Xml;
 
 namespace Honua.Infrastructure.Tiles;
 
-/// <summary>
-/// Shared writer that packages WebMercatorQuad tiles into the Esri
-/// "exploded" tile-package (TPK) cache layout inside a ZIP container.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The exploded-cache layout is the documented, portable form of an ArcGIS
-/// tile package: a ZIP whose entries follow
-/// <c>v101/&lt;cacheName&gt;/_alllayers/L&lt;level&gt;/R&lt;row&gt;/C&lt;col&gt;.&lt;ext&gt;</c>
-/// alongside a <c>conf.xml</c> cache configuration and a <c>conf.cdi</c>
-/// cache-data-interval (full extent) document. Levels are zero-padded to two
-/// digits; rows and columns are eight-digit lowercase hexadecimal. ArcGIS
-/// Pro, the ArcGIS Runtime SDKs, and QGIS all read this layout.
-/// </para>
-/// Compact Cache V2 / TPKX output is implemented separately by
-/// <see cref="CompactTilePackageWriter"/> so each archive format keeps one
-/// focused writer and compatibility contract.
-/// </remarks>
 internal static class TilePackageWriter
 {
-    /// <summary>WebMercatorQuad spatial reference (Esri WKID 3857 / latest 3857).</summary>
     private const int WebMercatorWkid = 3857;
 
-    /// <summary>
-    /// Half the WebMercator world extent, in meters. Sourced from the canonical
-    /// <see cref="Honua.Core.Features.Shared.Models.SpatialConstants.WebMercatorExtent"/> so the
-    /// value no longer drifts at a truncated precision (#2732).
-    /// </summary>
+    // This half-extent comes from the canonical constant so a truncated local copy cannot drift.
     private const double WebMercatorOrigin = Honua.Core.Features.Shared.Models.SpatialConstants.WebMercatorExtent;
 
-    /// <summary>Resolution (meters/pixel) at zoom 0 for a 256px tile in WebMercator.</summary>
     private const double ZeroLevelResolution = (WebMercatorOrigin * 2d) / 256d;
 
-    /// <summary>Default tile dimension, in pixels.</summary>
     private const int TileSize = 256;
 
-    /// <summary>MIME type advertised for a tile-package archive.</summary>
     public const string TilePackageContentType = "application/octet-stream";
 
-    /// <summary>Short identifier for the tile-package storage format.</summary>
     public const string TilePackageStorageFormat = "tpk";
 
-    /// <summary>
-    /// A single WebMercatorQuad tile and its rendered bytes.
-    /// </summary>
-    /// <param name="Level">Tile zoom level (WebMercatorQuad).</param>
-    /// <param name="Column">Tile column (X).</param>
-    /// <param name="Row">Tile row (Y).</param>
-    /// <param name="Bytes">Encoded tile image bytes.</param>
     internal readonly record struct PackagedTile(int Level, int Column, int Row, byte[] Bytes);
 
-    /// <summary>
-    /// Writes the supplied tiles into <paramref name="destination"/> using the
-    /// Esri exploded-cache TPK layout.
-    /// </summary>
-    /// <param name="destination">Target stream; left open for the caller.</param>
-    /// <param name="cacheName">Logical cache name used in archive paths.</param>
-    /// <param name="tileExtension">Tile file extension (for example <c>png</c> or <c>jpg</c>).</param>
-    /// <param name="tileFormat">Esri cache format string (for example <c>PNG</c> or <c>JPEG</c>).</param>
-    /// <param name="bounds">WGS84 bounds [west, south, east, north] used for the cache extent.</param>
-    /// <param name="tiles">Tiles to package.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The number of tiles written.</returns>
     public static async Task<int> WriteAsync(
         Stream destination,
         string cacheName,
@@ -116,9 +70,6 @@ internal static class TilePackageWriter
         return written;
     }
 
-    /// <summary>
-    /// Builds the exploded-cache entry path for a single tile.
-    /// </summary>
     internal static string BuildTileEntryPath(string cacheName, int level, int row, int column, string extension)
     {
         var levelSegment = "L" + level.ToString("D2", CultureInfo.InvariantCulture);

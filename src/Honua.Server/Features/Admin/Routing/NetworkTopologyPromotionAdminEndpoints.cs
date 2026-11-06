@@ -10,12 +10,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Admin.Routing;
 
-/// <summary>
-/// Admin promotion/rollback surface for the active network-topology generation (#2719).
-/// Every mutation runs through the canonical <see cref="INetworkTopologyPromotionStore"/>
-/// so validation, evidence/precondition checks, the atomic active-pointer flip, and
-/// immutable history stay consistent across the promote and rollback paths.
-/// </summary>
 internal static partial class NetworkTopologyPromotionAdminEndpoints
 {
     private const string TagAdmin = "Admin";
@@ -23,13 +17,6 @@ internal static partial class NetworkTopologyPromotionAdminEndpoints
     private const string IdempotencyKeyHeader = "Idempotency-Key";
     private const int MaxIdempotencyKeyLength = 200;
 
-    /// <summary>
-    /// Maps the network-topology promotion admin endpoints into the request pipeline.
-    /// </summary>
-    /// <remarks>
-    /// No-op when <see cref="INetworkTopologyPromotionStore"/> is not registered
-    /// (non-Postgres data providers), mirroring the other network-topology admin surfaces.
-    /// </remarks>
     public static IEndpointRouteBuilder MapNetworkTopologyPromotionAdminEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
@@ -233,14 +220,8 @@ internal static partial class NetworkTopologyPromotionAdminEndpoints
     private static string ResolveActor(HttpContext context)
         => context.User.Identity?.Name is { Length: > 0 } name ? name : "admin";
 
-    /// <summary>
-    /// Log category marker used by <see cref="ILogger{TCategoryName}"/> bindings.
-    /// </summary>
     internal sealed class NetworkTopologyPromotionAdminLogCategory;
 
-    /// <summary>
-    /// Source-generated logger messages for the network-topology promotion admin endpoints.
-    /// </summary>
     internal static partial class NetworkTopologyPromotionAdminLog
     {
         [LoggerMessage(EventId = 4810, Level = LogLevel.Information,

@@ -5,13 +5,9 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Identity.Saml;
 
-/// <summary>
-/// Fails startup when SAML is enabled without the issuer, audience, and ACS URL the
-/// assertion validator requires. A half-configured bridge must not accept assertions.
-/// </summary>
+// Startup fails when SAML is enabled without the issuer, audience, and consumer URL, so a half-configured bridge cannot accept assertions.
 internal sealed class SamlAuthenticationOptionsValidator : IValidateOptions<SamlAuthenticationOptions>
 {
-    /// <inheritdoc />
     public ValidateOptionsResult Validate(string? name, SamlAuthenticationOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);

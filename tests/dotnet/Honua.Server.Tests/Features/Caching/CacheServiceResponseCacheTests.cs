@@ -36,6 +36,106 @@ public sealed class CacheServiceResponseCacheTests
         invalidationCache.PatternRemovals.Should().BeEmpty();
     }
 
+    [UnitTest]
+    public async Task RemoveByPatternAsync_GlobalQueryPatterns_BumpQueryNamespaces()
+    {
+        var cache = new RecordingCacheService();
+        var responseCache = new CacheServiceResponseCache(cache);
+
+        await responseCache.RemoveByPatternAsync(ResponseCacheUtilities.BuildFeatureServerPattern());
+        await responseCache.RemoveByPatternAsync(ResponseCacheUtilities.BuildOgcPattern());
+        await responseCache.RemoveByPatternAsync(ResponseCacheUtilities.BuildODataPattern());
+
+        cache.VersionWrites.Should().BeEquivalentTo(
+        [
+            "response-version:query:featureserver",
+            "response-version:query:ogc",
+            "response-version:query:odata"
+        ]);
+        cache.PatternRemovals.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task SetAsync_CachedResponseOverEntryCap_IsNotStored()
+    {
+        var cache = new RecordingCacheService();
+        var responseCache = new CacheServiceResponseCache(cache, new CacheOptions
+        {
+            ResponseCacheMaxEntryBytes = 1024,
+            ResponseCacheMaxBytes = 8192
+        });
+
+        await responseCache.SetAsync(
+            "response:query:featureserver:service:alpha:layer:1:over",
+            new CachedResponse(new byte[2048], "application/json"),
+            TimeSpan.FromMinutes(1));
+
+        cache.ValueWrites.Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task SetAsync_CachedResponseOverByteBudget_IsNotStoredUntilReleased()
+    {
+        var cache = new RecordingCacheService();
+        var responseCache = new CacheServiceResponseCache(cache, new CacheOptions
+        {
+            ResponseCacheMaxEntryBytes = 1000,
+            ResponseCacheMaxBytes = 1500
+        });
+        var payload = new CachedResponse(new byte[1000], "application/json");
+        const string firstKey = "response:query:featureserver:service:alpha:layer:1:one";
+        const string secondKey = "response:query:featureserver:service:alpha:layer:1:two";
+
+        await responseCache.SetAsync(firstKey, payload, TimeSpan.FromMinutes(5));
+        await responseCache.SetAsync(secondKey, payload, TimeSpan.FromMinutes(5));
+        cache.ValueWrites.Should().ContainSingle();
+
+        await responseCache.RemoveAsync(firstKey);
+        await responseCache.SetAsync(secondKey, payload, TimeSpan.FromMinutes(5));
+        cache.ValueWrites.Should().HaveCount(2);
+    }
+
+    [UnitTest]
+    public async Task SetAsync_ExpiredReservation_DoesNotCountAgainstTheBudget()
+    {
+        var cache = new RecordingCacheService();
+        var responseCache = new CacheServiceResponseCache(cache, new CacheOptions
+        {
+            ResponseCacheMaxEntryBytes = 1000,
+            ResponseCacheMaxBytes = 1500
+        });
+        var payload = new CachedResponse(new byte[1000], "application/json");
+
+        await responseCache.SetAsync(
+            "response:query:featureserver:service:alpha:layer:1:expired",
+            payload,
+            TimeSpan.FromTicks(-1));
+        await responseCache.SetAsync(
+            "response:query:featureserver:service:alpha:layer:1:fresh",
+            payload,
+            TimeSpan.FromMinutes(5));
+
+        cache.ValueWrites.Should().HaveCount(2);
+    }
+
+    [UnitTest]
+    public async Task SetAsync_ReplacingTheSameKey_FitsInTheBudget()
+    {
+        var cache = new RecordingCacheService();
+        var responseCache = new CacheServiceResponseCache(cache, new CacheOptions
+        {
+            ResponseCacheMaxEntryBytes = 1000,
+            ResponseCacheMaxBytes = 1500
+        });
+        var payload = new CachedResponse(new byte[1000], "application/json");
+        const string key = "response:query:featureserver:service:alpha:layer:1:same";
+
+        await responseCache.SetAsync(key, payload, TimeSpan.FromMinutes(5));
+        await responseCache.SetAsync(key, payload, TimeSpan.FromMinutes(5));
+
+        cache.ValueWrites.Should().HaveCount(2);
+    }
+
     public static IEnumerable<object[]> GetNamespaceCases()
     {
         yield return [

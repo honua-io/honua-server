@@ -52,7 +52,6 @@ write docs/gis/data/catalog.json '{}'
 write docs/gis/data/notes.md 'generated'
 write docs/get-started/install-artifacts.json '{"serverImage":"example"}'
 write docs/llms.txt '# Documentation index'
-write docs/okf/domain-graph.v1.json '{}'
 write docs/ci/historical-report.json '{"contract":"honua.affected-shards-reconciliation/v1","rows":[{"changed_paths_before_landing":["docs/guides/intro.md","docs/llms.txt"]}]}'
 write src/Lib/Lib.cs 'internal sealed class Lib { }'
 # A packed README only has to exist; an embedded document is build content.
@@ -159,7 +158,6 @@ edit_generated_markdown() { printf 'More.\n' >> "${REPO}/docs/gis/data/notes.md"
 edit_install_manifest() { write docs/get-started/install-artifacts.json '{"serverImage":"next"}'; }
 edit_docs_indexes() {
   write docs/llms.txt '# Updated documentation index'
-  write docs/okf/domain-graph.v1.json '{"nodes": []}'
 }
 edit_runtime_consumed_manifest() {
   # Add the consumer to the target tree, then change only the docs data on a PR.
@@ -362,7 +360,8 @@ if "if: steps.docs-only.outputs.docs_only == 'true'" not in policy or "check-mar
 indexes = gate.split("- name: Validate derived documentation indexes (docs-only diff)", 1)
 if len(indexes) != 2 or any(command not in indexes[1].split("- name:", 1)[0] for command in (
     "if: steps.docs-only.outputs.docs_only == 'true'",
-    "generate-okf-graph.py --check", "generate-llms-txt.py --check",
+    "generate-okf-graph.py --output", "generate-okf-graph.py --check --output",
+    "generate-llms-txt.py --check",
 )):
     problems.append("docs data exemptions must retain their lightweight validators inside the required gate")
 install = gate.split("- name: Validate installation references and select public Docker proof", 1)

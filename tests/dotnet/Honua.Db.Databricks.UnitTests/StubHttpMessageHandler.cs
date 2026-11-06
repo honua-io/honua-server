@@ -11,7 +11,7 @@ namespace Honua.Db.Databricks.Tests;
 /// for assertions. Used to drive the Statement Execution submit → poll → chunk flow
 /// without a live Databricks workspace.
 /// </summary>
-internal sealed class StubHttpMessageHandler : HttpMessageHandler
+internal class StubHttpMessageHandler : HttpMessageHandler
 {
     private readonly Queue<Func<HttpRequestMessage, HttpResponseMessage>> _responders = new();
 

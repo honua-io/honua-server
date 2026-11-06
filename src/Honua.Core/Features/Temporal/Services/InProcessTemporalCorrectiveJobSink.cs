@@ -10,22 +10,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Core.Features.Temporal.Services;
 
-/// <summary>
-/// Default corrective-job sink (slice 5 of honua-server#1166) that runs the forward corrective operation
-/// as an in-process background task and assigns it a stable job id. This keeps the rollback path durable
-/// enough for the baseline deployment without requiring the Redis-backed control plane; deployments that
-/// route corrective work through the durable job runner register a sink that enqueues onto it instead.
-/// </summary>
-/// <remarks>
-/// The corrective work runs on a detached task scope so submission returns immediately with a queued
-/// handle, matching the async job semantics clients poll for. Job status (Queued, Processing, and the
-/// terminal Completed/Failed/Cancelled states) is persisted to <see cref="IUniversalProgressStore"/> when
-/// one is registered, so the returned job id resolves through the admin operations endpoints; terminal
-/// transitions use compare-and-set so they can never clobber a terminal state another writer recorded
-/// (honua-server#1593). The work delegate performs only forward edits through the canonical edit pipeline
-/// and never deletes change-log history; it observes the host shutdown token so an interrupted run is
-/// recorded as Cancelled rather than vanishing silently.
-/// </remarks>
 public sealed partial class InProcessTemporalCorrectiveJobSink : ITemporalCorrectiveJobSink
 {
     private static readonly TimeSpan ProgressTtl = TimeSpan.FromHours(24);
@@ -34,10 +18,6 @@ public sealed partial class InProcessTemporalCorrectiveJobSink : ITemporalCorrec
     private readonly IUniversalProgressStore? _progressStore;
     private readonly IHostApplicationLifetime? _lifetime;
 
-    /// <summary>Creates the sink.</summary>
-    /// <param name="logger">Logger for corrective-job lifecycle events.</param>
-    /// <param name="progressStore">Optional progress store backing job-status polling for the returned job id.</param>
-    /// <param name="lifetime">Optional host lifetime; when present, corrective work observes application shutdown.</param>
     public InProcessTemporalCorrectiveJobSink(
         ILogger<InProcessTemporalCorrectiveJobSink> logger,
         IUniversalProgressStore? progressStore = null,
@@ -48,7 +28,6 @@ public sealed partial class InProcessTemporalCorrectiveJobSink : ITemporalCorrec
         _lifetime = lifetime;
     }
 
-    /// <inheritdoc />
     public async Task<(string JobId, string Status)> SubmitAsync(
         string operationName,
         string serviceId,
@@ -150,10 +129,7 @@ public sealed partial class InProcessTemporalCorrectiveJobSink : ITemporalCorrec
         }
     }
 
-    /// <summary>
-    /// Compare-and-set status transition: heals a skipped intermediate transition (for example when the
-    /// Queued write failed) but never clobbers a terminal state another writer recorded.
-    /// </summary>
+    // A terminal state already recorded by another writer is left in place.
     private async Task TryTransitionAsync(
         string jobId,
         string operationName,

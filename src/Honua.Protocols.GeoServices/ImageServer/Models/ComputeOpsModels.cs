@@ -6,266 +6,131 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Models;
 
-/// <summary>
-/// Esri-conformant response for the Image Server <c>computeHistograms</c> endpoint.
-/// </summary>
 public sealed class ComputeHistogramsResponse
 {
-    /// <summary>
-    /// Per-band histograms describing the analysed area (whole layer or AOI).
-    /// </summary>
     [JsonPropertyName("histograms")]
     public BandHistogram[] Histograms { get; init; } = [];
 }
 
-/// <summary>
-/// Esri-conformant response for the Image Server <c>computeCacheInfo</c> endpoint.
-/// </summary>
 public sealed class ComputeCacheInfoResponse
 {
-    /// <summary>
-    /// Tile-cache scheme information for the image service.
-    /// </summary>
     [JsonPropertyName("cacheInfo")]
     public required ImageServerComputedCacheInfo CacheInfo { get; init; }
 }
 
-/// <summary>
-/// Tile-cache scheme information returned by <c>computeCacheInfo</c>.
-/// </summary>
 public sealed class ImageServerComputedCacheInfo
 {
-    /// <summary>
-    /// Tile scheme for cached services. Omitted for dynamic ImageServer layers.
-    /// </summary>
     [JsonPropertyName("tileInfo")]
     public TileInfo? TileInfo { get; init; }
 
-    /// <summary>
-    /// Extent covered by the computed cache scheme.
-    /// </summary>
     [JsonPropertyName("extent")]
     public required ImageServerExtent Extent { get; init; }
 
-    /// <summary>
-    /// Cache type reported by the service, when a cache exists.
-    /// </summary>
     [JsonPropertyName("cacheType")]
     public string? CacheType { get; init; }
 }
 
-/// <summary>
-/// Esri-conformant response for the Image Server <c>computePixelLocation</c>
-/// endpoint.
-/// </summary>
 public sealed class ComputePixelLocationResponse
 {
-    /// <summary>
-    /// Pixel-space coordinates for the submitted map locations.
-    /// </summary>
     [JsonPropertyName("geometries")]
     public PixelLocationPoint[] Geometries { get; init; } = [];
 }
 
-/// <summary>
-/// Pixel-space coordinate returned by <c>computePixelLocation</c>.
-/// </summary>
 public sealed class PixelLocationPoint
 {
-    /// <summary>
-    /// Pixel column coordinate.
-    /// </summary>
     [JsonPropertyName("x")]
     public required double X { get; init; }
 
-    /// <summary>
-    /// Pixel row coordinate.
-    /// </summary>
     [JsonPropertyName("y")]
     public required double Y { get; init; }
 }
 
-/// <summary>
-/// Esri-conformant response for the Image Server <c>queryBoundary</c> endpoint.
-/// </summary>
 public sealed class QueryBoundaryResponse
 {
-    /// <summary>
-    /// Boundary shape for matching raster catalog items.
-    /// </summary>
     [JsonPropertyName("shape")]
     public required CatalogQueryGeometry Shape { get; init; }
 
-    /// <summary>
-    /// Approximate boundary area in square meters for geospatial coordinate systems.
-    /// </summary>
     [JsonPropertyName("area")]
     public required double Area { get; init; }
 }
 
-/// <summary>
-/// Esri-conformant response for the Image Server <c>project</c> endpoint.
-/// </summary>
 public sealed class ImageServerProjectResponse
 {
-    /// <summary>
-    /// Projected Esri JSON geometries.
-    /// </summary>
     [JsonPropertyName("geometries")]
     public JsonElement[] Geometries { get; init; } = [];
 }
 
-/// <summary>
-/// Esri-conformant response for the Image Server <c>getSamples</c> endpoint.
-/// </summary>
 public sealed class GetSamplesResponse
 {
-    /// <summary>
-    /// Sampled pixel values at the requested points / along the requested geometry.
-    /// </summary>
     [JsonPropertyName("samples")]
     public SampleEntry[] Samples { get; init; } = [];
 }
 
-/// <summary>
-/// A single sampled pixel value at a geographic location, shaped per the Esri spec.
-/// </summary>
 public sealed class SampleEntry
 {
-    /// <summary>
-    /// Catalog object id of the raster that produced the sample.
-    /// </summary>
     [JsonPropertyName("rasterId")]
     public long? RasterId { get; init; }
 
-    /// <summary>
-    /// Sample location in the response spatial reference.
-    /// </summary>
     [JsonPropertyName("location")]
     public required SampleLocation Location { get; init; }
 
-    /// <summary>
-    /// Space-separated band values at the sample location, or <c>NoData</c>.
-    /// </summary>
     [JsonPropertyName("value")]
     public string? Value { get; init; }
 
-    /// <summary>
-    /// Pixel resolution at the sample location, when known.
-    /// </summary>
     [JsonPropertyName("resolution")]
     public double? Resolution { get; init; }
 
-    /// <summary>
-    /// Per-band sample attributes (band index → value).
-    /// </summary>
     [JsonPropertyName("attributes")]
     public Dictionary<string, object?>? Attributes { get; init; }
 }
 
-/// <summary>
-/// Sample location with its spatial reference.
-/// </summary>
 public sealed class SampleLocation
 {
-    /// <summary>
-    /// X coordinate of the sample location.
-    /// </summary>
     [JsonPropertyName("x")]
     public required double X { get; init; }
 
-    /// <summary>
-    /// Y coordinate of the sample location.
-    /// </summary>
     [JsonPropertyName("y")]
     public required double Y { get; init; }
 
-    /// <summary>
-    /// Spatial reference of the location.
-    /// </summary>
     [JsonPropertyName("spatialReference")]
     public SpatialReference? SpatialReference { get; init; }
 }
 
-/// <summary>
-/// Esri-conformant response for the Image Server <c>keyProperties</c> endpoint.
-/// Mirrors the ArcGIS REST "Key Properties" document so the ArcGIS API for Python
-/// <c>ImageryLayer.key_properties()</c> receives the flat raster key-property dictionary
-/// it expects: a <c>BandProperties</c> array plus cell-size and configuration keywords.
-/// </summary>
 public sealed class KeyPropertiesResponse
 {
-    /// <summary>
-    /// Per-band properties describing the primary raster.
-    /// </summary>
     [JsonPropertyName("BandProperties")]
     public BandProperty[] BandProperties { get; init; } = [];
 
-    /// <summary>
-    /// Coarsest (largest) cell size of the raster, in source spatial-reference units.
-    /// </summary>
     [JsonPropertyName("HighCellSize")]
     public double? HighCellSize { get; init; }
 
-    /// <summary>
-    /// Finest (smallest) cell size of the raster, in source spatial-reference units.
-    /// </summary>
     [JsonPropertyName("LowCellSize")]
     public double? LowCellSize { get; init; }
 
-    /// <summary>
-    /// Maximum cell size of the raster, in source spatial-reference units.
-    /// </summary>
     [JsonPropertyName("MaxCellSize")]
     public double? MaxCellSize { get; init; }
 
-    /// <summary>
-    /// Raster storage configuration keyword. Empty when the source does not declare one.
-    /// </summary>
     [JsonPropertyName("ConfigKeyword")]
     public string ConfigKeyword { get; init; } = string.Empty;
 
-    /// <summary>
-    /// Band definition keyword identifying the sensor/product band layout.
-    /// Empty when the source does not declare one.
-    /// </summary>
     [JsonPropertyName("BandDefinitionKeyword")]
     public string BandDefinitionKeyword { get; init; } = string.Empty;
 
-    /// <summary>
-    /// Esri pixel data type of the raster (e.g. <c>U8</c>, <c>F32</c>).
-    /// Retained alongside the canonical keys for callers that read it directly.
-    /// </summary>
     [JsonPropertyName("DataType")]
     public string? DataType { get; init; }
 
-    /// <summary>
-    /// Number of bands in the raster.
-    /// </summary>
     [JsonPropertyName("BandCount")]
     public int BandCount { get; init; }
 
-    /// <summary>
-    /// NoData value of the raster, when declared by the source.
-    /// </summary>
     [JsonPropertyName("NoDataValue")]
     public double? NoDataValue { get; init; }
 }
 
-/// <summary>
-/// Per-band key properties of a raster.
-/// </summary>
 public sealed class BandProperty
 {
-    /// <summary>
-    /// Human-readable band name (e.g. <c>Band_1</c>).
-    /// </summary>
     [JsonPropertyName("BandName")]
     public required string BandName { get; init; }
 
-    /// <summary>
-    /// Source pixel type for the band (PostGIS representation, e.g. <c>8BUI</c>).
-    /// </summary>
     [JsonPropertyName("PixelType")]
     public string? PixelType { get; init; }
 }

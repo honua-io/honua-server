@@ -40,7 +40,7 @@ public sealed class GeometryServiceInfoTests
         using var doc = JsonDocument.Parse(body);
         var root = doc.RootElement;
 
-        // Honua does not advertise an ArcGIS Server version (see NoArcGisServerVersionTests).
+        // Honua does not advertise an ArcGIS Server version (see NoGeoServicesServerVersionTests).
         root.TryGetProperty("currentVersion", out _).Should().BeFalse();
         root.TryGetProperty("serviceDescription", out _).Should().BeTrue();
         root.TryGetProperty("maxBufferCount", out var maxBuffer).Should().BeTrue();

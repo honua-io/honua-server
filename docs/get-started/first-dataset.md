@@ -7,7 +7,7 @@ description: "Upload a GeoJSON file, publish it as a layer, and query it through
 
 Upload a GeoJSON file, publish it as a layer, and query it through the supported Honua clients.
 
-**Prerequisites:** a running server with an admin password set (steps 1–4 of the [quickstart](quickstart.md)), Python 3.11+ with the pinned clients `honua-admin` 0.1.12 and `honua-sdk` 0.1.18 and the MCP Python client `mcp` 2.1.1 (step 2 installs them), and Node.js with `npx`.
+**Prerequisites:** a running server with an admin password set (steps 1–4 of the [quickstart](quickstart.md)), Python 3.11+ with the pinned clients `honua-admin` 0.1.12 and `honua-sdk` 0.1.19 and the MCP Python client `mcp` 2.1.1 (step 2 installs them), and Node.js with `npx`.
 
 > **Shell.** Every block on this page is `bash` — heredocs, `export`, and `python3`. On Windows run
 > them in WSL or Git Bash, not PowerShell, and note that a bare `python3` there resolves to the
@@ -15,13 +15,14 @@ Upload a GeoJSON file, publish it as a layer, and query it through the supported
 > the PowerShell equivalents where they differ.
 
 > **Base URL and admin key.** Steps 1–4 of the [quickstart](quickstart.md) write a generated
-> password into `.env` and publish the server on `18080`. Take both from there rather than
-> retyping the literals below:
+> admin password into `secrets/honua_admin_password` and publish the server on the
+> `HONUA_HTTP_PORT` that `.env` sets (`18080`). Take both from there rather than retyping the
+> literals below:
 >
 > ```bash
 > cd <your quickstart install directory>
 > export HONUA_BASE_URL="http://localhost:$(grep '^HONUA_HTTP_PORT=' .env | cut -d= -f2)"
-> export HONUA_API_KEY="$(grep '^HONUA_ADMIN_PASSWORD=' .env | cut -d= -f2)"
+> export HONUA_API_KEY="$(cat secrets/honua_admin_password)"
 > ```
 >
 > Every command below uses `$HONUA_BASE_URL` and `$HONUA_API_KEY`.
@@ -44,7 +45,7 @@ a database table. Install the pinned clients and the MCP client. MCP tool calls 
 the `X-API-Key` header. HTTP Basic auth is refused.
 
 ```bash
-python3 -m pip install 'honua-admin==0.1.12' 'honua-sdk==0.1.18' 'mcp==2.1.1'
+python3 -m pip install 'honua-admin==0.1.12' 'honua-sdk==0.1.19' 'mcp==2.1.1'
 ```
 
 ```bash
@@ -111,23 +112,20 @@ either way.
 ## 3. Register the database
 
 The import writes into the server's own database. On the quickstart stack that database is
-`honua`, the user is `honua`, and SSL is off — the same values as `compose.yaml`. The host name
+`honua`, the user is `honua`, and SSL is off — the same values as `compose.yaml`. Its password
+is the one the quickstart generated into `secrets/postgres_password`. The host name
 `postgres` is the Compose service, which the server container can resolve. Later steps publish
 through that connection. The route accepts the connection id (`connection.connection_id`) or the
 connection name; the steps below pass the id.
 
 ```bash
-python3 -m pip install 'honua-admin==0.1.12' 'honua-sdk==0.1.18'
+python3 -m pip install 'honua-admin==0.1.12' 'honua-sdk==0.1.19'
 python3 - <<'PY'
 import os
-import subprocess
 
 from honua_admin import CreateSecureConnectionRequest, HonuaAdminClient
 
-password = subprocess.check_output(
-    ["docker", "compose", "exec", "-T", "postgres", "printenv", "POSTGRES_PASSWORD"],
-    text=True,
-).strip()
+password = open("secrets/postgres_password").read().strip()
 
 with HonuaAdminClient(os.environ["HONUA_BASE_URL"], api_key=os.environ["HONUA_API_KEY"]) as admin:
     connection = admin.create_connection(CreateSecureConnectionRequest(
@@ -188,14 +186,14 @@ now available across every enabled protocol.
 ## 5. Query the published layer
 
 ```bash
-npx --yes -p @honua/sdk-js@0.2.6 honua services
-npx --yes -p @honua/sdk-js@0.2.6 honua layers "$HONUA_SERVICE"
-npx --yes -p @honua/sdk-js@0.2.6 honua query "$HONUA_SERVICE/$HONUA_LAYER_ID" --limit 5
-npx --yes -p @honua/sdk-js@0.2.6 honua query "$HONUA_SERVICE/$HONUA_LAYER_ID" --limit 5 --format geojson
-npx --yes -p @honua/sdk-js@0.2.6 honua query "$HONUA_SERVICE/$HONUA_LAYER_ID" --count
+npx --yes -p @honua/sdk-js@0.2.10 honua services
+npx --yes -p @honua/sdk-js@0.2.10 honua layers "$HONUA_SERVICE"
+npx --yes -p @honua/sdk-js@0.2.10 honua query "$HONUA_SERVICE/$HONUA_LAYER_ID" --limit 5
+npx --yes -p @honua/sdk-js@0.2.10 honua query "$HONUA_SERVICE/$HONUA_LAYER_ID" --limit 5 --format geojson
+npx --yes -p @honua/sdk-js@0.2.10 honua query "$HONUA_SERVICE/$HONUA_LAYER_ID" --count
 ```
 
-The `@honua/sdk-js` pin is the release version, 0.2.6. Omit `HONUA_API_KEY` after the service allows anonymous reads.
+The `@honua/sdk-js` pin is the release version, 0.2.10. Omit `HONUA_API_KEY` after the service allows anonymous reads.
 
 The package publishes its CLI as the `honua` binary, so `npx` needs `-p @honua/sdk-js honua`; `npx @honua/sdk-js <command>` looks for a binary named `sdk-js` and fails with `could not determine executable to run`.
 
@@ -206,16 +204,16 @@ The package publishes its CLI as the `honua` binary, so `npx` needs `-p @honua/s
 The count should be `2`. A one-row GeoJSON check should contain Honolulu or Hilo:
 
 ```bash
-npx --yes -p @honua/sdk-js@0.2.6 honua query "$HONUA_SERVICE/$HONUA_LAYER_ID" --limit 1 --format geojson
+npx --yes -p @honua/sdk-js@0.2.10 honua query "$HONUA_SERVICE/$HONUA_LAYER_ID" --limit 1 --format geojson
 ```
 
 ## Troubleshoot
 
-- **401 from an admin operation** — `HONUA_API_KEY` must be the `HONUA_ADMIN_PASSWORD` from your install's `.env`; re-run the two `export` lines at the top of this page.
+- **401 from an admin operation** — `HONUA_API_KEY` must be the admin password in your install's `secrets/honua_admin_password`; re-run the two `export` lines at the top of this page from the install directory.
 - **`'datasetName' is required`** — pass a `datasetName` of letters, digits and underscores that does not start with a digit.
 - **`unauthenticated` from the import** — the MCP client must send the `X-API-Key` header. MCP tool calls are refused without it.
 - **`Table 'honua_data.hawaii_cities' was not found`** on publish — publish the physical `imported_hawaii_cities` name, not the logical one you imported under.
-- **`could not determine executable to run`** from `npx` — use `-p @honua/sdk-js@0.2.6 honua <command>`.
+- **`could not determine executable to run`** from `npx` — use `-p @honua/sdk-js@0.2.10 honua <command>`.
 - **`Master key not configured`** — set `Security__ConnectionEncryption__MasterKey` to a 32-or-more-character value before saving connection credentials.
 - **Publishing cannot find the connection** — pass `connection.connection_id` or the name from step 3. The route accepts either.
 - **The collection is missing** — confirm the publish result says `enabled=true`, then run `honua services` and `honua layers "$HONUA_SERVICE"` again.

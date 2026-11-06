@@ -3,21 +3,7 @@
 
 namespace Honua.Server.Features.Admin.OperateFixtures;
 
-/// <summary>
-/// Supplies the deterministic Development/Test-only configuration defaults a standalone Operate
-/// observability fixture host needs to be self-sufficient. The honua-console live lane boots the
-/// server image via Testcontainers with only a database connection string and the fixture flags;
-/// it does not supply the connection-encryption master key that the Postgres secure-connection
-/// provider (and therefore the audit-log/connection-provider request path) requires. Without a
-/// key every request — including <c>/healthz/live</c> and the fixture seed endpoint — fails with
-/// "Master key not configured." (honua-server#2350).
-/// </summary>
-/// <remarks>
-/// These defaults are applied only when the fixture is enabled in the Development or Test
-/// environment (the fixture validator forbids Production), and only for keys that are not already
-/// configured, so an explicit operator/WebAppFixture value always wins. They protect throwaway
-/// fixture connection strings in an ephemeral test container, never production secrets.
-/// </remarks>
+// Fixture connection defaults apply only in Development or Test when the fixture is enabled and the key is unset, and they never stand in for a production secret.
 internal static class OperateObservabilityFixtureHostDefaults
 {
     internal const string MasterKeyConfigurationPath = "Security:ConnectionEncryption:MasterKey";
@@ -32,14 +18,6 @@ internal static class OperateObservabilityFixtureHostDefaults
     internal const string DefaultConnectionEncryptionSalt =
         "aG9udWEtb3BlcmF0ZS1maXh0dXJlLWRldmVsb3BtZW50LXNhbHQ=";
 
-    /// <summary>
-    /// Returns the fixture host defaults that are not already present in <paramref name="configuration"/>.
-    /// </summary>
-    /// <param name="configuration">The current host configuration.</param>
-    /// <returns>
-    /// A map of configuration keys to default values for every default not already configured. The
-    /// map is empty when the operator (or WebAppFixture) has supplied all of them.
-    /// </returns>
     public static IReadOnlyDictionary<string, string?> CreateMissingDefaults(IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);

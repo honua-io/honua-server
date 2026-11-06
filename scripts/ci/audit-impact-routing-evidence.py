@@ -826,9 +826,15 @@ def _archive_json(entry: dict[str, Any], root: Path) -> object:
                 or "\\" in member.filename
                 or member.is_dir()
                 or stat.S_ISLNK(mode)
-                or member.file_size > MAX_RECEIPT_BYTES
             ):
                 raise ValueError("receipt archive contains an unsafe member")
+            if member.file_size > MAX_RECEIPT_BYTES:
+                # Still an integrity failure, but name it: a receipt from a very
+                # wide change can exceed the cap without anything being unsafe.
+                raise ValueError(
+                    f"receipt archive member {member.filename} is {member.file_size} bytes, "
+                    f"over the {MAX_RECEIPT_BYTES}-byte receipt cap"
+                )
         receipt_name = PR_GATE_RECEIPT if entry["stream"] == PR_GATE_STREAM else NATIVE_RECEIPT
         with archive.open(receipt_name) as stream:
             content = stream.read(MAX_RECEIPT_BYTES + 1)

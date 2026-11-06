@@ -9,9 +9,6 @@ using Honua.Core.Features.Infrastructure.Domain;
 
 namespace Honua.FileStorage;
 
-/// <summary>
-/// AWS S3 implementation of <see cref="ICloudRangeReader"/> using native byte-range requests.
-/// </summary>
 internal sealed class AwsS3RangeReader : ICloudRangeReader
 {
     private readonly IAmazonS3 _client;
@@ -21,10 +18,8 @@ internal sealed class AwsS3RangeReader : ICloudRangeReader
         _client = client ?? throw new ArgumentNullException(nameof(client));
     }
 
-    /// <inheritdoc />
     public CloudStorageProvider Provider => CloudStorageProvider.AwsS3;
 
-    /// <inheritdoc />
     public Task<byte[]> ReadRangeAsync(
         string bucket,
         string key,
@@ -33,7 +28,6 @@ internal sealed class AwsS3RangeReader : ICloudRangeReader
         CancellationToken cancellationToken = default)
         => ReadRangeCoreAsync(bucket, key, offset, length, expectedETag: null, cancellationToken);
 
-    /// <inheritdoc />
     public Task<byte[]> ReadRangeAsync(
         string bucket,
         string key,
@@ -67,6 +61,10 @@ internal sealed class AwsS3RangeReader : ICloudRangeReader
         {
             response = await _client.GetObjectAsync(request, cancellationToken).ConfigureAwait(false);
         }
+        catch (AmazonS3Exception ex) when (ex.StatusCode == System.Net.HttpStatusCode.PreconditionFailed)
+        {
+            throw new CloudFileRevisionChangedException();
+        }
         catch (AmazonS3Exception ex) when (IsNotFound(ex))
         {
             throw new FileNotFoundException($"S3 object '{key}' was not found in bucket '{bucket}'.", ex);
@@ -80,7 +78,6 @@ internal sealed class AwsS3RangeReader : ICloudRangeReader
         }
     }
 
-    /// <inheritdoc />
     public async Task<Stream> ReadRangeStreamAsync(string bucket, string key, long offset, int length, CancellationToken cancellationToken = default)
     {
         var request = new GetObjectRequest
@@ -97,7 +94,6 @@ internal sealed class AwsS3RangeReader : ICloudRangeReader
         return ms;
     }
 
-    /// <inheritdoc />
     public async Task<long> GetObjectSizeAsync(string bucket, string key, CancellationToken cancellationToken = default)
     {
         try
@@ -111,7 +107,6 @@ internal sealed class AwsS3RangeReader : ICloudRangeReader
         }
     }
 
-    /// <inheritdoc />
     public async Task<CloudObjectMetadata> GetObjectMetadataAsync(
         string bucket,
         string key,

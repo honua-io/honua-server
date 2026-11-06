@@ -60,6 +60,16 @@ default admits the setup-view map lifecycle through propose. See
 [Studio AI proxy request budget](../reference/configuration/environment-variables.md#studio-ai-proxy-request-budget)
 before lowering it.
 
+For the built-in OpenAI-compatible and Anthropic HTTP adapters, preparation owns
+the selected provider, model, final destination and serialized request before
+invocation admission. Later request or configuration changes cannot retarget that
+prepared call. Current disclosure policy and invocation authority are checked
+again before credentials and sending. The original accepted request bytes remain
+the transcript identity; resolved defaults are not inserted into that identity.
+Configured `MaxTokens` remains the default when the caller does not supply a
+permitted override. This preparation adds no monetary or token accounting claim.
+Custom adapters and the Bedrock path keep their existing behavior.
+
 ## Signed certification transcripts
 
 Release-certifying calls include a `certification` object with `candidateId`,

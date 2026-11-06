@@ -11,27 +11,8 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Startup;
 
-/// <summary>
-/// Shared registration for the control-plane reconcile graph: the durable Redis-backed operation
-/// stores, the four typed reconcilers (deploy workflow, execution job, metadata release, coordinated
-/// release), the single <see cref="IOperationReconcileDispatcher"/> seam, the event handler, and the
-/// trigger options.
-/// <para>
-/// This is the ONE source of truth for the reconcile-side composition so the long-running server host
-/// (<c>Program.cs</c>) and the cloud event surface (<c>ControlPlaneEventEndpoints</c>, driven by the
-/// <c>Honua.ControlPlane.Lambda</c> entrypoint) wire the exact same graph. It deliberately registers only
-/// the reconcile services; the long-running host adds the poll/backstop <c>BackgroundService</c>s and the
-/// agent-approval gateway separately because those are host-lifecycle concerns, not part of a single
-/// cold-start-reconcile-exit Lambda invocation.
-/// </para>
-/// </summary>
 internal static class ControlPlaneReconcileRegistration
 {
-    /// <summary>
-    /// Registers the control-plane reconcile graph (stores, reconcilers, dispatcher, event handler,
-    /// trigger options). Requires that the batch + deploy backends (<c>AddHonuaBatchAndDeployBackends</c>),
-    /// the Redis multiplexer, and the control-plane HTTP clients are already registered.
-    /// </summary>
     public static IServiceCollection AddHonuaControlPlaneReconcilers(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -107,13 +88,6 @@ internal static class ControlPlaneReconcileRegistration
         return services;
     }
 
-    /// <summary>
-    /// Registers what the control-plane Lambda event route resolves: the event targets and the
-    /// scheduled-tick dispatcher. Independent of Redis (honua-release run 38242272260): on a
-    /// Redis-off cell the dispatcher sees only the tick handlers that were composed, and the
-    /// targets refuse the work that needs the durable stores with a typed 503 instead of the route
-    /// failing to bind. Idempotent, so the Redis-backed graph and the host can both call it.
-    /// </summary>
     public static IServiceCollection AddHonuaControlPlaneLambdaEventTargets(this IServiceCollection services)
     {
         services.TryAddSingleton<IScheduledTickDispatcher, ScheduledTickDispatcher>();

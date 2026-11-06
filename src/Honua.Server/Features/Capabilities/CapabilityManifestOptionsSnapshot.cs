@@ -21,12 +21,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Capabilities;
 
-/// <summary>
-/// Immutable snapshot that collapses the many configuration option bundles the capability
-/// manifest reads into a single cohesive dependency. Capturing the bound option values once
-/// removes the option-injection noise from <see cref="CapabilityManifestService"/> so its
-/// constructor reflects its real collaborators rather than configuration plumbing.
-/// </summary>
 internal sealed class CapabilityManifestOptionsSnapshot
 {
     public CapabilityManifestOptionsSnapshot(
@@ -100,13 +94,8 @@ internal sealed class CapabilityManifestOptionsSnapshot
         };
     }
 
-    /// <summary>
-    /// The background-import runner resolved at composition (honua-server#5916); null when no
-    /// import job service is composed.
-    /// </summary>
     public Honua.Core.Features.FileImport.Abstractions.IBackgroundImportRunnerInfo? BackgroundImportRunner { get; }
 
-    /// <summary>True when <c>Import:ObjectStore:AllowedBuckets</c> names at least one bucket.</summary>
     public bool ObjectStoreConfigured { get; }
 
     public LimitsOptions Limits { get; }
@@ -129,73 +118,24 @@ internal sealed class CapabilityManifestOptionsSnapshot
 
     public RbacOptions Rbac { get; }
 
-    /// <summary>
-    /// The config-bound experimental feature-flag switches (#2339 / T2). Carried on the
-    /// snapshot so the per-environment manifest honours the flags; the manifest begins
-    /// acting on them in T4 (#2340).
-    /// </summary>
     public CapabilityFlagOptions ExperimentalCapabilityFlags { get; }
 
-    /// <summary>
-    /// Whether the manifest's <c>Capabilities[]</c> and <c>Packages.Families[]</c> are
-    /// derived from the unified capability registry (#2335 / B3). Defaults to
-    /// <c>false</c> (staged); the legacy hand-curated composition is served until the
-    /// <c>Capabilities:ManifestFromRegistry</c> switch is turned on.
-    /// </summary>
     public bool ManifestFromRegistry { get; }
 
-    /// <summary>Whether schema-per-tenant data routing is active for this deployment.</summary>
     public bool TenantSchemaRoutingEnabled { get; }
 
-    /// <summary>
-    /// Whether tenant context resolution is enabled. Multi-tenant operation is internal to
-    /// Honua's own hosted operation and is not offered to licensees, so this is off in every
-    /// deployment a licensee may run - and the manifest omits tenant scope entirely when it
-    /// is, rather than reporting fields that are always null.
-    /// </summary>
     public bool TenantContextEnabled { get; }
 
-    /// <summary>
-    /// Whether the COMPLETE durable job substrate was composed at startup (honua-release#202):
-    /// both a durable <c>IExecutionJobStore</c> and a runnable <c>IJobQueue</c>.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Store presence alone is not enough to advertise <c>jobs.runner</c>. With a store but no
-    /// queue, <c>GeoprocessingJobDispatcher.MaybeEnqueueLocalAsync</c> silently skips enqueueing,
-    /// so a submission would be persisted and never drain — a fabricated availability claim of
-    /// exactly the kind this contract forbids. In production both are gated on the same
-    /// <c>IConnectionMultiplexer</c> and appear together; a partial composition is a
-    /// misconfiguration (or a test double) and must read as unavailable.
-    /// </para>
-    /// <para>
-    /// Registration is decided once at composition time, so capturing it here is exact for the
-    /// process lifetime rather than a cached approximation. A later Redis <em>outage</em> is a
-    /// different, transient condition reported by the Redis health check, not by this flag.
-    /// </para>
-    /// </remarks>
+    // jobs.runner is advertised only when both the durable store and a runnable queue exist, because a store without a queue would persist submissions that never drain.
     public bool DurableJobRuntimeAvailable { get; }
 
-    /// <summary>
-    /// Why the durable job substrate is unavailable, so the manifest can report the applicable
-    /// reason code (a missing dependency and an unentitled licence need different remediation).
-    /// </summary>
     public DurableJobSubstrateCause DurableJobSubstrateCause { get; }
 
-    /// <summary>
-    /// The informational Redis durability outcome (owner ruling 2026-10-10), or
-    /// <see langword="null"/> when the Redis-backed runtime is not composed. Published only
-    /// alongside an available runtime so it never reads as a reason a capability is withheld.
-    /// </summary>
+    // The Redis durability outcome is published only next to an available runtime so it is not read as a reason a capability is withheld.
     public CapabilityManifestRedisDurability? RedisDurability { get; }
 
-    /// <summary>The immutable deployment-profile selection reported by the manifest.</summary>
     public CapabilityManifestDeploymentProfile DeploymentProfile { get; }
 
-    /// <summary>
-    /// Mutable release version plus immutable deployment revision, kept as separate fields so
-    /// evidence consumers can bind a retained artifact to exact code/image content (#3038).
-    /// </summary>
     public DeploymentIdentity DeploymentIdentity { get; }
 
     private static CapabilityManifestRedisDurability? BuildRedisDurability(

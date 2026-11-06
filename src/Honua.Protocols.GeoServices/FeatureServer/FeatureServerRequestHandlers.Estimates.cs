@@ -224,12 +224,6 @@ internal static partial class FeatureServerEndpoints
             contentType: "application/json");
     }
 
-    /// <summary>
-    /// Resolves the layer id a service-level estimate is reported under (the publication's
-    /// service-local index) and the storage-layer handle it is read from. The handle comes
-    /// from the shared resolver, so a publication whose index differs from its storage id
-    /// is estimated from its own storage; <see langword="null"/> when it has none.
-    /// </summary>
     internal static (int PublicLayerId, int StorageLayerId)? ResolveServiceEstimateLayerIds(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Publication publication,

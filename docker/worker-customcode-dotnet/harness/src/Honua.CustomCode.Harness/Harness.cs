@@ -57,7 +57,9 @@ public sealed class Harness
         using var journal = new EventJournal(
             EventJournal.PathFromEnvironment(env, Path.Join(_options.WorkDir, EventJournal.FileName)),
             EventJournal.AttemptFromEnvironment(env),
-            mirror: _options.Logger ?? new HarnessLogger());
+            mirror: _options.Logger ?? new HarnessLogger(),
+            correlation: EventJournal.CorrelationFromEnvironment(env),
+            trace: EventJournal.TraceFromEnvironment(env));
         var state = new RunState();
         var exit = ExitHarnessError;
         try

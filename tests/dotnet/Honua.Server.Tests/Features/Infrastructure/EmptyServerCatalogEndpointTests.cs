@@ -204,7 +204,7 @@ public sealed class EmptyServerCatalogEndpointTests : IAsyncLifetime
         var root = doc.RootElement;
 
         // Valid GeoServices directory structure.
-        // Honua does not advertise an ArcGIS Server version (see NoArcGisServerVersionTests).
+        // Honua does not advertise an ArcGIS Server version (see NoGeoServicesServerVersionTests).
         // A fresh server still publishes the built-in Utilities/PrintingTools GPServer.
         root.TryGetProperty("currentVersion", out _).Should().BeFalse();
         var services = root.GetProperty("services").EnumerateArray().ToArray();

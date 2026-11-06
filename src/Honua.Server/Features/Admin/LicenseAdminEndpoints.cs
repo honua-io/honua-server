@@ -13,9 +13,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for license management and entitlements.
-/// </summary>
 internal static class LicenseAdminEndpoints
 {
     internal sealed class LicenseAdminEndpointsLog;

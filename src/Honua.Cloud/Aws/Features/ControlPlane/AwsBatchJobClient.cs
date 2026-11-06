@@ -7,14 +7,8 @@ using Honua.Cloud.Aws.Features;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Provider-neutral environment variable override for an AWS Batch container.
-/// </summary>
 internal sealed record AwsBatchEnvironmentOverride(string Name, string Value);
 
-/// <summary>
-/// Submission parameters for an AWS Batch job.
-/// </summary>
 internal sealed record AwsBatchJobSubmission
 {
     public bool RequireCredentialFreeCustomCode { get; init; }
@@ -42,9 +36,6 @@ internal sealed record AwsBatchJobSubmission
     public string? ShareIdentifier { get; init; }
 }
 
-/// <summary>
-/// Result of submitting an AWS Batch job.
-/// </summary>
 internal sealed record AwsBatchSubmitResult
 {
     public required string JobId { get; init; }
@@ -54,9 +45,6 @@ internal sealed record AwsBatchSubmitResult
     public required string JobName { get; init; }
 }
 
-/// <summary>
-/// Snapshot of an AWS Batch job observed by DescribeJobs.
-/// </summary>
 internal sealed record AwsBatchJobState
 {
     public required string JobId { get; init; }

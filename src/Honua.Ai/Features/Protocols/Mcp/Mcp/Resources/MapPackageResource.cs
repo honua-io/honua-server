@@ -10,28 +10,7 @@ using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.Protocols.Mcp.Resources;
 
-/// <summary>
-/// MCP resource for <c>honua://map-packages/{packageId}</c>. A map package is
-/// reachable in two lifecycle states, and the resource reads both:
-/// <list type="number">
-/// <item><description>
-/// <b>Published</b> — the package's server-side footprint is the set of
-/// deployments that reference it, reverse-looked-up by
-/// <see cref="DeploymentSourceKind.MapPackage"/> and visible whenever at least
-/// one currently-serving deployment references it.
-/// </description></item>
-/// <item><description>
-/// <b>Draft</b> — a package just created by <c>honua_create_map_package</c> has
-/// no deployment yet, but ADR-0076 promises the identifier that tool returns is
-/// addressable at this URI. The draft store is therefore consulted when the
-/// deployment reverse-lookup finds nothing (honua-server#3262); without it the
-/// tool handed back a well-formed URI that could never resolve.
-/// </description></item>
-/// </list>
-/// When neither knows the package the resource returns
-/// <see cref="GeoprocessingNotFoundException"/>, matching the server's actual
-/// knowledge of the package.
-/// </summary>
+// Drafts are consulted because a newly created package has a URI and no deployment yet.
 internal sealed class MapPackageResource : IMcpResource
 {
     public const string Template = McpResourceUris.MapPackagesPrefix + "{packageId}";

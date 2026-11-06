@@ -6,12 +6,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Features.Collaboration.Operations;
 
-/// <summary>
-/// Dependency injection for the saved-map collaborative edit operation log (#972). Registers the
-/// MVP conflict policy and the in-memory durable-seam repository. A durable Postgres-backed
-/// repository can override <see cref="ISavedMapOperationLogRepository"/> later without touching
-/// the HTTP adapter.
-/// </summary>
 internal static class SavedMapOperationServices
 {
     public static IServiceCollection AddSavedMapOperationLog(this IServiceCollection services)

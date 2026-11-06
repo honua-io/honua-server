@@ -5,10 +5,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Structured logging for Image Server operations.
-/// Event ID range: 5800-5899 (avoiding collisions with other features).
-/// </summary>
 internal static partial class ImageServerLog
 {
     [LoggerMessage(

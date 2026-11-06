@@ -3,24 +3,13 @@
 
 using System.Security.Cryptography;
 using System.Text;
+using Honua.Infrastructure.Redis;
 using Microsoft.Extensions.Caching.Memory;
 using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Token replay surfaces and continuations (honua-server#4909, honua-server#4899). Replay
-/// protection records the surface a validated bearer token was first admitted on. On the
-/// ordinary HTTP API the token stays reusable for its lifetime, as OAuth bearer clients
-/// expect. A surface that owns server-issued continuations (the MCP transport) registers the
-/// token as single-use until a continuation — an MCP session whose id the server minted for
-/// the authenticated caller — binds it; reuse there is then admitted only when the request
-/// presents the same continuation (not another session, no session, or a new
-/// <c>initialize</c>). Reuse across surfaces is a replay: a token admitted on the HTTP API
-/// cannot open or continue an MCP session, and a token registered on the MCP transport is
-/// refused by the HTTP API. The registration lives in the replay store, so it holds across
-/// instances when the store is Redis.
-/// </summary>
+// An ordinary API token stays reusable, a continuation surface registers it as single-use until the server-minted continuation binds it, and reuse across surfaces is a replay.
 public static partial class OidcAuthenticationExtensions
 {
     private const string RegisteredTokenReplayValue = "1";
@@ -41,13 +30,6 @@ public static partial class OidcAuthenticationExtensions
         return 1
         """;
 
-    /// <summary>
-    /// Binds the bearer token admitted on <paramref name="context"/> to a server-issued
-    /// continuation. Returns <see langword="false"/> without effect when no token was
-    /// registered for replay protection on a continuation surface for this request (API key,
-    /// anonymous, replay protection disabled, a token admitted on the HTTP API) or when the
-    /// token is already bound elsewhere.
-    /// </summary>
     internal static Task<bool> TryBindTokenReplayContinuationAsync(HttpContext context, string continuationId)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -84,13 +66,15 @@ public static partial class OidcAuthenticationExtensions
 
             try
             {
-                var bound = await redis.GetDatabase().ScriptEvaluateAsync(
-                    BindTokenReplayContinuationScript,
-                    [admission.TokenKey],
-                    [RegisteredTokenReplayValue, marker]).ConfigureAwait(false);
+                var bound = await RedisClientFault.RetryCompletedReaderAsync(
+                    () => redis.GetDatabase().ScriptEvaluateAsync(
+                        BindTokenReplayContinuationScript,
+                        [admission.TokenKey],
+                        [RegisteredTokenReplayValue, marker]),
+                    cancellationToken).ConfigureAwait(false);
                 return (int)bound == 1;
             }
-            catch (Exception ex) when (ex is RedisException or TimeoutException && ex is not OperationCanceledException)
+            catch (Exception ex) when (RedisClientFault.IsRedisTransportFault(ex))
             {
                 // RedisTimeoutException derives from TimeoutException, not RedisException.
                 OidcAuthenticationLog.TokenReplayContinuationBindFailed(logger, ex);
@@ -120,10 +104,7 @@ public static partial class OidcAuthenticationExtensions
         }, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Replay-store value for a continuation. The continuation id names a live session,
-    /// so only its digest is stored.
-    /// </summary>
+    // The replay store keeps only the continuation digest because the continuation id names a live session.
     internal static string BuildTokenReplayContinuationMarker(string continuationId) =>
         TokenReplayContinuationPrefix
         + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(continuationId)));
@@ -198,11 +179,6 @@ public static partial class OidcAuthenticationExtensions
         TokenReplayRegistrationResult Result,
         TokenReplayStore? Store);
 
-    /// <summary>
-    /// The replay surface a request presents its bearer token on (honua-server#4899): the
-    /// ordinary HTTP API, or a surface that owns server-issued continuations together with
-    /// the digest of the continuation the request continues, if any.
-    /// </summary>
     internal readonly record struct TokenReplayScope(bool OwnsContinuations, string? ContinuationMarker)
     {
         public static TokenReplayScope HttpApi => new(false, null);
@@ -210,7 +186,6 @@ public static partial class OidcAuthenticationExtensions
         public static TokenReplayScope ContinuationSurface(string? continuationMarker) =>
             new(true, continuationMarker);
 
-        /// <summary>Replay-store value recorded when a token is first admitted on this surface.</summary>
         public string RegistrationValue => OwnsContinuations ? RegisteredTokenReplayValue : HttpApiTokenReplayValue;
     }
 
@@ -221,28 +196,15 @@ public static partial class OidcAuthenticationExtensions
     }
 }
 
-/// <summary>
-/// A surface that owns server-issued continuations (for example the MCP transport and its
-/// sessions). Implementations must only claim the routes of that surface: a token admitted
-/// there stays single-use outside its continuation and is a replay on the ordinary HTTP API,
-/// and a token admitted on the HTTP API is a replay there.
-/// </summary>
+// An implementation may claim only its own routes, because admission there makes the token a replay on the ordinary API and an API admission is a replay on that surface.
 internal interface ITokenReplayContinuationResolver
 {
-    /// <summary>Whether <paramref name="context"/> targets this continuation surface.</summary>
     bool OwnsRequest(HttpContext context);
 
-    /// <summary>
-    /// Names the continuation the request presents, or <see langword="null"/> when it
-    /// continues none (for example an MCP <c>initialize</c>) or is not on this surface.
-    /// </summary>
     string? ResolveContinuationId(HttpContext context);
 }
 
-/// <summary>
-/// Server-created request feature recording the replay-store entry of the bearer token
-/// admitted on this request. Clients cannot supply it.
-/// </summary>
+// The continuation binding is created by the server and a client cannot supply it.
 internal sealed record TokenReplayAdmissionFeature(
     string TokenKey,
     DateTime ExpiresOn,

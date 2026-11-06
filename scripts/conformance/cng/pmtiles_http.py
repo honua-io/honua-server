@@ -11,6 +11,8 @@ from urllib.request import Request, urlopen
 ARTIFACT_KEY = "pmtiles/cng/honua.pmtiles"
 BUCKET = "honua-cng-fixtures"
 CONTENT_TYPE = "application/vnd.pmtiles"
+SOURCE_BINDING = {"layerId": "1000", "serviceId": "svc-cng-feature", "publicationId": "pub-cng-feature-1000",
+                  "resourceId": "res-cng-1000", "storageBindingId": "storage-cng-1000"}
 
 
 def serving_url(base_url: str) -> str:
@@ -24,7 +26,7 @@ def load_source(artifact: Path, base_url: str) -> tuple[bytes, dict]:
         "url": serving_url(base_url), "artifact_sha256": hashlib.sha256(content).hexdigest(),
         "artifact_size": len(content), "provider": "AwsS3", "provider_environment": "localstack",
         "object_key": ARTIFACT_KEY, "bucket": BUCKET,
-        "publication_api_proven": False,
+        "publication_api_proven": False, "source_binding": SOURCE_BINDING,
     }
     if any(source.get(key) != value for key, value in expected.items()):
         raise ValueError("PMTiles serving receipt does not match the artifact and supported server route")
@@ -78,7 +80,9 @@ def record_source(artifact: Path, object_metadata: Path, base_url: str, opener=u
     metadata = json.loads(object_metadata.read_text())
     if (metadata.get("ContentLength") != len(content) or metadata.get("ContentType") != CONTENT_TYPE
             or metadata.get("Metadata", {}).get("operation") != "publish"
-            or metadata.get("Metadata", {}).get("cng-sha256") != digest):
+            or metadata.get("Metadata", {}).get("cng-sha256") != digest
+            or any({key.lower(): value for key, value in metadata.get("Metadata", {}).items()}.get(key.lower()) != value
+                   for key, value in SOURCE_BINDING.items())):
         raise ValueError("S3 object metadata does not identify the exact generated published PMTiles artifact")
     url = serving_url(base_url)
     with opener(Request(url, method="HEAD"), timeout=30) as response:
@@ -89,7 +93,7 @@ def record_source(artifact: Path, object_metadata: Path, base_url: str, opener=u
             raise ValueError("Honua's supported PMTiles route did not resolve the seeded S3 object")
     return dict(schema="honua-cng-pmtiles-serving/v1", url=url, artifact_sha256=digest,
                 artifact_size=len(content), provider="AwsS3", provider_environment="localstack",
-                object_key=ARTIFACT_KEY, bucket=BUCKET, publication_api_proven=False,
+                object_key=ARTIFACT_KEY, bucket=BUCKET, publication_api_proven=False, source_binding=SOURCE_BINDING,
                 scope="candidate serving route with an S3-compatible emulator; not real AWS certification")
 
 

@@ -67,9 +67,32 @@ internal sealed partial class FileBackedLicenseService :
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         await _stopping.CancelAsync().ConfigureAwait(false);
-        if (_revalidationTask is not null)
+        if (_revalidationTask is { } revalidation)
         {
-            await _revalidationTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+            await FinishRevalidationAsync(revalidation, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task FinishRevalidationAsync(Task revalidation, CancellationToken hostShutdown)
+    {
+        try
+        {
+            await revalidation.WaitAsync(hostShutdown).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (CanceledByShutdown(revalidation, hostShutdown))
+        {
+            await SurfaceRevalidationFaultAsync(revalidation).ConfigureAwait(false);
+        }
+    }
+
+    private static bool CanceledByShutdown(Task revalidation, CancellationToken hostShutdown) =>
+        hostShutdown.IsCancellationRequested || revalidation.IsCanceled;
+
+    private static async Task SurfaceRevalidationFaultAsync(Task revalidation)
+    {
+        if (revalidation.IsFaulted)
+        {
+            await revalidation.ConfigureAwait(false);
         }
     }
 
@@ -134,30 +157,7 @@ internal sealed partial class FileBackedLicenseService :
             current.KeyId);
     }
 
-    /// <summary>
-    /// Computes the bootstrap license snapshot consulted by early startup gates (e.g. the
-    /// Redis-cache entitlement probe) before DI is built. When <paramref name="honorDevGrant"/>
-    /// is <see langword="true"/> and <c>Licensing:DevGrantEdition</c> is set to a valid edition,
-    /// the returned snapshot reflects that dev grant — keeping the startup gate consistent with
-    /// the runtime <see cref="DevLicenseEntitlementService"/> entitlement path (honua-server#1787).
-    /// Callers must pass <c>honorDevGrant: false</c> in Production so the override never relaxes a
-    /// startup gate without a signed license (the host-level guard fails the process closed there).
-    /// </summary>
-    /// <param name="configuration">The host configuration carrying the <c>Licensing</c> section.</param>
-    /// <param name="loggerFactory">Factory for the transient bootstrap logger.</param>
-    /// <param name="honorDevGrant">
-    /// When <see langword="true"/>, a valid <c>Licensing:DevGrantEdition</c> short-circuits the
-    /// snapshot to that edition. Must be <see langword="false"/> in Production.
-    /// </param>
-    /// <param name="secretResolvers">
-    /// The same <see cref="ILicenseContentSecretResolver"/> set that <c>AddHonuaLicensing</c> registers
-    /// for the per-request license service (e.g. AWS Secrets Manager and/or Azure Key Vault). Supplying
-    /// them here lets the bootstrap snapshot honor <c>Licensing:LicenseContentSecretRef</c> (e.g. a
-    /// secret-store-only Pro license); without them a paid secret-ref-only deployment refuses startup
-    /// (honua-server#1755). It is optional so hosts without a secret resolver (or built with the cloud
-    /// SDK excluded) still resolve file / inline / Community licenses correctly.
-    /// </param>
-    /// <param name="cancellationToken">Cancellation token for the snapshot load.</param>
+    // Production startup must pass honorDevGrant false so a startup gate cannot be relaxed without a signed license.
     internal static async Task<LicenseSnapshot> LoadBootstrapSnapshotAsync(
         IConfiguration configuration,
         ILoggerFactory loggerFactory,
@@ -398,13 +398,7 @@ internal sealed partial class FileBackedLicenseService :
         LogValidationResult(result);
     }
 
-    /// <summary>
-    /// Resolves <see cref="LicenseOptions.LicenseContentSecretRef"/> through the first registered
-    /// <see cref="ILicenseContentSecretResolver"/> that recognizes the reference (e.g. AWS Secrets
-    /// Manager for <c>aws:secretsmanager:</c>, Azure Key Vault for <c>azure:keyvault:</c>). Never
-    /// throws: no registered resolver, an unsupported reference, or an unreachable secret returns
-    /// <c>null</c> so the caller falls through to inline content / file validation.
-    /// </summary>
+    // Resolution never throws; an unresolved secret returns null so the caller falls through to inline or file validation.
     private async Task<string?> TryResolveLicenseContentSecretAsync(
         LicenseOptions options,
         CancellationToken cancellationToken)
@@ -450,11 +444,6 @@ internal sealed partial class FileBackedLicenseService :
         }
     }
 
-    /// <summary>
-    /// Validates an in-memory signed-license envelope (UTF-8 JSON, from inline config or a
-    /// resolved secret) and publishes the resulting snapshot. Malformed content publishes a
-    /// failed snapshot; the startup contract rejects it on paid deployments.
-    /// </summary>
     private void ApplyInlineLicenseContent(string licenseContent, LicenseOptions options)
     {
         try

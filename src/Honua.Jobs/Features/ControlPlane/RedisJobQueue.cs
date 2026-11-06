@@ -8,24 +8,11 @@ using StackExchange.Redis;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Detects and recovers claims that were orphaned between the atomic queue move
-/// and the subsequent job store update.
-/// </summary>
 internal interface IQueueClaimReconciler
 {
-    /// <summary>
-    /// Scans for stale claims older than <paramref name="staleThreshold"/> whose
-    /// backing job record has not advanced past Queued, and requeues them.
-    /// </summary>
     Task ReconcileStaleClaimsAsync(TimeSpan staleThreshold, CancellationToken cancellationToken);
 }
 
-/// <summary>
-/// Redis-backed durable job queue with atomic claim semantics.
-/// Uses a sorted set keyed by priority score for dequeue ordering and
-/// per-job metadata hashes for claim tracking.
-/// </summary>
 internal sealed partial class RedisJobQueue(
     IConnectionMultiplexer redis,
     IExecutionJobStore jobStore,
@@ -36,12 +23,6 @@ internal sealed partial class RedisJobQueue(
     private const int MaxScanEntries = 100;
     private const int MaxTraverseEntries = 5000;
 
-    /// <summary>
-    /// Admits a pending delivery unless a worker already owns its claim, preserving
-    /// the score of an existing pending delivery during admission repair.
-    /// KEYS[1] = pending set, KEYS[2] = claimed set.
-    /// ARGV[1] = operationId, ARGV[2] = priority score.
-    /// </summary>
     private const string AtomicEnqueueScript = """
         if redis.call('ZSCORE', KEYS[2], ARGV[1]) then
             return 0
@@ -49,12 +30,6 @@ internal sealed partial class RedisJobQueue(
         return redis.call('ZADD', KEYS[1], 'NX', ARGV[2], ARGV[1])
         """;
 
-    /// <summary>
-    /// Lua script that atomically removes a job from the pending set and adds it
-    /// to the claimed set. Returns 1 on success, 0 if another worker claimed first.
-    /// KEYS[1] = pending set, KEYS[2] = claimed set.
-    /// ARGV[1] = operationId, ARGV[2] = claim timestamp (ms).
-    /// </summary>
     private const string AtomicClaimScript = """
         local removed = redis.call('ZREM', KEYS[1], ARGV[1])
         if removed == 1 then
@@ -64,12 +39,6 @@ internal sealed partial class RedisJobQueue(
         return 0
         """;
 
-    /// <summary>
-    /// Lua script that atomically removes a job from the claimed set and adds it
-    /// back to the pending set. Optionally sets or clears visibility metadata.
-    /// KEYS[1] = claimed set, KEYS[2] = pending set, KEYS[3] = claim meta hash.
-    /// ARGV[1] = operationId, ARGV[2] = score, ARGV[3] = visibleAfterMs (empty to clear meta).
-    /// </summary>
     private const string AtomicRequeueScript = """
         redis.call('ZREM', KEYS[1], ARGV[1])
         redis.call('ZADD', KEYS[2], ARGV[2], ARGV[1])
@@ -325,7 +294,6 @@ internal sealed partial class RedisJobQueue(
         Log.JobRemovedFromQueue(logger, operationId);
     }
 
-    /// <inheritdoc />
     public async Task ReconcileStaleClaimsAsync(
         TimeSpan staleThreshold,
         CancellationToken cancellationToken = default)
@@ -397,12 +365,6 @@ internal sealed partial class RedisJobQueue(
         return await _database.SortedSetLengthAsync(QueueKey).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Best-effort rollback after a successful Lua claim when the subsequent
-    /// job store update fails. Uses the same atomic Lua script as
-    /// <see cref="RequeueAsync"/> to prevent a window where the job exists
-    /// in neither set.
-    /// </summary>
     private async Task RollBackClaimAsync(string operationId, OperationPriority priority)
     {
         try
@@ -436,11 +398,6 @@ internal sealed partial class RedisJobQueue(
         }
     }
 
-    /// <summary>
-    /// Computes a sort score that orders by priority (descending) then by enqueue time (ascending).
-    /// Lower scores are dequeued first. Critical=0, High=1e12, Normal=2e12, Low=3e12, plus
-    /// millisecond timestamp to break ties by FIFO order.
-    /// </summary>
     private static double ComputeScore(OperationPriority priority, DateTimeOffset enqueueTime)
     {
         var priorityBucket = priority switch

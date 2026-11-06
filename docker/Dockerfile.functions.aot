@@ -16,10 +16,9 @@
 # Custom handlers are a host feature, not a worker feature, so the bundled
 # dotnet-isolated worker is simply unused once FUNCTIONS_WORKER_RUNTIME=custom
 # is set below.
-# Current pin is host 4.1055.250.1 (2026-10-16): ASP.NET Core 8.0.32,
-# isolated worker 9.0.21, and Microsoft.NETCore.App 10.0.13. The floating
-# 4-dotnet-isolated9.0-appservice tag still resolves to ASP.NET Core 8.0.31.
-ARG AZURE_FUNCTIONS_BASE_IMAGE=mcr.microsoft.com/azure-functions/dotnet-isolated:4.1055.250-1-dotnet-isolated9.0-appservice@sha256:7016df2bb4661dc68697303b395760fa1b2de15181a2f551e9268bf53d4d08b2
+# The pinned host 4.1055.300.2 (2026-11-03) ships the ASP.NET Core and
+# Microsoft.NETCore.App shared frameworks 8.0.33, 9.0.22 and 10.0.14.
+ARG AZURE_FUNCTIONS_BASE_IMAGE=mcr.microsoft.com/azure-functions/dotnet-isolated:4.1055.300-2-dotnet-isolated9.0-appservice@sha256:4bed140e217027464567f68e3e630486663922e4bc4d5ec6ecd5408b5bbb540f
 
 FROM ${AZURE_FUNCTIONS_BASE_IMAGE} AS build
 WORKDIR /src
@@ -107,6 +106,9 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
 COPY . .
 
 ARG CONFIGURATION=Release
+# Empty VERSION preserves Directory.Build.props for local container builds.
+ARG VERSION=
+ARG HONUA_GIT_SHA=
 # Oracle.ManagedDataAccess and Snowflake.Data are not NativeAOT-compatible: both
 # emit fatal IL3000 diagnostics while reading Assembly.Location from a
 # single-file app. Keep the Functions image aligned with the Lambda AOT image by
@@ -131,6 +133,9 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
           -p:HonuaSkipOracleForAotVerification=true \
           -p:HonuaSkipSnowflakeForAotVerification=true && \
         dotnet publish src/Honua.Server/Honua.Server.csproj \
+          ${VERSION:+-p:Version="$VERSION"} \
+          ${VERSION:+-p:InformationalVersion="$VERSION$(if [ -n "$HONUA_GIT_SHA" ]; then printf '+%.7s' "$HONUA_GIT_SHA"; fi)"} \
+          ${VERSION:+-p:IncludeSourceRevisionInInformationalVersion=false} \
           --configuration "$CONFIGURATION" \
           --runtime "$RUNTIME_ID" \
           --no-restore \
@@ -165,6 +170,8 @@ WORKDIR /home/site/wwwroot
 # Immutable deployment identity (#3038). Keep the SHA in the runtime stage so revision-only
 # changes do not invalidate publish layers; the pushed image digest is injected by deployment.
 ARG HONUA_GIT_SHA=
+ARG VERSION=
+LABEL org.opencontainers.image.version="${VERSION}"
 LABEL org.opencontainers.image.revision="${HONUA_GIT_SHA}"
 ENV HONUA_GIT_SHA=${HONUA_GIT_SHA}
 

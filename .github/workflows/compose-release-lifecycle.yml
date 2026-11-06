@@ -1,0 +1,70 @@
+name: Compose Release Lifecycle
+
+on:
+  pull_request:
+    branches: [trunk]
+    paths:
+      - 'src/Honua.Server/Features/ControlPlane/**'
+      - 'src/Honua.Server/Features/Infrastructure/Monitoring/McpPlatformOpsReader.cs'
+      - 'src/Honua.Core/Features/ControlPlane/**'
+      - 'docs/get-started/compose.executor.yaml'
+      - 'docs/get-started/quickstart.md'
+      - 'docs/guides/connect/working-with-ai-agents.md'
+      - 'docs/guides/connect/operating-skills.md'
+      - 'tests/integration/test_compose_release_lifecycle.py'
+      - '.github/workflows/compose-release-lifecycle.yml'
+      - '.github/workflows/nightly-container-build.yml'
+      - 'docker/Dockerfile.aot'
+      - 'docker/Dockerfile.compose-executor'
+      - 'scripts/docker/*quickstart*.py'
+      - 'scripts/docker/test_compose_release_lifecycle_polling.py'
+      - 'scripts/docker/test_operating_skills.py'
+      - 'skills/**'
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: compose-release-lifecycle-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  published-rc1-lifecycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Prepare runner disk space
+        run: |
+          scripts/ci/server-test-shard-free-disk.sh
+          scripts/ci/server-test-shard-free-disk.sh --await
+      - name: Verify proposal lifecycle polling
+        run: python3 -m unittest discover -s scripts/docker -p 'test_compose_release_lifecycle_polling.py' -v
+      - name: Verify operating skill package bytes and checksums
+        run: python3 -m unittest discover -s scripts/docker -p 'test_operating_skills.py' -v
+      - name: Build production candidate image
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          docker build --file docker/Dockerfile.aot --tag honua-lifecycle:candidate \
+            --secret id=github_actor,env=GITHUB_ACTOR --secret id=github_token,env=GITHUB_TOKEN .
+      - name: Build the dedicated customer executor image
+        run: |
+          docker build --file docker/Dockerfile.compose-executor --tag honua-lifecycle:executor \
+            --build-arg HONUA_SERVER_IMAGE=honua-lifecycle:candidate .
+      - name: Verify customer package and isolation contract
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: python3 -m unittest discover -s scripts/docker -p 'test_compose_quickstart.py' -v
+      - name: Run published-image MCP and restore journey
+        run: |
+          export TMPDIR="${RUNNER_TEMP}"
+          python3 -m venv "${RUNNER_TEMP}/honua-lifecycle-venv"
+          "${RUNNER_TEMP}/honua-lifecycle-venv/bin/pip" install pytest
+          export HONUA_LIFECYCLE_EXECUTOR_IMAGE="$(docker image inspect --format '{{.Id}}' honua-lifecycle:executor)"
+          export HONUA_LIFECYCLE_IMAGE="$(docker image inspect --format '{{.Id}}' honua-lifecycle:candidate)"
+          "${RUNNER_TEMP}/honua-lifecycle-venv/bin/pytest" -q --tb=short --no-showlocals tests/integration/test_compose_release_lifecycle.py

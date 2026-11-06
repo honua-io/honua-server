@@ -216,7 +216,7 @@ internal static partial class FeatureServerEndpoints
         if (!string.IsNullOrWhiteSpace(where))
         {
             var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
-            var parseResult = filterService.Parse(FilterLanguage.ArcGisSql, where);
+            var parseResult = filterService.Parse(FilterLanguage.GeoServicesSql, where);
             if (!parseResult.IsSuccess)
             {
                 return StandardErrorHelpers.CreateBadRequest(context,
@@ -464,7 +464,7 @@ internal static partial class FeatureServerEndpoints
         if (!string.IsNullOrWhiteSpace(where))
         {
             var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
-            var parseResult = filterService.Parse(FilterLanguage.ArcGisSql, where);
+            var parseResult = filterService.Parse(FilterLanguage.GeoServicesSql, where);
             if (!parseResult.IsSuccess)
             {
                 return StandardErrorHelpers.CreateBadRequest(context,
@@ -566,10 +566,6 @@ internal static partial class FeatureServerEndpoints
         return Results.Bytes(tileData, "application/vnd.mapbox-vector-tile");
     }
 
-    /// <summary>
-    /// Maps zoom level to a reasonable default H3 resolution.
-    /// Lower zoom = coarser cells, higher zoom = finer cells.
-    /// </summary>
     private static int ZoomToH3Resolution(int zoom) => zoom switch
     {
         <= 2 => 1,
@@ -634,10 +630,6 @@ internal static partial class FeatureServerEndpoints
         return false;
     }
 
-    /// <summary>
-    /// Parses a GeoJSON Polygon string (H3 cell boundary) into an Esri-compatible
-    /// <see cref="GeoServicesGeometry"/> with Rings. Returns null on parse failure.
-    /// </summary>
     private static GeoServicesGeometry? TryParseH3CellGeometry(string geoJsonStr)
     {
         try

@@ -9,90 +9,34 @@ using Honua.Infrastructure.Authentication.ClientCertificates;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Extension methods for configuring authentication services
-/// </summary>
 public static class AuthenticationExtensions
 {
-    /// <summary>
-    /// Authentication scheme name for API key authentication
-    /// </summary>
     public const string ApiKeyScheme = "ApiKey";
 
-    /// <summary>
-    /// Authorization policy name for admin access
-    /// </summary>
     public const string AdminPolicy = "Admin";
 
-    /// <summary>
-    /// Authorization policy name for admin access (alias for legacy endpoints)
-    /// </summary>
     public const string AdminPolicyAlias = "AdminPolicy";
 
-    /// <summary>Authorization policy for proposal approve/reject decisions.</summary>
     public const string AdminApprovePolicy = "AdminApprove";
 
-    /// <summary>
-    /// Authorization policy name for the read-only operational-observability surfaces (A12).
-    /// Admits the admin family (full admin or <c>admin:read</c>) or a dedicated read-only
-    /// <c>ops:read</c> credential for safe reads, while still requiring full admin write for any
-    /// mutating request routed through it. Distinct from <see cref="AdminPolicy"/> so an ops-reader
-    /// key can observe the ops posture without holding a credential that could mutate.
-    /// </summary>
+    public const string AdminCredentialManagementPolicy = "AdminCredentialManagement";
+
+    // The ops-reader policy admits admin or ops:read for a safe method and still requires full admin for a mutation on that same policy.
     public const string OpsReadPolicy = "OpsRead";
 
-    /// <summary>
-    /// Authorization policy name for temporal-history read access (honua-server#1166).
-    /// Distinct from the current-read and admin surfaces so it can be tightened to a
-    /// dedicated permission grant in a later slice without touching endpoint code. In
-    /// this slice it requires the admin role, matching the admin baseline.
-    /// </summary>
     public const string TemporalHistoryReadPolicy = "TemporalHistoryRead";
 
-    /// <summary>
-    /// Authorization policy name for temporal-diff read access (honua-server#1166 slice 2). Distinct from
-    /// history reads so diff comparison between checkpoints can be authorized separately. In this slice it
-    /// requires the admin role, matching the admin baseline.
-    /// </summary>
     public const string TemporalDiffReadPolicy = "TemporalDiffRead";
 
-    /// <summary>
-    /// Authorization policy name for governed rollback execution (honua-server#1166 slice 5). Distinct
-    /// from read policies so the mutating corrective-operation surface is authorized separately. In this
-    /// slice it requires the admin role, matching the admin baseline.
-    /// </summary>
     public const string TemporalRollbackExecutePolicy = "TemporalRollbackExecute";
 
-    /// <summary>
-    /// Authorization policy name for the controlled-conformance mutation surface
-    /// (honua-server#3038). Distinct from the admin family so the credential a scheduled
-    /// conformance runner holds is named, auditable, and can be tightened to a dedicated
-    /// grant without touching endpoint code (NFR-002). In this slice it requires the admin
-    /// role, matching the admin baseline; the per-run ownership token enforced inside the
-    /// endpoints is what additionally isolates one authorized run from another.
-    /// </summary>
+    // Conformance mutation is a separate policy from admin so the runner credential can be narrowed later, and the per-run ownership token isolates one authorized run from another.
     public const string ConformanceMutatePolicy = "ConformanceMutate";
 
-    /// <summary>
-    /// Authorization policy name for the Studio package lifecycle surface (honua-server#3001).
-    /// Admits the admin family, matching the pre-#3001 posture, or any authenticated principal
-    /// once <c>Studio:EndUserAuthorization:Enabled</c> is turned on; per-resource ownership and
-    /// the elevated-operation (publish-request, rollback) operator-grant check are enforced
-    /// inside each endpoint handler via <c>IStudioAuthorizationService</c>. See
-    /// <see cref="StudioLifecycleRequirement"/>.
-    /// </summary>
     public const string StudioLifecyclePolicy = "StudioLifecycle";
 
-    /// <summary>
-    /// Authorization policy for the Studio AI proxy. Composes the Studio lifecycle feature-flag
-    /// gate with an interactive-principal boundary: administrators and OIDC/session users are
-    /// admitted, while non-admin API keys are not model-provider credentials.
-    /// </summary>
     public const string StudioAiProxyPolicy = "StudioAiProxy";
 
-    /// <summary>
-    /// Adds API key authentication and authorization services
-    /// </summary>
     public static IServiceCollection AddApiKeyAuthentication(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -112,6 +56,7 @@ public static class AuthenticationExtensions
         // in every policy that adds AdminPermissionRequirement below.
         services.AddSingleton<IAuthorizationHandler, AdminPermissionAuthorizationHandler>();
         services.AddSingleton<IAuthorizationHandler, AdminApproveAuthorizationHandler>();
+        services.AddSingleton<IAuthorizationHandler, AdminCredentialManagementAuthorizationHandler>();
 
         // Enforces the read-only ops-reader split (A12): admits admin or ops:read grants for safe
         // reads while requiring full admin write for mutating requests routed through OpsReadPolicy.
@@ -152,6 +97,11 @@ public static class AuthenticationExtensions
             options.AddPolicy(AdminPolicy, policy => ConfigureAdminPolicy(policy, mtlsCapabilityEnabled));
             options.AddPolicy(AdminPolicyAlias, policy => ConfigureAdminPolicy(policy, mtlsCapabilityEnabled));
             options.AddPolicy(AdminApprovePolicy, policy => ConfigureAdminApprovePolicy(policy, mtlsCapabilityEnabled));
+            options.AddPolicy(AdminCredentialManagementPolicy, policy =>
+            {
+                ConfigureAdminPolicy(policy, mtlsCapabilityEnabled);
+                _ = policy.AddRequirements(new AdminCredentialManagementRequirement());
+            });
             options.AddPolicy(OpsReadPolicy, policy => ConfigureOpsReadPolicy(policy, mtlsCapabilityEnabled));
             options.AddPolicy(TemporalHistoryReadPolicy, policy => ConfigureAdminPolicy(policy, mtlsCapabilityEnabled));
             options.AddPolicy(TemporalDiffReadPolicy, policy => ConfigureAdminPolicy(policy, mtlsCapabilityEnabled));
@@ -168,19 +118,7 @@ public static class AuthenticationExtensions
         return services;
     }
 
-    /// <summary>
-    /// Configures an admin-family authorization policy: an authenticated principal
-    /// in the <c>admin</c> role, or carrying the server-only approved-operation role,
-    /// whose scoped permission grants authorize the request (#1985). The permission
-    /// requirement binds approved-operation credentials to their exact method and path.
-    /// </summary>
-    /// <param name="policy">The policy builder to configure.</param>
-    /// <param name="mtlsCapabilityEnabled">
-    /// Whether the <c>security.mtls</c> experimental capability is enabled (#2958). Only
-    /// then is the client-certificate scheme added to the policy's accepted schemes — while
-    /// disabled (the default), a valid bearer token authenticates admin requests with no
-    /// interposed cert-RBAC check.
-    /// </param>
+    // While mTLS is disabled the certificate scheme is not registered, so a valid bearer authenticates an admin request with no certificate check.
     private static void ConfigureAdminPolicy(AuthorizationPolicyBuilder policy, bool mtlsCapabilityEnabled)
     {
         _ = policy.RequireAuthenticatedUser();
@@ -205,18 +143,7 @@ public static class AuthenticationExtensions
         }
     }
 
-    /// <summary>
-    /// Configures the read-only ops-reader authorization policy (A12). Unlike the admin family it
-    /// does NOT require the <c>admin</c> role — a key minted with only an <c>ops:read</c> grant
-    /// authenticates as a non-admin scoped principal — so authorization is decided by
-    /// <see cref="OpsReadRequirement"/> (via <see cref="AdminApiKeyPermission.IsOpsReadAuthorized"/>):
-    /// admin (any level) or ops:read for safe methods; full admin write for mutating methods.
-    /// </summary>
-    /// <param name="policy">The policy builder to configure.</param>
-    /// <param name="mtlsCapabilityEnabled">
-    /// Whether the <c>security.mtls</c> experimental capability is enabled (#2958); see
-    /// <see cref="ConfigureAdminPolicy"/>.
-    /// </param>
+    // The ops-reader policy does not require the admin role.
     private static void ConfigureOpsReadPolicy(AuthorizationPolicyBuilder policy, bool mtlsCapabilityEnabled)
     {
         _ = policy.RequireAuthenticatedUser();
@@ -228,28 +155,7 @@ public static class AuthenticationExtensions
         }
     }
 
-    /// <summary>
-    /// Configures the Studio package lifecycle authorization policy (honua-server#3001). Any
-    /// authenticated principal may satisfy the ASP.NET policy gate — admin unconditionally, a
-    /// non-admin only once <see cref="StudioLifecycleRequirement"/>'s
-    /// <c>Studio:EndUserAuthorization:Enabled</c> check passes — with per-resource ownership and
-    /// the elevated-operation operator-grant check enforced inside each endpoint handler.
-    /// </summary>
-    /// <param name="policy">The policy builder to configure.</param>
-    /// <param name="mtlsCapabilityEnabled">
-    /// Whether the <c>security.mtls</c> experimental capability is enabled (#2958); see
-    /// <see cref="ConfigureAdminPolicy"/>. Only consulted when <paramref name="oidcEnabled"/> is
-    /// <see langword="false"/> — the composite scheme already routes mTLS itself.
-    /// </param>
-    /// <param name="oidcEnabled">
-    /// Whether OIDC authentication is configured (<c>Oidc:Enabled</c>). When
-    /// <see langword="true"/>, the policy is pinned to <see cref="OidcAuthenticationExtensions.CompositeScheme"/>
-    /// instead of <see cref="ApiKeyScheme"/> alone: the composite scheme is what actually routes
-    /// a bearer token to JWT Bearer, letting an OIDC-authenticated non-admin session satisfy
-    /// this policy at all (an admin-only policy pinned to <see cref="ApiKeyScheme"/> can never
-    /// see an OIDC principal). Pinning to the composite scheme unconditionally would throw when
-    /// OIDC is disabled, because that scheme is then never registered.
-    /// </param>
+    // Pin this policy to the composite scheme only while OIDC is registered: leaving it unpinned hides an OIDC principal, and naming an unregistered scheme throws.
     private static void ConfigureStudioLifecyclePolicy(AuthorizationPolicyBuilder policy, bool mtlsCapabilityEnabled, bool oidcEnabled)
     {
         _ = policy.RequireAuthenticatedUser();
@@ -268,79 +174,41 @@ public static class AuthenticationExtensions
         }
     }
 
-    /// <summary>
-    /// Adds authentication middleware to the request pipeline
-    /// </summary>
     public static IApplicationBuilder UseApiKeyAuthentication(this IApplicationBuilder app)
     {
         return app.UseAuthentication()
                   .UseAuthorization();
     }
 
-    /// <summary>
-    /// Requires admin authorization for an endpoint or endpoint group
-    /// </summary>
     public static TBuilder RequireAdminAuthorization<TBuilder>(this TBuilder builder)
         where TBuilder : IEndpointConventionBuilder => builder.RequireAuthorization(AdminPolicy);
 
-    /// <summary>Requires full admin authority or the narrow <c>admin:approve</c> grant.</summary>
+    public static TBuilder RequireAdminCredentialManagementAuthorization<TBuilder>(this TBuilder builder)
+        where TBuilder : IEndpointConventionBuilder => builder.RequireAuthorization(AdminCredentialManagementPolicy);
+
     public static TBuilder RequireAdminApproveAuthorization<TBuilder>(this TBuilder builder)
         where TBuilder : IEndpointConventionBuilder => builder.RequireAuthorization(AdminApprovePolicy);
 
-    /// <summary>
-    /// Requires read-only ops-reader authorization for an endpoint or group (A12). Safe reads are
-    /// authorized by an admin key (any level) or a read-only <c>ops:read</c> grant; a mutating
-    /// request routed through this policy still requires full admin write, so applying it to a mixed
-    /// read/write group keeps every mutation admin-only while additionally admitting ops-reader keys
-    /// to the reads.
-    /// </summary>
     public static TBuilder RequireOpsReadAuthorization<TBuilder>(this TBuilder builder)
         where TBuilder : IEndpointConventionBuilder => builder.RequireAuthorization(OpsReadPolicy);
 
-    /// <summary>
-    /// Requires the distinct temporal-history read authorization for an endpoint or group
-    /// (honua-server#1166).
-    /// </summary>
     public static TBuilder RequireTemporalHistoryRead<TBuilder>(this TBuilder builder)
         where TBuilder : IEndpointConventionBuilder => builder.RequireAuthorization(TemporalHistoryReadPolicy);
 
-    /// <summary>
-    /// Requires the distinct temporal-diff read authorization for an endpoint or group
-    /// (honua-server#1166 slice 2).
-    /// </summary>
     public static TBuilder RequireTemporalDiffRead<TBuilder>(this TBuilder builder)
         where TBuilder : IEndpointConventionBuilder => builder.RequireAuthorization(TemporalDiffReadPolicy);
 
-    /// <summary>
-    /// Requires the distinct governed-rollback execution authorization for an endpoint or group
-    /// (honua-server#1166 slice 5).
-    /// </summary>
     public static TBuilder RequireTemporalRollbackExecute<TBuilder>(this TBuilder builder)
         where TBuilder : IEndpointConventionBuilder => builder.RequireAuthorization(TemporalRollbackExecutePolicy);
 
-    /// <summary>
-    /// Requires the distinct controlled-conformance mutation authorization for an endpoint or
-    /// group (honua-server#3038).
-    /// </summary>
     public static TBuilder RequireConformanceMutateAuthorization<TBuilder>(this TBuilder builder)
         where TBuilder : IEndpointConventionBuilder => builder.RequireAuthorization(ConformanceMutatePolicy);
 
-    /// <summary>
-    /// Requires Studio package lifecycle authorization for an endpoint or group
-    /// (honua-server#3001). Admits admin unconditionally and any authenticated principal once
-    /// <c>Studio:EndUserAuthorization:Enabled</c> is on; per-resource ownership and the
-    /// elevated-operation (publish-request, rollback) operator-grant check must additionally be
-    /// enforced inside the endpoint handler via <c>IStudioAuthorizationService</c>. With the flag
-    /// off, this policy is equivalent to <see cref="RequireAdminAuthorization{TBuilder}"/>.
-    /// </summary>
+    // With the Studio flag off this policy is the admin policy, and elevated publish or rollback checks stay in the handler.
     public static TBuilder RequireStudioLifecycleAuthorization<TBuilder>(this TBuilder builder)
         where TBuilder : IEndpointConventionBuilder => builder.RequireAuthorization(StudioLifecyclePolicy);
 
-    /// <summary>
-    /// Requires Studio AI proxy authorization for an endpoint or group (honua-server#3303).
-    /// In addition to the Studio lifecycle feature-flag gate, non-admin callers must be
-    /// authenticated through an interactive OIDC/session identity rather than an API key.
-    /// </summary>
+    // A non-admin Studio AI caller must be an interactive OIDC or session identity, not an API key.
     public static TBuilder RequireStudioAiProxyAuthorization<TBuilder>(this TBuilder builder)
         where TBuilder : IEndpointConventionBuilder => builder.RequireAuthorization(StudioAiProxyPolicy);
 }

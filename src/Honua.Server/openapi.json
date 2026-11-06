@@ -1794,6 +1794,10 @@
           "itemType": {
             "type": "string"
           },
+          "geometryType": {
+            "type": "string",
+            "description": "Canonical geometry type, for example Point or Polygon. GeometryCollection denotes a generic spatial resource. Omitted when spatial metadata is unavailable."
+          },
           "crs": {
             "type": "array",
             "items": {

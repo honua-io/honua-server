@@ -23,28 +23,28 @@ drift.
 <!-- BEGIN GENERATED DOTNET BASE IMAGE INVENTORY -->
 | Dockerfile | Build argument | Image reference |
 | --- | --- | --- |
-| `Dockerfile` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa` |
-| `Dockerfile` | `DOTNET_ASPNET_IMAGE` | `mcr.microsoft.com/dotnet/aspnet:10.0@sha256:d5633778c754e89a386882eddf8dbee6942447a8a4b8267c19cf1e1158d0b0ac` |
-| `docker/Dockerfile.aot` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa` |
-| `docker/Dockerfile.aot` | `DOTNET_RUNTIME_DEPS_IMAGE` | `mcr.microsoft.com/dotnet/runtime-deps:10.0@sha256:da5846024d0008b48259b53a8953d39381fe5b7ec99ef1449ba4ba927f201490` |
-| `docker/Dockerfile.controlplane-lambda` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa` |
-| `docker/Dockerfile.lambda` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa` |
-| `docker/Dockerfile.lambda.aot` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa` |
-| `docker/Dockerfile.lambda.aot` | `DOTNET_RUNTIME_DEPS_IMAGE` | `mcr.microsoft.com/dotnet/runtime-deps:10.0@sha256:da5846024d0008b48259b53a8953d39381fe5b7ec99ef1449ba4ba927f201490` |
-| `docker/Dockerfile.lambda.aot.simple` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa` |
-| `docker/Dockerfile.odata-tests` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa` |
-| `docker/Dockerfile.protocol-profile-runtime` | `DOTNET_ASPNET_IMAGE` | `mcr.microsoft.com/dotnet/aspnet:10.0@sha256:d5633778c754e89a386882eddf8dbee6942447a8a4b8267c19cf1e1158d0b0ac` |
-| `docker/worker-customcode-dotnet/Dockerfile` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa` |
-| `docker/worker-gdal/Dockerfile` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa` |
+| `Dockerfile` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:de4fe90a98845d75910b9769662465c84de1a934665c431279d1382b2bddc02b` |
+| `Dockerfile` | `DOTNET_ASPNET_IMAGE` | `mcr.microsoft.com/dotnet/aspnet:10.0@sha256:de0ee358cdd672f7017a003bed21e9ac9ed48a27c922a59b18175b6e82fa7fee` |
+| `docker/Dockerfile.aot` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:de4fe90a98845d75910b9769662465c84de1a934665c431279d1382b2bddc02b` |
+| `docker/Dockerfile.aot` | `DOTNET_RUNTIME_DEPS_IMAGE` | `mcr.microsoft.com/dotnet/runtime-deps:10.0@sha256:62028293921f5bd6db3d9f9119cd29cd926dfd3c2336da23b09f425e40c3c832` |
+| `docker/Dockerfile.controlplane-lambda` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:de4fe90a98845d75910b9769662465c84de1a934665c431279d1382b2bddc02b` |
+| `docker/Dockerfile.lambda` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:de4fe90a98845d75910b9769662465c84de1a934665c431279d1382b2bddc02b` |
+| `docker/Dockerfile.lambda.aot` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:de4fe90a98845d75910b9769662465c84de1a934665c431279d1382b2bddc02b` |
+| `docker/Dockerfile.lambda.aot` | `DOTNET_RUNTIME_DEPS_IMAGE` | `mcr.microsoft.com/dotnet/runtime-deps:10.0@sha256:62028293921f5bd6db3d9f9119cd29cd926dfd3c2336da23b09f425e40c3c832` |
+| `docker/Dockerfile.lambda.aot.simple` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:de4fe90a98845d75910b9769662465c84de1a934665c431279d1382b2bddc02b` |
+| `docker/Dockerfile.odata-tests` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:de4fe90a98845d75910b9769662465c84de1a934665c431279d1382b2bddc02b` |
+| `docker/Dockerfile.protocol-profile-runtime` | `DOTNET_ASPNET_IMAGE` | `mcr.microsoft.com/dotnet/aspnet:10.0@sha256:de0ee358cdd672f7017a003bed21e9ac9ed48a27c922a59b18175b6e82fa7fee` |
+| `docker/worker-customcode-dotnet/Dockerfile` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:de4fe90a98845d75910b9769662465c84de1a934665c431279d1382b2bddc02b` |
+| `docker/worker-gdal/Dockerfile` | `DOTNET_SDK_IMAGE` | `mcr.microsoft.com/dotnet/sdk:10.0@sha256:de4fe90a98845d75910b9769662465c84de1a934665c431279d1382b2bddc02b` |
 <!-- END GENERATED DOTNET BASE IMAGE INVENTORY -->
 
 ### Other pinned serving bases
 
 | Dockerfile | Stage | Image | Digest |
 | --- | --- | --- | --- |
-| `docker/Dockerfile.functions` | build + runtime | `mcr.microsoft.com/azure-functions/dotnet-isolated:4.1055.250-1-dotnet-isolated9.0-appservice` | `@sha256:7016df2bb4661dc68697303b395760fa1b2de15181a2f551e9268bf53d4d08b2` |
-| `docker/Dockerfile.functions.aot` | build + runtime | `mcr.microsoft.com/azure-functions/dotnet-isolated:4.1055.250-1-dotnet-isolated9.0-appservice` | `@sha256:7016df2bb4661dc68697303b395760fa1b2de15181a2f551e9268bf53d4d08b2` |
-| `docker/Dockerfile.lambda` | runtime | `public.ecr.aws/lambda/provided:al2023` | `@sha256:9b3ad8941296d16bffb52819b30ccc4c9b54db5fafac6f93737e034ba007c618` |
+| `docker/Dockerfile.functions` | build + runtime | `mcr.microsoft.com/azure-functions/dotnet-isolated:4.1055.300-2-dotnet-isolated9.0-appservice` | `@sha256:4bed140e217027464567f68e3e630486663922e4bc4d5ec6ecd5408b5bbb540f` |
+| `docker/Dockerfile.functions.aot` | build + runtime | `mcr.microsoft.com/azure-functions/dotnet-isolated:4.1055.300-2-dotnet-isolated9.0-appservice` | `@sha256:4bed140e217027464567f68e3e630486663922e4bc4d5ec6ecd5408b5bbb540f` |
+| `docker/Dockerfile.lambda` | runtime | `public.ecr.aws/lambda/provided:al2023` | `@sha256:612c98f126c2a95e77a016d56fed50a83055e11d636132ee6ebdd461f01b9617` |
 | `docker/Dockerfile.lambda(.aot)` | adapter | `public.ecr.aws/awsguru/aws-lambda-adapter:0.9.1` | `@sha256:46d6625e68cbbdd2efab4a20245977664513f13ffef47915b000d431adcea0b4` |
 
 The Functions images were previously the only platform-published Dockerfiles
@@ -54,7 +54,7 @@ upstream contents deterministic so nightly Trivy stops re-uploading the same
 advisories under shifting layers and (b) brings the Functions image in line with
 the existing platform Dockerfile pattern (`Dockerfile`,
 `docker/Dockerfile.aot`, `docker/Dockerfile.lambda{,.aot}`). Refresh cadence:
-explicit PR per published image. The 2026-10-19 refresh moves off host 4.1053.200.3 (ASP.NET Core 8.0.30 and worker 9.0.19) to host 4.1055.250.1, whose shared frameworks are ASP.NET Core 8.0.32, the 9.0.21 worker, and Microsoft.NETCore.App 10.0.13. The floating `4-dotnet-isolated9.0-appservice` tag still resolves to ASP.NET Core 8.0.31. The generated .NET inventory also records the
+explicit PR per published image. The 2026-10-19 refresh moves off host 4.1053.200.3 (ASP.NET Core 8.0.30 and worker 9.0.19) to host 4.1055.250.1, whose shared frameworks are ASP.NET Core 8.0.32, the 9.0.21 worker, and Microsoft.NETCore.App 10.0.13. The floating `4-dotnet-isolated9.0-appservice` tag still resolves to ASP.NET Core 8.0.31. The 2026-11-04 refresh moves to host 4.1055.300.2, whose shared frameworks are 8.0.33, 9.0.22 and 10.0.14, together with the .NET 10.0.14 SDK, ASP.NET Core and runtime-deps images, the GDAL worker runtime, and the Native AOT toolchain the SDK restores (Microsoft.DotNet.ILCompiler 10.0.14, the first release outside GHSA-p3jp-9v83-76w9). The generated .NET inventory also records the
 digest-pinned auxiliary `docker/Dockerfile.lambda.aot.simple`; it remains outside
 the platform publish matrix. Developer images, including `docker/Dockerfile.dev`, are now digest-pinned
 and included in the generated inventory.
@@ -605,3 +605,54 @@ the completed run uses a fresh empty regular file.
 A passing generic Security Nightly run does not establish the result for
 another image digest. The general 260-item quality cleanup is not additional
 RC security acceptance.
+
+## 2026-10-30 fixable image findings
+
+Issue #6790. The 2026-10-08 and 2026-10-13 rows that leave `wget`, `zlib1g`,
+and the Lambda emulator open describe those scans. They are not the disposition
+after this change. The unfixed Ubuntu packages that remain are tracked by #6795.
+No `.trivyignore` entry was added. `DOTNET_ASPNET_IMAGE` and
+`DOTNET_RUNTIME_DEPS_IMAGE` were not bumped.
+
+| Pin | Digest | Why it stayed |
+| --- | --- | --- |
+| `mcr.microsoft.com/dotnet/aspnet:10.0` | `sha256:d5633778c754e89a386882eddf8dbee6942447a8a4b8267c19cf1e1158d0b0ac` (.NET 10.0.13) | The tag index on 2026-10-30 was `sha256:de0ee358cdd672f7017a003bed21e9ac9ed48a27c922a59b18175b6e82fa7fee` (.NET 10.0.14). Apt on the pin already installs the zlib fix. |
+| `mcr.microsoft.com/dotnet/runtime-deps:10.0` | `sha256:da5846024d0008b48259b53a8953d39381fe5b7ec99ef1449ba4ba927f201490` | The tag index was `sha256:62028293921f5bd6db3d9f9119cd29cd926dfd3c2336da23b09f425e40c3c832`. Same reason. |
+| `public.ecr.aws/lambda/provided:al2023` | `sha256:612c98f126c2a95e77a016d56fed50a83055e11d636132ee6ebdd461f01b9617` | `/usr/local/bin/aws-lambda-rie` is Go 1.26.9 on amd64 and arm64. The public index `sha256:b19630ffeffa483bfc47690ff7b59accd4eda84f632b6e29a72b3f57fb29cbd9` is also Go 1.26.9. CVE-2026-111943 is fixed in 1.26.10 and 1.27.3. |
+
+`RUNTIME_PACKAGE_REVISION` is now `20261030` in the root Dockerfile,
+`docker/Dockerfile.aot`, and `docker/Dockerfile.lambda.aot`. The value is echoed
+inside `apt-get upgrade`, and each of those runs checks that `zlib1g` is at
+least `1:1.3.dfsg-3.1ubuntu2.3` (CVE-2026-85091, alert #3532). A rebuild of the
+pinned runtime-deps image with that upgrade no longer reports CVE-2026-85091.
+The no-upgrade pin still reports `zlib1g` `1:1.3.dfsg-3.1ubuntu2.2`.
+
+`wget` (CVE-2021-31879, alert #3406) is no longer installed in those Ubuntu
+runtime stages. Health checks use `bash /dev/tcp` to `127.0.0.1`. The bases
+ship bash and do not install an HTTP client. nginx, caddy, and the OGC stub still call
+wget. Cite scripts pipe `scripts/docker/container-http-get.sh` into `bash -s`.
+
+The published Lambda JIT stage deletes `/usr/local/bin/aws-lambda-rie`
+(CVE-2026-111943, alert #3803). `docker build --target local-emulation -f
+docker/Dockerfile.lambda .` keeps the binary for local `docker run`. Production
+Lambda sets `AWS_LAMBDA_RUNTIME_API`, and the entrypoint execs
+`/var/runtime/bootstrap`. `docker/Dockerfile.controlplane-lambda` is not in the
+scan matrix and is unchanged.
+
+Local Trivy 0.68.1 (`aquasec/trivy:0.68.1`, `--scanners vuln`, all severities)
+on the runtime package recipe, not a full app publish:
+
+| Recipe | Total | Notes |
+| --- | --- | --- |
+| runtime-deps pin, no upgrade | 27 (22 MEDIUM, 5 LOW) | CVE-2026-85091 present |
+| AOT recipe before (upgrade, with wget) | 27 (22 MEDIUM, 5 LOW) | CVE-2026-85091 absent; CVE-2021-31879 present |
+| AOT recipe after | 26 (21 MEDIUM, 5 LOW) | both absent |
+| JIT recipe before | 28 (23 MEDIUM, 5 LOW) | CVE-2021-31879 present; also `libexpat1` |
+| JIT recipe after | 27 (22 MEDIUM, 5 LOW) | CVE-2021-31879 absent |
+| Lambda pin, amd64 and arm64 | 55 (44 HIGH, 10 MEDIUM, 1 UNKNOWN) | CVE-2026-111943, stdlib v1.26.9 |
+| Lambda pin plus `rm` of the emulator | 52 (43 HIGH, 9 MEDIUM) | CVE-2026-111943 absent |
+
+The Lambda proof image does not re-run the Dockerfile's existing `dnf upgrade`.
+The 43 remaining HIGH findings are Amazon Linux packages in that older snapshot.
+The public index above, which is newer, still reported CVE-2026-111943 and did
+not offer a fixed emulator.

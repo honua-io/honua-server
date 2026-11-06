@@ -3,12 +3,7 @@
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Source-generated log messages for the scoped-job token issuer (custom-code auth
-/// spine, Phase 0). Tokens are never written verbatim; an 8-character SHA-256
-/// prefix is emitted instead so issuance and validation events can be correlated
-/// without leaking the secret value to log sinks.
-/// </summary>
+// Tokens are never logged verbatim; an eight-character SHA-256 prefix is emitted instead.
 internal static partial class ScopedJobTokenLog
 {
     [LoggerMessage(EventId = 7055, Level = LogLevel.Warning,

@@ -12,6 +12,8 @@ import unittest
 from argparse import Namespace
 from pathlib import Path
 
+from harness_context import requirement_posture
+
 SCRIPT = Path(__file__).with_name("generate-protocol-harness-fragment.py")
 REPOSITORY_ROOT = SCRIPT.parents[2]
 CONTRACT = REPOSITORY_ROOT / "docs" / "gis" / "data" / "protocol-harness-assignments.v1.json"
@@ -79,8 +81,9 @@ def governed_fixture(value, args):
                 "client_version": f"source@{producer}", "deployment_target": "source-test-host",
                 "fixture_revision": f"server-test-fixtures@{producer}",
                 "contract_revision": f"server-protocol-harness@{value['revision']}+{producer}",
-                "auth_policy_revision": "server-test-host-v1", "maturity": "supported",
-                "required_tier": "nightly",
+                "auth_policy_revision": "server-test-host-v1",
+                "maturity": requirement_posture(row, value)[0],
+                "required_tier": requirement_posture(row, value)[1],
             } for row in value["assignments"]],
         }
         prepared.requirements_context.write_text(json.dumps(context))

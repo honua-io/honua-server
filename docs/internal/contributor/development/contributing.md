@@ -27,7 +27,7 @@ dotnet format Honua.sln
 - `TreatWarningsAsErrors=true` — all builds must pass without warnings
 - Private fields: `_camelCase` with underscore prefix
 - Async methods: suffix with `Async`
-- New public APIs should include XML documentation
+- No XML doc comments (`///`) in application code; see the Clean Code rules in [architecture criteria](../architecture-criteria.md#clean-code-robert-c-martin)
 
 ---
 

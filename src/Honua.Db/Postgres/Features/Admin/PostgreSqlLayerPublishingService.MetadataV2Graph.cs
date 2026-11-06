@@ -89,6 +89,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         string? resourceGeometryColumn,
         string geometryType,
         int srid,
+        double? storageCoordinateEpoch,
         IReadOnlyList<LayerFieldInsert> fields,
         LayerExtentInsert? extent,
         IReadOnlyList<string> capabilities,
@@ -104,6 +105,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             resourceGeometryColumn,
             geometryType,
             srid,
+            storageCoordinateEpoch,
             fields,
             extent,
             capabilities,
@@ -120,6 +122,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         string? resourceGeometryColumn,
         string geometryType,
         int srid,
+        double? storageCoordinateEpoch,
         IReadOnlyList<LayerFieldInsert> fields,
         LayerExtentInsert? extent,
         IReadOnlyList<string> capabilities,
@@ -146,6 +149,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             geometryType,
             srid,
             storage.StorageSrid,
+            storageCoordinateEpoch,
             fields,
             extent,
             now);
@@ -192,6 +196,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             };
         }
         service = service with { Metadata = ApplyPublicationScope(service.Metadata, publicationScope) };
+        service = PublishedServiceOrganization.Apply(graph, service, request);
         resource = resource with { Metadata = ApplyPublicationScope(resource.Metadata, publicationScope) };
         binding = binding with { Metadata = ApplyPublicationScope(binding.Metadata, publicationScope) };
         featurePublication = featurePublication with { Metadata = ApplyPublicationScope(featurePublication.Metadata, publicationScope) };
@@ -3214,6 +3219,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         // instead of repeating `existing?.Metadata` (which CodeQL cannot correlate with
         // the later null-forgiving access to `existing!.Metadata`).
         var existingMetadata = existing?.Metadata;
+        var publicName = existing?.EffectivePublicName ?? serviceName;
         var serviceId = existingMetadata?.Id ?? BuildNewPublishedServiceId(graph, serviceName);
         var metadata = (existingMetadata ?? new MetadataV2ObjectMetadata()) with
         {
@@ -3221,8 +3227,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
             Name = existingMetadata is not null && !string.IsNullOrWhiteSpace(existingMetadata.Name)
                 ? existingMetadata.Name
                 : serviceName,
-            Title = existingMetadata?.Title ?? serviceName,
-            Description = existingMetadata?.Description ?? $"Honua service '{serviceName}'",
+            Title = existingMetadata?.Title ?? publicName,
+            Description = existingMetadata?.Description ?? $"Honua service '{publicName}'",
             CreatedAt = existingMetadata?.CreatedAt ?? now,
             UpdatedAt = now
         };
@@ -3237,7 +3243,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             {
                 Metadata = metadata,
                 Route = string.IsNullOrWhiteSpace(existing.Route)
-                    ? $"/rest/services/{metadata.Name}/FeatureServer"
+                    ? $"/rest/services/{Uri.EscapeDataString(publicName)}/FeatureServer"
                     : existing.Route,
                 SpatialReference = existing.SpatialReference ?? CreateSpatialReference(srid),
             };
@@ -3289,6 +3295,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         string geometryType,
         int srid,
         int storageSrid,
+        double? storageCoordinateEpoch,
         IReadOnlyList<LayerFieldInsert> fields,
         LayerExtentInsert? extent,
         DateTimeOffset now)
@@ -3336,7 +3343,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
                     }
                     : null,
                 PrimaryGeometryField = geometryColumn,
-                StorageCrs = CreateSpatialReference(storageSrid)
+                StorageCrs = CreateSpatialReference(storageSrid),
+                StorageCrsCoordinateEpoch = storageCoordinateEpoch
             },
             Display = new MetadataV2ResourceDisplay
             {

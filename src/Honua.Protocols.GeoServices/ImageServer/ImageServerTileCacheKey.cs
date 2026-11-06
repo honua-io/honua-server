@@ -10,18 +10,9 @@ using Honua.Core.Features.Tiles;
 
 namespace Honua.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Builds the durable cloud tile-cache object key for an ImageServer WMTS tile. The key is
-/// partitioned by every dimension that changes the rendered bytes so two requests that differ in
-/// any of them can never collide: the tile matrix set (gridset), style, output format, time,
-/// tenant/auth identity, and the layer identity (publication scope, layer id, participating raster
-/// set, and metadata graph revision).
-/// </summary>
+// The tile key includes every input that changes the rendered bytes, including tenant and auth identity, so two different renders cannot collide.
 internal static class ImageServerTileCacheKey
 {
-    /// <summary>
-    /// Builds the cloud tile-cache object key for a single ImageServer tile.
-    /// </summary>
     internal static string Build(
         CloudStorageOptions? storageOptions,
         string metadataEtag,
@@ -83,9 +74,6 @@ internal static class ImageServerTileCacheKey
             $"{row.ToString(CultureInfo.InvariantCulture)}.{GetTileFileExtension(rasterFormat)}");
     }
 
-    /// <summary>
-    /// Returns the file extension used for a cached tile of the given raster format.
-    /// </summary>
     internal static string GetTileFileExtension(RasterFormat rasterFormat)
         => rasterFormat switch
         {

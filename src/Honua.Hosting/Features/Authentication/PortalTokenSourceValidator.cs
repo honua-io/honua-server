@@ -9,44 +9,13 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Re-checks the credential a stored portal token was minted from (SEC-9). A portal token is
-/// a derived credential: it must stop when the credential behind it stops.
-/// </summary>
+// A portal token stops being honoured when the credential it was minted from stops.
 internal interface IPortalTokenSourceValidator
 {
-    /// <summary>
-    /// Whether the credential described by <paramref name="source"/> is still the live one.
-    /// Fails closed: anything that cannot be confirmed is reported as no longer valid.
-    /// </summary>
-    /// <param name="source">Source recorded on the token at issuance.</param>
-    /// <param name="cancellationToken">Token used to abort the check.</param>
-    /// <returns><see langword="true"/> when the token may still be honoured.</returns>
     ValueTask<bool> IsStillValidAsync(PortalTokenSourceRecord source, CancellationToken cancellationToken);
 }
 
-/// <summary>
-/// Default <see cref="IPortalTokenSourceValidator"/>. Resolves the live credential through the
-/// stores that already own it and compares its version marker with the one recorded on the
-/// token.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The check is bounded by an in-process cache of the LIVE credential's marker, keyed by the
-/// credential (not by the token), with an absolute lifetime of
-/// <see cref="PortalTokenAuthenticationOptions.SourceRevalidationSeconds"/>. Steady-state cost
-/// is therefore at most one point read per distinct source credential per window per instance,
-/// not one per request: with the default window a deployment authenticating a thousand portal
-/// tokens a second issued from one key performs six key reads a minute, and each read is a
-/// single <c>GET</c> — strictly cheaper than the <c>SDIFF</c> + <c>SMEMBERS</c> + <c>MGET</c> +
-/// conditional write that <see cref="IAdminApiKeyStore.ValidateAsync"/> already performs when
-/// the same key authenticates over <c>X-API-Key</c>.
-/// </para>
-/// <para>
-/// The window is also the worst-case propagation delay for a revocation, which is why it is
-/// short and configurable: set it to zero to re-read on every request.
-/// </para>
-/// </remarks>
+// The cache is keyed by the live credential, not the token, and the window is also the worst-case revocation delay.
 internal sealed class PortalTokenSourceValidator(
     IMemoryCache memoryCache,
     IOptions<PortalTokenAuthenticationOptions> portalTokenOptions,
@@ -62,7 +31,6 @@ internal sealed class PortalTokenSourceValidator(
     private readonly IServiceProvider _serviceProvider = serviceProvider;
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
-    /// <inheritdoc />
     public async ValueTask<bool> IsStillValidAsync(
         PortalTokenSourceRecord source,
         CancellationToken cancellationToken)
@@ -174,6 +142,13 @@ internal sealed class PortalTokenSourceValidator(
             return null;
         }
 
+        // A restricted key cannot be exchanged for a token (ManagedKeyExchangeAuthority), so a
+        // token minted before restrictions existed on the key must not outlive them either.
+        if (ApiKeyRequestRestrictions.IsRestricted(record))
+        {
+            return null;
+        }
+
         return PortalCredentialSourceVersion.ForManagedKey(record);
     }
 
@@ -199,6 +174,5 @@ internal sealed class PortalTokenSourceValidator(
         return seconds <= 0 ? TimeSpan.Zero : TimeSpan.FromSeconds(seconds);
     }
 
-    /// <summary>Cached marker of the live credential; a null marker means "no longer valid".</summary>
     private sealed record LiveSourceVersion(string? Version);
 }

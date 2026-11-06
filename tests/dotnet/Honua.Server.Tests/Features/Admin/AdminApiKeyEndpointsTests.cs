@@ -201,6 +201,12 @@ public sealed class AdminApiKeyEndpointsTests : IAsyncLifetime
             $"/api/v1/admin/api-keys/{victim.ApiKey.Id}/revoke", content: null);
         Assert.Equal(HttpStatusCode.Forbidden, revokeResponse.StatusCode);
 
+        var restrictionsResponse = await readKeyClient.PatchAsJsonAsync(
+            $"/api/v1/admin/api-keys/{victim.ApiKey.Id}/restrictions",
+            new UpdateAdminApiKeyRestrictionsRequest { AllowedReferrers = ["https://evil.example.net"] },
+            _jsonOptions);
+        Assert.Equal(HttpStatusCode.Forbidden, restrictionsResponse.StatusCode);
+
         // The privilege-escalation attempt must not have mutated anything: the
         // victim key still authenticates.
         using var victimClient = CreateApiKeyClient(victim.Key);
@@ -227,6 +233,88 @@ public sealed class AdminApiKeyEndpointsTests : IAsyncLifetime
         };
         var createResponse = await fullKeyClient.PostAsJsonAsync("/api/v1/admin/api-keys", createRequest, _jsonOptions);
         Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/api-keys")]
+    [Endpoint("POST /api/v1/admin/api-keys/{id}/rotate")]
+    [Endpoint("POST /api/v1/admin/api-keys/{id}/revoke")]
+    public async Task OperationalWriteKey_CannotManageCredentials()
+    {
+        // The installer's operational key (admin:read, admin:write, read:*) has general
+        // admin write. Creating, rotating and revoking keys requires full-admin authority,
+        // so each of those requests returns 403 and leaves the key store unchanged.
+        var operational = await CreateApiKeyAsync("installer-operational-key", permissions: ["admin:read", "admin:write", "read:*"]);
+        var fullAdmin = await CreateApiKeyAsync("existing-full-admin-key", permissions: ["admin:*"]);
+        using var operationalClient = CreateApiKeyClient(operational.Key);
+
+        foreach (var requested in new[] { new[] { "admin:approve" }, new[] { "admin:read", "admin:write", "read:*" }, new[] { "admin:*" } })
+        {
+            var create = await operationalClient.PostAsJsonAsync(
+                "/api/v1/admin/api-keys",
+                new CreateAdminApiKeyRequest { Name = "operational-child", Permissions = requested },
+                _jsonOptions);
+            Assert.Equal(HttpStatusCode.Forbidden, create.StatusCode);
+        }
+
+        var rotateFullAdmin = await operationalClient.PostAsync($"/api/v1/admin/api-keys/{fullAdmin.ApiKey.Id}/rotate", content: null);
+        Assert.Equal(HttpStatusCode.Forbidden, rotateFullAdmin.StatusCode);
+
+        var revokeFullAdmin = await operationalClient.PostAsync($"/api/v1/admin/api-keys/{fullAdmin.ApiKey.Id}/revoke", content: null);
+        Assert.Equal(HttpStatusCode.Forbidden, revokeFullAdmin.StatusCode);
+
+        // Nothing was created or changed: the full-admin key still authenticates with its
+        // original secret, and the operational key keeps its read and general write role.
+        using var fullAdminClient = CreateApiKeyClient(fullAdmin.Key);
+        Assert.Equal(HttpStatusCode.OK, (await fullAdminClient.GetAsync("/api/v1/admin/api-keys")).StatusCode);
+        var list = await _client.GetStringAsync("/api/v1/admin/api-keys");
+        Assert.DoesNotContain("operational-child", list, StringComparison.Ordinal);
+        Assert.Equal(HttpStatusCode.OK, (await operationalClient.GetAsync("/api/v1/admin/api-keys")).StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/api-keys")]
+    [Endpoint("POST /api/v1/admin/api-keys/{id}/rotate")]
+    [Endpoint("POST /api/v1/admin/api-keys/{id}/revoke")]
+    public async Task FullAdminKeyAndBootstrap_RetainCredentialManagement()
+    {
+        var fullAdmin = await CreateApiKeyAsync("credential-manager-full-admin", permissions: ["admin:*"]);
+        using var fullAdminClient = CreateApiKeyClient(fullAdmin.Key);
+
+        var minted = await fullAdminClient.PostAsJsonAsync(
+            "/api/v1/admin/api-keys",
+            new CreateAdminApiKeyRequest { Name = "minted-by-full-admin", Permissions = ["admin:approve"] },
+            _jsonOptions);
+        Assert.Equal(HttpStatusCode.Created, minted.StatusCode);
+        var mintedKey = JsonSerializer.Deserialize<ApiResponse<AdminApiKeySecretResponse>>(
+            await minted.Content.ReadAsStringAsync(), _jsonOptions)!.Data!;
+
+        Assert.Equal(HttpStatusCode.OK, (await fullAdminClient.PostAsync($"/api/v1/admin/api-keys/{mintedKey.ApiKey.Id}/rotate", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await _client.PostAsync($"/api/v1/admin/api-keys/{mintedKey.ApiKey.Id}/revoke", null)).StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/api-keys")]
+    public async Task ApprovedOperationKey_ForKeyCreation_MayCreateOnlyThroughItsExactOperation()
+    {
+        var store = _fixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        var issued = await store.CreateAsync(
+            "approved-operation:create-key",
+            AdminApiKeyPermission.CreateApprovedOperationGrants("POST", "/api/v1/admin/api-keys", "public"),
+            DateTimeOffset.UtcNow.AddMinutes(5),
+            "test-requester",
+            CancellationToken.None);
+        var other = await CreateApiKeyAsync("approved-operation-rotate-target", permissions: ["admin:read"]);
+        using var operationClient = CreateApiKeyClient(issued.Key);
+
+        var create = await operationClient.PostAsJsonAsync(
+            "/api/v1/admin/api-keys",
+            new CreateAdminApiKeyRequest { Name = "approved-create", Permissions = ["admin:read"] },
+            _jsonOptions);
+        var rotate = await operationClient.PostAsync($"/api/v1/admin/api-keys/{other.ApiKey.Id}/rotate", null);
+
+        Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, rotate.StatusCode);
     }
 
     [IntegrationTest]
@@ -415,16 +503,144 @@ public sealed class AdminApiKeyEndpointsTests : IAsyncLifetime
         }
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/api-keys")]
+    [Endpoint("GET /api/v1/admin/api-keys")]
+    public async Task CreateApiKey_WithReferrerRestriction_IsNormalizedListedAndEnforced()
+    {
+        var response = await _client.PostAsJsonAsync(
+            "/api/v1/admin/api-keys",
+            new CreateAdminApiKeyRequest
+            {
+                Name = "browser-restricted-key",
+                Permissions = ["admin:read"],
+                AllowedReferrers = ["HTTPS://Console.Example.com/", "https://*.example.org", "https://console.example.com"],
+            },
+            _jsonOptions);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var created = JsonSerializer.Deserialize<ApiResponse<AdminApiKeySecretResponse>>(
+            await response.Content.ReadAsStringAsync(), _jsonOptions)!.Data!;
+        Assert.Equal(new[] { "https://console.example.com", "https://*.example.org" }, created.ApiKey.AllowedReferrers);
+        Assert.Null(created.ApiKey.AllowedIpRanges);
+
+        Assert.Equal(HttpStatusCode.OK, await ListWithKeyAsync(created.Key, origin: "https://console.example.com"));
+        Assert.Equal(HttpStatusCode.OK, await ListWithKeyAsync(created.Key, origin: "https://ops.example.org"));
+        Assert.Equal(HttpStatusCode.Unauthorized, await ListWithKeyAsync(created.Key, origin: "https://evil.example.net"));
+        Assert.Equal(HttpStatusCode.Unauthorized, await ListWithKeyAsync(created.Key, origin: null));
+
+        var list = JsonSerializer.Deserialize<ApiResponse<AdminApiKeyResponse[]>>(
+            await _client.GetStringAsync("/api/v1/admin/api-keys"), _jsonOptions);
+        var listed = Assert.Single(list!.Data!, key => key.Id == created.ApiKey.Id);
+        Assert.Equal(created.ApiKey.AllowedReferrers, listed.AllowedReferrers);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/api-keys")]
+    [Endpoint("GET /api/v1/admin/api-keys")]
+    public async Task CreateApiKey_WithIpRestriction_RefusesClientsOutsideTheRange()
+    {
+        // 192.0.2.0/24 is TEST-NET-1: the in-process test client is never inside it.
+        var created = await CreateApiKeyAsync("network-restricted-key", permissions: ["admin:read"],
+            allowedIpRanges: ["192.0.2.0/24"]);
+        var unrestricted = await CreateApiKeyAsync("unrestricted-key", permissions: ["admin:read"]);
+
+        Assert.Equal(new[] { "192.0.2.0/24" }, created.ApiKey.AllowedIpRanges);
+        Assert.Equal(HttpStatusCode.Unauthorized, await ListWithKeyAsync(created.Key, origin: null));
+        Assert.Equal(HttpStatusCode.OK, await ListWithKeyAsync(unrestricted.Key, origin: null));
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/api-keys")]
+    [Endpoint("PATCH /api/v1/admin/api-keys/{id}/restrictions")]
+    [Endpoint("GET /api/v1/admin/api-keys")]
+    public async Task UpdateRestrictions_ReplacesListsWithoutReturningOrChangingTheSecret()
+    {
+        var created = await CreateApiKeyAsync("restriction-update", permissions: ["admin:read"],
+            allowedIpRanges: ["203.0.113.0/24"]);
+        var response = await _client.PatchAsJsonAsync(
+            $"/api/v1/admin/api-keys/{created.ApiKey.Id}/restrictions",
+            new UpdateAdminApiKeyRestrictionsRequest
+            {
+                AllowedReferrers = ["https://maps.example.com/"],
+                AllowedIpRanges = [],
+            },
+            _jsonOptions);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain(created.Key, body, StringComparison.Ordinal);
+        Assert.DoesNotContain("203.0.113.0/24", body, StringComparison.Ordinal);
+        var updated = JsonSerializer.Deserialize<ApiResponse<AdminApiKeyResponse>>(body, _jsonOptions);
+        Assert.NotNull(updated);
+        Assert.NotNull(updated.Data);
+        Assert.Equal(["https://maps.example.com"], updated.Data.AllowedReferrers);
+        Assert.Null(updated.Data.AllowedIpRanges);
+        Assert.Equal(created.ApiKey.KeyPrefix, updated.Data.KeyPrefix);
+
+        Assert.Equal(HttpStatusCode.OK, await ListWithKeyAsync(created.Key, origin: "https://maps.example.com"));
+        Assert.Equal(HttpStatusCode.Unauthorized, await ListWithKeyAsync(created.Key, origin: "https://evil.example.net"));
+
+        var malformed = await _client.PatchAsJsonAsync(
+            $"/api/v1/admin/api-keys/{created.ApiKey.Id}/restrictions",
+            new UpdateAdminApiKeyRestrictionsRequest { AllowedIpRanges = ["not-an-ip"] },
+            _jsonOptions);
+        Assert.Equal(HttpStatusCode.BadRequest, malformed.StatusCode);
+        Assert.DoesNotContain(created.Key, await malformed.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+
+        var missing = await _client.PatchAsJsonAsync(
+            $"/api/v1/admin/api-keys/{Guid.NewGuid()}/restrictions",
+            new UpdateAdminApiKeyRestrictionsRequest(),
+            _jsonOptions);
+        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/api-keys")]
+    public async Task CreateApiKey_WithMalformedRestriction_ReturnsBadRequest()
+    {
+        var invalid = new[]
+        {
+            new CreateAdminApiKeyRequest { Name = "bad-referrer", AllowedReferrers = ["https://app.example.com/path"] },
+            new CreateAdminApiKeyRequest { Name = "bad-referrer", AllowedReferrers = ["app.example.com"] },
+            new CreateAdminApiKeyRequest { Name = "bad-referrer", AllowedReferrers = ["https://*.com"] },
+            new CreateAdminApiKeyRequest { Name = "bad-range", AllowedIpRanges = ["203.0.113.7/24"] },
+            new CreateAdminApiKeyRequest { Name = "bad-range", AllowedIpRanges = ["not-an-ip"] },
+            new CreateAdminApiKeyRequest { Name = "too-many", AllowedIpRanges = Enumerable.Range(0, 51).Select(i => $"10.0.{i}.0/24").ToArray() },
+        };
+
+        foreach (var request in invalid)
+        {
+            var response = await _client.PostAsJsonAsync("/api/v1/admin/api-keys", request, _jsonOptions);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+    }
+
+    private async Task<HttpStatusCode> ListWithKeyAsync(string key, string? origin)
+    {
+        using var client = _fixture.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/admin/api-keys");
+        request.Headers.Add("X-API-Key", key);
+        if (origin is not null)
+        {
+            request.Headers.Add("Origin", origin);
+        }
+
+        using var response = await client.SendAsync(request);
+        return response.StatusCode;
+    }
+
     private async Task<AdminApiKeySecretResponse> CreateApiKeyAsync(
         string name,
         DateTimeOffset? expiresAt = null,
-        IReadOnlyList<string>? permissions = null)
+        IReadOnlyList<string>? permissions = null,
+        IReadOnlyList<string>? allowedIpRanges = null)
     {
         var request = new CreateAdminApiKeyRequest
         {
             Name = name,
             ExpiresAt = expiresAt,
             Permissions = permissions ?? [],
+            AllowedIpRanges = allowedIpRanges,
         };
 
         var response = await _client.PostAsJsonAsync("/api/v1/admin/api-keys", request, _jsonOptions);

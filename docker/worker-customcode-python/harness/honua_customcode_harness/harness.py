@@ -40,7 +40,14 @@ from .context import (
 )
 from .context import Artifact
 from .deps import DepsRestoreError, restore_requirements
-from .events import EVENTS_FILE_NAME, EVENTS_PATH_ENV, EventJournal, attempt_from_env
+from .events import (
+    EVENTS_FILE_NAME,
+    EVENTS_PATH_ENV,
+    EventJournal,
+    attempt_from_env,
+    correlation_from_env,
+    trace_from_env,
+)
 from .jobspec import JobSpec, JobSpecError, load_job_spec
 from .loader import EntrypointError, load_entrypoint
 from .sandbox import (
@@ -88,7 +95,10 @@ def run(
     resolved_env = os.environ if env is None else env
     journal = EventJournal(
         resolved_env.get(EVENTS_PATH_ENV) or (workdir / EVENTS_FILE_NAME),
-        attempt=attempt_from_env(resolved_env), mirror=_StdLogger())
+        attempt=attempt_from_env(resolved_env),
+        correlation=correlation_from_env(resolved_env),
+        trace=trace_from_env(resolved_env),
+        mirror=_StdLogger())
     state: dict[str, Any] = {"phase": "inputs", "uploader": None}
     code = EXIT_HARNESS_ERROR
     try:

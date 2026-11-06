@@ -593,11 +593,7 @@ internal static class OutputCachingRegistration
         string? redisConnectionString)
         => redisCacheEntitled && !string.IsNullOrWhiteSpace(redisConnectionString);
 
-    /// <summary>
-    /// Checks the live entitlements required by the output-cache backend selected at startup.
-    /// A local store requires only output caching; a Redis store requires both output caching
-    /// and Redis on every request so a hot license replacement cannot retain Redis access.
-    /// </summary>
+    // A Redis output cache re-checks the Redis entitlement on every request so a hot license replacement cannot keep Redis access.
     internal static bool HasLiveOutputCacheEntitlements(
         IServiceProvider services,
         bool redisOutputCacheConfigured)
@@ -611,22 +607,13 @@ internal static class OutputCachingRegistration
         => new("tile-size-budget", context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>()
             .Value.Tiles.MaxTileSize.ToString(CultureInfo.InvariantCulture));
 
-    /// <summary>
-    /// Cache-key generation for the shared output cache. Raise it whenever a change makes entries
-    /// written by an earlier build unsafe or unwanted to replay, so a persistent (Redis) cache
-    /// cannot serve them after the deployment (#4980). Raising it costs one cold cache.
-    /// </summary>
+    // Raise this generation when entries written by an earlier build must not be replayed from a persistent cache.
     private const string OutputCacheEpoch = "2";
 
     private static KeyValuePair<string, string> ResolveTenantOutputCacheKey(HttpContext context)
         => new("tenant", TenantScopeHelpers.ResolveRequestTenantId(context) ?? "<none>");
 
-    /// <summary>
-    /// Resolves a license fingerprint (edition + validation state + active entitlements) for the output
-    /// cache vary-by so license-tier-filtered metadata responses never share a cache
-    /// entry across editions (#1983). Falls back to a stable sentinel when the license
-    /// provider is unavailable so caching still functions in minimal hosts.
-    /// </summary>
+    // The license fingerprint is part of the cache key so edition-filtered metadata is not shared across editions.
     internal static KeyValuePair<string, string> ResolveLicenseOutputCacheKey(HttpContext context)
     {
         var provider = context.RequestServices.GetService<ILicenseStatusProvider>();

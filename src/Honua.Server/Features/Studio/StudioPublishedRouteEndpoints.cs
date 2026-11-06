@@ -11,21 +11,13 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Studio;
 
-/// <summary>
-/// Studio published-route resolver (honua-server#4907). An approved Studio publication reports
-/// <c>activeUrl</c> = <see cref="StudioPublishedRoutes.BuildActiveUrl"/> of its intent route;
-/// this endpoint resolves that route to the governing accepted publication and serves the
-/// content item's Active version -- the published pointer, so a republish or rollback is
-/// reflected and a superseded version is never served -- honouring the publication visibility.
-/// </summary>
+// The route serves the active version, so a superseded version is never served.
 internal static class StudioPublishedRouteEndpoints
 {
     private const string ResourceType = "studio-published-route";
 
-    /// <summary>Log category for Studio published-route reads.</summary>
     internal sealed class StudioPublishedRouteLog;
 
-    /// <summary>Maps the Studio published-route read endpoint.</summary>
     public static void MapStudioPublishedRouteEndpoints(this IEndpointRouteBuilder endpoints)
     {
         // Deliberately not part of the /studio lifecycle group: its

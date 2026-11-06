@@ -29,7 +29,7 @@ public sealed class ImportZmRoundTripTests
         method.Should().NotBeNull();
 
         var plain = new WKBWriter();
-        return (WKBWriter)method!.Invoke(null, new object[] { geometry, plain })!;
+        return (WKBWriter)method!.Invoke(null, new object?[] { geometry, plain, null })!;
     }
 
     private static (bool HasZ, bool HasM) InvokeDetectZm(Geometry geometry)

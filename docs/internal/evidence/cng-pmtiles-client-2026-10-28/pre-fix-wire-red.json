@@ -1,0 +1,20 @@
+{
+  "archive": "/home/mike/.local/state/honua/cng-standards-20261027/delivery-evidence/artifacts/honua.pmtiles",
+  "archiveSize": 1107,
+  "archiveSha256": "75afff4d7e181018a7113c4e0f702df62b551b5e8c13f60235984b819255a866",
+  "clients": {
+    "pmtiles": "4.5.0",
+    "mapboxVectorTile": "3.0.0",
+    "pbf": "5.1.0"
+  },
+  "scope": "preserved old Honua generator artifact; file-reader payload validation, not HTTP qualification",
+  "header": {
+    "specVersion": 3,
+    "tileType": 1,
+    "numAddressedTiles": 21
+  },
+  "tileBytes": 16,
+  "tileSha256": "f7bc6c13e813d37799484d9cd24d1570d3e943fe0fe6e8f64925faabce0af40d",
+  "result": "expected canonical-client failure",
+  "error": "Error: Unimplemented type: 6"
+}

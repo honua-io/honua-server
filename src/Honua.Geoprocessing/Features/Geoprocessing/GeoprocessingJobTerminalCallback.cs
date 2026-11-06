@@ -17,11 +17,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// Synchronizes the admin progress store when a geoprocessing execution job
-/// reaches a terminal state, keeping the admin operations API consistent with
-/// the authoritative <see cref="IExecutionJobStore"/> record.
-/// </summary>
 internal sealed partial class GeoprocessingJobTerminalCallback(
     IUniversalProgressStore progressStore,
     IProcessCatalog processCatalog,
@@ -35,19 +30,9 @@ internal sealed partial class GeoprocessingJobTerminalCallback(
 {
     private TimeSpan ProgressRetention => executorOptions.CurrentValue.ResultRetention;
 
-    /// <summary>
-    /// First terminal transition: a persistence failure fails the Succeeded job closed
-    /// (durable status, admin progress, and the other terminal callbacks).
-    /// </summary>
     public ValueTask OnTerminalAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
         => OnTerminalCoreAsync(job, isReplay: false, cancellationToken);
 
-    /// <summary>
-    /// Read-side replay (#6107): the same idempotent result-package healing, but
-    /// non-destructive. A persistence failure never rewrites the durable record or fires
-    /// the Failed callbacks; it surfaces as a retryable
-    /// <see cref="GeoprocessingStoreUnavailableException"/> so the reader retries.
-    /// </summary>
     public ValueTask ReplayAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
         => OnTerminalCoreAsync(job, isReplay: true, cancellationToken);
 

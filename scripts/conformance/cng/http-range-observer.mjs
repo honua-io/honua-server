@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 
+export const sourceBinding = { layerId: "1000", serviceId: "svc-cng-feature", publicationId: "pub-cng-feature-1000",
+  resourceId: "res-cng-1000", storageBindingId: "storage-cng-1000" };
 export const artifactKey = "pmtiles/cng/honua.pmtiles";
 export const sha256 = bytes => createHash("sha256").update(bytes).digest("hex");
 
@@ -11,7 +13,8 @@ export function validateServingSource(content, source, baseUrl) {
     bucket: "honua-cng-fixtures",
     publication_api_proven: false,
   };
-  if (Object.entries(expected).some(([key, value]) => source[key] !== value)) {
+  if (Object.entries(expected).some(([key, value]) => source[key] !== value) ||
+      Object.entries(sourceBinding).some(([key, value]) => source.source_binding?.[key] !== value)) {
     throw new Error("PMTiles serving receipt does not match the archive and supported server route");
   }
 }

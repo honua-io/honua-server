@@ -362,17 +362,16 @@ public sealed class CogHttpTileServingTests : IAsyncLifetime
                 TileUrl(TileLevel, 0, 0, MissingCogLayerId));
             var body = await response.Content.ReadAsByteArrayAsync();
 
-            // /rest/services/... follows the GeoServices convention of carrying the
-            // error in the body rather than the status line, so the bounded error is a
-            // 200 envelope whose code is 404 — not a 4xx status. What matters for this
+            // ImageServer tile misses are transport 404s (#5937), unlike ordinary
+            // GeoServices operation errors that keep a 200 status line. The body is
+            // still the bounded GeoServices error envelope. What matters for this
             // criterion is asserted below: it is an error, it is bounded, it carries no
             // imagery, and it does not describe the storage layout.
             var text = System.Text.Encoding.UTF8.GetString(body);
-            // The GeoServices contract is specifically that the transport status stays
-            // 200 and the error travels in the body. Asserting only the body would stay
-            // green if this regressed to a bare HTTP 404 or 500.
-            response.StatusCode.Should().Be(HttpStatusCode.OK,
-                "GeoServices carries the error in the envelope, not the status line");
+            // Pin the exact status: a 200 envelope, a 500 or any other status would
+            // mean the missing-object path no longer follows the tile-miss contract.
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound,
+                "a missing ImageServer tile is an HTTP 404 with a GeoServices error envelope (#5937)");
             response.Content.Headers.ContentType?.MediaType.Should().Be("application/json",
                 "no partial or placeholder imagery may be emitted for a missing object");
 

@@ -9,11 +9,6 @@ using Honua.Core.Features.Console.Domain;
 
 namespace Honua.Server.Features.Console.Services;
 
-/// <summary>
-/// Baseline in-memory <see cref="IConsoleContentStore"/>. Suitable for tests and
-/// early Console wiring; a persistent implementation lands in a follow-on
-/// ticket (see <c>#1163</c>).
-/// </summary>
 internal sealed class InMemoryConsoleContentStore : IConsoleContentStore
 {
     private const int MaxLimit = 200;

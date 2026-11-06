@@ -3,17 +3,7 @@
 
 namespace Honua.Infrastructure.Events;
 
-/// <summary>
-/// Contract surface for the feature-change retry queue. The interface and
-/// pending-publish records live in Honua.Hosting so the JSON source-gen
-/// context (<see cref="FeatureChangeEventsJsonContext"/>) and the hosted
-/// background service can compile against them without a back-edge to
-/// Server. The concrete <c>FeatureChangeRetryQueue</c> implementation
-/// remains in Honua.Server because its constructor takes a
-/// <c>Honua.Server.Features.Streaming.FeatureStreamSessionManager</c>,
-/// and the Streaming sub-area has not been carved into Hosting (see
-/// ADR-0044 for the deferral).
-/// </summary>
+// The contract lives here so Hosting can compile against it, and the queue implementation stays in the server project because it depends on a streaming type this assembly cannot reference.
 internal interface IFeatureChangeRetryQueue
 {
     Task<string> EnqueueAsync(FeatureChangeEventRequest request, CancellationToken cancellationToken = default);

@@ -5,9 +5,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Server.Features.Admin.Models;
 
-/// <summary>
-/// JSON source generation metadata for external service discovery.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
@@ -24,12 +21,12 @@ namespace Honua.Server.Features.Admin.Models;
 [JsonSerializable(typeof(ExternalServiceExtent))]
 [JsonSerializable(typeof(ExternalServiceField))]
 [JsonSerializable(typeof(ExternalServiceField[]))]
-[JsonSerializable(typeof(ArcGisServiceDocument))]
-[JsonSerializable(typeof(ArcGisCatalogDocument))]
-[JsonSerializable(typeof(ArcGisTokenDocument))]
+[JsonSerializable(typeof(GeoServicesServiceDocument))]
+[JsonSerializable(typeof(GeoServicesCatalogDocument))]
+[JsonSerializable(typeof(GeoServicesTokenDocument))]
 [JsonSerializable(typeof(OAuthTokenDocument))]
-[JsonSerializable(typeof(ArcGisLayerDocument))]
-[JsonSerializable(typeof(ArcGisCountDocument))]
+[JsonSerializable(typeof(GeoServicesLayerDocument))]
+[JsonSerializable(typeof(GeoServicesCountDocument))]
 [JsonSerializable(typeof(OgcLandingDocument))]
 [JsonSerializable(typeof(OgcCollectionsDocument))]
 internal sealed partial class ExternalServiceDiscoveryJsonContext : JsonSerializerContext

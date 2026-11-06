@@ -5,12 +5,6 @@ namespace Honua.Server.Features.Geoprocessing;
 
 internal static class GeoprocessingSeedServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers the default GPServer service seeder (honua-server#2349). Enabled by
-    /// default so a fresh instance is usable out of the box; disable with
-    /// <c>Geoprocessing:SeedDefaultService=false</c> (or
-    /// <c>HONUA_GEOPROCESSING_SEED_DEFAULT_SERVICE=false</c>).
-    /// </summary>
     public static IServiceCollection AddGeoprocessingDefaultServiceSeeding(
         this IServiceCollection services, IConfiguration configuration)
     {
@@ -24,10 +18,6 @@ internal static class GeoprocessingSeedServiceCollectionExtensions
     }
 }
 
-/// <summary>
-/// Configuration gate for the default GPServer service seed. Enabled unless explicitly
-/// turned off, so the out-of-the-box behavior is a usable GPServer facade.
-/// </summary>
 internal static class GeoprocessingSeedConfiguration
 {
     public const string SectionName = "Geoprocessing";
@@ -43,11 +33,7 @@ internal static class GeoprocessingSeedConfiguration
     }
 }
 
-/// <summary>
-/// Runs <see cref="GeoprocessingServiceSeeder"/> once at startup. Failures are logged
-/// but never thrown: an inability to seed the sample service must not block host
-/// startup (an operator can still publish a service to enable GPServer).
-/// </summary>
+// A failure to seed the sample service is logged and must not block host startup.
 internal sealed partial class GeoprocessingSeedHostedService(
     IServiceProvider serviceProvider,
     IConfiguration configuration,

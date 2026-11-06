@@ -83,6 +83,18 @@ public interface ICloudFileStorage
     Task<Stream?> DownloadAsync(string fileId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Opens bytes only from the observed provider generation. Unsupported providers fail
+    /// closed; a changed generation throws <see cref="CloudFileRevisionChangedException"/>.
+    /// </summary>
+    /// <param name="fileId">Logical object identifier.</param>
+    /// <param name="expectedETag">Opaque provider generation from file metadata.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A leased stream, or null when the object is missing.</returns>
+    Task<Stream?> DownloadIfMatchAsync(string fileId, string expectedETag, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Conditional artifact reads are not supported by this storage provider.");
+
+
+    /// <summary>
     /// Downloads a file as a byte array
     /// </summary>
     /// <param name="fileId">Unique file identifier</param>

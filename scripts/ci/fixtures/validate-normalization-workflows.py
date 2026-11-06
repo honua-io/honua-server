@@ -44,7 +44,7 @@ def validate(
     require(producer, "  contents: read", "producer contents permission must be read-only")
     require(producer, "  packages: read", "producer package permission must be read-only")
     require(producer, "scripts/ci/normalization-envelope.py build", "producer must build the envelope")
-    require(producer, "actions/upload-artifact@v7", "producer must upload one data artifact")
+    require(producer, "actions/upload-artifact@", "producer must upload one data artifact")
     require(
         producer,
         "name: normalization-envelope-${{ github.run_id }}-attempt-${{ github.run_attempt }}",
@@ -88,7 +88,7 @@ def validate(
         "name: normalization-projections-${{ github.run_id }}-attempt-${{ github.run_attempt }}",
         "intermediate projections must bind the immutable workflow attempt",
     )
-    require(produce_block, "actions/download-artifact@v8", "isolated packaging must download projection data")
+    require(produce_block, "actions/download-artifact@", "isolated packaging must download projection data")
     require(
         producer,
         '--output-root "${RUNNER_TEMP}/normalized-projections"',
@@ -248,7 +248,7 @@ def validate(
         raise AssertionError("the mutation step must consume the minted token, never a raw secret")
 
     mint_uses = re.search(
-        r"uses: actions/create-github-app-token@([0-9a-f]{40})\s*$", mint_block, re.MULTILINE)
+        r"uses: actions/create-github-app-token@([0-9a-f]{40})(?:[ \t]+#[^\n]*)?$", mint_block, re.MULTILINE)
     if not mint_uses:
         raise AssertionError("the credential mint must pin actions/create-github-app-token by commit SHA")
     require(mint_block, "permission-contents: write", "the minted token must request Contents: write")

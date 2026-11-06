@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Run fail-closed negative matrix
         run: python3 -m unittest scripts/qualification/test_validate_alerting_candidate.py
 
@@ -64,7 +64,7 @@ jobs:
           echo "sha=${candidate_sha}" >> "$GITHUB_OUTPUT"
 
       - name: Check out exact candidate
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ steps.candidate.outputs.sha }}
 
@@ -74,7 +74,7 @@ jobs:
         run: test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
 
       - name: Download exact-candidate hosted evidence
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: alerting-hosted-evidence-${{ steps.candidate.outputs.sha }}
           path: artifacts/alerting-enabled-candidate
@@ -110,7 +110,7 @@ jobs:
 
       - name: Retain immutable candidate receipt
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: alerting-enabled-candidate-${{ steps.candidate.outputs.sha }}
           path: artifacts/alerting-enabled-candidate/

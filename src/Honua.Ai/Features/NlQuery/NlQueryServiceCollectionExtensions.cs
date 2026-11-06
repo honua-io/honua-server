@@ -9,15 +9,8 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Ai.NlQuery;
 
-/// <summary>
-/// DI registration for the NL spatial query feature.
-/// When the feature is disabled or not configured, nothing is registered.
-/// </summary>
 internal static class NlQueryServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers NL query services when the feature is enabled in configuration.
-    /// </summary>
     public static IServiceCollection AddNlQuery(this IServiceCollection services, IConfiguration configuration)
     {
         var section = configuration.GetSection(NlQueryConfiguration.SectionName);

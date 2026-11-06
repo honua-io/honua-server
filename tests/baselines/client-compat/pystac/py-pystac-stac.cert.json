@@ -54,9 +54,9 @@
       "test_case_id": "CERT-DISC-01",
       "status": "pass",
       "duration_ms": 49,
-      "measured_count": 5,
+      "measured_count": 11,
       "measured_delta": null,
-      "notes": "pystac_client.Client.get_collections() yielded 5 collection(s): 0, 2000, 2001, 2002, 3000.",
+      "notes": "pystac_client.Client.get_collections() yielded 11 collection(s): 0, 10, 11, 12, 20, 2000, 2001, 2002, 21, 22, 3000.",
       "evidence_ref": ""
     },
     {
@@ -253,9 +253,9 @@
       "test_case_id": "NB-STAC-CONF-02",
       "status": "pass",
       "duration_ms": 21,
-      "measured_count": 5,
+      "measured_count": 11,
       "measured_delta": null,
-      "notes": "collections honored: all 5 listed collections (0, 2000, 2001, 2002, 3000) round-tripped through get_collection(id).",
+      "notes": "collections honored: all 11 listed collections (0, 10, 11, 12, 20, 2000, 2001, 2002, 21, 22, 3000) round-tripped through get_collection(id).",
       "evidence_ref": ""
     },
     {
@@ -451,9 +451,9 @@
       "test_case_id": "NB-STAC-ITEM-01",
       "status": "pass",
       "duration_ms": 43,
-      "measured_count": 1,
+      "measured_count": 2,
       "measured_delta": null,
-      "notes": "All 1 assets on item 1 (geojson) carried href/type/roles and resolved with a matching content type.",
+      "notes": "All 2 assets on item 1 (cog, geojson) carried href/type/roles and resolved with a matching content type.",
       "evidence_ref": ""
     },
     {
@@ -523,9 +523,9 @@
       "test_case_id": "NB-STAC-COLL-03",
       "status": "pass",
       "duration_ms": 38,
-      "measured_count": 5,
+      "measured_count": 11,
       "measured_delta": null,
-      "notes": "/stac/collections returned 5 entries, each rehydrating under pystac.Collection with a spatial extent.",
+      "notes": "/stac/collections returned 11 entries, each rehydrating under pystac.Collection with a spatial extent.",
       "evidence_ref": ""
     },
     {

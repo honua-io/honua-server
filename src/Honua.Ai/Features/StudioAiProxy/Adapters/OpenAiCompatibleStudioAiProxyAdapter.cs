@@ -4,22 +4,17 @@
 using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Runtime.CompilerServices;
-using System.Text;
 using System.Text.Json;
+using System.Text;
 using Honua.Ai.StudioAiProxy.Abstractions;
 using Honua.Ai.StudioAiProxy.Adapters.Models;
 using Honua.Ai.StudioAiProxy.Domain;
+using Honua.Core.Features.Security.Admission;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Ai.StudioAiProxy.Adapters;
 
-/// <summary>
-/// Adapter for any OpenAI-compatible <c>POST {endpoint}/chat/completions</c> streaming endpoint —
-/// covers OpenAI itself, OpenRouter, LiteLLM, Ollama, vLLM, and LM Studio as operator config choices
-/// (they all speak this wire shape; only <see cref="StudioAiProxyProviderOptions.Endpoint"/> and
-/// whether an API key is required differ).
-/// </summary>
-internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapter
+internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapter, IStudioAiPreparedHttpAdapter
 {
     private const string ProviderLabel = "openai";
 
@@ -43,14 +38,30 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
         => !string.IsNullOrWhiteSpace(options.Endpoint) && !string.IsNullOrWhiteSpace(options.Model);
 
     public async IAsyncEnumerable<StudioAiChatEvent> StreamAsync(
-        StudioAiProxyProviderOptions options,
-        StudioAiChatRequest request,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
+        StudioAiProxyProviderOptions options, StudioAiChatRequest request,
+        IAiExecutionPermit permit, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(request);
+        // Preserve direct callers' lazy enumeration and initial cancellation gate.
+        await permit.EnsureCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var invocation = Prepare(options, request);
+        await foreach (var evt in StreamPreparedAsync(invocation, permit, cancellationToken).ConfigureAwait(false))
+            yield return evt;
+    }
 
-        var model = string.IsNullOrWhiteSpace(request.Model) ? options.Model : request.Model!;
+    public StudioAiHttpInvocation Prepare(StudioAiProxyProviderOptions options, StudioAiChatRequest request)
+        => new(options, request, "/chat/completions", (snapshot, original, model) =>
+            JsonSerializer.SerializeToUtf8Bytes(BuildRequest(snapshot, original, model),
+                StudioAiProxyJsonContext.Default.OpenAiProxyRequest));
+
+    public async IAsyncEnumerable<StudioAiChatEvent> StreamPreparedAsync(
+        StudioAiHttpInvocation invocation, IAiExecutionPermit permit,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        await permit.EnsureCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var options = invocation.CopyOptions();
+        var model = invocation.Model;
         // A local endpoint (Ollama/vLLM/LM Studio) typically needs no key; a hosted gateway does.
         // Absence here is not itself a configuration error — the provider will reject the call with
         // an auth error if a key really was required, and that surfaces as a normal Error event.
@@ -71,27 +82,25 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
             yield break;
         }
 
-        var proxyRequest = BuildRequest(options, request, model);
-
         var client = _httpClientFactory.CreateClient("studio-ai-proxy");
-        var endpoint = options.Endpoint.TrimEnd('/') + "/chat/completions";
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, endpoint);
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, invocation.Destination);
         if (!string.IsNullOrWhiteSpace(apiKey))
         {
             httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
         }
 
-        httpRequest.Content = new StringContent(
-            JsonSerializer.Serialize(proxyRequest, StudioAiProxyJsonContext.Default.OpenAiProxyRequest),
-            Encoding.UTF8,
-            "application/json");
+        httpRequest.Content = new ByteArrayContent(invocation.CopyBody());
+        httpRequest.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json")
+        {
+            CharSet = "utf-8"
+        };
 
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutCts.CancelAfter(TimeSpan.FromSeconds(options.TimeoutSeconds));
         var stopwatch = Stopwatch.StartNew();
 
         var (response, sendTimedOut, requestError) = await StudioAiProxyHttpStreamHelpers
-            .SendSafeAsync(client, httpRequest, timeoutCts.Token, cancellationToken)
+            .SendSafeAsync(client, httpRequest, permit, timeoutCts.Token, cancellationToken)
             .ConfigureAwait(false);
 
         if (sendTimedOut)
@@ -103,7 +112,7 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
 
         if (requestError is not null)
         {
-            StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, requestError);
+            StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, "send", requestError.GetType().Name);
             yield return Error(model, "Provider request failed.");
             yield break;
         }
@@ -111,7 +120,7 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
         using var successResponse = response!;
         if (!successResponse.IsSuccessStatusCode)
         {
-            var (body, bodyTimedOut, bodyFailure, _) = await StudioAiProxyHttpStreamHelpers
+            var (_, bodyTimedOut, bodyFailure, _) = await StudioAiProxyHttpStreamHelpers
                 .ReadErrorBodySafeAsync(successResponse.Content, timeoutCts.Token, cancellationToken)
                 .ConfigureAwait(false);
             if (bodyTimedOut)
@@ -123,12 +132,12 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
 
             if (bodyFailure is not null)
             {
-                StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, bodyFailure);
+                StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, "error-body", bodyFailure.GetType().Name);
                 yield return Error(model, "Provider response failed.", stopwatch.ElapsedMilliseconds);
                 yield break;
             }
 
-            StudioAiProxyLog.ProviderHttpError(_logger, ProviderLabel, (int)successResponse.StatusCode, Truncate(body, 500));
+            StudioAiProxyLog.ProviderHttpError(_logger, ProviderLabel, (int)successResponse.StatusCode);
             yield return Error(model, $"Provider returned HTTP {(int)successResponse.StatusCode}.");
             yield break;
         }
@@ -145,7 +154,7 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
 
         if (openFailure is not null)
         {
-            StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, openFailure);
+            StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, "open-stream", openFailure.GetType().Name);
             yield return Error(model, "Provider response failed.", stopwatch.ElapsedMilliseconds);
             yield break;
         }
@@ -179,7 +188,7 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
 
             if (ioError is not null)
             {
-                StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, ioError);
+                StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, "read-stream", ioError.GetType().Name);
                 yield return Error(model, "Provider stream ended unexpectedly.", stopwatch.ElapsedMilliseconds);
                 yield break;
             }
@@ -229,7 +238,7 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
             catch (JsonException ex)
             {
                 parseFailed = true;
-                StudioAiProxyLog.ProviderResponseParseFailed(_logger, ProviderLabel, ex);
+                StudioAiProxyLog.ProviderResponseParseFailed(_logger, ProviderLabel, ex.GetType().Name);
             }
 
             if (parseFailed || chunk is null)
@@ -433,9 +442,6 @@ internal sealed class OpenAiCompatibleStudioAiProxyAdapter : IStudioAiProxyAdapt
         LatencyMs = latencyMs
     };
 
-    private static string Truncate(string value, int max) => value.Length <= max ? value : value[..max];
-
-    /// <summary>Accumulates one tool call's streamed argument fragments, keyed by delta index.</summary>
     private sealed class ToolCallAccumulator(string id, string name)
     {
         private readonly StringBuilder _arguments = new();

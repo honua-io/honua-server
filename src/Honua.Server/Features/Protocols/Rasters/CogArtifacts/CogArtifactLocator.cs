@@ -6,23 +6,7 @@ using Honua.Core.Features.Raster.Abstractions;
 
 namespace Honua.Server.Features.Protocols.Rasters.CogArtifacts;
 
-/// <summary>
-/// Resolves a layer's published COG so protocol surfaces can advertise it.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Deliberately reports only what is readable *now*. The object key is derived the
-/// same way the publisher writes it, and then confirmed through
-/// <see cref="CogArtifactService.ResolvePublishedAsync"/>, which is the identical
-/// lookup the public range proxy performs. Deriving the key without that confirmation
-/// would let STAC advertise an asset for any layer that merely owns a raster, and a
-/// client following it would get a 404 on an href the catalogue promised.
-/// </para>
-/// <para>
-/// An unpublished layer is the ordinary case - every vector layer - so it returns
-/// <see langword="null"/> rather than throwing.
-/// </para>
-/// </remarks>
+// The key is advertised only after the same lookup the public proxy uses, so the catalogue cannot promise an href that is missing.
 internal sealed class CogArtifactLocator : ICogArtifactLocator
 {
     private readonly CogArtifactService _service;

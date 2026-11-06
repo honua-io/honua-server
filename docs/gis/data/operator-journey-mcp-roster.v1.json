@@ -20,6 +20,18 @@
       "inputFields": ["id"]
     },
     {
+      "toolName": "honua_admin_connections_list",
+      "operationId": "admin.connections.list",
+      "mode": "read",
+      "inputFields": []
+    },
+    {
+      "toolName": "honua_admin_connection_tables_list",
+      "operationId": "admin.connections.tables.discover",
+      "mode": "read",
+      "inputFields": ["connectionId"]
+    },
+    {
       "toolName": "honua_admin_connections_create",
       "operationId": "admin.connections.create",
       "mode": "execute",
@@ -87,6 +99,7 @@
         "enabled",
         "fieldDomains",
         "fields",
+        "folderId",
         "geometryColumn",
         "geometryType",
         "globalIdField",
@@ -97,6 +110,7 @@
         "licenseUrl",
         "namespace",
         "primaryKey",
+        "publicName",
         "publisher",
         "schema",
         "serviceName",

@@ -5,20 +5,9 @@ using Honua.Core.Features.Security.Abstractions;
 
 namespace Honua.Ai.StudioAiProxy;
 
-/// <summary>
-/// Resolves a Studio AI proxy provider's API key, in this order:
-/// <list type="number">
-///   <item>If the configured value is a secret reference, resolve it via <see cref="ISecretProvider"/>.</item>
-///   <item>Otherwise use the plain configured value when present.</item>
-///   <item>Otherwise fall back to the per-provider environment variable
-///   (for example <c>HONUA_STUDIOAI_MYPROVIDER_API_KEY</c>).</item>
-/// </list>
-/// Credentials never leave the server: this resolver's output is only ever attached to the
-/// outbound provider request, never echoed back to the Studio client.
-/// </summary>
+// The resolved key is attached only to the outbound provider request and is never echoed to the client.
 public sealed class StudioAiProxyApiKeyResolver
 {
-    /// <summary>Stable error code returned when configured provider credentials are unavailable.</summary>
     public const string CredentialUnavailableCode = "studio_ai/provider_credential_unavailable";
 
     private readonly ISecretProvider? _secretProvider;
@@ -28,11 +17,9 @@ public sealed class StudioAiProxyApiKeyResolver
         _secretProvider = secretProvider;
     }
 
-    /// <summary>Builds the per-provider env var name, for example HONUA_STUDIOAI_MYPROVIDER_API_KEY.</summary>
     public static string EnvVarName(string providerName)
         => $"HONUA_STUDIOAI_{providerName.ToUpperInvariant()}_API_KEY";
 
-    /// <summary>Resolves the API key for the supplied provider, or empty when none is configured.</summary>
     public async Task<string> ResolveAsync(
         string providerName,
         StudioAiProxyProviderOptions options,

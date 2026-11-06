@@ -619,6 +619,11 @@ internal static class McpEndpointExtensions
         // cannot fan out into an unbounded run of serial dispatches. The batch as a
         // whole is refused, so no element's id is echoed.
         var maxBatchSize = Math.Max(1, options.MaxBatchSize);
+        if (string.Equals(principalKey, McpSessionManager.AnonymousPrincipalKey, StringComparison.Ordinal))
+        {
+            maxBatchSize = Math.Min(maxBatchSize, Math.Max(1, options.MaxAnonymousBatchSize));
+        }
+
         var batchLength = batch.GetArrayLength();
         if (batchLength > maxBatchSize)
         {

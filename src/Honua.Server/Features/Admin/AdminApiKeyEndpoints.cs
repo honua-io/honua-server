@@ -11,16 +11,10 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for server-managed API key lifecycle operations.
-/// </summary>
 internal static partial class AdminApiKeyEndpoints
 {
     internal sealed class AdminApiKeyEndpointsLog;
 
-    /// <summary>
-    /// Registers admin API key lifecycle endpoints.
-    /// </summary>
     public static void MapAdminApiKeyEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/api-keys")
@@ -34,17 +28,27 @@ internal static partial class AdminApiKeyEndpoints
             .WithDisplayName("List Admin API Keys")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
+        // Issuing, rotating, revoking or replacing restrictions needs full-admin credential
+        // authority; general admin write (admin:write, admin:manage) keeps the read routes only.
         group.MapPost("/", HandleCreateApiKey)
             .WithDisplayName("Create Admin API Key")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .RequireAdminCredentialManagementAuthorization();
 
         group.MapPost("/{id:guid}/rotate", HandleRotateApiKey)
             .WithDisplayName("Rotate Admin API Key")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .RequireAdminCredentialManagementAuthorization();
 
         group.MapPost("/{id:guid}/revoke", HandleRevokeApiKey)
             .WithDisplayName("Revoke Admin API Key")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }));
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
+            .RequireAdminCredentialManagementAuthorization();
+
+        group.MapPatch("/{id:guid}/restrictions", HandleUpdateApiKeyRestrictions)
+            .WithDisplayName("Update Admin API Key Restrictions")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Patch }))
+            .RequireAdminCredentialManagementAuthorization();
 
         group.MapGet("/{id:guid}/effective-permissions", HandleGetEffectivePermissions)
             .WithDisplayName("Get Admin API Key Effective Permissions")
@@ -68,7 +72,8 @@ internal static partial class AdminApiKeyEndpoints
             [FromServices] ILogger<AdminApiKeyEndpointsLog> logger,
             HttpContext context)
     {
-        if (!TryValidateCreateRequest(request, out var permissions, out var validationMessage))
+        if (!TryValidateCreateRequest(request, out var permissions, out var validationMessage) ||
+            !TryValidateRestrictionLists(request.AllowedReferrers, request.AllowedIpRanges, out var restrictions, out validationMessage))
         {
             return TypedResults.BadRequest(ApiResponse<object>.Failure(validationMessage));
         }
@@ -78,6 +83,7 @@ internal static partial class AdminApiKeyEndpoints
             permissions,
             request.ExpiresAt,
             ResolveCreator(context),
+            restrictions,
             context.RequestAborted);
 
         LogApiKeyCreated(logger, result.Record.Id, result.Record.Name);
@@ -127,6 +133,47 @@ internal static partial class AdminApiKeyEndpoints
         }
 
         LogApiKeyRevoked(logger, id);
+        return TypedResults.Ok(ApiResponse<AdminApiKeyResponse>.CreateSuccess(ToResponse(record)));
+    }
+
+    private static async Task<Results<Ok<ApiResponse<AdminApiKeyResponse>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>>>
+        HandleUpdateApiKeyRestrictions(
+            Guid id,
+            UpdateAdminApiKeyRestrictionsRequest? request,
+            [FromServices] IAdminApiKeyStore store,
+            [FromServices] ILogger<AdminApiKeyEndpointsLog> logger,
+            HttpContext context)
+    {
+        if (request is null)
+        {
+            return TypedResults.BadRequest(ApiResponse<object>.Failure("Validation failed: restrictions body is required"));
+        }
+
+        if (!TryValidateRestrictionLists(
+                request.AllowedReferrers,
+                request.AllowedIpRanges,
+                out var restrictions,
+                out var validationMessage))
+        {
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(validationMessage));
+        }
+
+        // An omitted or empty list clears that restriction. The replacement is the whole set.
+        var record = await store.UpdateRestrictionsAsync(
+            id,
+            restrictions ?? new AdminApiKeyRestrictions(null, null),
+            context.RequestAborted);
+        if (record is null)
+        {
+            return TypedResults.NotFound(ApiResponse<object>.Failure("API key not found"));
+        }
+
+        LogApiKeyRestrictionsUpdated(
+            logger,
+            id,
+            record.AllowedReferrers is { Count: > 0 },
+            record.AllowedIpRanges is { Count: > 0 });
+
         return TypedResults.Ok(ApiResponse<AdminApiKeyResponse>.CreateSuccess(ToResponse(record)));
     }
 
@@ -217,6 +264,73 @@ internal static partial class AdminApiKeyEndpoints
         return true;
     }
 
+    private static bool TryValidateRestrictionLists(
+        IReadOnlyList<string>? allowedReferrers,
+        IReadOnlyList<string>? allowedIpRanges,
+        out AdminApiKeyRestrictions? restrictions,
+        out string validationMessage)
+    {
+        restrictions = null;
+        if (!TryNormalizeList(allowedReferrers, "allowedReferrers",
+                "an origin such as 'https://app.example.com' or 'https://*.example.com' (no path)",
+                ApiKeyRequestRestrictions.TryNormalizeReferrerPattern, out var referrers, out validationMessage) ||
+            !TryNormalizeList(allowedIpRanges, "allowedIpRanges",
+                "a CIDR range such as '203.0.113.0/24' or '2001:db8::/32', or a single IP address",
+                ApiKeyRequestRestrictions.TryNormalizeIpRange, out var ranges, out validationMessage))
+        {
+            return false;
+        }
+
+        if (referrers is not null || ranges is not null)
+        {
+            restrictions = new AdminApiKeyRestrictions(referrers, ranges);
+        }
+
+        return true;
+    }
+
+    private delegate bool Normalizer(string? value, out string normalized);
+
+    private static bool TryNormalizeList(
+        IReadOnlyList<string>? values,
+        string field,
+        string expected,
+        Normalizer normalize,
+        out IReadOnlyList<string>? normalized,
+        out string validationMessage)
+    {
+        normalized = null;
+        validationMessage = string.Empty;
+        if (values is not { Count: > 0 })
+        {
+            return true;
+        }
+
+        if (values.Count > ApiKeyRequestRestrictions.MaxEntries)
+        {
+            validationMessage = $"Validation failed: {field} accepts at most {ApiKeyRequestRestrictions.MaxEntries} entries";
+            return false;
+        }
+
+        var result = new List<string>(values.Count);
+        foreach (var value in values)
+        {
+            if (!normalize(value, out var entry))
+            {
+                validationMessage = $"Validation failed: each {field} entry must be {expected}";
+                return false;
+            }
+
+            if (!result.Contains(entry, StringComparer.Ordinal))
+            {
+                result.Add(entry);
+            }
+        }
+
+        normalized = result;
+        return true;
+    }
+
     private static AdminApiKeyResponse ToResponse(AdminApiKeyRecord record) => new()
     {
         Id = record.Id,
@@ -231,6 +345,8 @@ internal static partial class AdminApiKeyEndpoints
         RotatedAt = record.RotatedAt,
         RevokedAt = record.RevokedAt,
         CreatedBy = record.CreatedBy,
+        AllowedReferrers = record.AllowedReferrers,
+        AllowedIpRanges = record.AllowedIpRanges,
     };
 
     private static string GetStatus(AdminApiKeyRecord record)
@@ -270,4 +386,9 @@ internal static partial class AdminApiKeyEndpoints
     [LoggerMessage(EventId = 4562, Level = LogLevel.Information,
         Message = "Revoked admin API key {ApiKeyId}")]
     private static partial void LogApiKeyRevoked(ILogger logger, Guid apiKeyId);
+
+    // Kinds only: whether each list is set. Patterns and key material stay out of the log.
+    [LoggerMessage(EventId = 4563, Level = LogLevel.Information,
+        Message = "Updated admin API key {ApiKeyId} restrictions (referrer={HasReferrer}, ip={HasIp})")]
+    private static partial void LogApiKeyRestrictionsUpdated(ILogger logger, Guid apiKeyId, bool hasReferrer, bool hasIp);
 }

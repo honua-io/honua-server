@@ -16,29 +16,7 @@ using Microsoft.Extensions.Caching.Memory;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Distributed-cache backed <see cref="IScopedJobTokenIssuer"/> for the custom-code
-/// geoprocessing auth spine (Phase 0). Mirrors <see cref="PortalTokenIssuer"/>'s
-/// mint pattern — opaque entropy plus a redis-authoritative record re-hydrated into
-/// a <see cref="ClaimsPrincipal"/> — but the stored record additionally carries the
-/// bound <c>JobId</c> and the <em>frozen, already-intersected</em> resource scope.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The attenuation is computed once, here, at mint time: the issuer intersects the
-/// pinned owner snapshot's roles/grants with the requested scope
-/// (<see cref="ScopedJobAttenuation.Intersect"/>) and stores only the resulting
-/// role/permission claim grammar. Nothing presented at callback time can widen the
-/// stored scope — the token value carries no claims of its own, and validation
-/// projects exactly the stored, frozen grant set.
-/// </para>
-/// <para>
-/// The hydrated principal uses the same role/<c>permission</c>/<c>tenant_id</c>
-/// claim grammar the shared RBAC pipeline already enforces, so authorization is
-/// never forked: the same service-scoped-role and per-operation permission checks
-/// every other request flows through enforce the intersection.
-/// </para>
-/// </remarks>
+// Attenuation is frozen at mint time, nothing presented at callback can widen it, and the principal uses the shared role grammar so authorization is not forked.
 internal sealed partial class ScopedJobTokenIssuer(
     IMemoryCache memoryCache,
     ILogger<ScopedJobTokenIssuer> logger,
@@ -56,7 +34,6 @@ internal sealed partial class ScopedJobTokenIssuer(
     private readonly ILogger<ScopedJobTokenIssuer> _logger = logger;
     private readonly IDistributedCache? _distributedCache = distributedCache;
 
-    /// <inheritdoc />
     public async Task<ScopedJobTokenIssuance> IssueAsync(
         ScopedJobTokenRequest request,
         CancellationToken cancellationToken)
@@ -107,7 +84,6 @@ internal sealed partial class ScopedJobTokenIssuer(
         return new ScopedJobTokenIssuance(token, request.ExpiresAt);
     }
 
-    /// <inheritdoc />
     public async Task<ScopedJobTokenValidation?> ValidateAsync(
         string token,
         string jobId,
@@ -137,7 +113,6 @@ internal sealed partial class ScopedJobTokenIssuer(
         return new ScopedJobTokenValidation(principal, record.JobId, record.ExpiresAt) { Attempt = record.Attempt };
     }
 
-    /// <inheritdoc />
     public Task RevokeAsync(string token, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(token))
@@ -331,11 +306,6 @@ internal sealed partial class ScopedJobTokenIssuer(
     }
 }
 
-/// <summary>
-/// Distributed-cache record backing a scoped-job token. Carries the frozen,
-/// already-intersected role/permission grants plus the bound job id; the token
-/// value itself is an opaque cache key with no embedded claims.
-/// </summary>
 internal sealed class ScopedJobTokenRecord
 {
     public required string PrincipalId { get; init; }

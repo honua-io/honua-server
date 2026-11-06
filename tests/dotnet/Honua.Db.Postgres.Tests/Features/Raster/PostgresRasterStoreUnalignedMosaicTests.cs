@@ -7,11 +7,13 @@ using System.Globalization;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Raster.CogParser;
 using Honua.Db.Postgres.Features.Raster;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
+using NSubstitute;
 
 namespace Honua.Db.Postgres.Tests.Features.Raster;
 
@@ -43,6 +45,156 @@ namespace Honua.Db.Postgres.Tests.Features.Raster;
 public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixture)
 {
     private const int LayerId = 4792;
+
+    [IntegrationTest]
+    public async Task ExportCog_AfterRestrictedPool_AvailablePoolStillWritesOptimizedLayout()
+    {
+        var schemaName = await CreateSchemaAsync();
+        try
+        {
+            await using (var connection = await fixture.GetConnectionAsync(schemaName))
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = """
+                    INSERT INTO raster_data(layer_id, name, raster)
+                    VALUES (4792, 'missing-cog-driver', ST_AddBand(
+                        ST_MakeEmptyRaster(1024,1024,0,1024,1,-1,0,0,3857),
+                        '32BF'::text,7::double precision,-9999::double precision));
+                    """;
+                await command.ExecuteNonQueryAsync();
+            }
+
+            // A dedicated pool sets a session-local GDAL policy on every physical connection.
+            // Do not mutate the shared container, process cache, or other tests' sessions.
+            var settings = new NpgsqlConnectionStringBuilder(fixture.ConnectionString)
+            {
+                Options = "-c postgis.gdal_enabled_drivers=GTiff"
+            };
+            await using var dataSource = NpgsqlDataSource.Create(settings.ConnectionString);
+            await using (var connection = await dataSource.OpenConnectionAsync())
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "SELECT short_name FROM ST_GDALDrivers() WHERE short_name IN ('COG','GTiff')";
+                await using var reader = await command.ExecuteReaderAsync();
+                var drivers = new List<string>();
+                while (await reader.ReadAsync()) drivers.Add(reader.GetString(0));
+                drivers.Should().Equal(new[] { "GTiff" }, "the isolated session allows TIFF but cannot author COG");
+            }
+
+            await using (var connection = await dataSource.OpenConnectionAsync())
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = """
+                    SELECT octet_length(ST_AsGDALRaster(ST_AddBand(
+                        ST_MakeEmptyRaster(2,2,0,2,1,-1,0,0,3857),
+                        '32BF'::text,7::double precision,-9999::double precision), 'GTiff'));
+                    """;
+                Convert.ToInt32(await command.ExecuteScalarAsync(), CultureInfo.InvariantCulture)
+                    .Should().BeGreaterThan(0, "GTiff fallback is genuinely writable in the restricted session");
+            }
+
+            var store = new PostgresRasterStore(new FixtureConnectionProvider(dataSource),
+                NullLogger<PostgresRasterStore>.Instance, FixtureBypassDatabaseSchemaGuard.Instance, schemaName);
+            var raster = await store.GetPrimaryRasterInfoAsync(LayerId);
+            raster.Should().NotBeNull();
+            Func<Task> export = async () => await store.ExportImageAsync(LayerId, raster!.Value.Id,
+                new RasterQuery { OutputFormat = RasterFormat.COG });
+            var restrictedException = await Record.ExceptionAsync(export);
+            // Observe the second pool even when the first pool wrongly returned fallback
+            // bytes, so a failed first assertion cannot hide cross-pool contamination.
+            var available = CreateStore(schemaName);
+            RasterResult? availableCog = null;
+            var availableException = await Record.ExceptionAsync(async () =>
+            {
+                availableCog = await available.ExportImageAsync(LayerId, raster!.Value.Id,
+                    new RasterQuery { OutputFormat = RasterFormat.COG });
+            });
+            availableException.Should().BeNull("the normal pool remains COG capable after a restricted session");
+            availableCog.Should().NotBeNull();
+            var bytes = availableCog!.Value.Data;
+            var ranges = Substitute.For<ICloudRangeReader>();
+            ranges.ReadRangeAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<long>(),
+                    Arg.Any<int>(), Arg.Any<CancellationToken>())
+                .Returns(call => Task.FromResult(bytes.AsSpan((int)call.ArgAt<long>(2),
+                    Math.Min(call.ArgAt<int>(3), bytes.Length - (int)call.ArgAt<long>(2))).ToArray()));
+            var metadata = await new CogMetadataExtractor().ReadMetadataAsync(ranges, "test", "after-restricted.tif");
+            metadata.OverviewLevels.Should().Contain(level => level.Width <= 512 && level.Height <= 512);
+            metadata.OverviewLevels.Should().OnlyContain(level => level.TileOffsets.Length > 0);
+            restrictedException.Should().BeOfType<NotSupportedException>(
+                "a restricted datasource must reject COG rather than returning mislabeled GTiff");
+        }
+        finally { await fixture.DropSchemaAsync(schemaName); }
+    }
+
+    // Exercise the actual managed writer, rather than reproducing its SQL or validating a
+    // pre-generated fixture. A 1024px image requires reduced-resolution IFDs for COG 1.0.
+    [IntegrationTest]
+    public async Task ExportCog_EmptyExtent_WritesTilesAndOverviews()
+    {
+        var schemaName = await CreateSchemaAsync();
+        try
+        {
+            await using var connection = await fixture.GetConnectionAsync(schemaName);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                INSERT INTO raster_data(layer_id, name, raster)
+                VALUES (4792, 'cog-layout', ST_AddBand(
+                    ST_MakeEmptyRaster(1024,1024,0,1024,1,-1,0,0,3857),
+                    '32BF'::text,7::double precision,-9999::double precision));
+                """;
+            await command.ExecuteNonQueryAsync();
+            var envelope = new NetTopologySuite.Geometries.Envelope(2048, 3072, 0, 1024);
+            var query = new RasterQuery
+            {
+                OutputFormat = RasterFormat.COG,
+                OutputWidth = 1024,
+                OutputHeight = 1024,
+                CoverClipExtent = true,
+                ResamplingAlgorithm = ResamplingAlgorithm.NearestNeighbor,
+                ClipRegion = new RasterClipRegion
+                {
+                    Geometry = new NetTopologySuite.IO.WKBWriter().Write(
+                        new NetTopologySuite.Geometries.GeometryFactory().ToGeometry(envelope)),
+                    Srid = 3857
+                }
+            };
+            var store = CreateStore(schemaName);
+            var result = await store.ExportEmptyExtentAsync(LayerId, query);
+
+            // Reading the emitted TIFF's IFD chain also requires real tile offset/count tags;
+            // plain stripped GTiff must fail this check rather than pass as readable TIFF.
+            var rangeReader = Substitute.For<ICloudRangeReader>();
+            rangeReader.ReadRangeAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<long>(),
+                    Arg.Any<int>(), Arg.Any<CancellationToken>())
+                .Returns(call => Task.FromResult(result.Data.AsSpan((int)call.ArgAt<long>(2),
+                    Math.Min(call.ArgAt<int>(3), result.Data.Length - (int)call.ArgAt<long>(2))).ToArray()));
+            var metadata = await new CogMetadataExtractor().ReadMetadataAsync(rangeReader, "test", "actual.tif");
+            metadata.Width.Should().Be(1024);
+            metadata.Height.Should().Be(1024);
+            metadata.TileWidth.Should().BeLessThanOrEqualTo(512);
+            metadata.TileHeight.Should().BeLessThanOrEqualTo(512);
+            metadata.OverviewLevels.Should().Contain(level => level.Width <= 512 && level.Height <= 512,
+                "COG optimized GeoTIFF requires a reduced-resolution image for this canvas");
+            metadata.OverviewLevels.Should().OnlyContain(level => level.TileOffsets.Length > 0);
+
+            // Producer-stack GDAL roundtrip verifies that layout changes retain nodata and samples.
+            // External rio-cogeo validation remains separate evidence, not this assertion.
+            command.CommandText = """
+                WITH emitted AS (SELECT ST_FromGDALRaster(@bytes) AS rast)
+                SELECT ST_SRID(rast), ST_BandNoDataValue(rast,1),
+                       ST_Value(rast,1,1,1,false), ST_Value(rast,1,1024,1024,false)
+                FROM emitted;
+                """;
+            command.Parameters.AddWithValue("bytes", result.Data);
+            await using var reader = await command.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetInt32(0).Should().Be(3857);
+            reader.GetDouble(1).Should().Be(-9999);
+            reader.GetDouble(2).Should().Be(-9999);
+            reader.GetDouble(3).Should().Be(-9999);
+        }
+        finally { await fixture.DropSchemaAsync(schemaName); }
+    }
 
     [IntegrationTheory]
     [InlineData("single")]
@@ -163,6 +315,66 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
             Band1(inFine).Should().Be(5);
             Band1(coarseOnly).Should().Be(20);
         });
+    }
+
+    // #6561: the named raster is the one whose sample the union kept. At the overlap the
+    // newer fine raster wins; outside its footprint the older coarse raster wins, including
+    // when Oldest is asked to prefer it where both cover the point.
+    [IntegrationTest]
+    public async Task IdentifyMosaicAsync_NamesTheRasterThatSuppliedThePixel()
+    {
+        await WithNestedMosaicAsync(async (store, ids) =>
+        {
+            var coarse = ids[0];
+            var fine = ids[1];
+
+            var overlap = await store.IdentifyMosaicAsync(LayerId, ids, RasterMergeStrategy.Newest, 1.25, 1.75, 4326);
+            var outsideFine = await store.IdentifyMosaicAsync(LayerId, ids, RasterMergeStrategy.Newest, 0.25, 0.25, 4326);
+            var oldest = await store.IdentifyMosaicAsync(LayerId, ids, RasterMergeStrategy.Oldest, 1.25, 1.75, 4326);
+
+            Band1(overlap).Should().Be(5);
+            overlap.ContributingRasterIds.Should().Equal([fine]);
+            Band1(outsideFine).Should().Be(20);
+            outsideFine.ContributingRasterIds.Should().Equal([coarse]);
+            Band1(oldest).Should().Be(20);
+            oldest.ContributingRasterIds.Should().Equal([coarse]);
+        });
+    }
+
+    // ST_Union resolves each band on its own. Min of (1, 10) and (2, 3) is (1, 3), so both
+    // rasters contributed. Newest still names only the later raster when it supplies every band.
+    // Oldest names both when the earlier raster is NoData on band 2.
+    [IntegrationTest]
+    public async Task IdentifyMosaicAsync_NamesEveryRasterThatSuppliedABand()
+    {
+        var schemaName = await CreateSchemaAsync();
+        try
+        {
+            var lowHigh = await InsertTwoBandRasterAsync(schemaName, "low-high", band1: 1, band2: 10, Day(1));
+            var highLow = await InsertTwoBandRasterAsync(schemaName, "high-low", band1: 2, band2: 3, Day(2));
+            var store = CreateStore(schemaName);
+
+            var minimum = await store.IdentifyMosaicAsync(LayerId, [lowHigh, highLow], RasterMergeStrategy.Min, 0.5, 1.5, 4326);
+            Band(minimum, 1).Should().Be(1);
+            Band(minimum, 2).Should().Be(3);
+            minimum.ContributingRasterIds.Should().Equal([lowHigh, highLow]);
+
+            var newest = await store.IdentifyMosaicAsync(LayerId, [lowHigh, highLow], RasterMergeStrategy.Newest, 0.5, 1.5, 4326);
+            Band(newest, 1).Should().Be(2);
+            Band(newest, 2).Should().Be(3);
+            newest.ContributingRasterIds.Should().Equal([highLow]);
+
+            var hole = await InsertTwoBandRasterAsync(schemaName, "band2-nodata", band1: 1, band2: null, Day(1));
+            var fill = await InsertTwoBandRasterAsync(schemaName, "band2-fill", band1: 2, band2: 3, Day(2));
+            var oldest = await store.IdentifyMosaicAsync(LayerId, [hole, fill], RasterMergeStrategy.Oldest, 0.5, 1.5, 4326);
+            Band(oldest, 1).Should().Be(1);
+            Band(oldest, 2).Should().Be(3);
+            oldest.ContributingRasterIds.Should().Equal([hole, fill]);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
     }
 
     [IntegrationTest]
@@ -491,10 +703,45 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
 
     private string? _schemaName;
 
-    private static double Band1(PixelValueResult result)
+    private static double Band1(PixelValueResult result) => Band(result, 1);
+
+    private static double Band(PixelValueResult result, int band)
     {
         result.HasData.Should().BeTrue();
-        return Convert.ToDouble(result.BandValues[1], CultureInfo.InvariantCulture);
+        return Convert.ToDouble(result.BandValues[band], CultureInfo.InvariantCulture);
+    }
+
+    // A 2x2 raster on x[0,2] y[0,2]. A null second band is stored as NoData so ST_Union can
+    // take that band from another raster.
+    private async Task<long> InsertTwoBandRasterAsync(
+        string schemaName,
+        string name,
+        double band1,
+        double? band2,
+        DateTimeOffset acquisition)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schemaName);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO raster_data (layer_id, name, raster, acquisition_date, created_at)
+            SELECT @layerId,
+                   @name,
+                   ST_AddBand(
+                       ST_AddBand(
+                           ST_MakeEmptyRaster(2, 2, 0, 2, 1, -1, 0, 0, 4326),
+                           '32BF', @band1, NULL),
+                       '32BF', @band2, @nodata),
+                   @acquisition,
+                   @acquisition
+            RETURNING id;
+            """;
+        command.Parameters.AddWithValue("layerId", LayerId);
+        command.Parameters.AddWithValue("name", name);
+        command.Parameters.AddWithValue("band1", band1);
+        command.Parameters.AddWithValue("band2", band2 ?? -9999d);
+        command.Parameters.AddWithValue("nodata", band2 is null ? -9999d : DBNull.Value);
+        command.Parameters.AddWithValue("acquisition", acquisition.UtcDateTime);
+        return (long)(await command.ExecuteScalarAsync())!;
     }
 
     private static DateTimeOffset Day(int day) => new(2024, 1, day, 0, 0, 0, TimeSpan.Zero);

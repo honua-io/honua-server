@@ -9,9 +9,6 @@ using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Protocols.Grpc;
 
-/// <summary>
-/// Maps unhandled server exceptions to gRPC status codes with safe client-facing messages.
-/// </summary>
 internal sealed class GrpcExceptionInterceptor(ILogger<GrpcExceptionInterceptor> logger) : Interceptor
 {
     private readonly ILogger<GrpcExceptionInterceptor> _logger = logger;

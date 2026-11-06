@@ -9,30 +9,13 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Ai.Protocols.Mcp;
 
-/// <summary>
-/// Threads geoprocessing job progress onto the owning MCP session's SSE stream as
-/// <c>notifications/progress</c> frames (honua-server#1954). It does NOT fork the
-/// job runtime: it polls the canonical <see cref="IGeoprocessingJobService"/> (the
-/// same record the <c>honua://jobs/{id}</c> resource projects) and emits a
-/// progress notification whenever the reported <c>PercentComplete</c> or current
-/// phase changes, replacing client-side polling of <c>honua://jobs/{id}</c> with
-/// a server push. The bridge stops when the job reaches a terminal status, the
-/// session is terminated, or a safety cap elapses. It does not start a poll while
-/// <see cref="McpOptions.ServerInitiatedStreamEnabled"/> is off, because that is
-/// the only channel that can deliver the frames (honua-server#5629).
-/// </summary>
 internal sealed class McpJobProgressBridge
 {
-    /// <summary>Total used for the 0–100 completion ratio the runtime reports.</summary>
     private const double ProgressTotal = 100d;
 
-    /// <summary>Default interval between job-status polls.</summary>
     private static readonly TimeSpan DefaultPollInterval = TimeSpan.FromMilliseconds(750);
 
-    /// <summary>
-    /// Safety cap on how long a single job is tracked, so a wedged or never-terminal
-    /// job cannot leak a background poll for the lifetime of the process.
-    /// </summary>
+    // The cap stops a job that never reaches a terminal status from leaking a background poll for the process lifetime.
     private static readonly TimeSpan MaxTrackingDuration = TimeSpan.FromMinutes(30);
 
     private readonly IMcpNotificationPublisher _publisher;
@@ -56,19 +39,9 @@ internal sealed class McpJobProgressBridge
         _options = options;
     }
 
-    /// <summary>
-    /// Background job-store polls <see cref="Track"/> has started. Stays zero
-    /// while the server-initiated stream is off.
-    /// </summary>
     internal int StartedPollCount => Volatile.Read(ref _startedPolls);
 
-    /// <summary>
-    /// Starts a detached background poll that streams the job's progress to the
-    /// session. Fire-and-forget: the HTTP request that submitted the job returns
-    /// immediately while progress streams over the separate <c>GET /mcp</c> SSE
-    /// channel. Exceptions are swallowed (logged) so a background poll can never
-    /// surface on an unrelated request thread.
-    /// </summary>
+    // Poll failures are logged and swallowed so they cannot surface on an unrelated request thread.
     public void Track(string sessionId, string jobId, ClaimsPrincipal principal)
     {
         if (string.IsNullOrEmpty(sessionId) || string.IsNullOrEmpty(jobId))
@@ -109,12 +82,6 @@ internal sealed class McpJobProgressBridge
         });
     }
 
-    /// <summary>
-    /// Polls the job until it reaches a terminal status (or the token cancels) and
-    /// pushes a progress notification on every observed change. Exposed for unit
-    /// testing with a substitute job service and a zero poll interval. The first
-    /// observed state is always emitted so the client sees an immediate frame.
-    /// </summary>
     public async Task PumpAsync(
         string sessionId,
         string jobId,

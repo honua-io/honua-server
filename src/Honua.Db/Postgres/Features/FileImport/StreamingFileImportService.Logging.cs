@@ -147,6 +147,12 @@ internal sealed partial class StreamingFileImportService
             Level = LogLevel.Warning,
             Message = "Failed to refresh statistics for {SchemaName}.{TableName} after the import was committed")]
         public static partial void AnalyzeAfterCommitFailed(ILogger logger, Exception exception, string schemaName, string tableName);
+
+        [LoggerMessage(
+            EventId = 7447,
+            Level = LogLevel.Warning,
+            Message = "Failed to refresh typed columns for {SchemaName}.{TableName} after an interrupted direct import")]
+        public static partial void TypedColumnsRecoveryFailed(ILogger logger, Exception exception, string schemaName, string tableName);
     }
 
     private static partial class ShapefileLog

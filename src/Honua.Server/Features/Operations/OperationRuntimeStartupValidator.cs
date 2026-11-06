@@ -9,10 +9,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Operations;
 
-/// <summary>
-/// Fails release startup unless the canonical operation runtime has durable stores, audit,
-/// a non-pass-through policy decision point, and exactly one actuator per descriptor.
-/// </summary>
 public sealed class OperationRuntimeStartupValidator(IServiceScopeFactory scopeFactory) : IHostedService
 {
     public async Task StartAsync(CancellationToken cancellationToken)

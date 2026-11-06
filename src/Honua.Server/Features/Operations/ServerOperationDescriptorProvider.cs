@@ -7,12 +7,6 @@ using Honua.Core.Features.WorkflowPackages.Domain;
 
 namespace Honua.Server.Features.Operations;
 
-/// <summary>
-/// Surfaces the server-side operation descriptors into the grounding catalog. Today it
-/// contributes the <c>service.publish</c> descriptor and the catalog-only
-/// <c>admin.server.status</c> convention sample; DevOps descriptors join the catalog through
-/// their own provider in a later phase (descriptors only — execution stays remote).
-/// </summary>
 internal sealed class ServerOperationDescriptorProvider : IOperationDescriptorProvider
 {
     private readonly IReadOnlyList<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor> _legacyActuators;
@@ -26,16 +20,15 @@ internal sealed class ServerOperationDescriptorProvider : IOperationDescriptorPr
         IEnumerable<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor> legacyActuators)
         => _legacyActuators = legacyActuators.ToArray();
 
-    /// <inheritdoc />
     public string ProviderId => ServicePublishOperation.ProviderId;
 
-    /// <inheritdoc />
     public Task<IReadOnlyList<IOperationDescriptor>> ListDescriptorsAsync(
         CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlyList<IOperationDescriptor>>(
         [
             ServicePublishOperation.BuildDescriptor(),
             StylePresetOperation.BuildDescriptor(),
+            .. AiAdmissionControlOperation.Actions.Keys.Select(AiAdmissionControlOperation.Descriptor),
             .. StudioDraftOperations.BuildDescriptors(),
             .. WorkflowRollbackOperations.BuildDescriptors(),
             BuildAdminServerStatusDescriptor(),

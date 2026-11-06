@@ -482,5 +482,201 @@ public class SnowflakeFeatureQueryBuilderTests
         Assert.Throws<NotSupportedException>(() => SnowflakeFeatureQueryBuilder.BuildCountQuery(mapping, query));
         Assert.Throws<NotSupportedException>(() => SnowflakeFeatureQueryBuilder.BuildObjectIdsQuery(mapping, query));
         Assert.Throws<NotSupportedException>(() => SnowflakeFeatureQueryBuilder.BuildExtentQuery(mapping, query));
+        Assert.Throws<NotSupportedException>(() => SnowflakeFeatureQueryBuilder.BuildStatistics(mapping, query));
+    }
+
+    [Theory]
+    [InlineData(StatisticType.Count, "COUNT")]
+    [InlineData(StatisticType.Sum, "SUM")]
+    [InlineData(StatisticType.Min, "MIN")]
+    [InlineData(StatisticType.Max, "MAX")]
+    [InlineData(StatisticType.Avg, "AVG")]
+    [InlineData(StatisticType.Stddev, "STDDEV_SAMP")]
+    [InlineData(StatisticType.Var, "VAR_SAMP")]
+    public void BuildStatistics_EachStatisticType_QuotesFieldAndAlias(StatisticType statisticType, string sqlFunction)
+    {
+        var query = new FeatureQuery
+        {
+            OutStatistics = ImmutableArray.Create(new StatisticDefinition
+            {
+                StatisticType = statisticType,
+                OnStatisticField = "AREA",
+                OutStatisticFieldName = "AREA_STAT"
+            })
+        };
+
+        var result = SnowflakeFeatureQueryBuilder.BuildStatistics(BuildMapping(), query);
+
+        Assert.Contains($"{sqlFunction}(\"AREA\") AS \"AREA_STAT\"", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("FROM \"ANALYTICS\".\"PUBLIC\".\"PARCELS\"", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("WHERE 1=1", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("GROUP BY", result.Sql, StringComparison.Ordinal);
+        Assert.Empty(result.WhereParameters);
+    }
+
+    [Fact]
+    public void BuildStatistics_WithGroupBy_ProjectsAndGroupsQuotedColumns()
+    {
+        var query = new FeatureQuery
+        {
+            OutStatistics = ImmutableArray.Create(new StatisticDefinition
+            {
+                StatisticType = StatisticType.Avg,
+                OnStatisticField = "AREA",
+                OutStatisticFieldName = "AREA_AVG"
+            }),
+            GroupByFields = ImmutableArray.Create("CATEGORY", "NAME")
+        };
+
+        var result = SnowflakeFeatureQueryBuilder.BuildStatistics(BuildMapping(), query);
+
+        Assert.Contains("SELECT \"CATEGORY\", \"NAME\", AVG(\"AREA\") AS \"AREA_AVG\"", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("GROUP BY \"CATEGORY\", \"NAME\"", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildStatistics_WhereObjectIdsAndSpatialFilter_MatchCountEnvelope()
+    {
+        var geometry = new byte[] { 1, 2, 3, 4 };
+        var query = new FeatureQuery
+        {
+            Where = "CATEGORY = 'commercial'",
+            ObjectIds = ImmutableArray.Create(7L),
+            SpatialFilter = SpatialFilter.Create(geometry, SpatialRelationship.Intersects, 4326),
+            OutStatistics = ImmutableArray.Create(new StatisticDefinition
+            {
+                StatisticType = StatisticType.Count,
+                OnStatisticField = "OBJECTID",
+                OutStatisticFieldName = "N"
+            })
+        };
+        var mapping = BuildMapping();
+
+        var statistics = SnowflakeFeatureQueryBuilder.BuildStatistics(mapping, query);
+        var count = SnowflakeFeatureQueryBuilder.BuildCountQuery(mapping, query);
+
+        Assert.Equal(FilterTail(count.Sql), FilterTail(statistics.Sql));
+        Assert.Equal(count.WhereParameters.ToArray(), statistics.WhereParameters.ToArray());
+        Assert.Contains("COUNT(\"OBJECTID\") AS \"N\"", statistics.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildStatistics_UnsupportedStatisticType_ThrowsClearError()
+    {
+        var query = new FeatureQuery
+        {
+            OutStatistics = ImmutableArray.Create(new StatisticDefinition
+            {
+                StatisticType = (StatisticType)42,
+                OnStatisticField = "AREA",
+                OutStatisticFieldName = "AREA_STAT"
+            })
+        };
+
+        var ex = Assert.Throws<NotSupportedException>(() => SnowflakeFeatureQueryBuilder.BuildStatistics(BuildMapping(), query));
+
+        Assert.Contains("not supported", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Snowflake", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("42", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildStatistics_UnsafeFieldName_Throws()
+    {
+        var query = new FeatureQuery
+        {
+            OutStatistics = ImmutableArray.Create(new StatisticDefinition
+            {
+                StatisticType = StatisticType.Sum,
+                OnStatisticField = "AREA;DROP",
+                OutStatisticFieldName = "AREA_SUM"
+            })
+        };
+
+        Assert.Throws<ArgumentException>(() => SnowflakeFeatureQueryBuilder.BuildStatistics(BuildMapping(), query));
+    }
+
+    [Fact]
+    public void BuildStatistics_HavingOrderByLimitAndOffset_BoundTheAggregateResult()
+    {
+        var query = new FeatureQuery
+        {
+            OutStatistics = ImmutableArray.Create(new StatisticDefinition
+            {
+                StatisticType = StatisticType.Avg,
+                OnStatisticField = "AREA",
+                OutStatisticFieldName = "AREA_AVG"
+            }),
+            GroupByFields = ImmutableArray.Create("CATEGORY"),
+            Having = ImmutableArray.Create(new HavingCondition
+            {
+                StatisticType = StatisticType.Count,
+                OnStatisticField = "OBJECTID",
+                Operator = HavingComparisonOperator.GreaterThanOrEqual,
+                Value = 5
+            }),
+            OrderBy = ImmutableArray.Create(new OrderByClause("area_avg", ascending: false), new OrderByClause("CATEGORY")),
+            Limit = 2,
+            Offset = 1
+        };
+
+        var result = SnowflakeFeatureQueryBuilder.BuildStatistics(BuildMapping(), query);
+
+        var havingAt = result.Sql.IndexOf("HAVING COUNT(\"OBJECTID\") >= ?", StringComparison.Ordinal);
+        var orderAt = result.Sql.IndexOf("ORDER BY \"AREA_AVG\" DESC, \"CATEGORY\" ASC", StringComparison.Ordinal);
+        var limitAt = result.Sql.IndexOf("LIMIT 2", StringComparison.Ordinal);
+        var offsetAt = result.Sql.IndexOf("OFFSET 1", StringComparison.Ordinal);
+        Assert.True(havingAt > 0 && orderAt > havingAt && limitAt > orderAt && offsetAt > limitAt, result.Sql);
+        Assert.Equal(new object[] { 5d }, result.WhereParameters.ToArray());
+        Assert.DoesNotContain("LIMIT ?", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildStatistics_OffsetWithoutOrderBy_OrdersByTheFirstAggregateColumn()
+    {
+        var query = new FeatureQuery
+        {
+            OutStatistics = ImmutableArray.Create(new StatisticDefinition
+            {
+                StatisticType = StatisticType.Count,
+                OnStatisticField = "OBJECTID",
+                OutStatisticFieldName = "N"
+            }),
+            GroupByFields = ImmutableArray.Create("CATEGORY"),
+            Offset = 3
+        };
+
+        var result = SnowflakeFeatureQueryBuilder.BuildStatistics(BuildMapping(), query);
+
+        Assert.Contains("ORDER BY \"CATEGORY\"", result.Sql, StringComparison.Ordinal);
+        Assert.EndsWith("OFFSET 3", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("LIMIT", result.Sql, StringComparison.Ordinal);
+        Assert.Empty(result.WhereParameters);
+    }
+
+    [Fact]
+    public void BuildStatistics_UnknownOrderByField_Throws()
+    {
+        var query = new FeatureQuery
+        {
+            OutStatistics = ImmutableArray.Create(new StatisticDefinition
+            {
+                StatisticType = StatisticType.Count,
+                OnStatisticField = "OBJECTID",
+                OutStatisticFieldName = "N"
+            }),
+            OrderBy = ImmutableArray.Create(new OrderByClause("AREA;DROP"))
+        };
+
+        var ex = Assert.Throws<ArgumentException>(() => SnowflakeFeatureQueryBuilder.BuildStatistics(BuildMapping(), query));
+        Assert.Contains("order-by", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string FilterTail(string sql)
+    {
+        const string marker = "WHERE 1=1";
+        var index = sql.IndexOf(marker, StringComparison.Ordinal);
+        Assert.True(index >= 0, sql);
+        return sql[index..];
     }
 }

@@ -2,6 +2,8 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Exceptions;
+using Honua.ControlPlane;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Capabilities;
@@ -27,13 +29,6 @@ using CanonicalOperationExecutor = Honua.Core.Features.Operations.Abstractions.I
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Console-facing REST API for the agent-operation approval surface: list pending
-/// proposals, inspect a proposal's plan/diff/dry-run/risk, and approve or reject
-/// one. Approval is gated by the RBAC <see cref="AuthorizationOperation.Approve"/>
-/// grant (distinct from the proposer's grant) and every decision is audited
-/// through the gateway (#1694).
-/// </summary>
 internal static class ProposalEndpoints
 {
     // Reserved RBAC scope for operation-approval decisions.
@@ -84,14 +79,6 @@ internal static class ProposalEndpoints
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
     }
 
-    /// <summary>
-    /// The durable control plane (<see cref="IOperationProposalStore"/>,
-    /// <see cref="IOperationGateway"/>) is composed only when Redis is configured, but these
-    /// routes are mapped unconditionally. Before honua-release#202 that combination produced an
-    /// untyped <c>500</c> leaking the unresolved DI service name on a Redis-less install; the
-    /// approval surface is journey-critical, so it now refuses with the same machine-readable
-    /// capability-unavailable receipt the geoprocessing job surfaces emit.
-    /// </summary>
     private static IResult ControlPlaneUnavailable(HttpContext context)
     {
         // Report the composition cause, not a blanket "add Redis": on a host where Redis is
@@ -177,7 +164,8 @@ internal static class ProposalEndpoints
         string id,
         HttpContext context,
         [FromServices] IOperationProposalStore? proposalStore = null,
-        [FromServices] ITenantContext? tenantContext = null)
+        [FromServices] ITenantContext? tenantContext = null,
+        [FromServices] Honua.Core.Features.Operations.Abstractions.IOperationInstanceStore? instanceStore = null)
     {
         if (!UnavailableOperationProposalStore.IsDurable(proposalStore))
         {
@@ -185,11 +173,15 @@ internal static class ProposalEndpoints
         }
 
         var proposal = await proposalStore.GetAsync(id, context.RequestAborted).ConfigureAwait(false);
-        return proposal == null || !OperationTenantAuthorization.CanAccess(context, proposal.TenantId)
+        if (proposal == null || !OperationTenantAuthorization.CanAccess(context, proposal.TenantId)
             || (proposal.Evidence is not null
-                && !string.Equals(proposal.Evidence.TenantId, tenantContext?.TenantId, StringComparison.Ordinal))
-            ? Results.NotFound()
-            : Results.Json(ToDetail(proposal), ProposalJsonContext.Default.ProposalDetailResponse);
+                && !string.Equals(proposal.Evidence.TenantId, tenantContext?.TenantId, StringComparison.Ordinal)))
+            return Results.NotFound();
+        var execution = instanceStore is not null && proposal.Audit.OperationInstanceId is { Length: > 0 } instanceId
+            ? await instanceStore.GetAsync(instanceId, context.RequestAborted).ConfigureAwait(false)
+            : null;
+        return Results.Json(ToDetail(proposal, OperationProposalExecutionView.From(proposal, execution)),
+            ProposalJsonContext.Default.ProposalDetailResponse);
     }
 
     private static async Task<IResult> HandleApproveProposal(
@@ -264,7 +256,7 @@ internal static class ProposalEndpoints
                 ? Results.NotFound()
                 : Results.Json(ToDetail(resolved), ProposalJsonContext.Default.ProposalDetailResponse);
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException ex) when (ex is not ServiceUnavailableException)
         {
             return Results.Problem(detail: ex.Message, statusCode: StatusCodes.Status409Conflict);
         }
@@ -355,6 +347,10 @@ internal static class ProposalEndpoints
         if (!string.IsNullOrWhiteSpace(proposal.RequestedBy) &&
             approverIdentities.Contains(proposal.RequestedBy, StringComparer.OrdinalIgnoreCase))
         {
+            await OperationApprovalDenialRecorder.RecordAsync(
+                context.RequestServices.GetRequiredService<IServiceScopeFactory>(),
+                proposal, actor!, OperationApprovalDenialReason.SelfApproval, context.RequestAborted)
+                .ConfigureAwait(false);
             return Results.Problem(
                 detail: "Separation of duties: the requester of a proposal cannot approve it.",
                 statusCode: StatusCodes.Status403Forbidden);
@@ -398,14 +394,6 @@ internal static class ProposalEndpoints
                 statusCode: StatusCodes.Status403Forbidden);
     }
 
-    /// <summary>
-    /// Every framework-derived identifier that names the approving principal. Proposal writers
-    /// record the requester in different encodings: the raw subject or API-key id (admin
-    /// surfaces), the scheme-qualified canonical actor (MCP evidence-bound proposals), and the
-    /// Studio owner key <c>subject:{iss}:{sub}@tenant:{tenant}</c> (Studio publication and
-    /// rollback requests). Comparing only the raw subject let a Studio proposer approve their
-    /// own publication, so the separation-of-duties check refuses a match against any of them.
-    /// </summary>
     private static HashSet<string> ResolveApproverIdentities(HttpContext context, string? actor)
     {
         var identities = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -466,6 +454,7 @@ internal static class ProposalEndpoints
                 statusCode: StatusCodes.Status403Forbidden);
     }
 
+    // The filtered list indexes approval records; detail reads include the bound execution outcome.
     private static ProposalSummaryResponse ToSummary(OperationProposal proposal) => new()
     {
         ProposalId = proposal.ProposalId,
@@ -482,11 +471,11 @@ internal static class ProposalEndpoints
         UpdatedAt = proposal.UpdatedAt,
     };
 
-    private static ProposalDetailResponse ToDetail(OperationProposal proposal) => new()
+    private static ProposalDetailResponse ToDetail(OperationProposal proposal, OperationProposalExecutionView? execution = null) => new()
     {
         ProposalId = proposal.ProposalId,
         Kind = proposal.Kind.ToString(),
-        Status = proposal.Status.ToString(),
+        Status = execution?.Status ?? proposal.Status.ToString(),
         RequestedBy = proposal.RequestedBy,
         RequestedByAgent = proposal.RequestedByAgent,
         FindingId = proposal.AutonomyMetadata?.FindingId,
@@ -500,10 +489,10 @@ internal static class ProposalEndpoints
         Warnings = proposal.Plan.Warnings,
         GuardrailTier = proposal.GuardrailDecision?.Tier.ToString(),
         ResolvedBy = proposal.ResolvedBy,
-        ResolutionReason = proposal.ResolutionReason,
+        ResolutionReason = execution?.ResolutionReason ?? proposal.ResolutionReason,
         ExecutionOperationId = proposal.ExecutionOperationId,
         CreatedAt = proposal.CreatedAt,
-        UpdatedAt = proposal.UpdatedAt,
+        UpdatedAt = execution?.UpdatedAt ?? proposal.UpdatedAt,
         ResolvedAt = proposal.ResolvedAt,
     };
 }

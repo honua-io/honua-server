@@ -9,11 +9,6 @@ namespace Honua.Infrastructure.Helpers;
 
 internal static class ContentNegotiationHelpers
 {
-    /// <summary>
-    /// Tolerance used in place of exact floating-point equality when comparing
-    /// Accept-header "q" quality values, which are parsed from decimal text and
-    /// should not be compared with exact double equality.
-    /// </summary>
     private const double QualityEpsilon = 1e-9;
 
     public static bool TrySelectBestMediaType(

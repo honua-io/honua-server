@@ -212,12 +212,7 @@ internal static partial class FeatureServerEndpoints
         return Results.Json(response, FeatureServerJsonContext.Default.QueryResponse, contentType: "application/json");
     }
 
-    /// <summary>
-    /// Returns whether the field exists on the layer's public schema (or is the layer's
-    /// resolved object-id field, which may be internal rather than schema-listed).
-    /// Publisher-hidden fields are treated as absent, matching /query outStatistics, so
-    /// bins, date bins and H3 summaries cannot aggregate a hidden column (#6098).
-    /// </summary>
+    // Publisher-hidden fields are treated as absent so bins cannot aggregate a hidden column.
     private static bool IsSchemaField(MetadataV2Resource resource, string fieldName)
     {
         if (resource.IsHiddenSchemaField(fieldName))
@@ -232,10 +227,6 @@ internal static partial class FeatureServerEndpoints
                 StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Validates that every outStatistics entry references a known layer field, so
-    /// unknown names are rejected with a clear 400 before reaching the provider.
-    /// </summary>
     private static bool TryValidateStatisticsFields(
         MetadataV2Resource resource,
         ImmutableArray<StatisticDefinition> statistics,
@@ -251,12 +242,6 @@ internal static partial class FeatureServerEndpoints
         return true;
     }
 
-    /// <summary>
-    /// Builds the analytics <see cref="FeatureQuery"/> with the where clause parsed
-    /// and translated through the shared <see cref="IFilterExpressionService"/>
-    /// pipeline (the same path /query and queryH3 use) instead of handing the raw
-    /// string to the provider's legacy where-parser.
-    /// </summary>
     private static bool TryBuildAnalyticsFeatureQuery(
         HttpContext context,
         MetadataV2Resource resource,
@@ -276,7 +261,7 @@ internal static partial class FeatureServerEndpoints
         }
 
         var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
-        var parseResult = filterService.Parse(FilterLanguage.ArcGisSql, whereClause);
+        var parseResult = filterService.Parse(FilterLanguage.GeoServicesSql, whereClause);
         if (!parseResult.IsSuccess)
         {
             errorResult = StandardErrorHelpers.CreateBadRequest(context,

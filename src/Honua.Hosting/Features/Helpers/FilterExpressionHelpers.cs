@@ -6,15 +6,8 @@ using Honua.Core.Queries.Filters;
 
 namespace Honua.Infrastructure.Helpers;
 
-/// <summary>
-/// Shared helper methods for filter expression validation and normalization.
-/// </summary>
 internal static class FilterExpressionHelpers
 {
-    /// <summary>
-    /// Determines whether a filter expression resolves to a boolean value,
-    /// suitable for use as a WHERE clause predicate.
-    /// </summary>
     internal static bool IsBooleanFilterExpression(FilterExpression expression)
     {
         return expression switch
@@ -30,10 +23,6 @@ internal static class FilterExpressionHelpers
         };
     }
 
-    /// <summary>
-    /// Recursively walks a filter expression tree and resolves property references
-    /// against a Metadata v2 resource, normalizing namespace prefixes and field names.
-    /// </summary>
     internal static FilterExpression NormalizeFilterPropertyReferences(
         FilterExpression expression,
         MetadataV2Resource resource,
@@ -85,9 +74,6 @@ internal static class FilterExpressionHelpers
         };
     }
 
-    /// <summary>
-    /// Strips namespace prefixes (slash and colon delimited) from an identifier.
-    /// </summary>
     internal static string NormalizeIdentifier(string identifier)
     {
         var normalized = identifier.Trim();
@@ -111,10 +97,6 @@ internal static class FilterExpressionHelpers
         return normalized;
     }
 
-    /// <summary>
-    /// Resolves a requested field name against a Metadata v2 resource, matching
-    /// primary key, geometry, and schema fields case-insensitively.
-    /// </summary>
     internal static string? ResolveFieldName(MetadataV2Resource resource, string requestedName, bool allowGeometryAlias)
     {
         var normalized = NormalizeIdentifier(requestedName);

@@ -6,18 +6,8 @@ using Honua.Protocols.GeoServices.ImageServer.Models;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Services;
 
-/// <summary>
-/// Central knowledge of the Esri raster-catalog field surface exposed by the
-/// Image Server <c>query</c> endpoint. WHERE evaluation, <c>orderByFields</c>
-/// ordering, and <c>outFields</c> projection all resolve field names through
-/// this helper so the supported set stays in lockstep across the operation.
-/// </summary>
 internal static class ImageServerCatalogFields
 {
-    /// <summary>
-    /// Canonical, response-facing field names in their natural emit order. These
-    /// are the names stamped onto query feature attributes and the field schema.
-    /// </summary>
     public static readonly IReadOnlyList<string> CanonicalNames =
     [
         "OBJECTID",
@@ -37,12 +27,6 @@ internal static class ImageServerCatalogFields
         "CreatedAt",
     ];
 
-    /// <summary>
-    /// The protocol-neutral raster-catalog field schema, in <see cref="CanonicalNames"/>
-    /// order. REST metadata, REST <c>query</c>, SOAP <c>GetFields</c>/<c>AllowedFields</c>
-    /// and attribute-time resolution all project from this one definition.
-    /// </summary>
-    /// <param name="maskedFields">Caller field masks; masked fields are omitted.</param>
     public static Field[] Schema(ImmutableArray<string> maskedFields = default)
     {
         Field[] allFields =
@@ -69,11 +53,6 @@ internal static class ImageServerCatalogFields
             : allFields.Where(field => !maskedFields.Contains(field.Name, StringComparer.OrdinalIgnoreCase)).ToArray();
     }
 
-    /// <summary>
-    /// Resolves a catalog field value for WHERE evaluation, accepting the Esri
-    /// field aliases (for example <c>NUM_BANDS</c>) that the SQL surface allows.
-    /// Date fields resolve to <see cref="DateTime"/> for comparison.
-    /// </summary>
     public static bool TryResolve(string propertyName, ImageServerCatalogItem item, out object? value)
     {
         ArgumentNullException.ThrowIfNull(item);
@@ -134,11 +113,6 @@ internal static class ImageServerCatalogFields
         }
     }
 
-    /// <summary>
-    /// Maps a caller-supplied field name (any documented alias, case-insensitive)
-    /// to its canonical response-facing name, or <c>null</c> when the field is
-    /// not part of the catalog surface.
-    /// </summary>
     public static string? ResolveCanonicalName(string fieldName)
     {
         if (string.IsNullOrWhiteSpace(fieldName))

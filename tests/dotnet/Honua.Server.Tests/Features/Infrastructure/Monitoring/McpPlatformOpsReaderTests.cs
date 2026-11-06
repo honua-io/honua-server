@@ -213,6 +213,103 @@ public sealed class McpPlatformOpsReaderTests
 {
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
+    public async Task ProposePlatformReleaseConvergence_AfterRollback_UsesFreshLiveProposalIdentity()
+    {
+        var desired = "sha256:" + new string('a', 64);
+        var options = new ControlPlaneOptions
+        {
+            PlatformRelease = new() { Version = "2026.1-rc.2", ServingArtifactReference = desired },
+            DeployTargets = [new()
+            {
+                TargetId = "compose-local",
+                TargetKind = DeployTargetKind.LocalCompose,
+                Backend = ComposeDeployBackend.AdapterBackendName
+            }]
+        };
+        var observer = Substitute.For<IManagedComposeObserver>();
+        var gateway = ConvergenceGateway();
+        using var services = CreateServices(gateway, managedComposeObserver: observer);
+        var reader = CreateReader(options: options, services: services);
+        var keys = new List<string>();
+        foreach (var incarnation in new[] { new string('c', 64), new string('d', 64) })
+        {
+            observer.ReadAsync(Arg.Any<CancellationToken>()).Returns(new OpsManagedTargetHealthView[]
+            {
+                new()
+                {
+                    TargetId = "compose-local",
+                    Available = true,
+                    Status = "Healthy",
+                    ObservedAt = DateTimeOffset.UtcNow,
+                    RunningImage = "sha256:" + new string('b', 64),
+                    ServerVersion = "2026.1-rc.1",
+                    ServingIncarnation = incarnation
+                }
+            });
+            var output = await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), new McpPlatformReleaseConvergenceArgument(), CancellationToken.None);
+            Assert.True(output.RequiresApproval);
+            keys.Add(gateway.LastRequest!.IdempotencyKey!);
+        }
+        Assert.NotEqual(keys[0], keys[1]);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void ValidateFindingCandidateBinding_ComposeRestartTargetMismatch_IsRejected()
+    {
+        var payload = Honua.ControlPlane.Executors.OpsActionExecutionPayloads.RestartComposeService("compose-local", "redis");
+        var act = () => McpPlatformOpsReader.ValidateFindingCandidateBinding(OperationClass.AdminConfigChange, payload, "other-target");
+        act.Should().Throw<Honua.Geoprocessing.GeoprocessingValidationException>()
+            .WithMessage("*candidateId must be the finding's subject.targetId*")
+            .Which.Message.Should().NotContain("compose-local", "the refusal names the field, not the expected value");
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void ValidateFindingCandidateBinding_ComposeRestartSubjectTarget_IsAccepted()
+    {
+        var payload = Honua.ControlPlane.Executors.OpsActionExecutionPayloads.RestartComposeService("compose-local", "redis");
+        var act = () => McpPlatformOpsReader.ValidateFindingCandidateBinding(OperationClass.AdminConfigChange, payload, "compose-local");
+        act.Should().NotThrow();
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void ValidateFindingCandidateBinding_TargetlessFindingActions_DoNotBindCandidateIdToActionTarget()
+    {
+        // Alert redrive, channel pause and admission findings carry no subject.targetId; their
+        // actions do not bind candidateId to an action target. (A certified Studio transcript still
+        // binds it to the certified candidate; that check lives in StudioAiTranscriptSigner.)
+        string[] payloads =
+        [
+            Honua.ControlPlane.Executors.OpsActionExecutionPayloads.RedriveDeadLetters(),
+            Honua.ControlPlane.Executors.OpsActionExecutionPayloads.PauseChannel("alert-dispatch"),
+            Honua.ControlPlane.Executors.OpsActionExecutionPayloads.TuneBoundedAdmission(8),
+        ];
+
+        foreach (var payload in payloads)
+        {
+            var act = () => McpPlatformOpsReader.ValidateFindingCandidateBinding(OperationClass.AdminConfigChange, payload, "any-value");
+            act.Should().NotThrow();
+        }
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void ProposeFindingInputSchema_CandidateId_DescribesSubjectTargetIdAndTargetlessCase()
+    {
+        var properties = McpPlatformOpsSchemas.ProposeFindingInputSchema.GetProperty("properties");
+
+        properties.GetProperty("candidateId").GetProperty("description").GetString()
+            .Should().Contain("subject.targetId").And.Contain("compose-local")
+            .And.Contain("Findings without a target").And.Contain("don't bind it to an action target")
+            .And.NotContain("any non-empty value", "certified Studio calls still bind candidateId to the certified candidate");
+        properties.GetProperty("findingId").GetProperty("description").GetString()
+            .Should().Contain("honua_ops_findings");
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
     public void ValidateFindingCandidateBinding_DeployTargetMismatch_IsRejected()
     {
         var payload = new DeployExecutionPayload
@@ -227,7 +324,7 @@ public sealed class McpPlatformOpsReaderTests
             "candidate-a");
 
         act.Should().Throw<Honua.Geoprocessing.GeoprocessingValidationException>()
-            .WithMessage("*does not match the certified candidate*");
+            .WithMessage("*does not match the certified candidate*candidateId must be the finding's subject.targetId*");
     }
 
     [UnitTest]
@@ -442,7 +539,8 @@ public sealed class McpPlatformOpsReaderTests
                 ToRevision = " rev-9 ",
                 Reason = "rollback bad release",
                 IdempotencyKey = "rollback-key",
-                ParameterOverrides = new Dictionary<string, string> { ["activePort"] = "5102" },
+                ParameterOverrides = new Dictionary<string, string> { ["activePort"] = "5102", ["backupId"] = "not-the-backup" },
+                BackupId = " honua-cert-snap ",
             },
             CancellationToken.None);
 
@@ -474,11 +572,63 @@ public sealed class McpPlatformOpsReaderTests
         payload.ParameterOverrides.Should().Contain("activePort", "5102");
         payload.DesiredRevision.Should().Be("rev-9");
         payload.CurrentRevision.Should().Be("rev-10");
+        payload.Rollback.Should().BeTrue();
+        payload.BackupId.Should().Be("honua-cert-snap");
+        payload.ParameterOverrides.Should().ContainKey("backupId");
     }
 
-    [UnitTest]
+    [UnitTheory]
     [Operation(Operations.TestInfrastructure)]
-    public async Task ProposeRollback_WithoutRevision_UsesSecondNewestSucceededDeploy()
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ProposeRollback_LocalDefaultBackup_SealsVerifiedSelectionBeforeApproval(bool verified)
+    {
+        var store = new RecordingWorkflowOperationStore(
+            BuildDeployOperation("new", "local", "candidate", "installed", WorkflowOperationStatus.Succeeded),
+            BuildDeployOperation("baseline", "local", "installed", "installed", WorkflowOperationStatus.Succeeded, DateTimeOffset.UtcNow.AddMinutes(-10)));
+        var gateway = new RecordingGateway(new OperationGatewayResult
+        {
+            Outcome = OperationGatewayOutcome.ProposalCreated,
+            Decision = new GuardrailDecision(GuardrailTier.RequiresApproval, OperationClass.Deploy, HonuaEdition.Pro, "approval"),
+            ProposalId = "rollback-proposal"
+        });
+        var compose = Substitute.For<IComposeExecutorClient>();
+        compose.ExecuteAsync(Arg.Is<ComposeExecutorRequest>(request => request.Op == "plan-rollback" && request.Image == "installed"),
+            Arg.Any<CancellationToken>()).Returns(new ComposeExecutorResponse
+            {
+                Ok = verified,
+                ReadbackComplete = verified,
+                BackupId = verified ? "backup-selected" : null,
+                Code = verified ? null : "restore-backup-unverified"
+            });
+        using var services = CreateServices(gateway, compose: compose);
+        var options = new ControlPlaneOptions
+        {
+            DeployTargets = [new DeployTargetOptions { TargetId = "local", TargetKind = DeployTargetKind.LocalCompose }]
+        };
+        var result = await CreateReader(options: options, store: store, services: services).ProposeRollbackAsync(
+            CreatePrincipal(), new McpProposeRollbackArgument { TargetId = "local" }, CancellationToken.None);
+        if (verified)
+        {
+            result.ProposalId.Should().Be("rollback-proposal");
+            var payload = DeployExecutionPayload.Parse(gateway.LastRequest!.ExecutionPayload)!;
+            payload.DesiredRevision.Should().Be("installed");
+            payload.CurrentRevision.Should().Be("candidate");
+            payload.BackupId.Should().Be("backup-selected");
+        }
+        else
+        {
+            result.Outcome.Should().Be("Blocked");
+            gateway.ProposalCalls.Should().Be(0);
+        }
+        await compose.DidNotReceive().ExecuteAsync(Arg.Is<ComposeExecutorRequest>(request => request.Op == "rollback"), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTheory]
+    [Operation(Operations.TestInfrastructure)]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ProposeRollback_WithoutRevision_UsesPriorDistinctSucceededRevision(bool repeatedConvergence)
     {
         var store = new RecordingWorkflowOperationStore(
             BuildDeployOperation(
@@ -507,6 +657,12 @@ public sealed class McpPlatformOpsReaderTests
             Message = "queued for approval",
         });
 
+        if (repeatedConvergence)
+        {
+            await store.TryCreateAsync(BuildDeployOperation("op-repeat", "serving-us-west", "rev-10", "rev-10",
+                WorkflowOperationStatus.Succeeded, DateTimeOffset.UtcNow.AddMinutes(1)));
+        }
+
         using var services = CreateServices(gateway);
         var reader = CreateReader(store: store, services: services);
 
@@ -526,6 +682,8 @@ public sealed class McpPlatformOpsReaderTests
         payload.Should().NotBeNull();
         payload!.DesiredRevision.Should().Be("rev-9");
         payload.CurrentRevision.Should().Be("rev-10");
+        payload.Rollback.Should().BeTrue();
+        payload.BackupId.Should().BeNull();
     }
 
     [UnitTest]
@@ -605,6 +763,179 @@ public sealed class McpPlatformOpsReaderTests
         gateway.ProposalCalls.Should().Be(1);
         gateway.RouteCalls.Should().Be(0);
         gateway.LastRequest!.IdempotencyKey.Should().Be("converge:2026.07.01:serving-us-west");
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ProposePlatformReleaseConvergence_CompatibleRemoteRollbackWithoutRestore_IsNotBlocked()
+    {
+        var gateway = ConvergenceGateway();
+        using var services = CreateServices(gateway);
+        var rollback = BuildDeployOperation("compatible-rollback", "serving-us-west", "rc1", "candidate",
+            WorkflowOperationStatus.Succeeded);
+        rollback = rollback with
+        {
+            Audit = new OperationAuditInfo { IdempotencyKey = "compatible-rollback-key" },
+            Deploy = rollback.Deploy! with { PreMigrationBackupId = "backup-verified" }
+        };
+        var store = new RecordingWorkflowOperationStore(rollback);
+        var reader = CreateReader(store: store, services: services);
+
+        var result = await reader.ProposePlatformReleaseConvergenceAsync(
+            CreatePrincipal(), new McpPlatformReleaseConvergenceArgument(), CancellationToken.None);
+
+        result.Targets.Should().ContainSingle(target => target.TargetId == "serving-us-west" && target.ProposalId == "proposal-converge");
+        gateway.LastRequest!.IdempotencyKey.Should().Be("converge:2026.07.01:serving-us-west:after:compatible-rollback");
+        await reader.ProposePlatformReleaseConvergenceAsync(
+            CreatePrincipal(), new McpPlatformReleaseConvergenceArgument(), CancellationToken.None);
+        gateway.LastRequest!.IdempotencyKey.Should().Be("converge:2026.07.01:serving-us-west:after:compatible-rollback");
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ProposePlatformReleaseConvergence_AfterRollback_DefaultKeyChangesAndRetriesRemainStable()
+    {
+        var gateway = ConvergenceGateway();
+        var observer = Substitute.For<IManagedComposeObserver>();
+        var observedImage = "rc1";
+        var incarnation = new string('c', 64);
+        observer.ReadAsync(Arg.Any<CancellationToken>()).Returns(_ => new OpsManagedTargetHealthView[]
+        {
+            new() { TargetId = "serving-us-west", Available = true, Status = "Healthy", RunningImage = observedImage, ServingIncarnation = incarnation }
+        });
+        using var services = CreateServices(gateway, managedComposeObserver: observer);
+        var store = new RecordingWorkflowOperationStore();
+        var options = CreateOptions();
+        options.DeployTargets[0].TargetKind = DeployTargetKind.LocalCompose;
+        var reader = CreateReader(options: options, store: store, services: services);
+        var argument = new McpPlatformReleaseConvergenceArgument();
+        await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
+        var initialKey = gateway.LastRequest!.IdempotencyKey;
+        await store.TryCreateAsync(BuildDeployOperation("compose-baseline-fixture", "serving-us-west", "rc1", "rc1",
+            WorkflowOperationStatus.Succeeded, DateTimeOffset.UtcNow.AddMinutes(-1)));
+        await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
+        gateway.LastRequest!.IdempotencyKey.Should().Be(initialKey);
+
+        await store.TryCreateAsync(BuildDeployOperation("other-deploy", "serving-us-west", "other", "rc1",
+            WorkflowOperationStatus.Succeeded, DateTimeOffset.UtcNow.AddSeconds(-30)));
+        await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
+        gateway.LastRequest!.IdempotencyKey.Should().Be(initialKey, "a forward deploy is not a completed rollback");
+
+        var failedRollback = BuildDeployOperation("failed-rollback", "serving-us-west", "rc1", "other",
+            WorkflowOperationStatus.Failed, DateTimeOffset.UtcNow.AddSeconds(-10));
+        await store.TryCreateAsync(failedRollback with { Deploy = failedRollback.Deploy! with { PreMigrationBackupId = "backup-verified" } });
+        await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
+        gateway.LastRequest!.IdempotencyKey.Should().Be(initialKey, "a failed rollback must not advance the key");
+
+        await store.TryCreateAsync(BuildDeployOperation("candidate-deploy", "serving-us-west", "ghcr.io/honua/server:2026.07.01", "rc1",
+            WorkflowOperationStatus.Succeeded, DateTimeOffset.UtcNow));
+        observedImage = "ghcr.io/honua/server:2026.07.01";
+        var converged = await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
+        converged.Targets.Should().Contain(target => target.TargetId == "serving-us-west" && target.Outcome == "already-converged");
+        observedImage = "rc1";
+        incarnation = new string('d', 64);
+        // The new container may be visible before the rollback child reaches success.
+        var activeRestore = new WorkflowOperationRecord
+        {
+            OperationId = "active-rollback",
+            Kind = WorkflowOperationKind.PreMigrationRestore,
+            Status = WorkflowOperationStatus.Reconciling,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow
+        };
+        var owner = activeRestore with { OperationId = RestoreDeployAdmission.CellOwnerId, CurrentPhase = activeRestore.OperationId };
+        await store.TryCreateAsync(activeRestore);
+        await store.TryCreateAsync(owner);
+        var callsBeforeActive = gateway.ProposalCalls;
+        var active = await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
+        active.Targets.Should().ContainSingle(target => target.TargetId == "serving-us-west" && target.Outcome == "blocked");
+        gateway.ProposalCalls.Should().Be(callsBeforeActive);
+        await store.TrySetAsync(owner with { CurrentPhase = null });
+
+        var rollback = BuildDeployOperation("rollback-deploy", "serving-us-west", "rc1", "ghcr.io/honua/server:2026.07.01",
+            WorkflowOperationStatus.Succeeded, DateTimeOffset.UtcNow.AddMinutes(1));
+        rollback = rollback with
+        {
+            Audit = new OperationAuditInfo { IdempotencyKey = "restore-rollback" },
+            Deploy = rollback.Deploy! with { PreMigrationBackupId = "backup-verified" }
+        };
+        var restore = new WorkflowOperationRecord
+        {
+            OperationId = "restore-rollback",
+            Kind = WorkflowOperationKind.PreMigrationRestore,
+            Status = WorkflowOperationStatus.Reconciling,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            PreMigrationRestore = new PreMigrationRestoreContext
+            {
+                Payload = "{}",
+                Phase = "awaiting-local-deploy",
+                ApprovedBy = "approver",
+                DeployOperationId = rollback.OperationId
+            }
+        };
+        await store.TryCreateAsync(rollback);
+        await store.TryCreateAsync(restore);
+        var callsBeforePending = gateway.ProposalCalls;
+        var pending = await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
+        pending.Targets.Should().ContainSingle(target => target.TargetId == "serving-us-west" && target.Outcome == "blocked");
+        gateway.ProposalCalls.Should().Be(callsBeforePending);
+        await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(),
+            new McpPlatformReleaseConvergenceArgument { IdempotencyKey = "manual-key" }, CancellationToken.None);
+        gateway.LastRequest!.IdempotencyKey.Should().Be("manual-key:serving-us-west");
+        await store.TrySetAsync(restore with { Status = WorkflowOperationStatus.Failed });
+        var failed = await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
+        failed.Targets.Should().ContainSingle(target => target.TargetId == "serving-us-west" && target.Outcome == "blocked");
+        gateway.ProposalCalls.Should().Be(callsBeforePending + 1);
+        await store.TrySetAsync(restore with
+        {
+            Status = WorkflowOperationStatus.Succeeded,
+            PreMigrationRestore = restore.PreMigrationRestore with { DeployOperationId = "another-deploy" }
+        });
+        var mismatched = await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
+        mismatched.Targets.Should().ContainSingle(target => target.TargetId == "serving-us-west" && target.Outcome == "blocked");
+        gateway.ProposalCalls.Should().Be(callsBeforePending + 1);
+        await store.TrySetAsync(restore with { Status = WorkflowOperationStatus.Succeeded });
+        await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
+        var nextKey = gateway.LastRequest!.IdempotencyKey;
+        nextKey.Should().NotBe(initialKey);
+        nextKey.Should().EndWith(":after:rollback-deploy");
+        await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(), argument, CancellationToken.None);
+        gateway.LastRequest!.IdempotencyKey.Should().Be(nextKey);
+        await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(),
+            new McpPlatformReleaseConvergenceArgument { IdempotencyKey = "caller-key" }, CancellationToken.None);
+        gateway.LastRequest!.IdempotencyKey.Should().Be("caller-key:serving-us-west");
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ProposePlatformReleaseConvergence_LocalLiveOrExplicitKey_DoesNotReadDeployHistory()
+    {
+        var desired = "sha256:" + new string('a', 64);
+        var observed = desired;
+        var options = new ControlPlaneOptions
+        {
+            PlatformRelease = new() { Version = "2026.1-rc.2", ServingArtifactReference = desired },
+            DeployTargets = [new() { TargetId = "compose-local", TargetKind = DeployTargetKind.LocalCompose }]
+        };
+        var observer = Substitute.For<IManagedComposeObserver>();
+        observer.ReadAsync(Arg.Any<CancellationToken>()).Returns(_ => new OpsManagedTargetHealthView[]
+        {
+            new() { TargetId = "compose-local", Available = true, Status = "Healthy", RunningImage = observed }
+        });
+        var store = Substitute.For<IWorkflowOperationStore>();
+        var gateway = ConvergenceGateway();
+        using var services = CreateServices(gateway, managedComposeObserver: observer);
+        var reader = CreateReader(options: options, store: store, services: services);
+
+        var converged = await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(),
+            new McpPlatformReleaseConvergenceArgument(), CancellationToken.None);
+        converged.Targets.Should().ContainSingle(target => target.Outcome == "already-converged");
+        observed = "sha256:" + new string('b', 64);
+        await reader.ProposePlatformReleaseConvergenceAsync(CreatePrincipal(),
+            new McpPlatformReleaseConvergenceArgument { IdempotencyKey = "caller-key" }, CancellationToken.None);
+        gateway.LastRequest!.IdempotencyKey.Should().Be("caller-key:compose-local");
+        await store.DidNotReceive().GetMostRecentSucceededDeployByTargetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
@@ -1033,9 +1364,13 @@ public sealed class McpPlatformOpsReaderTests
         IOpsFindingsEvidenceSource? findings = null,
         IHttpContextAccessor? accessor = null,
         IAdminApiKeyStore? apiKeys = null,
-        Honua.Infrastructure.MultiTenancy.TenantContextOptions? tenantOptions = null)
+        Honua.Infrastructure.MultiTenancy.TenantContextOptions? tenantOptions = null,
+        IManagedComposeObserver? managedComposeObserver = null,
+        IComposeExecutorClient? compose = null)
     {
         var services = new ServiceCollection();
+        if (managedComposeObserver is not null) services.AddSingleton(managedComposeObserver);
+        if (compose is not null) services.AddSingleton(compose);
         if (tenantOptions is not null)
         {
             services.AddSingleton(Options.Create(tenantOptions));

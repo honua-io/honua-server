@@ -12,9 +12,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for geocoding provider health and configuration visibility.
-/// </summary>
 internal static class GeocodingOperationsEndpoints
 {
     private const string ProviderHealthCheckFailedMessage = "Geocoding provider health check failed.";
@@ -131,7 +128,4 @@ internal static class GeocodingOperationsEndpoints
     }
 }
 
-/// <summary>
-/// Log category for geocoding operations endpoints.
-/// </summary>
 internal sealed class GeocodingOperationsEndpointsLog;

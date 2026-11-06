@@ -17,9 +17,6 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
-/// <summary>
-/// Handler for the ArcGIS ImageServer <c>find</c> operation.
-/// </summary>
 internal sealed class ImageServerFindHandler
 {
     private const int DefaultMaxCount = 100;
@@ -41,9 +38,6 @@ internal sealed class ImageServerFindHandler
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// Finds catalog images whose footprints contain the requested target geometry.
-    /// </summary>
     public async Task<IResult> FindAsync(
         HttpContext context,
         int layerId,
@@ -335,11 +329,25 @@ internal sealed class ImageServerFindHandler
 
     private static ImageServerFindImage BuildImage(ImageServerCatalogItem item, ImmutableArray<string> maskedFields)
     {
-        var pixelSize = ImageServerCatalogSecurity.IsMasked(maskedFields, "MinPS") ||
-            ImageServerCatalogSecurity.IsMasked(maskedFields, "MaxPS")
-                ? null
-                : item.MinPixelSize > 0 ? item.MinPixelSize :
-                    item.MaxPixelSize > 0 ? item.MaxPixelSize : (double?)null;
+        // MinPS is the visibility floor (0 = visible when zoomed in), not the source cell.
+        // Report LowPS so find keeps advertising the native resolution (#6563).
+        double? pixelSize = null;
+        if (!ImageServerCatalogSecurity.IsMasked(maskedFields, "MinPS") &&
+            !ImageServerCatalogSecurity.IsMasked(maskedFields, "MaxPS"))
+        {
+            if (item.MinPixelSize > 0)
+            {
+                pixelSize = item.MinPixelSize;
+            }
+            else if (!ImageServerCatalogSecurity.IsMasked(maskedFields, "LowPS") && item.LowPixelSize > 0)
+            {
+                pixelSize = item.LowPixelSize;
+            }
+            else if (item.MaxPixelSize > 0)
+            {
+                pixelSize = item.MaxPixelSize;
+            }
+        }
 
         return new ImageServerFindImage
         {
@@ -362,11 +370,6 @@ internal sealed class ImageServerFindHandler
         };
     }
 
-    /// <summary>
-    /// Orientation sort key: the image's off-nadir angle (degrees from straight-down). Smaller is
-    /// better (more nadir, less oblique distortion over the target). Images without an off-nadir
-    /// angle sort last so metadata-bearing candidates are preferred.
-    /// </summary>
     private static double OffNadirSortKey(ImageServerCatalogItem item)
         => ImageServerSensorModel.TryReadOffNadirAngle(item.SensorMetadata) ?? double.MaxValue;
 

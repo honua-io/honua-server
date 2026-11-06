@@ -2,9 +2,9 @@
 
 **173 passes, 4 recorded failures, 137 blocked, 52 not started and 10 provisional exclusions** across 94 operations and four client lanes (376 cells). This is a rollup of retained evidence from multiple runs and candidates, not a complete certification of the current runtime. Blocked means the operation still needs proof; it does not mean Honua lacks the protocol.
 
-The active server fix branch is `feat/wcs-10-serving`, [PR 5038](https://github.com/honua-io/honua-server/pull/5038). The earlier WFS and Tiles evidence is committed in `honua-client-compat` at [a294c9c](https://github.com/honua-io/honua-client-compat/commit/a294c9caa7606fe0b93b52ca76cb0cf9e6d1482d), following the statistics/raster replay commit [9d6e362](https://github.com/honua-io/honua-client-compat/commit/9d6e362c4bd46d56ced7ea1ffedc5b8aac84698e). ArcPy follow-up evidence is on `fix/native-evidence-scope-20260920` at [58e23f3](https://github.com/honua-io/honua-esri-compat/commit/58e23f3f87a40688611010f954865d25f9f4d3ca); the later source-only routing/extension inventory is committed at [f923cc3](https://github.com/honua-io/honua-esri-compat/commit/f923cc3bb52b9731a75030bd4d66d7c7c80aeba9).
+The active server fix branch is `feat/wcs-10-serving`, [PR 5038](https://github.com/honua-io/honua-server/pull/5038). The earlier WFS and Tiles evidence is committed in `honua-client-compat` at [a294c9c](https://github.com/honua-io/honua-client-compat/commit/a294c9caa7606fe0b93b52ca76cb0cf9e6d1482d), following the statistics/raster replay commit [9d6e362](https://github.com/honua-io/honua-client-compat/commit/9d6e362c4bd46d56ced7ea1ffedc5b8aac84698e). ArcPy follow-up commits 58e23f3 and f923cc3 are outside this repository and add no certification credit here.
 
-The latest additional native Maps evidence is [a37a12e](https://github.com/honua-io/honua-client-compat/commit/a37a12e3f19f9b9f2ecfecc2f68af3a5df77c13d). The later qualified-version-name and same-host HTTP WCS diagnostics are [9b2315d](https://github.com/honua-io/honua-esri-compat/commit/9b2315d06988a32fcbab79608676826870f09c65); those diagnostics add no native certification credit.
+The latest additional native Maps evidence is [a37a12e](https://github.com/honua-io/honua-client-compat/commit/a37a12e3f19f9b9f2ecfecc2f68af3a5df77c13d). The later qualified-version-name and same-host HTTP WCS diagnostics are 9b2315d; those diagnostics add no native certification credit.
 
 ## Client totals
 
@@ -56,13 +56,15 @@ Each cell describes the operations in that protocol/version for one client. The 
 
 Full operation names, client build bindings, issue references and historical evidence are in the [operation checklist](CLIENT_CERTIFICATION_CHECKLIST.md) and its [JSON](data/client-certification-checklist.v1.json). The checksum below binds this dated snapshot; later checklist changes do not retroactively change this report.
 
+Desktop receipts cited from outside this repository are withdrawn. The checksum and the table above remain this dated snapshot.
+
 ## Evidence identifiers
 
 Operation names, client build bindings and historical cells stay in the
 [operation checklist](CLIENT_CERTIFICATION_CHECKLIST.md) and its
-[JSON](data/client-certification-checklist.v1.json). Desktop ArcGIS Pro and
-ArcPy procedure stays in private `honua-esri-compat` (ruling R30). This page
-does not restate those recipes. The checksum below binds this dated snapshot.
+[JSON](data/client-certification-checklist.v1.json). This repository does not
+certify ArcGIS clients, and this page does not restate a desktop procedure.
+The checksum below binds this dated snapshot.
 
 Recorded failures, not new results:
 
@@ -80,7 +82,6 @@ receipt does not validate that earlier pass. See
 Evidence commits already cited above, with no new certification claimed here:
 
 - `honua-client-compat` `a294c9c`, `9d6e362`, `a37a12e`
-- `honua-esri-compat` `58e23f3`, `f923cc3`, `9b2315d` (diagnostics add no native certification credit)
 
 ## Server conformance is a separate result
 

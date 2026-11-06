@@ -7,9 +7,6 @@ using Honua.Infrastructure.Validation;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
-/// <summary>
-/// Validates and applies limits to feature query parameters
-/// </summary>
 internal sealed class FeatureQueryValidator : IFeatureQueryValidator
 {
     private readonly ICommonQueryValidator _commonQueryValidator;
@@ -40,7 +37,6 @@ internal sealed class FeatureQueryValidator : IFeatureQueryValidator
         _commonQueryValidator = commonQueryValidator ?? throw new ArgumentNullException(nameof(commonQueryValidator));
     }
 
-    /// <inheritdoc/>
     public QueryValidationResult ValidateQueryLimits(QueryParameters queryParams)
     {
         var effectiveResultRecordCount = queryParams.ResultRecordCount;
@@ -112,7 +108,6 @@ internal sealed class FeatureQueryValidator : IFeatureQueryValidator
         return QueryValidationResult.Valid(validatedParams);
     }
 
-    /// <inheritdoc/>
     public RelatedRecordsValidationResult ValidateRelatedRecordsLimits(QueryRelatedRecordsParameters queryParams)
     {
         var paginationResult = _commonQueryValidator.ValidateAndNormalizePagination(

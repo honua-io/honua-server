@@ -9,14 +9,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Protocols.Ogc.Classic.Wfs20;
 
-/// <summary>
-/// Service collection extensions for WFS 2.0
-/// </summary>
 internal static class Wfs20ServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers WFS 2.0 services
-    /// </summary>
     internal static IServiceCollection AddWfs20(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);

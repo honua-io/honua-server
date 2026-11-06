@@ -19,10 +19,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for SLD (Styled Layer Descriptor) import/export. Migration tooling
-/// only — Community edition. No license gating is applied.
-/// </summary>
 internal static class AdminSldStyleEndpoints
 {
     private const int MaxSldBytes = 1_048_576; // 1 MiB cap; aligns with SldParser.
@@ -406,9 +402,6 @@ internal static class AdminSldStyleEndpoints
     }
 }
 
-/// <summary>
-/// Marker type for the SLD log category.
-/// </summary>
 internal sealed class SldImportLogCategory;
 
 internal static partial class SldStyleLog

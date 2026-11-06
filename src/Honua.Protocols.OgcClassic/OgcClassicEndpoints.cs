@@ -7,14 +7,8 @@ using Honua.Protocols.Ogc.Classic.Wps20;
 
 namespace Honua.Protocols.Ogc.Classic;
 
-/// <summary>
-/// Maps classic OGC web service endpoints.
-/// </summary>
 internal static class OgcClassicEndpoints
 {
-    /// <summary>
-    /// Maps WMS and WMTS endpoints, including GeoServices compatibility aliases.
-    /// </summary>
     public static IEndpointRouteBuilder MapOgcClassicEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);

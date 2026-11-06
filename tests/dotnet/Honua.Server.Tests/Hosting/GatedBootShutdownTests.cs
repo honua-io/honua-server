@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Reflection;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Server.Hosting;
@@ -50,5 +51,22 @@ public sealed class GatedBootShutdownTests
             .Should().BeFalse();
         GatedBootShutdown.IsSchemaFloorRefusal(new InvalidOperationException(floor.Message))
             .Should().BeFalse("only the schema-floor exception type takes the floor shutdown path");
+    }
+
+    [UnitTest]
+    public void IsAttachmentBindingRefusal_RecognizesTheProviderMismatchAndNotAPlainInvalidOperation()
+    {
+        var assembly = Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "Honua.Postgres.dll"));
+        var type = assembly.GetType(GatedBootShutdown.AttachmentBindingRefusalTypeName, throwOnError: true)!;
+        var mismatch = (Exception)Activator.CreateInstance(
+            type,
+            "Attachment family is absent despite its required migration phase.")!;
+
+        GatedBootShutdown.IsAttachmentBindingRefusal(mismatch).Should().BeTrue();
+        GatedBootShutdown.IsSchemaFloorRefusal(mismatch).Should().BeFalse();
+        GatedBootShutdown.IsContractGateRefusal(mismatch).Should().BeFalse(
+            "a binding mismatch is not the contract-approval gate, even though it derives from InvalidOperationException");
+        GatedBootShutdown.IsAttachmentBindingRefusal(new InvalidOperationException(mismatch.Message))
+            .Should().BeFalse("only the provider exception type takes the binding shutdown path");
     }
 }

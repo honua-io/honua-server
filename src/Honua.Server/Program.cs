@@ -135,6 +135,15 @@ if (Honua.Server.Hosting.MigrateOnly.MigrateOnlyMode.Resolve(builder.Configurati
     return;
 }
 
+// Compose executor mode (honua-server#6811): HONUA_COMPOSE_EXECUTOR=true serves the allowlisted
+// Compose socket and never builds this web host. The serving process does not take this path.
+if (Honua.Server.Hosting.ComposeExecutor.ComposeExecutorMode.Resolve(builder.Configuration) !=
+    Honua.Server.Hosting.ComposeExecutor.ComposeExecutorSwitch.NotRequested)
+{
+    Environment.ExitCode = await Honua.Server.Hosting.ComposeExecutor.ComposeExecutorCommand.RunFromEntryPointAsync(builder.Configuration);
+    return;
+}
+
 Honua.Infrastructure.Hosting.ProtocolProfile.ValidateRuntime(builder.Configuration);
 
 // Typed composition switch (resolved once, never consulted by services): a process a batch compute
@@ -604,6 +613,10 @@ Honua.Db.Oracle.Features.Security.OracleConnectionDriverServiceCollectionExtensi
 // (Snowflake.Data is not single-file/AOT safe — see Honua.Server.csproj).
 Honua.Snowflake.Features.Security.SnowflakeConnectionDriverServiceCollectionExtensions.AddSnowflakeConnectionDriver(builder.Services);
 #endif
+// Databricks speaks HTTPS to the SQL Statement Execution API (no ADO.NET driver) and stays
+// registered beside Redshift and Snowflake so admin connection tests resolve the provider
+// even when the experimental feature gate has not enabled the read-through provider.
+Honua.Db.Databricks.Features.Security.DatabricksConnectionDriverServiceCollectionExtensions.AddDatabricksConnectionDriver(builder.Services);
 builder.Services.AddSingleton<Honua.Core.Features.Security.Abstractions.IConnectionDriverRegistry, Honua.Core.Features.Security.Abstractions.ConnectionDriverRegistry>();
 
 // IGeometryService is a pure NTS-backed compute service (its only dependency is
@@ -776,10 +789,16 @@ if (connectedRedis != null && redisCacheEntitled)
         Honua.ControlPlane.RedisOperationProposalStore>();
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationGateway,
         Honua.ControlPlane.OperationGateway>();
+    builder.Services.AddSingleton<Honua.ControlPlane.OperationProposerApiKeyAuthority>();
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalEvidenceValidator,
         Honua.ControlPlane.OperationProposalEvidenceValidator>();
+    builder.Services.AddPreMigrationRestore(builder.Configuration);
+    if (!isTestEnvironment && !Honua.ControlPlane.ControlPlaneLambdaConnectionRelease.IsEventHandlerProfile(builder.Configuration))
+    {
+        builder.Services.AddHostedService(static provider => provider.GetRequiredService<Honua.ControlPlane.DurableRestoreWorker>());
+    }
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor,
-        Honua.ControlPlane.Executors.DeployOperationExecutor>();
+        Honua.ControlPlane.Executors.RestoreGuardedDeployOperationExecutor>();
     builder.Services.AddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor,
         Honua.ControlPlane.Executors.AdminConfigOperationExecutor>();
     // MetadataRelease executor is create-only BY DESIGN (#2563): rollback and the coordinated-release
@@ -908,7 +927,11 @@ builder.Services.AddSingleton<Honua.Infrastructure.Monitoring.DegradedStartupCon
 // Lambda that is a connect storm against RDS Proxy; EventBridge retries the invocation instead.
 if (Honua.ControlPlane.ControlPlaneLambdaConnectionRelease.HostsDatabasePollingLoops(builder.Configuration))
 {
-    builder.Services.AddHostedService<Honua.Infrastructure.Monitoring.DatabaseRecoveryBackgroundService>();
+    // Also a singleton: on AWS Lambda the readiness probe drives a bounded recovery attempt itself,
+    // because the background loop only runs while an invocation is executing.
+    builder.Services.AddSingleton<Honua.Infrastructure.Monitoring.DatabaseRecoveryBackgroundService>();
+    builder.Services.AddHostedService(static sp =>
+        sp.GetRequiredService<Honua.Infrastructure.Monitoring.DatabaseRecoveryBackgroundService>());
 }
 builder.Services.AddScoped<Honua.Infrastructure.Monitoring.IDeployPreflightProbe,
     Honua.Infrastructure.Monitoring.DeployPreflightProbe>();
@@ -1009,6 +1032,16 @@ builder.Services.AddSingleton<Honua.Infrastructure.Authentication.IAdminApiKeySt
     return new Honua.Infrastructure.Authentication.InMemoryAdminApiKeyStore(sp.GetService<TimeProvider>());
 });
 builder.Services.AddHostedService<Honua.Infrastructure.Authentication.RedisAdminApiKeyIndexMaintenance>();
+// A Lambda sandbox freezes between invocations, so a host that starts stopping there stays a
+// listener-less zombie for minutes. Exit after a short drain so Lambda recycles it (#6558).
+if (Honua.Infrastructure.Hosting.LambdaHostStopExitGuard.IsAwsLambda(Environment.GetEnvironmentVariable))
+{
+    builder.Services.AddHostedService<Honua.Infrastructure.Hosting.LambdaHostStopExitGuard>();
+
+    // A thawed sandbox can find its Redis sockets dead; re-validate them before the first
+    // request after an idle gap so no Redis read path fails on the teardown (#6753).
+    Honua.Infrastructure.Redis.RedisThawProbeExtensions.AddRedisThawProbe(builder.Services);
+}
 // Embed governance (#1191): authoritative embed key issuance/scoping, policy
 // evaluation, rate accounting, and redacted analytics ingestion. In-memory
 // defaults; durable providers can replace these via TryAdd later.
@@ -1296,7 +1329,7 @@ builder.Services.AddHonuaJsonContexts();
 // filter so the HEAD -> GET rewrite runs ahead of WebApplication's implicit UseRouting;
 // the matching restoration middleware below puts HEAD back once the endpoint is selected.
 // Normalize the optional ArcGIS application prefix before HEAD's endpoint inspection.
-builder.Services.AddSingleton<IStartupFilter, ArcGisPathBaseStartupFilter>();
+builder.Services.AddSingleton<IStartupFilter, GeoServicesPathBaseStartupFilter>();
 builder.Services.AddHonuaHeadRequestSupport();
 
 // Add comprehensive IOptions configuration validation
@@ -1369,6 +1402,10 @@ app.UseControlPlaneLambdaConnectionRelease(builder.Configuration);
 // Stamp Honua-Instance on every response, including ones short-circuited below (host
 // validation, HTTPS redirection, auth), so callers can tell which replica answered.
 app.UseServerInstanceHeader();
+
+// Lambda only: probe Redis after an idle gap (a possible freeze) ahead of authentication and
+// every other Redis reader, so a connection torn down on thaw fails the probe, not the request (#6753).
+Honua.Infrastructure.Redis.RedisThawProbeExtensions.UseRedisThawProbe(app);
 
 if (forwardedHeadersEnabled)
 {
@@ -1883,6 +1920,15 @@ catch (Exception ex) when (Honua.Server.Hosting.GatedBootShutdown.IsSchemaFloorR
     await Honua.Server.Hosting.GatedBootShutdown.StopRefusedHostAsync(app, ex.Message);
     return;
 }
+catch (Exception ex) when (Honua.Server.Hosting.GatedBootShutdown.IsAttachmentBindingRefusal(ex)
+    && !Honua.Server.Hosting.GatedBootShutdown.IsInProcessTestServer(app))
+{
+    // The runner returns this mismatch as a failed migration. Rethrowing it leaves Main as an
+    // unhandled exception, and the native image then aborts (exit 139) instead of refusing
+    // (honua-server#6554).
+    await Honua.Server.Hosting.GatedBootShutdown.StopRefusedHostAsync(app, ex.Message);
+    return;
+}
 catch (InvalidOperationException ex) when (Honua.Server.Hosting.GatedBootShutdown.IsContractGateRefusal(ex))
 {
     await Honua.Server.Hosting.GatedBootShutdown.StopRefusedHostAsync(app, ex.Message);
@@ -1912,6 +1958,7 @@ app.MapLayerPublishingEndpoints();
 
 // Configure service settings endpoints (protocol toggles + MapServer config)
 app.MapServiceSettingsEndpoints();
+app.MapFolderEndpoints();
 
 // Configure admin metadata version/manifest endpoints
 // v1 admin endpoint mappings removed in #1035 cutover; V2 admin UX (#1046) lives elsewhere.
@@ -1951,6 +1998,7 @@ app.MapOperateStatusEndpoints();
 app.MapAdminLayerStyleEndpoints();
 app.MapAdminLayerFieldConfigurationEndpoints();
 app.MapAdminLayerAuthoringEndpoints();
+app.MapAdminDiscoveryMetadataEndpoints();
 app.MapAdminLayerFilterConfigurationEndpoints();
 if (offlineSyncEnabled)
 {
@@ -2097,7 +2145,7 @@ if (app.Environment.IsDevelopment())
 // Configure file import endpoints
 app.MapImportEndpoints();
 app.MapMigrationScannerEndpoints();
-app.MapArcGisMigrationEvidenceEndpoints();
+app.MapGeoServicesMigrationEvidenceEndpoints();
 app.MapToolboxTranslationEndpoints();
 app.MapMigrationPerformanceEvidenceEndpoints();
 app.MapRasterImportEndpoints();

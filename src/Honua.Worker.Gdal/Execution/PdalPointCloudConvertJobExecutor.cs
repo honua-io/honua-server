@@ -4,6 +4,7 @@
 using System.Globalization;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Scene.PointCloud;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -138,7 +139,11 @@ internal sealed partial class PdalPointCloudConvertJobExecutor(
                 reproject ? "Running pdal translate (decompress + reproject)" : "Running pdal translate (decompress)",
                 cancellationToken).ConfigureAwait(false);
 
-            var args = BuildTranslateArguments(inputPath, outputPath, reproject ? sourceSrs : null);
+            var preserveInfrared = LasPublicHeader.TryRead(sourceBytes, out var header)
+                && header.VersionMajor == 1 && header.VersionMinor == 4
+                && header.HeaderSize >= 375 && header.HeaderSize <= sourceBytes.Length
+                && header.PointFormat == 8;
+            var args = BuildTranslateArguments(inputPath, outputPath, reproject ? sourceSrs : null, preserveInfrared);
 
             await GdalCommandLog.LogCommandAsync(context, "pdal", args, workspace, cancellationToken).ConfigureAwait(false);
 
@@ -207,7 +212,7 @@ internal sealed partial class PdalPointCloudConvertJobExecutor(
     /// <see cref="TargetSrs"/>. Each token is passed as a discrete argument (no
     /// shell), so the validated CRS token cannot influence argument parsing.
     /// </summary>
-    internal static List<string> BuildTranslateArguments(string inputPath, string outputPath, string? sourceSrs)
+    internal static List<string> BuildTranslateArguments(string inputPath, string outputPath, string? sourceSrs, bool preserveInfrared = false)
     {
         var args = new List<string>
         {
@@ -244,6 +249,14 @@ internal sealed partial class PdalPointCloudConvertJobExecutor(
             // exactly the resolution the producer chose, whatever CRS the source is in. Found by
             // the first test that ever executed real PDAL (PdalPointCloudRealCliTests).
             args.Add("--writers.las.forward=scale,offset");
+        }
+
+        if (preserveInfrared)
+        {
+            // PDAL defaults to format 7, which has no NIR field. Keep source format 8
+            // representable in both decompression-only and reprojection paths.
+            args.Add("--writers.las.dataformat_id=8");
+            args.Add("--writers.las.minor_version=4");
         }
 
         // Force an uncompressed LAS writer regardless of the output extension so

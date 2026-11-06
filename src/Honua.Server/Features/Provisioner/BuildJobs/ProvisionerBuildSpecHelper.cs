@@ -3,19 +3,8 @@
 
 namespace Honua.Server.Features.Provisioner.BuildJobs;
 
-/// <summary>
-/// Shared decode helper for the geocoder/router build spec builders. Both build jobs
-/// carry the same set of common parameters (feedstock source/product, area, table,
-/// schema, artifact name/key); only the artifact-kind key differs, so the common read +
-/// validation lives here to keep the two <c>TryParse</c> paths DRY and consistent.
-/// </summary>
 internal static class ProvisionerBuildSpecHelper
 {
-    /// <summary>
-    /// Reads and validates the parameters common to both build-job kinds, parsing and
-    /// re-validating the area selector. Returns <c>false</c> with a caller-facing
-    /// <paramref name="error"/> on the first missing/invalid value.
-    /// </summary>
     public static bool TryReadCommon(
         IReadOnlyDictionary<string, string> parameters,
         out string sourceId,

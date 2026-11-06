@@ -5,9 +5,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Infrastructure.Rendering;
 
-/// <summary>
-/// AOT-compatible JSON serialization context for MapLibre style parsing.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

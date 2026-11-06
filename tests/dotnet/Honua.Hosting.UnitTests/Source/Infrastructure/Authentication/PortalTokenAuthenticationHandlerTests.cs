@@ -9,12 +9,16 @@ using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
 public sealed class PortalTokenAuthenticationHandlerTests
 {
     private const string Referer = "https://native-proof.example/";
+    private const string BootstrapAdminPassword = "PortalTokenHandler-AdminPassword123!";
+    private const string GeoServicesQueryPath = "/rest/services/test/FeatureServer/0/query";
+    private const string AdminApiPath = "/api/v1/admin/api-keys";
 
     [Theory]
     [InlineData("/rest/services/protected/ImageServer", false, 1)]
@@ -144,6 +148,143 @@ public sealed class PortalTokenAuthenticationHandlerTests
         var result = await context.AuthenticateAsync(PortalTokenAuthenticationExtensions.PortalTokenScheme);
 
         result.Succeeded.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(GeoServicesQueryPath)]
+    [InlineData("/sharing/rest/portals/self")]
+    [InlineData("/sharing/rest/oauth2/revokeToken")]
+    [InlineData("/ogc/features/collections")]
+    [InlineData("/wfs")]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    public async Task AuthenticateAsync_NonAdminApiKeyInQuery_Authenticates(string path)
+    {
+        var store = new InMemoryAdminApiKeyStore();
+        var key = await CreateKeyAsync(store, "read:test");
+        await using var services = CreateServices(store);
+
+        var result = await AuthenticateAsync(QueryContext(services, path, key));
+
+        result.Succeeded.Should().BeTrue("a query-string API key is accepted wherever a portal token is (#5492)");
+        result.Principal!.Identity!.AuthenticationType.Should().Be(AuthenticationExtensions.ApiKeyScheme);
+        result.Principal.IsInRole("admin").Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(AdminApiPath, "admin:*")]
+    [InlineData("/wfs", "admin:*")]
+    [InlineData(GeoServicesQueryPath, "admin:*")]
+    [InlineData(GeoServicesQueryPath, "admin")]
+    [InlineData(GeoServicesQueryPath, "*")]
+    [InlineData(GeoServicesQueryPath, "admin:read")]
+    [InlineData("/sharing/rest/portals/self", "admin:write")]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    public async Task AuthenticateAsync_AdminApiKeyInQuery_IsRejected(string path, string grant)
+    {
+        var store = new InMemoryAdminApiKeyStore();
+        var key = await CreateKeyAsync(store, grant);
+        await using var services = CreateServices(store);
+
+        var result = await AuthenticateAsync(QueryContext(services, path, key));
+
+        result.Succeeded.Should().BeFalse("an administrative key must never be accepted from a URL");
+        result.Failure.Should().NotBeNull();
+    }
+
+    [Theory]
+    [InlineData(AdminApiPath)]
+    [InlineData(GeoServicesQueryPath)]
+    [InlineData("/sharing/rest/portals/self")]
+    [InlineData("/wfs")]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    public async Task AuthenticateAsync_BootstrapAdminPasswordInQuery_IsRejected(string path)
+    {
+        await using var services = CreateServices(new InMemoryAdminApiKeyStore());
+
+        var result = await AuthenticateAsync(QueryContext(services, path, BootstrapAdminPassword));
+
+        result.Succeeded.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(GeoServicesQueryPath, "X-Esri-Authorization")]
+    [InlineData(GeoServicesQueryPath, "Authorization")]
+    [InlineData(AdminApiPath, "Authorization")]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    public async Task AuthenticateAsync_AdminApiKeyInBearerHeader_IsUnchanged(string path, string header)
+    {
+        var store = new InMemoryAdminApiKeyStore();
+        var key = await CreateKeyAsync(store, "admin:*");
+        await using var services = CreateServices(store);
+        var context = new DefaultHttpContext { RequestServices = services };
+        context.Request.Path = path;
+        context.Request.Method = "GET";
+        context.Request.Headers[header] = "Bearer " + key;
+
+        var result = await AuthenticateAsync(context);
+
+        result.Succeeded.Should().BeTrue("header transports are not affected by the query-string restriction");
+        result.Principal!.IsInRole("admin").Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(GeoServicesQueryPath)]
+    [InlineData("/ogc/features/collections")]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    public async Task AuthenticateAsync_IssuedPortalTokenInQuery_StillAuthenticates(string path)
+    {
+        await using var services = CreateServices(new InMemoryAdminApiKeyStore());
+        var issued = await IssueAsync(services);
+
+        var result = await AuthenticateAsync(QueryContext(services, path, issued.Token));
+
+        result.Succeeded.Should().BeTrue();
+        result.Principal!.Identity!.Name.Should().Be("native-reader");
+    }
+
+    private static ServiceProvider CreateServices(InMemoryAdminApiKeyStore store)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddMemoryCache();
+        services.AddSingleton<IPortalTokenIssuer, PortalTokenIssuer>();
+        services.AddSingleton(new ApiKeyAuthenticationDependencies(
+            Options.Create(new ApiKeyAuthenticationOptions
+            {
+                EnvironmentName = "Production",
+                AdminPassword = BootstrapAdminPassword,
+            }),
+            secretResolver: null,
+            adminApiKeyStore: store));
+        services.AddAuthentication(PortalTokenAuthenticationExtensions.PortalTokenScheme)
+            .AddScheme<AuthenticationSchemeOptions, PortalTokenAuthenticationHandler>(
+                PortalTokenAuthenticationExtensions.PortalTokenScheme, _ => { });
+        return services.BuildServiceProvider();
+    }
+
+    private static async Task<string> CreateKeyAsync(InMemoryAdminApiKeyStore store, string grant)
+    {
+        var created = await store.CreateAsync("handler-test-key", [grant],
+            DateTimeOffset.UtcNow.AddMinutes(10), "test", CancellationToken.None);
+        return created.Key;
+    }
+
+    private static Task<AuthenticateResult> AuthenticateAsync(HttpContext context)
+        => context.AuthenticateAsync(PortalTokenAuthenticationExtensions.PortalTokenScheme);
+
+    private static DefaultHttpContext QueryContext(IServiceProvider services, string path, string token)
+    {
+        var context = new DefaultHttpContext { RequestServices = services };
+        context.Request.Path = path;
+        context.Request.Method = "GET";
+        context.Request.Headers.Referer = Referer;
+        context.Request.QueryString = new QueryString("?f=json&token=" + Uri.EscapeDataString(token));
+        return context;
     }
 
     private static ServiceProvider CreateServices()

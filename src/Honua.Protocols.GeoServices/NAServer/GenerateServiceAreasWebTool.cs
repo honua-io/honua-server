@@ -17,10 +17,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.GeoServices;
 
-/// <summary>
-/// Projects the canonical service-area solve as a bounded synchronous GP tool.
-/// This adapter does not establish stock arcpy.nax binding or an asynchronous job contract.
-/// </summary>
 internal static class GenerateServiceAreasWebTool
 {
     private static readonly HashSet<string> AllowedParameters = new(StringComparer.OrdinalIgnoreCase)

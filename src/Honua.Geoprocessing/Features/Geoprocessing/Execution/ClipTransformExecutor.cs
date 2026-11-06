@@ -9,16 +9,6 @@ using NtsGeometry = NetTopologySuite.Geometries.Geometry;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// <c>transform.clip</c> executor. Clips each feature's geometry to an
-/// area-of-interest region (the geometric intersection), dropping features that
-/// fall entirely outside the region. Pure managed NetTopologySuite overlay — no
-/// GEOS native dependency. A feature whose clipped geometry is empty is dropped;
-/// the clipped geometry keeps the source feature's SRID and attributes are
-/// preserved. Ported from the GeoETL baseline ClipTransform onto the #1185
-/// process/executor contract. Streams: a per-feature map; the region is parsed once
-/// before the stream is consumed.
-/// </summary>
 internal sealed class ClipTransformExecutor(
     IOptionsMonitor<GeoprocessingExecutorOptions> options)
     : FeatureCollectionTransformExecutor(options)

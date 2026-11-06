@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Infrastructure.Security;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.TestKit;
@@ -177,15 +178,15 @@ public sealed class ApplyEditsIdempotencyStoreRedisTests(RedisFixture redis)
         var store = CreateStore(multiplexer);
         var key = Guid.NewGuid().ToString("n");
 
-        (await store.TryReserveAsync(new ApplyEditsIdempotencyScope("svc", 0, "alice", key)))
+        (await store.TryReserveAsync(new ApplyEditsIdempotencyScope("svc", 0, new IdempotencyCaller("none", "alice"), key)))
             .Should().NotBeNull();
-        (await store.TryReserveAsync(new ApplyEditsIdempotencyScope("svc", 0, "bob", key)))
+        (await store.TryReserveAsync(new ApplyEditsIdempotencyScope("svc", 0, new IdempotencyCaller("none", "bob"), key)))
             .Should().NotBeNull("one caller's key must never collide with another principal's");
-        (await store.TryReserveAsync(new ApplyEditsIdempotencyScope("svc", 1, "alice", key)))
+        (await store.TryReserveAsync(new ApplyEditsIdempotencyScope("svc", 1, new IdempotencyCaller("none", "alice"), key)))
             .Should().NotBeNull("the same key on a different layer is a different edit");
-        (await store.TryReserveAsync(new ApplyEditsIdempotencyScope("other", 0, "alice", key)))
+        (await store.TryReserveAsync(new ApplyEditsIdempotencyScope("other", 0, new IdempotencyCaller("none", "alice"), key)))
             .Should().NotBeNull("the same key on a different service is a different edit");
-        (await store.TryReserveAsync(new ApplyEditsIdempotencyScope("svc", 0, "alice", key)))
+        (await store.TryReserveAsync(new ApplyEditsIdempotencyScope("svc", 0, new IdempotencyCaller("none", "alice"), key)))
             .Should().BeNull("the identical scope must still be deduplicated");
     }
 
@@ -193,7 +194,7 @@ public sealed class ApplyEditsIdempotencyStoreRedisTests(RedisFixture redis)
         => new(multiplexer, cache: null, NullLogger<DistributedApplyEditsIdempotencyStore>.Instance);
 
     private static ApplyEditsIdempotencyScope NewScope()
-        => new("svc", 0, "alice", Guid.NewGuid().ToString("n"));
+        => new("svc", 0, new IdempotencyCaller("none", "alice"), Guid.NewGuid().ToString("n"));
 
     private static ApplyEditsResponse ResponseWithObjectId(long objectId)
         => new()

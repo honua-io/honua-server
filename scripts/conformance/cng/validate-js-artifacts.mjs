@@ -5,7 +5,9 @@ import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { deserialize } from "flatgeobuf/lib/mjs/geojson.js";
 import { FetchSource, PMTiles } from "pmtiles";
-import { flatGeobufMetadata, pmtilesMetadata } from "./artifact-metadata.mjs";
+import { VectorTile } from "@mapbox/vector-tile";
+import { PbfReader } from "pbf";
+import { flatGeobufMetadata, pmtilesMetadata, validatePmtilesFixtureTile } from "./artifact-metadata.mjs";
 import { observeRangeFetch, validateServingSource } from "./http-range-observer.mjs";
 
 const require = createRequire(import.meta.url);
@@ -55,11 +57,12 @@ async function validatePmtiles(path) {
     const metadata = await archive.getMetadata();
     if (header.specVersion !== 3) throw new Error(`PMTiles specVersion=${header.specVersion}, expected 3`);
     if (metadata === null || typeof metadata !== "object") throw new Error("PMTiles metadata is not an object");
-    // The Honua writer fixture includes z=0/x=0/y=0. Require an actual client
-    // tile lookup, retaining the canonical client's normal header prefetch.
-    const tile = await archive.getZxy(0, 0, 0);
-    if (!tile?.data || tile.data.byteLength < 1) {
-      throw new Error("PMTiles browser client returned no data for fixture tile z=0/x=0/y=0");
+    if (content.length <= 16384) throw new Error("PMTiles fixture is not larger than canonical header prefetch");
+    // Widely separated Hilbert positions exercise actual range lookup within unchanged budgets.
+    for (const [z, x, y] of [[0, 0, 0], [2, 0, 3], [2, 3, 3]]) {
+      const tile = await archive.getZxy(z, x, y);
+      if (!tile?.data) throw new Error("PMTiles fixture tile is missing");
+      validatePmtilesFixtureTile(new VectorTile(new PbfReader(new Uint8Array(tile.data))), z, x, y);
     }
     return {
       surface: "pmtiles",

@@ -19,9 +19,6 @@ using NetTopologySuite.LinearReferencing;
 
 namespace Honua.Protocols.GeoServices.GeometryService.Services;
 
-/// <summary>
-/// Orchestrates geometry service operations: parse input, invoke PostGIS, format output.
-/// </summary>
 internal sealed class GeometryServiceHandler(
     IGeometryOperationService operationService,
     IGeometryConverter geometryConverter,
@@ -35,11 +32,6 @@ internal sealed class GeometryServiceHandler(
     private const int MaxRelationPairsPerRequest = 100_000;
     private const double MeanEarthRadiusMeters = 6_371_000d;
 
-    /// <summary>
-    /// Ground spacing for <c>calculationType=preserveShape</c>. Edges longer than this
-    /// are densified on the spheroid before the planar measure. Smaller geometries use
-    /// a tighter spacing so a short edge is still subdivided.
-    /// </summary>
     private const double PreserveShapeSegmentMeters = 10_000d;
 
     // Densify generates ceil(segmentLength / maxSegmentLength) interpolated vertices per
@@ -310,12 +302,6 @@ internal sealed class GeometryServiceHandler(
         }
     }
 
-    /// <summary>
-    /// Chooses the datum selection GeometryServer project applies. An explicit
-    /// client transformation is kept even when an endpoint is projected; the SQL
-    /// chokepoint composes it with the CRS defining conversions. Implicit catalog
-    /// defaults stay on PROJ's SRID-only transform, except a geographic noop.
-    /// </summary>
     internal static DatumTransformationSelection? SelectProjectDatumTransformation(
         string? transformationValue,
         DatumTransformationSelection? datumSelection,
@@ -3779,10 +3765,10 @@ internal sealed class GeometryServiceHandler(
         for (var i = 0; i < parameters.GeometryJsonStrings.Length; i++)
         {
             var wkb = _geometryConverter.ConvertGeoServicesJsonToWkb(parameters.GeometryJsonStrings[i]);
-            var geometry = new WKBReader().Read(wkb);
 
             if (parameters.CalculationType == MeasurementCalculationType.Planar)
             {
+                var geometry = new WKBReader().Read(wkb);
                 lengths[i] = ConvertPlanarLengthFromNativeUnits(
                     geometry.Length,
                     spatialContext,
@@ -3794,24 +3780,12 @@ internal sealed class GeometryServiceHandler(
                 continue;
             }
 
-            if (parameters.CalculationType == MeasurementCalculationType.PreserveShape)
-            {
-                var spacing = ResolvePreserveShapeSpacingMeters(geometry, spatialContext);
-                var densified = await _operationService.SegmentizeGeodesicAsync(wkb, parameters.SR, spacing, ct)
-                    .ConfigureAwait(false);
-                var densifiedGeometry = new WKBReader().Read(densified);
-                lengths[i] = ConvertPlanarLengthFromNativeUnits(
-                    densifiedGeometry.Length,
-                    spatialContext,
-                    parameters.LengthUnit);
-                areas[i] = ConvertPlanarAreaFromNativeUnits(
-                    ApplyPlanarAreaOrientation(densifiedGeometry.Area, parameters.GeometryJsonStrings[i]),
-                    spatialContext,
-                    parameters.AreaUnit);
-                continue;
-            }
-
-            var measurementGeometry = await ProjectForGeodeticMeasurementAsync(wkb, parameters.SR, ct).ConfigureAwait(false);
+            // preserveShape samples the request-CRS shape. geodesic and ground measure
+            // the input vertices on the existing spheroidal length and area path.
+            var measureWkb = parameters.CalculationType == MeasurementCalculationType.PreserveShape
+                ? DensifyInRequestCrs(new WKBReader().Read(wkb), spatialContext)
+                : wkb;
+            var measurementGeometry = await ProjectForGeodeticMeasurementAsync(measureWkb, parameters.SR, ct).ConfigureAwait(false);
             var measurementBoundary = new WKBWriter().Write(new WKBReader().Read(measurementGeometry).Boundary);
             var area = await _operationService.AreaAsync(measurementGeometry, 4326, ct).ConfigureAwait(false);
             var perimeter = await _operationService.LengthAsync(
@@ -3850,20 +3824,13 @@ internal sealed class GeometryServiceHandler(
                 continue;
             }
 
+            var measureWkb = wkb;
             if (parameters.CalculationType == MeasurementCalculationType.PreserveShape)
             {
-                var geometry = new WKBReader().Read(wkb);
-                var spacing = ResolvePreserveShapeSpacingMeters(geometry, spatialContext);
-                var densified = await _operationService.SegmentizeGeodesicAsync(wkb, parameters.SR, spacing, ct)
-                    .ConfigureAwait(false);
-                values[i] = ConvertPlanarLengthFromNativeUnits(
-                    new WKBReader().Read(densified).Length,
-                    spatialContext,
-                    parameters.LengthUnit);
-                continue;
+                measureWkb = DensifyInRequestCrs(new WKBReader().Read(wkb), spatialContext);
             }
 
-            var measurementGeometry = await ProjectForGeodeticMeasurementAsync(wkb, parameters.SR, ct).ConfigureAwait(false);
+            var measurementGeometry = await ProjectForGeodeticMeasurementAsync(measureWkb, parameters.SR, ct).ConfigureAwait(false);
             var length = await _operationService.LengthAsync(measurementGeometry, 4326, ct).ConfigureAwait(false);
             values[i] = ConvertLengthFromMeters(length, parameters.LengthUnit);
         }
@@ -3970,26 +3937,6 @@ internal sealed class GeometryServiceHandler(
         };
     }
 
-    /// <summary>
-    /// Converts a result geometry WKB to a GeoServices JSON element, translating the two result
-    /// shapes the underlying converter reports as <see langword="null"/> into faithful Esri output
-    /// instead of a 400 (#2742):
-    /// <list type="bullet">
-    ///   <item><description>
-    ///   <b>Empty geometry</b> (PostGIS returns <c>GEOMETRYCOLLECTION EMPTY</c> for a disjoint
-    ///   intersect or a full difference) becomes an empty Esri geometry of the request's
-    ///   <paramref name="geometryType"/> (<c>{"rings":[]}</c>, <c>{"paths":[]}</c>,
-    ///   <c>{"points":[]}</c>, or an empty point <c>{"x":null,"y":null}</c>).
-    ///   </description></item>
-    ///   <item><description>
-    ///   <b>Mixed GeometryCollection</b> (e.g. an intersection that yields both an area and a
-    ///   boundary touch) is reduced to its highest-dimension components — filtered to the target
-    ///   <paramref name="geometryType"/> when one is supplied — matching Esri's behavior of
-    ///   returning a single geometry of the operator type.
-    ///   </description></item>
-    /// </list>
-    /// Genuinely invalid/unreadable WKB still surfaces as a 400 through the converter.
-    /// </summary>
     private JsonElement ConvertResultWkbToElement(byte[] wkb, int srid, string? geometryType)
     {
         Geometry? geometry = null;
@@ -4026,12 +3973,6 @@ internal sealed class GeometryServiceHandler(
         return _geometryConverter.ConvertWkbToGeoServicesGeometry(wkb, srid);
     }
 
-    /// <summary>
-    /// Reduces a heterogeneous <see cref="GeometryCollection"/> to a homogeneous geometry of the
-    /// target dimension: the dimension implied by <paramref name="geometryType"/> when supplied,
-    /// otherwise the highest dimension present. Returns <see langword="null"/> when no component
-    /// matches.
-    /// </summary>
     private static Geometry? ReduceMixedCollection(Geometry collection, string? geometryType)
     {
         var components = new List<Geometry>();
@@ -4098,10 +4039,6 @@ internal sealed class GeometryServiceHandler(
             _ => null
         };
 
-    /// <summary>
-    /// Builds an empty Esri geometry element matching the request's geometry type, defaulting to
-    /// an empty polygon (<c>{"rings":[]}</c>) when the type is unknown.
-    /// </summary>
     private static JsonElement CreateEmptyGeometryElement(string? geometryType, int srid)
     {
         var spatialReference = $"\"spatialReference\":{{\"wkid\":{srid.ToString(System.Globalization.CultureInfo.InvariantCulture)},\"latestWkid\":{srid.ToString(System.Globalization.CultureInfo.InvariantCulture)}}}";
@@ -4121,31 +4058,12 @@ internal sealed class GeometryServiceHandler(
     // native degrees to meters with a single equator-based constant per axis; this matches
     // Esri "planar on GCS" semantics and intentionally ignores cos(latitude) longitude
     // shrinkage, so meter-valued output for high-latitude data is an equator-scaled
-    // approximation. Callers wanting true ground measures must use calculationType=geodesic,
-    // which routes through the geography pipeline.
+    // approximation. calculationType=ground selects the spheroidal ground result.
+    // calculationType=geodesic stays the vertex-geodesic path and is not retuned here.
     private static double ResolveMetersPerNativeUnit(string? wkt, bool isGeographic)
     {
-        var unitMatches = System.Text.RegularExpressions.Regex.Matches(
-            wkt ?? string.Empty,
-            @"(?:UNIT|LENGTHUNIT)\s*\[[^,\]]+,\s*([0-9.eE+-]+)",
-            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
-        if (unitMatches.Count > 0)
-        {
-            var matchIndex = isGeographic ? 0 : unitMatches.Count - 1;
-            if (double.TryParse(
-                unitMatches[matchIndex].Groups[1].Value,
-                System.Globalization.NumberStyles.Float,
-                System.Globalization.CultureInfo.InvariantCulture,
-                out var unitFactor)
-                && unitFactor > 0)
-            {
-                return isGeographic
-                    ? MeanEarthRadiusMeters * unitFactor
-                    : unitFactor;
-            }
-        }
-
-        return isGeographic ? MeanEarthRadiusMeters * (Math.PI / 180d) : 1.0;
+        var unitFactor = CrsLinearUnitFactor.Resolve(proj4Text: null, wkt, isGeographic);
+        return isGeographic ? MeanEarthRadiusMeters * unitFactor : unitFactor;
     }
 
     private static (MeasurementCalculationType CalculationType, string? Error) ResolveMeasurementCalculationType(
@@ -4169,7 +4087,12 @@ internal sealed class GeometryServiceHandler(
                 return (MeasurementCalculationType.PreserveShape, null);
             }
 
-            return (MeasurementCalculationType.Planar, "Parameter 'calculationType' must be one of: planar, geodesic, preserveShape.");
+            if (string.Equals(rawCalculationType, "ground", StringComparison.OrdinalIgnoreCase))
+            {
+                return (MeasurementCalculationType.Ground, null);
+            }
+
+            return (MeasurementCalculationType.Planar, "Parameter 'calculationType' must be one of: planar, geodesic, preserveShape, ground.");
         }
 
         return GeometryServiceRequestParser.ParseBool(GeometryServiceRequestParser.GetValue(values, "geodesic"))
@@ -4181,6 +4104,39 @@ internal sealed class GeometryServiceHandler(
         => keys
             .Select(key => GeometryServiceRequestParser.GetValue(values, key))
             .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+
+    private static byte[] DensifyInRequestCrs(Geometry geometry, MeasurementSpatialContext spatialContext)
+    {
+        var spacingNative = ResolvePreserveShapeSpacingNative(geometry, spatialContext);
+        if (!double.IsFinite(spacingNative) || spacingNative <= 0)
+        {
+            return new WKBWriter().Write(geometry);
+        }
+
+        var estimatedVertices = geometry.Length / spacingNative;
+        if (double.IsNaN(estimatedVertices) || estimatedVertices > MaxDensifiedVerticesPerGeometry)
+        {
+            throw new ArgumentException(
+                "preserveShape would generate too many vertices; the geometry extent is too large for the sample spacing.");
+        }
+
+        var densified = NetTopologySuite.Densify.Densifier.Densify(geometry, spacingNative);
+        return new WKBWriter().Write(densified);
+    }
+
+    private static double ResolvePreserveShapeSpacingNative(
+        Geometry geometry,
+        MeasurementSpatialContext spatialContext)
+    {
+        var spacingMeters = ResolvePreserveShapeSpacingMeters(geometry, spatialContext);
+        var metersPerUnit = spatialContext.MetersPerNativeUnit;
+        if (!double.IsFinite(metersPerUnit) || metersPerUnit <= 0)
+        {
+            return spacingMeters;
+        }
+
+        return spacingMeters / metersPerUnit;
+    }
 
     private static double ResolvePreserveShapeSpacingMeters(
         Geometry geometry,

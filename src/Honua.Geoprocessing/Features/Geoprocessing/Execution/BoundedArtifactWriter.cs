@@ -7,7 +7,6 @@ using Newtonsoft.Json;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>Streams GeoJSON into a byte-limited buffer without building a second JSON document.</summary>
 internal static class BoundedArtifactWriter
 {
     internal static byte[] WriteFeatureCollection(

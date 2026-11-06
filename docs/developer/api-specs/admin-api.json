@@ -397,6 +397,62 @@
         }
       }
     },
+    "/api-keys/{id}/restrictions": {
+      "patch": {
+        "tags": [
+          "API Keys"
+        ],
+        "summary": "Update Admin API Key Restrictions",
+        "description": "Replaces the referrer and IP restrictions on an existing server-managed API key. Each list replaces that restriction entirely; null or empty removes it. The key secret is unchanged and is not returned. Requires the same full-admin credential authority as create, rotate and revoke.",
+        "operationId": "updateAdminApiKeyRestrictions",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "API key identifier.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAdminApiKeyRestrictionsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "API key restrictions replaced. The response contains key metadata only.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseAdminApiKeyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
     "/api-keys/{id}/effective-permissions": {
       "get": {
         "tags": [
@@ -1400,15 +1456,50 @@
               "type": "string",
               "default": "default"
             }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "One-based page number. Defaults to 1; values below 1 return 400.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "description": "Page size. Defaults to 100; values outside 1 to 100 return 400.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 100
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Case-insensitive layer name filter. Longer than 200 characters returns 400.",
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "Published layers",
+            "description": "One page of published layers",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponsePublishedLayerSummaryArray"
+                  "$ref": "#/components/schemas/ApiResponsePublishedLayerPage"
                 }
               }
             }
@@ -3259,18 +3350,75 @@
           "Services"
         ],
         "summary": "List Services",
-        "description": "List available services with enabled protocol metadata.",
+        "description": "List one page of services with enabled protocol metadata. layerTotal counts layers for every match, including services outside the page.",
         "operationId": "listServices",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "One-based page number. Defaults to 1; values below 1 return 400.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "description": "Page size. Defaults to 100; values outside 1 to 100 return 400.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 100
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Case-insensitive service name filter. Longer than 200 characters returns 400.",
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "folderId",
+            "in": "query",
+            "required": false,
+            "description": "Omit for all services; root selects services without a folder.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
-            "description": "Service list",
+            "description": "One page of services",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseServiceSummaryArray"
+                  "$ref": "#/components/schemas/ApiResponseServiceListPage"
                 }
               }
+            },
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Current graph snapshot ETag; pass unchanged as If-Match on the next mutation."
+              }
             }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -6134,14 +6282,14 @@
         }
       }
     },
-    "/import/arcgis/migrations": {
+    "/import/geoservices-rest/migrations": {
       "get": {
         "tags": [
           "Import"
         ],
         "summary": "List ArcGIS Migration Runs",
         "description": "Returns a page of ArcGIS migration run summaries that have persisted manifest (and optionally parity) evidence. Results are newest-first. `pageSize` is clamped to a maximum of 100.",
-        "operationId": "listArcGisMigrationRuns",
+        "operationId": "listGeoServicesMigrationRuns",
         "parameters": [
           {
             "name": "sourceUrl",
@@ -6199,7 +6347,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ImportArcGisMigrationRunListResult"
+                  "$ref": "#/components/schemas/ImportGeoServicesMigrationRunListResult"
                 }
               }
             }
@@ -6216,14 +6364,14 @@
         }
       }
     },
-    "/import/arcgis/migrations/{runId}/manifest": {
+    "/import/geoservices-rest/migrations/{runId}/manifest": {
       "get": {
         "tags": [
           "Import"
         ],
         "summary": "Get ArcGIS Migration Manifest",
         "description": "Returns the persisted migration manifest artifact for an ArcGIS migration run. The response body is the artifact itself and is not wrapped in a success/data admin envelope.",
-        "operationId": "getArcGisMigrationManifest",
+        "operationId": "getGeoServicesMigrationManifest",
         "parameters": [
           {
             "name": "runId",
@@ -6266,7 +6414,7 @@
         ],
         "summary": "Record ArcGIS Migration Manifest",
         "description": "Persists the manifest evidence artifact produced by the ArcGIS migration planning pipeline against the supplied run id, creating or replacing the run record. Returns the stored run record.",
-        "operationId": "recordArcGisMigrationManifest",
+        "operationId": "recordGeoServicesMigrationManifest",
         "parameters": [
           {
             "name": "runId",
@@ -6283,7 +6431,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ImportArcGisMigrationManifestIngestionRequest"
+                "$ref": "#/components/schemas/ImportGeoServicesMigrationManifestIngestionRequest"
               }
             }
           }
@@ -6294,7 +6442,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ImportArcGisMigrationRunRecord"
+                  "$ref": "#/components/schemas/ImportGeoServicesMigrationRunRecord"
                 }
               }
             }
@@ -6311,14 +6459,14 @@
         }
       }
     },
-    "/import/arcgis/migrations/{runId}/parity": {
+    "/import/geoservices-rest/migrations/{runId}/parity": {
       "get": {
         "tags": [
           "Import"
         ],
         "summary": "Get ArcGIS Migration Parity",
         "description": "Returns the persisted post-apply parity artifact for an ArcGIS migration run. Responds 404 when the run is unknown and, separately, when the run has a manifest but no parity artifact yet.",
-        "operationId": "getArcGisMigrationParity",
+        "operationId": "getGeoServicesMigrationParity",
         "parameters": [
           {
             "name": "runId",
@@ -6336,7 +6484,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ImportArcGisMigrationParityArtifact"
+                  "$ref": "#/components/schemas/ImportGeoServicesMigrationParityArtifact"
                 }
               }
             }
@@ -6361,7 +6509,7 @@
         ],
         "summary": "Record ArcGIS Migration Parity",
         "description": "Persists the post-apply parity artifact for an ArcGIS migration run. The manifest for the run must already be recorded; otherwise the request is rejected with 409. `parity.classification` must be one of pass, warn, or fail (case-insensitive). Returns the stored parity artifact.",
-        "operationId": "recordArcGisMigrationParity",
+        "operationId": "recordGeoServicesMigrationParity",
         "parameters": [
           {
             "name": "runId",
@@ -6378,7 +6526,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ImportArcGisMigrationParityIngestionRequest"
+                "$ref": "#/components/schemas/ImportGeoServicesMigrationParityIngestionRequest"
               }
             }
           }
@@ -6389,7 +6537,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ImportArcGisMigrationParityArtifact"
+                  "$ref": "#/components/schemas/ImportGeoServicesMigrationParityArtifact"
                 }
               }
             }
@@ -8508,6 +8656,53 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/observability/audit/gap-attestations": {
+      "post": {
+        "tags": [
+          "Observability"
+        ],
+        "summary": "Attest Audit Chain Downgrade Gap",
+        "description": "Append a keyed declaration for the contiguous run of unhashed audit rows that a release without the hash chain appended after a rollback. The server derives the anchor row, gap bounds, row count and resume row from the stored rows; gapFirstAuditId must be the first row that verification reports as broken. Existing rows are never rewritten or re-hashed. Verification then accepts exactly the declared rows, reports them as attestedGapRows, and accepts the declaration only when its own row verifies under the configured chain key. Returns 409 when no chain key is configured or the stored rows do not show a downgrade gap at that row. The declaration is itself an audit row with action audit.chain.gap_attested. Requires admin write access.",
+        "operationId": "attestObservabilityAuditGap",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ObservabilityAuditGapAttestationBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The written declaration and the verification report after it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ObservabilityAuditGapAttestation"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "description": "The audit store did not accept the declaration row."
           }
         }
       }
@@ -14440,7 +14635,7 @@
             "name": "sourceKind",
             "in": "query",
             "required": false,
-            "description": "Restrict to a single source kind, for example `geoserver-rest` or `arcgis-geoservices-rest`.",
+            "description": "Restrict to a single source kind, for example `geoserver-rest` or `geoservices-rest`.",
             "schema": {
               "type": "string"
             }
@@ -21381,6 +21576,599 @@
           }
         }
       }
+    },
+    "/folders": {
+      "get": {
+        "operationId": "listFolders",
+        "tags": [
+          "Services"
+        ],
+        "summary": "listFolders",
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "query",
+            "required": false,
+            "description": "Omit for unscoped catalog ownership; supply a publication namespace to select the resolved tenant.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._-]+$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Current graph snapshot ETag"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ServiceFolder"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createFolder",
+        "tags": [
+          "Services"
+        ],
+        "summary": "createFolder",
+        "parameters": [
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "description": "Current graph snapshot ETag, returned by folder/service listing.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "namespace",
+            "in": "query",
+            "required": false,
+            "description": "Omit for unscoped catalog ownership; supply a publication namespace to select the resolved tenant.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._-]+$"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Current graph snapshot ETag"
+              },
+              "Location": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Created folder Admin resource."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/ServiceFolder"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "409": {
+            "description": "Catalog or permanent path reservation conflict"
+          },
+          "412": {
+            "description": "Snapshot changed"
+          },
+          "428": {
+            "description": "If-Match is required"
+          },
+          "503": {
+            "description": "Folder mutation is unavailable on a read-only metadata catalog."
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "title": {
+                    "type": "string",
+                    "nullable": true
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/folders/{id}": {
+      "patch": {
+        "operationId": "updateFolder",
+        "tags": [
+          "Services"
+        ],
+        "summary": "updateFolder",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "description": "Current graph snapshot ETag, returned by folder/service listing.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "namespace",
+            "in": "query",
+            "required": false,
+            "description": "Omit for unscoped catalog ownership; supply a publication namespace to select the resolved tenant.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._-]+$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Current graph snapshot ETag"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/ServiceFolder"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "409": {
+            "description": "Catalog or permanent path reservation conflict"
+          },
+          "412": {
+            "description": "Snapshot changed"
+          },
+          "428": {
+            "description": "If-Match is required"
+          },
+          "503": {
+            "description": "Folder mutation is unavailable on a read-only metadata catalog."
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FolderRequest"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteFolder",
+        "tags": [
+          "Services"
+        ],
+        "summary": "deleteFolder",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "description": "Current graph snapshot ETag, returned by folder/service listing.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "namespace",
+            "in": "query",
+            "required": false,
+            "description": "Omit for unscoped catalog ownership; supply a publication namespace to select the resolved tenant.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._-]+$"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Current graph snapshot ETag; pass unchanged as If-Match on the next mutation."
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "409": {
+            "description": "Catalog or permanent path reservation conflict"
+          },
+          "412": {
+            "description": "Snapshot changed"
+          },
+          "428": {
+            "description": "If-Match is required"
+          },
+          "503": {
+            "description": "Folder mutation is unavailable on a read-only metadata catalog."
+          }
+        }
+      }
+    },
+    "/services/{serviceName}/folder": {
+      "put": {
+        "operationId": "moveService",
+        "tags": [
+          "Services"
+        ],
+        "summary": "moveService",
+        "parameters": [
+          {
+            "name": "serviceName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "description": "Current graph snapshot ETag, returned by folder/service listing.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "namespace",
+            "in": "query",
+            "required": false,
+            "description": "Omit for unscoped catalog ownership; supply a publication namespace to select the resolved tenant.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._-]+$"
+            }
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "409": {
+            "description": "Catalog or permanent path reservation conflict"
+          },
+          "412": {
+            "description": "Snapshot changed"
+          },
+          "428": {
+            "description": "If-Match is required"
+          },
+          "204": {
+            "description": "Success",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Current graph snapshot ETag; pass unchanged as If-Match on the next mutation."
+              }
+            }
+          },
+          "503": {
+            "description": "Folder mutation is unavailable on a read-only metadata catalog."
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveServiceRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/metadata/layers/{layerId}/discovery": {
+      "get": {
+        "tags": [
+          "Metadata"
+        ],
+        "summary": "Read title, description and keywords",
+        "description": "Layer IDs are global storage layer IDs, not service-local publication identifiers. Layer changes affect the shared resource and every listed publication. Other metadata is preserved. Service names address all protocol services with that logical name. Writes require the ETag returned by GET and reject stale revisions with 409.",
+        "parameters": [
+          {
+            "name": "layerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Stored discovery metadata and affected publications",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscoveryMetadataEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Target not found"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Metadata"
+        ],
+        "summary": "Replace title, description and keywords",
+        "description": "Layer IDs are global storage layer IDs, not service-local publication identifiers. Layer changes affect the shared resource and every listed publication. Other metadata is preserved. Service names address all protocol services with that logical name. Writes require the ETag returned by GET and reject stale revisions with 409.",
+        "parameters": [
+          {
+            "name": "layerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Stored discovery metadata and affected publications",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscoveryMetadataEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Target not found"
+          },
+          "409": {
+            "description": "Metadata changed; reload before saving"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscoveryMetadataUpdateRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/services/{serviceName}/discovery": {
+      "get": {
+        "tags": [
+          "Metadata"
+        ],
+        "summary": "Read title, description and keywords",
+        "description": "Layer IDs are global storage layer IDs, not service-local publication identifiers. Layer changes affect the shared resource and every listed publication. Other metadata is preserved. Service names address all protocol services with that logical name. Writes require the ETag returned by GET and reject stale revisions with 409.",
+        "parameters": [
+          {
+            "name": "serviceName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Stored discovery metadata and affected publications",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscoveryMetadataEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Target not found"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Metadata"
+        ],
+        "summary": "Replace title, description and keywords",
+        "description": "Layer IDs are global storage layer IDs, not service-local publication identifiers. Layer changes affect the shared resource and every listed publication. Other metadata is preserved. Service names address all protocol services with that logical name. Writes require the ETag returned by GET and reject stale revisions with 409.",
+        "parameters": [
+          {
+            "name": "serviceName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Stored discovery metadata and affected publications",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscoveryMetadataEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Target not found"
+          },
+          "409": {
+            "description": "Metadata changed; reload before saving"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscoveryMetadataUpdateRequest"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -21794,7 +22582,7 @@
               "FileGdb",
               "FlatGeobuf",
               "GeoParquet",
-              "EsriJson",
+              "GeoServicesJson",
               "Wkb"
             ]
           },
@@ -23959,6 +24747,14 @@
             "type": "boolean",
             "default": false,
             "description": "Declares attachment support for the published resource. Does not enable editing."
+          },
+          "folderId": {
+            "type": "string",
+            "nullable": true
+          },
+          "publicName": {
+            "type": "string",
+            "maxLength": 64
           }
         }
       },
@@ -24442,11 +25238,12 @@
         "properties": {
           "sourceKind": {
             "type": "string",
-            "description": "Source kind alias. Accepted values normalize to either geoserver-rest or arcgis-geoservices-rest in the response artifact.",
+            "description": "Source kind alias. Accepted values normalize to either geoserver-rest or geoservices-rest in the response artifact; the legacy value arcgis-geoservices-rest is still accepted.",
             "enum": [
               "geoserver",
               "geoserver-rest",
               "geoservices",
+              "geoservices-rest",
               "arcgis-geoservices-rest"
             ]
           },
@@ -24505,7 +25302,7 @@
             "description": "Canonical source kind returned by the scanner.",
             "enum": [
               "geoserver-rest",
-              "arcgis-geoservices-rest"
+              "geoservices-rest"
             ]
           },
           "source": {
@@ -24698,7 +25495,7 @@
           },
           "code": {
             "type": "string",
-            "description": "Optional stable machine-readable compatibility code such as COMPATIBLE, MANUAL_REVIEW, ARCGIS_UNSUPPORTED_RENDERER, or ARCGIS_TOKEN_REQUIRED when the scanner can assign one deterministically. Source-specific codes are namespaced per source kind so downstream automation can branch deterministically. Omitted on aggregate assessments where no single code applies and on source-specific assessments that do not yet define a stable code."
+            "description": "Optional stable machine-readable compatibility code such as COMPATIBLE, MANUAL_REVIEW, GEOSERVICES_UNSUPPORTED_RENDERER, or GEOSERVICES_TOKEN_REQUIRED when the scanner can assign one deterministically. Source-specific codes are namespaced per source kind so downstream automation can branch deterministically. Omitted on aggregate assessments where no single code applies and on source-specific assessments that do not yet define a stable code."
           },
           "reason": {
             "type": "string",
@@ -24870,7 +25667,7 @@
           },
           "domainValues": {
             "type": "array",
-            "description": "Coded values for codedValue domains. Bounded; coded-value domains exceeding the cap surface as the ARCGIS_DOMAIN_TRUNCATED warning rather than silent truncation.",
+            "description": "Coded values for codedValue domains. Bounded; coded-value domains exceeding the cap surface as the GEOSERVICES_DOMAIN_TRUNCATED warning rather than silent truncation.",
             "items": {
               "$ref": "#/components/schemas/MigrationInventoryCodedValue"
             }
@@ -25419,6 +26216,58 @@
           }
         }
       },
+      "PublishedLayerPage": {
+        "type": "object",
+        "required": [
+          "items",
+          "page",
+          "pageSize",
+          "total"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublishedLayerSummary"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0,
+            "description": "Matched layers across every page."
+          }
+        }
+      },
+      "ApiResponsePublishedLayerPage": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/PublishedLayerPage"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "ApiResponseLayerStyleResponse": {
         "type": "object",
         "properties": {
@@ -25578,6 +26427,56 @@
             "format": "date-time",
             "nullable": true,
             "description": "Optional UTC expiration time."
+          },
+          "allowedReferrers": {
+            "type": "array",
+            "nullable": true,
+            "maxItems": 50,
+            "description": "Optional origin allow-list. When set, a request using the key is accepted only if its Origin header (or, when absent, its Referer reduced to scheme://host[:port]) matches an entry; a request with neither header is refused. Entries are origins without a path; a leading `*.` label matches any subdomain but not the bare domain. Recommended for keys used from browsers or in the `token` query parameter. Not a substitute for IP restrictions: non-browser clients can set these headers.",
+            "items": {
+              "type": "string",
+              "maxLength": 255,
+              "description": "Origin pattern, e.g. `https://app.example.com` or `https://*.example.com`."
+            }
+          },
+          "allowedIpRanges": {
+            "type": "array",
+            "nullable": true,
+            "maxItems": 50,
+            "description": "Optional client IP allow-list. When set, a request using the key is accepted only from an address inside one of the ranges, as resolved behind the configured trusted proxies (ForwardedHeaders:KnownProxies). Entries are CIDR ranges or single addresses; a CIDR with bits set past its prefix is rejected.",
+            "items": {
+              "type": "string",
+              "maxLength": 255,
+              "description": "CIDR range or address, e.g. `203.0.113.0/24`, `2001:db8::/32`."
+            }
+          }
+        }
+      },
+      "UpdateAdminApiKeyRestrictionsRequest": {
+        "type": "object",
+        "description": "Replacement restrictions. Null or empty lists remove that restriction. Does not accept or return key material.",
+        "properties": {
+          "allowedReferrers": {
+            "type": "array",
+            "nullable": true,
+            "maxItems": 50,
+            "description": "Origin allow-list that replaces the current referrer restriction. Null or empty removes it.",
+            "items": {
+              "type": "string",
+              "maxLength": 255,
+              "description": "Origin pattern, e.g. `https://app.example.com` or `https://*.example.com`."
+            }
+          },
+          "allowedIpRanges": {
+            "type": "array",
+            "nullable": true,
+            "maxItems": 50,
+            "description": "CIDR allow-list that replaces the current IP restriction. Null or empty removes it.",
+            "items": {
+              "type": "string",
+              "maxLength": 255,
+              "description": "CIDR range or address, e.g. `203.0.113.0/24`, `2001:db8::/32`."
+            }
           }
         }
       },
@@ -25650,6 +26549,20 @@
           "createdBy": {
             "type": "string",
             "nullable": true
+          },
+          "allowedReferrers": {
+            "type": "array",
+            "description": "Normalized origin patterns the request must match; omitted when the key has no referrer restriction.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allowedIpRanges": {
+            "type": "array",
+            "description": "Normalized CIDR ranges the client address must fall in; omitted when the key has no IP restriction.",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -25796,17 +26709,55 @@
           }
         }
       },
-      "ApiResponseServiceSummaryArray": {
+      "ServiceListPage": {
+        "type": "object",
+        "required": [
+          "items",
+          "page",
+          "pageSize",
+          "total",
+          "layerTotal"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServiceSummary"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0,
+            "description": "Services matching the query across every page."
+          },
+          "layerTotal": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0,
+            "description": "Sum of layer counts for every matching service, including services outside this page."
+          }
+        }
+      },
+      "ApiResponseServiceListPage": {
         "type": "object",
         "properties": {
           "success": {
             "type": "boolean"
           },
           "data": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ServiceSummary"
-            }
+            "$ref": "#/components/schemas/ServiceListPage"
           },
           "message": {
             "type": "string"
@@ -25877,6 +26828,29 @@
             "items": {
               "type": "string"
             }
+          },
+          "folderId": {
+            "type": "string",
+            "nullable": true
+          },
+          "folderName": {
+            "type": "string",
+            "nullable": true
+          },
+          "publicName": {
+            "type": "string",
+            "nullable": true
+          },
+          "title": {
+            "type": "string",
+            "nullable": true
+          },
+          "folderMutationIssues": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Preflight diagnostics for legacy identities before folder mutations."
           }
         }
       },
@@ -30744,7 +31718,7 @@
           },
           "sourceKind": {
             "type": "string",
-            "description": "Source kind identifier such as geoserver-rest or arcgis-geoservices-rest."
+            "description": "Source kind identifier such as geoserver-rest or geoservices-rest."
           },
           "source": {
             "$ref": "#/components/schemas/ImportMigrationSourceIdentity"
@@ -30817,7 +31791,7 @@
           }
         }
       },
-      "ImportArcGisMigrationRunSummary": {
+      "ImportGeoServicesMigrationRunSummary": {
         "type": "object",
         "description": "Lightweight ArcGIS migration run summary returned by the admin list endpoint.",
         "required": [
@@ -30874,7 +31848,7 @@
           }
         }
       },
-      "ImportArcGisMigrationRunListResult": {
+      "ImportGeoServicesMigrationRunListResult": {
         "type": "object",
         "description": "Page of ArcGIS migration run summaries.",
         "properties": {
@@ -30882,7 +31856,7 @@
             "type": "array",
             "description": "Run summaries on this page, newest first.",
             "items": {
-              "$ref": "#/components/schemas/ImportArcGisMigrationRunSummary"
+              "$ref": "#/components/schemas/ImportGeoServicesMigrationRunSummary"
             }
           },
           "totalCount": {
@@ -30902,7 +31876,7 @@
           }
         }
       },
-      "ImportArcGisMigrationRunRecord": {
+      "ImportGeoServicesMigrationRunRecord": {
         "type": "object",
         "description": "Run-level metadata persisted alongside the manifest and parity artifacts.",
         "required": [
@@ -30936,7 +31910,7 @@
           }
         }
       },
-      "ImportArcGisMigrationManifestIngestionRequest": {
+      "ImportGeoServicesMigrationManifestIngestionRequest": {
         "type": "object",
         "description": "Request body for recording an ArcGIS migration manifest artifact. `sourceUrl` and `manifest` are validated as required by the handler.",
         "properties": {
@@ -30967,16 +31941,16 @@
           }
         }
       },
-      "ImportArcGisMigrationParityIngestionRequest": {
+      "ImportGeoServicesMigrationParityIngestionRequest": {
         "type": "object",
         "description": "Request body for recording an ArcGIS migration parity artifact. `parity` is validated as required by the handler.",
         "properties": {
           "parity": {
-            "$ref": "#/components/schemas/ImportArcGisMigrationParityArtifact"
+            "$ref": "#/components/schemas/ImportGeoServicesMigrationParityArtifact"
           }
         }
       },
-      "ImportArcGisMigrationParityArtifact": {
+      "ImportGeoServicesMigrationParityArtifact": {
         "type": "object",
         "description": "Deterministic post-apply parity outcome for an ArcGIS migration source.",
         "required": [
@@ -30995,7 +31969,7 @@
           },
           "sourceKind": {
             "type": "string",
-            "example": "arcgis-geoservices-rest"
+            "example": "geoservices-rest"
           },
           "source": {
             "$ref": "#/components/schemas/ImportMigrationSourceIdentity"
@@ -31020,12 +31994,12 @@
             "type": "array",
             "description": "Per-target-resource probe outcomes, sorted by targetResourceId.",
             "items": {
-              "$ref": "#/components/schemas/ImportArcGisMigrationParityResourceProbe"
+              "$ref": "#/components/schemas/ImportGeoServicesMigrationParityResourceProbe"
             }
           }
         }
       },
-      "ImportArcGisMigrationParityResourceProbe": {
+      "ImportGeoServicesMigrationParityResourceProbe": {
         "type": "object",
         "description": "Per-target-resource parity probe bundle.",
         "required": [
@@ -31054,23 +32028,23 @@
             ]
           },
           "featureCount": {
-            "$ref": "#/components/schemas/ImportArcGisMigrationParityFeatureCountProbe"
+            "$ref": "#/components/schemas/ImportGeoServicesMigrationParityFeatureCountProbe"
           },
           "schema": {
-            "$ref": "#/components/schemas/ImportArcGisMigrationParitySchemaProbe"
+            "$ref": "#/components/schemas/ImportGeoServicesMigrationParitySchemaProbe"
           },
           "identityCoverage": {
-            "$ref": "#/components/schemas/ImportArcGisMigrationParityCoverageProbe"
+            "$ref": "#/components/schemas/ImportGeoServicesMigrationParityCoverageProbe"
           },
           "attachmentCoverage": {
-            "$ref": "#/components/schemas/ImportArcGisMigrationParityCoverageProbe"
+            "$ref": "#/components/schemas/ImportGeoServicesMigrationParityCoverageProbe"
           },
           "relationshipCoverage": {
-            "$ref": "#/components/schemas/ImportArcGisMigrationParityCoverageProbe"
+            "$ref": "#/components/schemas/ImportGeoServicesMigrationParityCoverageProbe"
           }
         }
       },
-      "ImportArcGisMigrationParityFeatureCountProbe": {
+      "ImportGeoServicesMigrationParityFeatureCountProbe": {
         "type": "object",
         "description": "Feature-count probe. Bands: pass when the absolute delta ratio is <= 5%, warn when > 5% and <= 20% (or when the source advertised no count), fail when > 20%.",
         "required": [
@@ -31111,7 +32085,7 @@
           }
         }
       },
-      "ImportArcGisMigrationParitySchemaProbe": {
+      "ImportGeoServicesMigrationParitySchemaProbe": {
         "type": "object",
         "description": "Schema match probe. Bands: pass when no expected field is missing from the target, fail otherwise. There is no warn band.",
         "required": [
@@ -31149,7 +32123,7 @@
           }
         }
       },
-      "ImportArcGisMigrationParityCoverageProbe": {
+      "ImportGeoServicesMigrationParityCoverageProbe": {
         "type": "object",
         "description": "Generic coverage probe. Bands: pass when coverage >= 0.99, warn when >= 0.80 and < 0.99, fail when < 0.80. A zero denominator reports pass.",
         "required": [
@@ -31939,7 +32913,7 @@
           },
           "sourceKind": {
             "type": "string",
-            "example": "arcgis-geoservices-rest"
+            "example": "geoservices-rest"
           },
           "sourceUrl": {
             "type": "string",
@@ -32107,7 +33081,7 @@
         "properties": {
           "sourceKind": {
             "type": "string",
-            "description": "Source kind identifier such as arcgis-geoservices-rest. Required."
+            "description": "Source kind identifier such as geoservices-rest. Required."
           },
           "sourceUrl": {
             "type": "string",
@@ -34162,6 +35136,11 @@
             "format": "int64",
             "description": "Leading rows with no hash (written before the hash-chain migration)."
           },
+          "attestedGapRows": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unhashed rows after the chain started that a keyed downgrade-gap attestation declares. They carry no tamper evidence of their own."
+          },
           "firstBrokenAuditId": {
             "type": "integer",
             "format": "int64",
@@ -34172,6 +35151,74 @@
             "type": "string",
             "nullable": true,
             "description": "Human-readable failure description, if any."
+          }
+        }
+      },
+      "ObservabilityAuditGapAttestationBody": {
+        "type": "object",
+        "description": "Request to attest one downgrade gap in the audit hash chain.",
+        "required": [
+          "gapFirstAuditId",
+          "reason"
+        ],
+        "properties": {
+          "gapFirstAuditId": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The first unhashed row of the gap; must be the first broken audit id that verification reports."
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 512,
+            "description": "Why the gap exists, for example the rollback that caused it."
+          }
+        }
+      },
+      "ObservabilityAuditGapAttestation": {
+        "type": "object",
+        "description": "A written downgrade-gap attestation.",
+        "required": [
+          "attestationAuditId",
+          "anchorAuditId",
+          "gapFirstAuditId",
+          "gapLastAuditId",
+          "gapRowCount",
+          "resumeAuditId",
+          "verification"
+        ],
+        "properties": {
+          "attestationAuditId": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The audit id of the declaration row."
+          },
+          "anchorAuditId": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The last hashed row before the gap."
+          },
+          "gapFirstAuditId": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The first unhashed row of the gap."
+          },
+          "gapLastAuditId": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The last unhashed row of the gap."
+          },
+          "gapRowCount": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The number of rows in the gap."
+          },
+          "resumeAuditId": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The first hashed row after the gap."
+          },
+          "verification": {
+            "$ref": "#/components/schemas/ObservabilityAuditIntegrity"
           }
         }
       },
@@ -37174,7 +38221,7 @@
           },
           "status": {
             "type": "string",
-            "description": "Current lifecycle status.",
+            "description": "Approval lifecycle status, or the canonical terminal execution status for an asynchronously submitted proposal. Completed, Failed, Cancelled, and Indeterminate reflect execution outcomes; resolutionReason carries the outcome reason.",
             "enum": [
               "Planned",
               "AwaitingApproval",
@@ -37184,7 +38231,10 @@
               "Succeeded",
               "Failed",
               "Rejected",
-              "RolledBack"
+              "RolledBack",
+              "Completed",
+              "Cancelled",
+              "Indeterminate"
             ]
           },
           "requestedBy": {
@@ -41571,7 +42621,7 @@
           },
           "sourceKind": {
             "type": "string",
-            "description": "Source kind identifier such as `geoserver-rest` or `arcgis-geoservices-rest`."
+            "description": "Source kind identifier such as `geoserver-rest` or `geoservices-rest`."
           },
           "sourceFamily": {
             "type": "string",
@@ -42087,7 +43137,7 @@
           },
           "sourceKind": {
             "type": "string",
-            "description": "Source kind identifier, for example `arcgis-geoservices-rest`. Required."
+            "description": "Source kind identifier, for example `geoservices-rest`. Required."
           },
           "sourceUrl": {
             "type": "string",
@@ -50124,6 +51174,153 @@
           },
           "artifactsUrl": {
             "type": "string"
+          }
+        }
+      },
+      "ServiceFolder": {
+        "type": "object",
+        "properties": {
+          "metadata": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "nullable": true
+              },
+              "name": {
+                "type": "string",
+                "nullable": true
+              },
+              "title": {
+                "type": "string",
+                "nullable": true
+              },
+              "tenant": {
+                "type": "string",
+                "nullable": true
+              }
+            }
+          },
+          "previousNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "deleted": {
+            "type": "boolean"
+          }
+        }
+      },
+      "FolderRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "title": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "MoveServiceRequest": {
+        "type": "object",
+        "required": [
+          "folderId"
+        ],
+        "properties": {
+          "folderId": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "DiscoveryMetadataUpdateRequest": {
+        "type": "object",
+        "required": [
+          "etag"
+        ],
+        "properties": {
+          "etag": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 512
+          },
+          "description": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 16384
+          },
+          "keywords": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        }
+      },
+      "DiscoveryPublicationImpact": {
+        "type": "object",
+        "properties": {
+          "publicationId": {
+            "type": "string"
+          },
+          "serviceName": {
+            "type": "string"
+          },
+          "identifier": {
+            "type": "string"
+          }
+        }
+      },
+      "DiscoveryMetadataResponse": {
+        "type": "object",
+        "properties": {
+          "etag": {
+            "type": "string"
+          },
+          "entityId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "nullable": true
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "keywords": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "affectedPublications": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiscoveryPublicationImpact"
+            }
+          }
+        }
+      },
+      "DiscoveryMetadataEnvelope": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/DiscoveryMetadataResponse"
           }
         }
       }

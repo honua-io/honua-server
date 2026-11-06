@@ -158,7 +158,8 @@ def test_actual_compose_render_retains_required_inputs_for_later_cleanup(substra
                   SOAK_CANDIDATE_SHA="b" * 40, SOAK_DB_PASSWORD="synthetic-db",
                   SOAK_ADMIN_PASSWORD="synthetic-admin", SOAK_MASTER_KEY=master_key,
                   SOAK_LICENSE_CONTENT=license_content, SOAK_LICENSE_TRUSTED_KEY="synthetic-public-key",
-                  SOAK_KEYRING_PASSWORD="synthetic-keyring-password", SOAK_KEYRING_CERTIFICATE=str(tmp_path / "keyring.pfx"))
+                  SOAK_KEYRING_PASSWORD="synthetic-keyring-password", SOAK_KEYRING_CERTIFICATE=str(tmp_path / "keyring.pfx"),
+                  SOAK_GP_ACTIVE_JOBS="101")
     assert started.returncode == 0, started.stderr
     # Parse the retained file again with actual Compose, as cleanup does, after
     # every startup input has disappeared. Dollar literals must not become a
@@ -184,4 +185,7 @@ def test_actual_compose_render_retains_required_inputs_for_later_cleanup(substra
         assert services["honua"]["environment"][key] == original.replace("$", "$$")
         assert services["honua"]["environment"][key] == original_environment[key]
     assert services["honua"]["environment"]["HONUA_GIT_SHA"] == "b" * 40
+    # GP admission is the lock-derived active-job limit, rendered by real Compose.
+    assert services["honua"]["environment"]["ExecutionAdmission__MaxConcurrentJobsGlobal"] == "101"
+    assert services["honua"]["environment"]["ExecutionAdmission__MaxConcurrentJobsPerPartition"] == "101"
     assert run("cleanup").returncode == 0

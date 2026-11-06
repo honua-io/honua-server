@@ -70,6 +70,9 @@ public sealed class ConfigurationDocumentationCredentialTests
             .Should().ContainSingle(variable => variable.Name == "CONTRIBUTOR_HOOK")
             .Which.Example.Should().Be(ExampleToken);
 
+        Property(documentation, "Limits:Connections:MaxConnectionPoolSize").Validation.Should().Be("Range: 1-1000");
+        Property(documentation, "Limits:Connections:MaxConnectionPoolSize").Description.Should().Contain("defaults to 4");
+
         var currentValues = AllCurrentValues(documentation.Sections);
         currentValues.Should().NotContain(TokenWebhook);
         currentValues.Should().NotContain(ContributorToken);

@@ -7,32 +7,15 @@ using Honua.Core.Features.MultiTenancy.Domain;
 
 namespace Honua.Core.Features.MultiTenancy.Lifecycle;
 
-/// <summary>
-/// Orchestrates tenant lifecycle transitions (create / suspend / resume / delete) over the
-/// <see cref="ITenantCatalog"/>, enforcing the valid state machine and recording an audit event
-/// for every transition (issue #2156).
-/// </summary>
-/// <remarks>
-/// The service depends only on Core abstractions (catalog, audit log, clock) so it is unit
-/// testable without infrastructure. Transitions are atomic at the catalog level: each operation
-/// performs a single conditional add/update, and the audit event is recorded only after the state
-/// change is committed so the trail never claims a transition that did not happen.
-/// </remarks>
+// The audit event is written only after the catalog commit, so the trail does not claim a transition that failed.
 public sealed class TenantLifecycleService
 {
-    /// <summary>Maximum permitted tenant id length (mirrors the tenant-context rail default).</summary>
     public const int MaxTenantIdLength = 128;
 
     private readonly ITenantCatalog _catalog;
     private readonly IAuditLog _auditLog;
     private readonly TimeProvider _timeProvider;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="TenantLifecycleService"/> class.
-    /// </summary>
-    /// <param name="catalog">The tenant catalog.</param>
-    /// <param name="auditLog">The audit sink for recording transitions.</param>
-    /// <param name="timeProvider">Clock used to stamp records/events; defaults to the system clock.</param>
     public TenantLifecycleService(
         ITenantCatalog catalog,
         IAuditLog auditLog,
@@ -43,26 +26,12 @@ public sealed class TenantLifecycleService
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
-    /// <summary>Gets a tenant by id.</summary>
-    /// <param name="tenantId">The tenant identifier.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<TenantRecord?> GetAsync(string tenantId, CancellationToken cancellationToken = default)
         => _catalog.GetAsync(tenantId, cancellationToken);
 
-    /// <summary>Lists all provisioned tenants.</summary>
-    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<IReadOnlyList<TenantRecord>> ListAsync(CancellationToken cancellationToken = default)
         => _catalog.ListAsync(cancellationToken);
 
-    /// <summary>
-    /// Provisions a new active tenant. Fails with <see cref="TenantLifecycleOutcome.Conflict"/> when
-    /// the tenant already exists, or <see cref="TenantLifecycleOutcome.Invalid"/> for a bad id.
-    /// </summary>
-    /// <param name="tenantId">The tenant identifier.</param>
-    /// <param name="displayName">Human-readable display name.</param>
-    /// <param name="plan">Optional billing plan.</param>
-    /// <param name="actor">The actor performing the operation.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     public async Task<TenantLifecycleResult> CreateAsync(
         string tenantId,
         string displayName,
@@ -97,9 +66,6 @@ public sealed class TenantLifecycleService
         return new TenantLifecycleResult(TenantLifecycleOutcome.Created, record, null);
     }
 
-    /// <summary>
-    /// Suspends an active tenant. Only an <see cref="TenantStatus.Active"/> tenant may be suspended.
-    /// </summary>
     public Task<TenantLifecycleResult> SuspendAsync(
         string tenantId,
         TenantLifecycleActor actor,
@@ -126,10 +92,6 @@ public sealed class TenantLifecycleService
             },
             cancellationToken);
 
-    /// <summary>
-    /// Resumes a suspended tenant back to its prior state. Only a <see cref="TenantStatus.Suspended"/>
-    /// tenant may be resumed.
-    /// </summary>
     public Task<TenantLifecycleResult> ResumeAsync(
         string tenantId,
         TenantLifecycleActor actor,
@@ -155,10 +117,6 @@ public sealed class TenantLifecycleService
             },
             cancellationToken);
 
-    /// <summary>
-    /// Deletes/retires a tenant. An active or suspended tenant may be deleted; a deleted tenant
-    /// cannot be deleted again.
-    /// </summary>
     public Task<TenantLifecycleResult> DeleteAsync(
         string tenantId,
         TenantLifecycleActor actor,

@@ -3,10 +3,6 @@
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// Source-generated structured log methods for execution admission decisions.
-/// Event IDs 8020-8039 reserved for admission (geoprocessing service uses 8000-8019).
-/// </summary>
 internal static partial class ExecutionAdmissionLog
 {
     [LoggerMessage(8020, LogLevel.Information,

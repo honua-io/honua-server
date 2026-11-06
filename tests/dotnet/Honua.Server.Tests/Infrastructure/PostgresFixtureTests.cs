@@ -1,8 +1,11 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Net;
+using System.Net.Sockets;
 using FluentAssertions;
 using Honua.TestKit;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Infrastructure;
 
@@ -66,5 +69,28 @@ public class PostgresFixtureTests
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("invalid startup state");
         attempts.Should().Be(1);
+    }
+
+    [UnitTest]
+    public async Task WaitUntilAcceptingAsync_WhenPortListens_Returns()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+        await PostgresEndpointProbe.WaitUntilAcceptingAsync("127.0.0.1", port, TimeSpan.FromSeconds(2));
+    }
+
+    [UnitTest]
+    public async Task WaitUntilAcceptingAsync_WhenPortRefusesPastTheTimeout_Throws()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+
+        var act = () => PostgresEndpointProbe.WaitUntilAcceptingAsync("127.0.0.1", port, TimeSpan.FromMilliseconds(50));
+
+        await act.Should().ThrowAsync<SocketException>();
     }
 }

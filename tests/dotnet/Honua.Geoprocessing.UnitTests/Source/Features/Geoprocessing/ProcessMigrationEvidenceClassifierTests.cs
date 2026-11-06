@@ -92,11 +92,11 @@ public sealed class ProcessMigrationEvidenceClassifierTests
         // registry (#1382). A registry whose deterministic-vector descriptor is
         // overridden to manual-review must flip the lane's verdict — proving the
         // verdict comes from the registry, not a private tier table.
-        var overridden = new EsriConstructCapabilityRegistry(
+        var overridden = new GeoServicesConstructCapabilityRegistry(
         [
-            new EsriConstructCapabilityDescriptor
+            new GeoServicesConstructCapabilityDescriptor
             {
-                ConstructKey = EsriConstructCapabilityRegistry.Keys.GpVectorDeterministic,
+                ConstructKey = GeoServicesConstructCapabilityRegistry.Keys.GpVectorDeterministic,
                 AutomationStatus = MigrationFidelityAutomationStatuses.ManualReview,
                 Code = ImportCompatibilityCodes.ManualReview,
                 Reason = "Test override: deterministic vector process requires review.",
@@ -120,19 +120,19 @@ public sealed class ProcessMigrationEvidenceClassifierTests
     {
         // Behaviour-preservation guard: the built-in registry reproduces the
         // exact verdicts the private table emitted for known GP constructs.
-        var registry = new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors);
+        var registry = new GeoServicesConstructCapabilityRegistry(GeoServicesConstructCapabilityRegistry.BuiltInDescriptors);
 
-        registry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.GpVectorDeterministic)
+        registry.ResolveOrUnknown(GeoServicesConstructCapabilityRegistry.Keys.GpVectorDeterministic)
             .AutomationStatus.Should().Be(MigrationFidelityAutomationStatuses.Automated);
-        registry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.GpDestructiveDataManagement)
+        registry.ResolveOrUnknown(GeoServicesConstructCapabilityRegistry.Keys.GpDestructiveDataManagement)
             .AutomationStatus.Should().Be(MigrationFidelityAutomationStatuses.ManualReview);
-        registry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.GpRasterSurface)
+        registry.ResolveOrUnknown(GeoServicesConstructCapabilityRegistry.Keys.GpRasterSurface)
             .AutomationStatus.Should().Be(MigrationFidelityAutomationStatuses.Assisted);
-        registry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.GpRasterConversion)
+        registry.ResolveOrUnknown(GeoServicesConstructCapabilityRegistry.Keys.GpRasterConversion)
             .AutomationStatus.Should().Be(MigrationFidelityAutomationStatuses.Assisted);
-        registry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.GpDataManagement)
+        registry.ResolveOrUnknown(GeoServicesConstructCapabilityRegistry.Keys.GpDataManagement)
             .AutomationStatus.Should().Be(MigrationFidelityAutomationStatuses.Assisted);
-        registry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.GpUnsupported)
+        registry.ResolveOrUnknown(GeoServicesConstructCapabilityRegistry.Keys.GpUnsupported)
             .AutomationStatus.Should().Be(MigrationFidelityAutomationStatuses.Unsupported);
     }
 
@@ -142,7 +142,7 @@ public sealed class ProcessMigrationEvidenceClassifierTests
     {
         // When the lane maps a process onto a key the registry does not know, the
         // shared UnknownDescriptor manual-review fallback governs the verdict.
-        var emptyRegistry = new EsriConstructCapabilityRegistry([]);
+        var emptyRegistry = new GeoServicesConstructCapabilityRegistry([]);
 
         var classification = ProcessMigrationEvidenceClassifier.Classify(
             _catalog.GetProcess("geometry.buffer")!,

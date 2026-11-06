@@ -9,11 +9,6 @@ using StackExchange.Redis;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Redis-backed durable store for operation proposals awaiting human approval.
-/// Mirrors <c>RedisWorkflowOperationStore</c>: TTL retention, optimistic version
-/// tokens, reconciliation leases, and an active-by-kind index (#1692).
-/// </summary>
 internal sealed partial class RedisOperationProposalStore(
     IConnectionMultiplexer redis,
     ILogger<RedisOperationProposalStore> logger) : IOperationProposalStore

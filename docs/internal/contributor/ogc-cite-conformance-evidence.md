@@ -89,6 +89,14 @@ to Honua's generated KML document. The raw ETS `default` diagnostic profile
 reports 42 passed, 0 failed, and 28 skipped because it also loads Level 2 and
 Level 3 checks while the test input declares Level 1.
 
+## Where The Suites Live
+
+The functional workflows are `.github/workflows/cite-*.yml`, the runners live under
+`scripts/conformance/cite/`, and the Docker compositions under `docker/cite/`. Local
+result directories (`cite-*-results/`) are gitignored, so an empty local directory does
+not mean a suite is unimplemented. Never quote pass rates from memory, training data,
+partial-run diagnostics or older branches; read [`docs/cite-status.md`](../../cite-status.md).
+
 ## Refreshing The Evidence
 
 For website or release evidence:
@@ -161,7 +169,7 @@ item-search-related extensions remain tracked separately by issues #956 and
 
 ## GeoServices REST Validation Evidence
 
-These are Honua's Esri-compatible GeoServices REST validation suites. They are
+These are Honua's GeoServices REST validation suites. They are
 not OGC CITE suites, not official Esri certification evidence, and should be
 presented separately from OGC conformance claims. The inventory below covers all
 GeoServices REST validation tests currently present across the JavaScript,
@@ -178,5 +186,5 @@ browser, Python, and .NET test suites on `trunk`.
 NAServer is not included in the interoperability evidence count above. The
 repository currently has a minimal NAServer route-registration smoke slice, but
 it returns deterministic compatibility envelopes rather than real network
-analysis behavior, so it should not be presented as Esri-compatible NAServer
+analysis behavior, so it should not be presented as NAServer network-analysis
 validation.

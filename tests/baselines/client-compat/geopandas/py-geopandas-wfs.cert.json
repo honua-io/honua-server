@@ -54,9 +54,9 @@
       "test_case_id": "CERT-DISC-01",
       "status": "pass",
       "duration_ms": 30,
-      "measured_count": 5,
+      "measured_count": 11,
       "measured_delta": null,
-      "notes": "GetCapabilities advertised 5 feature types: ['honua:test_layer', 'honua:browser_points', 'honua:browser_lines', 'honua:browser_polygons', 'honua:portal_public_points'].",
+      "notes": "GetCapabilities advertised 11 feature types: ['honua:test_layer', 'honua:wfs_t_insert_scratch', 'honua:wfs_t_update_scratch', 'honua:wfs_t_delete_scratch', 'honua:attachment_fixture', 'honua:related_assets', 'honua:related_inspections', 'honua:browser_points', 'honua:browser_lines', 'honua:browser_polygons', 'honua:portal_public_points'].",
       "evidence_ref": ""
     },
     {
@@ -72,9 +72,9 @@
       "test_case_id": "CERT-SCHM-01",
       "status": "pass",
       "duration_ms": 38,
-      "measured_count": 15,
+      "measured_count": 16,
       "measured_delta": null,
-      "notes": "WFS exposed 15 attributes (['active', 'count', 'created_at', 'description', 'eo_x003A_cloud_cover', 'event_date', 'event_time', 'gml_id', 'name', 'numbers', 'objectid', 'ratio', 'status', 'tags', 'uid']), covering every canonical attribute field plus the 'objectid' identifier and gml_id.",
+      "notes": "WFS exposed 16 attributes (['active', 'count', 'created_at', 'description', 'eo_x003A_cloud_cover', 'event_date', 'event_time', 'gml_id', 'name', 'numbers', 'objectid', 'ratio', 'shape', 'status', 'tags', 'uid']), covering every canonical attribute field plus the 'objectid' identifier and gml_id.",
       "evidence_ref": ""
     },
     {
@@ -379,9 +379,9 @@
       "test_case_id": "NB-GPD-WFS-CAP-01",
       "status": "pass",
       "duration_ms": 200,
-      "measured_count": 5,
+      "measured_count": 11,
       "measured_delta": null,
-      "notes": "All 5 feature types advertised by GetCapabilities resolved through DescribeFeatureType and reported a geometry type: ['honua:test_layer', 'honua:browser_points', 'honua:browser_lines', 'honua:browser_polygons', 'honua:portal_public_points'].",
+      "notes": "All 11 feature types advertised by GetCapabilities resolved through DescribeFeatureType and reported a geometry type: ['honua:test_layer', 'honua:wfs_t_insert_scratch', 'honua:wfs_t_update_scratch', 'honua:wfs_t_delete_scratch', 'honua:attachment_fixture', 'honua:related_assets', 'honua:related_inspections', 'honua:browser_points', 'honua:browser_lines', 'honua:browser_polygons', 'honua:portal_public_points'].",
       "evidence_ref": ""
     },
     {

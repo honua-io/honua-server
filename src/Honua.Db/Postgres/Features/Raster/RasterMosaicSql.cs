@@ -243,4 +243,83 @@ internal static class RasterMosaicSql
         // and wins the LAST union.
         _ => "effective_acquisition ASC, created_at ASC, id ASC"
     };
+
+    /// <summary>
+    /// Scalar <c>bigint[]</c> of the rasters that supplied an identified mosaic pixel.
+    /// The subquery reads the <c>source</c> CTE and the same aligned grid
+    /// <see cref="CreateMosaicAggregateExpression"/> unions. <c>ST_Union</c> resolves each
+    /// band on its own, so the array is the union of the per-band winners. One id means
+    /// one raster supplied every band that has data. Catalog order is not the contribution:
+    /// a raster that is NoData on a band does not win that band just because it sorts first.
+    /// </summary>
+    /// <param name="mergeStrategy">Pixel-resolution operation used by the union.</param>
+    /// <param name="ordering">Ordering applied to a FIRST/LAST selection.</param>
+    /// <param name="attributeSort">Allowlisted attribute sort for <see cref="RasterMosaicOrdering.Attribute"/>.</param>
+    /// <param name="samplePointSql">
+    /// Geometry expression for the identify point, in the raster SRID. It may reference
+    /// <c>candidate.aligned_rast</c> when the selected rasters do not share one SRID.
+    /// </param>
+    internal static string CreateIdentifyContributorArraySql(
+        RasterMergeStrategy mergeStrategy,
+        RasterMosaicOrdering ordering,
+        RasterMosaicAttributeSort? attributeSort,
+        string samplePointSql)
+    {
+        var aligned = CreateAlignedRasterExpression("source");
+        var order = OrderByClause(ordering, attributeSort);
+        // One row per band that has a value at the sample. FIRST/LAST then pick within
+        // that band, so a raster that is NoData on band 2 cannot hide the raster that
+        // supplied band 2. MIN/MAX compare that same per-band sample.
+        var ranked = $"""
+            SELECT candidate.id,
+                   band.n AS band,
+                   ST_Value(candidate.aligned_rast, band.n, {samplePointSql}) AS sample,
+                   row_number() OVER (PARTITION BY band.n ORDER BY {order}) AS n,
+                   count(*) OVER (PARTITION BY band.n) AS total
+            FROM (
+                SELECT source.*, {aligned} AS aligned_rast
+                FROM source
+                WHERE source.rast IS NOT NULL
+            ) AS candidate
+            CROSS JOIN LATERAL generate_series(1, ST_NumBands(candidate.aligned_rast)) AS band(n)
+            WHERE candidate.aligned_rast IS NOT NULL
+              AND ST_Value(candidate.aligned_rast, band.n, {samplePointSql}) IS NOT NULL
+            """;
+
+        var picked = mergeStrategy switch
+        {
+            // Every non-NoData sample contributes to the mean. Order is irrelevant.
+            RasterMergeStrategy.Average => DistinctIds(ranked, "TRUE"),
+
+            // MIN/MAX ignore mosaic order and resolve each band. id ASC keeps a tied value
+            // on one raster. The reported set is every band's winner.
+            RasterMergeStrategy.Min => WinnerByBandValue(ranked, "ASC"),
+            RasterMergeStrategy.Max => WinnerByBandValue(ranked, "DESC"),
+
+            // Oldest is the FIRST union: the first non-NoData raster in mosaic order wins
+            // that band. A later raster still contributes when an earlier one is NoData there.
+            RasterMergeStrategy.Oldest => DistinctIds(ranked, "ranked.n = 1"),
+
+            // Newest and the other LAST unions: the last non-NoData raster in mosaic order
+            // wins that band.
+            _ => DistinctIds(ranked, "ranked.n = ranked.total"),
+        };
+
+        return $"({picked})";
+    }
+
+    private static string DistinctIds(string ranked, string predicate) => $"""
+        SELECT COALESCE(array_agg(DISTINCT ranked.id ORDER BY ranked.id), ARRAY[]::bigint[])
+        FROM ({ranked}) AS ranked
+        WHERE {predicate}
+        """;
+
+    private static string WinnerByBandValue(string ranked, string direction) => $"""
+        SELECT COALESCE(array_agg(DISTINCT picked.id ORDER BY picked.id), ARRAY[]::bigint[])
+        FROM (
+            SELECT DISTINCT ON (ranked.band) ranked.id
+            FROM ({ranked}) AS ranked
+            ORDER BY ranked.band, ranked.sample {direction}, ranked.id ASC
+        ) AS picked
+        """;
 }

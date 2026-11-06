@@ -10,18 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Console;
 
-/// <summary>
-/// Anonymous-capable Console Share endpoints: public-link resolution and embed
-/// token redemption. These are intentionally public (the opaque token is the
-/// bearer of authorization) and therefore enforce strict anonymous-safe denial:
-/// unknown, expired, revoked, or no-longer-covered tokens all return an
-/// identical 404 that never discloses item identity, titles, or existence.
-/// </summary>
-/// <remarks>
-/// Successful resolution returns only presentation metadata intended for a
-/// shared item (id, type, title, summary, endpoints). Owner, provenance, caller
-/// permissions, and other private fields are never included on this surface.
-/// </remarks>
+// Unknown, expired, revoked, and ineligible tokens all return the same 404 and never disclose identity or titles, and success returns only presentation fields.
 internal static class ConsoleSharePublicEndpoints
 {
     // A single, constant denial body for every link-denial path so the responses
@@ -30,14 +19,8 @@ internal static class ConsoleSharePublicEndpoints
     private const string EmbedDeniedMessage = "Embed token not found or expired.";
     private const string PublicItemDeniedMessage = "Shared item not found.";
 
-    /// <summary>
-    /// Log category for the anonymous Console Share endpoints.
-    /// </summary>
     internal sealed class ConsoleSharePublicEndpointsLogCategory;
 
-    /// <summary>
-    /// Maps the anonymous Console Share endpoints into the supplied builder.
-    /// </summary>
     public static void MapConsoleSharePublicEndpoints(this IEndpointRouteBuilder endpoints)
     {
         // AllowAnonymous is deliberate: the opaque token authorizes the read, so

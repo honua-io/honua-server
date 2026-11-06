@@ -4,79 +4,80 @@
 using System.Globalization;
 using System.Net.Http;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Alerts.Abstractions;
 using Honua.Core.Features.AnalysisContent.Abstractions;
+using Honua.Core.Features.Attachments.Abstractions;
+using Honua.Core.Features.Attachments.Services;
 using Honua.Core.Features.AuditLog.Abstractions;
-using Honua.Core.Features.Observability.Abstractions;
+using Honua.Core.Features.AutoDocs;
+using Honua.Core.Features.Caching;
+using Honua.Core.Features.Collaboration.Operations;
+using Honua.Core.Features.Deployment.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
+using Honua.Core.Features.FileImport.Abstractions;
+using Honua.Core.Features.FileImport.Services;
 using Honua.Core.Features.Forms.Packages;
-using Honua.Core.Features.Admin.Abstractions;
-using Honua.Core.Features.AutoDocs;
-using Honua.Core.Features.Import;
-using Honua.Core.Features.Attachments.Abstractions;
-using Honua.Core.Features.Attachments.Services;
-using Honua.Core.Features.Collaboration.Operations;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.GeometryService.Abstractions;
+using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.HealthCheck.Abstractions;
 using Honua.Core.Features.Import.Abstractions;
-using Honua.Core.Features.Migration.Abstractions;
-using Honua.Core.Features.FileImport.Abstractions;
-using Honua.Core.Features.Migration.Services;
-using Honua.Core.Features.FileImport.Services;
+using Honua.Core.Features.Import;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Core.Features.WorkflowPackages.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Infrastructure.Resilience;
-using Honua.Core.Features.Metadata;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Caching;
+using Honua.Core.Features.Metadata;
+using Honua.Core.Features.Migration.Abstractions;
+using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.Mobile.FieldCollection.Abstractions;
-using Honua.Core.Features.Deployment.Abstractions;
+using Honua.Core.Features.Observability.Abstractions;
 using Honua.Core.Features.Publishing.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Share.Abstractions;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Styling.Abstractions;
+using Honua.Core.Features.WorkflowPackages.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Db.Postgres.Features.Admin;
 using Honua.Db.Postgres.Features.Alerts;
 using Honua.Db.Postgres.Features.AnalysisContent;
-using Honua.Db.Postgres.Features.AuditLog;
 using Honua.Db.Postgres.Features.Attachments;
+using Honua.Db.Postgres.Features.AuditLog;
 using Honua.Db.Postgres.Features.Collaboration.Operations;
+using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.Db.Postgres.Features.FeatureStore;
-using Honua.Core.Features.Geoprocessing.Abstractions;
-using Honua.Db.Postgres.Features.Geometry;
-using Honua.Db.Postgres.Features.Geoprocessing;
-using Honua.Db.Postgres.Features.GeometryService;
-using Honua.Db.Postgres.Features.HealthCheck;
-using Honua.Db.Postgres.Features.Migration;
 using Honua.Db.Postgres.Features.FileImport;
-using Honua.Db.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Forms;
+using Honua.Db.Postgres.Features.Geometry;
+using Honua.Db.Postgres.Features.GeometryService;
+using Honua.Db.Postgres.Features.Geoprocessing;
+using Honua.Db.Postgres.Features.HealthCheck;
 using Honua.Db.Postgres.Features.Infrastructure.Caching;
 using Honua.Db.Postgres.Features.Infrastructure.Crs;
 using Honua.Db.Postgres.Features.Infrastructure.Migrations;
-using Honua.Db.Postgres.Features.Infrastructure.Transforms;
 using Honua.Db.Postgres.Features.Infrastructure.Monitoring;
-using Honua.Db.Postgres.Features.Styling;
+using Honua.Db.Postgres.Features.Infrastructure.Transforms;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Db.Postgres.Features.Metadata;
-using Honua.Db.Postgres.Features.FeatureStore.Services;
-using Honua.Db.Postgres.Features.Forms;
+using Honua.Db.Postgres.Features.Migration;
 using Honua.Db.Postgres.Features.Mobile.FieldCollection;
 using Honua.Db.Postgres.Features.Observability;
 using Honua.Db.Postgres.Features.Raster;
 using Honua.Db.Postgres.Features.Security;
 using Honua.Db.Postgres.Features.Share;
 using Honua.Db.Postgres.Features.Studio;
+using Honua.Db.Postgres.Features.Styling;
 using Honua.Db.Postgres.Queries.Filters;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -112,6 +113,20 @@ internal static class ServiceCollectionExtensions
         var sessionSettingsMode = Honua.Core.Configuration.DatabaseSessionSettingsOptions.ResolveMode(configuration);
         var schemaConfiguration = PostgresSchemaConfiguration.FromConfiguration(configuration);
         services.TryAddSingleton(schemaConfiguration);
+
+        // Import and publish paths hold session advisory locks. Behind RDS Proxy those pin the
+        // proxy session, and a frozen Lambda never prunes its pool, so on Lambda they run on
+        // unpooled connections; long-lived hosts keep their pools (honua-server#6765).
+        var sessionLockConnections = PostgresSessionLockConnections.ForPrimaryDataSource(
+            Honua.Core.Features.ControlPlane.Abstractions.ControlPlaneEventHandlerHost.IsLambda(configuration),
+            connectionLimits,
+            schemaHeadersEnabled,
+            defaultSchema,
+            sessionSettingsMode);
+        // Registered as options: the policy is derived from configuration only, and the import and
+        // publish services are at their collaborator budget.
+        services.TryAddSingleton<Microsoft.Extensions.Options.IOptions<PostgresSessionLockConnections>>(
+            Microsoft.Extensions.Options.Options.Create(sessionLockConnections));
 
         // Register concurrency gate as singleton — shared across all scoped providers.
         // Factory form so the DI container tracks the IDisposable for shutdown disposal.
@@ -234,6 +249,10 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<IAlertChangeReader>(static serviceProvider => new PostgresAlertChangeReader(
             serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
             new LayerReadCommittedSnapshotPolicy(LayerReadSecurityResolver.FromServices(serviceProvider))));
+        services.AddKeyedScoped<Honua.Core.Features.Security.Admission.IAiExecutionAdmissionStore>("postgres", (provider, _) =>
+            new Features.Security.Admission.PostgresAiExecutionAdmissionStore(
+                provider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(), configuration["Database:Schema"]));
+
         services.AddScoped<IAlertRuleRepository, PostgresAlertRuleRepository>();
         services.AddScoped<IAlertStateStore, PostgresAlertStateStore>();
         services.AddScoped<IAlertEventStore, PostgresAlertEventStore>();
@@ -270,6 +289,13 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<IAuditLogIntegrityVerifier>(serviceProvider =>
             new PostgresAuditLogIntegrityVerifier(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                configuration["Database:Schema"],
+                serviceProvider.GetRequiredService<Honua.Core.Features.AuditLog.AuditChainKeySnapshot>().Key));
+        services.AddScoped<IAuditChainGapAttestor>(serviceProvider =>
+            new PostgresAuditChainGapAttestor(
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                serviceProvider.GetRequiredService<IAuditLog>(),
+                serviceProvider.GetRequiredService<IAuditLogIntegrityVerifier>(),
                 configuration["Database:Schema"],
                 serviceProvider.GetRequiredService<Honua.Core.Features.AuditLog.AuditChainKeySnapshot>().Key));
         services.AddScoped<IInvestigationStore, PostgresInvestigationStore>();
@@ -363,14 +389,25 @@ internal static class ServiceCollectionExtensions
         // The read surface is the cached path; the write surface (IMetadataV2GraphStore) stays the
         // raw store so read-modify-write publish paths always load a fresh persisted snapshot.
         // Cache-miss loads are shared across callers and outlive a cancelled initiator, so they
-        // resolve the store from their own scope instead of the initiating request's.
+        // resolve the store from their own scope instead of the initiating request's. Without a
+        // cross-node invalidation channel on Lambda, each request revalidates the cached snapshot's
+        // ETag against the current-pointer row (honua-server#6762).
+        var revalidateOnLambda = Honua.Core.Features.ControlPlane.Abstractions.ControlPlaneEventHandlerHost.IsLambda(configuration);
         services.AddScoped<IMetadataV2GraphProvider>(serviceProvider =>
-            new CachingMetadataV2GraphProvider(
-                serviceProvider.GetRequiredService<IMetadataV2GraphStore>(),
-                serviceProvider.GetRequiredService<MetadataV2GraphSnapshotCache>(),
+        {
+            var store = serviceProvider.GetRequiredService<IMetadataV2GraphStore>();
+            var cache = serviceProvider.GetRequiredService<MetadataV2GraphSnapshotCache>();
+            var revisionProbe = ShouldRevalidateMetadataGraphOnRead(serviceProvider, cache, revalidateOnLambda)
+                ? store as IMetadataV2GraphRevisionProbe
+                : null;
+            return new CachingMetadataV2GraphProvider(
+                store,
+                cache,
                 metadataEnvironment,
                 serviceProvider.GetRequiredService<IServiceScopeFactory>(),
-                static loadScope => loadScope.GetRequiredService<IMetadataV2GraphStore>()));
+                static loadScope => loadScope.GetRequiredService<IMetadataV2GraphStore>(),
+                revisionProbe);
+        });
         // Legacy V1 catalog -> Metadata v2 graph projector (honua-server#2081). Lets compat
         // seeding paths (cloud-demo reset/startup) project freshly-seeded legacy services
         // into the active graph store so the v2 read paths resolve them.
@@ -532,7 +569,8 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<LayerPublishingOptions>>().Value,
                 serviceProvider.GetService<Honua.Core.Features.MultiTenancy.Abstractions.ITenantContext>(),
                 serviceProvider.GetRequiredService<PostgresSchemaConfiguration>(),
-                serviceProvider.GetService<ISchemaContext>()));
+                serviceProvider.GetService<ISchemaContext>(),
+                serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<PostgresSessionLockConnections>>()));
 
         // Register health checker
         services.AddScoped<IDatabaseHealthChecker, PostgresDatabaseHealthChecker>();
@@ -721,7 +759,7 @@ internal static class ServiceCollectionExtensions
         // the GeoServices query slice; TryAdd keeps this idempotent so the import path can
         // resolve it even when GeoServices is not composed (#1501).
         services.TryAddSingleton<Honua.Core.Features.Infrastructure.Crs.IDatumTransformationCatalog>(
-            static _ => Honua.Core.Features.Infrastructure.Crs.EsriDatumTransformationCatalog.Create());
+            static _ => Honua.Core.Features.Infrastructure.Crs.GeoServicesDatumTransformationCatalog.Create());
 
         // Register streaming file import service with memory-efficient batch processing
         services.AddScoped<IFileImportService>(serviceProvider =>
@@ -740,7 +778,8 @@ internal static class ServiceCollectionExtensions
                 limits,
                 cloudStorage,
                 serviceProvider.GetRequiredService<PostgresSchemaConfiguration>(),
-                serviceProvider.GetService<Honua.Core.Features.Infrastructure.Crs.IDatumTransformationCatalog>());
+                serviceProvider.GetService<Honua.Core.Features.Infrastructure.Crs.IDatumTransformationCatalog>(),
+                serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<PostgresSessionLockConnections>>());
         });
 
         // Shared catalog receipt for honua_ingest_job_artifact. Registered before MCP so the
@@ -748,7 +787,8 @@ internal static class ServiceCollectionExtensions
         services.TryAddSingleton<IServerJobArtifactImportLedger>(static serviceProvider =>
             new PostgresServerJobArtifactImportLedger(
                 serviceProvider.GetRequiredService<NpgsqlDataSource>(),
-                serviceProvider.GetRequiredService<PostgresSchemaConfiguration>()));
+                serviceProvider.GetRequiredService<PostgresSchemaConfiguration>(),
+                serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<PostgresSessionLockConnections>>()));
 
         // Register universal import job service using unified progress store
         // This replaces the in-memory job service with one that uses centralized progress tracking
@@ -765,7 +805,7 @@ internal static class ServiceCollectionExtensions
         });
 
         // Register ArcGIS REST client for Geoservices service imports with resilience
-        services.AddResilientHttpClient<ArcGisRestClient>(
+        services.AddResilientHttpClient<GeoServicesRestClient>(
             "arcgis-rest",
             HttpResiliencePolicies.SlowServiceDefaults,
             configureClient: client =>
@@ -773,7 +813,7 @@ internal static class ServiceCollectionExtensions
                 client.DefaultRequestHeaders.Add("User-Agent", "HonuaServer/1.0");
                 client.Timeout = TimeSpan.FromMinutes(5);
             },
-            configureHandler: static () => ArcGisRestClient.CreatePinnedDnsHttpMessageHandler())
+            configureHandler: static () => GeoServicesRestClient.CreatePinnedDnsHttpMessageHandler())
             .AddHttpMessageHandler<MigrationRequestCountingHandler>();
 
         // Register the published-layer lifecycle service the importer delegates to (AutoPublish ->
@@ -835,9 +875,9 @@ internal static class ServiceCollectionExtensions
         // Register ArcGIS migration evidence store (#1025 slice 6). Replaces the Core
         // in-memory default so admin endpoints can serve persisted manifest + parity
         // artifacts across server restarts and across instances.
-        services.RemoveAll<IArcGisMigrationEvidenceStore>();
-        services.AddScoped<IArcGisMigrationEvidenceStore>(serviceProvider =>
-            new PostgresArcGisMigrationEvidenceStore(
+        services.RemoveAll<IGeoServicesMigrationEvidenceStore>();
+        services.AddScoped<IGeoServicesMigrationEvidenceStore>(serviceProvider =>
+            new PostgresGeoServicesMigrationEvidenceStore(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
 
@@ -909,7 +949,8 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 httpClientFactory.CreateClient(OgcWfsImportService.HttpClientName),
                 serviceProvider.GetRequiredService<ILogger<OgcWfsImportService>>(),
-                serviceProvider.GetService<PostgresSchemaConfiguration>());
+                serviceProvider.GetService<PostgresSchemaConfiguration>(),
+                serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<PostgresSessionLockConnections>>());
         });
 
         // First-class DAG remote source connectors (feat/etl-remote-source-connectors).
@@ -917,14 +958,14 @@ internal static class ServiceCollectionExtensions
         // an existing one-shot import reader's pagination/streaming rather than bouncing
         // through a one-shot import. The geoprocessing RemoteSourceExecutor resolves these
         // at execution time through an IServiceScopeFactory scope.
-        //   - source.esri-featureserver wraps the migration ArcGisRestClient (registered above);
+        //   - source.esri-featureserver wraps the migration GeoServicesRestClient (registered above);
         //   - source.honua-layer wraps the canonical IStreamingFeatureStore query pipeline;
         //   - source.postgis mirrors the sink.external-postgis secure-connection handling;
         //   - source.ogc-features / source.wfs reuse the migration bounded-buffer GeoJSON path.
-        services.AddScoped<IDagFeatureSource, EsriFeatureServerDagSource>(serviceProvider =>
-            new EsriFeatureServerDagSource(
-                serviceProvider.GetRequiredService<ArcGisRestClient>(),
-                serviceProvider.GetRequiredService<ILogger<EsriFeatureServerDagSource>>()));
+        services.AddScoped<IDagFeatureSource, GeoServicesFeatureServerDagSource>(serviceProvider =>
+            new GeoServicesFeatureServerDagSource(
+                serviceProvider.GetRequiredService<GeoServicesRestClient>(),
+                serviceProvider.GetRequiredService<ILogger<GeoServicesFeatureServerDagSource>>()));
         services.AddScoped<IDagFeatureSource, HonuaLayerDagSource>(serviceProvider =>
             new HonuaLayerDagSource(
                 serviceProvider.GetRequiredService<IStreamingFeatureStore>(),
@@ -976,7 +1017,7 @@ internal static class ServiceCollectionExtensions
         // The reader and import orchestrator are provider-agnostic; the serving read
         // path is Postgres-backed (reads the tile catalog populated by the importer).
         services.AddSingleton<Honua.Core.Features.TileCachePackage.Abstractions.ITileCachePackageReader,
-            Honua.Core.Features.TileCachePackage.Services.EsriTileCachePackageReader>();
+            Honua.Core.Features.TileCachePackage.Services.GeoServicesTileCachePackageReader>();
         services.AddScoped<Honua.Core.Features.TileCachePackage.Abstractions.ITileCachePackageImportService,
             Honua.Core.Features.TileCachePackage.Services.TileCachePackageImportService>();
         services.AddScoped<Honua.Core.Features.TileCachePackage.Abstractions.IImportedTileCacheReader,
@@ -1110,5 +1151,25 @@ internal static class ServiceCollectionExtensions
         return double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) && parsed > 0
             ? parsed
             : defaultValue;
+    }
+
+    /// <summary>
+    /// Whether the Metadata v2 read path revalidates its cached snapshot per request.
+    /// <c>Cache:MetadataGraphRevalidateOnRead</c> wins when set; otherwise it is on for Lambda when
+    /// the invalidator is the in-process cache itself, i.e. no Redis broadcast is composed.
+    /// </summary>
+    internal static bool ShouldRevalidateMetadataGraphOnRead(
+        IServiceProvider serviceProvider,
+        MetadataV2GraphSnapshotCache cache,
+        bool isLambda)
+    {
+        var configured = serviceProvider.GetService<IOptions<CacheOptions>>()?.Value.MetadataGraphRevalidateOnRead;
+        if (configured is { } explicitSetting)
+        {
+            return explicitSetting;
+        }
+
+        return isLambda
+            && ReferenceEquals(serviceProvider.GetService<IMetadataV2GraphCacheInvalidator>(), cache);
     }
 }

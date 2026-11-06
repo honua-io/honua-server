@@ -13,55 +13,22 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Default <see cref="ILayerAccessAuthorizer"/>: resolves a catalog layer id through the
-/// SAME Metadata v2 triple resolution the HTTP layer validators use
-/// (<see cref="LayerValidationHelpers.ResolveV2TripleForTenant"/>) and evaluates it with the
-/// SAME decision core the HTTP access helpers use
-/// (<see cref="AccessPolicyHelpers.EvaluateResourceAccessCoreAsync"/>), so a principal-only
-/// caller such as the geoprocessing submit pipeline reaches an identical decision to a
-/// protocol query for the same layer (honua-server#3046).
-/// </summary>
-/// <remarks>
-/// Registered as a singleton because its consumers (the geoprocessing job service and its
-/// authorizer) are singletons. The per-request seams it needs — the metadata graph provider,
-/// the permission resolver, and the tenant rail — are resolved from the AMBIENT request scope
-/// when the call happens on a request thread, exactly as the HTTP helpers do. When no request
-/// is ambient (workflow orchestration, schedulers, background replay) a fresh scope is created
-/// and the tenant is taken from the PRINCIPAL: the deferred-submission lanes authorize a
-/// restored author/submitter snapshot that carries the tenant it was captured with, so tenant
-/// visibility stays enforced for user-attributed background checks. Only a caller with no
-/// tenant at all — a tenant-less deployment, or a server-internal identity that never passed
-/// through tenant middleware — skips the filter, because scoping on a null tenant would deny
-/// every tenant-scoped layer rather than just the foreign ones.
-/// </remarks>
+// With no ambient request the fresh scope uses the principal's tenant, and only a caller with no tenant at all skips the filter, because a null tenant would deny every tenant-scoped layer.
 internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
 {
-    /// <summary>Tenant claim type mirrored from the portal-token grammar.</summary>
     private const string TenantClaimType = "tenant_id";
 
-    /// <summary>
-    /// Azure/OIDC tenant claim the tenant middleware also accepts. Reading only
-    /// <c>tenant_id</c> left an OIDC principal that carries just <c>tid</c> looking
-    /// tenant-less here, which disabled tenant scoping on exactly the background checks this
-    /// gate exists to constrain (honua-server#3046 review).
-    /// </summary>
     private const string AzureTenantClaimType = "tid";
 
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IServiceScopeFactory _scopeFactory;
 
-    /// <summary>
-    /// Creates the authorizer over the ambient-request accessor and the scope factory used
-    /// for non-request callers.
-    /// </summary>
     public LayerAccessAuthorizer(IHttpContextAccessor httpContextAccessor, IServiceScopeFactory scopeFactory)
     {
         _httpContextAccessor = httpContextAccessor;
         _scopeFactory = scopeFactory;
     }
 
-    /// <inheritdoc />
     public async Task<AccessDecision> AuthorizeLayerAsync(
         ClaimsPrincipal principal,
         int layerId,
@@ -115,7 +82,6 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
             cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<AccessDecision> AuthorizePublicationAsync(
         ClaimsPrincipal principal,
         MetadataV2Publication publication,
@@ -176,10 +142,6 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
             cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Resolves the tenant for the principal being authorized. The ambient tenant is only a
-    /// fallback for a tenant-less principal; it may belong to an approver or orchestrator.
-    /// </summary>
     internal static string? ResolveAuthorizationTenantId(
         ClaimsPrincipal principal,
         string? ambientTenantId)
@@ -338,12 +300,7 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
         return lastDenial ?? AccessDecision.Forbidden(DenialReason);
     }
 
-    /// <summary>
-    /// Authorizes a resource that has publications but none routable (draft or retired
-    /// services/publications). Each distinct publishing service is evaluated through the shared
-    /// decision core — scoped API keys, per-operation RBAC grants, resource and service
-    /// policy — and every one must allow (honua-server#6102).
-    /// </summary>
+    // A resource whose publications are all unroutable is allowed only when every distinct publishing service allows it.
     private static async Task<AccessDecision> EvaluateAllPublicationsAsync(
         IServiceProvider services,
         ClaimsPrincipal principal,
@@ -389,9 +346,6 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
         return allowed ?? AccessDecision.Forbidden(DenialReason);
     }
 
-    /// <summary>
-    /// Internal denial reason recorded for unresolvable layers. Never surfaced verbatim to a
-    /// client: callers map every denial onto one generic authorization failure.
-    /// </summary>
+    // The denial reason for an unresolvable layer is never returned to the client.
     private const string DenialReason = "The layer is not accessible to this principal.";
 }

@@ -142,6 +142,25 @@ Removing or changing the key, or rolling back to an older writer, is not a
 supported rollback. If activation fails, keep writes paused and restore the
 same key on a keyed-capable release; do not rewrite existing audit rows.
 
+#### Recovering from a rollback to a pre-hash-chain writer
+
+A release older than the hash chain inserts rows with no `entry_hash`. If one ran after
+hashed rows existed, verification fails with `entry_hash is missing at audit_id N: an
+unhashed row follows a hashed row`. Those rows carry no tamper evidence, and nothing can
+honestly add it later: never compute hashes into them. Instead, append a declaration:
+
+1. Activate the chain key as above, on a keyed-capable release, and confirm a hashed row
+   follows the gap.
+2. Run the Admin API operation `verifyObservabilityAudit` and note `firstBrokenAuditId`.
+3. Run the Admin API operation `attestObservabilityAuditGap` with that id as
+   `gapFirstAuditId` and a `reason` that names what rolled back and when.
+
+The server reads the anchor row, the gap bounds, the row count and the resume row from
+the table, refuses anything else (409), and appends an `audit.chain.gap_attested` row
+through the normal writer. Verification accepts exactly the declared rows, only when the
+declaration's own row verifies under the chain key, and reports them as
+`attestedGapRows`. A later unhashed row still fails. Repeat for each gap in order.
+
 ### Failures of audited operations
 
 | Operation | Trigger | EventType | Action | Outcome source |

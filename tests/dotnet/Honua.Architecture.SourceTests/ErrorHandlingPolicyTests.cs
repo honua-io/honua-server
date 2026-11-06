@@ -77,6 +77,9 @@ public sealed class ErrorHandlingPolicyTests
         ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "GeocodingAdminEndpoints.cs"),
         ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Admin", "LicenseAdminEndpoints.cs"),
         ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "Collaboration", "CollaborationEndpoints.cs"),
+        // Error shaping is a private Problem helper that returns Results.Json with a code and message.
+        // The marker scan does not recognize that helper.
+        ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "ControlPlane", "ControlPlaneEventEndpoints.cs"),
         // Pure route-table wiring; all request validation + error shaping (StandardErrorHelpers
         // BadRequest/NotFound/NotImplemented) lives in the companion DataEnrichmentRequestHandlers.cs.
         ArchitectureTestHelpers.CombinePath("src", "Honua.Server", "Features", "DataEnrichment", "DataEnrichmentEndpoints.cs"),

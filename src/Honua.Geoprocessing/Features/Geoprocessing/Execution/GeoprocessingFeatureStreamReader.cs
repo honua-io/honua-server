@@ -11,8 +11,6 @@ using NetTopologySuite.Features;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>Canonical receipt authorization and verified stream access for protocol adapters.</summary>
-/// <summary>A verified payload row and whether its coordinate frame came from the producer tag.</summary>
 internal readonly record struct VerifiedFeatureRow(IFeature Feature, bool HasProducerSpatialReference);
 
 internal interface IGeoprocessingFeatureStreamReader
@@ -24,7 +22,6 @@ internal interface IGeoprocessingFeatureStreamReader
         long maximumBytes, CancellationToken cancellationToken);
 }
 
-/// <summary>Keeps durable job and workspace ownership checks inside the GP boundary.</summary>
 internal sealed class GeoprocessingFeatureStreamReader(
     IOptionsMonitor<GeoprocessingOutputStagingOptions> options,
     IServiceScopeFactory workspaceScopes,

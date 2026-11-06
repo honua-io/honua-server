@@ -21,9 +21,10 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 /// response-shaping regressions bloating the catalog, without forcing the
 /// teaching descriptions (#2499) to be gutted to win tokens.</description></item>
 /// <item><description>A representative <c>honua_query_features</c> result — proves
-/// the double-encoding fix: the full FeatureCollection rides only in
-/// <c>structuredContent</c>, and the <c>text</c> block is a compact summary
-/// rather than a byte-for-byte duplicate.</description></item>
+/// the text-content contract: the full FeatureCollection is in
+/// <c>structuredContent</c> and, per MCP 2025-06-18 (Tools, "Structured Content"),
+/// the same serialized JSON is also returned as a <c>text</c> block, preceded by a
+/// compact summary for large pages.</description></item>
 /// </list>
 /// </summary>
 public sealed partial class McpTaxonomyAlignmentTests
@@ -67,11 +68,127 @@ public sealed partial class McpTaxonomyAlignmentTests
     }
 
     [UnitTest]
-    public void QueryFeatures_TextBlock_IsCompactSummaryNotDuplicatedPayload()
+    public void QueryFeatures_LargePage_ReturnsSummaryThenFullJsonText()
     {
-        // A representative page: 100 features, each with quantized geometry and a
-        // handful of attributes — the shape query_features actually returns.
-        const int featureCount = 100;
+        var output = BuildRepresentativeQueryPage(featureCount: 100);
+        var payloadJson = JsonSerializer.Serialize(output, MapToolJsonContext.Default.McpQueryFeaturesOutput);
+        payloadJson.Length.Should().BeGreaterThanOrEqualTo(McpToolHelpers.InlineTextThresholdChars);
+
+        var result = McpToolHelpers.SuccessResult(
+            output,
+            MapToolJsonContext.Default.McpQueryFeaturesOutput,
+            SummarizeForMeasurement);
+
+        _output?.WriteLine($"query_features payload (structuredContent): {payloadJson.Length:N0} chars (~{EstimateTokens(payloadJson):N0} tokens)");
+        _output?.WriteLine($"summary text block: {result.Content[0].Text?.Length ?? 0:N0} chars");
+
+        result.IsError.Should().BeFalse();
+        result.Content.Should().HaveCount(2, "a large result with a summarizer carries the summary and the full JSON");
+        result.Content.Should().OnlyContain(block => block.Type == "text");
+
+        var summary = result.Content[0].Text ?? string.Empty;
+        summary.Should().Contain("county_parcels").And.Contain("resultOffset=100",
+            "the summary must carry the layer address and the mechanical paging next-step");
+
+        // The data block is the serialized JSON itself and equals structuredContent.
+        var dataText = result.Content[1].Text ?? string.Empty;
+        dataText.Should().Be(payloadJson);
+        TextShouldEqualStructuredContent(dataText, result.StructuredContent);
+    }
+
+    [UnitTest]
+    public void SuccessResult_LargePayloadWithoutSummarizer_ReturnsFullJsonText()
+    {
+        var output = BuildRepresentativeQueryPage(featureCount: 100);
+
+        var result = McpToolHelpers.SuccessResult(output, MapToolJsonContext.Default.McpQueryFeaturesOutput);
+
+        result.Content.Should().ContainSingle();
+        var text = result.Content[0].Text ?? string.Empty;
+        text.Length.Should().BeGreaterThanOrEqualTo(McpToolHelpers.InlineTextThresholdChars);
+        text.Should().NotContain("elided");
+        TextShouldEqualStructuredContent(text, result.StructuredContent);
+    }
+
+    [UnitTest]
+    public void SuccessResult_SmallPayload_ReturnsSingleJsonTextAndSkipsSummarizer()
+    {
+        var output = BuildRepresentativeQueryPage(featureCount: 1);
+        var payloadJson = JsonSerializer.Serialize(output, MapToolJsonContext.Default.McpQueryFeaturesOutput);
+        payloadJson.Length.Should().BeLessThan(McpToolHelpers.InlineTextThresholdChars);
+        var summarizerCalled = false;
+
+        var result = McpToolHelpers.SuccessResult(
+            output,
+            MapToolJsonContext.Default.McpQueryFeaturesOutput,
+            o =>
+            {
+                summarizerCalled = true;
+                return SummarizeForMeasurement(o);
+            });
+
+        summarizerCalled.Should().BeFalse("small payloads need no summary");
+        result.Content.Should().ContainSingle().Which.Text.Should().Be(payloadJson);
+        TextShouldEqualStructuredContent(payloadJson, result.StructuredContent);
+    }
+
+    [UnitTest]
+    public void SuccessJsonElement_LargePayloadWithSummarizer_ReturnsSummaryThenFullJsonText()
+    {
+        var output = BuildRepresentativeQueryPage(featureCount: 100);
+        using var document = JsonDocument.Parse(
+            JsonSerializer.Serialize(output, MapToolJsonContext.Default.McpQueryFeaturesOutput));
+
+        var result = McpToolHelpers.SuccessJsonElement(document.RootElement, static _ => "Large page summary.");
+
+        result.Content.Should().HaveCount(2);
+        result.Content[0].Text.Should().Be("Large page summary.");
+        TextShouldEqualStructuredContent(result.Content[1].Text ?? string.Empty, result.StructuredContent);
+    }
+
+    [UnitTest]
+    public void SuccessJsonElement_LargePayloadWithoutSummarizer_ReturnsFullJsonText()
+    {
+        var output = BuildRepresentativeQueryPage(featureCount: 100);
+        using var document = JsonDocument.Parse(
+            JsonSerializer.Serialize(output, MapToolJsonContext.Default.McpQueryFeaturesOutput));
+
+        var result = McpToolHelpers.SuccessJsonElement(document.RootElement);
+
+        result.Content.Should().ContainSingle();
+        TextShouldEqualStructuredContent(result.Content[0].Text ?? string.Empty, result.StructuredContent);
+    }
+
+    [UnitTest]
+    public void SuccessJsonElement_SmallPayload_ReturnsSingleJsonText()
+    {
+        using var document = JsonDocument.Parse("""{"status":"ok","count":3}""");
+
+        var result = McpToolHelpers.SuccessJsonElement(document.RootElement, static _ => "unused");
+
+        result.Content.Should().ContainSingle().Which.Text.Should().Be("""{"status":"ok","count":3}""");
+        TextShouldEqualStructuredContent(result.Content[0].Text ?? string.Empty, result.StructuredContent);
+    }
+
+    /// <summary>
+    /// Asserts that a text block parses as JSON and is structurally equal to
+    /// the result's <c>structuredContent</c>.
+    /// </summary>
+    private static void TextShouldEqualStructuredContent(string text, JsonElement? structuredContent)
+    {
+        structuredContent.Should().NotBeNull();
+        var fromText = JsonNode.Parse(text);
+        var fromStructured = JsonNode.Parse(structuredContent!.Value.GetRawText());
+        JsonNode.DeepEquals(fromText, fromStructured).Should().BeTrue(
+            "the text block must carry the same serialized JSON as structuredContent");
+    }
+
+    /// <summary>
+    /// A representative query_features page: point features with quantized
+    /// geometry and a handful of attributes, the shape the tool returns.
+    /// </summary>
+    private static McpQueryFeaturesOutput BuildRepresentativeQueryPage(int featureCount)
+    {
         var features = new List<JsonNode>(featureCount);
         for (var i = 0; i < featureCount; i++)
         {
@@ -93,52 +210,17 @@ public sealed partial class McpTaxonomyAlignmentTests
             });
         }
 
-        var output = new McpQueryFeaturesOutput
+        return new McpQueryFeaturesOutput
         {
             ServiceId = "county_parcels",
             LayerId = 0,
             ReturnedCount = featureCount,
             Limit = 100,
             ResultOffset = 0,
-            ExceededTransferLimit = true,
-            NextOffset = 100,
+            ExceededTransferLimit = featureCount >= 100,
+            NextOffset = featureCount >= 100 ? 100 : null,
             GeoJson = new McpGeoJsonFeatureCollection { Features = features },
         };
-
-        var payloadJson = JsonSerializer.Serialize(output, MapToolJsonContext.Default.McpQueryFeaturesOutput);
-
-        // "Before" (original double-encoding): SuccessResult copied the full JSON
-        // verbatim into the text block, so the wire result carried the payload
-        // twice — text == structuredContent.
-        var beforeText = payloadJson;
-        var beforeTotal = payloadJson.Length + beforeText.Length;
-
-        // "After": the live tool passes an information-bearing summarizer, so the
-        // text block is a one-line summary and the payload rides once, in
-        // structuredContent.
-        var afterResult = McpToolHelpers.SuccessResult(
-            output,
-            MapToolJsonContext.Default.McpQueryFeaturesOutput,
-            SummarizeForMeasurement);
-        var afterText = afterResult.Content[0].Text ?? string.Empty;
-        var afterTotal = payloadJson.Length + afterText.Length;
-
-        _output?.WriteLine($"query_features payload (structuredContent): {payloadJson.Length:N0} chars (~{EstimateTokens(payloadJson):N0} tokens)");
-        _output?.WriteLine($"BEFORE (double-encoded) result total {beforeTotal:N0} chars (~{EstimateTokens(beforeTotal):N0} tokens)");
-        _output?.WriteLine($"AFTER  text block: {afterText.Length:N0} chars ('{afterText}'); result total {afterTotal:N0} chars (~{EstimateTokens(afterTotal):N0} tokens)");
-        _output?.WriteLine($"result total reduction: {beforeTotal - afterTotal:N0} chars (~{EstimateTokens(beforeTotal - afterTotal):N0} tokens, {(beforeTotal - afterTotal) * 100.0 / beforeTotal:F0}%)");
-
-        // The structuredContent still carries the full payload.
-        (afterResult.StructuredContent?.GetRawText().Length ?? 0).Should().Be(payloadJson.Length);
-
-        // After, the text block is a short, information-bearing summary — not a
-        // duplicate — so the result is far smaller than the double-encoded form.
-        afterText.Length.Should().BeLessThan(payloadJson.Length / 4,
-            "the summarized text block must be a fraction of the payload, not a duplicate");
-        afterText.Should().Contain("county_parcels").And.Contain("resultOffset=100",
-            "the summary must carry the layer address and the mechanical paging next-step");
-        afterTotal.Should().BeLessThan(beforeTotal / 2 + 512,
-            "eliminating the duplicated text roughly halves the result size");
     }
 
     [UnitTest]

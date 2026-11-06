@@ -6,20 +6,9 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.FeatureStore.Domain;
 
-/// <summary>
-/// Owner value that an update or delete must still match in the same write statement.
-/// This is the authorized snapshot for one row. It is not a
-/// <see cref="FeatureStateToken"/> and it is not a client precondition.
-/// </summary>
-/// <param name="ObjectId">Storage object id the guard covers.</param>
-/// <param name="Field">Owner attribute name. Matching is case-insensitive.</param>
-/// <param name="Expected">Owner text authorized for the edit. An absent owner is empty.</param>
+// The owner value must match in the same write statement; it is not a client precondition.
 public readonly record struct OwnerEditGuard(long ObjectId, string Field, string Expected)
 {
-    /// <summary>The guard for <paramref name="objectId"/>, or null when the batch has none.</summary>
-    /// <param name="guards">Guards stamped by the owner policy. Default or empty matches nothing.</param>
-    /// <param name="objectId">Storage object id being written.</param>
-    /// <returns>The matching guard, or null.</returns>
     public static OwnerEditGuard? Find(ImmutableArray<OwnerEditGuard> guards, long objectId)
     {
         if (guards.IsDefaultOrEmpty)
@@ -39,90 +28,34 @@ public readonly record struct OwnerEditGuard(long ObjectId, string Field, string
     }
 }
 
-/// <summary>
-/// Represents a batch of feature edits to apply
-/// </summary>
 public readonly record struct FeatureEditBatch
 {
-    /// <summary>
-    /// Ordered edit operations to execute when request sequencing matters.
-    /// When provided, writers should preserve this order while applying the batch.
-    /// </summary>
     public ImmutableArray<FeatureEditOperation> Operations { get; init; }
 
-    /// <summary>
-    /// Features to create
-    /// </summary>
     public ImmutableArray<Feature> Creates { get; init; }
 
-    /// <summary>
-    /// Features to update (must include Id)
-    /// </summary>
     public ImmutableArray<Feature> Updates { get; init; }
 
-    /// <summary>
-    /// Feature IDs to delete
-    /// </summary>
     public ImmutableArray<long> Deletes { get; init; }
 
-    /// <summary>
-    /// Whether to rollback all changes on failure
-    /// Default is false (GeoServices default behavior)
-    /// </summary>
     public bool RollbackOnFailure { get; init; } = false;
 
-    /// <summary>
-    /// Whether to use global IDs
-    /// </summary>
     public bool UseGlobalIds { get; init; } = false;
 
-    /// <summary>
-    /// Branch version the edit targets (#1272 Track B, ADR-0051). A null value or
-    /// <see cref="VersionContext.IsDefault"/> means the DEFAULT version: writers must use the
-    /// byte-identical non-versioned base write path (target <c>features</c>, no version GUC). A
-    /// non-DEFAULT context routes the edit to the version overlay, sets the transaction-scoped version
-    /// GUC so the change-tracking trigger tags produced changes, and captures the DEFAULT base image on
-    /// the version's first touch of an <c>(layer_id, objectid)</c>.
-    /// </summary>
+    // A null version is the default and must use the non-versioned write path.
     public VersionContext? VersionContext { get; init; }
 
-    /// <summary>
-    /// Optional optimistic-concurrency preconditions keyed by object ID. When a batch
-    /// carries a precondition for an object ID, writers must re-validate the stored
-    /// row's <see cref="FeatureStateToken"/> against the expected token inside the same
-    /// transaction (or equivalent synchronization) that applies the update/delete, and
-    /// report a mismatch as <see cref="EditOperationResult.PreconditionFailed"/> without
-    /// applying the operation. Object IDs without a precondition keep last-write-wins
-    /// semantics.
-    /// </summary>
+    // A precondition is re-checked inside the write transaction, and a mismatch leaves that operation unapplied.
     public ImmutableArray<FeatureEditPrecondition> Preconditions { get; init; }
 
-    /// <summary>
-    /// Caller-scoped row-level security predicate every created or updated row must satisfy
-    /// after the write (the <c>WITH CHECK</c> half of row-level security, honua-server#6103).
-    /// Stamped by the feature store from the same request-scoped RLS source its readers apply;
-    /// protocol adapters never set it. Writers that honour it re-select each written row with
-    /// this predicate inside the write transaction and fail the operation with
-    /// <see cref="EditOperationResult.NotPermittedErrorCode"/> (undoing that row) when the row
-    /// would fall outside the caller's visible partition. Null means no row-level security
-    /// policy applies to the caller.
-    /// </summary>
+    // Protocol adapters never set this predicate; the store stamps it, and a row outside the caller's partition fails the write.
     [JsonIgnore]
     public Honua.Core.Queries.Filters.SqlFragment? RowSecurityWriteCheck { get; init; }
 
-    /// <summary>
-    /// Owner predicates for updates and deletes. The shared owner policy stamps one guard
-    /// per existing row when a non-administrator must keep the authorized owner. Writers
-    /// apply the predicate in the same statement that mutates the row, so a concurrent
-    /// ownership transfer is not overwritten or deleted. Empty when the policy is off or
-    /// the caller may edit any owner. Only trusted server-side policy code sets this.
-    /// </summary>
+    // The guard is applied in the same statement so a concurrent ownership transfer is not overwritten.
     [JsonIgnore]
     public ImmutableArray<OwnerEditGuard> OwnerGuards { get; init; }
 
-    /// <summary>
-    /// Initializes a new FeatureEditBatch with default values
-    /// </summary>
     public FeatureEditBatch()
     {
         Operations = ImmutableArray<FeatureEditOperation>.Empty;
@@ -133,18 +66,6 @@ public readonly record struct FeatureEditBatch
         OwnerGuards = ImmutableArray<OwnerEditGuard>.Empty;
     }
 
-    /// <summary>
-    /// Creates a batch edit request
-    /// </summary>
-    /// <param name="creates">Features to create</param>
-    /// <param name="updates">Features to update</param>
-    /// <param name="deletes">Feature IDs to delete</param>
-    /// <param name="rollbackOnFailure">Whether to rollback all changes on failure</param>
-    /// <param name="useGlobalIds">Whether to use global IDs</param>
-    /// <param name="operations">Ordered operations to apply when request sequencing must be preserved</param>
-    /// <param name="versionContext">Branch version the edit targets; null/DEFAULT uses the byte-identical base write path</param>
-    /// <param name="preconditions">Optional per-object optimistic-concurrency preconditions enforced inside the write transaction</param>
-    /// <returns>Edit batch instance</returns>
     public static FeatureEditBatch Create(
         ImmutableArray<Feature> creates = default,
         ImmutableArray<Feature> updates = default,
@@ -166,9 +87,6 @@ public readonly record struct FeatureEditBatch
             Preconditions = preconditions.IsDefault ? ImmutableArray<FeatureEditPrecondition>.Empty : preconditions
         };
 
-    /// <summary>
-    /// Gets the total number of operations in this batch
-    /// </summary>
     public int TotalOperations =>
         !Operations.IsDefaultOrEmpty
             ? Operations.Length
@@ -176,56 +94,26 @@ public readonly record struct FeatureEditBatch
               (Updates.IsDefault ? 0 : Updates.Length) +
               (Deletes.IsDefault ? 0 : Deletes.Length);
 
-    /// <summary>
-    /// Gets whether this batch contains any operations
-    /// </summary>
     public bool IsEmpty => TotalOperations == 0;
 }
 
-/// <summary>
-/// Describes the type of a single ordered feature edit operation.
-/// </summary>
 public enum FeatureEditOperationKind
 {
-    /// <summary>
-    /// Create a new feature.
-    /// </summary>
     Create,
 
-    /// <summary>
-    /// Update an existing feature.
-    /// </summary>
     Update,
 
-    /// <summary>
-    /// Delete an existing feature.
-    /// </summary>
     Delete
 }
 
-/// <summary>
-/// Represents a single ordered edit operation within a feature edit batch.
-/// </summary>
 public readonly record struct FeatureEditOperation
 {
-    /// <summary>
-    /// Operation type.
-    /// </summary>
     public required FeatureEditOperationKind Kind { get; init; }
 
-    /// <summary>
-    /// Feature payload for create or update operations.
-    /// </summary>
     public Feature? Feature { get; init; }
 
-    /// <summary>
-    /// Object ID for delete operations.
-    /// </summary>
     public long? ObjectId { get; init; }
 
-    /// <summary>
-    /// Creates an ordered create operation.
-    /// </summary>
     public static FeatureEditOperation Create(Feature feature)
         => new()
         {
@@ -233,9 +121,6 @@ public readonly record struct FeatureEditOperation
             Feature = feature
         };
 
-    /// <summary>
-    /// Creates an ordered update operation.
-    /// </summary>
     public static FeatureEditOperation Update(Feature feature)
         => new()
         {
@@ -243,9 +128,6 @@ public readonly record struct FeatureEditOperation
             Feature = feature
         };
 
-    /// <summary>
-    /// Creates an ordered delete operation.
-    /// </summary>
     public static FeatureEditOperation Delete(long objectId)
         => new()
         {
@@ -254,75 +136,31 @@ public readonly record struct FeatureEditOperation
         };
 }
 
-/// <summary>
-/// Result of applying feature edits
-/// </summary>
 public readonly record struct FeatureEditResult
 {
     private const string RollbackErrorMessage = "Operation rolled back.";
-    /// <summary>
-    /// Number of features successfully created
-    /// </summary>
     public required int CreatedCount { get; init; }
 
-    /// <summary>
-    /// Number of features successfully updated
-    /// </summary>
     public required int UpdatedCount { get; init; }
 
-    /// <summary>
-    /// Number of features successfully deleted
-    /// </summary>
     public required int DeletedCount { get; init; }
 
-    /// <summary>
-    /// IDs of newly created features
-    /// </summary>
     public ImmutableArray<long> CreatedIds { get; init; }
 
-    /// <summary>
-    /// Results of individual create operations
-    /// </summary>
     public ImmutableArray<EditOperationResult> CreateResults { get; init; }
 
-    /// <summary>
-    /// Results of individual update operations
-    /// </summary>
     public ImmutableArray<EditOperationResult> UpdateResults { get; init; }
 
-    /// <summary>
-    /// Results of individual delete operations
-    /// </summary>
     public ImmutableArray<EditOperationResult> DeleteResults { get; init; }
 
-    /// <summary>
-    /// Whether entire transaction was rolled back
-    /// </summary>
     public bool WasRolledBack { get; init; }
 
-    /// <summary>
-    /// Gets whether this result represents rows that committed or an operation whose commit
-    /// outcome is unknown. A zero success count is not sufficient proof that no write occurred:
-    /// an auto-commit statement may commit before its acknowledgement is lost.
-    /// </summary>
     public bool MayHaveCommitted => !WasRolledBack &&
         (CreatedCount + UpdatedCount + DeletedCount > 0 ||
          CreateResults.Any(static result => result.IsCommitOutcomeUnknown) ||
          UpdateResults.Any(static result => result.IsCommitOutcomeUnknown) ||
          DeleteResults.Any(static result => result.IsCommitOutcomeUnknown));
 
-    /// <summary>
-    /// Creates a successful edit result
-    /// </summary>
-    /// <param name="createdCount">Number of features created</param>
-    /// <param name="updatedCount">Number of features updated</param>
-    /// <param name="deletedCount">Number of features deleted</param>
-    /// <param name="createdIds">IDs of newly created features</param>
-    /// <param name="createResults">Results of create operations</param>
-    /// <param name="updateResults">Results of update operations</param>
-    /// <param name="deleteResults">Results of delete operations</param>
-    /// <param name="wasRolledBack">Whether transaction was rolled back</param>
-    /// <returns>Edit result instance</returns>
     public static FeatureEditResult Success(
         int createdCount,
         int updatedCount,
@@ -344,13 +182,6 @@ public readonly record struct FeatureEditResult
             WasRolledBack = wasRolledBack
         };
 
-    /// <summary>
-    /// Creates a failed edit result (all operations rolled back)
-    /// </summary>
-    /// <param name="createResults">Results of create operations</param>
-    /// <param name="updateResults">Results of update operations</param>
-    /// <param name="deleteResults">Results of delete operations</param>
-    /// <returns>Edit result instance</returns>
     public static FeatureEditResult Rollback(
         ImmutableArray<EditOperationResult> createResults = default,
         ImmutableArray<EditOperationResult> updateResults = default,
@@ -367,14 +198,7 @@ public readonly record struct FeatureEditResult
             WasRolledBack = true
         };
 
-    /// <summary>
-    /// Creates a failed edit result for a transaction whose commit acknowledgement was lost.
-    /// The transaction may have committed, so callers must not release an idempotency reservation.
-    /// </summary>
-    /// <param name="createResults">Create failures marked with an unknown commit outcome</param>
-    /// <param name="updateResults">Update failures marked with an unknown commit outcome</param>
-    /// <param name="deleteResults">Delete failures marked with an unknown commit outcome</param>
-    /// <returns>Edit result instance whose commit outcome remains unknown</returns>
+    // Callers must not release the idempotency reservation when the commit acknowledgement was lost.
     public static FeatureEditResult FailureWithUnknownCommitOutcome(
         ImmutableArray<EditOperationResult> createResults = default,
         ImmutableArray<EditOperationResult> updateResults = default,
@@ -391,14 +215,8 @@ public readonly record struct FeatureEditResult
             WasRolledBack = false
         };
 
-    /// <summary>
-    /// Gets whether the operation was fully successful
-    /// </summary>
     public bool IsSuccess => !WasRolledBack && !HasErrors;
 
-    /// <summary>
-    /// Gets whether any individual operations had errors
-    /// </summary>
     public bool HasErrors =>
         CreateResults.Any(r => !r.IsSuccess) ||
         UpdateResults.Any(r => !r.IsSuccess) ||
@@ -432,87 +250,35 @@ public readonly record struct FeatureEditResult
     }
 }
 
-/// <summary>
-/// Result of an individual edit operation
-/// </summary>
 public readonly record struct EditOperationResult
 {
-    /// <summary>
-    /// Well-known error code reported when an edit operation is rejected because its
-    /// optimistic-concurrency precondition no longer matched the stored row state.
-    /// Uses the precondition-failure code; protocol adapters distinguish an HTTP condition failure
-    /// from a stale partial-update conflict using the rejecting snapshot.
-    /// </summary>
     public const int PreconditionFailedErrorCode = 412;
 
-    /// <summary>
-    /// Well-known error code reported when an edit operation is rejected because the written
-    /// row would not satisfy the caller's row-level security predicate (honua-server#6103).
-    /// The operation was not applied.
-    /// </summary>
+    // A row-level security rejection means the operation was not applied.
     public const int NotPermittedErrorCode = 403;
 
-    /// <summary>
-    /// Object ID of the affected feature
-    /// </summary>
     public long? ObjectId { get; init; }
 
-    /// <summary>
-    /// Global ID of the affected feature (if applicable)
-    /// </summary>
     public string? GlobalId { get; init; }
 
-    /// <summary>
-    /// Whether this operation succeeded
-    /// </summary>
     public bool IsSuccess { get; init; } = true;
 
-    /// <summary>
-    /// Error message if operation failed
-    /// </summary>
     public string? ErrorMessage { get; init; }
 
-    /// <summary>
-    /// Error code if operation failed
-    /// </summary>
     public int ErrorCode { get; init; }
 
-    /// <summary>
-    /// Whether this operation was rejected because its optimistic-concurrency
-    /// precondition (<see cref="FeatureEditPrecondition"/>) no longer matched the
-    /// stored row state at write time. Protocol adapters distinguish HTTP 409 and 412
-    /// using the rejecting snapshot and request conditions.
-    /// </summary>
     public bool IsPreconditionFailure { get; init; }
 
-    /// <summary>
-    /// Field-masked row snapshot captured under the lock that rejected this edit.
-    /// Protocol adapters use this internal evidence to evaluate HTTP conditions
-    /// without racing a subsequent read. Null when no snapshot is available.
-    /// </summary>
     [JsonIgnore]
     public Feature? PreconditionFailureFeature { get; init; }
 
-    /// <summary>
-    /// Whether the provider could not determine if this failed operation committed before the
-    /// failure was observed. Callers that enforce at-most-once behavior must retain their
-    /// idempotency reservation while this is <see langword="true"/>.
-    /// </summary>
+    // Callers must keep the idempotency reservation while the commit outcome is unknown, because the database may have committed.
     public bool IsCommitOutcomeUnknown { get; init; }
 
-    /// <summary>
-    /// Initializes a new EditOperationResult with default values
-    /// </summary>
     public EditOperationResult()
     {
     }
 
-    /// <summary>
-    /// Creates a successful operation result
-    /// </summary>
-    /// <param name="objectId">Object ID of the feature</param>
-    /// <param name="globalId">Global ID of the feature</param>
-    /// <returns>Operation result</returns>
     public static EditOperationResult Success(long objectId, string? globalId = null)
         => new()
         {
@@ -521,13 +287,6 @@ public readonly record struct EditOperationResult
             IsSuccess = true
         };
 
-    /// <summary>
-    /// Creates a failed operation result
-    /// </summary>
-    /// <param name="errorMessage">Error message</param>
-    /// <param name="errorCode">Error code</param>
-    /// <param name="objectId">Object ID if known</param>
-    /// <returns>Operation result</returns>
     public static EditOperationResult Failure(string errorMessage, int errorCode = 1000, long? objectId = null)
         => new()
         {
@@ -537,13 +296,6 @@ public readonly record struct EditOperationResult
             ErrorCode = errorCode
         };
 
-    /// <summary>
-    /// Creates a failed operation result whose database commit outcome is unknown.
-    /// </summary>
-    /// <param name="errorMessage">Error message</param>
-    /// <param name="errorCode">Error code</param>
-    /// <param name="objectId">Object ID if known</param>
-    /// <returns>Operation result flagged with an unknown commit outcome</returns>
     public static EditOperationResult FailureWithUnknownCommitOutcome(
         string errorMessage,
         int errorCode = 1000,
@@ -557,15 +309,6 @@ public readonly record struct EditOperationResult
             IsCommitOutcomeUnknown = true
         };
 
-    /// <summary>
-    /// Creates a typed precondition-failed operation result. Emitted by feature writers
-    /// when a <see cref="FeatureEditPrecondition"/> attached to the batch no longer
-    /// matches the stored row inside the write transaction; the targeted operation was
-    /// not applied.
-    /// </summary>
-    /// <param name="objectId">Object ID the precondition was attached to</param>
-    /// <param name="errorMessage">Optional error message override</param>
-    /// <returns>Operation result flagged as a precondition failure</returns>
     public static EditOperationResult PreconditionFailed(long? objectId, string? errorMessage = null)
         => new()
         {

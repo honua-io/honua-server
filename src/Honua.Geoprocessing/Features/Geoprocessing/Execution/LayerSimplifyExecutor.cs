@@ -11,18 +11,6 @@ using NtsGeometry = NetTopologySuite.Geometries.Geometry;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// <c>generalization.simplify-layer</c> layer-aware executor (#2325). The
-/// job-executable counterpart of the layer-scoped "Simplify Layer" op: it streams a
-/// Honua catalog layer through <c>source.honua-layer</c> and applies Douglas-Peucker
-/// simplification to every geometry, carrying attributes through one-to-one. The
-/// <c>tolerance</c> is expressed in the layer's spatial-reference units (degrees for
-/// geographic, meters for projected), matching <c>geometry.simplify</c>. When
-/// <c>preserveTopology</c> is true (the default) the topology-preserving simplifier is
-/// used so rings do not collapse or self-intersect; otherwise the plain
-/// Douglas-Peucker simplifier runs. Features whose geometry simplifies to empty are
-/// dropped.
-/// </summary>
 internal sealed class LayerSimplifyExecutor : LayerSourcedFeatureExecutor
 {
     internal const string HandledProcessId = "generalization.simplify-layer";

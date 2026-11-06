@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Exceptions;
 using Honua.Alerts.Ops;
 using Honua.Core.Features.Alerts.Domain;
 using Honua.Core.Features.Authorization.Domain;
@@ -25,12 +26,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Compatibility adapter from <see cref="IOperationGateway"/> onto the canonical typed
-/// operation runtime. Ordinary routes and approved replay delegate policy and actuation to
-/// <see cref="ICanonicalOperationInvoker"/>; durable proposal state and autonomy convergence
-/// remain here until their protocol adapters are converted.
-/// </summary>
 internal sealed partial class OperationGateway : IOperationGateway
 {
     private readonly IGuardrailLadder _ladder;
@@ -39,6 +34,7 @@ internal sealed partial class OperationGateway : IOperationGateway
     private readonly IProposalNotifier _notifier;
     private readonly ILogger<OperationGateway> _logger;
     private readonly IOperationProposalEvidenceValidator? _evidenceValidator;
+    private readonly OperationProposerApiKeyAuthority? _proposerKeyAuthority;
 
     public OperationGateway(
         IGuardrailLadder ladder,
@@ -47,7 +43,8 @@ internal sealed partial class OperationGateway : IOperationGateway
         IServiceScopeFactory scopeFactory,
         IProposalNotifier notifier,
         ILogger<OperationGateway> logger,
-        IOperationProposalEvidenceValidator? evidenceValidator = null)
+        IOperationProposalEvidenceValidator? evidenceValidator = null,
+        OperationProposerApiKeyAuthority? proposerKeyAuthority = null)
     {
         ArgumentNullException.ThrowIfNull(executors);
         _ladder = ladder;
@@ -56,6 +53,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         _notifier = notifier;
         _logger = logger;
         _evidenceValidator = evidenceValidator;
+        _proposerKeyAuthority = proposerKeyAuthority;
     }
 
     public async Task<OperationGatewayResult> RouteAsync(
@@ -277,29 +275,54 @@ internal sealed partial class OperationGateway : IOperationGateway
         // approval entry point can execute a proposal on its own requester's say-so (#4901).
         if (IsRequester(proposal.RequestedBy, approval))
         {
+            await OperationApprovalDenialRecorder.RecordAsync(
+                _scopeFactory, proposal, approvedBy, OperationApprovalDenialReason.SelfApproval, cancellationToken)
+                .ConfigureAwait(false);
             throw new InvalidOperationException(
                 "Separation of duties: the requester of a proposal cannot approve it.");
         }
 
-        if (proposal.Evidence is not null)
+        try
         {
-            if (!hasApprovalContext || _evidenceValidator is null)
-            {
-                throw new InvalidOperationException(
-                    "Evidence-bound proposals require the authenticated approval validation boundary.");
-            }
-
-            await _evidenceValidator.ValidateApprovalAsync(proposal, approval, cancellationToken)
+            await ValidateCurrentProposerAsync(proposal.RequestedBy, cancellationToken).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException ex) when (ex is not ServiceUnavailableException)
+        {
+            await OperationApprovalDenialRecorder.RecordAsync(
+                _scopeFactory, proposal, approvedBy, OperationApprovalDenialReason.CurrentAuthority, cancellationToken)
                 .ConfigureAwait(false);
+            throw;
+        }
+
+        try
+        {
+            if (proposal.Evidence is not null)
+            {
+                if (!hasApprovalContext || _evidenceValidator is null)
+                {
+                    throw new InvalidOperationException(
+                        "Evidence-bound proposals require the authenticated approval validation boundary.");
+                }
+
+                await _evidenceValidator.ValidateApprovalAsync(proposal, approval, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+        catch (InvalidOperationException ex) when (ex is not ServiceUnavailableException)
+        {
+            await OperationApprovalDenialRecorder.RecordAsync(
+                _scopeFactory, proposal, approvedBy, OperationApprovalDenialReason.EvidenceInvalid, cancellationToken)
+                .ConfigureAwait(false);
+            throw;
         }
 
         // Atomically claim the proposal before invoking the executor.
         // Transitions AwaitingApproval → Executing via a CAS write: only one concurrent
         // caller wins this write; all others re-read a non-AwaitingApproval status and
         // throw, preventing double-execution of non-idempotent operations (BH4-031).
-        proposal = await ClaimForExecutionAsync(proposal, cancellationToken).ConfigureAwait(false);
+        proposal = await ClaimForExecutionAsync(proposal, approvedBy, cancellationToken).ConfigureAwait(false);
 
-        var request = RebuildRequest(proposal);
+        var request = RebuildRequest(proposal) with { ApprovedBy = approvedBy, ApprovedProposalId = proposal.ProposalId };
         string? executionOperationId = null;
         var status = OperationProposalStatus.Failed;
         string? failureMessage = null;
@@ -327,6 +350,8 @@ internal sealed partial class OperationGateway : IOperationGateway
             OperationHandle handle;
             try
             {
+                // Recheck after claim/scope/replay preparation, immediately before canonical dispatch.
+                await ValidateCurrentProposerAsync(proposal.RequestedBy, cancellationToken).ConfigureAwait(false);
                 handle = await invoker.SubmitAsync(
                     replay?.Request ?? new OperationRequest
                     {
@@ -421,6 +446,15 @@ internal sealed partial class OperationGateway : IOperationGateway
             .ConfigureAwait(false);
         await _notifier.NotifyResolvedAsync(resolved, cancellationToken).ConfigureAwait(false);
         return resolved;
+    }
+
+    private async Task ValidateCurrentProposerAsync(string? actor, CancellationToken cancellationToken)
+    {
+        if (!OperationProposerApiKeyAuthority.IsApiKeyActor(actor)) return;
+        cancellationToken.ThrowIfCancellationRequested();
+        if (_proposerKeyAuthority is null)
+            throw new InvalidOperationException(OperationProposerApiKeyAuthority.Refusal);
+        await _proposerKeyAuthority.ValidateAsync(actor, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<OperationProposal?> RejectProposalAsync(
@@ -882,20 +916,26 @@ internal sealed partial class OperationGateway : IOperationGateway
             $"Failed to persist resolution for proposal '{proposal.ProposalId}' after repeated version conflicts.");
     }
 
-    /// <summary>
-    /// Atomically transitions a proposal from <see cref="OperationProposalStatus.AwaitingApproval"/>
-    /// to <see cref="OperationProposalStatus.Executing"/> via a CAS write.
-    /// Returns the updated proposal (with its incremented version token) on success.
-    /// Throws when another caller already claimed or resolved the proposal, or when the
-    /// claim cannot be won after retries due to persistent version conflicts.
-    /// </summary>
+    // The claim is a compare-and-swap, and a lost claim throws instead of double-applying the proposal.
     private async Task<OperationProposal> ClaimForExecutionAsync(
         OperationProposal proposal,
+        string approvedBy,
         CancellationToken cancellationToken)
     {
         for (var attempt = 0; attempt < 3; attempt++)
         {
-            var claiming = proposal with { Status = OperationProposalStatus.Executing };
+            var payload = proposal.Kind == OperationClass.Deploy
+                ? Honua.ControlPlane.Executors.DeployExecutionPayload.Parse(proposal.Plan.ExecutionPayload)
+                : null;
+            var restoreId = proposal.Kind == OperationClass.Deploy && payload is not null
+                ? DurableRestoreQueue.CreateId()
+                : proposal.ExecutionOperationId;
+            var claiming = proposal with
+            {
+                Status = OperationProposalStatus.Executing,
+                ResolvedBy = approvedBy,
+                ExecutionOperationId = restoreId
+            };
             if (await _proposalStore.TrySetAsync(claiming, cancellationToken: cancellationToken)
                     .ConfigureAwait(false))
             {

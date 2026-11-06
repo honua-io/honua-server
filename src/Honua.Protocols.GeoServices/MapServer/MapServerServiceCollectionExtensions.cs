@@ -5,20 +5,8 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Protocols.GeoServices.MapServer;
 
-/// <summary>
-/// Service collection extensions for MapServer feature registration.
-/// </summary>
 internal static class MapServerServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers MapServer services. MapServer adds SkiaSharp-based rendering for
-    /// export, identify, and legend operations. Query uses FeatureServer handlers.
-    /// </summary>
-    /// <param name="services">The service collection to register into.</param>
-    /// <param name="configuration">
-    /// Application configuration used to bind <see cref="MapServerDynamicLayersOptions"/>
-    /// (the opt-in <c>dynamicLayers</c> workspace allowlist, #1660).
-    /// </param>
     public static IServiceCollection AddMapServer(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);

@@ -17,9 +17,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Server-side control-plane service for durable deploy workflow operations.
-/// </summary>
 internal sealed partial class DeployWorkflowService
 {
     private const string RollbackSubmissionPendingPhase = "Rollback request accepted; submitting to deploy backend.";
@@ -27,11 +24,7 @@ internal sealed partial class DeployWorkflowService
     private const string MaxStalenessParameterKey = "telemetry.max_staleness_seconds";
     private const string ErrorCountParameterKey = "telemetry.error_count.query";
 
-    /// <summary>
-    /// Built-in providers that query a fixed window and never read a sample's observation time, so they
-    /// cannot honor <see cref="MaxStalenessParameterKey"/> (#4617). Host-registered providers are not
-    /// assumed to share that limitation.
-    /// </summary>
+    // These built-in providers query a fixed window and never read a sample's observation time, so they cannot honor a staleness limit.
     private static readonly HashSet<string> FixedWindowTelemetryProviders = new(StringComparer.OrdinalIgnoreCase)
     {
         "cloudwatch",
@@ -45,6 +38,7 @@ internal sealed partial class DeployWorkflowService
     private readonly ILogger<DeployWorkflowService> _logger;
     private readonly IOptionsMonitor<ControlPlaneOptions>? _controlPlaneOptions;
     private readonly IOptions<Honua.Infrastructure.MultiTenancy.TenantContextOptions>? _tenantOptions;
+    private readonly IOptions<RestoreCellOptions>? _restoreOptions;
 
     public DeployWorkflowService(
         IDeployTargetRegistry targetRegistry,
@@ -53,10 +47,12 @@ internal sealed partial class DeployWorkflowService
         IOperatorApprovalEvaluator approvalEvaluator,
         ILogger<DeployWorkflowService> logger,
         IOptionsMonitor<ControlPlaneOptions>? controlPlaneOptions = null,
-        IOptions<Honua.Infrastructure.MultiTenancy.TenantContextOptions>? tenantOptions = null)
+        IOptions<Honua.Infrastructure.MultiTenancy.TenantContextOptions>? tenantOptions = null,
+        IOptions<RestoreCellOptions>? restoreOptions = null)
     {
         _controlPlaneOptions = controlPlaneOptions;
         _tenantOptions = tenantOptions;
+        _restoreOptions = restoreOptions;
         _targetRegistry = targetRegistry;
         _workflowStore = workflowStores.FirstOrDefault();
         _backends = backends.ToDictionary(
@@ -68,6 +64,43 @@ internal sealed partial class DeployWorkflowService
     }
 
     public bool HasDurableStore => _workflowStore != null;
+
+    internal async Task RecordInstalledRevisionAsync(string targetId, string revision, WorkflowOperationRecord convergence, CancellationToken cancellationToken)
+    {
+        EnsureDurableStoreConfigured();
+        var id = "compose-baseline-" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(targetId)));
+        var existing = await _workflowStore!.GetAsync(id, cancellationToken).ConfigureAwait(false);
+        if (existing is not null)
+        {
+            if (existing.Kind != WorkflowOperationKind.Deploy || existing.Status != WorkflowOperationStatus.Succeeded ||
+                !string.Equals(existing.Deploy?.TargetId, targetId, StringComparison.Ordinal))
+                throw new InvalidOperationException("The installed Compose baseline is inconsistent.");
+            return;
+        }
+        var target = await _targetRegistry.GetAsync(targetId, cancellationToken).ConfigureAwait(false);
+        if (target?.TargetKind != DeployTargetKind.LocalCompose || !ComposeExecutorRules.IsImmutableImage(revision))
+            throw new InvalidOperationException("The installed Compose revision could not be recorded.");
+        var observedAt = DateTimeOffset.UtcNow;
+        var baseline = new WorkflowOperationRecord
+        {
+            OperationId = id,
+            Kind = WorkflowOperationKind.Deploy,
+            Status = WorkflowOperationStatus.Succeeded,
+            CreatedAt = convergence.CreatedAt.AddMilliseconds(-1),
+            UpdatedAt = observedAt,
+            CompletedAt = observedAt,
+            CurrentPhase = "Verified installed revision before the first managed convergence.",
+            Deploy = BuildSpec(target, revision, revision, null) with { ArtifactReference = revision, RequiresApproval = false },
+            Audit = convergence.Audit with { Reason = "Installed serving revision baseline." }
+        };
+        if (!await _workflowStore.TryCreateAsync(baseline, TimeSpan.FromDays(365), cancellationToken).ConfigureAwait(false) &&
+            await _workflowStore.GetAsync(id, cancellationToken).ConfigureAwait(false) is null)
+            throw new InvalidOperationException("The installed Compose revision could not be retained.");
+    }
+
+    private bool RestoreAdmissionEnabled =>
+        (_restoreOptions?.Value is { } options && (!string.IsNullOrWhiteSpace(options.CellPrefix) || options.Revisions.Count != 0)) ||
+        _controlPlaneOptions?.CurrentValue.DeployTargets.Any(target => target.TargetKind == DeployTargetKind.LocalCompose) == true;
 
     public async Task<DeployWorkflowPlanResult?> PlanAsync(
         string targetId,
@@ -162,13 +195,7 @@ internal sealed partial class DeployWorkflowService
         return new DeployWorkflowPlanResult(target, spec, plan, capabilities, canonicalApproval);
     }
 
-    /// <summary>
-    /// Refuses a synthetic health-probe or golden-query URL that the runtime probe would refuse
-    /// (honua-server#4988). Otherwise the rollout is admitted, the gate reports itself misconfigured
-    /// on every cycle, and a correct candidate is failed at its exposure deadline. A URL whose host
-    /// cannot be resolved right now is only a warning: that condition is transient, and the runtime
-    /// probe re-validates it on every cycle.
-    /// </summary>
+    // A probe URL the runtime would refuse is refused at plan time; an unresolvable host is only a warning because that failure is transient.
     private static async Task<DeployPlan> ApplyProbeUrlValidationAsync(
         DeployPlan plan,
         DeployOperationSpec spec,
@@ -283,11 +310,7 @@ internal sealed partial class DeployWorkflowService
         return null;
     }
 
-    /// <summary>
-    /// Records when the candidate first became exposed to traffic (#4617). Backends that cut over
-    /// synchronously inside <c>StartAsync</c> report <see cref="WorkflowOperationStatus.Reconciling"/>
-    /// or <see cref="WorkflowOperationStatus.Succeeded"/> immediately; an existing stamp is never moved.
-    /// </summary>
+    // The exposure stamp records the first moment the candidate served traffic, and an existing stamp is never moved.
     internal static DateTimeOffset? StampTrafficExposure(DateTimeOffset? existing, WorkflowOperationStatus status)
         => existing ?? (status is WorkflowOperationStatus.Reconciling or WorkflowOperationStatus.Succeeded
             ? DateTimeOffset.UtcNow
@@ -299,10 +322,6 @@ internal sealed partial class DeployWorkflowService
         return await _workflowStore!.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Lists durable deploy workflow operations newest-first with optional status and kind filters. Draws
-    /// from both the active-set and terminal-operations indexes maintained by the durable store.
-    /// </summary>
     public async Task<WorkflowOperationPage> ListDeployOperationsAsync(
         WorkflowOperationStatus? status,
         WorkflowOperationKind? kind,
@@ -323,10 +342,6 @@ internal sealed partial class DeployWorkflowService
             .ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Returns the most recent terminal-<see cref="WorkflowOperationStatus.Succeeded"/> deploy operation
-    /// for a target, or null when none exists. Backs the platform-release converge API lookup (#2564).
-    /// </summary>
     public async Task<WorkflowOperationRecord?> GetMostRecentSucceededDeployAsync(
         string targetId,
         CancellationToken cancellationToken = default)
@@ -335,7 +350,7 @@ internal sealed partial class DeployWorkflowService
         return await _workflowStore!.GetMostRecentSucceededDeployByTargetAsync(targetId, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<WorkflowOperationRecord?> CreateAsync(
+    public Task<WorkflowOperationRecord?> CreateAsync(
         string targetId,
         string desiredRevision,
         string? currentRevision,
@@ -348,8 +363,32 @@ internal sealed partial class DeployWorkflowService
         IReadOnlyDictionary<string, string>? parameterOverrides,
         ClaimsPrincipal? principal = null,
         CancellationToken cancellationToken = default)
+        => CreateWithBackupAsync(targetId, desiredRevision, currentRevision, requestedBy, reason,
+            idempotencyKey, correlationId, priority, submitImmediately, parameterOverrides, principal,
+            preMigrationBackupId: null, restoreOwnerId: null, approvedBy: null, cancellationToken);
+
+    internal async Task<WorkflowOperationRecord?> CreateWithBackupAsync(
+        string targetId,
+        string desiredRevision,
+        string? currentRevision,
+        string? requestedBy,
+        string? reason,
+        string? idempotencyKey,
+        string? correlationId,
+        OperationPriority priority,
+        bool submitImmediately,
+        IReadOnlyDictionary<string, string>? parameterOverrides,
+        ClaimsPrincipal? principal,
+        string? preMigrationBackupId,
+        string? restoreOwnerId,
+        string? approvedBy,
+        CancellationToken cancellationToken)
     {
         EnsureDurableStoreConfigured();
+        await using var admission = RestoreAdmissionEnabled
+            ? await RestoreDeployAdmission.AcquireAsync(_workflowStore!, CreateOperationId(idempotencyKey), restoreOwnerId, false, cancellationToken, _logger).ConfigureAwait(false)
+            : null;
+        if (admission is not null) cancellationToken = admission.Token;
 
         var planningResult = await PlanAsync(
                 targetId,
@@ -375,13 +414,17 @@ internal sealed partial class DeployWorkflowService
             currentRevision,
             priority,
             submitImmediately,
-            parameterOverrides);
+            parameterOverrides,
+            preMigrationBackupId);
 
         var operation = new WorkflowOperationRecord
         {
             OperationId = operationId,
             Kind = WorkflowOperationKind.Deploy,
-            Status = DeterminePersistedStatus(planningResult.Plan),
+            // A crash during provider submission must leave an active durable record so
+            // restore admission cannot mistake an in-flight deployment for a safe cell.
+            Status = submitImmediately && planningResult.Plan.IsReadyToSubmit
+                ? WorkflowOperationStatus.Submitted : DeterminePersistedStatus(planningResult.Plan),
             Priority = priority,
             CreatedAt = now,
             UpdatedAt = now,
@@ -394,6 +437,7 @@ internal sealed partial class DeployWorkflowService
             Audit = new OperationAuditInfo
             {
                 RequestedBy = requestedBy,
+                ApprovedBy = planningResult.Target.TargetKind == DeployTargetKind.LocalCompose ? approvedBy : null,
                 // honua-server#4958: the tenant binding is captured from the validated identity here,
                 // so the protection window sealed at activation can bind recovery to the same pair.
                 TenantId = Honua.Server.Features.Admin.PlatformDeployAuthority.ResolveTenantId(principal, _tenantOptions?.Value),
@@ -409,9 +453,28 @@ internal sealed partial class DeployWorkflowService
                 PartitionKey = $"{planningResult.Target.Environment}:{planningResult.Target.TargetId}",
                 RequiresExclusiveLease = true
             },
-            Deploy = planningResult.Spec
+            Deploy = planningResult.Spec with { PreMigrationBackupId = preMigrationBackupId }
         };
 
+        var immediateBackend = submitImmediately && planningResult.Plan.IsReadyToSubmit
+            ? ResolveBackend(planningResult.Target) : null;
+        if (immediateBackend is ICheckpointedDeployBackend checkpointedBackend && checkpointedBackend.RequiresCheckpoint(operation))
+        {
+            // Persist the checkpoint before releasing admission; the reconciler owns the next step.
+            operation = operation with { CurrentPhase = ICheckpointedDeployBackend.PendingPhase };
+        }
+
+        var priorOperation = await _workflowStore!.GetAsync(operation.OperationId, cancellationToken).ConfigureAwait(false);
+        if (priorOperation != null)
+        {
+            EnsureMatchingIdempotentRequest(priorOperation, requestFingerprint);
+            return priorOperation;
+        }
+
+        await using var submissionLease = submitImmediately && planningResult.Plan.IsReadyToSubmit
+            ? await RestoreDeployAdmission.AcquireWorkflowAsync(_workflowStore!, operation.OperationId, cancellationToken).ConfigureAwait(false)
+            : null;
+        if (submissionLease is not null) cancellationToken = submissionLease.Token;
         var created = await _workflowStore!.TryCreateAsync(operation, cancellationToken: cancellationToken).ConfigureAwait(false);
         if (!created)
         {
@@ -427,7 +490,12 @@ internal sealed partial class DeployWorkflowService
 
         if (submitImmediately && planningResult.Plan.IsReadyToSubmit)
         {
-            var backend = ResolveBackend(planningResult.Target);
+            var backend = immediateBackend;
+            if (operation.CurrentPhase == ICheckpointedDeployBackend.PendingPhase)
+            {
+                return operation;
+            }
+
             if (backend != null)
             {
                 try
@@ -474,13 +542,25 @@ internal sealed partial class DeployWorkflowService
         return operation;
     }
 
-    public async Task<WorkflowOperationRecord?> SubmitAsync(
+    public Task<WorkflowOperationRecord?> SubmitAsync(
         string operationId,
         string? requestedBy,
         string? reason,
         CancellationToken cancellationToken = default)
+        => SubmitWithRestoreAsync(operationId, requestedBy, reason, restoreOwnerId: null, cancellationToken);
+
+    internal async Task<WorkflowOperationRecord?> SubmitWithRestoreAsync(
+        string operationId,
+        string? requestedBy,
+        string? reason,
+        string? restoreOwnerId,
+        CancellationToken cancellationToken)
     {
         EnsureDurableStoreConfigured();
+        await using var admission = RestoreAdmissionEnabled
+            ? await RestoreDeployAdmission.AcquireAsync(_workflowStore!, operationId, restoreOwnerId, false, cancellationToken, _logger).ConfigureAwait(false)
+            : null;
+        if (admission is not null) cancellationToken = admission.Token;
 
         var operation = await _workflowStore!.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
         if (operation == null)
@@ -491,6 +571,17 @@ internal sealed partial class DeployWorkflowService
         if (operation.Kind != WorkflowOperationKind.Deploy || operation.Deploy == null)
         {
             throw new ResourceConflictException("Only deploy workflow operations can be submitted.");
+        }
+
+        await using var submissionLease = operation.Deploy.TargetKind == DeployTargetKind.LocalCompose
+            ? await RestoreDeployAdmission.AcquireWorkflowAsync(_workflowStore!, operationId, cancellationToken).ConfigureAwait(false)
+            : null;
+        if (submissionLease is not null)
+        {
+            cancellationToken = submissionLease.Token;
+            operation = await _workflowStore!.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+            if (operation?.Kind != WorkflowOperationKind.Deploy || operation.Deploy is null)
+                throw new ResourceConflictException("Deploy operation changed while acquiring its submission lease.");
         }
 
         if (operation.Status is WorkflowOperationStatus.Submitted
@@ -536,6 +627,20 @@ internal sealed partial class DeployWorkflowService
                 $"No deploy backend is registered for target '{operation.Deploy.TargetId}' ({operation.Deploy.Backend}).");
         }
 
+        var audit = MergeSubmissionAudit(operation.Audit, requestedBy, reason);
+        if (operation.Deploy.TargetKind == DeployTargetKind.LocalCompose)
+        {
+            // Checked before the claim so a same-principal submit cannot change the Compose project.
+            if (string.IsNullOrWhiteSpace(requestedBy) ||
+                string.Equals(requestedBy, operation.Audit.RequestedBy, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ResourceConflictException(
+                    "Separation of duties: a different principal must submit this Compose operation.");
+            }
+
+            audit = audit with { ApprovedBy = requestedBy };
+        }
+
         // Atomically claim the operation before calling the backend. Transitions Planned -> Submitted
         // via CAS (version check): only one concurrent SubmitAsync wins; the loser re-reads the
         // current state, which is already Submitted/Reconciling/etc., and returns it directly without
@@ -544,8 +649,10 @@ internal sealed partial class DeployWorkflowService
         {
             Status = WorkflowOperationStatus.Submitted,
             UpdatedAt = DateTimeOffset.UtcNow,
-            CurrentPhase = "Submitting to deploy backend.",
-            Audit = MergeSubmissionAudit(operation.Audit, requestedBy, reason)
+            CurrentPhase = backend is ICheckpointedDeployBackend checkpointed && checkpointed.RequiresCheckpoint(operation)
+                ? ICheckpointedDeployBackend.PendingPhase
+                : "Submitting to deploy backend.",
+            Audit = audit
         };
 
         var claimed = await _workflowStore!.TrySetAsync(preliminary, cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -553,6 +660,11 @@ internal sealed partial class DeployWorkflowService
         {
             // Another concurrent SubmitAsync already claimed this operation. Re-read and return
             // the current state so the caller sees the latest status without executing twice.
+            return await _workflowStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (preliminary.CurrentPhase == ICheckpointedDeployBackend.PendingPhase)
+        {
             return await _workflowStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
         }
 
@@ -600,36 +712,20 @@ internal sealed partial class DeployWorkflowService
         }
     }
 
-    /// <summary>
-    /// Distinct outcomes of a manual promotion attempt so the admin endpoint can return a structured
-    /// error when preconditions are not met, without conflating "not found" with "wrong state".
-    /// </summary>
     internal enum DeployPromotionOutcome
     {
-        /// <summary>The operation id did not resolve to a deploy operation.</summary>
         NotFound,
 
-        /// <summary>The operation is in a state from which it cannot be promoted (structured 409).</summary>
         PreconditionFailed,
 
-        /// <summary>The promotion was driven to the backend and the record updated.</summary>
         Promoted
     }
 
-    /// <summary>Result of a manual promotion attempt.</summary>
     internal sealed record DeployPromotionResult(
         DeployPromotionOutcome Outcome,
         WorkflowOperationRecord? Operation,
         string? PreconditionDetail);
 
-    /// <summary>
-    /// Manual promotion escape hatch (#2543): forces the cutover on a deploy operation that is parked
-    /// awaiting promotion — for example an on-prem rolling deploy whose standby replica is healthy but
-    /// which has no telemetry gate to auto-clear. Drives <see cref="IDeployBackend.PromoteAsync"/>
-    /// directly (a full cutover, not a canary ramp step) and records the operator on the audit trail.
-    /// Returns a structured precondition failure when the operation is terminal, not yet submitted, or
-    /// mid-rollback rather than throwing, so the endpoint can surface a clear reason.
-    /// </summary>
     public async Task<DeployPromotionResult> PromoteAsync(
         string operationId,
         string? requestedBy,
@@ -637,6 +733,10 @@ internal sealed partial class DeployWorkflowService
         CancellationToken cancellationToken = default)
     {
         EnsureDurableStoreConfigured();
+        await using var admission = RestoreAdmissionEnabled
+            ? await RestoreDeployAdmission.AcquireAsync(_workflowStore!, operationId, null, true, cancellationToken, _logger).ConfigureAwait(false)
+            : null;
+        if (admission is not null) cancellationToken = admission.Token;
 
         var operation = await _workflowStore!.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
         if (operation == null)
@@ -674,6 +774,38 @@ internal sealed partial class DeployWorkflowService
 
             await _workflowStore.SetAsync(updatedNoBackend, cancellationToken: cancellationToken).ConfigureAwait(false);
             return new DeployPromotionResult(DeployPromotionOutcome.Promoted, updatedNoBackend, null);
+        }
+
+        if (backend is ICheckpointedDeployBackend checkpointed && checkpointed.RequiresCheckpoint(operation) &&
+            operation.Deploy.TrafficExposedAt is null)
+        {
+            if (!IsCheckpointReadyForManualCutover(operation))
+            {
+                return new DeployPromotionResult(DeployPromotionOutcome.PreconditionFailed, operation,
+                    "Checkpoint preparation and activation must finish before manual cutover.");
+            }
+
+            var readiness = await backend.ObserveAsync(operation, cancellationToken).ConfigureAwait(false);
+            if (readiness.Status != WorkflowOperationStatus.Submitted || !readiness.PromotionRecommended)
+            {
+                return new DeployPromotionResult(DeployPromotionOutcome.PreconditionFailed, operation,
+                    "The checkpointed candidate must be healthy before manual cutover.");
+            }
+
+            var authorized = operation with
+            {
+                Status = WorkflowOperationStatus.Submitted,
+                CurrentPhase = ICheckpointedDeployBackend.CutoverPhase,
+                UpdatedAt = DateTimeOffset.UtcNow,
+                Audit = MergePromotionAudit(operation.Audit, requestedBy, reason)
+            };
+            if (!await _workflowStore.TrySetAsync(authorized, cancellationToken: cancellationToken).ConfigureAwait(false))
+            {
+                throw new ResourceConflictException("Deploy operation changed while cutover was being authorized.");
+            }
+
+            var saved = await _workflowStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
+            return new DeployPromotionResult(DeployPromotionOutcome.Promoted, saved, null);
         }
 
         DeployObservation observation;
@@ -726,7 +858,8 @@ internal sealed partial class DeployWorkflowService
             {
                 CurrentRevision = string.IsNullOrWhiteSpace(operation.Deploy.CurrentRevision)
                     ? observation.ObservedRevision ?? operation.Deploy.CurrentRevision
-                    : operation.Deploy.CurrentRevision
+                    : operation.Deploy.CurrentRevision,
+                TrafficExposedAt = operation.Deploy.TrafficExposedAt
             },
             Audit = MergePromotionAudit(operation.Audit, requestedBy, reason)
         };
@@ -748,15 +881,14 @@ internal sealed partial class DeployWorkflowService
         return new DeployPromotionResult(DeployPromotionOutcome.Promoted, updated, null);
     }
 
-    /// <summary>
-    /// Returns a human-readable reason when an operation cannot be manually promoted from its current
-    /// status, or <see langword="null"/> when promotion may proceed. Promotion is valid only while the
-    /// rollout is in flight (<see cref="WorkflowOperationStatus.Submitted"/> /
-    /// <see cref="WorkflowOperationStatus.Reconciling"/>) and has not already activated a candidate — a
-    /// <see cref="WorkflowOperationStatus.Reconciling"/> operation with <c>Deploy.Protection</c> set
-    /// (honua-server#4618) is already past cutover and observing, so it is treated the same as
-    /// <see cref="WorkflowOperationStatus.Succeeded"/> here.
-    /// </summary>
+    // Promotion is valid only while the rollout is in flight and has not already activated a candidate.
+    internal static bool IsCheckpointReadyForManualCutover(WorkflowOperationRecord operation)
+        => !string.IsNullOrWhiteSpace(operation.ProviderOperationId) &&
+           !string.IsNullOrWhiteSpace(operation.Deploy?.CurrentRevision) &&
+           operation.CurrentPhase is not (ICheckpointedDeployBackend.PendingPhase or
+               ICheckpointedDeployBackend.PreparingPhase or ICheckpointedDeployBackend.PreparedPhase or
+               ICheckpointedDeployBackend.CutoverPhase);
+
     private static string? DescribePromotionPrecondition(WorkflowOperationRecord operation)
         => operation.Status switch
         {
@@ -795,6 +927,10 @@ internal sealed partial class DeployWorkflowService
         CancellationToken cancellationToken = default)
     {
         EnsureDurableStoreConfigured();
+        await using var admission = RestoreAdmissionEnabled
+            ? await RestoreDeployAdmission.AcquireAsync(_workflowStore!, operationId, null, false, cancellationToken, _logger).ConfigureAwait(false)
+            : null;
+        if (admission is not null) cancellationToken = admission.Token;
 
         var operation = await _workflowStore!.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
         if (operation == null)
@@ -1092,7 +1228,7 @@ internal sealed partial class DeployWorkflowService
         return "Planned and ready for submission.";
     }
 
-    private static string CreateOperationId(string? idempotencyKey)
+    internal static string CreateOperationId(string? idempotencyKey)
     {
         if (string.IsNullOrWhiteSpace(idempotencyKey))
         {
@@ -1127,7 +1263,8 @@ internal sealed partial class DeployWorkflowService
         string? currentRevision,
         OperationPriority priority,
         bool submitImmediately,
-        IReadOnlyDictionary<string, string>? parameterOverrides)
+        IReadOnlyDictionary<string, string>? parameterOverrides,
+        string? preMigrationBackupId)
     {
         var normalizedParameters = parameterOverrides == null
             ? Array.Empty<DeployRequestFingerprintParameter>()
@@ -1154,6 +1291,7 @@ internal sealed partial class DeployWorkflowService
                 CurrentRevision = currentRevision?.Trim(),
                 Priority = priority.ToString(),
                 SubmitImmediately = submitImmediately,
+                PreMigrationBackupId = preMigrationBackupId,
                 Parameters = normalizedParameters
             },
             DeployControlJsonContext.Default.DeployRequestFingerprintPayload);
@@ -1282,12 +1420,7 @@ internal sealed partial class DeployWorkflowService
         };
     }
 
-    /// <summary>
-    /// Parses an optional progressive canary ramp from deploy parameters. Returns null when no
-    /// ramp parameters are present so the deploy keeps the default single-step bake-then-promote
-    /// behavior. Invalid ramp configuration is surfaced through the spec's validation so the plan
-    /// can block submission, rather than being silently discarded.
-    /// </summary>
+    // An invalid canary ramp fails validation instead of being discarded, and absent ramp parameters keep the single-step bake.
     private static CanaryRampSpec? ParseCanaryRamp(Dictionary<string, string> parameters)
     {
         if (!parameters.TryGetValue("deployment.canary_ramp.step_weights", out var rawWeights) ||
@@ -1357,6 +1490,9 @@ internal sealed partial class DeployWorkflowService
 
 internal sealed record DeployRequestFingerprintPayload
 {
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? PreMigrationBackupId { get; init; }
+
     public required string TargetId { get; init; }
     public string? Backend { get; init; }
     public string? TargetKind { get; init; }
@@ -1373,9 +1509,6 @@ internal sealed record DeployRequestFingerprintParameter
     public required string Value { get; init; }
 }
 
-/// <summary>
-/// Result of resolving a deploy target and planning a workflow operation.
-/// </summary>
 internal sealed record DeployWorkflowPlanResult(
     DeployTargetDefinition Target,
     DeployOperationSpec Spec,

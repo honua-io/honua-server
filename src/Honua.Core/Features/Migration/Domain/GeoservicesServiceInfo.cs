@@ -153,7 +153,7 @@ public sealed record GeoservicesLayerInfo
     /// <summary>
     /// The extent of the layer's data.
     /// </summary>
-    public EsriExtent? Extent { get; init; }
+    public GeoServicesExtent? Extent { get; init; }
 
     /// <summary>
     /// Estimated feature count (if available from service).
@@ -218,7 +218,7 @@ public sealed record GeoservicesFieldInfo : FieldDefinitionBase
 /// <summary>
 /// Represents the spatial extent from an ArcGIS service.
 /// </summary>
-public sealed record EsriExtent
+public sealed record GeoServicesExtent
 {
     /// <summary>
     /// Minimum X coordinate.

@@ -7,7 +7,6 @@ using Npgsql;
 
 namespace Honua.Server.Features.Portal.Sharing;
 
-/// <summary>Durable, tenant-scoped item audiences; every mutation locks its item row.</summary>
 internal sealed class PostgresPortalItemSharingStore(
     NpgsqlDataSource dataSource,
     IHttpContextAccessor contextAccessor,

@@ -605,6 +605,16 @@ public static class StudioCompositionViewBounds
     /// <summary>Largest accepted <see cref="StudioCompositionView.Pitch"/> in degrees.</summary>
     public const double MaxPitch = 85;
 
+    public const double MinBearing = 0;
+
+    public const double MaxBearingExclusive = 360;
+
+    public static bool IsZoomInBounds(double zoom) => zoom >= MinZoom && zoom <= MaxZoom;
+
+    public static bool IsPitchInBounds(double pitch) => pitch >= MinPitch && pitch <= MaxPitch;
+
+    public static bool IsBearingInBounds(double bearing) => bearing >= MinBearing && bearing < MaxBearingExclusive;
+
     /// <summary>
     /// Validates <paramref name="view"/> against the shared coordinate-arity and zoom/pitch
     /// bounds. A <see langword="null"/> view is valid (the member is optional).
@@ -643,13 +653,13 @@ public static class StudioCompositionViewBounds
         }
 
         // NaN/Infinity fail both comparisons, which is intended: neither is a renderable view.
-        if (view.Zoom is { } zoom && !(zoom >= MinZoom && zoom <= MaxZoom))
+        if (view.Zoom is { } zoom && !IsZoomInBounds(zoom))
         {
             error = $"The viewport 'zoom' must be between {MinZoom} and {MaxZoom}.";
             return false;
         }
 
-        if (view.Pitch is { } pitch && !(pitch >= MinPitch && pitch <= MaxPitch))
+        if (view.Pitch is { } pitch && !IsPitchInBounds(pitch))
         {
             error = $"The viewport 'pitch' must be between {MinPitch} and {MaxPitch}.";
             return false;

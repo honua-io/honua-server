@@ -6,20 +6,9 @@ using Honua.Infrastructure.Middleware;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Route registration for the previously not-implemented FeatureServer operations.
-/// These are thin protocol adapters over the shared service/layer validation and
-/// access pipeline; they return Esri-spec-shaped responses (empty collections or
-/// honest spec-compliant errors) for surfaces whose backing data model Honua does
-/// not yet provide (shared templates, HTML pop-ups, the image resource, layer
-/// assets, 3D geometry, and metadata updates). Contingent values are graph-backed.
-/// </summary>
+// These adapters return empty collections or spec-shaped errors for models Honua does not store, rather than a fabricated success.
 internal static partial class FeatureServerEndpoints
 {
-    /// <summary>
-    /// Maps the service-level and layer-level FeatureServer operations that complete
-    /// Esri REST coverage with honest, specification-shaped responses.
-    /// </summary>
     private static void MapFeatureServerNotImplementedEndpoints(IEndpointRouteBuilder endpoints)
     {
         // ----- Service-level operations -----

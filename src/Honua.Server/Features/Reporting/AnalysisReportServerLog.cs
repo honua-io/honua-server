@@ -3,12 +3,6 @@
 
 namespace Honua.Server.Features.Reporting;
 
-/// <summary>
-/// Source-generated structured log methods for the server-side reporting
-/// orchestrator. Event-id range 8240-8249 — placed after
-/// <see cref="Honua.Core.Features.Reporting.Services.AnalysisReportLog"/>
-/// (8230-8239) so the reporting pipeline owns a contiguous block.
-/// </summary>
 internal static partial class AnalysisReportServerLog
 {
     [LoggerMessage(8240, LogLevel.Information,

@@ -7,15 +7,11 @@ using System.Text;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Infrastructure.Redis;
 using Microsoft.Extensions.Options;
-using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Default <see cref="IPortalCredentialVerifier"/> bridging to the local admin
-/// password and admin API-key store. Used when no custom verifier is registered.
-/// </summary>
 internal sealed class AdminPortalCredentialVerifier(
     IOptions<ApiKeyAuthenticationOptions> apiKeyOptions,
     IConnectionSecretResolver? secretResolver = null,
@@ -32,7 +28,6 @@ internal sealed class AdminPortalCredentialVerifier(
     private readonly ITenantContext? _tenantContext = tenantContext;
     private readonly ILogger<AdminPortalCredentialVerifier>? _logger = logger;
 
-    /// <inheritdoc />
     public async Task<PortalCredentialPrincipal?> VerifyAsync(
         string username,
         string password,
@@ -104,7 +99,7 @@ internal sealed class AdminPortalCredentialVerifier(
         // This bridge mints token roles, not API-key permission, layer-write, or
         // approved-operation claims. Refuse credentials whose authority it cannot
         // preserve rather than widening scoped keys (#4577).
-        var roles = ManagedKeyExchangeAuthority.ResolveTokenRoles(record.Permissions);
+        var roles = ManagedKeyExchangeAuthority.ResolveTokenRoles(record);
         if (roles is null)
         {
             return null;
@@ -136,9 +131,11 @@ internal sealed class AdminPortalCredentialVerifier(
 
         try
         {
-            return await _adminApiKeyStore.ValidateAsync(password, cancellationToken).ConfigureAwait(false);
+            return await RedisClientFault.RetryCompletedReaderAsync(
+                () => _adminApiKeyStore.ValidateAsync(password, cancellationToken),
+                cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is RedisException or TimeoutException or System.Data.Common.DbException && ex is not OperationCanceledException)
+        catch (Exception ex) when (RedisClientFault.IsCredentialStoreUnavailable(ex))
         {
             if (_logger is not null)
             {

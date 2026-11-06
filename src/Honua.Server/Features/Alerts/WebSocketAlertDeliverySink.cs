@@ -8,10 +8,6 @@ using Honua.Infrastructure.Abstractions;
 
 namespace Honua.Alerts;
 
-/// <summary>
-/// Default in-memory implementation of the alert notification broadcaster.
-/// Maintains a concurrent set of subscriber callbacks and fans out events.
-/// </summary>
 internal sealed class InMemoryAlertNotificationBroadcaster : IAlertNotificationBroadcaster, IStreamingSubscriptionManager, IDisposable
 {
     private readonly ConcurrentDictionary<Guid, SubscriptionEntry> _subscribers = new();
@@ -89,12 +85,6 @@ internal sealed class InMemoryAlertNotificationBroadcaster : IAlertNotificationB
         }
     }
 
-    /// <summary>
-    /// Disposes the <see cref="CancellationTokenSource"/> of every still-connected subscriber.
-    /// This type is registered as a singleton, so the host disposes it once at shutdown;
-    /// individual subscriptions are otherwise disposed as they disconnect via
-    /// <see cref="RemoveSubscriber"/>/<see cref="DisconnectSubscriber"/>.
-    /// </summary>
     public void Dispose()
     {
         using var subscriberIds = _subscribers.Keys.GetEnumerator();
@@ -135,10 +125,6 @@ internal sealed class InMemoryAlertNotificationBroadcaster : IAlertNotificationB
     }
 }
 
-/// <summary>
-/// Delivery sink that pushes alert events to in-process WebSocket subscribers
-/// via the <see cref="IAlertNotificationBroadcaster"/>.
-/// </summary>
 internal sealed class WebSocketAlertDeliverySink : IAlertDeliverySink
 {
     private readonly IAlertNotificationBroadcaster _broadcaster;

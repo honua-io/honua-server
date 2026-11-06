@@ -8,12 +8,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Core.Features.TileCachePackage.Services;
 
-/// <summary>
-/// Imports Esri tile-cache packages into Honua's tile catalog and binds them to a
-/// served tileset (#1269). Reads the documented package layout via
-/// <see cref="ITileCachePackageReader"/> and persists tiles through the shared
-/// <see cref="IOgcTileCacheSink"/> so re-imports converge on the same catalog rows.
-/// </summary>
 public sealed partial class TileCachePackageImportService : ITileCachePackageImportService
 {
     private const string StyleIdentifier = "default";
@@ -22,12 +16,6 @@ public sealed partial class TileCachePackageImportService : ITileCachePackageImp
     private readonly IOgcTileCacheSink _sink;
     private readonly ILogger<TileCachePackageImportService> _logger;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="TileCachePackageImportService"/> class.
-    /// </summary>
-    /// <param name="reader">Package reader.</param>
-    /// <param name="sink">Tile catalog sink.</param>
-    /// <param name="logger">Logger.</param>
     public TileCachePackageImportService(
         ITileCachePackageReader reader,
         IOgcTileCacheSink sink,
@@ -38,7 +26,6 @@ public sealed partial class TileCachePackageImportService : ITileCachePackageImp
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <inheritdoc />
     public async Task<TileCachePackageImportResult> ImportAsync(
         TileCachePackageImportRequest request,
         CancellationToken cancellationToken = default)

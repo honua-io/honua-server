@@ -6,7 +6,6 @@ using Honua.Core.Features.Operations.Domain;
 
 namespace Honua.Server.Features.Operations;
 
-/// <summary>Captures and resolves secret-bearing approval parameters without serializing values.</summary>
 internal static class OperationSecretParameters
 {
     private static readonly TimeSpan ApprovalSecretTtl = TimeSpan.FromDays(30);

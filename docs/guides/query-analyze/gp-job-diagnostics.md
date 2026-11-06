@@ -38,6 +38,12 @@ job authorization again and uses the same redaction as the default view.
 
 The HTTP diagnostics route accepts the same `events` and `eventCursor` parameters.
 Responses are `no-store`; `X-Correlation-Id` carries the job's correlation id.
+`traceId` is the admitted W3C trace id: the job's `traceparent` when that parses,
+otherwise the `honua.trace_id` parameter. When the record has neither, `traceId` is
+null and `evidence.missing` says the trace is incomplete. This route reads the job
+record, the execution log, and the artifact store only. It does not call an external
+telemetry collector. A local glass-box run is not this projection; remote evidence
+stops at what the server stored.
 
 ## What each section answers
 
@@ -48,7 +54,7 @@ Responses are `no-store`; `X-Correlation-Id` carries the job's correlation id.
 | `lifecycle` | How far did it get? | `phase` is canonical: `waiting-for-capacity`, `waiting-for-retry`, `starting-worker`, `fetching-code`, `executing`, `publishing-results`, `completed`, `failed`, `cancelled`. `timingSource` is `measured` only when the record carries a claim timestamp; otherwise the numbers are `inferred` from record updates. |
 | `attempt` | Which attempt is this and would a retry help? | `retry.allowed` follows the same rules as `POST .../retry`; `wouldRepeat` states what a retry re-runs and whether earlier attempts left committed effects. |
 | `worker` | Is the worker alive? | `liveness` is judged against the job's own heartbeat policy: `alive`, `stale` (past the interval), `lost` (past the timeout; the reconciler will fail or retry the attempt), `not-claimed`, `finished` or `unknown`. |
-| `failure` | Which step failed and with what? | Classification `execution_failed`, `worker_lost`, `timeout` or `cancelled`; the failing step's phase and ordinal, structured `errorCode`, `nativeExitCode` and a sanitized `stderrExcerpt` when the worker recorded them; a `recovery` sentence. |
+| `failure` | Which step failed and with what? | Classification `execution_failed`, `worker_lost`, `timeout` or `cancelled`; the failing step's phase and ordinal, structured `errorCode`, `nativeExitCode` (including a harness `honua.event.exitCode`) and a sanitized `stderrExcerpt` when the worker recorded them; a `recovery` sentence. |
 | `steps` | What ran, in order? | At most 500 recent event-derived steps; omitted earlier steps are disclosed in `evidence.truncated`. `timingSource` distinguishes measured harness durations from inferred timings. Match a failure to a step by its `ordinal`, which is not necessarily the array index. |
 | `events` | What did the worker report recently? | The most recent `limit` events by default, or a cursor page. `mode`, `firstCursor`, `nextCursor`, `totalCount` and `truncated` describe the view. |
 | `artifacts` | Are the outputs usable? | `complete`, `partial`, `unavailable` or `none`, with counts of expired and unresolved references. |
@@ -75,10 +81,19 @@ and a note saying so.
    step named in `failure.phase`; find the step whose `ordinal` equals `failure.stepOrdinal` for its sanitized
    command line. Failure detail is bounded to the latest 500 retained events;
    inspect earlier event pages when truncation is disclosed.
-4. Check `release.state` before reproducing locally. A `partial` or
+4. The stored reason picks the phase and the recovery sentence when the record
+   only says `Failed`. Invalid input stays on `executing`. A submission failure
+   (`Failed (submission)`, `Submission failed.`) is `starting-worker`. A persist
+   failure (`Failed to persist…`) is `publishing-results`. `Execution timed out
+   after…` is the same `timeout` class as a maximum-duration expiry. Worker loss
+   stays `worker_lost`. Expired artifacts are not a failed run: `artifacts` counts
+   them and `evidence.notes` says to resubmit, because a retry cannot fetch bytes
+   the retention period already dropped. A recorded step phase such as `Reproject`
+   is kept.
+5. Check `release.state` before reproducing locally. A `partial` or
    `unavailable` release means the exact code is not recorded; say so in the
    ticket instead of assuming trunk.
-5. Check `artifacts.state` before promising outputs to a caller: `partial`
+6. Check `artifacts.state` before promising outputs to a caller: `partial`
    means some references expired or could not be resolved.
 
 ## From an AI client
@@ -93,5 +108,40 @@ Both are read-only and use the same Job Read authorization as the REST route; an
 with a read-only key gets the owner view.
 
 The same projection backs the SDK, CLI and Console surfaces as they adopt it
-(honua-release#613, stage 3). Local reproduction from this evidence is
-tracked separately (honua-server#6220).
+(honua-release#613, stage 3). A bundle that carries GP evidence can be run
+locally; see [From job id to local reproduction](#from-job-id-to-local-reproduction).
+
+## From job id to local reproduction
+
+`honua-gp-devkit reproduce` turns one exported diagnostic bundle into a separate
+local run. It does not replay production writes, does not reuse production
+credentials, connection strings or output paths, and does not check out another
+commit or move HEAD. It refuses to run when an input or artifact is missing or
+its bytes do not match the recorded hash, and it says which one.
+
+Read the job with `honua_diagnose_job` (above) and keep the diagnostic bundle
+that was exported with `gpEvidence`. Input bytes are present only when that
+export was explicitly authorized. From the checkout that should match a recorded
+source SHA:
+
+```bash
+honua-gp-devkit reproduce ./job-diagnostic-bundle.json
+```
+
+When the evidence records a release lock digest, pass the lock file you already
+have. The command compares that digest, and the source SHA when the evidence has
+one, to this checkout (`git rev-parse HEAD`) and to the lock. A mismatch names
+the identity and stops.
+
+```bash
+honua-gp-devkit reproduce ./job-diagnostic-bundle.json --lock ./process-release-lock.json
+```
+
+Exported inputs are written into a new temporary scratch directory and passed to
+the same local executors as `honua-gp-devkit run`. That directory, and the output
+directory next to it, are deleted when the command finishes. A bundle written
+before GP evidence still loads, and reproduce exits non-zero because the case is
+incomplete. A reproduced failure is still a failure of the process: the command
+exits 0 only when the local outcome matches the recorded one, including a
+recorded native failure, and it says so. The devkit help text spells the same
+verb as `honua gp reproduce`.

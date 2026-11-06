@@ -325,6 +325,8 @@ tests/js/test-results/
 
 # Generated 3D Tiles scene output (publish/ingest executors)
 scenes-generated/
+# Local OKF projection; exact-head CI publishes the graph as an artifact.
+/docs/okf/domain-graph.v1.json
 scripts/conformance/ogcapi/node_modules/
 
 # honua-gp-devkit run receipts (local development evidence)

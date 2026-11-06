@@ -1,8 +1,8 @@
 # I3S SceneServer manual smoke runbook (#1813)
 
-This runbook is the manual oracle for the parts of the Esri I3S SceneServer
-surface that no headless harness can assert: render fidelity in ArcGIS Pro and
-`@arcgis/core`. The automated `I3sConformanceFixtureTests` harness validates the
+This runbook is the manual oracle for the parts of the GeoServices REST I3S SceneServer
+surface that no headless harness can assert: loading and traversal in a scene-capable
+client. The automated `I3sConformanceFixtureTests` harness validates the
 protocol *shapes* (descriptor / node pages / statistics); this runbook validates
 that a real SceneLayer client *loads and traverses* the served scene.
 
@@ -41,20 +41,12 @@ descriptor, but the corresponding binary routes are the tracked follow-up.
 1. An Enterprise-licensed Honua server (`HonuaEdition.Enterprise`).
 2. A registered hosted scene with a loadable `tileset.json` (any 3D Tiles scene
    the server already serves, e.g. the demo Maui buildings scene).
-3. ArcGIS Pro 3.x **or** a local page importing `@arcgis/core` ≥ 4.29.
+3. A desktop GIS application or a local 3D client that supports I3S SceneLayer services.
 
-## Procedure — `@arcgis/core` SceneLayer load probe
+## Procedure — SceneLayer load probe
 
-```js
-import SceneLayer from "@arcgis/core/layers/SceneLayer.js";
-
-const layer = new SceneLayer({
-  url: "https://<host>/rest/services/<sceneId>/SceneServer/layers/0",
-});
-
-await layer.load();
-console.log("loaded", layer.title, layer.geometryType);
-```
+Add `https://<host>/rest/services/<sceneId>/SceneServer/layers/0` as a SceneLayer
+service in the client.
 
 Expected (this PR):
 
@@ -68,9 +60,7 @@ Known gap (until #1810/#1811):
 - The view will request `nodes/{id}/geometries/0` and receive 404 — geometry
   does not render. This is expected and tracked.
 
-## ArcGIS Pro
+## Desktop GIS client
 
-ArcGIS Pro scene compatibility is nominative. Certification detail stays in
-private `honua-esri-compat` (ruling R30). Geometry render and Identify remain
-blocked until #1810/#1811. Record the evidence identifier on epic #1805; do not
-restate the client procedure here.
+The service descriptor and node pages can be inspected, but geometry rendering and
+Identify remain blocked until #1810/#1811. Record the observed behavior on epic #1805.

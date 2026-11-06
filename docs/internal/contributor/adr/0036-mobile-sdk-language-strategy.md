@@ -218,7 +218,7 @@ prior ADR proposed an alternative.
 - `honua-sdk-dotnet/examples/FieldDataCollection/` — legacy MAUI reference
   app illustrating the patterns lifted into `Honua.Mobile.Field` and
   `Honua.Mobile.Offline`
-- `AGENTS.md` § Honua Repository Map (`honua-mobile` row)
+- Honua repository map, `honua-mobile` row: honua-flow `agents/repo-map.md` (moved there from `AGENTS.md` § Honua Repository Map)
 - .NET 10 Mobile NativeAOT documentation:
   https://learn.microsoft.com/en-us/dotnet/maui/
 - OGC GeoPackage Encoding Standard 1.3

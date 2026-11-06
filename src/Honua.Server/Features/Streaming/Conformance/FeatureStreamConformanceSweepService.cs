@@ -5,17 +5,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Streaming.Conformance;
 
-/// <summary>
-/// TTL sweeper for the controlled-conformance source (honua-server#3038, NFR-001).
-/// </summary>
-/// <remarks>
-/// A conformance run is expected to release its lease in a <c>finally</c> block, but the
-/// cases this workflow has to be safe for are exactly the ones where that never runs: the
-/// runner is killed, the scheduled job times out, the network drops mid-run. Each controlled
-/// record therefore carries its own absolute deadline in its ownership marker, and this sweep
-/// deletes anything past it — using only what is stored on the row, so nothing depends on the
-/// process that created it still being alive.
-/// </remarks>
+// Each record carries its own deadline, and the sweep deletes from the row alone.
 internal sealed class FeatureStreamConformanceSweepService : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;

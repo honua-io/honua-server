@@ -30,7 +30,6 @@ compose() {
   HONUA_ADMIN_PASSWORD="${ADMIN_PASSWORD}" \
   HONUA_DEV_GRANT_EDITION="${HONUA_DEV_GRANT_EDITION:-Enterprise}" \
   HONUA_ENABLE_OBSERVABILITY_TEST_SEED="${HONUA_ENABLE_OBSERVABILITY_TEST_SEED:-true}" \
-  HONUA_CONSOLE_IMAGE="${HONUA_CONSOLE_IMAGE}" \
     docker compose --profile console "${compose_files[@]}" --project-directory "${ROOT_DIR}" "$@"
 }
 
@@ -108,11 +107,6 @@ assert_proposal_roundtrip() {
 
   echo "proposal roundtrip: ok (${proposal_id})"
 }
-
-if [[ -z "${HONUA_CONSOLE_IMAGE:-}" ]]; then
-  echo "HONUA_CONSOLE_IMAGE must point to a compatible published honua-console image." >&2
-  exit 2
-fi
 
 if ! command -v jq >/dev/null 2>&1; then
   echo "jq is required for proposal smoke assertions." >&2

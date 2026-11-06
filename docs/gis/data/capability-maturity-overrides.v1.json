@@ -73,6 +73,27 @@
       "reasonCode": "release-deferred",
       "reason": "3D scene serving is outside the current release surface and is not available by default.",
       "decision": "honua-server#25 capability truth alignment"
+    },
+    {
+      "capability": "process.geoprocessing",
+      "maturity": "preview",
+      "reasonCode": "release-deferred",
+      "reason": "The 2026-10-25 founder re-tier makes the GP catalog Preview in 2026.1. GPServer REST and SOAP stay registered and serving. gRPC ProcessService is the same canonical runtime and has no separate capability key; serve.grpc stays GA because it also covers FeatureService and the other geospatial.v1 services. PrintingTools stays on printing.pdf-output. jobs.runner stays Implemented: it is the durable job substrate for imports, tiles and workflows as well as geoprocessing, and demoting it would mark those non-GP jobs Preview. analysis.spatial stays Implemented: it is spatial analysis, not the GP catalog.",
+      "decision": "honua-release#376 founder re-tier (2026-10-25); honua-server#6569"
+    },
+    {
+      "capability": "process.ogc-api-processes",
+      "maturity": "preview",
+      "reasonCode": "release-deferred",
+      "reason": "OGC API - Processes is part of the GP catalog the 2026-10-25 founder re-tier made Preview in 2026.1. Routes stay registered and serving; only the advertised lifecycle changes.",
+      "decision": "honua-release#376 founder re-tier (2026-10-25); honua-server#6569"
+    },
+    {
+      "capability": "serve.wps",
+      "maturity": "preview",
+      "reasonCode": "release-deferred",
+      "reason": "WPS 2.0 is part of the GP catalog the 2026-10-25 founder re-tier made Preview in 2026.1. Routes stay registered and serving; only the advertised lifecycle changes.",
+      "decision": "honua-release#376 founder re-tier (2026-10-25); honua-server#6569"
     }
   ]
 }

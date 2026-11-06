@@ -9,36 +9,15 @@ namespace Honua.Protocols.GeoServices.MapServer;
 
 internal static partial class MapServerEndpoints
 {
-    /// <summary>
-    /// A candidate published layer the dynamicLayers source resolver can map a <c>dataLayer</c>
-    /// source onto. Decouples the resolver from the per-operation descriptor records.
-    /// </summary>
     private readonly record struct DynamicLayerCandidate(int PublicLayerId, MetadataV2Resource Resource);
 
-    /// <summary>
-    /// How a <c>joinTable</c> dynamic data source combines its left (primary) and right
-    /// (secondary) sources. Mirrors the Esri <c>joinType</c> values.
-    /// </summary>
     private enum DynamicLayerJoinType
     {
-        /// <summary>Keep every left feature; right attributes are null when no match exists.</summary>
         LeftOuter,
 
-        /// <summary>Keep only left features that have at least one matching right row.</summary>
         Inner,
     }
 
-    /// <summary>
-    /// Parsed <c>joinTable</c> data source. Both sides resolve to allowlisted, access-policy-gated
-    /// published map layers; the join is materialized application-side (no raw SQL) by keying the
-    /// right source on <see cref="RightKey"/> and merging its attributes onto each left feature.
-    /// </summary>
-    /// <param name="LeftMapLayerId">Resolved public layer id of the left (geometry/identity) source.</param>
-    /// <param name="RightMapLayerId">Resolved public layer id of the right (attribute) source.</param>
-    /// <param name="LeftKey">Left-source join key field name (validated as an identifier).</param>
-    /// <param name="RightKey">Right-source join key field name (validated as an identifier).</param>
-    /// <param name="JoinType">Left-outer or inner join semantics.</param>
-    /// <param name="RightQualifier">Prefix applied to right-source attribute names (Esri <c>table.field</c> qualification).</param>
     private sealed record DynamicLayerJoinDefinition(
         int LeftMapLayerId,
         int RightMapLayerId,
@@ -47,22 +26,11 @@ internal static partial class MapServerEndpoints
         DynamicLayerJoinType JoinType,
         string RightQualifier);
 
-    /// <summary>
-    /// A resolved dynamic-layer source: either a single published layer (<c>mapLayer</c>/plain
-    /// <c>dataLayer</c>) or a <c>joinTable</c> that combines two published layers. The "anchor"
-    /// layer (<see cref="MapLayerId"/>) is the layer that supplies geometry/identity and whose
-    /// access policy and rendering the existing pipeline already enforces; <see cref="Join"/> is
-    /// non-null only for join sources.
-    /// </summary>
     private readonly record struct ResolvedDynamicSource(int MapLayerId, DynamicLayerJoinDefinition? Join)
     {
         public bool IsJoin => Join is not null;
     }
 
-    /// <summary>
-    /// Builds a <see cref="DynamicLayerSourceResolver"/> for the current request, reading the
-    /// MapServer dynamicLayers workspace allowlist options from the request services.
-    /// </summary>
     private static DynamicLayerSourceResolver CreateDynamicLayerSourceResolver(
         HttpContext context,
         MetadataV2GraphSnapshot snapshot,
@@ -73,14 +41,6 @@ internal static partial class MapServerEndpoints
         return new DynamicLayerSourceResolver(snapshot, candidates, options);
     }
 
-    /// <summary>
-    /// Resolution context shared by every MapServer operation that accepts <c>dynamicLayers</c>
-    /// (export, identify, find, legend) and the dynamicLayer child resource. It translates an Esri
-    /// dynamic-layer <c>source</c> into a published map-layer id, supporting both
-    /// <c>source.type=mapLayer</c> (reference an existing published layer) and
-    /// <c>source.type=dataLayer</c> (reference a registered workspace + table that is already
-    /// materialized by a published resource).
-    /// </summary>
     private sealed class DynamicLayerSourceResolver
     {
         private readonly MetadataV2GraphSnapshot _snapshot;
@@ -99,17 +59,6 @@ internal static partial class MapServerEndpoints
             _options = options;
         }
 
-        /// <summary>
-        /// Resolves a dynamic-layer <c>source</c> element to the published map-layer id it targets.
-        /// </summary>
-        /// <param name="sourceElement">The parsed <c>source</c> JSON object.</param>
-        /// <param name="contextLabel">
-        /// A short label used to build error messages, e.g. <c>"dynamicLayers entry '5'"</c> or
-        /// <c>"dynamicLayer"</c>.
-        /// </param>
-        /// <param name="mapLayerId">The resolved published map-layer id when successful.</param>
-        /// <param name="error">A client-safe validation message when resolution fails.</param>
-        /// <returns><see langword="true"/> when the source resolves to a published layer.</returns>
         public bool TryResolveMapLayerId(
             JsonElement sourceElement,
             string contextLabel,
@@ -156,13 +105,6 @@ internal static partial class MapServerEndpoints
             return false;
         }
 
-        /// <summary>
-        /// Resolves a dynamic-layer <c>source</c> to either a single published layer or a
-        /// <c>joinTable</c> that combines two published layers. A <c>dataLayer</c> source whose
-        /// <c>dataSource.type</c> is <c>joinTable</c> is resolved into a structured join; every other
-        /// supported source falls back to <see cref="TryResolveMapLayerId"/>. queryTable (raw SQL)
-        /// remains deferred and is rejected.
-        /// </summary>
         public bool TryResolveSource(
             JsonElement sourceElement,
             string contextLabel,

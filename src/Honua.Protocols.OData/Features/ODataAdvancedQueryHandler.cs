@@ -11,10 +11,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Protocols.OData;
 
-/// <summary>
-/// Handler for OData advanced query operations including $apply aggregation and $search full-text search.
-/// Provides complex analytical and search operations with proper validation and error handling.
-/// </summary>
 internal sealed partial class ODataAdvancedQueryHandler(
     ODataQuerySearchService querySearchService,
     ODataValidationService validationService,
@@ -24,9 +20,6 @@ internal sealed partial class ODataAdvancedQueryHandler(
     private readonly ODataValidationService _validationService = validationService ?? throw new ArgumentNullException(nameof(validationService));
     private readonly ILogger<ODataAdvancedQueryHandler> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
-    /// <summary>
-    /// Handles OData $apply aggregation request.
-    /// </summary>
     public async Task<IResult> HandleApplyAsync(
         HttpContext context,
         int layerId,
@@ -124,9 +117,6 @@ internal sealed partial class ODataAdvancedQueryHandler(
         }
     }
 
-    /// <summary>
-    /// Handles OData $search full-text search request.
-    /// </summary>
     public async Task<IResult> HandleSearchAsync(
         HttpContext context,
         int layerId,
@@ -277,9 +267,6 @@ internal sealed partial class ODataAdvancedQueryHandler(
         }
     }
 
-    /// <summary>
-    /// Logging methods for OData advanced query operations.
-    /// </summary>
     private static partial class Log
     {
         [LoggerMessage(EventId = 3017, Level = LogLevel.Warning, Message = "Invalid OData $apply expression for layer {LayerId}.")]

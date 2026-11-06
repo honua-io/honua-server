@@ -7,12 +7,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Mobile.FieldCollection.Automations;
 
-/// <summary>
-/// Drains the in-process action queue and routes each invocation to the handler
-/// registered for its action type, applying bounded retry for retryable failures
-/// (#2121). Runs as a single-reader hosted service alongside the channel
-/// dispatcher.
-/// </summary>
 internal sealed partial class FieldCollectionAutomationDispatchBackgroundService : BackgroundService
 {
     private readonly ChannelFieldCollectionActionDispatcher _dispatcher;

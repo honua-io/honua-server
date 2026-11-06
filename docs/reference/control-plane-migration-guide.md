@@ -107,6 +107,34 @@ replacements ([versioning and support](versioning-and-support.md)). After upgrad
 2. Regenerate your client from the new contract and update your integrations.
 3. Verify write-path behaviour against your automation (publish, update and import operations).
 
+## GeoServices REST admin names
+
+Regenerate admin clients from `docs/developer/api-specs/admin-api.json` after upgrading an evaluation build. These names moved together:
+
+| Previous | Current |
+|---|---|
+| `/api/v1/admin/import/arcgis/migrations`, plus the manifest and parity routes under it | `/api/v1/admin/import/geoservices-rest/migrations`, with the same subpaths |
+| Schema and operation names beginning `ImportArcGisMigration` or `ArcGisMigration` | The same names beginning `ImportGeoServicesMigration` or `GeoServicesMigration` |
+| `sourceKind` value `arcgis-geoservices-rest` | `geoservices-rest`. A scan request still accepts `arcgis-geoservices-rest` |
+| Diagnostic codes `ARCGIS_*` | `GEOSERVICES_*`. Reports already stored keep the codes they were written with |
+| File-import preview format `EsriJson` | `GeoServicesJson` |
+| Configuration section `ArcGisRest` | `GeoServicesRest`. Startup fails while `ArcGisRest` is set and names this replacement |
+
+Migration 144 rewrites stored source-kind values to `geoservices-rest`. An older server refuses that database. The refusal points at [Rollback boundaries](../guides/deploy/upgrade-and-rollback.md#rollback-boundaries). Restore the backup taken before that migration, then start the older image.
+
+## Service and layer lists
+
+Regenerate admin clients from `docs/developer/api-specs/admin-api.json` after upgrading an evaluation build. `GET /api/v1/admin/services` and `GET /api/v1/admin/connections/{id}/layers` return one page instead of a `data` array.
+
+| Query | Meaning |
+|---|---|
+| `page` | One-based page. Defaults to 1. Values below 1 return 400. |
+| `pageSize` | Defaults to 100. Values outside 1 to 100 return 400. |
+| `q` | Case-insensitive name contains. Longer than 200 characters returns 400. |
+| `folderId` | Service list only. Omit for every folder. `root` selects services without a folder. An unknown folder returns 404. |
+
+The service page is `items`, `page`, `pageSize`, `total`, and `layerTotal`. `total` counts services matching `q` and `folderId`. `layerTotal` is the sum of those services' layer counts, including services on other pages. The layer page is `items`, `page`, `pageSize`, and `total`. `total` counts layers matching `q` for that connection and `serviceName`. `serviceName` is unchanged.
+
 ## Removed Contract Paths
 
 Endpoints removed from the published admin OpenAPI spec because they were already

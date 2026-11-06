@@ -6,70 +6,25 @@ using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// How an execution worker's single assigned operation was resolved.
-/// </summary>
 internal enum ExecutionWorkerClaimOutcome
 {
-    /// <summary>The worker claimed the assigned job and the execution loop has run it.</summary>
     Executed,
 
-    /// <summary>The job was already terminal; there is nothing to run.</summary>
     AlreadyTerminal,
 
-    /// <summary>No durable record exists for the assigned operation.</summary>
     NotFound,
 
-    /// <summary>
-    /// The durable record has moved past the attempt this process was launched for (it was handed
-    /// back for resubmission, or resubmitted), so this launch is stale and must not run.
-    /// </summary>
     StaleLaunch,
 
-    /// <summary>Another live worker holds the claim on the launched attempt.</summary>
     OwnedByAnotherWorker,
 
-    /// <summary>The launch environment names a different job kind than the durable record.</summary>
     LaunchMismatch,
 
-    /// <summary>
-    /// This image cannot run the job (unsupported kind, runtime profile or contract version); the
-    /// worker recorded a terminal failure because another attempt on the same image cannot succeed.
-    /// </summary>
     Unrunnable,
 
-    /// <summary>
-    /// The durable job store could not be read or written, the submission never became visible,
-    /// or the host stopped first.
-    /// </summary>
     StoreUnavailable,
 }
 
-/// <summary>
-/// The <see cref="IJobQueue"/> an execution worker composes in place of the shared Redis queue.
-/// It hands the shared <see cref="JobExecutionService"/> loop exactly one operation — the attempt the
-/// batch compute backend launched this process for — so the worker runs the same claim, heartbeat,
-/// artifact-publication fence and terminal finalization as an in-process run, but can never claim
-/// another job from the shared queue.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The claim does not count an attempt: the provider submission that launched this worker already
-/// did (<c>ExecutionJobSubmissionHelper.StartOnRemoteBackendAsync</c>). When the launch carries
-/// <see cref="ExecutionWorkerLaunch.ExecutionAttempt"/> the claim is fenced to that attempt, so a
-/// stale container (or one the provider retried natively) can never run a newer attempt.
-/// </para>
-/// <para>
-/// Retries are owned by the serving host's execution-job reconciler, which resubmits a record the
-/// worker hands back as <c>Queued</c> with no provider marker and a retry time. A worker never
-/// submits work, so <see cref="EnqueueAsync"/> fails loudly.
-/// </para>
-/// <para>
-/// <see cref="JobExecutionService"/> processes a claim to completion before it polls again, so the
-/// next <see cref="TryClaimAsync"/> call after a claim marks the assigned run finished and completes
-/// <see cref="Completion"/>.
-/// </para>
-/// </remarks>
 internal sealed partial class AssignedExecutionJobQueue : IJobQueue
 {
     internal const string ClaimedPhase = "Claimed by execution worker";
@@ -107,10 +62,8 @@ internal sealed partial class AssignedExecutionJobQueue : IJobQueue
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
-    /// <summary>The operation this worker was launched for.</summary>
     public string OperationId => _launch.OperationId;
 
-    /// <summary>Completes once the assigned operation has been run or refused.</summary>
     public Task<ExecutionWorkerClaimOutcome> Completion => _completion.Task;
 
     public Task EnqueueAsync(
@@ -223,10 +176,6 @@ internal sealed partial class AssignedExecutionJobQueue : IJobQueue
     public Task<long> GetQueueDepthAsync(CancellationToken cancellationToken = default)
         => Task.FromResult(0L);
 
-    /// <summary>
-    /// Completes <see cref="Completion"/> when the host stops before the execution loop polled
-    /// again (for example a Spot interruption while the assigned job was running).
-    /// </summary>
     internal void MarkStopped()
     {
         var previous = Interlocked.Exchange(ref _state, Finished);
@@ -235,7 +184,6 @@ internal sealed partial class AssignedExecutionJobQueue : IJobQueue
             : ExecutionWorkerClaimOutcome.StoreUnavailable);
     }
 
-    /// <returns>The outcome, or <see langword="null"/> when the launched submission is not recorded yet.</returns>
     private async Task<ExecutionWorkerClaimOutcome?> TryClaimAssignedAsync(
         string workerId,
         IReadOnlySet<ExecutionJobKind>? acceptedKinds,

@@ -252,8 +252,8 @@ public sealed class RedisOffDirectPublishTests
     [Trait("Tier", "Fast")]
     public async Task RedisOffProduction_PolicyAllowedGovernedOperations_KeepTypedRedisRefusal(string operationId)
     {
-        // Only the configure (service.publish) and style (style.apply-preset) steps are direct on
-        // a Redis-off host. Geoprocessing, durable compositions, proposals and approvals, and the
+        // Configure (service.publish), style (style.apply-preset), and explicit AI admission controls
+        // can run directly on a Redis-off host. Geoprocessing, durable compositions, proposals and approvals, and the
         // governed honua_admin_* catalogs keep the typed refusal (journey stages 5-8).
         await using var provider = ComposeRedisOffProduction(
             PublishingService(), new CapturingAuditLog(), AdminAllowPolicy(), StyleCatalog());
@@ -302,7 +302,15 @@ public sealed class RedisOffDirectPublishTests
         OperationsServiceCollectionExtensions.ComposeDispatcherInstanceStore(new UnavailableOperationInstanceStore())
             .Should().BeOfType<NonDurableDirectOperationInstanceStore>()
             .Which.DirectOperationIds.Should().BeEquivalentTo(
-                new[] { ServicePublishOperation.OperationId, StylePresetOperation.OperationId });
+                new[]
+                {
+                    ServicePublishOperation.OperationId,
+                    StylePresetOperation.OperationId,
+                    "admin.ai.admission.initialize",
+                    "admin.ai.admission.policy-update",
+                    "admin.ai.admission.stop",
+                    "admin.ai.admission.resume"
+                });
         var durable = new VolatileOperationInstanceStore();
         OperationsServiceCollectionExtensions.ComposeDispatcherInstanceStore(durable).Should().BeSameAs(durable);
     }

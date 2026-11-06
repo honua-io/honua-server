@@ -8,6 +8,7 @@ using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -51,6 +52,7 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
 
     private readonly WebAppFixture _fixture = new();
     private readonly RedisFixture _redis = new();
+    private string _denialAuditMode = "ok";
 
     public async Task InitializeAsync()
     {
@@ -80,6 +82,13 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
             })
             .ConfigureServices(services =>
             {
+                var originalAudit = services.Last(item => item.ServiceType == typeof(IAuditLog));
+                services.RemoveAll<IAuditLog>();
+                services.AddScoped<IAuditLog>(provider => new DenialAuditSwitch(
+                    (IAuditLog)(originalAudit.ImplementationInstance
+                        ?? originalAudit.ImplementationFactory?.Invoke(provider)
+                        ?? ActivatorUtilities.CreateInstance(provider, originalAudit.ImplementationType!)),
+                    () => _denialAuditMode));
                 services.RemoveAll<IStudioPackageStore>();
                 services.AddSingleton<IStudioPackageStore, InMemoryStudioPackageStore>();
                 // The generic operator gate is admitted so the assertions isolate the
@@ -88,6 +97,7 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
                 services.AddSingleton<IOperatorAuthorizationEvaluator, AllowAllOperatorAuthorizationEvaluator>();
             });
         await _fixture.InitializeAsync();
+
     }
 
     public async Task DisposeAsync()
@@ -125,6 +135,17 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
         // The detail response omits null members, so an unresolved proposal carries no resolver.
         (after.TryGetProperty("resolvedBy", out var resolvedBy) && resolvedBy.ValueKind != JsonValueKind.Null)
             .Should().BeFalse("a refused self-approval must not record a resolver");
+
+        using var scope = _fixture.Services.CreateScope();
+        var stored = await scope.ServiceProvider.GetRequiredService<IOperationProposalStore>().GetAsync(proposalId);
+        var audits = await scope.ServiceProvider.GetRequiredService<IAuditLogReader>().ListAsync(
+            new AuditLogFilter { ResourceId = proposalId, PageSize = 20 });
+        var denial = audits.Items.Should().ContainSingle(item => item.Action == "operation.approval_denied").Subject;
+        denial.Outcome.Should().Be(AuditOutcome.Denied);
+        denial.Actor.Should().Be(subject);
+        denial.CorrelationId.Should().Be(stored!.Audit.CorrelationId ?? proposalId);
+        using var details = JsonDocument.Parse(denial.Details!);
+        details.RootElement.GetProperty("reason").GetString().Should().Be("self_approval");
     }
 
     [IntegrationTest]
@@ -145,6 +166,10 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
         using var document = JsonDocument.Parse(body);
         document.RootElement.GetProperty("status").GetString().Should().Be("Succeeded", body);
         document.RootElement.GetProperty("resolvedBy").GetString().Should().NotContain("studio-proposer-carol");
+        using var scope = _fixture.Services.CreateScope();
+        var audits = await scope.ServiceProvider.GetRequiredService<IAuditLogReader>().ListAsync(
+            new AuditLogFilter { ResourceId = proposalId, PageSize = 20 });
+        audits.Items.Should().NotContain(item => item.Action == "operation.approval_denied");
     }
 
     [IntegrationTest]
@@ -173,6 +198,10 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage($"{SeparationOfDuties}*");
         (await GetProposalAsync(sameAdmin, proposalId)).GetProperty("status").GetString()
             .Should().Be("AwaitingApproval");
+        using var scope = _fixture.Services.CreateScope();
+        var audits = await scope.ServiceProvider.GetRequiredService<IAuditLogReader>().ListAsync(
+            new AuditLogFilter { ResourceId = proposalId, PageSize = 20 });
+        audits.Items.Should().ContainSingle(item => item.Action == "operation.approval_denied");
     }
 
     /// <summary>
@@ -273,6 +302,64 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
             expires: DateTime.UtcNow.AddMinutes(30),
             signingCredentials: credentials);
         return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+
+    [IntegrationTheory]
+    [InlineData("null")]
+    [InlineData("throw")]
+    [InlineData("nonpersisted")]
+    [Operation(Operations.ApprovalManagement)]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    public async Task ApproveProposal_DenialAuditUnavailable_ReturnsSafe503WithoutResolving(string mode)
+    {
+        const string subject = "studio-proposer-audit-outage";
+        using var proposer = CreateBearerClient(CreateToken(subject));
+        using var approver = CreateBearerClient(CreateToken(subject, administrator: true));
+        var proposalId = await ProposeAsync(proposer);
+        _denialAuditMode = mode;
+        using var response = await approver.PostAsync($"/api/v1/admin/proposals/{proposalId}/approve", null);
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, body);
+        body.Should().NotContain("FAKE_AUDIT_SINK_SECRET_CANARY");
+        (await GetProposalAsync(approver, proposalId)).GetProperty("status").GetString()
+            .Should().Be("AwaitingApproval");
+        using var scope = _fixture.Services.CreateScope();
+        var audits = await scope.ServiceProvider.GetRequiredService<IAuditLogReader>().ListAsync(
+            new AuditLogFilter { ResourceId = proposalId, PageSize = 20 });
+        audits.Items.Should().NotContain(item => item.Action == "operation.approval_denied");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ApprovalManagement)]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    public async Task ApproveProposal_MissingOrPermissionDenied_DoesNotCreateProposalAuditJoin()
+    {
+        using var proposer = CreateBearerClient(CreateToken("studio-no-approval-permission"));
+        using var administrator = CreateBearerClient(CreateToken("studio-audit-reader", administrator: true));
+        var proposalId = await ProposeAsync(proposer);
+        using var forbidden = await proposer.PostAsync($"/api/v1/admin/proposals/{proposalId}/approve", null);
+        forbidden.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var missingId = Guid.NewGuid().ToString("N");
+        using var missing = await administrator.PostAsync($"/api/v1/admin/proposals/{missingId}/approve", null);
+        missing.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        using var scope = _fixture.Services.CreateScope();
+        var reader = scope.ServiceProvider.GetRequiredService<IAuditLogReader>();
+        foreach (var id in new[] { proposalId, missingId })
+        {
+            var audits = await reader.ListAsync(new AuditLogFilter { ResourceId = id, PageSize = 20 });
+            audits.Items.Should().NotContain(item => item.Action == "operation.approval_denied");
+        }
+    }
+
+    private sealed class DenialAuditSwitch(IAuditLog inner, Func<string> mode) : IAuditLog
+    {
+        public bool IsPersisted => mode() != "nonpersisted" && inner.IsPersisted;
+        public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
+        {
+            if (auditEvent.Action != "operation.approval_denied") return inner.RecordAsync(auditEvent, cancellationToken);
+            if (mode() == "throw") throw new InvalidOperationException("FAKE_AUDIT_SINK_SECRET_CANARY");
+            return mode() == "null" ? Task.FromResult<string?>(null) : inner.RecordAsync(auditEvent, cancellationToken);
+        }
     }
 
     private sealed class AllowAllOperatorAuthorizationEvaluator : IOperatorAuthorizationEvaluator

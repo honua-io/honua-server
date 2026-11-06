@@ -222,6 +222,104 @@ public sealed class MetadataV2GraphSnapshotCacheTests
         provider.GetCurrentCalls.Should().Be(2);
     }
 
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task GetCurrentAsync_WithRevisionProbe_PublishOnInstanceA_ReadOnInstanceBSeesItWithinTtl()
+    {
+        // One database, two Lambda instances, each with its own in-process cache and no broadcast.
+        var database = new CountingProvider(SnapshotWithRevision(1));
+        var probe = new DatabaseEtagProbe(database);
+        var cacheA = NewCache(ttlSeconds: 3600, out _);
+        var cacheB = NewCache(ttlSeconds: 3600, out _);
+
+        (await new CachingMetadataV2GraphProvider(database, cacheB, Environment, probe).GetCurrentAsync())
+            .Revision.Should().Be(1);
+
+        // Instance A publishes: the database moves to revision 2 and only A's cache is invalidated.
+        database.Next = SnapshotWithRevision(2);
+        cacheA.Invalidate(Environment);
+
+        // The next request on instance B (a new scope) must see the new revision, not 404 for the TTL.
+        var requestOnB = new CachingMetadataV2GraphProvider(database, cacheB, Environment, probe);
+        (await requestOnB.GetCurrentAsync()).Revision.Should()
+            .Be(2, "a publish on another instance must be visible on the next request without Redis (#6762)");
+        database.GetCurrentCalls.Should().Be(2, "the full catalog reloads only when the revision changed");
+
+        // Later requests reuse the reloaded snapshot: one probe each, no further loads.
+        (await new CachingMetadataV2GraphProvider(database, cacheB, Environment, probe).GetCurrentAsync())
+            .Revision.Should().Be(2);
+        database.GetCurrentCalls.Should().Be(2);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task GetCurrentAsync_WithRevisionProbe_ProbesOncePerScope()
+    {
+        var database = new CountingProvider(SnapshotWithRevision(1));
+        var probe = new DatabaseEtagProbe(database);
+        var cache = NewCache(ttlSeconds: 3600, out _);
+        var scope = new CachingMetadataV2GraphProvider(database, cache, Environment, probe);
+
+        for (var i = 0; i < 5; i++)
+        {
+            (await scope.GetCurrentAsync()).Revision.Should().Be(1);
+        }
+
+        probe.Calls.Should().Be(1, "repeat reads inside one request reuse the validated snapshot");
+        database.GetCurrentCalls.Should().Be(1);
+
+        // A same-scope write invalidates the cache; the next read gets a different snapshot and is
+        // revalidated rather than served from the memo.
+        database.Next = SnapshotWithRevision(2);
+        cache.Invalidate(Environment);
+        (await scope.GetCurrentAsync()).Revision.Should().Be(2);
+        probe.Calls.Should().Be(2);
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task GetCurrentAsync_WithRevisionProbe_NoActivatedRevision_ServesCachedSnapshot()
+    {
+        var database = new CountingProvider(SnapshotWithRevision(1));
+        var probe = new DatabaseEtagProbe(database) { ReturnNull = true };
+        var cache = NewCache(ttlSeconds: 3600, out _);
+
+        await new CachingMetadataV2GraphProvider(database, cache, Environment, probe).GetCurrentAsync();
+        await new CachingMetadataV2GraphProvider(database, cache, Environment, probe).GetCurrentAsync();
+
+        database.GetCurrentCalls.Should().Be(1, "a compat/empty snapshot has no pointer row to compare, so the TTL governs");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task GetCurrentAsync_WithRevisionProbe_CacheDisabled_DoesNotProbe()
+    {
+        var database = new CountingProvider(SnapshotWithRevision(1));
+        var probe = new DatabaseEtagProbe(database);
+        var cache = NewCache(ttlSeconds: 60, out _, enabled: false);
+
+        await new CachingMetadataV2GraphProvider(database, cache, Environment, probe).GetCurrentAsync();
+
+        probe.Calls.Should().Be(0, "every read already hits the store when caching is off");
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task InvalidateIfCurrent_KeepsNewerSnapshot()
+    {
+        var database = new CountingProvider(SnapshotWithRevision(2));
+        var cache = NewCache(ttlSeconds: 3600, out _);
+        await cache.GetOrLoadAsync(Environment, database.GetCurrentAsync);
+
+        cache.InvalidateIfCurrent(Environment, "\"rev-1\"");
+        await cache.GetOrLoadAsync(Environment, database.GetCurrentAsync);
+        database.GetCurrentCalls.Should().Be(1, "a stale-etag drop must not evict a snapshot that is already newer");
+
+        cache.InvalidateIfCurrent(Environment, "\"rev-2\"");
+        await cache.GetOrLoadAsync(Environment, database.GetCurrentAsync);
+        database.GetCurrentCalls.Should().Be(2);
+    }
+
     private static MetadataV2GraphSnapshotCache NewCache(int ttlSeconds, out TestClock clock, bool enabled = true)
     {
         clock = new TestClock();
@@ -276,6 +374,22 @@ public sealed class MetadataV2GraphSnapshotCacheTests
 
         public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(long revision, CancellationToken cancellationToken = default)
             => new((MetadataV2GraphSnapshot?)null);
+    }
+
+    private sealed class DatabaseEtagProbe(CountingProvider database)
+        : Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphRevisionProbe
+    {
+        private int _calls;
+
+        public int Calls => Volatile.Read(ref _calls);
+
+        public bool ReturnNull { get; set; }
+
+        public ValueTask<string?> GetCurrentEtagAsync(CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _calls);
+            return new(ReturnNull ? null : database.Next.Etag);
+        }
     }
 
     private sealed class LoadGate

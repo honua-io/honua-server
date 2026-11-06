@@ -9,17 +9,8 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Validates OidcAuthenticationOptions configuration to ensure secure OIDC authentication setup.
-/// Enforces provider-specific validation rules and security best practices.
-/// </summary>
 internal sealed class OidcAuthenticationOptionsValidator : ConfigurationValidator<OidcAuthenticationOptions>
 {
-    /// <summary>
-    /// Validates the OIDC authentication options configuration using derived class-specific logic.
-    /// </summary>
-    /// <param name="options">The OIDC authentication options instance to validate</param>
-    /// <param name="errors">List to add validation errors to</param>
     protected override void PerformFeatureSpecificValidation(OidcAuthenticationOptions options, List<string> errors)
     {
         // Complex business rule validations
@@ -30,9 +21,6 @@ internal sealed class OidcAuthenticationOptionsValidator : ConfigurationValidato
     }
 
 
-    /// <summary>
-    /// Validates general OIDC settings.
-    /// </summary>
     private static void ValidateGeneralSettings(OidcAuthenticationOptions options, List<string> errors)
     {
         if (!options.TryGetAdminAuthCallbackUri(out _))
@@ -84,9 +72,6 @@ internal sealed class OidcAuthenticationOptionsValidator : ConfigurationValidato
         }
     }
 
-    /// <summary>
-    /// Validates provider-specific settings.
-    /// </summary>
     private static void ValidateProviderSettings(OidcAuthenticationOptions options, List<string> errors)
     {
         // Validate Azure AD provider
@@ -123,9 +108,6 @@ internal sealed class OidcAuthenticationOptionsValidator : ConfigurationValidato
         ValidateCallbackPaths(options, errors);
     }
 
-    /// <summary>
-    /// Validates Azure AD provider configuration.
-    /// </summary>
     private static void ValidateAzureAdProvider(AzureAdProviderOptions azureAd, List<string> errors)
     {
         ValidateRequiredString(azureAd.TenantId, "AzureAd.TenantId", errors);
@@ -150,9 +132,6 @@ internal sealed class OidcAuthenticationOptionsValidator : ConfigurationValidato
         ValidateScopes(azureAd.Scopes, "AzureAd.Scopes", errors);
     }
 
-    /// <summary>
-    /// Validates Google provider configuration.
-    /// </summary>
     private static void ValidateGoogleProvider(GoogleProviderOptions google, List<string> errors)
     {
         ValidateRequiredString(google.ClientId, "Google.ClientId", errors);
@@ -162,9 +141,6 @@ internal sealed class OidcAuthenticationOptionsValidator : ConfigurationValidato
         ValidateScopes(google.Scopes, "Google.Scopes", errors);
     }
 
-    /// <summary>
-    /// Validates Generic OIDC provider configuration.
-    /// </summary>
     private static void ValidateGenericProvider(GenericOidcProviderOptions generic, List<string> errors)
     {
         if (string.IsNullOrWhiteSpace(generic.Authority))
@@ -211,9 +187,6 @@ internal sealed class OidcAuthenticationOptionsValidator : ConfigurationValidato
         ValidateScopes(generic.Scopes, "Generic.Scopes", errors);
     }
 
-    /// <summary>
-    /// Validates Okta provider configuration.
-    /// </summary>
     private static void ValidateOktaProvider(OktaProviderOptions okta, List<string> errors)
     {
         ValidateRequiredString(okta.OrgUrl, "Okta.OrgUrl", errors);
@@ -241,9 +214,6 @@ internal sealed class OidcAuthenticationOptionsValidator : ConfigurationValidato
         ValidateScopes(okta.Scopes, "Okta.Scopes", errors);
     }
 
-    /// <summary>
-    /// Validates Auth0 provider configuration.
-    /// </summary>
     private static void ValidateAuth0Provider(Auth0ProviderOptions auth0, List<string> errors)
     {
         ValidateRequiredString(auth0.Domain, "Auth0.Domain", errors);
@@ -283,9 +253,6 @@ internal sealed class OidcAuthenticationOptionsValidator : ConfigurationValidato
         ValidateScopes(auth0.Scopes, "Auth0.Scopes", errors);
     }
 
-    /// <summary>
-    /// Validates that callback paths are unique across providers.
-    /// </summary>
     private static void ValidateCallbackPaths(OidcAuthenticationOptions options, List<string> errors)
     {
         var callbackPaths = new List<(string path, string provider)>();
@@ -332,9 +299,6 @@ internal sealed class OidcAuthenticationOptionsValidator : ConfigurationValidato
         }
     }
 
-    /// <summary>
-    /// Validates claims mapping configuration.
-    /// </summary>
     private static void ValidateClaimsMapping(ClaimsMappingOptions claimsMapping, List<string> errors)
     {
         ValidateRequiredString(claimsMapping.NameClaimType, "ClaimsMapping.NameClaimType", errors);
@@ -375,9 +339,6 @@ internal sealed class OidcAuthenticationOptionsValidator : ConfigurationValidato
         }
     }
 
-    /// <summary>
-    /// Validates token validation configuration.
-    /// </summary>
     private static void ValidateTokenValidation(TokenValidationOptions tokenValidation, List<string> errors)
     {
         if (!string.IsNullOrWhiteSpace(tokenValidation.SymmetricSigningKey))
@@ -406,9 +367,6 @@ internal sealed class OidcAuthenticationOptionsValidator : ConfigurationValidato
         }
     }
 
-    /// <summary>
-    /// Validates a callback path format.
-    /// </summary>
     private static void ValidateCallbackPath(string path, string propertyName, List<string> errors)
     {
         if (string.IsNullOrWhiteSpace(path))
@@ -433,9 +391,6 @@ internal sealed class OidcAuthenticationOptionsValidator : ConfigurationValidato
         }
     }
 
-    /// <summary>
-    /// Validates OIDC scopes.
-    /// </summary>
     private static void ValidateScopes(string[] scopes, string propertyName, List<string> errors)
     {
         if (scopes == null || scopes.Length == 0)
@@ -463,9 +418,6 @@ internal sealed class OidcAuthenticationOptionsValidator : ConfigurationValidato
         }
     }
 
-    /// <summary>
-    /// Validates if a string is a valid GUID.
-    /// </summary>
     private static bool IsValidGuid(string value)
     {
         return Guid.TryParse(value, out _);

@@ -5,9 +5,6 @@ using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Production <see cref="IRollbackDataPlaneProbe"/> over the shared deploy health and golden-query probes.
-/// </summary>
 internal sealed class HttpRollbackDataPlaneProbe(IDeployHealthProbe healthProbe) : IRollbackDataPlaneProbe
 {
     public async Task<RollbackReadinessProbeResult> ProbeReadinessAsync(

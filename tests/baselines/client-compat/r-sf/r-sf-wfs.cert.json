@@ -55,9 +55,9 @@
       "test_case_id": "CERT-DISC-01",
       "status": "pass",
       "duration_ms": 29,
-      "measured_count": 5,
+      "measured_count": 11,
       "measured_delta": null,
-      "notes": "ows4R WFSClient$getCapabilities()$getFeatureTypes() listed 5 feature type(s)/collection(s); certification target resolved to 'honua:test_layer'.",
+      "notes": "ows4R WFSClient$getCapabilities()$getFeatureTypes() listed 11 feature type(s)/collection(s); certification target resolved to 'honua:test_layer'.",
       "evidence_ref": ""
     },
     {
@@ -488,9 +488,9 @@
       "test_case_id": "NB-RSF-AUT-03",
       "status": "pass",
       "duration_ms": 184,
-      "measured_count": 7,
+      "measured_count": 14,
       "measured_delta": null,
-      "notes": "GDAL_HTTP_HEADERS carried 'X-API-Key: <admin key>' through sf::st_layers() on the WFS DSN: 7 layer(s) listed and the certification target 'honua:test_layer' is present. Proves the credential path works through the sf/GDAL stack, not just httr.",
+      "notes": "GDAL_HTTP_HEADERS carried 'X-API-Key: <admin key>' through sf::st_layers() on the WFS DSN: 14 layer(s) listed and the certification target 'honua:test_layer' is present. Proves the credential path works through the sf/GDAL stack, not just httr.",
       "evidence_ref": ""
     },
     {
@@ -551,9 +551,9 @@
       "test_case_id": "NB-RSF-OWS-03",
       "status": "pass",
       "duration_ms": 0,
-      "measured_count": 5,
+      "measured_count": 11,
       "measured_delta": null,
-      "notes": "ows4R parsed 5 feature type(s) from the WFS 2.0.0 capabilities: {honua:test_layer, honua:browser_points, honua:browser_lines, honua:browser_polygons, honua:portal_public_points}; the certification target 'honua:test_layer' is present. ows4R resolves the service namespace by prefix, so a capabilities document that binds wfs/2.0 only as the default namespace parses as zero feature types.",
+      "notes": "ows4R parsed 11 feature type(s) from the WFS 2.0.0 capabilities: {honua:test_layer, honua:wfs_t_insert_scratch, honua:wfs_t_update_scratch, honua:wfs_t_delete_scratch, honua:attachment_fixture, honua:related_assets, honua:related_inspections, honua:browser_points, honua:browser_lines, honua:browser_polygons, honua:portal_public_points}; the certification target 'honua:test_layer' is present. ows4R resolves the service namespace by prefix, so a capabilities document that binds wfs/2.0 only as the default namespace parses as zero feature types.",
       "evidence_ref": ""
     },
     {

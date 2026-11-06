@@ -228,21 +228,31 @@ fi
 
 workflow="${REPO_ROOT}/.github/workflows/ci.yml"
 grep -Fq 'name: Server Tests (${{ matrix.shard_name }})' "${workflow}"
-# Major-version-agnostic on purpose: this proves the shard cache still uses the
-# restore/save actions; a Dependabot major bump must not fail router validation.
-grep -Eq 'actions/cache/restore@v[0-9]+' "${workflow}"
-grep -Eq 'actions/cache/save@v[0-9]+' "${workflow}"
+# Ref-agnostic on purpose: this proves the shard cache still uses the restore/save
+# actions, pinned by tag or by full commit SHA; a Dependabot bump must not fail
+# router validation.
+grep -Eq 'actions/cache/restore@(v[0-9]+|[0-9a-f]{40})' "${workflow}"
+grep -Eq 'actions/cache/save@(v[0-9]+|[0-9a-f]{40})' "${workflow}"
 grep -Fq "steps.shard-cache-materialize.outputs.restored != 'true'" "${workflow}"
 
 # Structural assertions on the shard-cache steps. Parsing beats grepping here:
 # the previous line-window greps silently stopped covering the `with:` block as
 # soon as comments were added above it, and a whole-file grep for an attempt
 # expression would fire on unrelated jobs.
-python3 - "${workflow}" <<'PYEOF'
+python3 - "${workflow}" "${REPO_ROOT}/.github/workflows/pr-gate.yml" <<'PYEOF'
 import sys, yaml
 
 workflow = yaml.safe_load(open(sys.argv[1], encoding="utf-8"))
 steps = workflow["jobs"]["server-tests"]["steps"]
+runtime_workflow = yaml.safe_load(open(sys.argv[2], encoding="utf-8"))
+runtime_steps = runtime_workflow["jobs"]["pr-gate-tests"]["steps"]
+start = next(s for s in runtime_steps if s.get("name") == "Start freeing runtime proof disk space")
+wait = next(s for s in runtime_steps if s.get("name") == "Wait for runtime proof disk cleanup")
+restore = next(s for s in runtime_steps if s.get("id") == "managed-consumer")
+assert start.get("run") == "scripts/ci/server-test-shard-free-disk.sh"
+assert wait.get("run") == "scripts/ci/server-test-shard-free-disk.sh --await"
+assert start.get("if") == wait.get("if") == restore.get("if")
+assert runtime_steps.index(start) < runtime_steps.index(wait) < runtime_steps.index(restore)
 by_id = {s["id"]: s for s in steps if isinstance(s, dict) and "id" in s}
 
 def fail(message):

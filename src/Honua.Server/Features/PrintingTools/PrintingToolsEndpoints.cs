@@ -26,9 +26,6 @@ using Honua.Server.Features.PrintingTools.Models;
 
 namespace Honua.Server.Features.PrintingTools;
 
-/// <summary>
-/// Maps GeoServices-compatible print service endpoints for the Export Web Map Task.
-/// </summary>
 internal static partial class PrintingToolsEndpoints
 {
     private const string TaskRoute = "/rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task";
@@ -36,9 +33,6 @@ internal static partial class PrintingToolsEndpoints
     private const string GpServiceRoute = "/rest/services/Utilities/PrintingTools/GPServer";
     private const string GpSoapRoute = "/services/Utilities/PrintingTools/GPServer";
 
-    /// <summary>
-    /// Maps print service endpoints.
-    /// </summary>
     public static IEndpointRouteBuilder MapPrintingToolsEndpoints(this IEndpointRouteBuilder endpoints)
     {
         // Service info / metadata
@@ -240,18 +234,18 @@ internal static partial class PrintingToolsEndpoints
         var allTemplates = LayoutTemplateRegistry.GetTemplates();
         var templates = isPro ? allTemplates : allTemplates.Where(t => t.IsMapOnly).ToList();
 
-        var templateInfos = templates.Select(t => new EsriLayoutTemplateInfo
+        var templateInfos = templates.Select(t => new GeoServicesLayoutTemplateInfo
         {
             LayoutTemplate = t.Name,
             PageSize = [Math.Round(t.PageWidth / 72.0, 3), Math.Round(t.PageHeight / 72.0, 3)],
             PageUnits = "inches",
             WebMapFrameSize = [Math.Round(t.MapFrame.Width / 72.0, 3), Math.Round(t.MapFrame.Height / 72.0, 3)],
-            LayoutOptions = new EsriLayoutOptions
+            LayoutOptions = new GeoServicesLayoutOptions
             {
-                TitleText = new EsriLayoutElement { Type = "esriLayoutTextElement", IsVisible = t.Title is not null },
-                LegendOptions = new EsriLayoutElement { Type = "esriLayoutLegendElement", IsVisible = t.Legend is not null },
-                ScaleBarOptions = new EsriLayoutElement { Type = "esriLayoutScaleBarElement", IsVisible = t.ScaleBar is not null },
-                CopyrightText = new EsriLayoutElement { Type = "esriLayoutTextElement", IsVisible = t.Attribution is not null }
+                TitleText = new GeoServicesLayoutElement { Type = "esriLayoutTextElement", IsVisible = t.Title is not null },
+                LegendOptions = new GeoServicesLayoutElement { Type = "esriLayoutLegendElement", IsVisible = t.Legend is not null },
+                ScaleBarOptions = new GeoServicesLayoutElement { Type = "esriLayoutScaleBarElement", IsVisible = t.ScaleBar is not null },
+                CopyrightText = new GeoServicesLayoutElement { Type = "esriLayoutTextElement", IsVisible = t.Attribution is not null }
             }
         }).ToArray();
 
@@ -273,9 +267,6 @@ internal static partial class PrintingToolsEndpoints
             contentType: "application/json");
     }
 
-    /// <summary>
-    /// Validated print request parameters shared by sync execute and async submit paths.
-    /// </summary>
     private readonly record struct ValidatedPrintRequest(
         WebMapDefinition WebMap,
         string Format,
@@ -283,10 +274,6 @@ internal static partial class PrintingToolsEndpoints
         int Dpi,
         ILogger Logger);
 
-    /// <summary>
-    /// Validates and resolves print request parameters from the HTTP context.
-    /// Returns either a validated request or an <see cref="IResult"/> error.
-    /// </summary>
     private static async Task<(ValidatedPrintRequest? Request, IResult? Error)> ValidateAndResolveRequestAsync(
         HttpContext context, CancellationToken cancellationToken)
     {

@@ -3,8 +3,9 @@
 
 using System.Text;
 using System.Reflection;
-using Honua.Db.Postgres.Features.FileImport;
+using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
+using Honua.Db.Postgres.Features.FileImport;
 using Honua.TestKit;
 using NetTopologySuite.Features;
 using NetTopologySuite.IO;
@@ -78,7 +79,10 @@ public sealed class GpxElevationDatabaseRoundtripTests(PostgresFixture fixture)
             var validate = typeof(StreamingFileImportService).GetMethod("ValidateGeometry", BindingFlags.NonPublic | BindingFlags.Static)!;
             Assert.Null(validate.Invoke(null, [source.Geometry]));
             var selectWriter = typeof(StreamingFileImportService).GetMethod("SelectWkbWriter", BindingFlags.NonPublic | BindingFlags.Static)!;
-            var writer = (WKBWriter)selectWriter.Invoke(null, [source.Geometry, new WKBWriter()])!;
+            // GPX does not implement IImportGeometrySource; pass the same cast the importer uses
+            // so a declared Z/M fact is not dropped when the reader starts supplying one.
+            var writer = (WKBWriter)selectWriter.Invoke(
+                null, [source.Geometry, new WKBWriter(), source as IImportGeometrySource])!;
             var wkb = writer.Write(source.Geometry);
             await using (var insert = new NpgsqlCommand($"SELECT \"{schema}\".insert_import_feature(@schema, @table, @wkb, 4326, 4326, '{{\"name\":\"Profile\"}}'::jsonb)", connection))
             {

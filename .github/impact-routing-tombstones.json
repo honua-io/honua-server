@@ -10,5 +10,13 @@
     "alternative to an entry here, and neither is deleting a failing receipt class.",
     "kind=receipt needs producer_run_id; kind=image-outcome needs head_sha."
   ],
-  "tombstones": []
+  "tombstones": [
+    {
+      "kind": "receipt",
+      "producer_run_id": 40090592156,
+      "reason": "Native Image Impact Observation for PR #6544 (FCL relicense, head 1fbdcd87, 8,054 changed paths) wrote a 2,719,460-byte receipt, over the auditor's 2 MiB cap. The artifact is immutable and can never verify; it leaves the 7-day receipt window on 2026-10-31T11:36Z. Remove this entry after that.",
+      "issue": "https://github.com/honua-io/honua-server/issues/6621",
+      "expires_at": "2026-11-07T00:00:00Z"
+    }
+  ]
 }

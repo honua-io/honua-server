@@ -5,10 +5,6 @@ using Honua.Core.Features.Identity.Abstractions;
 
 namespace Honua.Server.Features.Admin.Services;
 
-/// <summary>
-/// Resolves live membership for identities mirrored into the managed-user store by SCIM,
-/// OIDC provisioning, or the admin identity surface.
-/// </summary>
 internal sealed class ManagedUserPrincipalMembershipSource(IUserStore userStore)
     : IPrincipalMembershipSource
 {

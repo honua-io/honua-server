@@ -4,7 +4,7 @@
 using System.Globalization;
 using System.Xml.Linq;
 using Honua.Protocols.GeoServices.ImageServer.Models;
-using static Honua.Protocols.GeoServices.Soap.ArcGisSoapProtocol;
+using static Honua.Protocols.GeoServices.Soap.GeoServicesSoapProtocol;
 
 namespace Honua.Protocols.GeoServices.ImageServer;
 

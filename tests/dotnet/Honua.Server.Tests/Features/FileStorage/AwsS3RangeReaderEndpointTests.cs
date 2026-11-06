@@ -37,7 +37,7 @@ public sealed class AwsS3RangeReaderEndpointTests
     public async Task RangeReader_WithServiceUrl_HeadThenRangedGetCompleteSignedForConfiguredRegion()
     {
         var content = Enumerable.Range(0, 64).Select(value => (byte)value).ToArray();
-        using var endpoint = FakeS3Endpoint.Start(content, ETag);
+        using var endpoint = FakeObjectEndpoint.Start(content, ETag);
         using var provider = BuildProvider(endpoint.ServiceUrl);
         var reader = provider.GetServices<ICloudRangeReader>()
             .Single(candidate => candidate.Provider == CloudStorageProvider.AwsS3);
@@ -108,17 +108,18 @@ public sealed class AwsS3RangeReaderEndpointTests
         return services.BuildServiceProvider();
     }
 
-    private sealed record ObservedRequest(string Method, IReadOnlyDictionary<string, string> Headers);
+    internal sealed record ObservedRequest(string Method, IReadOnlyDictionary<string, string> Headers);
 
-    /// <summary>Minimal loopback S3 object endpoint answering HEAD and single-range GET.</summary>
-    private sealed class FakeS3Endpoint : IDisposable
+    /// <summary>Loopback object endpoint answering HEAD, full/range GET and If-Match preconditions.</summary>
+    internal sealed class FakeObjectEndpoint : IDisposable
     {
         private readonly TcpListener _listener;
-        private readonly byte[] _content;
-        private readonly string _etag;
+        private byte[] _content;
+        private string _etag;
+        private readonly object _generationLock = new();
         private readonly CancellationTokenSource _stop = new();
 
-        private FakeS3Endpoint(byte[] content, string etag)
+        private FakeObjectEndpoint(byte[] content, string etag)
         {
             _content = content;
             _etag = etag;
@@ -129,12 +130,21 @@ public sealed class AwsS3RangeReaderEndpointTests
 
         public string ServiceUrl => $"http://127.0.0.1:{((IPEndPoint)_listener.LocalEndpoint).Port}";
 
-        public static FakeS3Endpoint Start(byte[] content, string etag)
+        public static FakeObjectEndpoint Start(byte[] content, string etag)
         {
-            var endpoint = new FakeS3Endpoint(content, etag);
+            var endpoint = new FakeObjectEndpoint(content, etag);
             endpoint._listener.Start();
             _ = endpoint.AcceptLoopAsync();
             return endpoint;
+        }
+
+        public void Replace(byte[] content, string etag)
+        {
+            lock (_generationLock)
+            {
+                _content = content;
+                _etag = etag;
+            }
         }
 
         public void Dispose()
@@ -191,9 +201,21 @@ public sealed class AwsS3RangeReaderEndpointTests
 
         private byte[] BuildResponse(string method, Dictionary<string, string> headers)
         {
+            lock (_generationLock)
+            {
+                return BuildGenerationResponse(method, headers);
+            }
+        }
+
+        private byte[] BuildGenerationResponse(string method, Dictionary<string, string> headers)
+        {
+            if (headers.TryGetValue("If-Match", out var expected) && expected != _etag)
+            {
+                return Encoding.ASCII.GetBytes("HTTP/1.1 412 Precondition Failed\r\nContent-Length: 0\r\nx-ms-error-code: ConditionNotMet\r\n\r\n");
+            }
             var head = new StringBuilder();
             byte[] body = [];
-            if (method == "GET" && headers.TryGetValue("Range", out var range))
+            if (method == "GET" && (headers.TryGetValue("Range", out var range) || headers.TryGetValue("x-ms-range", out range)))
             {
                 var bounds = range["bytes=".Length..].Split('-');
                 var start = int.Parse(bounds[0], CultureInfo.InvariantCulture);
@@ -205,12 +227,13 @@ public sealed class AwsS3RangeReaderEndpointTests
             }
             else
             {
+                body = _content;
                 head.Append("HTTP/1.1 200 OK\r\n");
                 head.Append(CultureInfo.InvariantCulture, $"Content-Length: {_content.Length}\r\n");
             }
 
             head.Append(CultureInfo.InvariantCulture, $"ETag: {_etag}\r\n");
-            head.Append("Content-Type: image/tiff\r\n\r\n");
+            head.Append("Last-Modified: Tue, 27 Oct 2026 00:00:00 GMT\r\nx-ms-blob-type: BlockBlob\r\nContent-Type: image/tiff\r\n\r\n");
             return [.. Encoding.ASCII.GetBytes(head.ToString()), .. method == "HEAD" ? [] : body];
         }
     }

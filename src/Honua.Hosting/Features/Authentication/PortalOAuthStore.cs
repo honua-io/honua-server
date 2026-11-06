@@ -12,25 +12,6 @@ using Microsoft.Extensions.Caching.Memory;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Distributed-cache backed store for the ArcGIS OAuth2 named-user bridge (#1242).
-/// Persists three short-lived artifacts that the bridge needs across the
-/// browser/IdP round trips:
-/// <list type="bullet">
-/// <item><description>a <em>broker</em> session that pins the ArcGIS client's
-/// <c>redirect_uri</c>/<c>state</c>/PKCE challenge to the IdP PKCE verifier while
-/// the user authenticates at the identity provider,</description></item>
-/// <item><description>an issued ArcGIS <em>authorization code</em> bound to the
-/// verified principal and the client's PKCE challenge, and</description></item>
-/// <item><description>a <em>refresh token</em> bound to the verified principal so
-/// long-lived ArcGIS clients can mint a fresh access token without re-prompting.</description></item>
-/// </list>
-/// The dual-tier (memory + distributed) pattern mirrors
-/// <see cref="AdminAuthSessionStore"/> and <see cref="PortalTokenIssuer"/>: the
-/// distributed tier stays authoritative for multi-node deployments and the
-/// in-memory tier accelerates the redis round trip. No second user/token store is
-/// introduced — these are single-use brokering artifacts that expire quickly.
-/// </summary>
 internal sealed partial class PortalOAuthStore(
     IMemoryCache memoryCache,
     ILogger<PortalOAuthStore> logger,
@@ -50,7 +31,6 @@ internal sealed partial class PortalOAuthStore(
     // Lock used to make TryGetValue+Remove atomic on the memory-only path (BH2-022).
     private readonly Lock _consumeLock = new();
 
-    /// <summary>Persists a broker session and returns its opaque identifier.</summary>
     public async Task<string> CreateBrokerSessionAsync(
         PortalOAuthBrokerSession session,
         CancellationToken cancellationToken)
@@ -66,7 +46,6 @@ internal sealed partial class PortalOAuthStore(
         return id;
     }
 
-    /// <summary>Reads and removes a broker session (single use).</summary>
     public Task<PortalOAuthBrokerSession?> ConsumeBrokerSessionAsync(
         string? id,
         CancellationToken cancellationToken)
@@ -76,7 +55,6 @@ internal sealed partial class PortalOAuthStore(
             PortalOAuthStoreJsonContext.Default.PortalOAuthBrokerSession,
             cancellationToken);
 
-    /// <summary>Persists an issued ArcGIS authorization code and returns its value.</summary>
     public async Task<string> CreateAuthorizationCodeAsync(
         PortalOAuthAuthorizationCode code,
         CancellationToken cancellationToken)
@@ -92,11 +70,6 @@ internal sealed partial class PortalOAuthStore(
         return value;
     }
 
-    /// <summary>
-    /// Atomically reads and removes an issued ArcGIS authorization code (single use).
-    /// Uses a distributed claim lock on the Redis path to prevent concurrent callers
-    /// from both acquiring the record (BH2-022 fix).
-    /// </summary>
     public Task<PortalOAuthAuthorizationCode?> ConsumeAuthorizationCodeAsync(
         string? code,
         CancellationToken cancellationToken)
@@ -106,10 +79,6 @@ internal sealed partial class PortalOAuthStore(
             PortalOAuthStoreJsonContext.Default.PortalOAuthAuthorizationCode,
             cancellationToken);
 
-    /// <summary>
-    /// Marks refresh tokens for <paramref name="principalKey"/> issued at or before now as
-    /// revoked. A later sign-in mints a token whose <c>IssuedAt</c> is after this marker.
-    /// </summary>
     public Task RevokePrincipalAsync(string principalKey, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(principalKey))
@@ -131,11 +100,6 @@ internal sealed partial class PortalOAuthStore(
             cancellationToken);
     }
 
-    /// <summary>
-    /// Whether a refresh token issued at <paramref name="issuedAt"/> for
-    /// <paramref name="principalKey"/> has been revoked. A default <paramref name="issuedAt"/>
-    /// fails closed once a marker exists.
-    /// </summary>
     public async Task<bool> IsPrincipalRefreshRevokedAsync(
         string? principalKey,
         DateTimeOffset issuedAt,
@@ -154,7 +118,6 @@ internal sealed partial class PortalOAuthStore(
         return marker is not null && issuedAt <= marker.RevokedAt;
     }
 
-    /// <summary>Persists a refresh token and returns its value.</summary>
     public async Task<string> CreateRefreshTokenAsync(
         PortalOAuthRefreshToken token,
         CancellationToken cancellationToken)
@@ -170,7 +133,6 @@ internal sealed partial class PortalOAuthStore(
         return value;
     }
 
-    /// <summary>Reads a refresh token without removing it (refresh tokens are reusable until expiry).</summary>
     public Task<PortalOAuthRefreshToken?> GetRefreshTokenAsync(
         string? token,
         CancellationToken cancellationToken)
@@ -180,15 +142,9 @@ internal sealed partial class PortalOAuthStore(
             PortalOAuthStoreJsonContext.Default.PortalOAuthRefreshToken,
             cancellationToken);
 
-    /// <summary>Removes a refresh token (used on rotation).</summary>
     public Task RemoveRefreshTokenAsync(string? token, CancellationToken cancellationToken)
         => RemoveAsync(RefreshKeyPrefix, token, cancellationToken);
 
-    /// <summary>
-    /// Atomically reads and removes a refresh token (single use when rotation is enabled).
-    /// Uses a distributed claim lock on the Redis path to prevent concurrent callers
-    /// from both acquiring the record (BH2-023 fix).
-    /// </summary>
     public Task<PortalOAuthRefreshToken?> ConsumeRefreshTokenAsync(
         string? token,
         CancellationToken cancellationToken)
@@ -198,11 +154,7 @@ internal sealed partial class PortalOAuthStore(
             PortalOAuthStoreJsonContext.Default.PortalOAuthRefreshToken,
             cancellationToken);
 
-    /// <summary>
-    /// Restores a refresh token that was atomically consumed but whose subsequent
-    /// token issuance failed (BH2-024 fix). The token is re-persisted under its
-    /// original value with its remaining TTL so the client can retry successfully.
-    /// </summary>
+    // A refresh token consumed before issuance failed is restored under its original value with the remaining lifetime so the client can retry.
     public Task RestoreRefreshTokenAsync(
         string tokenValue,
         PortalOAuthRefreshToken record,
@@ -325,22 +277,7 @@ internal sealed partial class PortalOAuthStore(
         }
     }
 
-    /// <summary>
-    /// Atomically reads and removes a single-use OAuth artifact (authorization code or
-    /// rotated refresh token). RFC 6749 requires these to be single-use; a non-atomic
-    /// GET+DELETE allows two concurrent callers to both acquire the record and issue
-    /// independent tokens from the same credential (BH2-022, BH2-023).
-    ///
-    /// For the distributed (Redis) path, a short-lived SET NX claim key is used as
-    /// a distributed mutex so only one concurrent caller can proceed with the GET+DEL.
-    /// The claim key is managed independently via <see cref="StackExchange.Redis.IDatabase"/>
-    /// (STRING type) and does not interfere with the distributed cache's HASH-based
-    /// storage format. On non-Redis distributed caches (or when the IDatabase is not
-    /// yet lazily initialized) the operation degrades to a non-atomic GET+DEL.
-    ///
-    /// For the memory-only path, a <see langword="lock"/> makes TryGetValue+Remove
-    /// atomic within this process.
-    /// </summary>
+    // An authorization code or rotated refresh token is taken atomically; a separate read and delete would let two callers mint from it.
     private async Task<T?> AtomicConsumeAsync<T>(
         string keyPrefix,
         string? id,
@@ -459,12 +396,6 @@ internal sealed partial class PortalOAuthStore(
         }
     }
 
-    /// <summary>
-    /// Attempts to obtain the underlying <see cref="StackExchange.Redis.IDatabase"/> from
-    /// the distributed cache when it is backed by Redis.
-    /// Returns <see langword="null"/> when the distributed cache is not Redis-backed or
-    /// when the IDatabase has not yet been lazily initialized (first-request cold start).
-    /// </summary>
     private StackExchange.Redis.IDatabase? TryGetRedisDatabase()
     {
         if (_distributedCache is not Microsoft.Extensions.Caching.StackExchangeRedis.RedisCache redisCache)
@@ -491,156 +422,88 @@ internal sealed partial class PortalOAuthStore(
         => Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
 }
 
-/// <summary>Common expiry contract for cached OAuth brokering artifacts.</summary>
 internal abstract class PortalOAuthRecord
 {
-    /// <summary>Absolute expiry instant of the cached artifact.</summary>
     public DateTimeOffset ExpiresAt { get; init; }
 }
 
-/// <summary>
-/// Broker session created while the user authenticates at the IdP. Pins the ArcGIS
-/// client's request parameters to the Honua-initiated IdP PKCE leg.
-/// </summary>
 internal sealed class PortalOAuthBrokerSession : PortalOAuthRecord
 {
-    /// <summary>OIDC provider key chosen for this login.</summary>
     public required string ProviderKey { get; init; }
 
-    /// <summary>ArcGIS client identifier supplied to <c>oauth2/authorize</c>.</summary>
     public required string ClientId { get; init; }
 
-    /// <summary>ArcGIS client redirect URI the browser is returned to.</summary>
     public required string RedirectUri { get; init; }
 
-    /// <summary>Opaque ArcGIS-client <c>state</c> echoed back verbatim.</summary>
     public string? ClientState { get; init; }
 
-    /// <summary>ArcGIS-client PKCE <c>code_challenge</c>, or <see langword="null"/> when not used.</summary>
     public string? ClientCodeChallenge { get; init; }
 
-    /// <summary>ArcGIS-client PKCE <c>code_challenge_method</c> (<c>S256</c> or <c>plain</c>).</summary>
     public string? ClientCodeChallengeMethod { get; init; }
 
-    /// <summary>Requested access-token lifetime in minutes, clamped on issuance.</summary>
     public int? ExpirationMinutes { get; init; }
 
-    /// <summary>The CSRF <c>state</c> value Honua sends to the IdP.</summary>
     public required string IdpState { get; init; }
 
-    /// <summary>The PKCE verifier Honua sends to the IdP token endpoint.</summary>
     public required string IdpCodeVerifier { get; init; }
 }
 
-/// <summary>Issued ArcGIS authorization code bound to a verified named user.</summary>
 internal sealed class PortalOAuthAuthorizationCode : PortalOAuthRecord
 {
-    /// <summary>ArcGIS client identifier the code was issued to.</summary>
     public required string ClientId { get; init; }
 
-    /// <summary>Redirect URI the code was issued for (must match on exchange).</summary>
+    // The redirect URI stored with the code must match the one presented at exchange.
     public required string RedirectUri { get; init; }
 
-    /// <summary>ArcGIS-client PKCE <c>code_challenge</c>, or <see langword="null"/>.</summary>
     public string? CodeChallenge { get; init; }
 
-    /// <summary>ArcGIS-client PKCE <c>code_challenge_method</c>.</summary>
     public string? CodeChallengeMethod { get; init; }
 
-    /// <summary>Requested access-token lifetime in minutes, clamped on issuance.</summary>
     public int? ExpirationMinutes { get; init; }
 
-    /// <summary>The verified principal projected from the IdP token.</summary>
     public required PortalOAuthPrincipal Principal { get; init; }
 }
 
-/// <summary>Refresh token bound to a verified named user.</summary>
 internal sealed class PortalOAuthRefreshToken : PortalOAuthRecord
 {
-    /// <summary>
-    /// Binding mode chosen from the verified authorization-code redirect. Null keeps
-    /// legacy records on the referer-bound path rather than upgrading them to bearer.
-    /// </summary>
+    // Null binding mode keeps old refresh records on the referer-bound path and must not upgrade them to bearer.
     public PortalTokenClientType? ClientType { get; init; }
 
-    /// <summary>Original binding preserved on refresh; absent on legacy records.</summary>
     public string? BindingValue { get; init; }
 
-    /// <summary>ArcGIS client identifier the refresh token was issued to.</summary>
     public required string ClientId { get; init; }
 
-    /// <summary>The verified principal projected from the IdP token.</summary>
     public required PortalOAuthPrincipal Principal { get; init; }
 
-    /// <summary>
-    /// When this refresh token was minted. Rotation does not move
-    /// <see cref="PortalOAuthRecord.ExpiresAt"/>. A token issued at or before a revocation
-    /// marker is rejected; an unset value fails closed once a marker exists.
-    /// </summary>
     public DateTimeOffset IssuedAt { get; init; }
 }
 
-/// <summary>Per-principal refresh-token revocation marker.</summary>
 internal sealed class PortalOAuthRefreshRevocation : PortalOAuthRecord
 {
-    /// <summary>Refresh tokens issued at or before this instant are rejected.</summary>
     public DateTimeOffset RevokedAt { get; init; }
 }
 
-/// <summary>
-/// Serializable projection of <see cref="PortalCredentialPrincipal"/> for the cache.
-/// </summary>
 internal sealed class PortalOAuthPrincipal
 {
-    /// <summary>Stable identifier of the authenticated principal.</summary>
     public required string PrincipalId { get; init; }
 
-    /// <summary>Display name surfaced through the issued token's principal.</summary>
     public string? DisplayName { get; init; }
 
-    /// <summary>Tenant scope to attach to the issued token, or <see langword="null"/>.</summary>
     public string? TenantId { get; init; }
 
-    /// <summary>Roles granted for the lifetime of issued tokens.</summary>
     public required string[] Roles { get; init; }
 
-    /// <summary>
-    /// Whether <see cref="Roles"/> depend on the Enterprise <c>identity.claims-mapping</c>
-    /// entitlement, so tokens minted from this principal revalidate them on every restore
-    /// (honua-server#2997 review).
-    /// </summary>
-    /// <remarks>
-    /// NULLABLE for the same reason as <c>PortalTokenRecord</c>'s copy: a cached authorization
-    /// code or refresh token persisted before this field existed deserializes the member as
-    /// absent, and a non-nullable bool would read that as an explicit "not mapping-derived".
-    /// Exchanging or refreshing it would then stamp an explicit <see langword="false"/> onto the
-    /// new token record and skip the live entitlement check entirely — laundering legacy
-    /// custom-mapped roles through a refresh. Absent means unknown, and unknown fails closed.
-    /// </remarks>
     public bool? RolesRequireClaimsMappingEntitlement { get; init; }
 
-    /// <summary>
-    /// Exact entitlement-independent fallback roles. Null on legacy cached principals means
-    /// unknown and remains fail-closed; an empty array is a known empty fallback.
-    /// </summary>
+    // Null fallback roles mean unknown and stay fail-closed; an empty array is a known empty fallback.
     public string[]? RolesWithoutClaimsMapping { get; init; }
 
-    /// <summary>
-    /// Whether <see cref="TenantId"/> was synthesized by a <c>CustomMappings</c> entry and so
-    /// also depends on <c>identity.claims-mapping</c>. Nullable on exactly the same terms as
-    /// <see cref="RolesRequireClaimsMappingEntitlement"/>: absent means unknown, and unknown
-    /// fails closed, so a legacy cached code cannot launder a mapping-derived tenant through a
-    /// refresh (honua-server#2997 review).
-    /// </summary>
+    // A missing claims-mapping flag means unknown provenance and fails closed, so a cached code cannot carry a mapping-derived tenant through a refresh.
     public bool? TenantRequiresClaimsMappingEntitlement { get; init; }
 
-    /// <summary>
-    /// Credential this principal was verified from, so minted portal tokens are clamped to
-    /// that credential's expiry (SEC-9). Null on a principal cached before this field existed.
-    /// </summary>
+    // A present source clamps the minted token to that credential's expiry. Null identifies cached principals written before source provenance was recorded.
     public PortalCredentialSource? Source { get; init; }
 
-    /// <summary>Projects a verified credential principal into the serializable form.</summary>
     public static PortalOAuthPrincipal From(PortalCredentialPrincipal principal)
         => new()
         {

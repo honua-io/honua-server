@@ -6,53 +6,23 @@ using System.Globalization;
 
 namespace Honua.Infrastructure.Rendering;
 
-/// <summary>
-/// A single discrete legend class: a display label plus the synthetic feature
-/// attributes that select this class when the style layer is resolved.
-/// </summary>
 internal readonly record struct LegendClass(
     string Label,
     ImmutableDictionary<string, object?> Properties);
 
-/// <summary>
-/// The discrete classes a style layer resolves to, plus the reason the layer's
-/// classifying expression could not be enumerated when it could not.
-/// </summary>
 internal sealed class LegendClassSet
 {
-    /// <summary>
-    /// Ordered legend classes. Always contains at least one entry.
-    /// </summary>
     public required IReadOnlyList<LegendClass> Classes { get; init; }
 
-    /// <summary>
-    /// The feature attribute the classes are keyed on, when the layer is data-driven.
-    /// </summary>
     public string? Field { get; init; }
 
-    /// <summary>
-    /// Populated when the classifying expression is data-driven but cannot be
-    /// projected onto discrete legend entries. <see cref="Classes"/> then holds a
-    /// single representative entry and callers must surface this reason rather than
-    /// present the entry as a complete legend.
-    /// </summary>
+    // Callers must surface this reason instead of presenting the representative entry as a complete legend.
     public string? UnrepresentableReason { get; init; }
 
-    /// <summary>
-    /// Whether the layer resolved to enumerable data-driven classes.
-    /// </summary>
     public bool IsDataDriven => Field != null && UnrepresentableReason == null;
 }
 
-/// <summary>
-/// Projects a MapLibre style layer onto the discrete classes a legend can show.
-///
-/// The classifier never evaluates paint values itself: it enumerates the *domain*
-/// of the layer's classifying expression and emits the synthetic feature attributes
-/// that select each branch. Callers feed those attributes back through the same
-/// <see cref="StyleTranslator"/>/<see cref="SkiaMapRenderer"/> path that GetMap uses,
-/// so a swatch cannot drift from what the map actually draws.
-/// </summary>
+// A swatch is produced by feeding synthetic attributes through the same path the map uses, so the legend cannot drift from the drawing.
 internal static class LegendClassifier
 {
     private const string MatchOperator = "match";
@@ -60,9 +30,6 @@ internal static class LegendClassifier
     private const string InterpolateOperator = "interpolate";
     private const string GetOperator = "get";
 
-    /// <summary>
-    /// Classifies a style layer into the legend entries it can honestly represent.
-    /// </summary>
     internal static LegendClassSet Classify(MapLibreStyleLayer styleLayer)
     {
         var fallback = new LegendClassSet
@@ -195,19 +162,7 @@ internal static class LegendClassifier
         return new LegendClassSet { Classes = classes, Field = field };
     }
 
-    /// <summary>
-    /// A layer is only ever classified on its colour property, so an "interpolate"
-    /// here is always a continuous colour ramp.
-    /// </summary>
-    /// <remarks>
-    /// The ramp is sampled at its own stops. A stop is the one input an "interpolate" resolves
-    /// exactly, for every interpolation type: the evaluator returns that stop's output verbatim
-    /// rather than blending toward a neighbour, so "linear", "exponential" and "cubic-bezier"
-    /// ramps all sample identically here and the curve between stops never has to be modelled.
-    /// Each entry is therefore the colour GetMap paints for a feature carrying that value — the
-    /// same guarantee "match" and "step" entries carry — and the sampling is what a continuous
-    /// domain permits: exact at the labelled values, continuous between them.
-    /// </remarks>
+    // An interpolate ramp is sampled at its stops because those inputs resolve exactly and the curve between them is not a legend class.
     private static LegendClassSet? ClassifyInterpolate(MapLibreExpression[] items)
     {
         // interpolate, ["linear"], input, stop1, output1, stop2, output2, ...

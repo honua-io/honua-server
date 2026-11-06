@@ -454,17 +454,17 @@ internal sealed class LayerValidationService(
 
     private static bool TryResolveFilterLanguage(string? language, out FilterLanguage filterLanguage)
     {
-        filterLanguage = FilterLanguage.ArcGisSql;
-        var normalized = (language ?? PermanentFilterLanguages.ArcGisSql)
+        filterLanguage = FilterLanguage.GeoServicesSql;
+        var normalized = (language ?? PermanentFilterLanguages.GeoServicesSql)
             .Trim()
             .ToLowerInvariant();
 
         switch (normalized)
         {
-            case PermanentFilterLanguages.ArcGisSql:
+            case PermanentFilterLanguages.GeoServicesSql:
             case "arcgis":
             case "geoservices-sql":
-                filterLanguage = FilterLanguage.ArcGisSql;
+                filterLanguage = FilterLanguage.GeoServicesSql;
                 return true;
             case PermanentFilterLanguages.Cql2Text:
             case "cql2":

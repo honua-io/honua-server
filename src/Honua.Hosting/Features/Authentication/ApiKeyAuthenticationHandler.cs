@@ -8,20 +8,14 @@ using System.Text;
 using System.Text.Encodings.Web;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Redis;
 using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
-using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// API Key authentication handler with development bypass mode support
-/// </summary>
-/// <remarks>
-/// Initializes a new instance of the ApiKeyAuthenticationHandler
-/// </remarks>
 internal sealed class ApiKeyAuthenticationHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> options,
     ILoggerFactory logger,
@@ -35,15 +29,13 @@ internal sealed class ApiKeyAuthenticationHandler(
     private const string AuthFailureMessageKey = "AuthFailureMessage";
     private const string AuthRealm = "Honua Admin";
     private const string AdminAuthenticationNotConfigured = "Admin authentication not configured";
+    private const string RequestNotPermittedMessage = "This API key is not permitted from this origin or network.";
     private static readonly Guid DevelopmentBypassActorId = new("00000000-0000-0000-0000-000000000001");
     private static readonly Guid BootstrapAdminActorId = new("00000000-0000-0000-0000-000000000002");
 
     private readonly ApiKeyAuthenticationDependencies _dependencies = dependencies ?? throw new ArgumentNullException(nameof(dependencies));
     private readonly ApiKeyAuthenticationOptions _authOptions = dependencies.Options;
 
-    /// <summary>
-    /// Handles API key authentication with development bypass support
-    /// </summary>
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         if (ScopedJobAuthentication.HasCandidate(Context))
@@ -83,6 +75,7 @@ internal sealed class ApiKeyAuthenticationHandler(
             providedApiKey,
             Scheme.Name,
             _dependencies,
+            ApiKeyRequestContext.From(Context),
             Logger,
             Context.RequestAborted);
         switch (validation.Rejection)
@@ -100,26 +93,31 @@ internal sealed class ApiKeyAuthenticationHandler(
             case ApiKeyRejection.CredentialStoreUnavailable:
                 Context.Items[AuthFailureMessageKey] = "credential store unavailable";
                 return AuthenticateResult.Fail("credential store unavailable");
+            case ApiKeyRejection.RequestNotPermitted:
+                // Refusal already logged by ValidateApiKeyAsync with the key id and restriction.
+                Context.Items[AuthFailureMessageKey] = RequestNotPermittedMessage;
+                return AuthenticateResult.Fail(RequestNotPermittedMessage);
             default:
                 AuthenticationLog.InvalidApiKeyProvided(Logger);
                 return AuthenticateResult.Fail("Invalid API key");
         }
     }
 
-    /// <summary>
-    /// Validates a presented API key against the managed key store and the bootstrap
-    /// admin credential, and projects the key's own authority onto a principal.
-    /// </summary>
-    /// <remarks>
-    /// Shared with <see cref="PortalTokenAuthenticationHandler"/> so a key presented through
-    /// a GeoServices token transport (#5492) yields exactly the principal the
-    /// <c>X-API-Key</c> header yields: same roles, permission claims and credential kind.
-    /// Rejections are returned rather than logged so each caller reports its own transport.
-    /// </remarks>
+    // The GeoServices token transport shares this path so the same key yields the same principal, and a rejection is returned instead of logged so the caller reports it.
+    internal static Task<ApiKeyValidation> ValidateApiKeyAsync(
+        string providedApiKey,
+        string schemeName,
+        ApiKeyAuthenticationDependencies dependencies,
+        ILogger logger,
+        CancellationToken cancellationToken)
+        // No request context: a key with referrer or IP restrictions fails closed.
+        => ValidateApiKeyAsync(providedApiKey, schemeName, dependencies, request: null, logger, cancellationToken);
+
     internal static async Task<ApiKeyValidation> ValidateApiKeyAsync(
         string providedApiKey,
         string schemeName,
         ApiKeyAuthenticationDependencies dependencies,
+        ApiKeyRequestContext? request,
         ILogger logger,
         CancellationToken cancellationToken)
     {
@@ -130,9 +128,21 @@ internal sealed class ApiKeyAuthenticationHandler(
         {
             try
             {
-                var storedKey = await dependencies.AdminApiKeyStore.ValidateAsync(providedApiKey, cancellationToken);
+                // One completed-reader fault is a torn Redis pipe (Lambda freeze/thaw or a
+                // timeout). Retry once so the multiplexer can reconnect and a managed key
+                // still authenticates (honua-server#6753).
+                var storedKey = await RedisClientFault.RetryCompletedReaderAsync(
+                    () => dependencies.AdminApiKeyStore.ValidateAsync(providedApiKey, cancellationToken),
+                    cancellationToken);
                 if (storedKey is not null)
                 {
+                    var violation = ApiKeyRequestRestrictions.Evaluate(storedKey.Record, request);
+                    if (violation != ApiKeyRestrictionViolation.None)
+                    {
+                        AuthenticationLog.ApiKeyRequestRestrictionRefused(logger, storedKey.Record.Id, violation);
+                        return new ApiKeyValidation(null, ApiKeyRejection.RequestNotPermitted);
+                    }
+
                     AuthenticationLog.ApiKeyAuthenticationSuccessful(logger);
                     return new ApiKeyValidation(
                         CreateSuccessfulAuthenticationResult(
@@ -144,11 +154,11 @@ internal sealed class ApiKeyAuthenticationHandler(
                         ApiKeyRejection.None);
                 }
             }
-            catch (Exception ex) when (ex is RedisException or TimeoutException or System.Data.Common.DbException && ex is not OperationCanceledException)
+            catch (Exception ex) when (RedisClientFault.IsCredentialStoreUnavailable(ex))
             {
                 // RedisTimeoutException derives from TimeoutException, not RedisException.
-                // A store outage must not become an unhandled 500, and must not skip the
-                // HONUA_ADMIN_PASSWORD break-glass comparison.
+                // A second completed-reader fault is the same outage: fall through to the
+                // HONUA_ADMIN_PASSWORD break-glass comparison instead of an unhandled 500.
                 storeUnavailable = true;
                 AuthenticationLog.AdminApiKeyStoreUnavailable(logger, ex);
             }
@@ -287,25 +297,6 @@ internal sealed class ApiKeyAuthenticationHandler(
         return Request.IsHttps;
     }
 
-    /// <summary>
-    /// Determines if development authentication bypass is enabled.
-    /// </summary>
-    /// <remarks>
-    /// SECURITY: The bypass is gated by three independent conditions and is only
-    /// active when all three are satisfied. Any deployment that does not match
-    /// every condition - including Staging, QA, Production, or any other custom
-    /// environment - falls through to normal API-key authentication.
-    /// <list type="number">
-    ///   <item>Resolved ASPNETCORE_ENVIRONMENT is exactly "Test" (the only
-    ///   environment where the in-process test host runs unauthenticated).
-    ///   We deliberately do NOT honour the bypass in "Development" because
-    ///   developers should exercise the same API-key path as production.</item>
-    ///   <item><c>HONUA_DEV_AUTH=true</c> is supplied.</item>
-    ///   <item><c>HONUA_DEV_AUTH_ALLOW_BYPASS=true</c> is supplied as an
-    ///   independent operator acknowledgement so an accidentally-leaked
-    ///   HONUA_DEV_AUTH cannot, on its own, disable authentication.</item>
-    /// </list>
-    /// </remarks>
     private bool IsDevelopmentBypassEnabled()
     {
         // SECURITY: Never allow bypass in production or any non-Test environment.
@@ -356,14 +347,10 @@ internal sealed class ApiKeyAuthenticationHandler(
 
     private static bool IsAllowedBypassEnvironment(string? environmentName)
     {
-        // Only "Test" is allowed - Development, Staging, QA, Production, and any
-        // other custom environment fall through to standard API-key auth.
+        // Only "Test" is allowed. Development is not honored so developers exercise the same API-key path as production.
         return string.Equals(environmentName, "Test", StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Performs constant-time comparison of API keys to prevent timing attacks
-    /// </summary>
     private static bool IsApiKeyValid(string providedKey, string configuredKey)
     {
         byte[] providedBytes = Encoding.UTF8.GetBytes(providedKey);
@@ -403,9 +390,6 @@ internal sealed class ApiKeyAuthenticationHandler(
         return matches && providedBytes.Length == configuredBytes.Length;
     }
 
-    /// <summary>
-    /// Creates a successful authentication result with admin claims
-    /// </summary>
     private static AuthenticateResult CreateSuccessfulAuthenticationResult(
         string schemeName,
         string authenticationType,
@@ -553,9 +537,6 @@ internal sealed class ApiKeyAuthenticationHandler(
         return resolvedPassword;
     }
 
-    /// <summary>
-    /// Handles authentication challenges by returning 401 Unauthorized
-    /// </summary>
     protected override Task HandleChallengeAsync(AuthenticationProperties properties)
     {
         Response.Headers.Append("WWW-Authenticate", $"ApiKey realm=\"{AuthRealm}\", header=\"{ApiKeyHeader}\"");
@@ -579,32 +560,21 @@ internal sealed class ApiKeyAuthenticationHandler(
     }
 }
 
-/// <summary>
-/// Why <see cref="ApiKeyAuthenticationHandler.ValidateApiKeyAsync"/> refused a presented key.
-/// </summary>
 internal enum ApiKeyRejection
 {
-    /// <summary>The key was accepted.</summary>
     None,
 
-    /// <summary>The key matched no managed key and the bootstrap admin credential.</summary>
     InvalidKey,
 
-    /// <summary>The key matched no managed key and no bootstrap admin credential is configured.</summary>
     AdminPasswordNotConfigured,
 
-    /// <summary>The key matched no managed key and the bootstrap admin credential could not be resolved.</summary>
     AdminPasswordUnavailable,
 
-    /// <summary>
-    /// The managed key store could not be reached and the bootstrap admin credential did not match.
-    /// Callers fail the request; they must not treat this as an invalid key or an unhandled error.
-    /// </summary>
+    // A store outage together with a bootstrap mismatch fails the request; it is neither an invalid key nor an unhandled error.
     CredentialStoreUnavailable,
+
+    // A valid key is still refused when its referrer or IP restriction misses the request.
+    RequestNotPermitted,
 }
 
-/// <summary>
-/// Outcome of <see cref="ApiKeyAuthenticationHandler.ValidateApiKeyAsync"/>: the success
-/// result carrying the key's own principal, or the reason it was refused.
-/// </summary>
 internal readonly record struct ApiKeyValidation(AuthenticateResult? Success, ApiKeyRejection Rejection);

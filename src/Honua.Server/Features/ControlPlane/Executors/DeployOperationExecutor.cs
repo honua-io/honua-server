@@ -10,12 +10,6 @@ using Honua.Core.Features.Guardrails.Domain;
 
 namespace Honua.ControlPlane.Executors;
 
-/// <summary>
-/// Gateway executor that adapts the existing two-phase deploy workflow
-/// (<see cref="DeployWorkflowService"/>) to the shared operation gateway. This is
-/// the first adapter over <see cref="IOperationGateway"/>; the durable record,
-/// plan production, and backend submission stay in the deploy service (#1693).
-/// </summary>
 internal sealed class DeployOperationExecutor(DeployWorkflowService deployWorkflowService) : IOperationExecutor
 {
     public OperationClass OperationClass => OperationClass.Deploy;
@@ -61,13 +55,21 @@ internal sealed class DeployOperationExecutor(DeployWorkflowService deployWorkfl
             $"revision: {planResult.Spec.CurrentRevision ?? "(unknown)"} -> {planResult.Spec.DesiredRevision}",
         };
 
+        if (payload.Rollback && !string.IsNullOrWhiteSpace(payload.BackupId))
+        {
+            diff.Add($"backup: {payload.BackupId}");
+        }
+
+        var dryRun = new List<string>();
+        if (planResult.Plan.RequiresOutOfBandMigrations) dryRun.Add("requires out-of-band migrations");
+        if (payload.Rollback && !string.IsNullOrWhiteSpace(payload.BackupId))
+            dryRun.Add($"Verify backup {payload.BackupId}; restore it before starting the prior revision when required by reader compatibility.");
+
         return new OperationProposalPlan
         {
             Summary = $"Deploy {payload.DesiredRevision} to {planResult.Target.TargetId}",
             Diff = diff,
-            DryRun = planResult.Plan.RequiresOutOfBandMigrations
-                ? ["requires out-of-band migrations"]
-                : Array.Empty<string>(),
+            DryRun = dryRun,
             RiskLevel = planResult.Plan.RequiresOutOfBandMigrations ? ProposalRiskLevel.High : ProposalRiskLevel.Medium,
             BlockingReasons = planResult.Plan.BlockingReasons,
             Warnings = planResult.Plan.Warnings,
@@ -75,10 +77,24 @@ internal sealed class DeployOperationExecutor(DeployWorkflowService deployWorkfl
         };
     }
 
-    public async Task<string?> ExecuteAsync(
+    public Task<string?> ExecuteAsync(
         OperationGatewayRequest request,
         string? executionPayload,
         CancellationToken cancellationToken = default)
+        => ExecuteCoreAsync(request, executionPayload, null, cancellationToken);
+
+    internal Task<string?> ExecuteRestoreAsync(
+        OperationGatewayRequest request,
+        string? executionPayload,
+        string restoreOwnerId,
+        CancellationToken cancellationToken)
+        => ExecuteCoreAsync(request, executionPayload, restoreOwnerId, cancellationToken);
+
+    private async Task<string?> ExecuteCoreAsync(
+        OperationGatewayRequest request,
+        string? executionPayload,
+        string? restoreOwnerId,
+        CancellationToken cancellationToken)
     {
         var payload = DeployExecutionPayload.Parse(executionPayload);
         if (payload == null)
@@ -86,7 +102,7 @@ internal sealed class DeployOperationExecutor(DeployWorkflowService deployWorkfl
             throw new InvalidOperationException("Deploy execution payload is missing or malformed.");
         }
 
-        var record = await deployWorkflowService.CreateAsync(
+        var record = await deployWorkflowService.CreateWithBackupAsync(
                 payload.TargetId,
                 payload.DesiredRevision,
                 payload.CurrentRevision,
@@ -98,8 +114,28 @@ internal sealed class DeployOperationExecutor(DeployWorkflowService deployWorkfl
                 submitImmediately: true,
                 payload.ParameterOverrides,
                 principal: null,
+                preMigrationBackupId: payload.Rollback ? payload.BackupId : null,
+                restoreOwnerId,
+                request.ApprovedBy,
                 cancellationToken)
             .ConfigureAwait(false);
+
+        // Approval persists the workflow and returns before Start when the target requires it.
+        // The approver is a different principal from the requester, so replay that approval as the
+        // submit. Targets that were already started (approval not required) are left as they are.
+        if (record != null &&
+            !string.IsNullOrWhiteSpace(request.ApprovedBy) &&
+            record.BlockingReasons.Count == 0 &&
+            record.Status is WorkflowOperationStatus.AwaitingApproval or WorkflowOperationStatus.Planned)
+        {
+            record = await deployWorkflowService.SubmitWithRestoreAsync(
+                    record.OperationId,
+                    request.ApprovedBy,
+                    request.Reason,
+                    restoreOwnerId,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
 
         return record?.OperationId;
     }
@@ -111,6 +147,12 @@ internal sealed class DeployOperationExecutor(DeployWorkflowService deployWorkfl
         var operation = await deployWorkflowService.GetAsync(executionOperationId, cancellationToken).ConfigureAwait(false);
         return operation is null ? null : BackendStatus(operation.Status);
     }
+
+    internal Task<WorkflowOperationRecord?> GetWorkflowAsync(string operationId, CancellationToken cancellationToken)
+        => deployWorkflowService.GetAsync(operationId, cancellationToken);
+
+    internal Task RecordInstalledRevisionAsync(string targetId, string revision, WorkflowOperationRecord convergence, CancellationToken cancellationToken)
+        => deployWorkflowService.RecordInstalledRevisionAsync(targetId, revision, convergence, cancellationToken);
 
     private static OperationBackendStatus BackendStatus(WorkflowOperationStatus status) => new()
     {
@@ -130,27 +172,24 @@ internal sealed class DeployOperationExecutor(DeployWorkflowService deployWorkfl
     };
 }
 
-/// <summary>
-/// Class-specific execution payload for deploy operations carried through the gateway.
-/// </summary>
 internal sealed record DeployExecutionPayload
 {
-    /// <summary>Stable deploy target identifier.</summary>
     public required string TargetId { get; init; }
 
-    /// <summary>Desired revision to deploy.</summary>
     public required string DesiredRevision { get; init; }
 
-    /// <summary>Currently observed revision, when known.</summary>
     public string? CurrentRevision { get; init; }
 
-    /// <summary>Relative operator priority.</summary>
     public OperationPriority Priority { get; init; } = OperationPriority.Normal;
 
-    /// <summary>Backend parameter overrides.</summary>
     public Dictionary<string, string>? ParameterOverrides { get; init; }
 
-    /// <summary>Parses a serialized payload, returning null when missing/malformed.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Rollback { get; init; }
+
+    // The backup id is ignored unless restore is requested, and it is never read from parameter overrides.
+    public string? BackupId { get; init; }
+
     public static DeployExecutionPayload? Parse(string? json)
     {
         if (string.IsNullOrWhiteSpace(json))
@@ -168,7 +207,6 @@ internal sealed record DeployExecutionPayload
         }
     }
 
-    /// <summary>Serializes this payload to JSON for storage on the proposal.</summary>
     public string Serialize()
         => JsonSerializer.Serialize(this, DeployExecutionPayloadJsonContext.Default.DeployExecutionPayload);
 }

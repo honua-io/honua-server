@@ -11,6 +11,18 @@ upgrade step cannot reuse stale package layers. PDAL compilation and managed
 build caches remain enabled; the blocking vulnerability policy is unchanged.
 
 After review, an operator can select `publish_nightly=true` on canonical `trunk`.
+The same dispatch may set `candidate_sha` to a full 40-hex commit that is reachable
+from `trunk` (local `git merge-base --is-ancestor`, or compare-API status `ahead`
+or `identical`; a negative local answer in a shallow checkout falls back to the
+API, authenticated with the workflow `GH_TOKEN`). The build checks that commit out, runs the same image, smoke,
+boundary, handoff, PDAL, native API, and Trivy gates, and stamps
+`org.opencontainers.image.revision` with the candidate. The nightly tag and bundle
+`source_sha` use that commit, so GP lifecycle and resilience qualification can bind
+the server and worker to one source. The GitHub attestation stays on the trunk
+workflow commit (`--source-ref refs/heads/trunk --source-digest $GITHUB_SHA`): it
+proves this trunk workflow published the tested bytes, and the OCI revision names
+the candidate. Missing, non-hex, or unreachable commits are refused before any
+image build or registry write. PR and schedule runs ignore `candidate_sha`.
 Publication requires the image/boundary/actual container handoff, real PDAL,
 native public API, existing blocking Trivy policy and SARIF jobs to succeed.
 The separate publication job alone receives new OIDC/attestation authority.

@@ -13,33 +13,8 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin.Scene;
 
-/// <summary>
-/// <see cref="IPointCloudDecompressor"/> backed by the canonical geoprocessing job
-/// runtime (#1854). It builds a single-step <c>pcloud.translate</c>
-/// <see cref="AnalysisPlan"/>, submits it through <see cref="IGeoprocessingJobService"/>
-/// (which stamps the native runtime profile so the dispatch routes to the
-/// out-of-tree PDAL worker), polls the job to a terminal state, and returns the
-/// decompressed uncompressed-LAS bytes the managed scene tiler consumes.
-/// </summary>
-/// <remarks>
-/// <para>
-/// This is the worker-boundary crossing the <c>Honua.Scene</c> tiling subsystem
-/// deliberately does not take: the scene assembly stays free of any
-/// geoprocessing/job dependency, and the server composition root binds this
-/// adapter so the admin point-cloud ingest endpoint can decompress LAZ/COPC (or
-/// reproject a projected source) before tiling. The actual decompression is the
-/// thin-adapter-over-canonical-pipeline path AGENTS.md prescribes — no LAS/LAZ
-/// parsing, no 3D-Tiles generation lives here.
-/// </para>
-/// <para>
-/// The decompressed LAS round-trips back through the existing managed
-/// <c>LasPointCloudReader</c> + <c>PointCloudTilesetBuilder</c>, so the ingest
-/// outcome is identical to a natively-uploaded uncompressed LAS.
-/// </para>
-/// </remarks>
 internal sealed partial class GeoprocessingPointCloudDecompressor : IPointCloudDecompressor
 {
-    /// <summary>The canonical process id handled by the out-of-tree PDAL worker.</summary>
     public const string ProcessId = "pcloud.translate";
 
     private const string LasArtifactContentType = "application/vnd.las";
@@ -65,7 +40,6 @@ internal sealed partial class GeoprocessingPointCloudDecompressor : IPointCloudD
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
-    /// <inheritdoc />
     public async Task<byte[]> DecompressAsync(byte[] source, string? sourceSrs, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(source);
@@ -180,11 +154,6 @@ internal sealed partial class GeoprocessingPointCloudDecompressor : IPointCloudD
             "Point-cloud decompression job produced no uncompressed-LAS artifact.");
     }
 
-    /// <summary>
-    /// Decodes a <c>data:application/vnd.las;base64,&lt;payload&gt;</c> artifact URI
-    /// into its LAS bytes. Returns <see langword="false"/> for any other URI shape
-    /// so the caller can skip non-LAS artifacts.
-    /// </summary>
     internal static bool TryDecodeLasDataUri(string? uri, out byte[] bytes)
     {
         bytes = [];
@@ -233,14 +202,6 @@ internal sealed partial class GeoprocessingPointCloudDecompressor : IPointCloudD
     }
 }
 
-/// <summary>
-/// Composition-root factory that binds the request principal to a
-/// <see cref="GeoprocessingPointCloudDecompressor"/> (#1854). The decompressor
-/// authorizes and submits under the calling admin operator's identity, which is
-/// only available per-request, so the long-lived dependencies are captured here
-/// and the principal is supplied when the ingest endpoint creates the
-/// per-request instance.
-/// </summary>
 internal sealed class GeoprocessingPointCloudDecompressorFactory : IPointCloudDecompressorFactory
 {
     private readonly IGeoprocessingJobService _jobService;
@@ -260,28 +221,18 @@ internal sealed class GeoprocessingPointCloudDecompressorFactory : IPointCloudDe
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
-    /// <inheritdoc />
     public IPointCloudDecompressor Create(ClaimsPrincipal principal)
         => new GeoprocessingPointCloudDecompressor(_jobService, principal, _options, _logger, _timeProvider);
 }
 
-/// <summary>
-/// Tunables for the out-of-process point-cloud decompression dispatch (#1854):
-/// how long the ingest request waits for the <c>pcloud.translate</c> worker and
-/// how frequently it polls the job for completion.
-/// </summary>
 internal sealed class PointCloudDecompressionOptions
 {
-    /// <summary>Configuration section binding key.</summary>
     public const string SectionName = "Scene:PointCloud:Decompression";
 
-    /// <summary>Maximum time the ingest request waits for the worker to finish. Default 5 minutes.</summary>
     public TimeSpan Timeout { get; set; } = TimeSpan.FromMinutes(5);
 
-    /// <summary>Interval between job-status polls while waiting. Default 1 second.</summary>
     public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(1);
 
-    /// <summary>Parses an invariant timespan/seconds value, falling back to <paramref name="fallback"/>.</summary>
     internal static TimeSpan ParseDuration(string? raw, TimeSpan fallback)
     {
         if (string.IsNullOrWhiteSpace(raw))

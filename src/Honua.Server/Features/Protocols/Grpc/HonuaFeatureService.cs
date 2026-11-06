@@ -20,6 +20,7 @@ using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Events;
 using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Security;
 using Honua.Infrastructure.Services;
 using Honua.Infrastructure.Validation;
 using Honua.ServiceDefaults;
@@ -30,10 +31,6 @@ using Proto = Geospatial.V1;
 
 namespace Honua.Server.Features.Protocols.Grpc;
 
-/// <summary>
-/// gRPC service implementation for feature queries.
-/// Delegates to existing infrastructure (IResourceValidator, IFeatureReader, IStreamingFeatureStore).
-/// </summary>
 internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceBase
 {
     private const string GrpcProtocolName = "Grpc";
@@ -51,6 +48,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
     private readonly ILogger<HonuaFeatureService> _logger;
     private readonly GrpcApplyEditsIdempotencyStore _idempotencyStore;
     private readonly GeometryLimits _geometryLimits;
+    private readonly EditLimits _editLimits;
     private readonly int _streamBatchSize;
 
     public HonuaFeatureService(
@@ -102,6 +100,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         _spatialReferenceResolver = spatialReferenceResolver;
         _mutationEventService = mutationEventService;
         _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
+        _editLimits = limitsOptions?.Value?.Edits ?? new EditLimits();
         _streamBatchSize = Math.Max(grpcOptions?.Value?.StreamBatchSize ?? 1000, 1);
         _logger = logger;
         _idempotencyStore = idempotencyStore;
@@ -300,6 +299,8 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         }
 
         await EnsureWriteAccessAsync(context, layer.Service, layer.Resource, editBatch).ConfigureAwait(false);
+        EnsureDeclaredEditCapabilities(layer.Service, layer.Publication, editBatch);
+        EnsureEditLimits(editBatch, _editLimits);
         editBatch = await ValidateGrpcMutationsAsync(layer.Resource, editBatch, context.CancellationToken)
             .ConfigureAwait(false);
 
@@ -326,7 +327,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
                 context.GetHttpContext(), request.ServiceId, request.LayerId, idempotencyKey)
                 ?? throw new RpcException(new Status(
                     StatusCode.FailedPrecondition,
-                    "An idempotency key requires a caller identity the server can bind retries to."));
+                    IdempotencyCaller.UnbindableCallerMessage));
             idempotencyLease = await _idempotencyStore.EnterAsync(scope, context.CancellationToken).ConfigureAwait(false);
         }
         await using var heldIdempotencyLease = idempotencyLease;
@@ -604,10 +605,6 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         StatusCode.Aborted,
         "The edit lost its idempotency reservation before it completed; retry with the same idempotency key."));
 
-    /// <summary>
-    /// True when the writer could not prove the transaction rolled back and reported no
-    /// successful row. A confirmed rollback and a known partial success are receipts.
-    /// </summary>
     private static bool IsAmbiguousCommit(FeatureEditResult result)
     {
         if (result.WasRolledBack || result.CreatedCount + result.UpdatedCount + result.DeletedCount > 0)
@@ -647,15 +644,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Pre-reads every update and delete target through the RLS-enforced
-    /// <see cref="IFeatureReader.GetAsync(int, long, CancellationToken)"/> so the gRPC edit
-    /// surface enforces the same row-level visibility as the read path. A row that is hidden
-    /// from the caller by a row-level-security policy or a metadata permanent filter resolves
-    /// to <see langword="null"/>; the request is rejected (fail closed) rather than mutating or
-    /// deleting it, because the underlying edit SQL filters only on <c>(layer_id, objectid)</c>
-    /// with no RLS predicate (#2071). Adds carry no objectid and are not pre-read.
-    /// </summary>
+    // A row hidden by row-level security is rejected rather than edited, because the edit statement has no row-level predicate.
     private async Task<FeatureEditBatch> EnsureEditTargetsVisibleAsync(
         int storageLayerId,
         FeatureEditBatch editBatch,
@@ -749,11 +738,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         };
     }
 
-    /// <summary>
-    /// Omitted geometry keeps the stored geometry. There is no protobuf signal for
-    /// clearing geometry. Omitted attributes are not copied from this snapshot: the
-    /// writer merges them from the locked row, including fields this caller cannot see.
-    /// </summary>
+    // Omitted geometry keeps the stored geometry because there is no protobuf signal for clearing it, and omitted attributes are merged from the locked row.
     private static Feature MergePartialUpdate(Feature update, Feature stored)
         => update with
         {
@@ -834,13 +819,6 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         }
     }
 
-    /// <summary>
-    /// Build per-operation-kind queues of geometry-change flags in the same order
-    /// ApplyEditsAsync iterates rows for each kind, so the outbox payload's
-    /// <c>GeometryChanged</c> field tracks the originating request's intent rather than
-    /// inferring from the post-mutation snapshot. Deletes default to false (the inline
-    /// publish path also defaults to false for delete events).
-    /// </summary>
     private static Dictionary<string, IReadOnlyList<bool>>? BuildPerOperationGeometryChanged(FeatureEditBatch editBatch)
     {
         if (editBatch.Creates.IsDefaultOrEmpty && editBatch.Updates.IsDefaultOrEmpty && editBatch.Deletes.IsDefaultOrEmpty)
@@ -1085,13 +1063,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             request.ReturnGeometry);
     }
 
-    /// <summary>
-    /// Binds the request's <c>where</c> clause to the shared filter pipeline, as FeatureServer
-    /// does with the same GeoServices SQL parameter: the clause is parsed by the shared parser,
-    /// refused when any field it references is masked from the caller, and translated against
-    /// the layer schema. The raw text stays on <see cref="FeatureQuery.Where"/> for providers
-    /// that re-parse it, and the provider's own field-security check still runs on both.
-    /// </summary>
+    // A where clause that names a masked field is refused.
     private static async Task<SqlFragment?> BindWhereClauseAsync(
         string? where,
         MetadataV2Resource resource,
@@ -1106,7 +1078,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         var filterService = requestServices.GetService<IFilterExpressionService>()
             ?? throw new InvalidOperationException("A where clause requires the shared filter expression service.");
 
-        var parse = filterService.Parse(FilterLanguage.ArcGisSql, where);
+        var parse = filterService.Parse(FilterLanguage.GeoServicesSql, where);
         if (!parse.IsSuccess || parse.Expression is null)
         {
             throw new RpcException(new Status(
@@ -1285,6 +1257,46 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
 
             ThrowIfAccessDenied(decision);
         }
+    }
+
+    // An edit kind the publication omits is rejected.
+    private static void EnsureDeclaredEditCapabilities(
+        MetadataV2Service service,
+        MetadataV2Publication publication,
+        FeatureEditBatch editBatch)
+    {
+        Check(!editBatch.Creates.IsDefaultOrEmpty, AuthorizationOperation.Insert);
+        Check(!editBatch.Updates.IsDefaultOrEmpty, AuthorizationOperation.Update);
+        Check(!editBatch.Deletes.IsDefaultOrEmpty, AuthorizationOperation.Delete);
+
+        void Check(bool present, AuthorizationOperation operation)
+        {
+            if (present &&
+                LayerValidationHelpers.FindUndeclaredEditCapability(service, publication, operation) is { } capability)
+            {
+                throw new RpcException(new Status(
+                    StatusCode.FailedPrecondition,
+                    LayerValidationHelpers.DescribeUndeclaredEditCapability(capability)));
+            }
+        }
+    }
+
+    private static void EnsureEditLimits(FeatureEditBatch editBatch, EditLimits editLimits)
+    {
+        var creates = editBatch.Creates.IsDefault ? 0 : editBatch.Creates.Length;
+        var updates = editBatch.Updates.IsDefault ? 0 : editBatch.Updates.Length;
+        var deletes = editBatch.Deletes.IsDefault ? 0 : editBatch.Deletes.Length;
+        if (EditLimitPolicy.Evaluate(new EditCounts(creates, updates, deletes), editLimits) is not { } violation)
+        {
+            return;
+        }
+
+        var limit = violation.Limit.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        throw new RpcException(new Status(
+            StatusCode.InvalidArgument,
+            violation.Kind == EditLimitViolationKind.FeaturesPerOperation
+                ? $"Too many features in a single edit operation. Maximum per operation: {limit}."
+                : $"Too many edits in a single request. Maximum per request: {limit}."));
     }
 
     private static async Task EnsureReadAccessAsync(

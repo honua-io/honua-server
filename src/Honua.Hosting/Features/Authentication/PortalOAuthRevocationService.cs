@@ -5,18 +5,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// RFC 7009 per-token revocation for the ArcGIS OAuth2 named-user bridge (#2155).
-/// Revokes a single presented access or refresh token immediately so it fails every
-/// subsequent authorization check across all replicas. Revocation is the dual of
-/// <see cref="PortalTokenIntrospectionService"/>: both resolve a presented credential
-/// to the single cache-backed source of truth (ADR-0049/0053). An access token is
-/// revoked by evicting its backing portal-token cache entry (the JWT <c>jti</c> or
-/// the opaque value itself); a refresh token is revoked by removing it from the
-/// <see cref="PortalOAuthStore"/>. The presented token value is the authorization to
-/// revoke it (the caller already holds the bearer credential), matching RFC 7009 and
-/// ArcGIS sign-out semantics.
-/// </summary>
+// An access token is revoked by evicting its cache entry and a refresh token by removing it, and holding the token is the authorization to revoke it.
 internal sealed class PortalOAuthRevocationService(
     IPortalTokenIssuer tokenIssuer,
     PortalOAuthStore store,
@@ -26,16 +15,7 @@ internal sealed class PortalOAuthRevocationService(
     private readonly PortalOAuthStore _store = store;
     private readonly PortalJwtAccessTokenService _jwtService = jwtService;
 
-    /// <summary>
-    /// Revokes a presented token. The <paramref name="tokenTypeHint"/> (RFC 7009
-    /// §2.1) is advisory; because a leaked credential should never be left live, the
-    /// presented value is removed from both the access-token and refresh-token stores
-    /// regardless of the hint. All removals are idempotent no-ops when the value is
-    /// unknown, so RFC 7009 §2.2 (a revocation request always succeeds) is preserved.
-    /// </summary>
-    /// <param name="token">The access or refresh token to revoke.</param>
-    /// <param name="tokenTypeHint">Optional <c>token_type_hint</c> (advisory only).</param>
-    /// <param name="cancellationToken">Token used to abort the revocation.</param>
+    // The token type hint is advisory: the value is removed from both stores so a hint cannot leave the other form live, and an unknown value still succeeds.
     public async Task RevokeAsync(
         string token,
         string? tokenTypeHint,

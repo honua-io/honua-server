@@ -20,6 +20,7 @@ using Honua.Core.Features.Publishing.Domain;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Temporal.Domain;
 using Honua.Infrastructure.Progress;
+using Honua.Infrastructure.Redis;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.StackExchangeRedis;
 using StackExchange.Redis;
@@ -27,10 +28,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Migration;
 
-/// <summary>
-/// Redis-based universal progress store with fallback to in-memory storage.
-/// Supports any operation type implementing IOperationProgress.
-/// </summary>
 internal sealed partial class UniversalProgressStore : IUniversalProgressStore, IProgressStoreRecovery
 {
     private readonly IDistributedCache? _cache;
@@ -193,7 +190,9 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
             {
                 throw CreateDistributedStateUnavailableException("atomically replace progress");
             }
-            persisted = await _redis!.GetDatabase().HashGetAsync(key, "data").ConfigureAwait(false);
+            persisted = await RedisClientFault.RetryCompletedReaderAsync(
+                () => _redis!.GetDatabase().HashGetAsync(key, "data"),
+                cancellationToken).ConfigureAwait(false);
             current = persisted.HasValue ? DeserializeProgress(persisted.ToString()) : null;
         }
         if (current is null)
@@ -369,7 +368,9 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
 
         try
         {
-            var json = await _cache.GetStringAsync(key, cancellationToken);
+            var json = await RedisClientFault.RetryCompletedReaderAsync(
+                () => _cache.GetStringAsync(key, cancellationToken),
+                cancellationToken).ConfigureAwait(false);
             if (json == null)
             {
                 RemoveFallbackEntry(operationId, key);
@@ -515,11 +516,6 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
     private static bool IsTerminalStatus(OperationStatus status)
         => status is OperationStatus.Completed or OperationStatus.Failed or OperationStatus.Cancelled;
 
-    /// <summary>
-    /// Atomic compare-and-set against the in-memory fallback store: the status check and the swap are
-    /// linearized through <see cref="ConcurrentDictionary{TKey,TValue}.TryUpdate"/>, retrying when a
-    /// concurrent writer replaced the entry between the read and the swap.
-    /// </summary>
     private ProgressCompareAndSetResult TrySetProgressInFallback(
         string operationId,
         IOperationProgress progress,
@@ -560,11 +556,6 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
         }
     }
 
-    /// <summary>
-    /// Best-effort per-operation distributed lock (SET NX with TTL) used to serialize conditional writes
-    /// and terminal-status writes across nodes. Returns the lock token, or null when no Redis backplane is
-    /// available or the lock could not be acquired in time; callers proceed unguarded in that case.
-    /// </summary>
     private async Task<string?> TryAcquireConditionalWriteLockAsync(string operationId, CancellationToken cancellationToken)
     {
         if (_redis is null || _isUsingFallback)
@@ -728,7 +719,9 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
 
         try
         {
-            await _cache.GetStringAsync(HealthCheckKey, cancellationToken).ConfigureAwait(false);
+            await RedisClientFault.RetryCompletedReaderAsync(
+                () => _cache.GetStringAsync(HealthCheckKey, cancellationToken),
+                cancellationToken).ConfigureAwait(false);
             _isUsingFallback = false;
             Log.RedisConnectionRestored(_logger);
             return true;
@@ -815,7 +808,9 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
         var setKey = operationType.HasValue
             ? GetActiveOperationTypeKey(operationType.Value)
             : ActiveOperationIdsKey;
-        var members = await db.SetMembersAsync(setKey).ConfigureAwait(false);
+        var members = await RedisClientFault.RetryCompletedReaderAsync(
+            () => db.SetMembersAsync(setKey),
+            cancellationToken).ConfigureAwait(false);
         var activeIds = new List<string>(members.Length);
 
         foreach (var member in members)
@@ -845,14 +840,18 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
     {
         try
         {
-            var typeValue = await _cache!.GetStringAsync($"{TypePrefix}{operationId}", cancellationToken).ConfigureAwait(false);
+            var typeValue = await RedisClientFault.RetryCompletedReaderAsync(
+                () => _cache!.GetStringAsync($"{TypePrefix}{operationId}", cancellationToken),
+                cancellationToken).ConfigureAwait(false);
             if (!string.IsNullOrWhiteSpace(typeValue) &&
                 Enum.TryParse<OperationType>(typeValue.ToString(), true, out var parsedType))
             {
                 return parsedType;
             }
 
-            var progressValue = await _cache!.GetStringAsync($"{KeyPrefix}{operationId}", cancellationToken).ConfigureAwait(false);
+            var progressValue = await RedisClientFault.RetryCompletedReaderAsync(
+                () => _cache!.GetStringAsync($"{KeyPrefix}{operationId}", cancellationToken),
+                cancellationToken).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(progressValue))
             {
                 return null;
@@ -873,7 +872,9 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
 
     private async Task<bool> ProgressEntryExistsAsync(string operationId, CancellationToken cancellationToken)
     {
-        var progressJson = await _cache!.GetStringAsync($"{KeyPrefix}{operationId}", cancellationToken).ConfigureAwait(false);
+        var progressJson = await RedisClientFault.RetryCompletedReaderAsync(
+            () => _cache!.GetStringAsync($"{KeyPrefix}{operationId}", cancellationToken),
+            cancellationToken).ConfigureAwait(false);
         return !string.IsNullOrWhiteSpace(progressJson);
     }
 
@@ -916,15 +917,6 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
     }
 }
 
-/// <summary>
-/// Adapter that implements IDistributedProgressStore using IUniversalProgressStore.
-/// This allows existing code using typed progress stores to work with the unified system.
-/// </summary>
-/// <summary>
-/// Adapter that implements IDistributedProgressStore using IUniversalProgressStore.
-/// This allows existing code using typed progress stores to work with the unified system.
-/// Note: This only works for types that implement IOperationProgress.
-/// </summary>
 internal sealed class DistributedProgressStoreAdapter<TProgress> : IDistributedProgressStore<TProgress>, IProgressStoreRecovery
     where TProgress : class, IOperationProgress
 {
@@ -991,9 +983,6 @@ internal sealed class DistributedProgressStoreAdapter<TProgress> : IDistributedP
     }
 }
 
-/// <summary>
-/// Wrapper for storing polymorphic progress data with type information.
-/// </summary>
 internal sealed record ProgressWrapper
 {
     public required OperationType Type { get; init; }
@@ -1001,9 +990,6 @@ internal sealed record ProgressWrapper
     public required JsonElement Data { get; init; }
 }
 
-/// <summary>
-/// JSON serialization context for universal progress storage.
-/// </summary>
 [JsonSourceGenerationOptions(JsonSerializerDefaults.General)]
 [JsonSerializable(typeof(ProgressWrapper))]
 [JsonSerializable(typeof(ImportProgress))]

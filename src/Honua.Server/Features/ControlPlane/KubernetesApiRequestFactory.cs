@@ -7,28 +7,12 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Shared builder for authenticated Kubernetes API server requests. Resolves the
-/// in-cluster service-account context (projected token + API server env vars) or the
-/// explicitly configured out-of-cluster endpoint, attaches the bearer token, and
-/// combines the API server base URL with a REST path. Extracted from
-/// <see cref="KubernetesJobClient"/> so the Job batch backend and the Argo Rollouts
-/// deploy backend share one credential-resolution and request-shaping path instead of
-/// each duplicating the auth chain. Keeps the trim/AOT surface small by avoiding the
-/// official <c>KubernetesClient</c> NuGet dependency.
-/// </summary>
 internal sealed class KubernetesApiRequestFactory(IOptionsMonitor<KubernetesExecutionOptions> options)
 {
     private const string InClusterTokenPath = "/var/run/secrets/kubernetes.io/serviceaccount/token";
     private const string InClusterHostEnv = "KUBERNETES_SERVICE_HOST";
     private const string InClusterPortEnv = "KUBERNETES_SERVICE_PORT";
 
-    /// <summary>
-    /// Builds an authenticated <see cref="HttpRequestMessage"/> for the given Kubernetes
-    /// REST path. When <paramref name="contentType"/> is supplied the payload is sent with
-    /// that media type (used for JSON merge/strategic-merge PATCH bodies); otherwise it
-    /// defaults to <c>application/json</c>.
-    /// </summary>
     public async Task<HttpRequestMessage> CreateRequestAsync(
         HttpMethod method,
         string relativeUrl,
@@ -58,13 +42,7 @@ internal sealed class KubernetesApiRequestFactory(IOptionsMonitor<KubernetesExec
         return request;
     }
 
-    /// <summary>
-    /// Joins the API server base URL with a Kubernetes REST path while preserving any
-    /// non-root path on the base (e.g. when the API server sits behind a path-based
-    /// gateway at <c>https://proxy.example/k8s</c>). <see cref="Uri(Uri, string)"/> drops
-    /// the base path whenever the relative URL starts with "/", so build the string
-    /// explicitly instead.
-    /// </summary>
+    // The path is concatenated because a relative URL that starts with a slash would drop a gateway prefix on the base.
     internal static Uri CombineApiServerUri(Uri apiServer, string relativeUrl)
     {
         ArgumentNullException.ThrowIfNull(apiServer);

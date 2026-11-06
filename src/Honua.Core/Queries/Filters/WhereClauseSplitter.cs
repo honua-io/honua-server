@@ -5,10 +5,6 @@ using System.Text;
 
 namespace Honua.Core.Queries.Filters;
 
-/// <summary>
-/// Splits a simple WHERE clause on logical AND without treating the token as
-/// part of a quoted literal or an identifier such as <c>start_and_end</c>.
-/// </summary>
 internal static class WhereClauseSplitter
 {
     internal static List<string> SplitOnAnd(string whereClause)

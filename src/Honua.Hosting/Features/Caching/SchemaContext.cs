@@ -6,15 +6,11 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 
 namespace Honua.Infrastructure.Middleware;
 
-/// <summary>
-/// Mutable schema context for request-scoped database operations.
-/// </summary>
 internal sealed class SchemaContext : ISchemaContext
 {
     private static readonly AsyncLocal<string?> AmbientSchema = new();
     private string? _currentSchema;
 
-    /// <inheritdoc />
     public string? CurrentSchema
     {
         get => AmbientSchema.Value ?? _currentSchema;

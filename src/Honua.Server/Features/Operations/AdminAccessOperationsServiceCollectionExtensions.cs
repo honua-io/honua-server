@@ -8,7 +8,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Features.Operations;
 
-/// <summary>Composes the access-family descriptors and canonical REST-backed executors.</summary>
 internal static class AdminAccessOperationsServiceCollectionExtensions
 {
     public static IServiceCollection AddAdminAccessOperations(this IServiceCollection services)

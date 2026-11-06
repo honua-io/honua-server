@@ -18,10 +18,10 @@ Query and read features through the Esri GeoServices FeatureServer surface (quer
 | Edition | Community |
 | Surface maturity | 49 implemented |
 | Registry entries | 49 |
-| Proving tests | 565 |
+| Proving tests | 581 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 
 ## Documented in
 
-- [GeoServices REST (ArcGIS-compatible)](../../reference/protocols/geoservices-rest.md)
+- [GeoServices REST](../../reference/protocols/geoservices-rest.md)

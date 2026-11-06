@@ -7,46 +7,18 @@ using Honua.Core.Features.Styling.Domain;
 
 namespace Honua.Server.Features.Styling;
 
-/// <summary>
-/// Service for resolving and updating layer styles.
-/// </summary>
 internal interface ILayerStyleService
 {
-    /// <summary>
-    /// Retrieves the style snapshot for a layer.
-    /// </summary>
-    /// <param name="resource">Metadata v2 resource.</param>
-    /// <param name="layerId">Route layer id used as a storage-layer fallback.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Style snapshot or null when not available.</returns>
     Task<LayerStyleSnapshot?> GetStyleAsync(
         MetadataV2Resource resource,
         int layerId,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Retrieves drawingInfo for a layer.
-    /// </summary>
-    /// <param name="resource">Metadata v2 resource.</param>
-    /// <param name="layerId">Route layer id used as a storage-layer fallback.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>drawingInfo payload or null when not available.</returns>
     Task<JsonElement?> GetDrawingInfoAsync(
         MetadataV2Resource resource,
         int layerId,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Updates the style for a layer using MapLibre or drawingInfo input.
-    /// </summary>
-    /// <param name="resource">Metadata v2 resource.</param>
-    /// <param name="layerId">Route layer id used as a storage-layer fallback.</param>
-    /// <param name="mapLibreStyle">MapLibre style payload.</param>
-    /// <param name="drawingInfo">GeoServices drawingInfo payload.</param>
-    /// <param name="revisedBy">Optional author or source identifier captured for the new revision.</param>
-    /// <param name="changeSummary">Optional operator-supplied description of the change.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Update result with status and style snapshot.</returns>
     Task<LayerStyleUpdateResult> UpdateStyleAsync(
         MetadataV2Resource resource,
         int layerId,
@@ -57,9 +29,6 @@ internal interface ILayerStyleService
         CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// Snapshot of stored style payloads.
-/// </summary>
 internal sealed record LayerStyleSnapshot(
     JsonElement? MapLibreStyle,
     JsonElement? DrawingInfo,
@@ -68,28 +37,13 @@ internal sealed record LayerStyleSnapshot(
     string? RevisedBy = null,
     string? ChangeSummary = null);
 
-/// <summary>
-/// Status for style updates.
-/// </summary>
 internal enum LayerStyleUpdateStatus
 {
-    /// <summary>
-    /// Style update succeeded.
-    /// </summary>
     Updated,
-    /// <summary>
-    /// Layer was not found.
-    /// </summary>
     NotFound,
-    /// <summary>
-    /// Style payload was invalid.
-    /// </summary>
     Invalid
 }
 
-/// <summary>
-/// Result for style update attempts.
-/// </summary>
 internal sealed record LayerStyleUpdateResult(
     LayerStyleUpdateStatus Status,
     LayerStyleSnapshot? Style,

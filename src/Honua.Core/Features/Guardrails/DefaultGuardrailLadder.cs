@@ -9,31 +9,12 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Guardrails;
 
-/// <summary>
-/// Default <see cref="IGuardrailLadder"/> built over <see cref="HonuaEdition"/>
-/// and the license entitlement snapshot. Implements the locked default policy
-/// from #1690: Community/Pro execute directly (subject to RBAC + entitlement),
-/// Enterprise routes in-scope mutating operation classes through approval.
-/// Under <c>Licensing:Mode=Disabled</c> (Enterprise-equivalent), Studio draft
-/// composition executes directly while discriminated Studio steps keep approval (#4758).
-/// Operator overrides can tighten or loosen the default per operation class.
-/// </summary>
 public sealed class DefaultGuardrailLadder : IGuardrailLadder
 {
     private readonly ILicenseEntitlementService _entitlements;
     private readonly GuardrailLadderOptions _options;
     private readonly IOpsActionGuardrailCatalog? _actionCatalog;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="DefaultGuardrailLadder"/> class.
-    /// </summary>
-    /// <param name="entitlements">Active license entitlement service.</param>
-    /// <param name="options">Operator override options.</param>
-    /// <param name="actionCatalog">
-    /// Optional per-action guardrail catalog. When present, resolution with an
-    /// action discriminator sources the tier from it; when absent, any discriminated
-    /// resolution fails closed to <see cref="GuardrailTier.Blocked"/>.
-    /// </param>
     public DefaultGuardrailLadder(
         ILicenseEntitlementService entitlements,
         IOptions<GuardrailLadderOptions> options,
@@ -46,15 +27,12 @@ public sealed class DefaultGuardrailLadder : IGuardrailLadder
         _actionCatalog = actionCatalog;
     }
 
-    /// <inheritdoc />
     public GuardrailDecision Resolve(OperationClass operationClass)
         => Resolve(operationClass, _entitlements.GetSnapshot().Edition);
 
-    /// <inheritdoc />
     public GuardrailDecision Resolve(OperationClass operationClass, string? actionDiscriminator)
         => Resolve(operationClass, actionDiscriminator, _entitlements.GetSnapshot().Edition);
 
-    /// <inheritdoc />
     public GuardrailDecision Resolve(OperationClass operationClass, string? actionDiscriminator, HonuaEdition edition)
     {
         // No discriminator: fall back to operation-class-only resolution.
@@ -83,11 +61,7 @@ public sealed class DefaultGuardrailLadder : IGuardrailLadder
         return ApplyActionFloor(operationClass, edition, actionTier, $"action-catalog:{actionDiscriminator}");
     }
 
-    /// <summary>
-    /// Applies a known action's tier as a floor on top of the edition/operator-override policy.
-    /// The tier enum is ordered DirectExecute(0) &lt; RequiresApproval(1) &lt; Blocked(2), so a
-    /// per-action tier can only TIGHTEN the guardrail — never loosen the edition policy.
-    /// </summary>
+    // A per-action tier can only tighten the edition policy.
     private GuardrailDecision ApplyActionFloor(
         OperationClass operationClass,
         HonuaEdition edition,
@@ -101,7 +75,6 @@ public sealed class DefaultGuardrailLadder : IGuardrailLadder
         return new GuardrailDecision(effective, operationClass, edition, source);
     }
 
-    /// <inheritdoc />
     public GuardrailDecision Resolve(OperationClass operationClass, HonuaEdition edition)
         => ResolveClass(operationClass, edition, disabledStudioComposition: true);
 

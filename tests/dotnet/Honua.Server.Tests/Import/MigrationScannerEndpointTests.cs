@@ -116,7 +116,7 @@ public sealed class MigrationScannerEndpointTests : IAsyncLifetime
         payload.Should().NotBeNull();
 
         var root = payload!.RootElement;
-        root.GetProperty("sourceKind").GetString().Should().Be("arcgis-geoservices-rest");
+        root.GetProperty("sourceKind").GetString().Should().Be("geoservices-rest");
         root.GetProperty("source").GetProperty("serviceType").GetString().Should().Be("FeatureServer");
         root.GetProperty("authPosture").GetProperty("mode").GetString().Should().Be("anonymous");
         root.GetProperty("containers")[0].GetProperty("kind").GetString().Should().Be("service");
@@ -395,7 +395,7 @@ public sealed class MigrationScannerEndpointTests : IAsyncLifetime
         first.Should().Be(second, "successive exports of the same artifact must be byte-for-byte identical for downstream review tooling.");
 
         using var document = JsonDocument.Parse(first);
-        document.RootElement.GetProperty("sourceKind").GetString().Should().Be("arcgis-geoservices-rest");
+        document.RootElement.GetProperty("sourceKind").GetString().Should().Be("geoservices-rest");
         document.RootElement.GetProperty("source").GetProperty("displayName").GetString().Should().Be("Parcels");
     }
 
@@ -561,7 +561,7 @@ public sealed class MigrationScannerEndpointTests : IAsyncLifetime
             ScanRequests.Add(request);
             return Task.FromResult(new MigrationSourceInventoryArtifact
             {
-                SourceKind = "arcgis-geoservices-rest",
+                SourceKind = "geoservices-rest",
                 Source = new MigrationSourceIdentity
                 {
                     DisplayName = "Parcels",

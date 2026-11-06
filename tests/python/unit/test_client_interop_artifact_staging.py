@@ -25,8 +25,12 @@ class ClientInteropArtifactStagingTests(unittest.TestCase):
             encoding="utf-8"
         )
 
-        self.assertIn('"--output-document=/dev/null"', compose)
-        self.assertNotIn('"--spider"', compose)
+        honua = compose.split("\n  honua:\n", 1)[1].split("\n  gdal-worker:\n", 1)[0]
+        healthcheck = honua.split("\n    healthcheck:\n", 1)[1]
+        self.assertIn("/dev/tcp/127.0.0.1/5000", healthcheck)
+        self.assertIn("GET /healthz/ready HTTP/1.0", healthcheck)
+        self.assertIn(" 200 ", healthcheck)
+        self.assertNotIn("HEAD /healthz/ready", healthcheck)
 
     def test_stages_envelopes_from_isolated_v4_artifact_directories(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

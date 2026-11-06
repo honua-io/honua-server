@@ -1334,6 +1334,14 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         //   * Plausibly-geographic-but-unlisted CRSs (EPSG 4000-4999 outside the allowlist)
         //     -> reject, because running planar ST_DWithin would compare metres to degrees and
         //        match the entire planet. See distance policy note below.
+        if (mapping.Srid == DuckDbGeodesicSql.Nad27Srid)
+        {
+            // NAD27 degrees are not WGS 84. The spatial extension's ST_Transform applies the
+            // datum shift to EPSG:4326; measuring the original degrees on the spheroid would skip it.
+            parameters.Add(distanceInMeters);
+            return $"{DuckDbGeodesicSql.Nad27SpheroidDistance(geomCol, filterGeomParam)} <= ${paramIndex++}";
+        }
+
         if (IsGeographicSrid(mapping.Srid))
         {
             parameters.Add(distanceInMeters);

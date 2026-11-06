@@ -7,28 +7,13 @@ using System.Text.Json;
 using Honua.Ai.StudioAiProxy.Abstractions;
 using Honua.Ai.StudioAiProxy.Adapters.Bedrock;
 using Honua.Ai.StudioAiProxy.Domain;
+using Honua.Core.Features.Security.Admission;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Ai.StudioAiProxy.Adapters;
 
-/// <summary>
-/// Adapter that bridges the Studio AI proxy onto the existing Bedrock chat-client plumbing
-/// (<see cref="IBedrockChatClientFactory"/> / <c>BedrockChatClientAdapter</c>, which already speaks
-/// Bedrock's Converse streaming API as a Microsoft.Extensions.AI <see cref="IChatClient"/>). This is
-/// the "thin bridge" called for by honua-server#3000: no new AWS wire code, just a translation from
-/// the proxy's provider-neutral request/event shape to/from <see cref="ChatMessage"/> /
-/// <see cref="ChatResponseUpdate"/>.
-/// </summary>
-/// <remarks>
-/// One behavioral difference from the Anthropic/OpenAI-compatible adapters: Bedrock's Converse
-/// streaming API accumulates a tool call's JSON arguments internally and hands the proxy a single
-/// complete <see cref="FunctionCallContent"/> at the end of the tool-use content block (see
-/// <c>BedrockChatClientAdapter.GetStreamingResponseAsync</c>), rather than incremental JSON-text
-/// fragments. This adapter still emits the full <c>ToolCallStart</c> / <c>ToolCallDelta</c> /
-/// <c>ToolCallStop</c> triad for contract symmetry with the other two adapters, but the delta is a
-/// single chunk carrying the whole arguments payload instead of a token-by-token stream.
-/// </remarks>
+// Bedrock returns one complete tool-call payload, and the adapter still emits ToolCallStart, ToolCallDelta, and ToolCallStop so the neutral contract matches the other providers.
 internal sealed class BedrockStudioAiProxyAdapter : IStudioAiProxyAdapter
 {
     private const string ProviderLabel = "bedrock";
@@ -55,10 +40,12 @@ internal sealed class BedrockStudioAiProxyAdapter : IStudioAiProxyAdapter
     public async IAsyncEnumerable<StudioAiChatEvent> StreamAsync(
         StudioAiProxyProviderOptions options,
         StudioAiChatRequest request,
+        IAiExecutionPermit permit,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(request);
+        await permit.EnsureCurrentAsync(cancellationToken).ConfigureAwait(false);
 
         var model = string.IsNullOrWhiteSpace(request.Model) ? options.Model : request.Model!;
         string? apiKey = null;
@@ -89,6 +76,7 @@ internal sealed class BedrockStudioAiProxyAdapter : IStudioAiProxyAdapter
 
         yield return new StudioAiChatEvent { Type = StudioAiChatEventType.MessageStart, Model = model };
 
+        await permit.AuthorizeSendAsync(cancellationToken).ConfigureAwait(false);
         var enumerator = client.GetStreamingResponseAsync(messages, chatOptions, timeoutCts.Token).GetAsyncEnumerator(timeoutCts.Token);
         int? promptTokens = null;
         int? completionTokens = null;
@@ -110,7 +98,7 @@ internal sealed class BedrockStudioAiProxyAdapter : IStudioAiProxyAdapter
 
                 if (failure is not null)
                 {
-                    StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, failure);
+                    StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, "read-stream", failure.GetType().Name);
                     yield return Error(model, "Provider request failed.", stopwatch.ElapsedMilliseconds);
                     yield break;
                 }
@@ -328,7 +316,6 @@ internal sealed class BedrockStudioAiProxyAdapter : IStudioAiProxyAdapter
         return StudioAiStopReason.EndTurn;
     }
 
-    /// <summary>Writes a tool call's arguments dictionary to a compact JSON object without reflection (AOT-safe).</summary>
     private static string SerializeArguments(IDictionary<string, object?>? arguments)
     {
         if (arguments is null || arguments.Count == 0)
@@ -426,11 +413,6 @@ internal sealed class BedrockStudioAiProxyAdapter : IStudioAiProxyAdapter
         LatencyMs = latencyMs
     };
 
-    /// <summary>
-    /// An <see cref="AIFunction"/> whose schema is one <see cref="StudioAiToolDefinition"/>; never
-    /// invoked (Bedrock/Converse only needs the declaration to steer the model), it exists solely to
-    /// carry name/description/schema through <see cref="ChatOptions.Tools"/>.
-    /// </summary>
     private sealed class StudioAiToolFunction : AIFunction
     {
         private readonly StudioAiToolDefinition _definition;

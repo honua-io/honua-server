@@ -2,22 +2,17 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Runtime.CompilerServices;
-using System.Text;
 using System.Text.Json;
+using System.Text;
 using Honua.Ai.StudioAiProxy.Abstractions;
 using Honua.Ai.StudioAiProxy.Domain;
+using Honua.Core.Features.Security.Admission;
+using Honua.Core.Features.Security;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Ai.StudioAiProxy;
 
-/// <summary>
-/// Orchestrates the Studio AI proxy: resolves the named (or default) configured provider, dispatches
-/// to the adapter registered for its <see cref="StudioAiProxyProviderOptions.Kind"/>, and — as a
-/// defense-in-depth backstop over the adapter contract — guarantees the event sequence always ends
-/// with exactly one terminal event even if an adapter misbehaves (throws instead of yielding an
-/// <see cref="StudioAiChatEventType.Error"/>).
-/// </summary>
 internal sealed class StudioAiProxyService : IStudioAiProxyService
 {
     private const int MaxToolCount = 128;
@@ -31,13 +26,16 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
     private readonly Dictionary<string, IStudioAiProxyAdapter> _adaptersByKind;
     private readonly ILogger<StudioAiProxyService> _logger;
     private readonly StudioAiTranscriptSigner _transcriptSigner;
+    private readonly IAiExecutionAdmission? _admission;
 
     public StudioAiProxyService(
         IOptions<StudioAiProxyConfiguration> options,
         IEnumerable<IStudioAiProxyAdapter> adapters,
         StudioAiTranscriptSigner transcriptSigner,
-        ILogger<StudioAiProxyService> logger)
+        ILogger<StudioAiProxyService> logger,
+        IAiExecutionAdmission? admission = null)
     {
+        _admission = admission;
         _configuration = options.Value;
         _adaptersByKind = adapters
             .GroupBy(a => a.Kind, StringComparer.OrdinalIgnoreCase)
@@ -70,6 +68,14 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
     }
 
     public string? ValidateRequest(StudioAiChatRequest request)
+    {
+        if (ValidateRequestContent(request) is { } failure) return failure;
+        var providerName = ResolveProviderName(request);
+        return ValidateProviderRequest(request, providerName,
+            providerName is null ? null : _configuration.GetProvider(providerName));
+    }
+
+    private string? ValidateRequestContent(StudioAiChatRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
 
@@ -187,13 +193,17 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
             return "toolChoice.mode 'specific' requires toolChoice.toolName.";
         }
 
-        var providerName = ResolveProviderName(request);
+        return null;
+    }
+
+    private string? ValidateProviderRequest(StudioAiChatRequest request, string? providerName,
+        StudioAiProxyProviderOptions? providerOptions)
+    {
         if (string.IsNullOrWhiteSpace(providerName))
         {
             return "No provider was named and no default provider is configured.";
         }
 
-        var providerOptions = _configuration.GetProvider(providerName);
         if (providerOptions is null)
         {
             return $"Provider '{providerName}' is not configured.";
@@ -214,7 +224,22 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
             return $"Provider '{providerName}' does not support tool calls.";
         }
 
+        if (!DisclosureAllowed(request, providerName, providerOptions))
+        {
+            return "AI disclosure is not approved for the selected provider, destination, model and workload.";
+        }
+
         return null;
+    }
+
+    private bool DisclosureAllowed(StudioAiChatRequest request, string provider, StudioAiProxyProviderOptions options)
+    {
+        var destination = string.Equals(options.Kind, StudioAiProxyConfiguration.BedrockKind, StringComparison.OrdinalIgnoreCase)
+            ? "aws-bedrock:" + (string.IsNullOrWhiteSpace(options.Region) ? StudioAiProxyConfiguration.DefaultBedrockRegion : options.Region)
+            : options.Endpoint;
+        var model = string.IsNullOrWhiteSpace(request.Model) ? options.Model : request.Model;
+        return AiDisclosurePolicy.IsAllowed(_configuration.Disclosure,
+            new AiDisclosureRequest(provider, options.Kind, destination, model!, "studio-chat"));
     }
 
     private static int JsonCharacterCount(JsonElement value)
@@ -225,22 +250,171 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
     private static int JsonCharacterCount(JsonElement? value)
         => value is null ? 0 : JsonCharacterCount(value.Value);
 
-    public async IAsyncEnumerable<StudioAiChatEvent> StreamChatAsync(
-        StudioAiChatRequest request,
-        StudioAiProxyCallSummary summary,
+    public async Task<StudioAiPreparedCall> PrepareChatAsync(StudioAiChatRequest request,
+        AiExecutionContext? executionContext, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (ValidateRequestContent(request) is not null)
+            throw new AiAdmissionException("invalid_context");
+        var providerName = ResolveProviderName(request);
+        var providerOptions = providerName is null ? null : _configuration.GetProvider(providerName);
+        // Select the built-in serializer from the same owned tuple it will freeze.
+        // Legacy custom/Bedrock adapters retain their existing request/options path.
+        var ownedOptions = providerOptions is null ? null : StudioAiHttpInvocation.SnapshotOptions(providerOptions);
+        IStudioAiPreparedHttpAdapter? httpAdapter = null;
+        StudioAiHttpInvocation? invocation = null;
+        if (ownedOptions is not null && _adaptersByKind.TryGetValue(ownedOptions.Kind, out var selected)
+            && selected is IStudioAiPreparedHttpAdapter builtInHttp)
+        {
+            try
+            {
+                invocation = builtInHttp.Prepare(ownedOptions, request);
+            }
+            catch (Exception exception) when (exception is JsonException or InvalidOperationException or ArgumentException)
+            {
+                // Never expose serialized prompt/schema values through preparation failures.
+                throw new AiAdmissionException("invalid_context");
+            }
+            request = invocation.Request;
+            providerOptions = invocation.CopyOptions();
+            httpAdapter = builtInHttp;
+        }
+        if (ValidateProviderRequest(request, providerName, providerOptions) is { } validationError)
+            throw new AiAdmissionException(validationError.StartsWith("AI disclosure", StringComparison.Ordinal)
+                ? "disclosure_denied" : "invalid_context");
+        if (executionContext is not { IsValid: true, UseCase: "studio-chat" })
+            throw new AiAdmissionException("invalid_context");
+        if (_admission is null)
+            throw new AiAdmissionException("unavailable");
+        var permit = await _admission.AcquireAsync(executionContext, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return new StudioAiPreparedCall(request, executionContext, permit, providerName, httpAdapter, invocation);
+        }
+        catch
+        {
+            await permit.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+    }
+
+    public async IAsyncEnumerable<StudioAiChatEvent> StreamChatAsync(StudioAiChatRequest request,
+        StudioAiProxyCallSummary summary, [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        StudioAiPreparedCall? prepared = null;
+        AiAdmissionException? denied = null;
+        try
+        {
+            prepared = await PrepareChatAsync(request, request.ExecutionContext, cancellationToken).ConfigureAwait(false);
+        }
+        catch (AiAdmissionException ex) { denied = ex; }
+        if (denied is not null)
+        {
+            yield return AdmissionError(summary, denied.Code);
+            yield break;
+        }
+        await using var owned = prepared!;
+        await foreach (var evt in StreamPreparedChatAsync(prepared!, summary, cancellationToken).ConfigureAwait(false))
+            yield return evt;
+    }
+
+    public async IAsyncEnumerable<StudioAiChatEvent> StreamPreparedChatAsync(StudioAiPreparedCall prepared,
+        StudioAiProxyCallSummary summary, [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        if (!prepared.TryClaim())
+        {
+            yield return AdmissionError(summary, "duplicate_invocation");
+            yield break;
+        }
+        await using var owned = prepared;
+        var beginFailure = await BeginPermitSafeAsync(prepared.Permit, cancellationToken).ConfigureAwait(false);
+        if (beginFailure is not null)
+        {
+            yield return AdmissionError(summary, beginFailure);
+            yield break;
+        }
+        using var streaming = CancellationTokenSource.CreateLinkedTokenSource(prepared.Permit.Token, cancellationToken);
+        var enumerator = StreamPreparedCoreAsync(prepared, summary, streaming.Token).GetAsyncEnumerator(streaming.Token);
+        try
+        {
+            while (true)
+            {
+                var (more, failure) = await MoveNextSafeAsync(enumerator, cancellationToken).ConfigureAwait(false);
+                if (failure is not null)
+                {
+                    yield return AdmissionError(summary, failure is AiAdmissionException rejected ? rejected.Code
+                        : prepared.Permit.Token.IsCancellationRequested ? "invalidated" : "unavailable");
+                    yield break;
+                }
+                if (!more) break;
+                yield return enumerator.Current;
+            }
+        }
+        finally
+        {
+            await enumerator.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    private static async Task<string?> BeginPermitSafeAsync(IAiExecutionPermit permit, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await permit.BeginInvocationAsync(cancellationToken).ConfigureAwait(false);
+            return null;
+        }
+        catch (AiAdmissionException ex) { return ex.Code; }
+    }
+
+    private static StudioAiChatEvent AdmissionError(StudioAiProxyCallSummary summary, string code)
+    {
+        summary.Succeeded = false;
+        summary.StopReason = StudioAiStopReason.Cancelled;
+        summary.ErrorMessage = "AI invocation admission is unavailable or no longer current.";
+        return new StudioAiChatEvent
+        {
+            Type = StudioAiChatEventType.Error,
+            ErrorCode = code == "disclosure_denied" ? "studio_ai/disclosure_denied" : "studio_ai/admission_" + code,
+            ErrorMessage = summary.ErrorMessage
+        };
+    }
+
+    private async IAsyncEnumerable<StudioAiChatEvent> StreamPreparedCoreAsync(
+        StudioAiPreparedCall prepared, StudioAiProxyCallSummary summary,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        var request = prepared.Request;
+
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(summary);
 
-        var providerName = ResolveProviderName(request)!;
-        var providerOptions = _configuration.GetProvider(providerName)!;
+        cancellationToken.ThrowIfCancellationRequested();
+        var invocation = prepared.HttpInvocation;
+        var providerName = invocation is null ? ResolveProviderName(request)! : prepared.ProviderName!;
+        var providerOptions = invocation is null ? _configuration.GetProvider(providerName)! : invocation.CopyOptions();
         var adapter = _adaptersByKind[providerOptions.Kind];
-        var model = string.IsNullOrWhiteSpace(request.Model) ? providerOptions.Model : request.Model!;
+        var model = invocation?.Model ?? (string.IsNullOrWhiteSpace(request.Model) ? providerOptions.Model : request.Model!);
 
         summary.Provider = providerName;
         summary.Kind = providerOptions.Kind;
         summary.Model = model;
+
+        // Enforce again for non-HTTP service callers before creating/enumerating an adapter.
+        if (!DisclosureAllowed(request, providerName, providerOptions))
+        {
+            summary.Succeeded = false;
+            summary.StopReason = StudioAiStopReason.Error;
+            summary.ErrorMessage = "AI disclosure is not approved for this workload.";
+            yield return new StudioAiChatEvent
+            {
+                Type = StudioAiChatEventType.Error,
+                Model = model,
+                ErrorCode = "studio_ai/disclosure_denied",
+                ErrorMessage = summary.ErrorMessage
+            };
+            yield break;
+        }
 
         StudioAiProxyLog.ChatRequested(_logger, providerName, providerOptions.Kind, model);
 
@@ -264,7 +438,10 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
             }
         }
 
-        var enumerator = adapter.StreamAsync(providerOptions, request, cancellationToken).GetAsyncEnumerator(cancellationToken);
+        var stream = invocation is null
+            ? adapter.StreamAsync(providerOptions, request, prepared.Permit, cancellationToken)
+            : prepared.HttpAdapter!.StreamPreparedAsync(invocation, prepared.Permit, cancellationToken);
+        var enumerator = stream.GetAsyncEnumerator(cancellationToken);
         var validator = new StudioAiStreamGrammarValidator();
         StudioAiChatEvent? successfulTerminal = null;
         var transcriptEvents = signingKey is null ? null : new List<StudioAiChatEvent>();
@@ -281,10 +458,15 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
                 var (hasNext, failure) = await MoveNextSafeAsync(enumerator, cancellationToken).ConfigureAwait(false);
                 if (failure is not null)
                 {
+                    if (failure is AiAdmissionException denied)
+                    {
+                        yield return AdmissionError(summary, denied.Code);
+                        yield break;
+                    }
                     summary.Succeeded = false;
                     summary.ErrorMessage = "Adapter failed unexpectedly.";
                     summary.StopReason = StudioAiStopReason.Error;
-                    StudioAiProxyLog.ProviderRequestFailed(_logger, providerName, failure);
+                    StudioAiProxyLog.ProviderRequestFailed(_logger, providerName, "adapter-stream", failure.GetType().Name);
                     yield return new StudioAiChatEvent
                     {
                         Type = StudioAiChatEventType.Error,

@@ -8,20 +8,6 @@ using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-/// <summary>
-/// JSON-schema documents describing the structured result of each MCP tool.
-/// Mirrors <see cref="McpToolSchemas"/> (input schemas): schemas are immutable
-/// <see cref="JsonElement"/> values parsed at type-load time so the MCP surface
-/// stays AOT-safe, and the artifact-kind enum is sourced from the canonical
-/// <see cref="ArtifactKind"/> so the published contract cannot drift from the
-/// domain types the tools serialize.
-/// </summary>
-/// <remarks>
-/// These schemas are published on the descriptor under the standard MCP
-/// <c>outputSchema</c> tool field, available in the 2025-06-18 revision this
-/// server negotiates by default (honua-server#1954). Each describes the same
-/// <c>result.structuredContent</c> payload the tool emits.
-/// </remarks>
 internal static class McpToolOutputSchemas
 {
     private const string ValidationViolationDef = """
@@ -91,21 +77,7 @@ internal static class McpToolOutputSchemas
             }
         """;
 
-    /// <summary>
-    /// Widens a tool's success schema with the shared structured error envelope.
-    /// MCP clients validate <c>structuredContent</c> against <c>outputSchema</c>
-    /// for both successful and failed tool calls, so every advertised schema must
-    /// accept the result produced by <see cref="McpToolHelpers.ErrorResult(Exception)"/>.
-    /// </summary>
-    /// <remarks>
-    /// The wrapper retains every success constraint at the root or in the success
-    /// branch and adds a separately typed error branch. Properties shared by both
-    /// shapes are constrained in their respective branches, preventing the union
-    /// from relaxing successful results without duplicating the full schema. It
-    /// uses the JSON DOM rather than reflection-based serialization, preserving
-    /// Native AOT compatibility. Schemas already carrying the error branch are
-    /// returned unchanged.
-    /// </remarks>
+    // MCP clients validate structuredContent against outputSchema for failed calls too, so every advertised schema must accept the shared error envelope.
     internal static JsonElement IncludeErrorEnvelope(JsonElement successSchema)
     {
         if (AcceptsErrorEnvelope(successSchema))
@@ -208,7 +180,6 @@ internal static class McpToolOutputSchemas
         return false;
     }
 
-    /// <summary>Schema for <see cref="Models.McpValidatePlanOutput"/>.</summary>
     public static readonly JsonElement ValidatePlanOutputSchema = Parse(
         $$"""
         {
@@ -223,7 +194,6 @@ internal static class McpToolOutputSchemas
         }
         """);
 
-    /// <summary>Schema for <see cref="Models.McpDryRunOutput"/>.</summary>
     public static readonly JsonElement DryRunOutputSchema = Parse(
         $$"""
         {
@@ -244,7 +214,6 @@ internal static class McpToolOutputSchemas
         }
         """);
 
-    /// <summary>Schema for <see cref="Models.McpExecuteOutput"/>.</summary>
     public static readonly JsonElement ExecuteOutputSchema = Parse(
         """
         {
@@ -262,7 +231,6 @@ internal static class McpToolOutputSchemas
         }
         """);
 
-    /// <summary>Schema for <see cref="Models.McpCancelJobOutput"/>.</summary>
     public static readonly JsonElement CancelJobOutputSchema = Parse(
         """
         {
@@ -276,7 +244,6 @@ internal static class McpToolOutputSchemas
         }
         """);
 
-    /// <summary>Schema for <see cref="Models.McpProposeOperationOutput"/>.</summary>
     public static readonly JsonElement ProposeOperationOutputSchema = Parse(
         """
         {
@@ -326,14 +293,6 @@ internal static class McpToolOutputSchemas
         }
         """);
 
-    /// <summary>
-    /// Schema for <see cref="Models.McpPublishServiceOutput"/>. Projects the
-    /// canonical <c>OperationHandle</c>: <c>status</c> is the
-    /// <c>OperationHandleStatus</c> (Completed | Queued | RequiresApproval |
-    /// Running | Failed); a completed publish carries <c>serviceUri</c>,
-    /// <c>layerId</c>, and <c>metadataRevision</c>; a requires-approval outcome
-    /// carries <c>approvalLane</c>; a queued outcome carries <c>jobId</c>.
-    /// </summary>
     public static readonly JsonElement PublishServiceOutputSchema = Parse(
         """
         {
@@ -386,15 +345,6 @@ internal static class McpToolOutputSchemas
         }
         """);
 
-    /// <summary>
-    /// Schema for <see cref="Models.McpPublishResultOutput"/>. Projects the same
-    /// canonical <c>OperationHandle</c> as the publish-service output (the
-    /// promotion routes through <c>service.publish</c>): a completed promotion
-    /// carries <c>serviceId</c> + <c>layerId</c> the agent chains straight into
-    /// <c>honua_query_features</c> / <c>honua_render_map</c>; a requires-approval
-    /// outcome carries <c>approvalLane</c>; a queued outcome carries <c>jobId</c>.
-    /// <c>sourceJobId</c> / <c>artifactId</c> echo the promoted result.
-    /// </summary>
     public static readonly JsonElement PublishResultOutputSchema = Parse(
         """
         {
@@ -457,12 +407,7 @@ internal static class McpToolOutputSchemas
         }
         """);
 
-    /// <summary>
-    /// Schema for <see cref="Models.McpPlanAnalysisOutput"/>. The compiled plan,
-    /// spec draft, clarification, and estimate are deep nested shapes; the schema
-    /// pins the top-level envelope and leaves those sub-objects open so the
-    /// published contract stays stable as the planning engine evolves.
-    /// </summary>
+    // Nested planning objects stay open so the published contract remains stable as the planning engine evolves.
     public static readonly JsonElement PlanAnalysisOutputSchema = Parse(
         """
         {
@@ -487,16 +432,6 @@ internal static class McpToolOutputSchemas
         }
         """);
 
-    /// <summary>
-    /// Schema for <c>McpGroundingOutput</c> (shared by honua_ground_candidates
-    /// and honua_clarify_intent). The classification, draft intent, candidate
-    /// ranking, and optional clarification envelope are deep nested shapes; the
-    /// schema pins the top-level envelope and leaves those sub-objects open. On a
-    /// clarification turn exactly one of <c>clarification</c> (proprietary
-    /// envelope) or <c>elicitation</c> (MCP-native elicitation request, emitted
-    /// when the session advertised the elicitation capability; honua-server#2484)
-    /// is populated.
-    /// </summary>
     public static readonly JsonElement GroundingOutputSchema = Parse(
         """
         {
@@ -513,12 +448,6 @@ internal static class McpToolOutputSchemas
         }
         """);
 
-    /// <summary>
-    /// Schema for <c>PackageReviewResponse</c> (shared by honua_validate_package
-    /// and honua_preview_package). The findings, requirements, estimate, and
-    /// optional preview plan are deep nested shapes; the schema pins the
-    /// top-level envelope and leaves those sub-objects open.
-    /// </summary>
     public static readonly JsonElement PackageReviewOutputSchema = Parse(
         """
         {
@@ -528,6 +457,11 @@ internal static class McpToolOutputSchemas
             "packageFamily": { "type": ["string", "null"] },
             "packageId": { "type": ["string", "null"] },
             "decision": { "type": ["string", "null"] },
+            "status": {
+              "type": "string",
+              "enum": ["ready", "warning", "blocked"],
+              "description": "Review outcome. Distinct from the structured error envelope status \"error\"."
+            },
             "findings": { "type": "array", "items": { "type": "object" } },
             "previewPlan": { "type": ["object", "null"] },
             "estimate": { "type": ["object", "null"] }
@@ -535,7 +469,6 @@ internal static class McpToolOutputSchemas
         }
         """);
 
-    /// <summary>Schema for <c>McpGeocodeOutput</c>.</summary>
     public static readonly JsonElement GeocodeOutputSchema = Parse(
         $$"""
         {
@@ -566,7 +499,6 @@ internal static class McpToolOutputSchemas
         }
         """);
 
-    /// <summary>Schema for <c>McpGeocodeAddressesOutput</c>.</summary>
     public static readonly JsonElement GeocodeAddressesOutputSchema = Parse(
         """
         {
@@ -605,7 +537,6 @@ internal static class McpToolOutputSchemas
         }
         """);
 
-    /// <summary>Schema for <see cref="Models.McpIngestJobArtifactOutput"/>.</summary>
     public static readonly JsonElement IngestJobArtifactOutputSchema = Parse(
         """
         {
@@ -631,13 +562,6 @@ internal static class McpToolOutputSchemas
         }
         """);
 
-    /// <summary>
-    /// Schema for <see cref="Models.McpIngestDatasetOutput"/>. A successful
-    /// ingest carries the connectionId/schema/table triple (plus geometry column
-    /// and primary key) that chains directly into <c>honua_publish_service</c>;
-    /// per-row issues (e.g. addresses that failed to geocode) ride alongside
-    /// without failing the ingest.
-    /// </summary>
     public static readonly JsonElement IngestDatasetOutputSchema = Parse(
         """
         {
@@ -676,7 +600,6 @@ internal static class McpToolOutputSchemas
         }
         """);
 
-    /// <summary>Schema for <c>McpRouteOutput</c>.</summary>
     public static readonly JsonElement RouteOutputSchema = Parse(
         """
         {
@@ -704,7 +627,6 @@ internal static class McpToolOutputSchemas
         }
         """);
 
-    /// <summary>Schema for <c>McpListLayersOutput</c>.</summary>
     public static readonly JsonElement ListLayersOutputSchema = Parse(
         """
         {
@@ -734,7 +656,6 @@ internal static class McpToolOutputSchemas
         }
         """);
 
-    /// <summary>Schema for <c>McpQueryFeaturesOutput</c>.</summary>
     public static readonly JsonElement QueryFeaturesOutputSchema = Parse(
         $$"""
         {
@@ -799,7 +720,6 @@ internal static class McpToolOutputSchemas
         }
         """);
 
-    /// <summary>Schema for <c>McpRenderMapOutput</c>.</summary>
     public static readonly JsonElement RenderMapOutputSchema = Parse(
         $$"""
         {
@@ -856,19 +776,7 @@ internal static class McpToolOutputSchemas
         }
         """);
 
-    /// <summary>
-    /// Schema for the <c>honua_create_map_package</c> result (ADR-0076): a real
-    /// draft package, its stable <c>map_…</c> identifier, and its resource URI.
-    /// </summary>
-    /// <remarks>
-    /// The status vocabulary has exactly one value. There is deliberately no
-    /// <c>capability_unavailable</c> state: ADR-0076 names a permanently
-    /// unavailable-but-advertised tool as the failure mode this work exists to
-    /// prevent, so a draft that cannot be created fails as a structured
-    /// <c>invalid_argument</c> instead of succeeding with an empty envelope.
-    /// The package sub-object stays open because the canonical MapPackage shape
-    /// is owned by the domain model, not by this schema.
-    /// </remarks>
+    // The package sub-object stays open because the canonical MapPackage shape is owned by the domain model, not by this schema.
     public static readonly JsonElement CreateMapPackageOutputSchema = Parse(
         """
         {
@@ -900,11 +808,6 @@ internal static class McpToolOutputSchemas
         }
         """);
 
-    /// <summary>
-    /// Schema for the <c>honua_create_app_package</c> result (ADR-0076). Mirrors
-    /// <see cref="CreateMapPackageOutputSchema"/> with an <c>app_…</c> identifier
-    /// and the <c>honua://app-packages/{id}</c> resource URI.
-    /// </summary>
     public static readonly JsonElement CreateAppPackageOutputSchema = Parse(
         """
         {
@@ -936,11 +839,6 @@ internal static class McpToolOutputSchemas
         }
         """);
 
-    /// <summary>
-    /// Schema for <c>McpGetStyleOutput</c>. Resolve mode carries the StyleRef
-    /// projection (styleId/title/encodings); list mode carries the styles
-    /// discovery catalog. Only one field set is populated per call.
-    /// </summary>
     public static readonly JsonElement GetStyleOutputSchema = Parse(
         """
         {
@@ -979,7 +877,6 @@ internal static class McpToolOutputSchemas
         }
         """);
 
-    /// <summary>Schema for <c>McpApplyStylePresetOutput</c>.</summary>
     public static readonly JsonElement ApplyStylePresetOutputSchema = Parse(
         """
         {
@@ -1012,12 +909,6 @@ internal static class McpToolOutputSchemas
         }
         """);
 
-    /// <summary>
-    /// Schema for <see cref="Models.McpOperationToolOutput"/> — the structured
-    /// result of a published operations-toolset operation projected as a
-    /// first-class MCP tool (#2483). Projects the canonical <c>OperationHandle</c>
-    /// plus the determinism/cache provenance the published-tool contract adds.
-    /// </summary>
     public static readonly JsonElement OperationToolOutputSchema = Parse(
         """
         {
@@ -1076,13 +967,6 @@ internal static class McpToolOutputSchemas
         }
         """);
 
-    /// <summary>
-    /// Schema for <c>StudioPackageDraft</c> (honua-server#3002) — returned by
-    /// every Studio draft lifecycle and composition-mutation tool. The nested
-    /// envelope/validation shapes are left open; the schema pins the top-level
-    /// draft fields an agent reads to drive generation-checked follow-up calls
-    /// (<c>draftId</c>, <c>generation</c>).
-    /// </summary>
     public static readonly JsonElement StudioDraftOutputSchema = Parse(
         """
         {
@@ -1110,7 +994,6 @@ internal static class McpToolOutputSchemas
         }
         """);
 
-    /// <summary>Canonical durable envelope and Studio draft projection for converted mutations.</summary>
     public static readonly JsonElement StudioDraftMutationOutputSchema = Parse(
         """
         {
@@ -1153,7 +1036,6 @@ internal static class McpToolOutputSchemas
         }
         """);
 
-    /// <summary>Schema for <c>StudioValidationSummary</c> (<c>honua_studio_validate_draft</c>).</summary>
     public static readonly JsonElement StudioValidationOutputSchema = Parse(
         """
         {
@@ -1168,7 +1050,6 @@ internal static class McpToolOutputSchemas
         }
         """);
 
-    /// <summary>Schema for <c>StudioPreviewPlan</c> (<c>honua_studio_preview_draft</c>).</summary>
     public static readonly JsonElement StudioPreviewPlanOutputSchema = Parse(
         """
         {
@@ -1185,10 +1066,6 @@ internal static class McpToolOutputSchemas
         }
         """);
 
-    /// <summary>
-    /// Schema for <c>McpStudioProposePublicationOutput</c>
-    /// (<c>honua_studio_propose_publication</c>).
-    /// </summary>
     public static readonly JsonElement StudioProposePublicationOutputSchema = Parse(
         """
         {
@@ -1212,10 +1089,6 @@ internal static class McpToolOutputSchemas
         }
         """);
 
-    /// <summary>
-    /// Top-level read of a saved Studio version (<c>honua_studio_get_version</c>).
-    /// Save keeps these fields nested under <c>version</c>.
-    /// </summary>
     public static readonly JsonElement StudioGetVersionOutputSchema = Parse("""
         {"type":"object","required":["versionId","contentHash"],"additionalProperties":false,"properties":{
           "versionId":{"type":"string","format":"uuid"},

@@ -12,13 +12,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Tiles;
 
-/// <summary>
-/// Concrete raster tile-source producer for the durable tile-export runtime. Renders ImageServer
-/// tiles from the pinned plan descriptor and revision through the canonical streaming grid planner
-/// and package pipeline, so a queued worker reproduces the exact mosaic/time/raster selection the
-/// submission captured. HTTP-independent: it resolves the scoped raster store and metadata graph
-/// from a per-job scope (the shared executor is a singleton), never from request-scoped state.
-/// </summary>
 internal sealed class ImageServerTileExportProducer(IServiceScopeFactory scopeFactory) : ITileExportPackageProducer
 {
     public bool CanProduce(TileExportJobPlan plan)
@@ -136,11 +129,7 @@ internal sealed class ImageServerTileExportProducer(IServiceScopeFactory scopeFa
     }
 }
 
-/// <summary>
-/// Source fence for raster tile exports: confirms the pinned metadata revision and layer are still
-/// resolvable before a queued job renders, so an export never silently renders newer or missing
-/// state under an old artifact identity.
-/// </summary>
+// The queued export confirms the pinned metadata revision is still resolvable, so it does not silently render newer or missing state under the old artifact identity.
 internal sealed class ImageServerTileExportSourceFence(IServiceScopeFactory scopeFactory) : ITileExportSourceFence
 {
     public TileExportSourceKind SourceKind => TileExportSourceKind.Raster;

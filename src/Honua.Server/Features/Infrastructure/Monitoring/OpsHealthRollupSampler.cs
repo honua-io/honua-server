@@ -11,18 +11,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Monitoring;
 
-/// <summary>
-/// Per-replica background sampler (#2553). On a configurable interval it captures this replica's local
-/// ops-health sections (per-protocol serving latency + vitals), flushes them into the persisted rollup
-/// store, periodically downsamples/prunes the store, and raises the in-process
-/// <see cref="OpsHealthFlushSignal"/> with the freshly cluster-aggregated snapshot.
-/// </summary>
-/// <remarks>
-/// The sampler is strictly fail-open: it never runs on a serving path, and any rollup-store outage is
-/// caught and logged so serving is unaffected — the deployment simply degrades to snapshot-only. When no
-/// rollup store is registered (non-Postgres providers) it still raises the flush signal so realtime
-/// consumers keep working; only persistence and history are unavailable.
-/// </remarks>
+// A rollup-store outage is logged and does not affect serving.
 internal sealed partial class OpsHealthRollupSampler : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
@@ -47,7 +36,6 @@ internal sealed partial class OpsHealthRollupSampler : BackgroundService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <inheritdoc />
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var options = _options.Value;
@@ -85,9 +73,6 @@ internal sealed partial class OpsHealthRollupSampler : BackgroundService
         }
     }
 
-    /// <summary>Runs a single flush pass. Exposed for deterministic testing.</summary>
-    /// <param name="cancellationToken">A token to cancel the flush.</param>
-    /// <returns>A task that completes when the flush pass finishes.</returns>
     internal async Task RunFlushAsync(CancellationToken cancellationToken)
     {
         try

@@ -1,17 +1,21 @@
 ---
 type: guide
 title: "Studio MCP tools"
-description: "The server publishes 20 typed Studio tools through /mcp."
+description: "The server publishes 21 typed Studio tools through /mcp."
 resource: "honua://capability/ai.mcp-discovery"
 ---
 # Studio MCP tools
 
-The server publishes 20 typed Studio tools through `/mcp`.
+The server publishes 21 typed Studio tools through `/mcp`.
 This tool plane is executable independently of the browser Studio preview.
-The `configure` and `setup` workflow views both include these tools. The
+The `configure` and `setup` workflow views both include these tools, except
+`honua_studio_set_map_style`, which neither view carries. The
 `setup_and_publish` and `dashboard_scaffolding` prompts select `configure`
-because that view also carries the closed admin roster. `setup` (`setup.v5`)
+because that view also carries the closed admin roster. `setup` (`setup.v6`)
 is the bounded terminal path and is what stamps `_meta["honua.studio"].view`.
+To list every tool, including `honua_studio_set_map_style`, send an
+authenticated `tools/list` request with `params.view` set to `"full"` and
+repeat it with `params.cursor` set to each `nextCursor` until none is returned.
 
 | Tool | Semantics |
 |---|---|
@@ -21,10 +25,11 @@ is the bounded terminal path and is what stamps `_meta["honua.studio"].view`.
 | `honua_studio_validate_draft` | Check envelope structure without mutating the draft, querying sources or rendering. |
 | `honua_studio_preview_draft` | Return a plan without querying sources, rendering a canvas or publishing. |
 | `honua_studio_add_layer` | Add one layer. |
-| `honua_studio_remove_layer` | Remove one layer. |
-| `honua_studio_set_layer_style` | Replace a layer's typed style. |
+| `honua_studio_remove_layer` | Remove one layer, with the source binding, inline style, map-style source and render layers no other layer uses. |
+| `honua_studio_set_layer_style` | Bind or clear a layer's `styleRef`, or store a `styleBody` as the layer's inline style. Clearing keeps shared style definitions. |
 | `honua_studio_set_layer_visibility` | Set a layer's visibility. |
-| `honua_studio_set_view` | Set center, zoom, bearing, and pitch. |
+| `honua_studio_set_map_style` | Replace the draft's map style with an edited MapLibre style. Sources and existing render-layer bindings cannot change. Clears style definitions and layer style bindings. |
+| `honua_studio_set_view` | Update center, zoom, bearing, and pitch. Omitted members keep their values. Zoom outside [0, 24], pitch outside [0, 85] or bearing outside [0, 360) is refused with `out-of-bounds`. |
 | `honua_studio_add_widget` | Add a widget. |
 | `honua_studio_remove_widget` | Remove a widget. |
 | `honua_studio_bind_interaction` | Bind a typed source event to an action. |

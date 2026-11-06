@@ -13,6 +13,9 @@ namespace Honua.Core.Features.Metadata.Domain.V2;
 /// </summary>
 public sealed record MetadataV2Graph
 {
+    private IReadOnlyList<MetadataV2Folder>? _folders;
+    private IReadOnlyList<MetadataV2ServicePathAlias>? _servicePathAliases;
+
     /// <summary>
     /// Canonical schema version for this graph document.
     /// </summary>
@@ -78,6 +81,20 @@ public sealed record MetadataV2Graph
     /// </summary>
     [JsonPropertyName("storageBindings")]
     public IReadOnlyList<MetadataV2StorageBinding> StorageBindings { get; init; } = Array.Empty<MetadataV2StorageBinding>();
+
+    [JsonPropertyName("folders")]
+    public IReadOnlyList<MetadataV2Folder> Folders
+    {
+        get => _folders ?? [];
+        init => _folders = value;
+    }
+
+    [JsonPropertyName("servicePathAliases")]
+    public IReadOnlyList<MetadataV2ServicePathAlias> ServicePathAliases
+    {
+        get => _servicePathAliases ?? [];
+        init => _servicePathAliases = value;
+    }
 
     /// <summary>
     /// Services that publish resources.
@@ -582,6 +599,15 @@ public sealed record MetadataV2StorageBinding
 /// </summary>
 public sealed record MetadataV2Service
 {
+    [JsonPropertyName("folderId")]
+    public string? FolderId { get; init; }
+
+    [JsonPropertyName("publicName")]
+    public string? PublicName { get; init; }
+
+    [JsonIgnore]
+    public string EffectivePublicName => PublicName ?? Metadata.Name;
+
     private IReadOnlyDictionary<string, JsonElement>? _options;
     private IReadOnlyDictionary<string, JsonElement>? _extensions;
 

@@ -7,21 +7,6 @@ using System.Text;
 
 namespace Honua.Protocols.GeoServices.GeometryService.Services;
 
-/// <summary>
-/// Hand-rolled MGRS / USNG encoder and decoder over the WGS84 ellipsoid.
-/// </summary>
-/// <remarks>
-/// MGRS (Military Grid Reference System) and USNG (United States National Grid)
-/// share an identical grid scheme; they differ only in formatting conventions
-/// (USNG conventionally inserts spaces, MGRS conventionally omits them). This
-/// implementation uses a Transverse Mercator (UTM) projection on the WGS84
-/// ellipsoid followed by the MGRS 100km grid-square lettering scheme.
-///
-/// No external library is required and there is no reflection, keeping the
-/// implementation AOT-friendly. The reference algorithm follows NGA TM 8358.1
-/// (Datums, Ellipsoids, Grids and Grid Reference Systems) and the widely-used
-/// public-domain GeoTrans / proj4 formulations.
-/// </remarks>
 internal static class MgrsConverter
 {
     // WGS84 ellipsoid parameters.
@@ -44,17 +29,6 @@ internal static class MgrsConverter
     private const string RowLettersOdd = "ABCDEFGHJKLMNPQRSTUV";
     private const string RowLettersEven = "FGHJKLMNPQRSTUVABCDE";
 
-    /// <summary>
-    /// Converts a WGS84 longitude/latitude pair to an MGRS / USNG grid reference string.
-    /// </summary>
-    /// <param name="longitude">Longitude in decimal degrees (WGS84).</param>
-    /// <param name="latitude">Latitude in decimal degrees (WGS84).</param>
-    /// <param name="precision">Number of digits per easting/northing component (0-5).</param>
-    /// <param name="addSpaces">When true, inserts spaces (USNG/Esri default formatting).</param>
-    /// <param name="rounding">When true, rounds rather than truncates at the requested precision.</param>
-    /// <param name="oldStyle">When true, uses the legacy MGRS AL row-letter scheme.</param>
-    /// <param name="zoneOneAt180">When true, assigns longitude 180 to UTM zone 1.</param>
-    /// <returns>The grid reference string.</returns>
     public static string ToMgrs(
         double longitude,
         double latitude,
@@ -126,12 +100,6 @@ internal static class MgrsConverter
         return builder.ToString();
     }
 
-    /// <summary>
-    /// Converts an MGRS / USNG grid reference string to a WGS84 longitude/latitude pair.
-    /// </summary>
-    /// <param name="mgrs">The grid reference string (spaces optional).</param>
-    /// <param name="oldStyle">Whether the input uses the legacy MGRS AL row-letter scheme.</param>
-    /// <returns>A tuple of (longitude, latitude) in decimal degrees (WGS84).</returns>
     public static (double Longitude, double Latitude) FromMgrs(string mgrs, bool oldStyle = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(mgrs);

@@ -22,13 +22,13 @@
     "@playwright/test": "^1.52.0",
     "@types/jsdom": "^28.0.1",
     "@types/node": "^20.10.0",
-    "@vitest/coverage-v8": "^4.1.8",
-    "@vitest/ui": "^4.1.8",
+    "@vitest/coverage-v8": "^4.1.12",
+    "@vitest/ui": "^4.1.12",
     "ajv": "^8.20.0",
     "jsdom": "^26.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.3.0",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.12"
   },
   "dependencies": {
     "@turf/boolean-valid": "^7.0.0",
@@ -40,6 +40,6 @@
     "node": ">=18.0.0"
   },
   "overrides": {
-    "fast-uri": "3.1.8"
+    "fast-uri": "3.1.9"
   }
 }

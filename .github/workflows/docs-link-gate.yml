@@ -73,8 +73,9 @@ jobs:
     # cold run is seconds, not minutes. The ceiling is a bound, not a budget.
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           # The additions-only example gate diffs the PR head against its base.
           fetch-depth: 0
 
@@ -116,7 +117,17 @@ jobs:
         run: python3 scripts/ci/check-okf-bundle.py --summary
 
       - name: Check the derived OKF agent graph
-        run: python3 scripts/ci/generate-okf-graph.py --check
+        run: |
+          python3 scripts/ci/generate-okf-graph.py --output "${RUNNER_TEMP}/domain-graph.v1.json"
+          python3 scripts/ci/generate-okf-graph.py --check --output "${RUNNER_TEMP}/domain-graph.v1.json"
+
+      - name: Upload exact-head OKF agent graph
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: okf-agent-graph-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/domain-graph.v1.json
+          if-no-files-found: error
+          retention-days: 30
 
       # One capability concept per registry entry, generated from
       # docs/gis/data/capability-keys.v1.json and the capability matrix. They

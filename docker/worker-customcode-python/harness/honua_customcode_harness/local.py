@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import signal
 import sys
@@ -20,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from .context import CancellationToken, GpContext, JobCancelled, OutputSink, OutputSizeExceeded
-from .events import SCHEMA, EventJournal
+from .events import SCHEMA, EventJournal, correlation_from_env, trace_from_env
 from .harness import _coerce_result
 from .loader import load_entrypoint
 
@@ -39,7 +40,9 @@ def run_local(*, source: Path, entrypoint: str, params: Mapping[str, Any],
     run_dir.mkdir(parents=True, exist_ok=False)
     workdir = run_dir / "work"
     workdir.mkdir()
-    journal = EventJournal(run_dir / "events.jsonl", attempt="local")
+    journal = EventJournal(
+        run_dir / "events.jsonl", attempt="local",
+        correlation=correlation_from_env(os.environ), trace=trace_from_env(os.environ))
     result: dict[str, Any] = {
         "schemaVersion": "1.0", "runId": run_id, "entrypoint": entrypoint,
         "executionMode": "local", "contentClassification": "local-development-unsanitized",

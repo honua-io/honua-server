@@ -8,11 +8,6 @@ namespace Honua.Protocols.GeoServices.MapServer;
 
 internal static partial class MapServerEndpoints
 {
-    /// <summary>
-    /// Normalizes a MapServer extent value into the comma-delimited "xmin,ymin,xmax,ymax"
-    /// form. Accepts both the legacy comma string and the Esri JSON envelope object
-    /// ({"xmin":..,"ymin":..,"xmax":..,"ymax":..}) that ArcGIS Pro, the ArcGIS JS SDK and arcpy emit.
-    /// </summary>
     private static bool TryNormalizeMapEnvelope(
         string? envelopeValue,
         string parameterName,

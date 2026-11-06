@@ -7,9 +7,9 @@ namespace Honua.Protocols.GeoServices.Catalog;
 
 internal sealed record ServicesDirectoryResponse
 {
-    // No ArcGIS Server version is advertised. Honua is an independent, Esri-compatible
+    // No ArcGIS Server version is advertised. Honua is an independent GeoServices REST
     // server and must not impersonate a specific ArcGIS Server release. Do NOT add a
-    // currentVersion/fullVersion field (guarded by NoArcGisServerVersionTests).
+    // currentVersion/fullVersion field (guarded by NoGeoServicesServerVersionTests).
 
     [JsonPropertyName("folders")]
     public string[] Folders { get; init; } = [];
@@ -35,13 +35,7 @@ internal sealed record ServiceDirectoryEntry
 
 internal sealed record RestInfoResponse
 {
-    /// <summary>
-    /// ArcGIS REST compatibility level selected for native Esri clients. ArcGIS Pro 3.7's
-    /// ImageServer reader rejects the service before issuing an image operation when this
-    /// field is absent. This is not Honua's product version; keep the exception confined to
-    /// <c>/rest/info</c>, and do not add <c>fullVersion</c> or version fields to service models.
-    /// See honua-server#3375 for the licensed-client A/B evidence.
-    /// </summary>
+    // ArcGIS Pro 3.7's ImageServer reader rejects the service when this compatibility field is absent; it is not Honua's product version, so fullVersion and version stay off the service models and this field stays on /rest/info.
     [JsonPropertyName("currentVersion")]
     public double CurrentVersion { get; init; } = 10.8;
 

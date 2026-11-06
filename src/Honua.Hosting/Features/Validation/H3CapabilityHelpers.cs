@@ -7,15 +7,8 @@ using Honua.Infrastructure.Models;
 
 namespace Honua.Infrastructure.Validation;
 
-/// <summary>
-/// Shared validation for H3 capability checks across FeatureServer and OGC endpoints.
-/// </summary>
 internal static class H3CapabilityHelpers
 {
-    /// <summary>
-    /// Checks whether the h3-pg extension is available and returns an appropriate
-    /// error result if not. Returns null when H3 is available.
-    /// </summary>
     internal static async Task<IResult?> ValidateH3AvailabilityAsync(
         HttpContext context, CancellationToken cancellationToken)
     {

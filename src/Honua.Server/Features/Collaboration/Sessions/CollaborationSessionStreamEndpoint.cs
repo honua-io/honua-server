@@ -11,31 +11,7 @@ using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Collaboration.Sessions;
 
-/// <summary>
-/// Authenticated WebSocket transport for a saved-map collaboration session (#971/#2999): the join
-/// handshake authorizes through the shared <see cref="ISavedMapCollaborationAuthorizer"/> (the
-/// Studio-lifecycle-backed authorizer by default), then streams v1 collaboration envelopes —
-/// status, snapshot (presence plus the op-log tail for late joiners), presence deltas, and
-/// server-ordered <c>operation-appended</c> echoes — and accepts client control frames that update
-/// the joining participant's own presence. Cross-node fan-out is provided by the Redis backplane
-/// registered alongside the in-memory session service.
-/// </summary>
-/// <remarks>
-/// Resume semantics (NFR-001): a reconnecting client passes <c>resumeFrom</c> (its last observed
-/// op-log cursor). When the cursor is inside the retained replay window the handshake snapshot
-/// carries the operation tail and the stream continues live; otherwise a typed
-/// <c>resync-required</c> error event precedes a fresh snapshot with no tail, telling the client
-/// to reload the document. Presence is always re-snapshotted on reconnect — the bounded
-/// per-participant outbox intentionally cannot replay presence history, matching the SDK reducer,
-/// which rebuilds presence from every snapshot.
-/// <para>
-/// The same <c>resync-required</c> signal covers the two ways a client can end up without a
-/// complete history: the retained window advancing past its cursor mid-handshake (announced before
-/// the snapshot is sent, so the error keeps a lower sequence), and a deployment whose advertised
-/// <see cref="CollaborationCapabilities.Replay"/> capability is false — there the handshake serves
-/// presence only and never hands back node-local operations another replica could contradict.
-/// </para>
-/// </remarks>
+// If the cursor is outside the retained window, a typed resync-required event precedes a snapshot with no tail, and a node that is not authoritative for replay serves presence only.
 internal static partial class CollaborationSessionStreamEndpoint
 {
     private const int MaxControlFrameBytes = 16 * 1024;
@@ -322,12 +298,7 @@ internal static partial class CollaborationSessionStreamEndpoint
         }
     }
 
-    /// <summary>
-    /// Operation tail for a handshake snapshot: the operations to deliver, the cursor the tail
-    /// actually reaches, and whether the retained replay window moved past the requested start
-    /// while the tail was being read (so the caller can emit the typed <c>resync-required</c>
-    /// event instead of silently handing back a suffix with a hole in front of it).
-    /// </summary>
+    // The tail reports whether the window moved past the requested start so the caller emits resync-required instead of a suffix with a hole.
     private readonly record struct SnapshotTail(
         CollaborationOperationWire[] Operations,
         long DeliveredThrough,
@@ -335,19 +306,12 @@ internal static partial class CollaborationSessionStreamEndpoint
         string? ResyncMessage,
         long WindowBaseCursor)
     {
-        /// <summary>No tail at all, because this node may not answer replay.</summary>
+        // There is no tail because this node may not answer replay.
         public static SnapshotTail Unavailable { get; } =
             new([], 0, ResyncRequired: false, ResyncMessage: null, WindowBaseCursor: 0);
     }
 
-    /// <summary>
-    /// Reads the snapshot's operation tail starting after <paramref name="sinceCursor"/> and
-    /// reports the cursor the tail actually reaches, so the snapshot can never advertise a
-    /// position it did not deliver. When the retained window moves past the requested start
-    /// between reads the tail restarts from the window's current base and reports
-    /// <see cref="SnapshotTail.ResyncRequired"/>, because the client's history now has a gap the
-    /// tail cannot fill.
-    /// </summary>
+    // The snapshot never advertises a cursor it did not deliver, and a moved window restarts the tail and reports the gap.
     private static async Task<SnapshotTail> ReadSnapshotTailAsync(
         ISavedMapOperationLogRepository operationLog,
         string mapId,
@@ -385,13 +349,7 @@ internal static partial class CollaborationSessionStreamEndpoint
         return new SnapshotTail([], sinceCursor, ResyncRequired: true, resyncMessage, windowBase);
     }
 
-    /// <summary>
-    /// Emits the typed, non-terminal <c>resync-required</c> error telling the client its cursor
-    /// cannot be resumed from the retained window and it must reload the durable document.
-    /// </summary>
-    /// <summary>
-    /// Ends the handshake without emitting a snapshot the client could not safely trust.
-    /// </summary>
+    // The resync event ends the handshake without a snapshot the client could not trust.
     private static async Task CloseWithErrorAsync(
         WebSocket webSocket,
         string reason,
@@ -547,11 +505,7 @@ internal static partial class CollaborationSessionStreamEndpoint
         ILogger logger)
         => ApplyControlFrame(sessions, sessionId, text, sessions.Capabilities, logger);
 
-    /// <summary>
-    /// Applies one client control frame against the capability snapshot advertised for the
-    /// session. Kept internal so each independent presence flag can be proven fail-closed
-    /// without relying on a WebSocket receive timeout (honua-server#3074).
-    /// </summary>
+    // Control frames are applied against the advertised capability snapshot and fail closed.
     internal static void ApplyControlFrame(
         InMemoryCollaborationSessionService sessions,
         Guid sessionId,

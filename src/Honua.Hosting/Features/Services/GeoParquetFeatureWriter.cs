@@ -10,25 +10,24 @@ using Apache.Arrow;
 using Apache.Arrow.Types;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Microsoft.Extensions.Logging;
+using NetTopologySuite;
 using NetTopologySuite.Geometries;
+using NetTopologySuite.Geometries.Implementation;
 using NetTopologySuite.IO;
 using ParquetSharp.Arrow;
 
 namespace Honua.Infrastructure.Services;
 
-/// <summary>
-/// Shared GeoParquet feature encoder used by every protocol adapter that exports
-/// cloud-native Parquet (GeoServices <c>f=parquet</c>, OData <c>$format=parquet</c>).
-/// Encodes a canonical <see cref="QueryResult{Feature}"/> into a spec-compliant
-/// GeoParquet 1.1.0 byte payload so the wire format lives in one place rather than
-/// being reimplemented per protocol.
-/// </summary>
 public static partial class GeoParquetFeatureWriter
 {
+    public const string CoordinateEpochOutputUnsupportedMessage =
+        "GeoParquet coordinate epoch requires finite metadata and output in its storage CRS; epoch-aware CRS transformation is not supported.";
+
     // Constants for GeoParquet format
     private const string GeometryColumnName = "geometry";
 
@@ -44,10 +43,10 @@ public static partial class GeoParquetFeatureWriter
     private const string GeometryEncoding = "WKB";
     private const string GeoMetadataKey = "geo";
 
-    /// <summary>
-    /// GeoParquet content type emitted by <see cref="FormatAsGeoParquet"/>.
-    /// </summary>
     public const string ContentType = "application/vnd.apache.parquet";
+
+    [ThreadStatic]
+    private static WKBReader? _dimensionPreservingWkbReader;
 
     [ThreadStatic]
     private static WKBWriter? _wkbWriter2D;
@@ -55,21 +54,6 @@ public static partial class GeoParquetFeatureWriter
     [ThreadStatic]
     private static WKBWriter? _wkbWriter3D;
 
-    /// <summary>
-    /// Formats a canonical query result as GeoParquet using Metadata v2 resource metadata.
-    /// </summary>
-    /// <param name="result">Canonical query result to encode.</param>
-    /// <param name="resource">Metadata v2 resource describing the layer schema.</param>
-    /// <param name="objectIdFieldName">Resolved object-id field name for the layer.</param>
-    /// <param name="returnGeometry">Whether to include the geometry column.</param>
-    /// <param name="outputSrid">Output SRID for CRS metadata. EPSG:4326 emits the GeoParquet default (OGC:CRS84); any other SRID must have a resolvable PROJJSON definition.</param>
-    /// <param name="returnZ">Whether to retain Z ordinates.</param>
-    /// <param name="returnM">Whether M ordinates were requested (rejected for GeoParquet).</param>
-    /// <param name="geometryLimits">Geometry output limits.</param>
-    /// <param name="outFields">Requested output fields, or null / ["*"] for all.</param>
-    /// <param name="logger">Optional logger for conversion diagnostics.</param>
-    /// <param name="encodingLimits">Optional encoding budgets; defaults apply when omitted.</param>
-    /// <returns>The GeoParquet payload and its content type.</returns>
     public static (byte[] response, string contentType) FormatAsGeoParquet(
         QueryResult<Feature> result,
         MetadataV2Resource resource,
@@ -93,6 +77,7 @@ public static partial class GeoParquetFeatureWriter
 
         // Resolve (and thereby validate) the output-CRS PROJJSON up-front so a non-resolvable
         // SRID fails fast with a precise error before any geometry encoding work happens.
+        _ = ResolveCoordinateEpoch(resource, includeGeometry, srid);
         _ = ResolveGeoParquetCrsProjJson(includeGeometry, srid);
         EnsureSupportedCloudNativeGeometryMeasures(includeGeometry, returnM, "GeoParquet");
 
@@ -107,22 +92,32 @@ public static partial class GeoParquetFeatureWriter
         // A small type set is all the metadata pass retains. Encoding each batch later keeps
         // Arrow buffers bounded while still describing types found in the final batch.
         var geometryTypes = new HashSet<string>(StringComparer.Ordinal);
+        var includeCovering = true;
         if (includeGeometry)
         {
             foreach (var feature in features)
             {
-                var (_, _, _, geometryType) = ProcessGeometryCore(feature.Geometry, srid,
+                var (_, envelope, _, geometryType) = ProcessGeometryCore(feature.Geometry, srid,
                     geometryLimits, returnZ, returnM, feature.Id, logger, encodeWkb: false);
                 if (geometryType is not null)
                 {
                     geometryTypes.Add(geometryType);
+                    // A non-null empty geometry has no finite bounding box. GeoParquet
+                    // requires covering values iff geometry values exist, so omit this
+                    // optional representation for the whole file instead of writing null.
+                    if (envelope is null || envelope.IsNull
+                        || !double.IsFinite(envelope.MinX) || !double.IsFinite(envelope.MinY)
+                        || !double.IsFinite(envelope.MaxX) || !double.IsFinite(envelope.MaxY))
+                    {
+                        includeCovering = false;
+                    }
                 }
             }
         }
 
-        var (schema, fieldsToInclude, resolvedObjectIdFieldName) = BuildSchema(
+        var (schema, fieldsToInclude, resolvedObjectIdFieldName, geometryColumnName, bboxColumnName) = BuildSchema(
             resource, objectIdFieldName, returnGeometry, outFields, outputSrid,
-            runtimeFields, geometryTypes);
+            runtimeFields, geometryTypes, includeCovering: includeCovering);
 
         return (WriteArrowParquet(schema, writer =>
         {
@@ -135,10 +130,15 @@ public static partial class GeoParquetFeatureWriter
                 {
                     (geometryArray, bboxArray, _) = BuildGeometryArray(batchFeatures, srid,
                         returnZ, returnM, geometryLimits, logger);
+                    if (!includeCovering)
+                    {
+                        bboxArray.Dispose();
+                        bboxArray = null;
+                    }
                 }
 
                 var arrays = BuildArrays(batchFeatures, schema, returnGeometry, geometryArray,
-                    bboxArray, resolvedObjectIdFieldName, fieldsToInclude, logger);
+                    bboxArray, resolvedObjectIdFieldName, fieldsToInclude, geometryColumnName, bboxColumnName, logger);
                 using var recordBatch = new RecordBatch(schema, arrays, count);
                 // This API flushes a new row group for each batch; do not use the buffered API.
                 writer.WriteRecordBatch(recordBatch, encodingLimits.MaxRowsPerBatch);
@@ -185,9 +185,6 @@ public static partial class GeoParquetFeatureWriter
         }
     }
 
-    /// <summary>
-    /// Resolves the schema fields included in a GeoParquet / GeoArrow export.
-    /// </summary>
     public static List<MetadataV2Field> ResolveSelectedFields(
         MetadataV2Resource resource,
         string objectIdFieldName,
@@ -233,17 +230,13 @@ public static partial class GeoParquetFeatureWriter
         int? outputSrid,
         GeoParquetLimits encodingLimits)
     {
-        var (schema, _, _) = BuildSchema(
+        var (schema, _, _, _, _) = BuildSchema(
             resource, objectIdFieldName, returnGeometry, outFields, outputSrid, isEmpty: true);
 
         return (WriteArrowParquet(schema, writeBatches: null, encodingLimits), ContentType);
     }
 
-    /// <summary>
-    /// Builds the Arrow schema and resolves which attribute fields to include.
-    /// Shared by both populated and empty GeoParquet paths.
-    /// </summary>
-    private static (Schema schema, List<MetadataV2Field> fieldsToInclude, string objectIdFieldName) BuildSchema(
+    private static (Schema schema, List<MetadataV2Field> fieldsToInclude, string objectIdFieldName, string geometryColumnName, string bboxColumnName) BuildSchema(
         MetadataV2Resource resource,
         string objectIdFieldName,
         bool returnGeometry,
@@ -251,7 +244,8 @@ public static partial class GeoParquetFeatureWriter
         int? outputSrid,
         IReadOnlyList<(string name, IArrowType type)>? runtimeFields = null,
         IReadOnlyCollection<string>? geometryTypes = null,
-        bool isEmpty = false)
+        bool isEmpty = false,
+        bool includeCovering = true)
     {
         var resolvedFields = ResolveSelectedFields(resource, objectIdFieldName, outFields);
 
@@ -264,10 +258,6 @@ public static partial class GeoParquetFeatureWriter
             new Field(objectIdFieldName, new Int64Type(), false)
         };
 
-        if (returnGeometry && resource.HasGeometry())
-        {
-            schemaFields.Add(new Field(GeometryColumnName, new BinaryType(), true));
-        }
 
         foreach (var field in fieldsToInclude)
         {
@@ -287,27 +277,52 @@ public static partial class GeoParquetFeatureWriter
             }
         }
 
-        // GeoParquet 1.1 covering bbox column. Declared last so attribute/runtime ordering stays
-        // stable; the `geo` metadata `covering` maps xmin/ymin/xmax/ymax onto this struct.
+        var occupiedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var field in schemaFields)
+        {
+            if (!occupiedNames.Add(field.Name))
+            {
+                throw new InvalidOperationException($"Cloud-native output contains ambiguous attribute name '{field.Name}'.");
+            }
+        }
+        var geometryColumnName = AllocateGeneratedColumnName(GeometryColumnName, occupiedNames);
+        var bboxColumnName = AllocateGeneratedColumnName(BboxColumnName, occupiedNames);
         if (returnGeometry && resource.HasGeometry())
         {
-            schemaFields.Add(new Field(BboxColumnName, CreateBboxStructType(), nullable: true));
+            schemaFields.Insert(1, new Field(geometryColumnName, new BinaryType(), true));
+        }
+
+        // GeoParquet 1.1 covering bbox column. Declared last so attribute/runtime ordering stays
+        // stable; the `geo` metadata `covering` maps xmin/ymin/xmax/ymax onto this struct.
+        if (includeCovering && returnGeometry && resource.HasGeometry())
+        {
+            schemaFields.Add(new Field(bboxColumnName, CreateBboxStructType(), nullable: true));
         }
 
         var schema = new Schema(schemaFields, BuildGeoParquetMetadata(
-            resource, returnGeometry, outputSrid, geometryTypes, isEmpty));
-        return (schema, fieldsToInclude, objectIdFieldName);
+            resource, returnGeometry, outputSrid, geometryTypes, isEmpty, geometryColumnName, bboxColumnName, includeCovering));
+        return (schema, fieldsToInclude, objectIdFieldName, geometryColumnName, bboxColumnName);
     }
 
-    /// <summary>
-    /// Builds GeoParquet metadata following the specification.
-    /// </summary>
+    internal static string AllocateGeneratedColumnName(string preferredName, ISet<string> occupiedNames)
+    {
+        var name = preferredName;
+        for (var suffix = 1; !occupiedNames.Add(name); suffix++)
+        {
+            name = $"{preferredName}_{suffix}";
+        }
+        return name;
+    }
+
     private static Dictionary<string, string> BuildGeoParquetMetadata(
         MetadataV2Resource resource,
         bool returnGeometry,
         int? outputSrid,
         IReadOnlyCollection<string>? geometryTypes,
-        bool isEmpty = false)
+        bool isEmpty,
+        string geometryColumnName,
+        string bboxColumnName,
+        bool includeCovering)
     {
         var metadata = new Dictionary<string, string>();
 
@@ -334,30 +349,38 @@ public static partial class GeoParquetFeatureWriter
         // the exact CRS. Coordinates in the WKB stay in (x, y) order per the GeoParquet spec,
         // which overrides the CRS axis order, so no coordinate swap is applied.
         var crsPart = crsProjJson is null ? string.Empty : $@",""crs"":{crsProjJson}";
+        var coordinateEpoch = ResolveCoordinateEpoch(resource, includeGeometry: true, srid);
+        var epochPart = coordinateEpoch.HasValue
+            ? $@",""epoch"":{coordinateEpoch.Value.ToString("R", CultureInfo.InvariantCulture)}"
+            : string.Empty;
 
         // GeoParquet 1.1 "covering" declares the per-row bbox column used for spatial pruning.
         // The paths point at the fields of the emitted `bbox` struct column so a reader can map
         // xmin/ymin/xmax/ymax without decoding geometry (honua-server#2843).
-        var coveringPart =
-            $@",""covering"":{{""bbox"":{{""{BboxXMinFieldName}"":[""{BboxColumnName}"",""{BboxXMinFieldName}""],""{BboxYMinFieldName}"":[""{BboxColumnName}"",""{BboxYMinFieldName}""],""{BboxXMaxFieldName}"":[""{BboxColumnName}"",""{BboxXMaxFieldName}""],""{BboxYMaxFieldName}"":[""{BboxColumnName}"",""{BboxYMaxFieldName}""]}}}}";
-        var geoJson = $@"{{""version"":""{GeoParquetVersion}"",""primary_column"":""{GeometryColumnName}"",""columns"":{{""{GeometryColumnName}"":{{""encoding"":""{GeometryEncoding}"",""geometry_types"":{geometryTypesPart}{crsPart}{coveringPart}}}}}}}";
+        var coveringPart = includeCovering
+            ? $@",""covering"":{{""bbox"":{{""{BboxXMinFieldName}"":[""{bboxColumnName}"",""{BboxXMinFieldName}""],""{BboxYMinFieldName}"":[""{bboxColumnName}"",""{BboxYMinFieldName}""],""{BboxXMaxFieldName}"":[""{bboxColumnName}"",""{BboxXMaxFieldName}""],""{BboxYMaxFieldName}"":[""{bboxColumnName}"",""{BboxYMaxFieldName}""]}}}}"
+            : string.Empty;
+        var geoJson = $@"{{""version"":""{GeoParquetVersion}"",""primary_column"":""{geometryColumnName}"",""columns"":{{""{geometryColumnName}"":{{""encoding"":""{GeometryEncoding}"",""geometry_types"":{geometryTypesPart}{crsPart}{epochPart}{coveringPart}}}}}}}";
 
         metadata[GeoMetadataKey] = geoJson;
 
         return metadata;
     }
 
-    /// <summary>
-    /// Encodes a GeoParquet <c>geometry_types</c> value: a JSON array of the given type names,
-    /// sorted ordinally and JSON-escaped.
-    /// </summary>
-    /// <remarks>
-    /// Written with <see cref="Utf8JsonWriter"/> instead of the <c>JsonSerializer.Serialize</c>
-    /// overload that takes no type info. The shipped server sets
-    /// <c>JsonSerializerIsReflectionEnabledByDefault=false</c>, so that overload threw for every
-    /// page with a concrete geometry type, and <c>f=parquet</c> / <c>f=geoarrow</c> answered with a
-    /// 500 error envelope instead of a file (honua-server#4747).
-    /// </remarks>
+    private static double? ResolveCoordinateEpoch(MetadataV2Resource resource, bool includeGeometry, int outputSrid)
+    {
+        if (!includeGeometry || resource.Spatial?.StorageCrsCoordinateEpoch is not { } epoch)
+        {
+            return null;
+        }
+        if (!double.IsFinite(epoch) || resource.Spatial.StorageCrs?.ResolveSrid() != outputSrid)
+        {
+            throw new InvalidOperationException(CoordinateEpochOutputUnsupportedMessage);
+        }
+        return epoch;
+    }
+
+    // SerializeGeometryTypes uses Utf8JsonWriter because the shipped server sets JsonSerializerIsReflectionEnabledByDefault false.
     public static string SerializeGeometryTypes(IEnumerable<string> geometryTypes)
     {
         ArgumentNullException.ThrowIfNull(geometryTypes);
@@ -377,15 +400,7 @@ public static partial class GeoParquetFeatureWriter
         return Encoding.UTF8.GetString(buffer.WrittenSpan);
     }
 
-    /// <summary>
-    /// Validates that a cloud-native geometry export uses the only spec-compliant SRID (EPSG:4326).
-    /// </summary>
-    /// <remarks>
-    /// Used by the GeoArrow formatter, which does not yet emit non-4326 CRS metadata. The
-    /// GeoParquet path instead resolves a PROJJSON definition via
-    /// <see cref="ResolveGeoParquetCrsProjJson"/> and supports any SRID with a resolvable
-    /// definition.
-    /// </remarks>
+    // GeoArrow still requires EPSG:4326 because it does not emit CRS metadata for any other SRID.
     public static void EnsureSupportedCloudNativeGeometrySrid(bool includeGeometry, int srid, string formatLabel)
     {
         if (!includeGeometry || srid == 4326)
@@ -397,20 +412,7 @@ public static partial class GeoParquetFeatureWriter
             $"{formatLabel} geometry output only supports EPSG:4326. Requested SRID {srid} cannot be encoded with spec-compliant CRS metadata.");
     }
 
-    /// <summary>
-    /// Resolves the GeoParquet column <c>crs</c> PROJJSON for an output SRID.
-    /// </summary>
-    /// <param name="includeGeometry">Whether geometry (and therefore CRS metadata) is emitted.</param>
-    /// <param name="srid">Output EPSG SRID.</param>
-    /// <returns>
-    /// The authoritative PROJJSON object as a JSON string when a non-default CRS applies, or
-    /// <see langword="null"/> when no <c>crs</c> field should be written (geometry excluded, or
-    /// EPSG:4326 which uses the GeoParquet default of OGC:CRS84 / longitude-latitude).
-    /// </returns>
-    /// <exception cref="InvalidOperationException">
-    /// Thrown when a non-4326 SRID has no resolvable PROJJSON definition, so the output cannot
-    /// carry spec-compliant CRS metadata.
-    /// </exception>
+    // EPSG:4326 omits the CRS field and means OGC:CRS84; any other SRID with no PROJJSON definition throws so the file cannot claim a CRS it cannot describe.
     public static string? ResolveGeoParquetCrsProjJson(bool includeGeometry, int srid)
     {
         // EPSG:4326 is emitted as the GeoParquet default (OGC:CRS84, lon/lat) by omitting `crs`.
@@ -431,9 +433,6 @@ public static partial class GeoParquetFeatureWriter
             + "GeoParquet PROJJSON catalog.");
     }
 
-    /// <summary>
-    /// Validates that a cloud-native geometry export does not request unsupported M ordinates.
-    /// </summary>
     public static void EnsureSupportedCloudNativeGeometryMeasures(bool includeGeometry, bool returnM, string formatLabel)
     {
         if (!includeGeometry || !returnM)
@@ -445,11 +444,6 @@ public static partial class GeoParquetFeatureWriter
             $"{formatLabel} geometry output does not support returnM=true. GeoParquet 1.1.0 only supports XY and XYZ geometries.");
     }
 
-    /// <summary>
-    /// Detects runtime-computed attributes present in the result set but not declared in the
-    /// resource schema (e.g. the "distance" field injected by KNN queries when returnDistance=true).
-    /// Internal fields prefixed with "__" are excluded.
-    /// </summary>
     public static List<(string name, IArrowType type)> DetectRuntimeFields(
         ImmutableArray<Feature> features,
         MetadataV2Resource resource)
@@ -463,10 +457,17 @@ public static partial class GeoParquetFeatureWriter
 
         foreach (var feature in features)
         {
+            var attributeNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var (key, value) in feature.Attributes)
             {
-                if (seenRuntimeFields.Contains(key) || resourceFieldNames.Contains(key)) continue;
                 if (key.StartsWith("__", StringComparison.Ordinal)) continue;
+                if (!attributeNames.Add(key)
+                    || (seenRuntimeFields.TryGetValue(key, out var previousName)
+                        && !string.Equals(previousName, key, StringComparison.Ordinal)))
+                {
+                    throw new InvalidOperationException($"Cloud-native output contains ambiguous attribute name '{key}'.");
+                }
+                if (seenRuntimeFields.Contains(key) || resourceFieldNames.Contains(key)) continue;
 
                 var arrowType = InferArrowTypeFromValue(value);
                 if (arrowType == null) continue;
@@ -479,9 +480,6 @@ public static partial class GeoParquetFeatureWriter
         return result;
     }
 
-    /// <summary>
-    /// Infers an Arrow type from a CLR runtime value. Returns null for unrecognised types.
-    /// </summary>
     private static IArrowType? InferArrowTypeFromValue(object? value)
     {
         return value switch
@@ -493,17 +491,14 @@ public static partial class GeoParquetFeatureWriter
             bool => new BooleanType(),
             string => new StringType(),
             DateOnly => new Date32Type(),
-            TimeOnly => new Time32Type(TimeUnit.Millisecond),
-            TimeSpan => new Time32Type(TimeUnit.Millisecond),
-            DateTime => new TimestampType(TimeUnit.Millisecond, TimeZoneInfo.Utc),
-            DateTimeOffset => new TimestampType(TimeUnit.Millisecond, TimeZoneInfo.Utc),
+            TimeOnly => new Time64Type(TimeUnit.Microsecond),
+            TimeSpan => new Time64Type(TimeUnit.Microsecond),
+            DateTime => new TimestampType(TimeUnit.Microsecond, TimeZoneInfo.Utc),
+            DateTimeOffset => new TimestampType(TimeUnit.Microsecond, TimeZoneInfo.Utc),
             _ => null
         };
     }
 
-    /// <summary>
-    /// Maps metadata v2 geometry type to GeoParquet geometry type string.
-    /// </summary>
     public static string? MapGeometryTypeToGeoParquet(MetadataV2GeometryType geometryType, bool returnZ)
     {
         var baseType = geometryType switch
@@ -521,11 +516,7 @@ public static partial class GeoParquetFeatureWriter
         return baseType is null ? null : returnZ ? $"{baseType} Z" : baseType;
     }
 
-    /// <summary>
-    /// Maps metadata v2 field metadata to Arrow data type.
-    /// IMPORTANT: keep in sync with the matching attribute array builders which select the
-    /// matching typed builder for the same SQL type strings.
-    /// </summary>
+    // Keep this schema-type switch in sync with the typed array builders that select a builder for the same SQL type strings.
     private static IArrowType MapToArrowType(MetadataV2Field field)
     {
         return ResolveSqlType(field).ToLowerInvariant() switch
@@ -537,8 +528,8 @@ public static partial class GeoParquetFeatureWriter
             "double precision" or "float8" => new DoubleType(),
             "boolean" or "bool" => new BooleanType(),
             "date" => new Date32Type(),
-            "time" => new Time32Type(TimeUnit.Millisecond),
-            "timestamp" or "timestamptz" or "timestamp with time zone" or "timestamp without time zone" => new TimestampType(TimeUnit.Millisecond, TimeZoneInfo.Utc),
+            "time" => new Time64Type(TimeUnit.Microsecond),
+            "timestamp" or "timestamptz" or "timestamp with time zone" or "timestamp without time zone" => new TimestampType(TimeUnit.Microsecond, TimeZoneInfo.Utc),
             "bytea" => new BinaryType(),
             "uuid" => new StringType(),
             "json" or "jsonb" => new StringType(),
@@ -580,10 +571,6 @@ public static partial class GeoParquetFeatureWriter
     private static bool IsGeometryField(MetadataV2Field field)
         => field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography;
 
-    /// <summary>
-    /// Builds Arrow arrays for each column.
-    /// The geometry column is pre-built and passed in (null when geometry is excluded).
-    /// </summary>
     private static IArrowArray[] BuildArrays(
         ImmutableArray<Feature> features,
         Schema schema,
@@ -592,6 +579,8 @@ public static partial class GeoParquetFeatureWriter
         StructArray? bboxArray,
         string objectIdFieldName,
         List<MetadataV2Field> fieldsToInclude,
+        string geometryColumnName,
+        string bboxColumnName,
         ILogger? logger = null)
     {
         var arrays = new List<IArrowArray>();
@@ -602,11 +591,11 @@ public static partial class GeoParquetFeatureWriter
             {
                 arrays.Add(BuildObjectIdArray(features, objectIdFieldName));
             }
-            else if (field.Name == GeometryColumnName && returnGeometry && geometryArray != null)
+            else if (field.Name == geometryColumnName && returnGeometry && geometryArray != null)
             {
                 arrays.Add(geometryArray);
             }
-            else if (field.Name == BboxColumnName && returnGeometry && bboxArray != null)
+            else if (field.Name == bboxColumnName && returnGeometry && bboxArray != null)
             {
                 arrays.Add(bboxArray);
             }
@@ -627,9 +616,6 @@ public static partial class GeoParquetFeatureWriter
         return arrays.ToArray();
     }
 
-    /// <summary>
-    /// Builds Int64 array for object IDs directly from features without intermediate allocation
-    /// </summary>
     private static Int64Array BuildObjectIdArray(ImmutableArray<Feature> features, string objectIdFieldName)
     {
         var builder = new Int64Array.Builder();
@@ -640,10 +626,6 @@ public static partial class GeoParquetFeatureWriter
         return builder.Build();
     }
 
-    /// <summary>
-    /// Resolves the object-id value for a feature, preferring the resolved object-id
-    /// attribute (numeric-normalized) and falling back to the canonical feature id.
-    /// </summary>
     public static long ResolveObjectIdValue(Feature feature, string objectIdFieldName)
     {
         if (!string.IsNullOrWhiteSpace(objectIdFieldName) &&
@@ -684,12 +666,6 @@ public static partial class GeoParquetFeatureWriter
         }
     }
 
-    /// <summary>
-    /// Builds the WKB geometry array and the parallel GeoParquet 1.1 covering bbox column,
-    /// and tracks which concrete GeoParquet geometry types were emitted. The per-row bbox is the envelope
-    /// of the emitted (output-SRID, limit-applied) geometry so it stays consistent with the WKB;
-    /// null / empty geometries yield a null bbox row.
-    /// </summary>
     private static (BinaryArray array, StructArray bbox, string[] geometryTypes) BuildGeometryArray(
         ImmutableArray<Feature> features,
         int outputSrid,
@@ -756,11 +732,6 @@ public static partial class GeoParquetFeatureWriter
             geometryTypes.OrderBy(static type => type, StringComparer.Ordinal).ToArray());
     }
 
-    /// <summary>
-    /// Arrow struct type for the GeoParquet covering bbox column: four double ordinate fields.
-    /// A single definition is reused for both the schema field and the array so the declared
-    /// column type and the data match exactly.
-    /// </summary>
     private static StructType CreateBboxStructType() => new(new List<Field>
     {
         new Field(BboxXMinFieldName, new DoubleType(), nullable: true),
@@ -769,10 +740,6 @@ public static partial class GeoParquetFeatureWriter
         new Field(BboxYMaxFieldName, new DoubleType(), nullable: true)
     });
 
-    /// <summary>
-    /// Assembles the covering bbox <see cref="StructArray"/> from its four ordinate child arrays
-    /// and a validity bitmap that marks rows with null / empty geometry as null.
-    /// </summary>
     private static StructArray BuildBboxStructArray(
         int length,
         DoubleArray xMin,
@@ -786,19 +753,11 @@ public static partial class GeoParquetFeatureWriter
         return new StructArray(CreateBboxStructType(), length, children, nullBitmap, nullCount);
     }
 
-    /// <summary>
-    /// Reads an attribute value from a feature, returning null when absent.
-    /// </summary>
     public static object? GetAttributeValue(Feature feature, string fieldName)
     {
         return feature.Attributes.TryGetValue(fieldName, out var value) ? value : null;
     }
 
-    /// <summary>
-    /// Builds a GeoArrow WKB array and returns the concrete GeoParquet-compatible geometry type
-    /// tokens emitted by that same pass. Keeping type discovery beside encoding prevents protocol
-    /// adapters from decoding and filtering every geometry twice.
-    /// </summary>
     public static (BinaryArray array, string[] geometryTypes) BuildGeoArrowGeometryArray(
         IReadOnlyList<Feature> features,
         int outputSrid,
@@ -832,9 +791,6 @@ public static partial class GeoParquetFeatureWriter
             geometryTypes.OrderBy(static type => type, StringComparer.Ordinal).ToArray());
     }
 
-    /// <summary>
-    /// Processes a WKB geometry payload into the spec-compliant output WKB, applying limits and dimension filtering.
-    /// </summary>
     public static byte[]? ProcessGeometry(
         byte[]? geometryBytes,
         int outputSrid,
@@ -859,15 +815,24 @@ public static partial class GeoParquetFeatureWriter
         ILogger? logger = null,
         bool encodeWkb = true)
     {
-        if (geometryBytes == null || geometryBytes.Length == 0)
+        if (geometryBytes == null)
         {
             return (null, null, false, null);
+        }
+
+        if (!WkbSridNormalizer.TryGetDeclaredOrdinates(geometryBytes, out var declaredZ, out _))
+        {
+            throw new InvalidOperationException("Invalid geometry data for export.");
         }
 
         Geometry? geometry;
         try
         {
-            geometry = WkbReaderCache.Get().Read(geometryBytes);
+            // Packed sequences preserve per-coordinate Z values, including all-NaN Z.
+            // Declared dimensions of empty geometries come from the validated WKB above.
+            _dimensionPreservingWkbReader ??= new WKBReader(
+                new NtsGeometryServices(PackedCoordinateSequenceFactory.DoubleFactory));
+            geometry = _dimensionPreservingWkbReader.Read(geometryBytes);
         }
         catch (Exception ex) when (ex is ParseException or FormatException)
         {
@@ -876,12 +841,12 @@ public static partial class GeoParquetFeatureWriter
                 Log.GeoParquetCorruptGeometry(logger, featureId, geometryBytes.Length, ex);
             }
 
-            return (null, null, false, null);
+            throw new InvalidOperationException("Invalid geometry data for export.");
         }
 
         if (geometry == null)
         {
-            return (null, null, false, null);
+            throw new InvalidOperationException("Invalid geometry data for export.");
         }
 
         geometry.SRID = outputSrid;
@@ -894,7 +859,7 @@ public static partial class GeoParquetFeatureWriter
         // GeoParquet 1.1.0 only supports XY and XYZ — always strip M values.
         geometry = GeometryOutputProcessor.ApplyDimensionFilter(geometry, returnZ, includeM: false);
 
-        var hasZ = GeometryHasZ(geometry);
+        var hasZ = returnZ && declaredZ;
         var writer = GetWkbWriter(hasZ);
 
         // Envelope of the emitted geometry (output SRID, limits applied) feeds the covering bbox
@@ -921,11 +886,7 @@ public static partial class GeoParquetFeatureWriter
         return baseType is null ? null : hasZ ? $"{baseType} Z" : baseType;
     }
 
-    /// <summary>
-    /// Builds attribute array for a specific field.
-    /// IMPORTANT: keep in sync with the matching schema type mapper which declares the
-    /// Arrow schema type for the same SQL type strings.
-    /// </summary>
+    // Keep this array-builder switch in sync with the schema-type mapper that declares the Arrow type for the same SQL type strings.
     private static IArrowArray BuildAttributeArray(
         ImmutableArray<Feature> features,
         string fieldName,
@@ -943,7 +904,7 @@ public static partial class GeoParquetFeatureWriter
             "boolean" or "bool" => BuildBooleanAttributeArray(features, fieldName, logger),
             "bytea" => BuildBinaryAttributeArray(features, fieldName, logger),
             "date" => BuildDate32AttributeArray(features, fieldName, logger),
-            "time" => BuildTime32AttributeArray(features, fieldName, logger),
+            "time" => BuildTime64AttributeArray(features, fieldName, logger),
             "timestamp" or "timestamptz" or "timestamp with time zone" or "timestamp without time zone" => BuildTimestampAttributeArray(features, fieldName, logger),
             var resolved when resolved.StartsWith("numeric", StringComparison.OrdinalIgnoreCase) => BuildDoubleAttributeArray(features, fieldName, logger),
             var resolved when resolved.StartsWith("decimal", StringComparison.OrdinalIgnoreCase) => BuildDoubleAttributeArray(features, fieldName, logger),
@@ -951,9 +912,6 @@ public static partial class GeoParquetFeatureWriter
         };
     }
 
-    /// <summary>
-    /// Iterates features extracting attribute values, handling nulls and conversion errors.
-    /// </summary>
     private static void ForEachAttribute(
         ImmutableArray<Feature> features,
         string fieldName,
@@ -1051,18 +1009,21 @@ public static partial class GeoParquetFeatureWriter
         return builder.Build();
     }
 
-    private static Time32Array BuildTime32AttributeArray(ImmutableArray<Feature> features, string fieldName, ILogger? logger = null)
+    private static Time64Array BuildTime64AttributeArray(ImmutableArray<Feature> features, string fieldName, ILogger? logger = null)
     {
-        var builder = new Time32Array.Builder(TimeUnit.Millisecond);
+        // Time64 has no builder in Apache.Arrow 22. Build the microsecond values as
+        // int64, then view that buffer as Time64. PostgreSQL time is microseconds;
+        // Time32 cannot store them.
+        var builder = new Int64Array.Builder();
         ForEachAttribute(
             features,
             fieldName,
             v =>
             {
-                var milliseconds = TryConvertTimeMilliseconds(v);
-                if (milliseconds.HasValue)
+                var microseconds = TryConvertTimeMicroseconds(v);
+                if (microseconds.HasValue)
                 {
-                    builder.Append(milliseconds.Value);
+                    builder.Append(microseconds.Value);
                 }
                 else
                 {
@@ -1071,12 +1032,19 @@ public static partial class GeoParquetFeatureWriter
             },
             () => builder.AppendNull(),
             logger);
-        return builder.Build();
+        var values = builder.Build();
+        return new Time64Array(
+            new Time64Type(TimeUnit.Microsecond),
+            values.ValueBuffer,
+            values.NullBitmapBuffer,
+            values.Length,
+            values.NullCount,
+            values.Offset);
     }
 
     private static TimestampArray BuildTimestampAttributeArray(ImmutableArray<Feature> features, string fieldName, ILogger? logger = null)
     {
-        var builder = new TimestampArray.Builder(TimeUnit.Millisecond, TimeZoneInfo.Utc);
+        var builder = new TimestampArray.Builder(TimeUnit.Microsecond, TimeZoneInfo.Utc);
         ForEachAttribute(
             features,
             fieldName,
@@ -1134,10 +1102,6 @@ public static partial class GeoParquetFeatureWriter
         return builder.Build();
     }
 
-    /// <summary>
-    /// Builds an array for a runtime-computed attribute absent from the resource schema.
-    /// Dispatches by the Arrow type declared in the schema field.
-    /// </summary>
     private static IArrowArray BuildRuntimeAttributeArray(
         ImmutableArray<Feature> features,
         Field field,
@@ -1151,7 +1115,7 @@ public static partial class GeoParquetFeatureWriter
             Int64Type => BuildInt64AttributeArray(features, field.Name, logger),
             BooleanType => BuildBooleanAttributeArray(features, field.Name, logger),
             Date32Type => BuildDate32AttributeArray(features, field.Name, logger),
-            Time32Type => BuildTime32AttributeArray(features, field.Name, logger),
+            Time64Type => BuildTime64AttributeArray(features, field.Name, logger),
             TimestampType => BuildTimestampAttributeArray(features, field.Name, logger),
             _ => BuildStringAttributeArray(features, field.Name, logger)
         };
@@ -1194,25 +1158,28 @@ public static partial class GeoParquetFeatureWriter
         };
     }
 
-    private static int? TryConvertTimeMilliseconds(object? value)
+    private static long? TryConvertTimeMicroseconds(object? value)
     {
+        // One microsecond is 10 ticks. Integer division drops only the 100 ns remainder,
+        // which PostgreSQL time does not store.
+        const long ticksPerMicrosecond = TimeSpan.TicksPerMillisecond / 1000;
         return value switch
         {
             null => null,
-            TimeOnly timeOnly => checked((int)(timeOnly.Ticks / TimeSpan.TicksPerMillisecond)),
-            TimeSpan timeSpan => checked((int)(timeSpan.Ticks / TimeSpan.TicksPerMillisecond)),
-            DateTime dateTime => checked((int)(TimeOnly.FromDateTime(dateTime).Ticks / TimeSpan.TicksPerMillisecond)),
-            DateTimeOffset dateTimeOffset => checked((int)(TimeOnly.FromDateTime(dateTimeOffset.UtcDateTime).Ticks / TimeSpan.TicksPerMillisecond)),
-            JsonElement element => TryConvertTimeMillisecondsElement(element),
+            TimeOnly timeOnly => timeOnly.Ticks / ticksPerMicrosecond,
+            TimeSpan timeSpan => timeSpan.Ticks / ticksPerMicrosecond,
+            DateTime dateTime => TimeOnly.FromDateTime(dateTime).Ticks / ticksPerMicrosecond,
+            DateTimeOffset dateTimeOffset => TimeOnly.FromDateTime(dateTimeOffset.UtcDateTime).Ticks / ticksPerMicrosecond,
+            JsonElement element => TryConvertTimeMicrosecondsElement(element),
             string stringValue when TimeOnly.TryParse(
                 stringValue,
                 CultureInfo.InvariantCulture,
                 DateTimeStyles.AllowWhiteSpaces,
-                out var parsedTimeOnly) => checked((int)(parsedTimeOnly.Ticks / TimeSpan.TicksPerMillisecond)),
+                out var parsedTimeOnly) => parsedTimeOnly.Ticks / ticksPerMicrosecond,
             string stringValue when TimeSpan.TryParse(
                 stringValue,
                 CultureInfo.InvariantCulture,
-                out var parsedTimeSpan) => checked((int)(parsedTimeSpan.Ticks / TimeSpan.TicksPerMillisecond)),
+                out var parsedTimeSpan) => parsedTimeSpan.Ticks / ticksPerMicrosecond,
             _ => null
         };
     }
@@ -1235,64 +1202,13 @@ public static partial class GeoParquetFeatureWriter
         };
     }
 
-    private static int? TryConvertTimeMillisecondsElement(JsonElement element)
+    private static long? TryConvertTimeMicrosecondsElement(JsonElement element)
     {
         return element.ValueKind switch
         {
-            JsonValueKind.String => TryConvertTimeMilliseconds(element.GetString()),
+            JsonValueKind.String => TryConvertTimeMicroseconds(element.GetString()),
             _ => null
         };
-    }
-
-    /// <summary>
-    /// Checks whether the geometry contains any non-NaN Z value by walking
-    /// coordinate sequences directly, avoiding the intermediate Coordinate[]
-    /// allocation that <see cref="Geometry.Coordinates"/> would produce.
-    /// </summary>
-    private static bool GeometryHasZ(Geometry geometry)
-    {
-        for (var g = 0; g < geometry.NumGeometries; g++)
-        {
-            var part = geometry.GetGeometryN(g);
-            if (part is Point point)
-            {
-                if (point.CoordinateSequence.Dimension > 2 &&
-                    !double.IsNaN(point.CoordinateSequence.GetOrdinate(0, Ordinate.Z)))
-                {
-                    return true;
-                }
-
-                continue;
-            }
-
-            if (part is LineString lineString)
-            {
-                if (SequenceHasZ(lineString.CoordinateSequence)) return true;
-                continue;
-            }
-
-            if (part is Polygon polygon)
-            {
-                if (SequenceHasZ(polygon.ExteriorRing.CoordinateSequence)) return true;
-                for (var h = 0; h < polygon.NumInteriorRings; h++)
-                {
-                    if (SequenceHasZ(polygon.GetInteriorRingN(h).CoordinateSequence)) return true;
-                }
-            }
-        }
-
-        return false;
-    }
-
-    private static bool SequenceHasZ(CoordinateSequence sequence)
-    {
-        if (sequence.Dimension <= 2) return false;
-        for (var i = 0; i < sequence.Count; i++)
-        {
-            if (!double.IsNaN(sequence.GetOrdinate(i, Ordinate.Z))) return true;
-        }
-
-        return false;
     }
 
     private static WKBWriter GetWkbWriter(bool emitZ)

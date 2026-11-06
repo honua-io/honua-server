@@ -31,7 +31,7 @@ namespace Honua.Scene.Grpc;
 /// participate in resolution and is not used to scope the query. Callers that
 /// only know a dataset string must resolve it to a layer index out-of-band
 /// (the HTTP surface performs that name-to-index resolution itself). This
-/// matches CLAUDE.md's requirement to document intentional protocol divergence
+/// matches AGENTS.md's requirement to document intentional protocol divergence
 /// in code; the divergence is covered by the elevation gRPC tests.
 /// </remarks>
 internal sealed partial class HonuaElevationGrpcService : Proto.ElevationService.ElevationServiceBase

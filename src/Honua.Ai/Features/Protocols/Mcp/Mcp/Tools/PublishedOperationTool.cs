@@ -3,6 +3,8 @@
 
 using System.Buffers;
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.Authorization.Domain;
@@ -19,32 +21,10 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-/// <summary>
-/// A validated operations-toolset descriptor (RFC #17) projected into a first-class,
-/// typed MCP tool (#2483, ADR-0056 Increment 4). One instance wraps one
-/// <see cref="OperationDescriptor"/>: <see cref="Describe"/> projects the descriptor's
-/// input schema, an output schema, and behavior annotations, and
-/// <see cref="InvokeAsync"/> routes the call through the canonical
-/// <see cref="IOperationInvoker"/> so the operation policy decision point governs every
-/// invocation exactly as the hand-authored publish tools do.
-/// </summary>
-/// <remarks>
-/// The tool does not execute the operation itself; it adapts arguments onto an
-/// <see cref="OperationRequest"/> and hands it to the dispatcher, which consults the
-/// policy decision point (allow / require-approval / dry-run-first / deny) before any
-/// executor runs. For a deterministic, read-only descriptor the result is param-keyed
-/// cached (<see cref="IPublishedOperationCache"/>): identical inputs from the
-/// identical principal context (principal id, tier, roles, scopes, connection, and
-/// service are part of the key) return an identical result without re-execution.
-/// A hit re-checks OAuth scope authority and the composed policy decision point.
-/// Non-deterministic or side-effecting descriptors are never cached.
-/// </remarks>
 internal sealed class PublishedOperationTool : IMcpTool
 {
-    /// <summary>Prefix for non-admin MCP tool names projected from operation ids.</summary>
     public const string NamePrefix = "honua_op_";
 
-    /// <summary>Prefix for MCP tool names projected from <c>admin.*</c> operation ids.</summary>
     public const string AdminNamePrefix = "honua_admin_";
 
     // Matches the full-catalog publication guard: a published tool accepts secret references,
@@ -68,7 +48,11 @@ internal sealed class PublishedOperationTool : IMcpTool
         _catalogVersion = catalogVersion ?? string.Empty;
         _logger = logger;
         Name = ProjectName(descriptor.OperationId);
-        _inputSchema = BuildInputSchema(descriptor.InputSchema, descriptor.Policy.SupportsDryRun);
+        _inputSchema = BuildInputSchema(
+            descriptor.InputSchema.Select(parameter => parameter with
+            {
+                Name = McpConnectionDiscoveryProjection.InputName(descriptor.OperationId, parameter.Name)
+            }).ToArray(), descriptor.Policy.SupportsDryRun);
     }
 
     public string Name { get; }
@@ -81,7 +65,6 @@ internal sealed class PublishedOperationTool : IMcpTool
         _ => McpTelemetry.WorkflowFamily.Lifecycle,
     };
 
-    /// <summary>Whether the backing descriptor is deterministic (AI-free).</summary>
     public bool IsDeterministic =>
         _descriptor.Policy.Determinism == OperationDeterminism.Deterministic;
 
@@ -91,19 +74,21 @@ internal sealed class PublishedOperationTool : IMcpTool
     private bool RequiresAdminAuthorization =>
         _descriptor.OperationId.StartsWith("admin.", StringComparison.Ordinal);
 
+    private bool RequiresProposalSubmission =>
+        _descriptor.ApprovalModel == OperationApprovalModel.OperatorGate
+        && _descriptor.OperationId is "admin.api-key.create" or "admin.api-key.revoke";
+
     // Deterministic AND read-only invocations are the only ones safe to cache: a
     // cache must never skip a side effect or return a stale AI turn.
     private bool IsCacheable =>
         IsDeterministic
         && _descriptor.Policy.SideEffectClass == OperationSideEffectClass.ReadOnly;
 
-    /// <summary>
-    /// Projects an operation id (for example <c>service.publish</c>) into a valid MCP
-    /// tool name (for example <c>honua_op_service_publish</c>, or
-    /// <c>honua_admin_server_status</c> for an <c>admin.*</c> operation).
-    /// </summary>
     public static string ProjectName(string operationId)
     {
+        if (operationId == McpConnectionDiscoveryProjection.TablesOperationId)
+            return "honua_admin_connection_tables_list";
+
         var isAdminOperation = operationId.StartsWith("admin.", StringComparison.Ordinal);
         var operationName = isAdminOperation ? operationId["admin.".Length..] : operationId;
         var sanitized = new char[operationName.Length];
@@ -121,6 +106,9 @@ internal sealed class PublishedOperationTool : IMcpTool
 
     public McpToolDescriptor Describe()
     {
+        if (McpConnectionDiscoveryProjection.Contains(_descriptor.OperationId))
+            return McpConnectionDiscoveryProjection.Describe(_descriptor.OperationId, Name, _inputSchema);
+
         var readOnly = _descriptor.Policy.SideEffectClass == OperationSideEffectClass.ReadOnly;
         var destructive =
             _descriptor.ApprovalModel == OperationApprovalModel.OperatorGate
@@ -148,7 +136,11 @@ internal sealed class PublishedOperationTool : IMcpTool
             Description = _descriptor.Description
                 + " Published operations-toolset operation '" + _descriptor.OperationId
                 + "', governed by the operation policy decision point on every invocation"
-                + " (allow / require-approval / dry-run-first / deny)." + determinismNote,
+                + " (allow / require-approval / dry-run-first / deny)."
+                + (RequiresProposalSubmission
+                    ? " This tool submits a proposal only, never the key mutation. A separately authenticated authorized approver must approve the sealed proposal; one-time keys remain in the protected secret channel."
+                    : string.Empty)
+                + determinismNote,
             InputSchema = _inputSchema,
             OutputSchema = McpToolOutputSchemas.OperationToolOutputSchema,
             Annotations = annotations,
@@ -166,7 +158,8 @@ internal sealed class PublishedOperationTool : IMcpTool
         var principal = McpAuthorizationHelper.EnsurePrincipal(httpContext);
         await EnsureOperationAuthorizationAsync(httpContext, principal, cancellationToken).ConfigureAwait(false);
 
-        if (_descriptor.ApprovalModel == OperationApprovalModel.OperatorGate)
+        var proposalOnly = RequiresProposalSubmission;
+        if (_descriptor.ApprovalModel == OperationApprovalModel.OperatorGate && !proposalOnly)
         {
             // Fail closed until #3586 replaces this refusal with the unified runtime's
             // transport-neutral approval proof. The MCP adapter must not implement an
@@ -206,7 +199,17 @@ internal sealed class PublishedOperationTool : IMcpTool
             DryRun = dryRun,
         };
 
-        var cacheKey = IsCacheable && !dryRun
+        if (proposalOnly && dryRun)
+        {
+            return McpToolHelpers.ErrorResult(new GeoprocessingValidationException("Dry-run requests cannot be submitted for approval."));
+        }
+
+        if (proposalOnly)
+        {
+            context = BindProposalIdentity(httpContext, request, context);
+        }
+
+        var cacheKey = !proposalOnly && IsCacheable && !dryRun
             ? IPublishedOperationCache.BuildKey(
                 _descriptor.OperationId,
                 _catalogVersion,
@@ -282,7 +285,22 @@ internal sealed class PublishedOperationTool : IMcpTool
                 new InvalidOperationException("The operations toolset is unavailable (no IOperationInvoker is registered in this composition)."));
         }
 
-        var handle = await invoker.SubmitAsync(request, context, cancellationToken).ConfigureAwait(false);
+        OperationHandle handle;
+        if (proposalOnly)
+        {
+            if (invoker is not IOperationProposalSubmitter proposer)
+            {
+                return McpToolHelpers.ErrorResult(new InvalidOperationException("The proposal-only operation runtime is unavailable."));
+            }
+            handle = await proposer.ProposeAsync(request, context, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            handle = await invoker.SubmitAsync(request, context, cancellationToken).ConfigureAwait(false);
+        }
+        if (McpConnectionDiscoveryProjection.Contains(_descriptor.OperationId))
+            return McpConnectionDiscoveryProjection.CreateResult(_descriptor.OperationId, handle);
+
         var output = Project(handle, cacheKey);
 
         // Cache only a completed, deterministic, read-only result — never a
@@ -293,6 +311,22 @@ internal sealed class PublishedOperationTool : IMcpTool
         }
 
         return McpToolHelpers.SuccessResult(output, McpJsonContext.Default.McpOperationToolOutput);
+    }
+
+    private OperationPolicyContext BindProposalIdentity(HttpContext httpContext, OperationRequest request, OperationPolicyContext context)
+    {
+        if (!httpContext.Request.Headers.TryGetValue("Idempotency-Key", out var values)) return context;
+        var key = values.Count == 1 ? values[0] : null;
+        if (key is not { Length: > 0 and <= 128 } || key.Any(c => c is < '!' or > '~'))
+            throw new GeoprocessingValidationException("Idempotency-Key must be one bounded printable value.");
+
+        // The canonical proposal runtime owns mode/actor/tenant scoping and the full
+        // typed request fingerprint. This adapter adds only its discovery-version binding.
+        return context with
+        {
+            IdempotencyKey = key,
+            IdempotencyRequestHash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(_catalogVersion))),
+        };
     }
 
     private async Task EnsureOperationAuthorizationAsync(
@@ -440,9 +474,10 @@ internal sealed class PublishedOperationTool : IMcpTool
         // codeql[cs/linq/missed-where]: copies only arguments the caller actually supplied
         foreach (var parameter in _descriptor.InputSchema)
         {
-            if (arguments is { ValueKind: JsonValueKind.Object } args && args.TryGetProperty(parameter.Name, out _))
+            var inputName = McpConnectionDiscoveryProjection.InputName(_descriptor.OperationId, parameter.Name);
+            if (arguments is { ValueKind: JsonValueKind.Object } args && args.TryGetProperty(inputName, out _))
             {
-                parameters[parameter.Name] = ReadString(arguments, parameter.Name);
+                parameters[parameter.Name] = ReadString(arguments, inputName);
             }
         }
 

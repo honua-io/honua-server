@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -135,6 +136,226 @@ internal static partial class SnowflakeFeatureQueryBuilder
 
         return new ParameterizedQuery(sb.ToString(), parameters);
     }
+
+    /// <summary>
+    /// Builds an aggregate statistics query (<c>outStatistics</c> plus optional
+    /// <c>groupByFieldsForStatistics</c>) over the same WHERE, object-id, and spatial
+    /// filter envelope as <see cref="BuildSelectQuery"/>. HAVING, ORDER BY, LIMIT, and
+    /// OFFSET apply to the aggregate result. ORDER BY accepts only a declared statistic
+    /// alias or group-by field.
+    /// </summary>
+    public static ParameterizedQuery BuildStatistics(SnowflakeLayerMapping mapping, FeatureQuery query)
+    {
+        ArgumentNullException.ThrowIfNull(mapping);
+        GuardUnsupportedTemporalFilter(query);
+
+        if (query.OutStatistics is not { IsDefaultOrEmpty: false } statistics)
+        {
+            // No aggregates requested: return an empty result rather than a malformed SELECT.
+            return new ParameterizedQuery("SELECT 1 WHERE FALSE", new List<object>());
+        }
+
+        var sb = new StringBuilder();
+        var parameters = new List<object>();
+        var groupByColumns = QuoteGroupByColumns(query);
+
+        sb.Append("SELECT ");
+        if (groupByColumns.Count > 0)
+        {
+            sb.Append(string.Join(", ", groupByColumns)).Append(", ");
+        }
+
+        sb.Append(BuildStatisticColumns(statistics));
+        sb.Append(" FROM ").Append(mapping.QuotedTableReference);
+        sb.Append(" WHERE 1=1");
+
+        AppendWhereClause(sb, query, parameters);
+        AppendObjectIdsFilter(sb, mapping, query, parameters);
+        AppendSpatialFilter(sb, mapping, query, parameters);
+
+        if (groupByColumns.Count > 0)
+        {
+            sb.Append(" GROUP BY ").Append(string.Join(", ", groupByColumns));
+        }
+
+        AppendStatisticsHaving(sb, query, parameters);
+        var hasOrderBy = query.OrderBy is { IsDefaultOrEmpty: false };
+        AppendStatisticsOrderBy(sb, statistics, query);
+        // LIMIT / OFFSET are inline integer literals, matching SELECT, so positional ? binds
+        // stay aligned with WhereParameters. OFFSET without ORDER BY is rejected by Snowflake,
+        // and the primary key is not in the grouped projection, so fall back to the first
+        // aggregate output column.
+        var fallbackOrder = groupByColumns.Count > 0
+            ? groupByColumns[0]
+            : SnowflakeIdentifier.Quote(statistics[0].OutStatisticFieldName);
+        AppendStatisticsPagination(sb, query, fallbackOrder, hasOrderBy);
+
+        return new ParameterizedQuery(sb.ToString(), parameters);
+    }
+
+    private static List<string> QuoteGroupByColumns(FeatureQuery query)
+    {
+        if (query.GroupByFields is not { IsDefaultOrEmpty: false } groupBy)
+        {
+            return [];
+        }
+
+        var columns = new List<string>(groupBy.Length);
+        foreach (var field in groupBy)
+        {
+            columns.Add(SnowflakeIdentifier.Quote(field));
+        }
+
+        return columns;
+    }
+
+    private static string BuildStatisticColumns(ImmutableArray<StatisticDefinition> statistics)
+    {
+        var columns = new List<string>(statistics.Length);
+        foreach (var stat in statistics)
+        {
+            var fieldExpr = SnowflakeIdentifier.Quote(stat.OnStatisticField);
+            var alias = SnowflakeIdentifier.Quote(stat.OutStatisticFieldName);
+            columns.Add($"{StatisticExpression(stat.StatisticType, fieldExpr)} AS {alias}");
+        }
+
+        return string.Join(", ", columns);
+    }
+
+    private static void AppendStatisticsHaving(StringBuilder sb, FeatureQuery query, List<object> parameters)
+    {
+        if (query.Having is not { IsDefaultOrEmpty: false } having)
+        {
+            return;
+        }
+
+        sb.Append(" HAVING ");
+        for (var i = 0; i < having.Length; i++)
+        {
+            if (i > 0)
+            {
+                sb.Append(" AND ");
+            }
+
+            var condition = having[i];
+            var fieldExpr = SnowflakeIdentifier.Quote(condition.OnStatisticField);
+            parameters.Add(condition.BoundValue());
+            sb.Append(StatisticExpression(condition.StatisticType, fieldExpr))
+                .Append(' ')
+                .Append(HavingOperator(condition.Operator))
+                .Append(" ?");
+        }
+    }
+
+    private static void AppendStatisticsOrderBy(
+        StringBuilder sb,
+        ImmutableArray<StatisticDefinition> statistics,
+        FeatureQuery query)
+    {
+        if (query.OrderBy is not { IsDefaultOrEmpty: false } orderBy)
+        {
+            return;
+        }
+
+        var terms = new List<string>(orderBy.Length);
+        foreach (var clause in orderBy)
+        {
+            var expression = ResolveStatisticsOrderBy(clause.Field, statistics, query.GroupByFields);
+            terms.Add($"{expression} {(clause.Ascending ? "ASC" : "DESC")}");
+        }
+
+        sb.Append(" ORDER BY ").Append(string.Join(", ", terms));
+    }
+
+    private static void AppendStatisticsPagination(
+        StringBuilder sb,
+        FeatureQuery query,
+        string fallbackOrderColumn,
+        bool hasOrderBy)
+    {
+        var offset = query.Offset.GetValueOrDefault(0);
+        if (!query.Limit.HasValue && offset <= 0)
+        {
+            return;
+        }
+
+        if (!hasOrderBy && offset > 0)
+        {
+            sb.Append(" ORDER BY ").Append(fallbackOrderColumn);
+        }
+
+        if (query.Limit.HasValue)
+        {
+            sb.Append(" LIMIT ").Append(query.Limit.Value.ToString(CultureInfo.InvariantCulture));
+        }
+
+        if (offset > 0)
+        {
+            sb.Append(" OFFSET ").Append(offset.ToString(CultureInfo.InvariantCulture));
+        }
+    }
+
+    /// <summary>
+    /// Resolves an aggregate ORDER BY name to the declared statistic alias or group-by field.
+    /// The caller's text is never emitted.
+    /// </summary>
+    private static string ResolveStatisticsOrderBy(
+        string field,
+        ImmutableArray<StatisticDefinition> statistics,
+        ImmutableArray<string>? groupByFields)
+    {
+        foreach (var stat in statistics)
+        {
+            if (stat.OutStatisticFieldName.Equals(field, StringComparison.OrdinalIgnoreCase))
+            {
+                return SnowflakeIdentifier.Quote(stat.OutStatisticFieldName);
+            }
+        }
+
+        if (groupByFields is { IsDefaultOrEmpty: false } groupBy)
+        {
+            foreach (var groupField in groupBy)
+            {
+                if (groupField.Equals(field, StringComparison.OrdinalIgnoreCase))
+                {
+                    return SnowflakeIdentifier.Quote(groupField);
+                }
+            }
+        }
+
+        throw new ArgumentException(
+            $"Invalid statistics order-by field name: {field}. Aggregate ordering must name a declared statistic alias or group-by field.");
+    }
+
+    private static string StatisticExpression(StatisticType statisticType, string fieldExpr)
+    {
+        // STDDEV_SAMP / VAR_SAMP are the sample aggregates named by StatisticType.
+        return statisticType switch
+        {
+            StatisticType.Count => $"COUNT({fieldExpr})",
+            StatisticType.Sum => $"SUM({fieldExpr})",
+            StatisticType.Min => $"MIN({fieldExpr})",
+            StatisticType.Max => $"MAX({fieldExpr})",
+            StatisticType.Avg => $"AVG({fieldExpr})",
+            StatisticType.Stddev => $"STDDEV_SAMP({fieldExpr})",
+            StatisticType.Var => $"VAR_SAMP({fieldExpr})",
+            _ => throw new NotSupportedException(
+                $"Statistic type '{statisticType}' is not supported by the Snowflake provider."),
+        };
+    }
+
+    private static string HavingOperator(HavingComparisonOperator op)
+        => op switch
+        {
+            HavingComparisonOperator.Equal => "=",
+            HavingComparisonOperator.NotEqual => "<>",
+            HavingComparisonOperator.GreaterThan => ">",
+            HavingComparisonOperator.GreaterThanOrEqual => ">=",
+            HavingComparisonOperator.LessThan => "<",
+            HavingComparisonOperator.LessThanOrEqual => "<=",
+            _ => throw new NotSupportedException(
+                $"Having operator '{op}' is not supported by the Snowflake provider."),
+        };
 
     /// <summary>
     /// Rejects a <see cref="FeatureQuery.TemporalFilter"/> the Snowflake provider cannot translate.

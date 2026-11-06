@@ -5,12 +5,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Ai.Protocols.Mcp.Discovery;
 
-/// <summary>
-/// Arguments for <c>honua_resolve_entity</c> (#1949): a natural-language name or
-/// phrase the client LLM wants to resolve to concrete catalog entity references
-/// (services and layers) it can then pass to <c>honua_query_features</c> /
-/// <c>honua_render_map</c>.
-/// </summary>
 internal sealed class McpResolveEntityArgument
 {
     [JsonPropertyName("text")]
@@ -23,10 +17,6 @@ internal sealed class McpResolveEntityArgument
     public int? Limit { get; set; }
 }
 
-/// <summary>
-/// Structured result of <c>honua_resolve_entity</c>: the ranked entity references
-/// the supplied text resolved to, grounded in the live Metadata v2 catalog.
-/// </summary>
 internal sealed class McpResolveEntityOutput
 {
     [JsonPropertyName("query")]
@@ -42,12 +32,6 @@ internal sealed class McpResolveEntityOutput
     public IReadOnlyList<McpEntityMatch> Matches { get; set; } = [];
 }
 
-/// <summary>
-/// A single resolved catalog entity reference returned by
-/// <c>honua_resolve_entity</c>. <see cref="ServiceId"/> plus <see cref="LayerId"/>
-/// (for a layer match) are the actionable references the client passes to the
-/// query/render tools.
-/// </summary>
 internal sealed class McpEntityMatch
 {
     [JsonPropertyName("kind")]
@@ -78,10 +62,6 @@ internal sealed class McpEntityMatch
     public double Score { get; set; }
 }
 
-/// <summary>
-/// Arguments for <c>honua_list_capabilities</c> (#1949). All optional: a cold
-/// client LLM can call it with no arguments to discover the full server surface.
-/// </summary>
 internal sealed class McpListCapabilitiesArgument
 {
     [JsonPropertyName("includeResources")]
@@ -96,21 +76,10 @@ internal sealed class McpListCapabilitiesArgument
     [JsonPropertyName("resourceCursor")]
     public string? ResourceCursor { get; set; }
 
-    /// <summary>
-    /// Explicit administrative export operation. It returns the complete
-    /// inventory and is rejected for callers without an admin role.
-    /// </summary>
     [JsonPropertyName("fullExport")]
     public bool? FullExport { get; set; }
 }
 
-/// <summary>
-/// Structured result of <c>honua_list_capabilities</c>: a self-describing manifest
-/// of the tools, resources, and grounding resources the live <c>/mcp</c> surface
-/// exposes, so a client LLM with no Honua knowledge can plan a workflow. Sourced
-/// from the same in-process catalog served over both HTTP-SSE and stdio (#1950),
-/// so the manifest is transport-symmetric.
-/// </summary>
 internal sealed class McpListCapabilitiesOutput
 {
     [JsonPropertyName("serverName")]
@@ -149,24 +118,10 @@ internal sealed class McpListCapabilitiesOutput
     [JsonPropertyName("groundingResources")]
     public IReadOnlyList<string> GroundingResources { get; set; } = [];
 
-    /// <summary>
-    /// The named, server-authored workflow discovery views this server publishes
-    /// (honua-server#3428). A client selects one by name on <c>tools/list</c>
-    /// (<c>{"view": "setup"}</c>) or negotiates it for the session at
-    /// <c>initialize</c>, and receives only that view's canonical descriptors.
-    /// Advertising the views here is what keeps the contract server-owned: no
-    /// client maintains its own view or tool inventory. Selecting a view narrows
-    /// discovery only — the complete paginated catalog stays available, and every
-    /// call is still independently authorized.
-    /// </summary>
     [JsonPropertyName("workflowViews")]
     public IReadOnlyList<Views.McpWorkflowViewSummary> WorkflowViews { get; set; } = [];
 }
 
-/// <summary>
-/// A tool entry in the capability manifest: the LLM-grade name, title,
-/// description, read/write classification, and workflow family.
-/// </summary>
 internal sealed class McpCapabilityTool
 {
     [JsonPropertyName("name")]
@@ -185,10 +140,6 @@ internal sealed class McpCapabilityTool
     public string WorkflowFamily { get; set; } = string.Empty;
 }
 
-/// <summary>
-/// A resource entry in the capability manifest: the URI (or URI template), name,
-/// description, and telemetry family.
-/// </summary>
 internal sealed class McpCapabilityResource
 {
     [JsonPropertyName("uri")]

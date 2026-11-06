@@ -120,7 +120,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
 
-        // Honua does not advertise an ArcGIS Server version (see NoArcGisServerVersionTests).
+        // Honua does not advertise an ArcGIS Server version (see NoGeoServicesServerVersionTests).
         root.TryGetProperty("currentVersion", out _).Should().BeFalse();
         root.GetProperty("executionType").GetString().Should().Be("esriExecutionTypeAsynchronous");
         root.TryGetProperty("capabilities", out _).Should().BeTrue();
@@ -764,7 +764,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         // #4034: Esri clients decide execute success by the absence of an `error` object,
         // so a failed or cancelled synchronous run must return the GeoServices error
         // envelope — never `results: []`, which reads as an empty successful run.
-        var cases = new (ExecutionJobStatus Status, string? ErrorMessage, string EsriStatus, string Outcome)[]
+        var cases = new (ExecutionJobStatus Status, string? ErrorMessage, string GeoServicesStatus, string Outcome)[]
         {
             (ExecutionJobStatus.Failed, "Buffer distance exceeds the configured geometry limit.", "esriJobFailed", "failed"),
             (ExecutionJobStatus.Cancelled, null, "esriJobCancelled", "was cancelled"),

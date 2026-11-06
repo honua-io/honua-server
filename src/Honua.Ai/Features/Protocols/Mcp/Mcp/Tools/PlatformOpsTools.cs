@@ -15,9 +15,6 @@ internal interface IEvidenceBoundProposalTool
     string TargetProperty { get; }
 }
 
-/// <summary>
-/// MCP tool that returns the declared platform-release co-versioning snapshot.
-/// </summary>
 internal sealed class PlatformReleaseStatusTool(ILogger<PlatformReleaseStatusTool> logger) : IMcpTool
 {
     public const string ToolName = "honua_platform_release_status";
@@ -31,8 +28,8 @@ internal sealed class PlatformReleaseStatusTool(ILogger<PlatformReleaseStatusToo
         Name = ToolName,
         Title = "Platform release status",
         Description =
-            "Read-only deterministic platform_release / server_upgrade status. Mirrors the admin "
-            + "platformRelease preflight projection and is distinct from hosted-content deployments.",
+            "platform_release / server_upgrade status: desired artifacts, live Compose image digests/server "
+            + "versions, skew or unavailable readback. Distinct from hosted-content deployments.",
         InputSchema = McpPlatformOpsSchemas.PlatformReleaseStatusInputSchema,
         OutputSchema = McpPlatformOpsSchemas.PlatformReleaseStatusOutputSchema,
         Annotations = McpToolAnnotationSets.ReadOnly("Platform release status")
@@ -61,9 +58,6 @@ internal sealed class PlatformReleaseStatusTool(ILogger<PlatformReleaseStatusToo
         httpContext.RequestServices.GetRequiredService<IMcpPlatformOpsReader>();
 }
 
-/// <summary>
-/// MCP tool that lists deploy operations or fetches one deploy operation by id.
-/// </summary>
 internal sealed class DeployOperationsTool(ILogger<DeployOperationsTool> logger) : IMcpTool
 {
     public const string ToolName = "honua_deploy_operations";
@@ -109,9 +103,6 @@ internal sealed class DeployOperationsTool(ILogger<DeployOperationsTool> logger)
         httpContext.RequestServices.GetRequiredService<IMcpPlatformOpsReader>();
 }
 
-/// <summary>
-/// MCP tool that reports operation kinds backed by the live executor catalog.
-/// </summary>
 internal sealed class SupportedOperationKindsTool(ILogger<SupportedOperationKindsTool> logger) : IMcpTool
 {
     public const string ToolName = "honua_supported_operation_kinds";
@@ -126,8 +117,7 @@ internal sealed class SupportedOperationKindsTool(ILogger<SupportedOperationKind
         Title = "Supported operation kinds",
         Description =
             "Read-only discovery of stable operation-kind identifiers backed by executors registered "
-            + "in the live operation gateway. Typed proposal tools remain fail-closed when their operation kind "
-            + "remain fail-closed and cannot be routed.",
+            + "in the live operation gateway. Proposal tools for unlisted kinds fail closed.",
         InputSchema = McpPlatformOpsSchemas.SupportedOperationKindsInputSchema,
         OutputSchema = McpPlatformOpsSchemas.SupportedOperationKindsOutputSchema,
         Annotations = McpToolAnnotationSets.ReadOnly("Supported operation kinds")
@@ -154,9 +144,6 @@ internal sealed class SupportedOperationKindsTool(ILogger<SupportedOperationKind
     }
 }
 
-/// <summary>
-/// MCP tool that proposes a rollback as a new forward Deploy operation to a prior revision.
-/// </summary>
 internal sealed class ProposeRollbackTool(ILogger<ProposeRollbackTool> logger) : IMcpTool
 {
     public const string ToolName = "honua_propose_rollback";

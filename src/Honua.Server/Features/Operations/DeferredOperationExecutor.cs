@@ -8,10 +8,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Features.Operations;
 
-/// <summary>
-/// Keeps discovery and dispatcher composition independent of actuator dependencies.
-/// The scoped DI container owns the selected actuator and its disposal.
-/// </summary>
 internal sealed class DeferredOperationExecutor(string operationId, Func<IOperationExecutor> resolve)
     : IOperationExecutor, IOperationRequestPreparer, IOperationDryRunExecutor
 {
@@ -28,10 +24,7 @@ internal sealed class DeferredOperationExecutor(string operationId, Func<IOperat
 
     public string OperationId => operationId;
 
-    /// <summary>
-    /// True only when the resolved actuator implements a real dry-run route.
-    /// The wrapper itself must not make every deferred executor look dry-run capable.
-    /// </summary>
+    // The wrapper must not make every deferred executor look dry-run capable.
     public bool ExecutesDryRun => _executor.Value is IOperationDryRunExecutor { ExecutesDryRun: true };
 
     public Task<OperationRequest> PrepareAsync(
@@ -53,7 +46,6 @@ internal sealed class DeferredOperationExecutor(string operationId, Func<IOperat
         => _executor.Value.GetStatusAsync(handle, cancellationToken);
 }
 
-/// <summary>Registers operation identities without constructing their actuator graphs.</summary>
 internal static class DeferredOperationExecutorServiceCollectionExtensions
 {
     public static IServiceCollection TryAddDeferredOperationExecutor<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TExecutor>(

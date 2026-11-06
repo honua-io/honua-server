@@ -86,11 +86,19 @@ services:
       - "${HONUA_BIND_ADDRESS:-127.0.0.1}:${HONUA_GRPC_PORT:-8081}:8081"
     environment:
       ASPNETCORE_ENVIRONMENT: Development
+      Mcp__WorkflowViews__DefaultView: ${HONUA_MCP_DEFAULT_VIEW:-default}
       ConnectionStrings__DefaultConnection: "Host=postgres;Database=honua_dev;Username=honua_user;Password=${POSTGRES_PASSWORD:?Initialize quickstart credentials first}"
       ConnectionStrings__Redis: "${HONUA_REDIS_URL:-redis:6379}"
       # These values make the documented local reverse-proxy/Console hostnames valid
       # inputs to the production host-validation middleware when this file is reused.
+      # For local Console OIDC set HONUA_PUBLIC_BASE_URL to the Console origin.
+      # Deployed installations can instead override Oidc__AdminAuthCallbackUri.
       PUBLIC_BASE_URL: "${HONUA_PUBLIC_BASE_URL:-http://localhost:8080}"
+      Oidc__Enabled: "${OIDC_ENABLED:-false}"
+      Oidc__Generic__Enabled: "${OIDC_GENERIC_ENABLED:-false}"
+      Oidc__Generic__Authority: "${OIDC_GENERIC_AUTHORITY:-}"
+      Oidc__Generic__ClientId: "${OIDC_GENERIC_CLIENT_ID:-}"
+      Oidc__Generic__ClientSecret: "${OIDC_GENERIC_CLIENT_SECRET:-}"
       HostValidation__AllowedHosts__0: "${HONUA_ALLOWED_HOST_0:-localhost}"
       HostValidation__AllowedHosts__1: "${HONUA_ALLOWED_HOST_1:-127.0.0.1}"
       HostValidation__AllowedHosts__2: "${HONUA_ALLOWED_HOST_2:-honua}"
@@ -101,6 +109,9 @@ services:
       # Development-only defaults for the repo quickstart. Override these before
       # reusing this compose file outside a local developer workstation.
       HONUA_ADMIN_PASSWORD: "${HONUA_ADMIN_PASSWORD:-quickstart-admin-password}"
+      # Studio customers retain resource authorization and publication approval.
+      # This does not enable the optional AI proxy or provider calls.
+      Studio__EndUserAuthorization__Enabled: "true"
       AuditLog__ChainVerification__Key: "${AuditLog__ChainVerification__Key:-}"
       FileStorage__Provider: "${HONUA_STORAGE_PROVIDER:-Local}"
       FileStorage__LocalStorage__BasePath: "/var/lib/honua/storage"
@@ -126,7 +137,7 @@ services:
       storage-init:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--output-document=/dev/null", "http://localhost:8080/healthz/live"]
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /healthz/live HTTP/1.0\\r\\nHost: 127.0.0.1\\r\\nConnection: close\\r\\n\\r\\n' >&3 && IFS= read -r status <&3 && case \"$$status\" in *' 200 '*) exit 0 ;; *) exit 1 ;; esac"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -146,11 +157,9 @@ services:
       - honua_cache:/tmp/honua-cache
       - dotnet_diagnostics:/tmp/dotnet-diagnostics
 
-  # Honua Console ops dashboard. Enable with:
-  #   HONUA_CONSOLE_IMAGE=<compatible-image> docker compose --profile console up -d
-  # until the public Console image is available for the default quickstart.
+  # Console and embedded Studio. Keep this digest aligned with the release manifest.
   console:
-    image: "${HONUA_CONSOLE_IMAGE:-ghcr.io/honua-io/honua-console:pending}"
+    image: "${HONUA_CONSOLE_IMAGE:-ghcr.io/honua-io/honua-console@sha256:ab453db9b2a468a05e58ebc445569fd2df84908df91967ae8d31417d6e971358}"
     profiles:
       - console
     ports:
@@ -162,11 +171,12 @@ services:
       HONUA_ADMIN_API_KEY: "${HONUA_ADMIN_PASSWORD:-quickstart-admin-password}"
       Honua__Server__BaseUrl: "http://honua:8080"
       Honua__Server__AdminApiKey: "${HONUA_ADMIN_PASSWORD:-quickstart-admin-password}"
+      Studio__EmbedJsStudio: "true"
     depends_on:
       honua:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "test -s /app/wwwroot/version.json"]
+      test: ["CMD-SHELL", "test -s /app/version.json || test -s /app/wwwroot/version.json"]
       interval: 30s
       timeout: 10s
       retries: 5

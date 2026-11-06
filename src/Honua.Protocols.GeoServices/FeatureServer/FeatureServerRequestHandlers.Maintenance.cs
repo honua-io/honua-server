@@ -582,7 +582,7 @@ internal static partial class FeatureServerEndpoints
         if (!string.IsNullOrWhiteSpace(whereClause) && whereClause != "1=1")
         {
             var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
-            var parseResult = filterService.Parse(FilterLanguage.ArcGisSql, whereClause);
+            var parseResult = filterService.Parse(FilterLanguage.GeoServicesSql, whereClause);
             if (!parseResult.IsSuccess)
             {
                 return StandardErrorHelpers.CreateBadRequest(context,
@@ -682,12 +682,7 @@ internal static partial class FeatureServerEndpoints
             cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Applies calculate updates through the shared edit pipeline. One batch uses that
-    /// pipeline's own transaction. More than one batch shares a writer transaction so a
-    /// later failure rolls back earlier batches from this request before anything commits
-    /// (#6359). A provider that cannot share a transaction refuses the split instead.
-    /// </summary>
+    // One calculate batch uses the pipeline transaction; further batches share a writer transaction so a later failure rolls back earlier batches, and a provider that cannot share a transaction refuses the split.
     private static async Task<IResult> ApplyCalculateBatchesAsync(
         HttpContext httpContext,
         FeatureServerEditsHandler editsHandler,
@@ -1104,10 +1099,6 @@ internal static partial class FeatureServerEndpoints
         return parser.TryParse(out _, out error);
     }
 
-    /// <summary>
-    /// Parses a calculate <c>sqlExpression</c> and reports the field identifiers it reads.
-    /// Function names and the NULL/TRUE/FALSE keywords are not field references.
-    /// </summary>
     internal static bool TryInspectCalcExpression(
         string expression,
         out IReadOnlyCollection<string> sourceFields,
@@ -1129,9 +1120,6 @@ internal static partial class FeatureServerEndpoints
         return parser.TryParse(out value, out error);
     }
 
-    /// <summary>
-    /// Managed attribute bags are case-sensitive. Calculate identifiers follow the schema, which is not.
-    /// </summary>
     private static Dictionary<string, object?> ToCaseInsensitiveAttributes(
         IReadOnlyDictionary<string, object?> attributes)
     {
@@ -1279,11 +1267,7 @@ internal static partial class FeatureServerEndpoints
         }
     }
 
-    /// <summary>
-    /// Small, parameter-free SQL scalar evaluator for Esri calculate expressions. It deliberately
-    /// supports only value-producing SQL (literals, field references, arithmetic, concatenation,
-    /// and common scalar functions), so calculate cannot become a general SQL execution surface.
-    /// </summary>
+    // The calculate evaluator accepts only value-producing SQL, so the operation cannot become a general SQL execution surface.
     private sealed class CalcSqlExpressionParser
     {
         private readonly string _expression;
@@ -1738,7 +1722,7 @@ internal static partial class FeatureServerEndpoints
         }
 
         // Dialect (standard|native) or omitted: parse the SQL expression using the filter service.
-        var parseResult = filterService.Parse(FilterLanguage.ArcGisSql, sqlExpression);
+        var parseResult = filterService.Parse(FilterLanguage.GeoServicesSql, sqlExpression);
 
         if (!parseResult.IsSuccess)
         {
@@ -1758,23 +1742,10 @@ internal static partial class FeatureServerEndpoints
         return Results.Json(validResponse, FeatureServerJsonContext.Default.ValidateSqlResponse, contentType: "application/json");
     }
 
-    /// <summary>
-    /// Returns <see langword="true"/> when <paramref name="sqlType"/> names a SQL dialect
-    /// (<c>standard</c> = standardized SQL, <c>native</c> = native DBMS SQL) rather than a
-    /// validateSQL clause type. Both dialects map to the ArcGIS SQL filter dialect for
-    /// parsing/validation purposes.
-    /// </summary>
     private static bool IsSqlDialectType(string sqlType)
         => string.Equals(sqlType, "standard", StringComparison.OrdinalIgnoreCase)
            || string.Equals(sqlType, "native", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Service-level <c>validateSQL</c> (#1446). Esri's canonical validateSQL lives at the
-    /// FeatureServer service root and takes <c>sql</c> plus <c>sqlType</c> (one of
-    /// <c>where</c>, <c>orderBy</c>, or <c>expression</c>). It reuses the same SQL parsing /
-    /// validation the layer-level route uses, validating against a representative accessible
-    /// layer of the service.
-    /// </summary>
     private static async Task<IResult> HandleServiceValidateSql(
         string serviceId,
         HttpContext context)
@@ -1892,14 +1863,6 @@ internal static partial class FeatureServerEndpoints
            || string.Equals(sqlType, "orderBy", StringComparison.OrdinalIgnoreCase)
            || string.Equals(sqlType, "expression", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Maps the canonical Esri <c>sqlType</c> enum values
-    /// (<c>esriSQLTypeWhere</c>/<c>esriSQLTypeOrderBy</c>/<c>esriSQLTypeExpression</c>) that real
-    /// ArcGIS clients send to the short forms (<c>where</c>/<c>orderBy</c>/<c>expression</c>) the
-    /// rest of the pipeline uses. The ArcGIS API for Python's <c>statement</c> alias maps to
-    /// <c>expression</c> (full-statement validation). Short forms and any unrecognized value pass
-    /// through unchanged so the caller still validates them (#1858, #1901).
-    /// </summary>
     private static string NormalizeServiceSqlType(string sqlType)
     {
         if (string.Equals(sqlType, "esriSQLTypeWhere", StringComparison.OrdinalIgnoreCase))
@@ -1921,11 +1884,6 @@ internal static partial class FeatureServerEndpoints
         return sqlType;
     }
 
-    /// <summary>
-    /// Validates a SQL string for the given Esri <c>sqlType</c> against a layer schema.
-    /// <c>where</c>/<c>expression</c> are parsed and translated through the shared filter
-    /// service; <c>orderBy</c> is validated through the shared orderBy parser.
-    /// </summary>
     private static (bool IsValid, string? Error) ValidateServiceSql(
         IFilterExpressionService filterService,
         string sqlExpression,
@@ -1951,7 +1909,7 @@ internal static partial class FeatureServerEndpoints
         // where + expression both validate as ArcGIS SQL filter expressions. Parse for
         // syntax, then translate against the layer schema so unknown fields / type
         // mismatches are reported as invalid rather than passing a syntactic-only check.
-        var parseResult = filterService.Parse(FilterLanguage.ArcGisSql, sqlExpression);
+        var parseResult = filterService.Parse(FilterLanguage.GeoServicesSql, sqlExpression);
         if (!parseResult.IsSuccess)
         {
             return (false, parseResult.ErrorMessage ?? "Invalid SQL syntax.");
@@ -1969,10 +1927,6 @@ internal static partial class FeatureServerEndpoints
         return (true, null);
     }
 
-    /// <summary>
-    /// Parses the "edits" parameter from request values into a feature array.
-    /// Returns a tuple of (features, error). On success, error is null.
-    /// </summary>
     private static (GeoServicesFeature[]? Features, IResult? Error) TryParseEditsArray(
         IReadOnlyDictionary<string, Microsoft.Extensions.Primitives.StringValues> values,
         HttpContext context)

@@ -13,11 +13,6 @@ using Honua.Core.Features.Licensing.Abstractions;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Worker-side hosted service that claims jobs from the queue, dispatches them
-/// to the appropriate <see cref="IJobExecutor"/>, manages heartbeat pumping
-/// during execution, and finalizes job state on completion or failure.
-/// </summary>
 internal sealed partial class JobExecutionService(
     IJobQueue jobQueue,
     IExecutionJobStore jobStore,
@@ -33,10 +28,6 @@ internal sealed partial class JobExecutionService(
     private const int PreDispatchRecoveryAttempts = 2;
     private const int FinalizeCasAttempts = 3;
 
-    /// <summary>
-    /// Delay before the claim loop polls the queue again after finding it empty. A submitted job
-    /// can wait up to one interval before a worker claims it; there is no wake-up signal.
-    /// </summary>
     internal static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan LogRetention = TimeSpan.FromDays(7);
     private static readonly TimeSpan DefaultPartitionLeaseDuration = TimeSpan.FromMinutes(1);
@@ -48,11 +39,7 @@ internal sealed partial class JobExecutionService(
     private readonly CancellationTokenSource _draining = new();
     private int _drainDeadlineExpired;
 
-    /// <summary>
-    /// Stop taking work before cancelling execution. A rolling deployment must let the owned
-    /// job finish while its heartbeat is still live. Expiring the host's shutdown deadline
-    /// fails the owned attempt without retrying it on the replacement serving revision.
-    /// </summary>
+    // Stop taking work before cancelling the owned job, so a rolling deployment can finish it while its heartbeat is still live.
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
         await _draining.CancelAsync().ConfigureAwait(false);
@@ -97,10 +84,6 @@ internal sealed partial class JobExecutionService(
         _draining.Dispose();
     }
 
-    /// <summary>
-    /// When <see langword="true"/> (the execution worker profile), host shutdown cancels the running
-    /// job immediately and hands the attempt back for a provider retry rather than draining it.
-    /// </summary>
     internal bool RequeueOnShutdown { get; set; }
 
     internal JobExecutionService(
@@ -162,15 +145,6 @@ internal sealed partial class JobExecutionService(
         return profiles;
     }
 
-    /// <summary>
-    /// Selects the executor for a claimed job by kind, disambiguating among
-    /// executors that share the kind via the runtime-profile claim fence. When a
-    /// single executor is registered for the kind it is returned directly (the
-    /// claim-side profile fence already guaranteed this worker accepts the job's
-    /// profile); when several share the kind, the one whose
-    /// <see cref="IJobExecutor.AcceptedRuntimeProfiles"/> can claim the job's
-    /// effective profile is chosen.
-    /// </summary>
     private IJobExecutor? ResolveExecutor(ExecutionJobKind kind, string? runtimeProfile)
     {
         if (!_executorsByKind.TryGetValue(kind, out var candidates) || candidates.Length == 0)
@@ -300,16 +274,10 @@ internal sealed partial class JobExecutionService(
         }
     }
 
-    /// <summary>
-    /// Hands a claim whose pre-dispatch sequence faulted back to the queue: re-reads the record and,
-    /// while this worker still owns it, abandons the attempt through the retry policy with no backoff
-    /// (the attempt counts, as a heartbeat-expiry requeue would count it, so a persistent fault ends
-    /// in a terminal failure rather than an endless requeue). Safe to repeat: a record that is
-    /// already terminal, requeued or reclaimed is left alone. If the store is still failing, the
-    /// fault is logged and reconciliation recovers the job. The per-job token registration is
-    /// always dropped.
-    /// </summary>
-    private async Task ReleaseFaultedClaimAsync(string operationId, string workerId)
+    private async Task ReleaseFaultedClaimAsync(
+        string operationId,
+        string workerId,
+        string reason = "Job store fault before execution started.")
     {
         try
         {
@@ -327,7 +295,7 @@ internal sealed partial class JobExecutionService(
                 await AbandonJobAsync(
                         job,
                         workerId,
-                        "Job store fault before execution started.",
+                        reason,
                         CancellationToken.None,
                         requeueDelayOverride: TimeSpan.Zero)
                     .ConfigureAwait(false);
@@ -427,7 +395,11 @@ internal sealed partial class JobExecutionService(
         if (!await jobStore.TrySetAsync(running, cancellationToken: stoppingToken).ConfigureAwait(false))
         {
             Log.TerminalStateSkipped(logger, operationId, "CAS conflict on Running transition");
-            cancellationTokens.Remove(operationId, workerId);
+            // No executor or heartbeat pump has started. Recover a still-owned claim
+            // immediately instead of leaving it idle until the 90-second heartbeat
+            // timeout. The recovery re-read honours cancellation or a moved owner.
+            await ReleaseFaultedClaimAsync(operationId, workerId,
+                "Job state changed before execution started.").ConfigureAwait(false);
             return;
         }
 
@@ -1382,12 +1354,6 @@ internal sealed partial class JobExecutionService(
         }
     }
 
-    /// <summary>
-    /// Returns <c>true</c> when the job record is no longer in an active state owned
-    /// by <paramref name="workerId"/>, indicating that the reconciler or another
-    /// worker has already transitioned the job. Callers should skip their own
-    /// state transition to avoid overwriting the authoritative update.
-    /// </summary>
     private static bool IsTerminalOrNotOwnedBy(ExecutionJobRecord job, string workerId)
         => job.Status is not (ExecutionJobStatus.Provisioning or ExecutionJobStatus.Running)
            || job.ClaimedBy != workerId;
@@ -1397,11 +1363,6 @@ internal sealed partial class JobExecutionService(
             or ExecutionJobStatus.Failed
             or ExecutionJobStatus.Cancelled;
 
-    /// <summary>
-    /// Builds a worker ID that always preserves the full GUID suffix for ownership
-    /// uniqueness, truncating the machine-name prefix when necessary to stay within
-    /// the 48-character budget.
-    /// </summary>
     internal static string GenerateWorkerId()
         => GenerateWorkerId(Environment.MachineName, Guid.NewGuid());
 
@@ -1421,7 +1382,6 @@ internal sealed partial class JobExecutionService(
         return $"{prefix}-{guid}";
     }
 
-    /// <summary>Marks the point after which the execution phase owns cleanup for a claimed job.</summary>
     private sealed class DispatchProgress
     {
         public bool ExecutorStarted { get; set; }
@@ -1533,18 +1493,6 @@ internal sealed partial class JobExecutionService(
     }
 }
 
-/// <summary>
-/// Execution context provided to <see cref="IJobExecutor"/> during job execution.
-/// Mediates heartbeat pumping, progress reporting, log appending, and artifact publication.
-/// Serializes read-modify-write operations on the job record to prevent concurrent
-/// heartbeat, progress, and artifact writes from clobbering each other.
-/// <paramref name="claimedAttempt"/> carries the attempt number observed when the
-/// worker claimed the job; artifact publication is fenced on it so a stale attempt
-/// (a resurrected worker whose job was requeued and reclaimed) can never publish
-/// into a newer attempt's record (#3089, ADR-0071). Zero disables only the attempt
-/// comparison (test harness contexts); ownership, cancellation, and version fences
-/// always apply.
-/// </summary>
 internal sealed partial class JobExecutionContext(
     string operationId,
     string workerId,
@@ -1561,10 +1509,6 @@ internal sealed partial class JobExecutionContext(
 
     public string OperationId => operationId;
 
-    /// <summary>
-    /// True after this attempt observed that the durable record is no longer owned by
-    /// this worker and attempt. The execution service uses it to skip terminal writes.
-    /// </summary>
     internal bool LeaseLost => Volatile.Read(ref _leaseLost) != 0;
 
     public async Task ReportProgressAsync(
@@ -1622,16 +1566,6 @@ internal sealed partial class JobExecutionContext(
         }
     }
 
-    /// <summary>
-    /// Durably appends an artifact reference under the publication fence (#3089):
-    /// the write is rejected when the job is no longer owned by this worker, when the
-    /// record's attempt no longer matches the claimed attempt (a retried attempt owns
-    /// the record now), or when durable cancellation was requested. Publication is
-    /// idempotent for typed raster output descriptors — republishing a descriptor for
-    /// an output name this attempt already published cannot produce a duplicate entry.
-    /// Legacy references keep append semantics (distinct outputs may be byte-identical).
-    /// Version conflicts are re-read and retried instead of being silently dropped.
-    /// </summary>
     public async Task PublishArtifactAsync(
         string artifactReference,
         CancellationToken cancellationToken = default)
@@ -1639,13 +1573,11 @@ internal sealed partial class JobExecutionContext(
         await TryPublishArtifactAsync(artifactReference, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public Task<bool> TryPublishArtifactAsync(
         string artifactReference,
         CancellationToken cancellationToken = default)
         => TryPublishReferenceAsync(artifactReference, committedEffect: false, cancellationToken);
 
-    /// <inheritdoc />
     public async Task RecordCommittedEffectAsync(string artifactReference, CancellationToken cancellationToken = default)
     {
         if (!await TryPublishReferenceAsync(artifactReference, committedEffect: true, cancellationToken).ConfigureAwait(false))
@@ -1724,7 +1656,6 @@ internal sealed partial class JobExecutionContext(
         }
     }
 
-    /// <inheritdoc />
     public async Task ThrowIfExecutionLeaseLostAsync(
         CancellationToken cancellationToken = default)
     {
@@ -1746,15 +1677,6 @@ internal sealed partial class JobExecutionContext(
         }
     }
 
-    /// <summary>
-    /// Builds the updated reference list, returning <see langword="false"/> when the
-    /// publication is already durably present. Only typed raster output descriptors
-    /// dedupe — they carry an (attempt, output name) identity, so republishing the same
-    /// logical output within an attempt replaces its entry instead of appending a
-    /// duplicate. Legacy references (data URIs, provider links) keep strict append
-    /// semantics: two distinct outputs may legitimately have byte-identical payloads,
-    /// and collapsing them would shift the positional slot/kind mapping downstream.
-    /// </summary>
     private static bool TryAppendArtifactReference(
         IReadOnlyList<string> existing,
         string artifactReference,
@@ -1794,14 +1716,12 @@ internal sealed partial class JobExecutionContext(
             return true;
         }
 
+        // Legacy references keep duplicates. Two outputs may share a payload, and collapsing them would shift the positional slot and kind.
         updated.AddRange(existing);
         updated.Add(artifactReference);
         return true;
     }
 
-    /// <summary>
-    /// Pumps heartbeat signals at the configured interval until cancelled.
-    /// </summary>
     internal async Task RunHeartbeatPumpAsync(CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)
@@ -1877,12 +1797,7 @@ internal sealed partial class JobExecutionContext(
         => job.Status is ExecutionJobStatus.Provisioning or ExecutionJobStatus.Running
            && job.ClaimedBy == workerId;
 
-    /// <summary>
-    /// Returns <see langword="false"/> when <paramref name="job"/> is missing or no longer
-    /// this worker's attempt. A present, unowned record cancels the job token so the
-    /// executor stops; a missing record does not, because a transient read miss is not
-    /// proof the lease moved.
-    /// </summary>
+    // A missing job record does not cancel the worker token, because a transient read miss is not proof the lease moved.
     private bool TryObserveLease([NotNullWhen(true)] ExecutionJobRecord? job)
     {
         if (job == null)

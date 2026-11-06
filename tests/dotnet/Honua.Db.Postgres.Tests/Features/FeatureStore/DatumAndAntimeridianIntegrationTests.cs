@@ -1,8 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Data;
 using System.Data.Common;
+using System.Data;
 using System.Globalization;
 using Honua.Core.Configuration;
 using Honua.Core.Exceptions;
@@ -12,9 +12,9 @@ using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Tiles;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.Db.Postgres.Features.Raster;
-using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Formats;
+using Honua.TestKit;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.ObjectPool;
 using Npgsql;
@@ -33,10 +33,13 @@ public sealed class DatumAndAntimeridianIntegrationTests(PostgresFixture fixture
         "MULTIPOLYGON(((170 0, 180 0, 180 10, 170 10, 170 0)),((-180 0, -170 0, -170 10, -180 10, -180 0)))";
 
     private const double WebMercatorExtent = 20037508.342789244;
+    // Returns a boolean, not the geometry: Honua registers no Npgsql geometry type handler,
+    // so a bare geometry column cannot be read. PROJ 7 images (PostGIS 16-3.4, 17-3.5) resolve
+    // us_noaa_conus.tif through the legacy NADCON "conus" file, so the probe succeeds there.
     private const string NadconProbe =
         "SELECT ST_TransformPipeline(ST_SetSRID(ST_MakePoint(-100, 40), 4267), " +
         "'+proj=pipeline +step +proj=unitconvert +xy_in=deg +xy_out=rad +step +proj=hgridshift " +
-        "+grids=us_noaa_conus.tif +step +proj=unitconvert +xy_in=rad +xy_out=deg', 4269)";
+        "+grids=us_noaa_conus.tif +step +proj=unitconvert +xy_in=rad +xy_out=deg', 4269) IS NOT NULL";
 
     [IntegrationTest]
     public async Task PacificMultipolygon_IsOnlyInTilesThatMeetIt()
@@ -136,7 +139,7 @@ public sealed class DatumAndAntimeridianIntegrationTests(PostgresFixture fixture
             await command.ExecuteNonQueryAsync();
         }
 
-        var selection = DatumOutputSelection.Resolve(EsriDatumTransformationCatalog.Create(), 4267, 3857);
+        var selection = DatumOutputSelection.Resolve(GeoServicesDatumTransformationCatalog.Create(), 4267, 3857);
         selection.Should().NotBeNull();
         var pipeline = ProjPipelineInverter.Orient(selection!.ProjPipeline!, selection.TransformForward);
         double oracleX;

@@ -211,6 +211,21 @@ supported targets, and a valid example value per parameter. `run` refuses a func
 registered but not runnable here with the same prerequisite; it never turns the run into a
 server submission. Add `--probe-container` to also check the GDAL worker image.
 
+A scaffolded project is not a catalog registration. `describe --project <dir>` and
+`list --project <dir>` report that task's own
+prerequisites: the language runtime (Python 3.11+ or a .NET 10 SDK reported by `dotnet --list-sdks`; the runtime host alone is not enough), the committed
+dependency lock, and the local harness. A lock that is present is the dependency set;
+`describe` does not import each locked package. A missing interpreter, lock, or harness
+is `missing`, names what to install, and `test` stops before starting the harness. The
+devkit does not submit the project to a server. When the project's `toolchainVersion`
+matches this devkit and `.honua/toolchain` is absent, discovery treats the harness as
+restorable and `test` extracts it. A different toolchain version is refused.
+
+```bash
+honua-gp-devkit describe --project . --json
+honua-gp-devkit list --project . --json
+```
+
 ## Scaffold and test your own built-in executor
 
 ```bash

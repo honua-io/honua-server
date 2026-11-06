@@ -13,26 +13,8 @@ using NetTopologySuite.IO;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// Production <see cref="IJobExecutor"/> for the <c>geometry.length</c>
-/// process. Slice 4 of #1031 — companion to <see cref="GeometryAreaJobExecutor"/>
-/// for one-dimensional measure outputs.
-///
-/// Computes the planar (Cartesian) length of the supplied geometry in the
-/// input CRS's coordinate units and publishes a single canonical
-/// <c>MeasureResult</c> document on the <c>outputScalar</c> slot. There is no
-/// geodesic option: the catalog advertises planar length only, so a geographic
-/// (degree) input yields length in degrees, not meters. Ellipsoidal (geodesic)
-/// length is a tracked follow-on. Returns the <see cref="Geometry.Length"/> for
-/// line geometries; for polygons NTS returns the perimeter, which is consistent
-/// with the catalog description.
-/// </summary>
 internal sealed partial class GeometryLengthJobExecutor : IProcessExecutor
 {
-    /// <summary>
-    /// The single process id this executor handles. Matches the catalog
-    /// entry in <see cref="BuiltInProcessCatalog"/>.
-    /// </summary>
     internal const string HandledProcessId = "geometry.length";
 
     private const string ScalarDataUriPrefix = "data:application/json;base64,";
@@ -48,10 +30,6 @@ internal sealed partial class GeometryLengthJobExecutor : IProcessExecutor
         _logger = logger;
     }
 
-    /// <summary>
-    /// The single process id this executor handles, surfaced through
-    /// <see cref="IProcessExecutor"/> so the dispatcher auto-registers it (#2122).
-    /// </summary>
     public IReadOnlySet<string> ProcessIds { get; } =
         new HashSet<string>(StringComparer.Ordinal) { HandledProcessId };
 

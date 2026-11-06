@@ -10,61 +10,24 @@ using Honua.Core.Features.ControlPlane.Domain;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Parameter keys read from <see cref="ExecutionJobSpec.Parameters"/> by the local process-pool
-/// batch backend. The executable and its ordered arguments describe the child process to launch;
-/// any <c>env.&lt;NAME&gt;</c> entry is injected as an environment variable alongside the standard
-/// <c>HONUA_*</c> variables the cloud backends inject.
-/// </summary>
 internal static class LocalProcessParameterKeys
 {
-    /// <summary>Absolute path (or PATH-resolvable name) of the executable to launch.</summary>
     public const string Executable = "process.executable";
 
-    /// <summary>
-    /// Prefix for ordered positional arguments: <c>process.arg.0</c>, <c>process.arg.1</c>, ...
-    /// Arguments are collected in ascending numeric order and passed as an argument list (never a
-    /// shell command string) so there is no shell interpretation or injection surface.
-    /// </summary>
+    // Positional arguments are passed as a list, never a shell string, so there is no shell interpretation.
     public const string ArgumentPrefix = "process.arg.";
 
-    /// <summary>Optional per-job working directory override; defaults to a scratch dir under the pool root.</summary>
     public const string WorkingDirectory = "process.working_dir";
 
-    /// <summary>Prefix for environment variables passed through to the child process.</summary>
     public const string EnvironmentPrefix = "env.";
 }
 
-/// <summary>
-/// Substrate-neutral, single-host batch-compute backend (ADR-0060) that launches run-to-completion
-/// workloads as child processes bounded by a configurable max-concurrency pool. This is the true
-/// process-spawning geoprocessing executor for single-host / air-gapped deployments: it needs no
-/// container runtime and no cloud batch service.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Peer to (not a replacement for) <see cref="LocalBatchComputeBackend"/>: the in-process
-/// <c>local</c> backend bridges progress from the in-process worker substrate, whereas this backend
-/// actually spawns an external OS process per job.
-/// </para>
-/// <para>
-/// State discipline: launched processes are tracked in an in-process registry keyed by operation id.
-/// This state cannot survive a host restart, so <see cref="ObserveAsync"/> reports a job whose
-/// launched process is no longer tracked as <see cref="ExecutionJobStatus.Failed"/> with a clear
-/// "process lost" message; the reconciler's retry machinery then re-queues it. Admission is
-/// non-blocking: when the pool is saturated the backend returns <see cref="ExecutionJobStatus.Provisioning"/>
-/// with a pending marker so the reconciler keeps the record active and a later reconcile launches the
-/// process once a slot frees, rather than holding the reconciliation lease on a blocking wait.
-/// </para>
-/// </remarks>
 internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComputeBackend, IDisposable
 {
     internal const string AdapterBackendName = "honua-local-process";
 
-    /// <summary>Provider-id marker for a job admitted to the backend but not yet launched (pool saturated).</summary>
     internal const string PendingSubmissionMarkerPrefix = "local-process-pending:";
 
-    /// <summary>Provider-id prefix stamped once the child process has actually been launched.</summary>
     internal const string LaunchedMarkerPrefix = "local-process:";
 
     private const int MaxTailLines = 50;
@@ -447,12 +410,6 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
         }
     }
 
-    /// <summary>
-    /// Releases a pool slot, tolerating a concurrent <see cref="Dispose"/> that already disposed the
-    /// semaphore. A monitor task can still be draining when the backend is torn down, so the release
-    /// races the disposal; swallowing the disposed-object signal keeps shutdown from surfacing a
-    /// spurious error.
-    /// </summary>
     private void ReleaseSlot()
     {
         if (_disposed)
@@ -473,11 +430,6 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
     private static bool IsTerminal(ExecutionJobStatus status)
         => status is ExecutionJobStatus.Succeeded or ExecutionJobStatus.Failed or ExecutionJobStatus.Cancelled;
 
-    /// <summary>
-    /// Removes a tracked execution and best-effort deletes the scratch directory the backend created
-    /// for it. Caller-supplied working directories are never deleted (only backend-owned scratch dirs
-    /// under <see cref="LocalProcessPoolOptions.WorkingRoot"/> are).
-    /// </summary>
     private void EvictExecution(string operationId)
     {
         if (!_executions.TryRemove(operationId, out var execution))
@@ -669,10 +621,6 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
         _slots.Dispose();
     }
 
-    /// <summary>
-    /// In-process tracking state for one launched child process. Terminal status is recorded by the
-    /// monitor task once the process exits so <see cref="ObserveAsync"/> can report it.
-    /// </summary>
     private sealed class ProcessExecution(string operationId, string? scratchDirectory) : IDisposable
     {
         private readonly object _sync = new();
@@ -683,7 +631,6 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
 
         public string OperationId { get; } = operationId;
 
-        /// <summary>Backend-owned scratch directory to reclaim on eviction, or null for a caller-supplied dir.</summary>
         public string? ScratchDirectory { get; } = scratchDirectory;
 
         public CancellationToken CancellationToken => _cts.Token;
@@ -824,59 +771,28 @@ internal sealed partial class LocalProcessPoolBatchComputeBackend : IBatchComput
     }
 }
 
-/// <summary>
-/// Options for the single-host local process-pool batch backend (<c>ControlPlane:LocalProcess</c>).
-/// </summary>
 internal sealed class LocalProcessPoolOptions
 {
-    /// <summary>Configuration section name.</summary>
     public const string SectionName = "ControlPlane:LocalProcess";
 
-    /// <summary>
-    /// Maximum number of concurrently running child processes. Bounds host resource pressure on a
-    /// single-node deployment. Defaults to 2.
-    /// </summary>
     public int MaxConcurrentProcesses { get; set; } = 2;
 
-    /// <summary>
-    /// Root scratch directory under which each job gets a working directory. When unset, a
-    /// <c>honua-local-process</c> folder under the system temp directory is used.
-    /// </summary>
     public string? WorkingRoot { get; set; }
 
-    /// <summary>
-    /// Exact worker contract attestations. Shared runtimes and shells must include the argument
-    /// prefix that selects the worker artifact; an empty prefix is accepted only for self-contained
-    /// executables. Unmatched workers are treated as v1.
-    /// </summary>
     public List<LocalProcessWorkerContractOptions> WorkerContracts { get; set; } = [];
 }
 
-/// <summary>An exact local worker identity and its supported execution contract.</summary>
 internal sealed class LocalProcessWorkerContractOptions
 {
-    /// <summary>Absolute or PATH-resolvable executable identity.</summary>
     public string Executable { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Ordered argument prefix that selects the worker artifact. Required for shared launchers such
-    /// as <c>dotnet</c>, <c>python</c>, <c>java</c>, or a shell.
-    /// </summary>
     public List<string> ArgumentPrefix { get; set; } = [];
 
-    /// <summary>
-    /// Explicit operator assertion that <see cref="Executable"/> is the worker itself and does not
-    /// dispatch an argument-selected artifact. Required when <see cref="ArgumentPrefix"/> is empty.
-    /// </summary>
     public bool IsSelfContained { get; set; }
 
-    /// <summary>Highest execution contract understood by this exact worker identity.</summary>
     public int MaxSupportedContractVersion { get; set; } = 1;
 }
 
-/// <summary>
-/// Validates <see cref="LocalProcessPoolOptions"/> at startup.
-/// </summary>
 internal sealed class LocalProcessPoolOptionsValidator : OptionsValidator<LocalProcessPoolOptions>
 {
     protected override void ValidateOptions(LocalProcessPoolOptions options, List<string> failures)

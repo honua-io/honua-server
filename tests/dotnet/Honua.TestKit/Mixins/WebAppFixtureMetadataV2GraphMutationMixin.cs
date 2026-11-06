@@ -273,6 +273,30 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
         WriteGraph(fixture, provider, updatedGraph);
     }
 
+    internal static void RestoreResourceSchemaFields(
+        WebAppFixture fixture, int layerIndex, IReadOnlyList<MetadataV2Field> fields)
+    {
+        ArgumentNullException.ThrowIfNull(fields);
+        var provider = RequireProvider(fixture);
+        var snapshot = ReadCurrent(fixture, provider);
+        var publication = snapshot.Graph.Publications.FirstOrDefault(candidate =>
+            candidate.LayerIndex == layerIndex)
+            ?? throw new InvalidOperationException($"No publication for layer {layerIndex} in the test V2 graph.");
+        var resources = snapshot.Graph.Resources.ToArray();
+        var index = Array.FindIndex(resources, resource =>
+            string.Equals(resource.Metadata.Id, publication.ResourceId, StringComparison.Ordinal));
+        if (index < 0)
+        {
+            throw MissingResourceMutation(layerIndex, publication.ResourceId, nameof(RestoreResourceSchemaFields));
+        }
+        resources[index] = resources[index] with { SchemaFields = fields.ToArray() };
+        WriteGraph(fixture, provider, snapshot.Graph with
+        {
+            Revision = snapshot.Graph.Revision + 1,
+            Resources = resources
+        });
+    }
+
     /// <summary>
     /// Sets (or clears) editor-tracking and GlobalID bindings on the resource published
     /// at <paramref name="layerIndex"/> so applyEdits can stamp those fields (#6134).

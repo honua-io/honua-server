@@ -42,7 +42,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
@@ -78,7 +78,7 @@ jobs:
               assert any(definitions[result.attrib['testId']] == method for result in results), method
           print(f"Actual routing contract: {counts['passed']} executed/passed; all {len(methods)} new source methods present, 0 skipped/failed.")
           PY
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: routing-utility-contract-results

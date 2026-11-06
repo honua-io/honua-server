@@ -7,16 +7,8 @@ using Honua.Infrastructure.Helpers;
 
 namespace Honua.Protocols.Ogc.Classic.Wfs20.Services;
 
-/// <summary>
-/// Resolves WFS property references against the reversible XML local-name spelling emitted
-/// by DescribeFeatureType and GML feature responses.
-/// </summary>
 internal static class WfsPropertyNameResolver
 {
-    /// <summary>
-    /// Resolves canonical field names, ordinary QName-prefixed names, and the encoded NCName
-    /// declared by WFS XSD (for example <c>eo_x003A_cloud_cover</c>).
-    /// </summary>
     internal static string? Resolve(
         MetadataV2Resource resource,
         string requestedName,
@@ -69,14 +61,6 @@ internal static class WfsPropertyNameResolver
         return FindExactField(resource, decodedName);
     }
 
-    /// <summary>
-    /// Determines whether a requested property reference addresses the geometry property a
-    /// spatial resource advertises, applying the same local-name normalization as
-    /// <see cref="Resolve"/>. Callers use this for the fallback geometry property of a
-    /// resource that declares a geometry type but registers no geometry schema field, where
-    /// the field-based geometry alias has no field to match and <see cref="Resolve"/>
-    /// therefore reports the advertised property as unknown.
-    /// </summary>
     internal static bool MatchesGeometryProperty(string requestedName, string geometryPropertyName)
     {
         ArgumentNullException.ThrowIfNull(requestedName);
@@ -96,10 +80,6 @@ internal static class WfsPropertyNameResolver
                localName.Equals("shape", StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Reduces a property reference to the XML local name DescribeFeatureType advertises by
-    /// dropping any XPath step prefix and any QName namespace prefix.
-    /// </summary>
     private static string ExtractLocalName(string requested)
     {
         var localName = requested;

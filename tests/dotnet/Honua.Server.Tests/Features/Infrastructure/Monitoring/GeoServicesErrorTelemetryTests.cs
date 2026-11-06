@@ -56,7 +56,7 @@ public sealed class GeoServicesErrorTelemetryTests
     [Fact]
     public void FormatError_GeoServicesInBand200Envelope_IncrementsCountersWithInBandTrue()
     {
-        // Arrange: GeoServices returns HTTP 200 with an {error} body for Esri compat.
+        // Arrange: GeoServices returns HTTP 200 with an {error} body for a GeoServices REST client.
         var context = CreateContext("/rest/services/0/FeatureServer/0/query");
         var errorResponse = new StandardErrorResponse(
             StatusCode: StatusCodes.Status200OK,

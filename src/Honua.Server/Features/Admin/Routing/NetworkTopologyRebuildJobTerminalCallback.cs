@@ -9,18 +9,12 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Admin.Routing;
 
-/// <summary>
-/// Abandons an unclaimed topology-rebuild attempt when its execution job is cancelled or
-/// fails before a worker takes the lease. Claimed attempts are failed by the executor and
-/// are left in <c>failed</c>.
-/// </summary>
 internal sealed partial class NetworkTopologyRebuildJobTerminalCallback(
     IServiceScopeFactory serviceScopeFactory,
     ILogger<NetworkTopologyRebuildJobTerminalCallback> logger) : IJobTerminalCallback
 {
     private const string AbandonedFailureCode = "routing.topology.rebuild_abandoned";
 
-    /// <inheritdoc />
     public async ValueTask OnTerminalAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
     {
         if (job.Spec.Kind != ExecutionJobKind.NetworkTopologyRebuild

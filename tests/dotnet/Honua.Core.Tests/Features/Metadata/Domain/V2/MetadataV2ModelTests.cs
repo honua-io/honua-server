@@ -142,7 +142,7 @@ public sealed class MetadataV2ModelTests
 
     [UnitTest]
     [Operation(Operations.Query)]
-    public void EsriServiceLayers_AreServiceLocalPublicationSlots()
+    public void GeoServicesServiceLayers_AreServiceLocalPublicationSlots()
     {
         var parcels = new MetadataV2Resource
         {

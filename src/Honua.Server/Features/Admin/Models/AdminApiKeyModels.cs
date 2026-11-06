@@ -5,146 +5,77 @@ using System.ComponentModel.DataAnnotations;
 
 namespace Honua.Server.Features.Admin.Models;
 
-/// <summary>
-/// Request body for creating an admin API key.
-/// </summary>
 public sealed class CreateAdminApiKeyRequest
 {
-    /// <summary>
-    /// Human-readable key name used in operator audit and list views.
-    /// </summary>
     [Required]
     [StringLength(120, MinimumLength = 1)]
     public required string Name { get; init; }
 
-    /// <summary>
-    /// Optional permission labels assigned to the key. A key whose grants are all
-    /// layer-scoped write grants (<c>write:{service}</c> or
-    /// <c>write:{service}/{layer}</c>) and that carries no full-admin grant
-    /// (<c>admin</c> or <c>*</c>) is minted as a low-blast-radius, write-only,
-    /// layer-scoped credential (#1637): it authenticates as a non-admin principal
-    /// and is authorized only for writes to the named service(s)/layer(s). Data read
-    /// grants use <c>read:{service}</c>, <c>read:{service}/{layer}</c>,
-    /// <c>read:{service}/*</c> or <c>read:*</c>; wildcards are rejected on
-    /// <c>write:</c> grants.
-    /// </summary>
+    // A key whose grants are only layer-scoped writes, with no admin or star grant, authenticates as a non-admin and may write only those layers; write grants reject wildcards.
     public IReadOnlyList<string> Permissions { get; init; } = [];
 
-    /// <summary>
-    /// Optional UTC expiration time for the key.
-    /// </summary>
     public DateTimeOffset? ExpiresAt { get; init; }
+
+    public IReadOnlyList<string>? AllowedReferrers { get; init; }
+
+    public IReadOnlyList<string>? AllowedIpRanges { get; init; }
 }
 
-/// <summary>
-/// Metadata for an admin API key without plaintext key material.
-/// </summary>
+// Each restriction list replaces that restriction entirely, and the key secret is neither accepted nor returned.
+public sealed class UpdateAdminApiKeyRestrictionsRequest
+{
+    public IReadOnlyList<string>? AllowedReferrers { get; init; }
+
+    public IReadOnlyList<string>? AllowedIpRanges { get; init; }
+}
+
 public sealed class AdminApiKeyResponse
 {
-    /// <summary>
-    /// Stable key identifier.
-    /// </summary>
     public Guid Id { get; init; }
 
-    /// <summary>
-    /// Human-readable key name.
-    /// </summary>
     public required string Name { get; init; }
 
-    /// <summary>
-    /// Non-secret key prefix used for operator recognition.
-    /// </summary>
     public required string KeyPrefix { get; init; }
 
-    /// <summary>
-    /// Assigned permission labels.
-    /// </summary>
     public IReadOnlyList<string> Permissions { get; init; } = [];
 
-    /// <summary>
-    /// Current key lifecycle status.
-    /// </summary>
     public required string Status { get; init; }
 
-    /// <summary>
-    /// When the key was created.
-    /// </summary>
     public DateTimeOffset CreatedAt { get; init; }
 
-    /// <summary>
-    /// When the key metadata was last updated.
-    /// </summary>
     public DateTimeOffset UpdatedAt { get; init; }
 
-    /// <summary>
-    /// Optional key expiration time.
-    /// </summary>
     public DateTimeOffset? ExpiresAt { get; init; }
 
-    /// <summary>
-    /// Most recent successful authentication time.
-    /// </summary>
     public DateTimeOffset? LastUsedAt { get; init; }
 
-    /// <summary>
-    /// Most recent key rotation time.
-    /// </summary>
     public DateTimeOffset? RotatedAt { get; init; }
 
-    /// <summary>
-    /// Revocation time when revoked.
-    /// </summary>
     public DateTimeOffset? RevokedAt { get; init; }
 
-    /// <summary>
-    /// Authenticated principal that created the key when available.
-    /// </summary>
     public string? CreatedBy { get; init; }
+
+    public IReadOnlyList<string>? AllowedReferrers { get; init; }
+
+    public IReadOnlyList<string>? AllowedIpRanges { get; init; }
 }
 
-/// <summary>
-/// Create or rotate response that includes one-time plaintext key material.
-/// </summary>
 public sealed class AdminApiKeySecretResponse
 {
-    /// <summary>
-    /// Key metadata without secret material.
-    /// </summary>
     public required AdminApiKeyResponse ApiKey { get; init; }
 
-    /// <summary>
-    /// Plaintext key material. Returned only at create and rotate time.
-    /// </summary>
     public required string Key { get; init; }
 }
 
-/// <summary>
-/// Effective permissions response for an admin API key.
-/// </summary>
 public sealed class AdminApiKeyEffectivePermissionsResponse
 {
-    /// <summary>
-    /// Key identifier.
-    /// </summary>
     public Guid Id { get; init; }
 
-    /// <summary>
-    /// Key name.
-    /// </summary>
     public required string Name { get; init; }
 
-    /// <summary>
-    /// Current key lifecycle status.
-    /// </summary>
     public required string Status { get; init; }
 
-    /// <summary>
-    /// Permissions currently assigned to the key.
-    /// </summary>
     public IReadOnlyList<string> Permissions { get; init; } = [];
 
-    /// <summary>
-    /// Whether the key can currently authenticate.
-    /// </summary>
     public bool CanAuthenticate { get; init; }
 }

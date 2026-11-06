@@ -108,6 +108,17 @@ grep -Fq '9: "NeedsReview"' "$RUNNER" \
   || fail "the ArcGIS import harness must treat operator review as a terminal non-success status"
 grep -Fq '11: "Cancelled"' "$RUNNER" \
   || fail "the ArcGIS import harness must recognize the current cancelled status"
+grep -Fq 'rest/services/Wildfire/FeatureServer}' "$RUNNER" \
+  || fail "the ArcGIS import source must be a relationship-free layer that single-layer import completes at full fidelity"
+if grep -Fq 'rest/services/ServiceRequest/FeatureServer' "$RUNNER"; then
+    fail "ServiceRequest layer 0 declares a composite relationship; single-layer import correctly ends in NeedsReview"
+fi
+grep -Fq "global-json-file: sdk/honua-sdk-dotnet/global.json" "$WORKFLOW" \
+  || fail "workflow must install the .NET SDK pinned by the honua-sdk-dotnet checkout"
+grep -Fq "run: python3 scripts/ci/prepare-dotnet-toolchain.py" "$WORKFLOW" \
+  || fail "workflow must provision the honua-sdk-dotnet workload set before the .NET leg"
+grep -Fq 'cp "$dotnet_global_json" "$smoke_dir/global.json"' "$RUNNER" \
+  || fail "the .NET smoke app must resolve the same SDK and workload set as the SDK checkout"
 sed -n '/^write_migration_automation_summary()/,/^write_migration_automation_not_applicable_summary()/p' "$RUNNER" \
   | grep -Fq 'required: true' \
   || fail "strict current capability evidence must record migration automation as required"

@@ -5,24 +5,7 @@ using Microsoft.AspNetCore.OutputCaching;
 
 namespace Honua.Infrastructure.Caching;
 
-/// <summary>
-/// Output cache policy that keeps <c>HEAD</c> requests out of the output cache entirely
-/// (no lookup, no storage).
-/// </summary>
-/// <remarks>
-/// <para>
-/// ASP.NET Core's output cache stores a HEAD response as an entry with an empty body and,
-/// on replay, stamps <c>Content-Length</c> from the cached body length. The first HEAD on a
-/// resource therefore reports the real length while every later HEAD within the TTL reports
-/// <c>Content-Length: 0</c>. GDAL's <c>/vsicurl</c> sizes a remote file from that HEAD and,
-/// on a zero, reads nothing (QGIS then rejects the PMTiles archive as an invalid data source);
-/// ArcGIS Pro and range-aware browsers behave the same way.
-/// </para>
-/// <para>
-/// A HEAD is cheap on this server (the shared HEAD support discards the body), and cached GET
-/// entries are keyed separately, so bypassing the cache for HEAD loses nothing.
-/// </para>
-/// </remarks>
+// The output cache stores a HEAD response with an empty body and stamps Content-Length from that length, so a cached HEAD advertises zero length and GDAL range clients reject the asset.
 internal sealed class BypassOutputCacheOnHeadRequestPolicy : IOutputCachePolicy
 {
     public ValueTask CacheRequestAsync(OutputCacheContext context, CancellationToken cancellationToken)

@@ -22,14 +22,8 @@ using NtsGeometryType = NetTopologySuite.IO.GeometryType;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
-/// <summary>
-/// Service for formatting query results into different output formats
-/// </summary>
 internal interface IQueryFormatter
 {
-    /// <summary>
-    /// Formats query result into the specified format.
-    /// </summary>
     ValueTask<(object response, string contentType)> FormatQueryResultAsync(
         QueryResult<Feature> result,
         MetadataV2Resource resource,
@@ -47,9 +41,6 @@ internal interface IQueryFormatter
         QuantizationTransform? quantizationTransform = null);
 }
 
-/// <summary>
-/// Implementation of query formatter service
-/// </summary>
 internal sealed class QueryFormatter : IQueryFormatter
 {
     private readonly GeometryLimits _geometryLimits;
@@ -279,9 +270,6 @@ internal sealed class QueryFormatter : IQueryFormatter
         return (response, "application/geo+json");
     }
 
-    /// <summary>
-    /// Converts a Feature to GeoServices feature format
-    /// </summary>
     private static GeoServicesFeature ConvertToGeoServicesFeature(
         Feature feature,
         bool returnGeometry,
@@ -345,9 +333,6 @@ internal sealed class QueryFormatter : IQueryFormatter
         return featureBase.ToGeoJsonFeature(geometry);
     }
 
-    /// <summary>
-    /// Filters attributes based on outFields parameter
-    /// </summary>
     private static Dictionary<string, object?> FilterAttributes(
         ImmutableDictionary<string, object?> attributes,
         string[]? outFields,
@@ -664,7 +649,7 @@ internal sealed class QueryFormatter : IQueryFormatter
         {
             Name = field.Name,
             Type = geoServicesType,
-            SqlType = EsriSqlType(field),
+            SqlType = GeoServicesSqlType(field),
             Alias = field.Alias ?? field.Title ?? field.Name,
             // Esri clients (arcpy/.NET SDK) require a positive length on string fields;
             // a null length is mapped to 0 and breaks inserts. Fall back to the
@@ -681,23 +666,11 @@ internal sealed class QueryFormatter : IQueryFormatter
     private static bool IsGeometryField(MetadataV2Field field)
         => field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography;
 
-    /// <summary>
-    /// The Esri <c>sqlType</c> for a field, never the provider's physical type name.
-    /// </summary>
-    /// <remarks>
-    /// Esri clients treat a non-enumeration <c>sqlType</c> on an
-    /// <c>esriFieldTypeString</c> field as unreadable. This used to fall back to
-    /// <c>field.SqlType</c>, which is the PostgreSQL name, so a query response described
-    /// the object id as <c>INTEGER</c> where the layer resource described it as
-    /// <c>sqlTypeInteger</c>. Both now resolve through the same mapping (#5197).
-    /// </remarks>
-    private static string EsriSqlType(MetadataV2Field field)
+    // Clients treat a provider type name in sqlType as unreadable, so the query response uses the same Esri enumeration as the layer resource.
+    private static string GeoServicesSqlType(MetadataV2Field field)
         => GeoServicesFieldConventions.MapSqlType(field.Type);
 
 
-    /// <summary>
-    /// Converts WKB geometry to GeoJSON format
-    /// </summary>
     internal static GeoJsonGeometry? ConvertGeometryToGeoJsonFormat(
         byte[]? wkbGeometry,
         GeometryLimits geometryLimits,
@@ -769,13 +742,7 @@ internal sealed class QueryFormatter : IQueryFormatter
         };
     }
 
-    /// <summary>
-    /// Collapses an NTS <see cref="GeometryCollection"/> whose members are all the same
-    /// single-part geometry type into the corresponding RFC 7946 <c>Multi*</c> geometry,
-    /// so a multipart feature serializes as <c>MultiPoint</c>/<c>MultiLineString</c>/
-    /// <c>MultiPolygon</c> rather than a <c>GeometryCollection</c> of single parts (#1824).
-    /// Returns false for empty or mixed-type collections, which remain a GeometryCollection.
-    /// </summary>
+    // A collection whose members are one single-part type is emitted as the RFC 7946 multi geometry; an empty or mixed collection stays a GeometryCollection.
     private static bool TryCollapseHomogeneousCollection(GeometryCollection collection, out Geometry multi)
     {
         multi = collection;
@@ -956,12 +923,6 @@ internal sealed class QueryFormatter : IQueryFormatter
         return values.ToArray();
     }
 
-    /// <summary>
-    /// Maps a canonical geometry type to a layer geometry token. Shared with
-    /// the queryRelatedRecords response builder so both surfaces agree (#1452).
-    /// Types that are not one of the five layer tokens (none, mixed, or a
-    /// heterogeneous collection) return null so the property is omitted.
-    /// </summary>
     internal static string? MapGeometryType(MetadataV2GeometryType geometryType)
         => geometryType switch
         {
@@ -980,9 +941,6 @@ internal sealed class QueryFormatter : IQueryFormatter
 
 }
 
-/// <summary>
-/// Streaming query formatter that writes JSON responses incrementally to reduce memory pressure
-/// </summary>
 internal sealed class StreamingQueryFormatter
 {
     private const int FlushInterval = 32;
@@ -1024,12 +982,7 @@ internal sealed class StreamingQueryFormatter
             returnCentroid,
             cancellationToken);
 
-    /// <summary>
-    /// Streams the GeoServices f=json response. <paramref name="hasMoreResults"/> is
-    /// evaluated AFTER the feature enumeration completes (exceededTransferLimit is
-    /// written after the features array), so the flag can be produced by a pass-through
-    /// limit probe without buffering the result set.
-    /// </summary>
+    // exceededTransferLimit is written after the features are enumerated, so a pass-through limit probe can set it without buffering the result.
     public async Task StreamAsGeoServicesJsonAsync(
         IAsyncEnumerable<Feature> features,
         MetadataV2Resource resource,
@@ -1177,12 +1130,7 @@ internal sealed class StreamingQueryFormatter
             outputStream,
             cancellationToken);
 
-    /// <summary>
-    /// Streams the GeoJSON response. <paramref name="hasMoreResults"/> is evaluated
-    /// AFTER the feature enumeration completes (exceededTransferLimit is written after
-    /// the features array), so the flag can be produced by a pass-through limit probe
-    /// without buffering the result set.
-    /// </summary>
+    // The GeoJSON exceededTransferLimit flag is written after the features are enumerated, so a pass-through limit probe can set it without buffering the result.
     public async Task StreamAsGeoJsonAsync(
         IAsyncEnumerable<Feature> features,
         MetadataV2Resource resource,
@@ -1259,9 +1207,6 @@ internal sealed class StreamingQueryFormatter
         await writer.FlushAsync(cancellationToken);
     }
 
-    /// <summary>
-    /// Writes a single feature in GeoServices format
-    /// </summary>
     private static void WriteGeoServicesFeature(
         Utf8JsonWriter writer,
         Feature feature,
@@ -1449,12 +1394,6 @@ internal sealed class StreamingQueryFormatter
         return new HashSet<string>(outFields, StringComparer.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Writes a JSON attribute, stringifying complex values only for Esri f=json;
-    /// GeoJSON keeps typed arrays and objects. When <paramref name="temporalFieldTypes"/> contains <paramref name="propertyName"/>
-    /// the declared type determines the wire representation: <c>esriFieldTypeDate</c>
-    /// uses epoch milliseconds and <c>esriFieldTypeDateOnly</c> uses ISO calendar dates.
-    /// </summary>
     private static void WriteJsonValue(
         Utf8JsonWriter writer,
         string propertyName,

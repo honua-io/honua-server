@@ -13,8 +13,8 @@
 # they cannot load. On Alpine every f=parquet request returned the typed 501, and gcompat +
 # libatomic loaded the library but segfaulted the server on the first request. These are the
 # same Ubuntu-based SDK/runtime-deps digests as docker/Dockerfile.lambda.aot.
-ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa
-ARG DOTNET_RUNTIME_DEPS_IMAGE=mcr.microsoft.com/dotnet/runtime-deps:10.0@sha256:da5846024d0008b48259b53a8953d39381fe5b7ec99ef1449ba4ba927f201490
+ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:de4fe90a98845d75910b9769662465c84de1a934665c431279d1382b2bddc02b
+ARG DOTNET_RUNTIME_DEPS_IMAGE=mcr.microsoft.com/dotnet/runtime-deps:10.0@sha256:62028293921f5bd6db3d9f9119cd29cd926dfd3c2336da23b09f425e40c3c832
 
 # Build stage with security hardening
 # Extract restore inputs with their directory structure. Ordinary source edits,
@@ -116,6 +116,9 @@ COPY . .
 # kill does not fail the nightly outright. Retries are cheap: a successful
 # restore is an "up-to-date" no-op and successful publish output is reused.
 ARG CONFIGURATION=Release
+# Empty VERSION preserves Directory.Build.props for local container builds.
+ARG VERSION=
+ARG HONUA_GIT_SHA=
 ARG AOT_PUBLISH_MAX_ATTEMPTS=3
 RUN --mount=type=cache,target=/root/.nuget/packages \
     --mount=type=secret,id=github_actor \
@@ -138,6 +141,9 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
           -p:RuntimeIdentifier="$RUNTIME_ID" \
           "$@" && \
         dotnet publish src/Honua.Server/Honua.Server.csproj \
+          ${VERSION:+-p:Version="$VERSION"} \
+          ${VERSION:+-p:InformationalVersion="$VERSION$(if [ -n "$HONUA_GIT_SHA" ]; then printf '+%.7s' "$HONUA_GIT_SHA"; fi)"} \
+          ${VERSION:+-p:IncludeSourceRevisionInInformationalVersion=false} \
           --configuration "$CONFIGURATION" \
           --runtime "$RUNTIME_ID" \
           --no-restore \
@@ -170,12 +176,14 @@ FROM ${DOTNET_RUNTIME_DEPS_IMAGE} AS runtime
 
 # Echoed in the upgrade RUN so a bump invalidates the cached apt layer.
 # 2026-10-08: refresh Ubuntu pocket updates on the digest-pinned runtime-deps base.
-ARG RUNTIME_PACKAGE_REVISION=20261008
+# 2026-10-30: pick up zlib1g 1:1.3.dfsg-3.1ubuntu2.3 (CVE-2026-85091).
+# dpkg-query needs the version field with one dollar. Two dollars emit a leading dollar and fail the epoch check.
+ARG RUNTIME_PACKAGE_REVISION=20261105
 
 # Security: Install runtime dependencies. The Ubuntu runtime-deps base already ships
 # ICU (InvariantGlobalization=false, honua-server#1369). libatomic1 is required by
-# ParquetSharpNative, which backs the GeoParquet writer (honua-server#4912); wget backs
-# the HEALTHCHECK below. fonts-dejavu-core is the rendering font: the NoDependencies Skia
+# ParquetSharpNative, which backs the GeoParquet writer (honua-server#4912).
+# fonts-dejavu-core is the rendering font: the NoDependencies Skia
 # asset has no Fontconfig lookup, and without a font file every label, legend and Studio
 # deliverable renders blank (honua-server#4908, #4949).
 # The base is digest-pinned; compatible security updates and dependency versions
@@ -189,8 +197,10 @@ RUN echo "runtime package revision ${RUNTIME_PACKAGE_REVISION}" && \
     fonts-dejavu-core \
     libatomic1 \
     libgssapi-krb5-2 \
-    tzdata \
-    wget && \
+    tzdata && \
+    dpkg --compare-versions "$(dpkg-query -W -f '${Version}' zlib1g)" ge "1:1.3.dfsg-3.1ubuntu2.3" && \
+    dpkg --compare-versions "$(dpkg-query -W -f '${Version}' apt)" ge "2.8.4ubuntu0.1" && \
+    dpkg --compare-versions "$(dpkg-query -W -f '${Version}' libapt-pkg6.0t64)" ge "2.8.4ubuntu0.1" && \
     rm -rf /var/lib/apt/lists/* /tmp/* && \
     test -r /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
 
@@ -263,11 +273,13 @@ LABEL security.non-root="true" \
 
 # Immutable deployment identity (#3038). `.dockerignore` excludes `.git/`, so SourceLink
 # cannot stamp a commit into the published binary from inside the build context; the commit
-# SHA is therefore injected here as a runtime environment variable. Placing the ARG in the
-# runtime stage keeps a SHA change from invalidating the expensive AOT publish layers.
+# SHA is therefore injected here as a runtime environment variable. The build stage also uses the SHA
+# to stamp the informational version when VERSION is provided.
 # HONUA_IMAGE_DIGEST is intentionally not set here: an image cannot contain its own digest,
 # so deployments inject it (Helm/Terraform/task definition) once the image has been pushed.
 ARG HONUA_GIT_SHA=
+ARG VERSION=
+LABEL org.opencontainers.image.version="${VERSION}"
 LABEL org.opencontainers.image.revision="${HONUA_GIT_SHA}"
 ENV HONUA_GIT_SHA=${HONUA_GIT_SHA}
 
@@ -283,9 +295,9 @@ ENV ASPNETCORE_ENVIRONMENT=Production \
     DOTNET_EnableDiagnostics=0 \
     HONUA_DEFAULT_FONT_PATH=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
 
-# Security: Enhanced health check with timeout and authentication bypass
+# Health check. The runtime image has bash and no HTTP client.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD ["wget", "-q", "-T", "5", "-O", "/dev/null", "http://localhost:8080/healthz/live"]
+    CMD ["bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /healthz/live HTTP/1.0\\r\\nHost: 127.0.0.1\\r\\nConnection: close\\r\\n\\r\\n' >&3 && IFS= read -r status <&3 && case \"$status\" in *' 200 '*) exit 0 ;; *) exit 1 ;; esac"]
 
 # Security: Explicit port exposure
 EXPOSE 8080/tcp 8081/tcp

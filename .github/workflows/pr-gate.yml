@@ -69,7 +69,7 @@ jobs:
           echo "Admission passed; exact-head review has not released format verification yet."
           exit 1
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
         with:
           fetch-depth: 2
@@ -137,7 +137,7 @@ jobs:
       # computation force-fulls and the optimization silently never fires. Two
       # commits is a couple of extra seconds of fetch; do not lower it, and do
       # not raise it to 0 (full history on this repo is minutes).
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
 
@@ -160,6 +160,28 @@ jobs:
 
       - name: Verify boot smoke readiness controls
         run: python3 scripts/ci/server-boot-smoke.test.py
+      # Admission tier, seconds, and deliberately ahead of the documentation
+      # exit: an agent-instruction or PR-body edit is exactly what these police.
+      #   - No AI/agent attribution in the PR's commits or body (fleet rule 1;
+      #     source honua-flow agents/fleet-rules.md). Agent harnesses append
+      #     Co-Authored-By / "Generated with" lines by default, so the prose rule
+      #     is enforced here. Commits and the PR body are read from the API at
+      #     run time, so a rerun after editing the body sees the current text.
+      #     Body edits alone do not start a run (no `edited` trigger on this
+      #     heavy workflow); the next push or rerun re-checks.
+      #   - The canonical instruction file stays a budgeted digest with an
+      #     unmodified generated fleet block and no dangling repo paths.
+      - name: Verify commit attribution and agent instructions
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          python3 scripts/ci/check-commit-attribution.py --self-test
+          if [[ -n "${PR_NUMBER}" ]]; then
+            python3 scripts/ci/check-commit-attribution.py --pr "${PR_NUMBER}" --repo "${GITHUB_REPOSITORY}"
+          fi
+          python3 scripts/ci/check-agents-md.py --self-test
+          bash scripts/ci/check-instructions-sync.sh
 
       - name: Validate modular test inventory and isolation
         run: |
@@ -187,6 +209,8 @@ jobs:
           python3 -m unittest discover -s scripts/certification -p 'test_producer_context.py'
           python3 -m unittest discover -s scripts/certification -p 'test_generate_protocol_harness_fragment.py'
           python3 -m unittest discover -s scripts/certification -p 'test_harness_context.py'
+          # Fails when a manifest input (e.g. the core client fixture) moves without its digest.
+          python3 -m unittest discover -s scripts/certification -p 'test_sdk_protocol_fixture.py'
 
       - name: Verify CITE normalization and supplemental HTTP controls
         run: python3 -m unittest discover -s scripts/conformance/cite/tests -p 'test_*.py'
@@ -229,7 +253,7 @@ jobs:
       # fails attempt 2 closed instead of relying only on its run number.
       - name: Revalidate exact-head review before verification
         if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt > 1
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const head = context.payload.pull_request?.head?.sha;
@@ -299,7 +323,8 @@ jobs:
         if: steps.docs-only.outputs.docs_only == 'true'
         run: |
           python3 -m pip install -r scripts/ci/okf-requirements.txt
-          python3 scripts/ci/generate-okf-graph.py --check
+          python3 scripts/ci/generate-okf-graph.py --output "${RUNNER_TEMP}/domain-graph.v1.json"
+          python3 scripts/ci/generate-okf-graph.py --check --output "${RUNNER_TEMP}/domain-graph.v1.json"
           python3 scripts/ci/generate-llms-txt.py --check
 
       # Artifact consistency is a cheap docs check, not a C# architecture test.
@@ -313,7 +338,7 @@ jobs:
 
       - name: Set up Python for the public installation proof
         if: steps.public-install.outputs.smoke == 'true'
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.11'
 
@@ -324,7 +349,7 @@ jobs:
 
       - name: Upload public installation evidence
         if: always() && steps.public-install.outputs.smoke == 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: docs-public-install
           path: artifacts/docs-validation/public-install/receipt.json
@@ -436,7 +461,7 @@ jobs:
 
       - name: Revalidate exact-head review before success
         if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt > 1
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const head = context.payload.pull_request?.head?.sha;
@@ -459,13 +484,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 75
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
 
       - name: Revalidate exact-head review before verification
         if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt > 1
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const head = context.payload.pull_request?.head?.sha;
@@ -482,12 +507,22 @@ jobs:
               core.setFailed(`Exact-head Review Gate is ${reviewGate?.state || 'missing'}.`);
             }
 
+      # The consumer runs on a separate runner from the build producer. Free the same
+      # unused hosted tools before restoring binaries and pulling the production GDAL image.
+      - name: Start freeing runtime proof disk space
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && needs.pr-gate.outputs.skip != 'true'
+        run: scripts/ci/server-test-shard-free-disk.sh
+
       - name: Setup .NET
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && needs.pr-gate.outputs.skip != 'true'
         uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
           artifact-sdk-version: ${{ needs.pr-gate.outputs.managed-sdk-version }}
+
+      - name: Wait for runtime proof disk cleanup
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && needs.pr-gate.outputs.skip != 'true'
+        run: scripts/ci/server-test-shard-free-disk.sh --await
 
       - name: Plan managed test consumer
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && needs.pr-gate.outputs.skip != 'true'
@@ -549,7 +584,7 @@ jobs:
 
       - name: Upload remote source execution proof
         if: always() && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: remote-source-execution-proof
           path: tests/TestResults/remote-source-execution-proof.trx
@@ -741,14 +776,59 @@ jobs:
             exit 1
           fi
 
+      # Runner provisioning for the real-GDAL proof below, kept out of the proof's
+      # own 10-minute budget. The Azure Ubuntu mirror stalls for minutes at a
+      # time: on 2026-10-23..26 the proof timed out 13 times with no output at all
+      # (passing runs print apt output ~8 s in and finish in ~30 s), and one run
+      # spent 9m27s silent before the first package arrived. Every network attempt
+      # is bounded by `timeout` and retried with backoff, apt itself retries and
+      # times out stalled fetches, and the install is --no-download so dpkg is
+      # never interrupted mid-download. Category=GDAL also selects the proximity
+      # proofs: gdal_proximity.py and Scripts/gdal_euclidean_allocation.py need
+      # the GDAL Python bindings, NumPy and SciPy, which `gdal-bin` does not ship,
+      # so this is the same set ci.yml's worker-gdal-tests job installs.
+      # scripts/ci/fixtures/validate-pr-gate-apt-provisioning.py holds the step
+      # timeout and the job timeout to this loop's worst case.
+      - name: Provision the GDAL CLI packages for the real-GDAL proof
+        id: gdal-cli-packages
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'
+        timeout-minutes: 25
+        run: |
+          set -euo pipefail
+          packages="gdal-bin python3-gdal python3-numpy python3-scipy"
+          printf '%s\n' \
+            'Acquire::Retries "3";' \
+            'Acquire::http::Timeout "30";' \
+            'Acquire::https::Timeout "30";' \
+            | sudo tee /etc/apt/apt.conf.d/80honua-ci-network >/dev/null
+          downloaded=false
+          for attempt in 1 2 3; do
+            if sudo timeout --kill-after=15s 240s sh -c \
+                "apt-get update -q && apt-get install -yq --download-only ${packages}"; then
+              downloaded=true
+              break
+            fi
+            echo "::warning::GDAL CLI package download attempt ${attempt} failed or stalled on the apt mirror"
+            if [[ "${attempt}" -lt 3 ]]; then
+              sleep $((attempt * 15))
+            fi
+          done
+          if [[ "${downloaded}" != "true" ]]; then
+            echo "::error::the GDAL CLI packages could not be downloaded from the runner's apt mirror after 3 bounded attempts"
+            exit 1
+          fi
+          # shellcheck disable=SC2086 # word-splitting the package list is intended
+          sudo timeout --kill-after=15s 600s apt-get install -yqq --no-download ${packages}
+
       - name: Prove the real-GDAL CLI cases run on the required gate
         # honua-server#4401: the five [GdalCliFact] cases emit Tier=Integration,
         # which the lean gate's Tier=Fast filter can never match, and ci.yml has no
         # pull_request trigger — so real gdaldem / ogr2ogr coverage could regress
-        # without blocking a merge. Run them here on the gate runner, over an
-        # apt-provisioned GDAL CLI (the same provisioning ci.yml's worker-gdal-tests
-        # job uses), with the same counts-based tripwire. HONUA_REQUIRE_GDAL_CLI
-        # turns a missing tool into a failure rather than a skip.
+        # without blocking a merge. Run them here on the gate runner, over the GDAL
+        # CLI the previous step apt-provisioned (the same provisioning ci.yml's
+        # worker-gdal-tests job uses), with the same counts-based tripwire.
+        # HONUA_REQUIRE_GDAL_CLI turns a missing tool into a failure rather than a
+        # skip.
         id: gdal-cli-proof
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'
         timeout-minutes: 10
@@ -756,17 +836,14 @@ jobs:
           HONUA_REQUIRE_GDAL_CLI: "true"
         run: |
           set -euo pipefail
-          sudo apt-get update -qq
           # Category=GDAL is the whole [GdalCliFact] set, not just the gdaldem /
           # ogr2ogr cases. It also selects the two proximity correctness proofs:
           # Distance_... shells out to the gdal_proximity.py utility, and
           # Allocation_... runs the production step Scripts/gdal_euclidean_allocation.py,
-          # which imports the GDAL Python bindings, NumPy and SciPy. `gdal-bin` ships
-          # none of those, so provision the same set ci.yml's worker-gdal-tests job
-          # installs for this identical test surface and prefer the distro interpreter
-          # that owns the apt-installed modules. (GITHUB_PATH only affects LATER steps,
-          # so the PATH edit has to be an export inside this one.)
-          sudo apt-get install -yqq gdal-bin python3-gdal python3-numpy python3-scipy
+          # which imports the GDAL Python bindings, NumPy and SciPy. The previous step
+          # provisions those; prefer the distro interpreter that owns the
+          # apt-installed modules. (GITHUB_PATH only affects LATER steps, so the PATH
+          # edit has to be an export inside this one.)
           export PATH="/usr/bin:${PATH}"
           /usr/bin/python3 -c 'from osgeo import gdal; from scipy import ndimage; import numpy'
           for tool in gdaldem ogr2ogr gdal_translate gdalinfo gdal_proximity.py python3; do
@@ -805,7 +882,7 @@ jobs:
 
       - name: Upload imagery classify execution proof
         if: always() && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: imagery-classify-execution-proof
           path: tests/TestResults/imagery-classify-execution-proof.trx
@@ -816,11 +893,11 @@ jobs:
       # in ci.yml's Worker GDAL Tests job for why it is never written here.
       - name: Set up Docker Buildx for production PDAL
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && needs.pr-gate.outputs.generated_only != 'true'
-        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
       - name: Log in to GHCR for the production PDAL build cache
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && needs.pr-gate.outputs.generated_only != 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -845,6 +922,7 @@ jobs:
             --logger 'trx;LogFileName=pdal-execution-proof.trx' --results-directory tests/TestResults
 
       - name: Execute import and independent vector export fidelity proofs
+        id: fidelity-proof
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'
         timeout-minutes: 25
         run: |
@@ -854,15 +932,18 @@ jobs:
 
       - name: Upload import and independent vector export fidelity evidence
         if: always() && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: import-export-fidelity-proof
           path: tests/TestResults/import-export-fidelity/
-          if-no-files-found: error
+          # Missing evidence is an error only when the proof itself ran. When an
+          # earlier step failed (or timed out) the proof never runs, and an error
+          # here would bury that step's real failure under a second one.
+          if-no-files-found: ${{ steps.fidelity-proof.outcome != 'skipped' && 'error' || 'warn' }}
 
       - name: Upload point-cloud execution proof
         if: always() && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: pdal-execution-proof
           path: |
@@ -871,7 +952,7 @@ jobs:
 
       - name: Upload raster execution proof
         if: always() && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: raster-execution-proof
           path: |
@@ -881,7 +962,7 @@ jobs:
 
       - name: Upload layer execution proof
         if: always() && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: layer-execution-proof
           path: tests/TestResults/layer-execution-proof.trx
@@ -889,7 +970,7 @@ jobs:
 
       - name: Upload protocol-tier execution proof
         if: always() && needs.pr-gate.outputs.generated_only != 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: protocol-tier-execution-proof
           path: tests/TestResults/protocol-tier-execution-proof.trx
@@ -903,7 +984,7 @@ jobs:
 
       - name: Upload copy-features execution proof
         if: always() && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: copy-features-execution-proof
           path: tests/TestResults/copy-features-execution-proof.trx
@@ -920,7 +1001,7 @@ jobs:
 
       - name: Revalidate exact-head review before success
         if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt > 1
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const head = context.payload.pull_request?.head?.sha;
@@ -973,7 +1054,14 @@ jobs:
   # forces the pull request to UNSTABLE and stalls the clean-only merge train),
   # and the aggregate context `PR Gate / Affected shards` publishes the verdict
   # in its step summary and as HONUA_AFFECTED_SHARD_* annotations while
-  # concluding success.
+  # concluding success. That success is not a test pass. The publisher
+  # (scripts/ci/affected-shard-verdict.py) sets test_pass=false on every
+  # report-mode result, including a green shard table and a skipped selection.
+  # Trunk branch protection already requires this context (read back
+  # 2026-10-27; docs/ci/affected-shards-disposition-20261027.json). That
+  # requirement is not the promotion below and is not removed here: the
+  # lander requires the check to exist, and deleting it is a protection edit.
+  # Do not flip this mode to enforce to paper over the requirement.
   #
   #   PROMOTION RULE: make this context required when its FALSE-RED rate over 7
   #   days of runs is < 2%. A false red is a run that emits
@@ -1028,7 +1116,7 @@ jobs:
       # checked-out ref is refs/pull/N/merge and its FIRST PARENT is the current
       # tip of the base branch, which is the diff base both the router and the
       # affected-projects closure are computed against.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
 
@@ -1041,8 +1129,9 @@ jobs:
       # trigger (see its header). So without this step nothing validates the
       # selector on the pull request that changes it: an under-scoped edit
       # would make selection and aggregation both green and land, and only the
-      # trailing workflow would discover the broken fixture. AGENTS.md already
-      # treats a diff touching the selectors as unable to scope itself; the
+      # trailing workflow would discover the broken fixture. The local pre-PR
+      # gate (scripts/ci/pre-pr-check.sh) already treats a diff touching the
+      # selectors as unable to scope itself; the
       # same reasoning applies to a lane consuming its own PR-authored
       # selector. Offline (no network, no dotnet), so it costs seconds.
       #
@@ -1092,7 +1181,7 @@ jobs:
 
       - name: Upload selection receipt
         if: always() && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: pr-gate-affected-shards-selection
           path: ${{ runner.temp }}/affected-shards.json
@@ -1142,7 +1231,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Start freeing disk space
         run: scripts/ci/server-test-shard-free-disk.sh
@@ -1205,7 +1294,7 @@ jobs:
       # infrastructure, not as a shard red.
       - name: Upload affected shard results
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         timeout-minutes: 3
         with:
           name: pr-gate-affected-shard-${{ matrix.artifact_suffix }}
@@ -1221,16 +1310,23 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # The publisher lives in the workflow's commit. Without this checkout the
+      # aggregate would have to keep the verdict inline, where a report-mode
+      # exit 0 was indistinguishable from a test pass.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: always()
+
       - name: Download affected shard receipts
         if: always()
         continue-on-error: true
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: pr-gate-affected-shard-*
           path: shard-results
           merge-multiple: true
 
       - name: Report affected-shard verdict
+        if: always()
         env:
           MODE: ${{ env.AFFECTED_SHARDS_MODE }}
           SELECT_RESULT: ${{ needs.affected-shards-select.result }}
@@ -1238,112 +1334,16 @@ jobs:
           SELECT_REASON: ${{ needs.affected-shards-select.outputs.reason }}
           SELECT_COUNT: ${{ needs.affected-shards-select.outputs.selected_count }}
           SHARDS_RESULT: ${{ needs.affected-shard.result }}
-        run: |
-          set -euo pipefail
+        run: python3 scripts/ci/affected-shard-verdict.py --timings shard-results --receipt affected-shard-verdict.json
 
-          note() { printf '%s\n' "$1" >> "${GITHUB_STEP_SUMMARY}"; }
-          note '### PR Gate / Affected shards'
-          note ''
-          if [[ "${MODE}" == "enforce" ]]; then
-            note "- Mode: \`${MODE}\` (enforcing; see the promotion rule in pr-gate.yml)"
-          else
-            note "- Mode: \`${MODE}\` (report-only until the promotion rule in pr-gate.yml is met)"
-          fi
-          note "- Selection: \`${SELECT_REASON:-unavailable}\` (\`${SELECT_COUNT:-0}\` shard families)"
-
-          # MISSING EVIDENCE IS NOT A PASS ONCE THIS CONTEXT IS REQUIRED.
-          # Promotion is documented as exactly two changes -- flip
-          # AFFECTED_SHARDS_MODE to `enforce`, add this context to branch
-          # protection -- so every path that concludes "no evidence" has to be
-          # aware of the mode. Otherwise a selector crash, an invalid routing
-          # config, or shard jobs that die before their receipts would exit 0
-          # and silently disable the required gate rather than blocking on it.
-          # In `report` the behaviour is unchanged: warn, publish, pass.
-          unavailable() {
-            local verdict="$1" explanation="$2" annotation="$3" detail="${4:-}"
-            note "- Verdict: \`${verdict}\` — ${explanation}"
-            if [[ -n "${detail}" ]]; then
-              note "  ${detail}"
-            fi
-            if [[ "${MODE}" == "enforce" ]]; then
-              note '  `AFFECTED_SHARDS_MODE` is `enforce`, so this required context fails closed on'
-              note '  missing evidence rather than reporting a pass it cannot support.'
-              echo "::error::HONUA_AFFECTED_SHARD_UNAVAILABLE ${annotation}"
-              exit 1
-            fi
-            echo "::warning::HONUA_AFFECTED_SHARD_UNAVAILABLE ${annotation}"
-            exit 0
-          }
-
-          if [[ "${SELECT_RESULT}" != "success" ]]; then
-            unavailable "selection_${SELECT_RESULT}" \
-              "no shard evidence for this head." \
-              "selection concluded '${SELECT_RESULT}'."
-          fi
-          if [[ "${SELECT_SKIP}" == "true" ]]; then
-            note "- Verdict: \`skipped\` — nothing in this diff can move a server-test shard."
-            exit 0
-          fi
-
-          shopt -s nullglob
-          timings=(shard-results/*.timing.json)
-          received=${#timings[@]}
-          expected=${SELECT_COUNT:-0}
-          if [[ "${received}" -eq 0 ]]; then
-            unavailable "no_receipts" \
-              "shard jobs concluded \`${SHARDS_RESULT}\` without a timing artifact." \
-              "shard jobs concluded '${SHARDS_RESULT}' with no timing receipt." \
-              "A shard that fails before its test step (restore, build, runner disk) produces no receipt; that is an infrastructure failure of this lane, not a shard regression."
-          fi
-
-          note ''
-          note '| Shard | Status | Duration | Budget used | Capacity |'
-          note '|---|---|---:|---:|---|'
-          red=0
-          for timing in "${timings[@]}"; do
-            shard=$(jq -r '.shard' "${timing}")
-            status=$(jq -r '.status' "${timing}")
-            duration=$(jq -r '.duration_seconds' "${timing}")
-            budget=$(jq -r 'if .headroom_ratio == null then "n/a" else ((.headroom_ratio * 1000 | round) / 10 | tostring) + "%" end' "${timing}")
-            capacity=$(jq -r '.capacity_status' "${timing}")
-            note "| ${shard} | \`${status}\` | ${duration}s | ${budget} | \`${capacity}\` |"
-            if [[ "${status}" != "passed" ]]; then
-              red=$((red + 1))
-              echo "::error::HONUA_AFFECTED_SHARD_RED shard='${shard}' status='${status}' — this shard family is red on the pull-request head. The trailing matrix will report the same failure on trunk after this merges."
-            fi
-          done
-
-          note ''
-          # A PARTIAL RECEIPT SET IS NOT GREEN. `timings` being non-empty only
-          # proves SOME selected shard reported; when one shard dies before
-          # run-server-test-shard.sh writes its timing file and another passes,
-          # every receipt present says `passed` and the naive check below would
-          # call that a clean prediction of the trailing matrix. It is not --
-          # the unreported family is exactly the one this lane was spending a
-          # runner to learn about. Checked AFTER the table so the partial
-          # evidence is still published, and after `red` is counted so a
-          # confirmed red still reports as a red rather than as infrastructure.
-          if [[ "${red}" -eq 0 && "${received}" -lt "${expected}" ]]; then
-            unavailable "incomplete_receipts" \
-              "only ${received} of ${expected} selected shard families produced a timing receipt." \
-              "shard jobs concluded '${SHARDS_RESULT}' with ${received}/${expected} timing receipts." \
-              "Every receipt received says \`passed\`, but the families that reported none are exactly the ones this lane spent runners to learn about, so this head has no complete shard evidence."
-          fi
-          if [[ "${red}" -eq 0 ]]; then
-            note "- Verdict: \`green\` — all ${received} selected shard families passed on this head."
-            echo "::notice::HONUA_AFFECTED_SHARD_GREEN ${received} selected shard families passed."
-            exit 0
-          fi
-
-          note "- Verdict: \`red\` — ${red} of ${received} selected shard families failed on this head."
-          if [[ "${MODE}" == "enforce" ]]; then
-            echo "::error::PR Gate / Affected shards: ${red} shard families are red on this head."
-            exit 1
-          fi
-          note '  Reported only: `AFFECTED_SHARDS_MODE` is `report`, so this context stays green while'
-          note '  the false-red rate is measured. Treat the rows above as a pre-merge prediction of the'
-          note '  trailing matrix and fix them before landing.'
-          exit 0
+      - name: Retain affected-shard verdict
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pr-gate-affected-shards-verdict-${{ github.run_id }}-${{ github.run_attempt }}
+          path: affected-shard-verdict.json
+          if-no-files-found: warn
+          retention-days: 7
 
   ci-router-validation:
     # ci.yml's `CI Router Validation` job (scripts/ci/validate-ci-router.sh,
@@ -1366,7 +1366,7 @@ jobs:
 
       # fetch-depth 2: refs/pull/N/merge's first parent is the target-branch
       # tip, exactly what scripts/ci/pr-touches-ci-surface.sh diffs against.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: env.REVIEW_FIRST_MODE != 'enforce' || github.run_attempt > 1
         with:
           fetch-depth: 2
@@ -1420,7 +1420,7 @@ jobs:
 
       # fetch-depth 2: refs/pull/N/merge's first parent is the target-branch tip,
       # which is what "added by this change" is measured against.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1
         with:
           fetch-depth: 2
@@ -1493,7 +1493,7 @@ jobs:
 
       - name: Upload N-1 receipt
         if: ${{ !cancelled() && steps.n1.conclusion != 'skipped' }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: n1-reader-compat-receipt
           path: ${{ runner.temp }}/n1-reader-compat/
@@ -1564,7 +1564,7 @@ jobs:
       # which review evidence could be dismissed while format was still running.
       - name: Revalidate exact-head review before success
         if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt > 1
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const head = context.payload.pull_request?.head?.sha;

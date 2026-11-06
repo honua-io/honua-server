@@ -10,16 +10,6 @@ using TypedExecutor = Honua.Core.Features.Operations.Abstractions.IOperationExec
 
 namespace Honua.Server.Features.Operations;
 
-/// <summary>
-/// Typed actuator wrapper for one legacy operation-class actuator. It has no policy, identity,
-/// proposal, or audit behavior; only the canonical dispatcher may call it. The legacy actuator
-/// is resolved at USE time, not construction time: control-plane executors are legitimately
-/// registered after <c>AddOperationsToolset</c> (post-Program ConfigureServices), and a
-/// registration-time snapshot left the dispatcher without compatibility actuators — converge
-/// returned NotSupported/blocked with null operation ids (trunk red 2026-08-29, run
-/// 33249627814; the fourth member of the registration-ordering family after #3614/#3617/#3621).
-/// Hosts whose final composition lacks the class's actuator get a typed refusal at use time.
-/// </summary>
 internal sealed class LegacyGatewayOperationAdapter : TypedExecutor
 {
     private readonly Func<LegacyExecutor> _actuatorFactory;
@@ -74,6 +64,7 @@ internal sealed class LegacyGatewayOperationAdapter : TypedExecutor
         {
             OperationInstanceId = context.OperationInstanceId,
             CorrelationId = context.CorrelationId,
+            ApprovedProposalId = context.ApprovedProposalId,
         };
         var executionId = await Actuator
             .ExecuteAsync(gatewayRequest, gatewayRequest.ExecutionPayload, cancellationToken)
@@ -150,7 +141,6 @@ internal sealed class LegacyGatewayOperationAdapter : TypedExecutor
             ?? throw new InvalidOperationException("The legacy compatibility request is unavailable.");
 }
 
-/// <summary>Canonical descriptor ids for legacy operation-class compatibility adapters.</summary>
 internal static class LegacyOperationIds
 {
     public static string For(OperationClass operationClass) => operationClass switch

@@ -11,10 +11,16 @@
     <ProjectReference Include="..\..\..\src\Honua.Db\DuckDB\Honua.DuckDB.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Core\Honua.Core.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Geometry\Honua.Geometry.csproj" />
+    <ProjectReference Include="..\Honua.TestKit.Abstractions\Honua.TestKit.Abstractions.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Npgsql" />
+    <!-- Direct pin of Testcontainers' transitive SSH.NET to the patched release
+         (GHSA-q939-rpr3-3284). -->
+    <PackageReference Include="SSH.NET" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

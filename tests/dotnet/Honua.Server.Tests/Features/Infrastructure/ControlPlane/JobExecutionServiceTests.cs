@@ -26,6 +26,40 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 public sealed class JobExecutionServiceTests
 {
     [UnitTest]
+    public async Task ProcessJob_RunningTransitionCasConflict_RequeuesUnstartedClaimImmediately()
+    {
+        var durable = CreateProvisioningJob() with { AttemptCount = 1, RetryPolicy = new JobRetryPolicy { MaxAttempts = 3 } };
+        var store = Substitute.For<IExecutionJobStore>();
+        store.GetAsync(durable.OperationId, Arg.Any<CancellationToken>()).Returns(_ => durable);
+        store.TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var update = call.Arg<ExecutionJobRecord>();
+                if (update.Status == ExecutionJobStatus.Running)
+                {
+                    // An observer updated the same claim after the worker's read.
+                    durable = durable with { Version = durable.Version + 1, UpdatedAt = DateTimeOffset.UtcNow };
+                    return false;
+                }
+                durable = update;
+                return true;
+            });
+        var queue = Substitute.For<IJobQueue>();
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+        using var service = new JobExecutionService(queue, store, [executor],
+            new ExecutionJobCancellationTokens(), [], null, NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, durable.OperationId, durable.ClaimedBy!);
+
+        Assert.Equal(ExecutionJobStatus.Queued, durable.Status);
+        Assert.Null(durable.ClaimedBy);
+        await queue.Received(1).RequeueAsync(durable.OperationId, durable.Priority, null, Arg.Any<CancellationToken>());
+        await executor.DidNotReceive().ExecuteAsync(Arg.Any<ExecutionJobRecord>(),
+            Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
     public async Task ProcessJob_OrdinaryCompletionAfterEarlierCommittedEffect_HonoursCancellationAndReturnsOnlyReceipt()
     {
         var durable = CreateProvisioningJob();

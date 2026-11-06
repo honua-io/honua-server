@@ -13,22 +13,13 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Protocols.Zarr;
 
-/// <summary>
-/// Log category for Zarr admin endpoints.
-/// </summary>
 internal sealed class ZarrEndpointsLog;
 
-/// <summary>
-/// Admin endpoints for Zarr store registration and metadata discovery.
-/// </summary>
 internal static class ZarrEndpoints
 {
     private const string DuplicateRegistrationMessage =
         "A Zarr store with the same layer, provider, bucket, and root path is already registered.";
 
-    /// <summary>
-    /// Maps Zarr admin endpoints.
-    /// </summary>
     public static void MapZarrEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
@@ -246,10 +237,6 @@ internal static class ZarrEndpoints
         }
     }
 
-    /// <summary>
-    /// Returns true when the Metadata v2 graph contains any publication whose service-local layer
-    /// index matches the supplied id.
-    /// </summary>
     private static async Task<bool> LayerPublicationExistsAsync(
         IMetadataV2GraphProvider graphProvider,
         int layerId,

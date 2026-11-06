@@ -9,17 +9,6 @@ using Honua.Core.Features.Migration.Services;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// Classifies built-in processes for migration evidence claims.
-/// </summary>
-/// <remarks>
-/// The capability/fidelity verdict (automation tier) is sourced from the shared
-/// <see cref="IEsriConstructCapabilityRegistry"/> (#1382): the classifier maps a
-/// process onto a GP construct family key and the registry supplies the verdict,
-/// keeping the GP lane aligned with the importer and Portal-facade lanes rather
-/// than maintaining a private tier table. Unrecognised keys fall back to the
-/// shared <c>manual-review</c> descriptor.
-/// </remarks>
 internal static class ProcessMigrationEvidenceClassifier
 {
     private static readonly FrozenSet<string> FirstSliceAutomatedVectorProcessIds =
@@ -55,16 +44,11 @@ internal static class ProcessMigrationEvidenceClassifier
     // Single shared registry instance built from the same descriptor set the DI
     // container seeds, so the static GP classifier resolves identical verdicts.
     private static readonly IEsriConstructCapabilityRegistry Registry =
-        new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors);
+        new GeoServicesConstructCapabilityRegistry(GeoServicesConstructCapabilityRegistry.BuiltInDescriptors);
 
     public static ProcessMigrationEvidenceClassification Classify(ProcessDefinition definition)
         => Classify(definition, Registry);
 
-    /// <summary>
-    /// Classifies <paramref name="definition"/> using the supplied capability
-    /// registry. The construct-family mapping stays local (it is the lane's
-    /// parsing job); the registry owns the per-family capability/fidelity verdict.
-    /// </summary>
     public static ProcessMigrationEvidenceClassification Classify(
         ProcessDefinition definition,
         IEsriConstructCapabilityRegistry registry)
@@ -78,7 +62,7 @@ internal static class ProcessMigrationEvidenceClassifier
         var tier = ToAutomationTier(descriptor.AutomationStatus);
         var requiresApproval = string.Equals(
             constructKey,
-            EsriConstructCapabilityRegistry.Keys.GpDestructiveDataManagement,
+            GeoServicesConstructCapabilityRegistry.Keys.GpDestructiveDataManagement,
             StringComparison.Ordinal);
 
         return new ProcessMigrationEvidenceClassification(
@@ -88,33 +72,27 @@ internal static class ProcessMigrationEvidenceClassifier
             descriptor.Reason);
     }
 
-    /// <summary>
-    /// Maps a process to its GP construct family registry key. Every process maps
-    /// to a registered family (including the explicit <c>gp.unsupported</c> catch
-    /// for processes outside the first evidence slice), so the shared unknown
-    /// fallback only fires when the registry itself lacks the key.
-    /// </summary>
     private static string ResolveConstructKey(ProcessDefinition definition)
     {
         var processId = definition.ProcessId;
         if (FirstSliceAutomatedVectorProcessIds.Contains(processId))
         {
-            return EsriConstructCapabilityRegistry.Keys.GpVectorDeterministic;
+            return GeoServicesConstructCapabilityRegistry.Keys.GpVectorDeterministic;
         }
 
         if (ProcessDestructiveClassifier.IsDestructive(processId))
         {
-            return EsriConstructCapabilityRegistry.Keys.GpDestructiveDataManagement;
+            return GeoServicesConstructCapabilityRegistry.Keys.GpDestructiveDataManagement;
         }
 
         return definition.Category switch
         {
-            "surface" or "raster" => EsriConstructCapabilityRegistry.Keys.GpRasterSurface,
-            "imagery" => EsriConstructCapabilityRegistry.Keys.GpImageryInference,
+            "surface" or "raster" => GeoServicesConstructCapabilityRegistry.Keys.GpRasterSurface,
+            "imagery" => GeoServicesConstructCapabilityRegistry.Keys.GpImageryInference,
             "conversion" when definition.OutputArtifactKinds.Contains(ArtifactKind.Raster) =>
-                EsriConstructCapabilityRegistry.Keys.GpRasterConversion,
-            "data-management" => EsriConstructCapabilityRegistry.Keys.GpDataManagement,
-            _ => EsriConstructCapabilityRegistry.Keys.GpUnsupported
+                GeoServicesConstructCapabilityRegistry.Keys.GpRasterConversion,
+            "data-management" => GeoServicesConstructCapabilityRegistry.Keys.GpDataManagement,
+            _ => GeoServicesConstructCapabilityRegistry.Keys.GpUnsupported
         };
     }
 

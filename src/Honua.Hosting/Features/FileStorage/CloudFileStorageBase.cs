@@ -59,6 +59,23 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
     protected SerializedUploadProgressWriter CreateProgressWriter(string uploadId)
         => new(ProgressStore, Logger, uploadId);
 
+    // A progress-store failure must not fail an upload that succeeded, except an out-of-memory condition.
+    protected async Task TrySetUploadProgressAsync(
+        string uploadId,
+        UploadProgress progress,
+        TimeSpan? ttl,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await ProgressStore.SetProgressAsync(uploadId, progress, ttl, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            FileStorageLog.ProgressUpdateFailed(Logger, ex, uploadId);
+        }
+    }
+
     protected void ReportProgressToCaller(
         IProgress<UploadProgress>? progressReporter,
         string uploadId,
@@ -85,6 +102,10 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
         => CancelUploadInternalAsync(uploadId, cancellationToken);
 
     public abstract Task<Stream?> DownloadAsync(string fileId, CancellationToken cancellationToken = default);
+
+    public virtual Task<Stream?> DownloadIfMatchAsync(string fileId, string expectedETag, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Conditional artifact reads are not supported by this storage provider.");
+
 
     public async Task<byte[]?> DownloadBytesAsync(string fileId, CancellationToken cancellationToken = default)
     {
@@ -272,7 +293,7 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
             ErrorMessage = progressMessage,
             CurrentPhase = "Failed"
         };
-        await ProgressStore.SetProgressAsync(uploadId, failedProgress, TimeSpan.FromMinutes(10), CancellationToken.None);
+        await TrySetUploadProgressAsync(uploadId, failedProgress, TimeSpan.FromMinutes(10), CancellationToken.None);
         ReportProgressToCaller(request.Progress, uploadId, failedProgress);
         FileStorageLog.FileUploadFailed(Logger, ex, request.FileName);
         return UploadResult.CreateFailure(resultMessage, stopwatch.Elapsed);
@@ -297,7 +318,7 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
             ErrorMessage = "Upload was cancelled",
             CurrentPhase = "Cancelled"
         };
-        await ProgressStore.SetProgressAsync(uploadId, cancelledProgress, TimeSpan.FromMinutes(10), CancellationToken.None);
+        await TrySetUploadProgressAsync(uploadId, cancelledProgress, TimeSpan.FromMinutes(10), CancellationToken.None);
         ReportProgressToCaller(request.Progress, uploadId, cancelledProgress);
     }
 
@@ -391,7 +412,7 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
                     CompletedAt = DateTimeOffset.UtcNow,
                     CurrentPhase = "Cancelled"
                 };
-                await ProgressStore.SetProgressAsync(uploadId, cancelledProgress, TimeSpan.FromMinutes(10), cancellationToken);
+                await TrySetUploadProgressAsync(uploadId, cancelledProgress, TimeSpan.FromMinutes(10), cancellationToken);
             }
 
             // Enhanced cleanup: Attempt to cleanup any partially uploaded files
@@ -403,13 +424,6 @@ internal abstract class CloudFileStorageBase : ICloudFileStorage
         return false;
     }
 
-    /// <summary>
-    /// Cleanup resources associated with a cancelled upload to prevent storage leaks.
-    /// Override this method in derived classes to implement provider-specific cleanup.
-    /// </summary>
-    /// <param name="uploadId">The upload ID to clean up</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>A task representing the cleanup operation</returns>
     protected virtual async Task CleanupCancelledUploadResourcesAsync(string uploadId, CancellationToken cancellationToken)
     {
         try

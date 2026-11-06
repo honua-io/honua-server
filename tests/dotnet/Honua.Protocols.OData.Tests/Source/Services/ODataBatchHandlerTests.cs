@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using FluentAssertions;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -289,6 +290,132 @@ public sealed class ODataBatchHandlerTests
         queryCount.Value.Should().Be(0);
     }
 
+    // SEC-5: declared publication edit capabilities are an editing contract on $batch too.
+    public static TheoryData<string> BatchMutationMethods() => new() { "POST", "PATCH", "DELETE" };
+
+    [UnitTheory]
+    [MemberData(nameof(BatchMutationMethods))]
+    public async Task ProcessBatchAsync_QueryOnlyPublication_RejectsEveryMutationBeforeTheWrite(string method)
+    {
+        var (reader, writer, applyCount, _, _) = CreateTrackedStores();
+        var sut = CreateSut(reader, writer);
+
+        var response = await sut.ProcessBatchAsync(
+            CapabilityContext(reader, writer, ["Query"]),
+            new ODataBatchRequest { Requests = [MutationRequest(method)] },
+            "https://example.test",
+            CancellationToken.None);
+
+        response.Responses.Should().ContainSingle();
+        response.Responses[0].Status.Should().Be(StatusCodes.Status405MethodNotAllowed);
+        response.Responses[0].Body.Should().BeOfType<ODataError>()
+            .Which.Error.Code.Should().Be("MethodNotAllowed");
+        applyCount.Value.Should().Be(0);
+    }
+
+    [UnitTest]
+    public async Task ProcessBatchAsync_CreateOnlyPublication_RejectsDeleteAndAllowsCreate()
+    {
+        var (reader, writer, applyCount, _, _) = CreateTrackedStores();
+        var sut = CreateSut(reader, writer);
+
+        var deleted = await sut.ProcessBatchAsync(
+            CapabilityContext(reader, writer, ["Query", "Create"]),
+            new ODataBatchRequest { Requests = [MutationRequest("DELETE")] },
+            "https://example.test",
+            CancellationToken.None);
+
+        deleted.Responses.Should().ContainSingle();
+        deleted.Responses[0].Status.Should().Be(StatusCodes.Status405MethodNotAllowed);
+        applyCount.Value.Should().Be(0);
+
+        var created = await sut.ProcessBatchAsync(
+            CapabilityContext(reader, writer, ["Query", "Create"]),
+            new ODataBatchRequest { Requests = [MutationRequest("POST")] },
+            "https://example.test",
+            CancellationToken.None);
+
+        created.Responses.Should().ContainSingle();
+        created.Responses[0].Status.Should().Be(StatusCodes.Status201Created);
+        applyCount.Value.Should().Be(1);
+    }
+
+    [UnitTheory]
+    [MemberData(nameof(BatchMutationMethods))]
+    public async Task ProcessBatchAsync_UnspecifiedCapabilities_KeepsLegacyEditBehavior(string method)
+    {
+        var (reader, writer, applyCount, _, _) = CreateTrackedStores();
+        var sut = CreateSut(reader, writer);
+
+        var response = await sut.ProcessBatchAsync(
+            CapabilityContext(reader, writer, capabilities: null),
+            new ODataBatchRequest { Requests = [MutationRequest(method)] },
+            "https://example.test",
+            CancellationToken.None);
+
+        response.Responses.Should().ContainSingle();
+        response.Responses[0].Status.Should().BeOneOf(
+            StatusCodes.Status200OK,
+            StatusCodes.Status201Created,
+            StatusCodes.Status204NoContent);
+        applyCount.Value.Should().Be(1);
+    }
+
+    [UnitTest]
+    public async Task ValidateLayerWriteAccessV2Async_ODataSingleEntityWrites_EnforceDeclaredCapabilities()
+    {
+        var (reader, writer, _, _, _) = CreateTrackedStores();
+
+        foreach (var operation in new[]
+                 {
+                     AuthorizationOperation.Insert,
+                     AuthorizationOperation.Update,
+                     AuthorizationOperation.Delete
+                 })
+        {
+            var queryOnly = await ValidateODataWriteAsync(CapabilityContext(reader, writer, ["Query"]), operation);
+            queryOnly.IsValid.Should().BeFalse();
+            queryOnly.ErrorResult.Should().BeAssignableTo<IStatusCodeHttpResult>()
+                .Which.StatusCode.Should().Be(StatusCodes.Status405MethodNotAllowed);
+
+            var unspecified = await ValidateODataWriteAsync(CapabilityContext(reader, writer, null), operation);
+            unspecified.IsValid.Should().BeTrue();
+
+            var editing = await ValidateODataWriteAsync(CapabilityContext(reader, writer, ["Query", "Editing"]), operation);
+            editing.IsValid.Should().BeTrue();
+        }
+
+        var createOnlyDelete = await ValidateODataWriteAsync(
+            CapabilityContext(reader, writer, ["Query", "Create"]),
+            AuthorizationOperation.Delete);
+        createOnlyDelete.IsValid.Should().BeFalse();
+    }
+
+    private static Task<LayerValidationHelpers.MetadataV2ValidationResult> ValidateODataWriteAsync(
+        HttpContext context,
+        AuthorizationOperation operation)
+        => LayerValidationHelpers.ValidateLayerWriteAccessV2Async(
+            context,
+            1,
+            LayerValidationHelpers.ValidationProtocol.OData,
+            "OData",
+            operation,
+            CancellationToken.None);
+
+    private static ODataBatchRequestItem MutationRequest(string method)
+        => method switch
+        {
+            "POST" => CreateRequest("create-city"),
+            "PATCH" => UpdateRequest("update-city"),
+            _ => new ODataBatchRequestItem
+            {
+                Id = "delete-city",
+                Method = "DELETE",
+                Url = "Features(1,42)",
+                AtomicityGroup = "g1"
+            }
+        };
+
     private static DefaultHttpContext EditorContext(
         IFeatureReader reader,
         IFeatureWriter writer,
@@ -417,11 +544,32 @@ public sealed class ODataBatchHandlerTests
         string? subject,
         RbacOptions? rbac,
         params string[] roles)
+        => CreateContext(featureReader, featureWriter, CreateMetadataProvider(ownerPolicy), subject, rbac, roles);
+
+    private static DefaultHttpContext CapabilityContext(
+        IFeatureReader featureReader,
+        IFeatureWriter featureWriter,
+        string[]? capabilities)
+        => CreateContext(
+            featureReader,
+            featureWriter,
+            CreateMetadataProvider(capabilities: capabilities),
+            "alice",
+            EditorRoles,
+            ["editor"]);
+
+    private static DefaultHttpContext CreateContext(
+        IFeatureReader featureReader,
+        IFeatureWriter featureWriter,
+        TestMetadataV2GraphProvider metadataProvider,
+        string? subject,
+        RbacOptions? rbac,
+        string[] roles)
     {
         var services = new ServiceCollection();
         services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
         services.AddSingleton<IOptions<RbacOptions>>(Options.Create(rbac ?? new RbacOptions()));
-        services.AddSingleton<IMetadataV2GraphProvider>(CreateMetadataProvider(ownerPolicy));
+        services.AddSingleton<IMetadataV2GraphProvider>(metadataProvider);
         services.AddSingleton(new ODataFeatureProviderResolver(
             featureReader,
             featureWriter,
@@ -456,7 +604,9 @@ public sealed class ODataBatchHandlerTests
             => Task.CompletedTask;
     }
 
-    private static TestMetadataV2GraphProvider CreateMetadataProvider(MetadataV2OwnerEditPolicy? ownerPolicy = null)
+    private static TestMetadataV2GraphProvider CreateMetadataProvider(
+        MetadataV2OwnerEditPolicy? ownerPolicy = null,
+        string[]? capabilities = null)
     {
         var builder = new TestMetadataV2GraphBuilder()
             .AddResource(
@@ -480,6 +630,11 @@ public sealed class ODataBatchHandlerTests
         if (ownerPolicy is not null)
         {
             builder = builder.WithOwnerEditPolicy("res-layer-1", ownerPolicy);
+        }
+
+        if (capabilities is not null)
+        {
+            builder = builder.WithPublicationCapabilities("svc-cities-layer-1", capabilities);
         }
 
         return builder.BuildProvider();

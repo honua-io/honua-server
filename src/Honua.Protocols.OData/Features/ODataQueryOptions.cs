@@ -5,9 +5,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Protocols.OData;
 
-/// <summary>
-/// Common OData query options for list and count endpoints.
-/// </summary>
 internal sealed record ODataQueryOptions
 {
     [FromQuery(Name = "$filter")] public string? DollarFilter { get; init; }

@@ -7,25 +7,17 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Models;
 
-/// <summary>
-/// Esri JSON <c>points</c> (a list of vertices) with positional Z/M slots. A missing ordinate is NaN in
-/// memory and <c>null</c> on the wire, so a ZM vertex without a Z keeps its slot and its M is not read
-/// back as the elevation (#4027).
-/// </summary>
-internal sealed class EsriVertexListJsonConverter : JsonConverter<double[][]>
+// Z and M slots are positional: a ZM vertex without a Z keeps a NaN slot, serialized as null, so its M is not read back as the elevation.
+internal sealed class GeoServicesVertexListJsonConverter : JsonConverter<double[][]>
 {
     public override double[][]? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
-        => EsriVertexJson.ReadVertexList(ref reader, options);
+        => GeoServicesVertexJson.ReadVertexList(ref reader, options);
 
     public override void Write(Utf8JsonWriter writer, double[][] value, JsonSerializerOptions options)
-        => EsriVertexJson.WriteVertexList(writer, value);
+        => GeoServicesVertexJson.WriteVertexList(writer, value);
 }
 
-/// <summary>
-/// Esri JSON <c>paths</c> and <c>rings</c> (lists of vertex lists) with positional Z/M slots; see
-/// <see cref="EsriVertexListJsonConverter"/>.
-/// </summary>
-internal sealed class EsriVertexListsJsonConverter : JsonConverter<double[][][]>
+internal sealed class GeoServicesVertexListsJsonConverter : JsonConverter<double[][][]>
 {
     public override double[][][]? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
@@ -34,11 +26,11 @@ internal sealed class EsriVertexListsJsonConverter : JsonConverter<double[][][]>
             return null;
         }
 
-        EsriVertexJson.ExpectStartArray(ref reader);
+        GeoServicesVertexJson.ExpectStartArray(ref reader);
         var lists = new List<double[][]>();
         while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
         {
-            lists.Add(EsriVertexJson.ReadVertexList(ref reader, options)
+            lists.Add(GeoServicesVertexJson.ReadVertexList(ref reader, options)
                 ?? throw new JsonException("A path or ring cannot be null."));
         }
 
@@ -50,14 +42,14 @@ internal sealed class EsriVertexListsJsonConverter : JsonConverter<double[][][]>
         writer.WriteStartArray();
         foreach (var list in value)
         {
-            EsriVertexJson.WriteVertexList(writer, list);
+            GeoServicesVertexJson.WriteVertexList(writer, list);
         }
 
         writer.WriteEndArray();
     }
 }
 
-internal static class EsriVertexJson
+internal static class GeoServicesVertexJson
 {
     public static void ExpectStartArray(ref Utf8JsonReader reader)
     {

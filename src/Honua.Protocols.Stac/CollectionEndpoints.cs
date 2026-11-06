@@ -15,9 +15,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Protocols.Stac;
 
-/// <summary>
-/// STAC collection listing and detail endpoints.
-/// </summary>
 internal static class CollectionEndpoints
 {
     // stac-api-validator (Filter Extension) only accepts JSON Schema draft 2019-09 or
@@ -26,9 +23,6 @@ internal static class CollectionEndpoints
     // documents pin draft 2019-09 explicitly to satisfy the validator.
     private const string QueryablesJsonSchemaDraft = "https://json-schema.org/draft/2019-09/schema";
 
-    /// <summary>
-    /// Maps STAC collection endpoints.
-    /// </summary>
     public static IEndpointRouteBuilder MapStacCollectionEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/stac/collections", HandleGetCollections)
@@ -299,10 +293,6 @@ internal static class CollectionEndpoints
         }
     }
 
-    /// <summary>
-    /// Builds a catalog-level queryables document listing the STAC common metadata properties
-    /// that are filterable across all collections.
-    /// </summary>
     private static QueryablesSchema BuildCatalogQueryablesSchema(string schemaId)
     {
         var properties = ImmutableDictionary.CreateBuilder<string, JsonSchemaProperty>();
@@ -346,9 +336,6 @@ internal static class CollectionEndpoints
         };
     }
 
-    /// <summary>
-    /// Builds a per-collection queryables document derived from the V2 resource schema fields.
-    /// </summary>
     private static QueryablesSchema BuildCollectionQueryablesSchema(
         MetadataV2Resource resource,
         string schemaId)
@@ -432,9 +419,6 @@ internal static class CollectionEndpoints
         };
     }
 
-    /// <summary>
-    /// Converts a V2 schema field to a JSON Schema property definition.
-    /// </summary>
     private static JsonSchemaProperty ConvertFieldToJsonSchemaProperty(MetadataV2Field field)
     {
         var (type, format) = field.Type switch

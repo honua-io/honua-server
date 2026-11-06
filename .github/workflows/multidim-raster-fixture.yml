@@ -3,8 +3,7 @@ name: Real Multidimensional Raster Fixture
 # Hardening pillar 2 for the portable raster chain: continuously prove that the
 # canonical fixture is backed by real NetCDF bytes, scanned by the native GDAL
 # worker, materialized as Zarr in LocalStack/S3, and readable as a selected
-# ImageServer slice. Desktop evidence is identifier desktop-arcgis in
-# honua-esri-compat. This workflow owns the portable production-path prerequisite.
+# ImageServer slice. This workflow owns the portable production-path prerequisite.
 
 on:
   schedule:
@@ -26,7 +25,7 @@ jobs:
     timeout-minutes: 90
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Run composed fixture
         shell: bash

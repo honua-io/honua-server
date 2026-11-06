@@ -18,7 +18,7 @@ Discover, search, and query Honua through MCP and the agent read surface without
 | Edition | Community |
 | Surface maturity | 4 implemented |
 | Registry entries | 4 |
-| Proving tests | 136 |
+| Proving tests | 141 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 
@@ -26,5 +26,6 @@ The facts above come from the server's capability registry and capability matrix
 
 - [What an agent can do in each edition](../../guides/connect/agent-capabilities-and-editions.md)
 - [Connect AI agents to Honua over MCP](../../guides/connect/ai-agents-mcp.md)
+- [Work with AI coding agents](../../guides/connect/working-with-ai-agents.md)
 - [Drive Studio from Claude Desktop](../../studio/drive-from-claude-desktop.md)
 - [Studio MCP tools](../../studio/mcp-tools.md)

@@ -8,32 +8,14 @@ using Honua.Core.Features.Grounding.Domain;
 
 namespace Honua.Ai.Protocols.Mcp.Grounding;
 
-/// <summary>
-/// JSON-schema documents advertised in <c>tools/list</c> for the grounding
-/// tools. Schemas are assembled at type-load time from the canonical workflow
-/// family and assumption-policy enums so the published contract cannot drift
-/// from server-side parsing.
-/// </summary>
 internal static class GroundingToolSchemas
 {
-    /// <summary>
-    /// Canonical workflow-family names advertised to MCP clients.
-    /// </summary>
     public static readonly IReadOnlyList<string> WorkflowFamilyNames = Enum.GetNames<WorkflowFamily>();
 
-    /// <summary>
-    /// Canonical assumption-policy names advertised to MCP clients.
-    /// </summary>
     public static readonly IReadOnlyList<string> AssumptionPolicyNames = Enum.GetNames<AssumptionPolicy>();
 
-    /// <summary>
-    /// Schema for <see cref="McpGroundCandidatesArgument"/>.
-    /// </summary>
     public static readonly JsonElement GroundCandidatesArgumentSchema = Parse(BuildSchema(includeClarificationResponse: false));
 
-    /// <summary>
-    /// Schema for <see cref="McpClarifyIntentArgument"/>.
-    /// </summary>
     public static readonly JsonElement ClarifyIntentArgumentSchema = Parse(BuildSchema(includeClarificationResponse: true));
 
     private static string BuildSchema(bool includeClarificationResponse)

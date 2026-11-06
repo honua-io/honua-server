@@ -9,55 +9,18 @@ using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.Protocols.Mcp;
 
-/// <summary>
-/// Opaque-cursor pagination helpers for the MCP operator surface (#1953). MCP
-/// 2025-03-26 paginates list operations (<c>tools/list</c>, <c>resources/list</c>,
-/// <c>resources/templates/list</c>, <c>prompts/list</c>) with an opaque
-/// <c>cursor</c> request field and a <c>nextCursor</c> response field; this helper
-/// produces and validates those cursors over a deterministically ordered list.
-/// It also implements a Honua extension that chunks a large
-/// <c>resources/read</c> payload into windowed pages so job-results and catalog
-/// documents do not have to be returned in a single response.
-/// </summary>
-/// <remarks>
-/// Cursors are opaque base64url tokens that callers MUST treat as black boxes and
-/// echo verbatim — their internal shape (a stable offset into the ordered list,
-/// or a content-index/character-offset pair for reads) is an implementation
-/// detail and may change. An unparseable or out-of-range cursor surfaces as a
-/// <see cref="GeoprocessingValidationException"/> so the dispatcher maps it to the
-/// JSON-RPC <c>-32602</c> invalid-params error MCP requires for an invalid cursor.
-/// </remarks>
 internal static class McpPagination
 {
-    /// <summary>
-    /// Default maximum number of list entries returned per page when the host
-    /// does not override <see cref="McpSurfaceLimits.ListPageSize"/>.
-    /// </summary>
     public const int DefaultListPageSize = 12;
 
-    /// <summary>
-    /// Default maximum number of characters returned per <c>resources/read</c>
-    /// page. Sized large enough that ordinary resource documents are returned in
-    /// a single response (no <c>nextCursor</c>) and only genuinely large
-    /// job-results/catalog payloads are chunked.
-    /// </summary>
+    // A read without a cursor returns the whole resource because MCP resources/read defines no cursor.
     public const int DefaultMaxResourceReadChars = 64_000;
 
-    /// <summary>Largest explicit per-request resource-read opt-up.</summary>
     public const int MaxResourceReadChars = 1_000_000;
 
     private const string ListCursorPrefix = "l1:";
     private const string ReadCursorPrefix = "r1:";
 
-    /// <summary>
-    /// Returns the page of <paramref name="ordered"/> identified by
-    /// <paramref name="cursor"/>, emitting <paramref name="nextCursor"/> when more
-    /// entries remain. <paramref name="ordered"/> must already be in a stable
-    /// order so the offset a cursor encodes is meaningful across calls.
-    /// </summary>
-    /// <exception cref="GeoprocessingValidationException">
-    /// The cursor is malformed or points past the end of the list.
-    /// </exception>
     public static IReadOnlyList<T> Page<T>(
         IReadOnlyList<T> ordered,
         string? cursor,
@@ -93,20 +56,6 @@ internal static class McpPagination
         return page;
     }
 
-    /// <summary>
-    /// Chunks the <paramref name="contents"/> of a <c>resources/read</c> result so
-    /// no single page exceeds <paramref name="maxChars"/> characters, preserving
-    /// each content block's <c>uri</c> and <c>mimeType</c>. When the whole
-    /// document fits in one page and no cursor was supplied the original
-    /// <paramref name="contents"/> are returned unchanged (no chunking, no
-    /// <paramref name="nextCursor"/>) so small resources are byte-for-byte
-    /// identical to the un-paginated behavior. Each emitted page's <c>text</c> is a
-    /// fragment that a client concatenates per <c>uri</c> to reconstruct the full
-    /// document.
-    /// </summary>
-    /// <exception cref="GeoprocessingValidationException">
-    /// The cursor is malformed or points past the end of the contents.
-    /// </exception>
     public static IReadOnlyList<McpResourceContent> Chunk(
         IReadOnlyList<McpResourceContent> contents,
         string? cursor,
@@ -275,19 +224,8 @@ internal static class McpPagination
     }
 }
 
-/// <summary>
-/// Host-tunable limits for the MCP operator surface: the list-pagination page
-/// size and the per-page character budget for chunked <c>resources/read</c>
-/// responses. Injected into <see cref="McpDataAccessSurface"/>; defaults to
-/// <see cref="Default"/> when the host does not register an override.
-/// </summary>
 internal sealed record McpSurfaceLimits(int ListPageSize, int MaxResourceReadChars)
 {
-    /// <summary>
-    /// The default limits: <see cref="McpPagination.DefaultListPageSize"/> list
-    /// entries per page and <see cref="McpPagination.DefaultMaxResourceReadChars"/>
-    /// characters per <c>resources/read</c> page.
-    /// </summary>
     public static McpSurfaceLimits Default { get; } =
         new(McpPagination.DefaultListPageSize, McpPagination.DefaultMaxResourceReadChars);
 }

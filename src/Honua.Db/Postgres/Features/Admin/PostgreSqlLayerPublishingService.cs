@@ -19,6 +19,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Microsoft.Extensions.Logging;
+using Honua.Db.Postgres.Features.FileImport;
 using Npgsql;
 
 using Honua.Db.Postgres.Features.Infrastructure;
@@ -37,7 +38,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
     LayerPublishingOptions? publishingOptions = null,
     Honua.Core.Features.MultiTenancy.Abstractions.ITenantContext? tenantContext = null,
     PostgresSchemaConfiguration? schemaConfiguration = null,
-    Honua.Core.Features.Infrastructure.Abstractions.ISchemaContext? schemaContext = null) : ILayerPublishingService
+    Honua.Core.Features.Infrastructure.Abstractions.ISchemaContext? schemaContext = null,
+    Microsoft.Extensions.Options.IOptions<PostgresSessionLockConnections>? sessionLockConnections = null) : ILayerPublishingService
 {
     private const string DefaultServiceName = "default";
     private const int CatalogExtentSrid = 4326;
@@ -125,19 +127,50 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         await ValidateTenantAccessAsync(normalizedService, null, null, cancellationToken).ConfigureAwait(false);
 
         await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync(cancellationToken);
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         var layers = await ReadPublishedLayersAsync(
                 connection,
                 transaction: null,
                 normalizedService,
                 cancellationToken)
             .ConfigureAwait(false);
-
-        var storageScope = await ResolveLayerStorageScopeAsync(connection, null,
-            layers.Select(layer => layer.LayerId).ToHashSet(), connectionId, cancellationToken).ConfigureAwait(false);
-        await ValidateTenantAccessAsync(normalizedService, layers.Select(layer => layer.LayerId).ToHashSet(), storageScope, cancellationToken).ConfigureAwait(false);
-        return await HydrateSourceGovernanceAsync(layers, normalizedService, storageScope, cancellationToken).ConfigureAwait(false);
+        return await ApplyListedLayerScopeAsync(
+            new ListedLayerScope(connection, normalizedService, layers, connectionId),
+            cancellationToken).ConfigureAwait(false);
     }
+
+    private readonly record struct ListedLayerScope(
+        NpgsqlConnection Connection,
+        string NormalizedService,
+        List<PublishedLayerSummary> Layers,
+        Guid? ConnectionId);
+
+    private async Task<IReadOnlyList<PublishedLayerSummary>> ApplyListedLayerScopeAsync(
+        ListedLayerScope scope,
+        CancellationToken cancellationToken)
+    {
+        var layerIds = scope.Layers.Select(layer => layer.LayerId).ToHashSet();
+        var storageScope = await ResolveLayerStorageScopeAsync(
+            scope.Connection, null, layerIds, scope.ConnectionId, cancellationToken).ConfigureAwait(false);
+        await ValidateTenantAccessAsync(
+            scope.NormalizedService, layerIds, storageScope, cancellationToken).ConfigureAwait(false);
+        return await HydrateSourceGovernanceAsync(
+            scope.Layers, scope.NormalizedService, storageScope, cancellationToken).ConfigureAwait(false);
+    }
+
+    private const string PublishedLayerColumns = """
+        l.layer_id,
+        l.layer_name,
+        l.description,
+        l.table_schema,
+        l.table_name,
+        l.primary_key_column,
+        l.geometry_type,
+        l.srid,
+        l.enabled
+        """;
+
+    private const string PublishedLayerSelect = PublishedLayerColumns + ",\n        COUNT(f.field_name)::int AS field_count";
 
     private static async Task<List<PublishedLayerSummary>> ReadPublishedLayersAsync(
         NpgsqlConnection connection,
@@ -146,18 +179,9 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         CancellationToken cancellationToken)
     {
         var layers = new List<PublishedLayerSummary>();
-        const string sql = """
+        const string sql = $"""
             SELECT
-                l.layer_id,
-                l.layer_name,
-                l.description,
-                l.table_schema,
-                l.table_name,
-                l.primary_key_column,
-                l.geometry_type,
-                l.srid,
-                l.enabled,
-                COUNT(f.field_name)::int AS field_count
+                {PublishedLayerSelect}
             FROM honua.layers l
             INNER JOIN honua.service_layers sl
                 ON sl.layer_id = l.layer_id
@@ -165,15 +189,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 ON f.layer_id = l.layer_id
             WHERE sl.service_name = @serviceName
             GROUP BY
-                l.layer_id,
-                l.layer_name,
-                l.description,
-                l.table_schema,
-                l.table_name,
-                l.primary_key_column,
-                l.geometry_type,
-                l.srid,
-                l.enabled
+                {PublishedLayerColumns}
             ORDER BY l.layer_id;
             """;
 
@@ -183,24 +199,27 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            layers.Add(new PublishedLayerSummary
-            {
-                LayerId = reader.GetInt32(0),
-                LayerName = reader.GetString(1),
-                Description = reader.IsDBNull(2) ? null : reader.GetString(2),
-                Schema = reader.GetString(3),
-                Table = reader.GetString(4),
-                PrimaryKey = reader.IsDBNull(5) ? null : reader.GetString(5),
-                GeometryType = reader.GetString(6),
-                Srid = reader.GetInt32(7),
-                Enabled = reader.GetBoolean(8),
-                FieldCount = reader.GetInt32(9),
-                ServiceName = normalizedService
-            });
+            layers.Add(ReadPublishedLayer(reader, normalizedService));
         }
 
         return layers;
     }
+
+    private static PublishedLayerSummary ReadPublishedLayer(NpgsqlDataReader reader, string serviceName)
+        => new()
+        {
+            LayerId = reader.GetInt32(0),
+            LayerName = reader.GetString(1),
+            Description = reader.IsDBNull(2) ? null : reader.GetString(2),
+            Schema = reader.GetString(3),
+            Table = reader.GetString(4),
+            PrimaryKey = reader.IsDBNull(5) ? null : reader.GetString(5),
+            GeometryType = reader.GetString(6),
+            Srid = reader.GetInt32(7),
+            Enabled = reader.GetBoolean(8),
+            FieldCount = reader.GetInt32(9),
+            ServiceName = serviceName,
+        };
 
     public async Task<PublishedLayerSummary> PublishLayerAsync(
         string connectionString,
@@ -241,6 +260,12 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 "Schema or table contains invalid characters.");
         }
 
+        if (!CommittedSinkSchemaGate.Allows(_schemaConfiguration, _schemaContext?.CurrentSchema, schema))
+        {
+            throw new LayerPublishingException(LayerPublishingErrorKind.NotFound,
+                $"Table '{schema}.{table}' was not found.");
+        }
+
         var serviceName = NormalizeServiceName(request.ServiceName);
         var publicationScope = ResolvePublicationScope(request.Namespace, _tenantContext?.TenantId);
         var (scopeGraph, _) = await LoadCurrentOrEmptyGraphAsync(cancellationToken).ConfigureAwait(false);
@@ -249,7 +274,26 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         var publicationCapabilities = ResolvePublicationCapabilities(
             request.Capabilities ?? (request.CreateEditableCopy ? _editableCapabilities : null), isManagedStore);
 
-        var validation = await ValidateTableForPublishAsync(
+        var managedCopyTarget = request.CreateEditableCopy
+            ? await ReadManagedCopyTargetAsync(cancellationToken).ConfigureAwait(false)
+            : null;
+        var managedStoreIdentity = isManagedStore
+            ? await CaptureManagedStoreIdentityAsync(cancellationToken).ConfigureAwait(false)
+            : null;
+        // This connection holds the importer session lock below. On Lambda it is unpooled, so
+        // closing it ends the RDS Proxy-pinned session (honua-server#6765).
+        await using var connection = new NpgsqlConnection(
+            (sessionLockConnections?.Value ?? PostgresSessionLockConnections.Pooled).Resolve(connectionString));
+        await connection.OpenAsync(cancellationToken);
+        // Keep the connection string's search_path. The request schema is not this
+        // database's search path: overwriting it makes to_regclass('features') resolve
+        // the server's store, so a foreign connection looks local and a source snapshot
+        // lands in the wrong features table.
+        // Wait for any importer before discovery or the repeatable-read snapshot exists.
+        await using var importSourceLock = await ImportedDatasetSpatialMetadata.AcquireSessionLockAsync(
+            connection, schema, table, cancellationToken);
+
+        var validation = await ValidateTableForPublishCoreAsync(
                 connectionString,
                 new TablePublishValidationRequest
                 {
@@ -266,11 +310,12 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                     ConnectionEndpointFingerprint = request.ConnectionEndpointFingerprint,
                     CommittedSinkPublication = request.CommittedSinkPublication
                 },
-                cancellationToken)
+                cancellationToken,
+                connection)
             .ConfigureAwait(false);
         ThrowIfPublishValidationFailed(validation, request.CreateEditableCopy);
 
-        var tableInfo = await ResolveTableInfoForValidationAsync(connectionString, schema, table, cancellationToken)
+        var tableInfo = await ResolveTableInfoForValidationAsync(connection, schema, table, cancellationToken)
             ?? throw new LayerPublishingException(
                 LayerPublishingErrorKind.NotFound,
                 $"Table '{schema}.{table}' was not found.");
@@ -300,7 +345,18 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
         var geometryType = string.IsNullOrWhiteSpace(geometryColumn) ? "None" : NormalizeGeometryType(geometryTypeRaw!);
 
-        var serviceSrid = await ResolveExistingServiceSridAsync(connectionString, serviceName, cancellationToken)
+        // A legacy client may request the single-part spelling for a source that
+        // is physically constrained to its multi family. Publish the stored type.
+        var sourceType = tableInfo.GeometryType?.ToUpperInvariant();
+        geometryType = (geometryType, sourceType) switch
+        {
+            ("Point", "MULTIPOINT") => "MultiPoint",
+            ("LineString", "MULTILINESTRING") => "MultiLineString",
+            ("Polygon", "MULTIPOLYGON") => "MultiPolygon",
+            _ => geometryType
+        };
+
+        var serviceSrid = await ResolveExistingServiceSridAsync(connection, serviceName, cancellationToken)
             .ConfigureAwait(false);
         var srid = serviceSrid ?? request.Srid ?? tableInfo.Srid ?? 4326;
         if (srid <= 0)
@@ -368,7 +424,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             : selectedColumns;
 
         var managedSchema = request.CreateEditableCopy
-            ? await ValidateManagedCopyTargetAsync(connectionString, fields, cancellationToken).ConfigureAwait(false)
+            ? await ValidateManagedCopyTargetAsync(connection, fields, managedCopyTarget!, cancellationToken).ConfigureAwait(false)
             : null;
         if (request.CreateEditableCopy)
         {
@@ -378,11 +434,21 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 "Original source object ID for migration identity mapping; null for newly created features."));
         }
 
-        await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync(cancellationToken);
         // Every physical-cursor page must observe the same source snapshot.
         await using var transaction = await connection.BeginTransactionAsync(
             System.Data.IsolationLevel.RepeatableRead, cancellationToken);
+        await ImportedDatasetSpatialMetadata.LockRelationAsync(connection, transaction, schema, table, cancellationToken);
+        var protectedTable = await ResolveTableInfoForValidationAsync(connection, schema, table, cancellationToken, transaction);
+        if (protectedTable is null || protectedTable.GeometryColumn != tableInfo.GeometryColumn ||
+            protectedTable.GeometryType != tableInfo.GeometryType || protectedTable.Srid != tableInfo.Srid ||
+            protectedTable.Columns.Count != columns.Count ||
+            !protectedTable.Columns.Zip(columns).All(pair => pair.First.Name == pair.Second.Name &&
+                pair.First.DataType == pair.Second.DataType && pair.First.IsNullable == pair.Second.IsNullable &&
+                pair.First.IsPrimaryKey == pair.Second.IsPrimaryKey && pair.First.MaxLength == pair.Second.MaxLength))
+        {
+            throw new LayerPublishingException(LayerPublishingErrorKind.Validation,
+                "Source schema changed while preparing publication; retry against the current source.");
+        }
         var transactionId = await PostgresTransactionOutcomeObserver
             .CaptureTransactionIdAsync(connection, transaction, cancellationToken)
             .ConfigureAwait(false);
@@ -414,9 +480,13 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 selectedColumns.Where(column => column.DataType.Equals("smallint", StringComparison.OrdinalIgnoreCase))
                     .Select(column => column.Name).ToArray());
 
+        var storageCoordinateEpoch = await ResolveImportedStorageEpochAsync(
+            connection, transaction, request, schema, table, geometryColumn, storageSrid,
+            storage.StorageSrid, cancellationToken);
+
         if (storage.IsManagedStore)
         {
-            await VerifyManagedStoreConnectionAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
+            await VerifyManagedStoreConnectionAsync(connection, transaction, cancellationToken, managedStoreIdentity).ConfigureAwait(false);
         }
 
         await EnsureLayerSequenceAsync(connection, transaction, cancellationToken);
@@ -492,6 +562,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                     request.CreateEditableCopy ? geometryColumn : storage.GeometryColumn,
                     geometryType,
                     srid,
+                    storageCoordinateEpoch,
                     fields,
                     refreshedExtent?.Extent,
                     publicationCapabilities,
@@ -693,6 +764,13 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             connectionString, request.ConnectionEndpointFingerprint,
             request.CommittedSinkPublication, request.Schema, request.Table);
 
+        return await ValidateTableForPublishCoreAsync(connectionString, request, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<TablePublishValidationResult> ValidateTableForPublishCoreAsync(
+        string connectionString, TablePublishValidationRequest request, CancellationToken cancellationToken,
+        NpgsqlConnection? existingConnection = null, NpgsqlTransaction? transaction = null)
+    {
         var schema = request.Schema?.Trim() ?? string.Empty;
         var table = request.Table?.Trim() ?? string.Empty;
         var serviceName = NormalizeServiceName(request.ServiceName);
@@ -712,7 +790,19 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
         checks.Add(Pass("source-table", $"Source table identifier '{schema}.{table}' is syntactically valid."));
 
-        var tableInfo = await ResolveTableInfoForValidationAsync(connectionString, schema, table, cancellationToken)
+        if (!CommittedSinkSchemaGate.Allows(_schemaConfiguration, _schemaContext?.CurrentSchema, schema))
+        {
+            checks.Add(Error("source-table", $"Table '{schema}.{table}' was not found.", $"{schema}.{table}", null));
+            return BuildValidationResult(request, serviceName, null, null, null, checks);
+        }
+
+        await using var ownedConnection = existingConnection is null ? new NpgsqlConnection(connectionString) : null;
+        var connection = existingConnection ?? ownedConnection!;
+        if (ownedConnection is not null)
+        {
+            await connection.OpenAsync(cancellationToken);
+        }
+        var tableInfo = await ResolveTableInfoForValidationAsync(connection, schema, table, cancellationToken, transaction)
             .ConfigureAwait(false);
         if (tableInfo == null)
         {
@@ -744,7 +834,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             request.PrimaryKey,
             request.ManagedStore,
             checks);
-        var serviceSrid = await ResolveExistingServiceSridAsync(connectionString, serviceName, cancellationToken)
+        var serviceSrid = await ResolveExistingServiceSridAsync(connection, serviceName, cancellationToken, transaction)
             .ConfigureAwait(false);
         var targetSrid = string.IsNullOrWhiteSpace(geometryColumn)
             ? null
@@ -756,20 +846,19 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             geometryColumn!.Equals(tableInfo.GeometryColumn, StringComparison.OrdinalIgnoreCase))
         {
             geometryHealth = await InspectGeometryHealthAsync(
-                    connectionString,
+                    connection,
                     schema,
                     table,
                     geometryColumn!,
-                    cancellationToken)
+                    cancellationToken,
+                    transaction)
                 .ConfigureAwait(false);
             AddGeometryHealthChecks(geometryHealth, checks, request.AllowEmptyTable);
         }
         else if (string.IsNullOrWhiteSpace(geometryColumn))
         {
-            await using var countConnection = new NpgsqlConnection(connectionString);
-            await countConnection.OpenAsync(cancellationToken).ConfigureAwait(false);
             await using var countCommand = new NpgsqlCommand(
-                $"SELECT COUNT(*) FROM {QuoteIdentifier(schema)}.{QuoteIdentifier(table)}", countConnection);
+                $"SELECT COUNT(*) FROM {QuoteIdentifier(schema)}.{QuoteIdentifier(table)}", connection, transaction);
             nonSpatialRowCount = (long)(await countCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
             checks.Add(nonSpatialRowCount == 0 && !request.AllowEmptyTable
                 ? Error("feature-count", "Source table is empty.")
@@ -780,7 +869,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         // layer over the same table is not a conflict (honua-server#4859).
         if (!request.ManagedStore)
         {
-            await AddExistingLayerCheckAsync(connectionString, schema, table, checks, cancellationToken)
+            await AddExistingLayerCheckAsync(connection, schema, table, checks, cancellationToken, transaction)
                 .ConfigureAwait(false);
         }
 

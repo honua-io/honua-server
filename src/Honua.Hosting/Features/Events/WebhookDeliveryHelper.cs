@@ -5,47 +5,33 @@ using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Net.Http.Headers;
-using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using Honua.Core.Features.Infrastructure.Abstractions;
-using Honua.Core.Features.Infrastructure.Internal;
+using Honua.Core.Features.Infrastructure.Validation;
 
 namespace Honua.Infrastructure.Events;
 
-/// <summary>
-/// Shared webhook delivery logic: HMAC signature, signed HTTP POST, and retry with exponential backoff.
-/// Used by both the feature-change and manifest-approval webhook dispatchers.
-/// </summary>
 internal static partial class WebhookDeliveryHelper
 {
+    // A slow webhook consumer must not absorb every outbound socket; 64 covers burst delivery.
+    private const int MaxConnectionsPerWebhookHost = 64;
+
+    private static readonly PinnedDnsFailureMessages PinnedConnectionFailures = new(
+        FeatureChangeWebhookUrlValidation.DisallowedAddressMessage,
+        "Unable to establish a secure connection to the webhook host.");
+
     internal static HttpMessageHandler CreatePinnedDnsHttpMessageHandler(
         Func<string, CancellationToken, Task<IPAddress[]>>? hostAddressResolver = null)
     {
         var resolver = hostAddressResolver ?? ((host, ct) => Dns.GetHostAddressesAsync(host, ct));
 
-        return new SocketsHttpHandler
-        {
-            AllowAutoRedirect = false,
-            // Cap outbound concurrency per destination to prevent a slow webhook consumer
-            // from absorbing the entire thread pool's worth of sockets. The default is
-            // unbounded; 64 is enough for hot burst workloads without starving the host.
-            MaxConnectionsPerServer = 64,
-            ConnectCallback = (context, cancellationToken) =>
-                ConnectWithPinnedDnsAsync(context, resolver, cancellationToken)
-        };
+        return new PinnedDnsConnector(resolver, PinnedConnectionFailures).CreateHandler(MaxConnectionsPerWebhookHost);
     }
 
-    /// <summary>
-    /// Computes an HMAC-SHA256 signature for webhook payloads using the <c>timestamp.payload</c> message format.
-    /// Delegates to <see cref="WebhookSignatureHelper"/> to avoid duplication.
-    /// </summary>
     internal static string ComputeSignature(string secret, string timestamp, string payload)
         => WebhookSignatureHelper.ComputeSignature(secret, timestamp, payload);
 
-    /// <summary>
-    /// Delivers a signed JSON payload to a webhook endpoint with retry and exponential backoff.
-    /// </summary>
     internal static async Task<bool> DeliverWithRetryAsync(
         WebhookDeliveryRequest request,
         IHttpClientFactory httpClientFactory,
@@ -181,136 +167,6 @@ internal static partial class WebhookDeliveryHelper
         }
     }
 
-    private static async ValueTask<Stream> ConnectWithPinnedDnsAsync(
-        SocketsHttpConnectionContext context,
-        Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
-        CancellationToken cancellationToken)
-    {
-        var addresses = await ResolveAllowedAddressesAsync(
-                context.DnsEndPoint.Host,
-                hostAddressResolver,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        Exception? lastException = null;
-        foreach (var address in addresses)
-        {
-            using var socketOwner = new SocketConnectionOwner(
-                new Socket(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp));
-
-            try
-            {
-                await socketOwner.Socket
-                    .ConnectAsync(address, context.DnsEndPoint.Port, cancellationToken)
-                    .ConfigureAwait(false);
-                return socketOwner.TransferToNetworkStream();
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex) when (ex is SocketException or ObjectDisposedException)
-            {
-                lastException = ex;
-            }
-        }
-
-        throw new HttpRequestException("Unable to establish a secure connection to the webhook host.", lastException);
-    }
-
-    private static async Task<IPAddress[]> ResolveAllowedAddressesAsync(
-        string host,
-        Func<string, CancellationToken, Task<IPAddress[]>> hostAddressResolver,
-        CancellationToken cancellationToken)
-    {
-        if (IPAddress.TryParse(host, out var literalAddress))
-        {
-            if (IsPrivateOrReservedAddress(literalAddress))
-            {
-                throw new HttpRequestException(FeatureChangeWebhookUrlValidation.DisallowedAddressMessage);
-            }
-
-            return [literalAddress];
-        }
-
-        IPAddress[] addresses;
-        try
-        {
-            addresses = await hostAddressResolver(host, cancellationToken).ConfigureAwait(false);
-        }
-        catch (SocketException)
-        {
-            throw new HttpRequestException(FeatureChangeWebhookUrlValidation.DisallowedAddressMessage);
-        }
-        catch (ArgumentException)
-        {
-            throw new HttpRequestException(FeatureChangeWebhookUrlValidation.DisallowedAddressMessage);
-        }
-
-        if (addresses.Length == 0)
-        {
-            throw new HttpRequestException(FeatureChangeWebhookUrlValidation.DisallowedAddressMessage);
-        }
-
-        if (addresses.Any(IsPrivateOrReservedAddress))
-        {
-            throw new HttpRequestException(FeatureChangeWebhookUrlValidation.DisallowedAddressMessage);
-        }
-
-        return addresses;
-    }
-
-    private static bool IsPrivateOrReservedAddress(IPAddress address)
-    {
-        if (IPAddress.IsLoopback(address))
-        {
-            return true;
-        }
-
-        if (address.IsIPv4MappedToIPv6)
-        {
-            address = address.MapToIPv4();
-        }
-
-        if (address.AddressFamily == AddressFamily.InterNetwork)
-        {
-            var bytes = address.GetAddressBytes();
-
-            if (bytes[0] == 0 ||
-                bytes[0] == 10 ||
-                (bytes[0] == 100 && bytes[1] >= 64 && bytes[1] <= 127) ||
-                bytes[0] == 127 ||
-                (bytes[0] == 169 && bytes[1] == 254) ||
-                (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31) ||
-                (bytes[0] == 192 && bytes[1] == 0 && bytes[2] == 0) ||
-                (bytes[0] == 192 && bytes[1] == 0 && bytes[2] == 2) ||
-                (bytes[0] == 192 && bytes[1] == 168) ||
-                (bytes[0] == 198 && (bytes[1] == 18 || bytes[1] == 19)) ||
-                (bytes[0] == 198 && bytes[1] == 51 && bytes[2] == 100) ||
-                (bytes[0] == 203 && bytes[1] == 0 && bytes[2] == 113) ||
-                bytes[0] >= 224)
-            {
-                return true;
-            }
-        }
-        else if (address.AddressFamily == AddressFamily.InterNetworkV6)
-        {
-            var bytes = address.GetAddressBytes();
-
-            if (address.Equals(IPAddress.IPv6None) ||
-                address.Equals(IPAddress.IPv6Loopback) ||
-                (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0x80) ||
-                (bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0xc0) ||
-                (bytes[0] & 0xfe) == 0xfc ||
-                (bytes[0] == 0x20 && bytes[1] == 0x01 && bytes[2] == 0x0d && bytes[3] == 0xb8))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
     [LoggerMessage(EventId = 9001, Level = LogLevel.Debug, Message = "Webhook delivery succeeded for event {EventId} with status {StatusCode}.")]
     private static partial void LogDeliverySucceeded(ILogger logger, string eventId, System.Net.HttpStatusCode statusCode);
 
@@ -321,58 +177,25 @@ internal static partial class WebhookDeliveryHelper
     private static partial void LogDeliveryException(ILogger logger, string eventId, int attempt, Exception exception);
 }
 
-/// <summary>
-/// Parameters for a webhook delivery attempt.
-/// </summary>
 internal readonly record struct WebhookDeliveryRequest
 {
-    /// <summary>
-    /// Pre-serialized JSON payload.
-    /// </summary>
     public required string Payload { get; init; }
 
-    /// <summary>
-    /// Event identifier used for headers and idempotency.
-    /// </summary>
     public required string EventId { get; init; }
 
-    /// <summary>
-    /// Event timestamp used for signature generation.
-    /// </summary>
     public required DateTimeOffset Timestamp { get; init; }
 
-    /// <summary>
-    /// Target webhook URI.
-    /// </summary>
     public required Uri WebhookUri { get; init; }
 
-    /// <summary>
-    /// HMAC shared secret.
-    /// </summary>
     public required string Secret { get; init; }
 
-    /// <summary>
-    /// Named HTTP client to use for delivery.
-    /// </summary>
     public required string HttpClientName { get; init; }
 
-    /// <summary>
-    /// Maximum delivery attempts.
-    /// </summary>
     public required int MaxAttempts { get; init; }
 
-    /// <summary>
-    /// Base retry delay in milliseconds.
-    /// </summary>
     public required int InitialBackoffMs { get; init; }
 
-    /// <summary>
-    /// Maximum retry delay in milliseconds.
-    /// </summary>
     public required int MaxBackoffMs { get; init; }
 
-    /// <summary>
-    /// Per-request timeout in seconds.
-    /// </summary>
     public required int RequestTimeoutSeconds { get; init; }
 }

@@ -7,20 +7,17 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Infrastructure.Helpers;
 using Honua.Protocols.GeoServices.GPServer.Models;
 using Honua.ServiceDefaults;
-using static Honua.Protocols.GeoServices.Soap.ArcGisSoapProtocol;
+using static Honua.Protocols.GeoServices.Soap.GeoServicesSoapProtocol;
 
 namespace Honua.Protocols.GeoServices.GPServer;
 
-/// <summary>
-/// ArcGIS SOAP adapter over the same authorized process catalog as
-/// GPServer REST. Execution must use the canonical job runtime.
-/// </summary>
+// SOAP execution uses the same authorized catalog and canonical job runtime as GPServer REST, so this adapter does not become a second process engine.
 internal static class GPServerSoapEndpoints
 {
     internal static void MapGPServerSoapEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapPost("/services/{serviceId}/GPServer", HandleRequestAsync)
-            .WithName("ArcGisSoapGPServer")
+            .WithName("GeoServicesSoapGPServer")
             .WithDisplayName("ArcGIS SOAP GPServer")
             .WithSummary("Discover and execute GPServer tasks through ArcGIS SOAP")
             .WithTags("GPServer")

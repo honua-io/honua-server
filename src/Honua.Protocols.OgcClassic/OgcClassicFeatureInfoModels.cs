@@ -5,9 +5,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Protocols.Ogc.Classic;
 
-/// <summary>
-/// WMS/WMTS GetFeatureInfo JSON response in the GeoJSON shape used by native clients.
-/// </summary>
 internal sealed class OgcClassicFeatureInfoResponse
 {
     [JsonPropertyName("type")]
@@ -17,9 +14,6 @@ internal sealed class OgcClassicFeatureInfoResponse
     public required OgcClassicFeatureInfoFeature[] Features { get; init; }
 }
 
-/// <summary>
-/// Single WMS/WMTS GetFeatureInfo JSON result.
-/// </summary>
 internal sealed class OgcClassicFeatureInfoFeature
 {
     [JsonPropertyName("type")]

@@ -15,12 +15,6 @@ namespace Honua.Protocols.GeoServices.FeatureServer;
 
 internal static partial class FeatureServerEndpoints
 {
-    /// <summary>
-    /// Applies geometry, spatialRel, time, and objectIds onto an analytics query.
-    /// queryBins, queryDateBins, and queryTopFeatures accept these parameters; the
-    /// feature-query builders already honor <see cref="FeatureQuery.SpatialFilter"/>,
-    /// <see cref="FeatureQuery.SqlFilter"/>, and <see cref="FeatureQuery.ObjectIds"/>.
-    /// </summary>
     internal static async Task<(FeatureQuery Query, IResult? Error)> ApplyAnalyticsFiltersAsync(
         HttpContext context,
         MetadataV2Resource resource,
@@ -81,10 +75,6 @@ internal static partial class FeatureServerEndpoints
         return (query, null);
     }
 
-    /// <summary>
-    /// True when the geometry included a horizontal spatial reference.
-    /// A missing object, an empty object, or wkid 0 is absent.
-    /// </summary>
     private static bool GeometryCarriesSpatialReference(GeoServicesSpatialReference? spatialReference)
         => spatialReference is { Wkid: > 0 }
             || spatialReference?.LatestWkid is > 0
@@ -283,7 +273,7 @@ internal static partial class FeatureServerEndpoints
             return (query with { SqlFilter = addition, Where = null }, null);
         }
 
-        var parseResult = filterService.Parse(FilterLanguage.ArcGisSql, query.Where);
+        var parseResult = filterService.Parse(FilterLanguage.GeoServicesSql, query.Where);
         if (!parseResult.IsSuccess)
         {
             return (query, StandardErrorHelpers.CreateBadRequest(context,

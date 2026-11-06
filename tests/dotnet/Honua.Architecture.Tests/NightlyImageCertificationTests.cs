@@ -38,6 +38,7 @@ public sealed partial class NightlyImageCertificationTests
         "build-lambda-aot",
         "verify-functions-aot",
         "build-jit",
+        "compose-executor",
     ];
 
     [ArchitectureTest]
@@ -77,18 +78,26 @@ public sealed partial class NightlyImageCertificationTests
         nightly.Should().NotContain("HONUA_GIT_SHA=${{ github.sha }}");
         nightly.Should().Contain($"HONUA_GIT_SHA={CandidateSha}", Exactly.Times(4),
             "AOT, Lambda AOT, Functions AOT and JIT are all stamped with the candidate sha");
-        nightly.Should().Contain($"labels: |\n            org.opencontainers.image.revision={CandidateSha}\n", Exactly.Times(4),
-            "the resolver binds a candidate by its config revision label, which metadata-action would otherwise set to github.sha");
+        nightly.Should().Contain($"labels: |\n            org.opencontainers.image.revision={CandidateSha}\n", Exactly.Times(5),
+            "the serving variants and Compose executor must bind their config revision to the candidate sha");
         nightly.Should().Contain($"annotations: |\n            org.opencontainers.image.revision={CandidateSha}\n", Exactly.Times(4),
             "metadata-action's default revision annotation names github.sha too; it must name the candidate");
         nightly.Should().Contain("annotations: ${{ steps.meta.outputs.annotations }}", Exactly.Times(4));
         nightly.Should().Contain("--annotation \"index:org.opencontainers.image.revision=${CANDIDATE_SHA}\"", Exactly.Times(3),
             "every published multi-arch index is annotated with the candidate sha");
-        nightly.Should().Contain("uses: actions/checkout@v7", Exactly.Times(6),
-            "only the selector itself checks out the workflow revision; every build checks out the candidate");
-        nightly.Should().Contain($"ref: {CandidateSha}", Exactly.Times(5));
+        nightly.Should().Contain("uses: actions/checkout@", Exactly.Times(10),
+            "only the selector itself checks out the workflow revision; every build, including the Compose executor, checks out the candidate");
+        nightly.Should().Contain($"ref: {CandidateSha}", Exactly.Times(9),
+            "six builds plus the three manifest jobs' sparse checkout of the immutable-tag guard");
+        foreach (var manifest in new[] { "manifest-aot", "manifest-lambda-aot", "manifest-jit" })
+        {
+            var block = Job(nightly, manifest);
+            block.Should().Contain($"ref: {CandidateSha}", manifest);
+            block.Should().Contain("sparse-checkout: scripts/ci/immutable-container-tags.py", manifest);
+            block.Should().NotContain("${{ github.sha }}", manifest);
+        }
 
-        foreach (var trunkOnly in new[] { "build-aot", "build-jit", "manifest-aot", "manifest-lambda-aot", "manifest-jit" })
+        foreach (var trunkOnly in new[] { "build-aot", "build-jit", "manifest-aot", "manifest-lambda-aot", "manifest-jit", "compose-executor" })
         {
             IfOf(Job(nightly, trunkOnly)).Should().Contain("needs.select-candidate.outputs.publish == 'true'",
                 $"{trunkOnly} publishes channel tags, which only a trunk or candidate-tag run at the certified sha may move");
@@ -108,29 +117,71 @@ public sealed partial class NightlyImageCertificationTests
         var select = Job(nightly, "select-candidate");
 
         // Hand-off: a trunk run whose head is not the candidate tags it and re-dispatches.
-        select.Should().Contain("actions: write");
-        select.Should().Contain("contents: write");
         select.Should().Contain("mode: ${{ steps.route.outputs.mode }}");
-        select.Should().Contain("publish: ${{ steps.route.outputs.publish }}");
-        var route = select[select.IndexOf("id: route", StringComparison.Ordinal)..];
-        route.Should().Contain("tag=\"nightly-candidate-${CANDIDATE_SHA:0:7}\"");
-        route.Should().Contain("-f ref=\"refs/tags/${tag}\" -f sha=\"${CANDIDATE_SHA}\"");
-        route.Should().Contain("gh workflow run nightly-container-build.yml --repo \"${GITHUB_REPOSITORY}\" --ref \"${tag}\"");
+        select.Should().Contain("steps.route.outputs.publish == 'true' && steps.existing.outputs.imaged != '1'");
+        var route = Step(select, "Route the build to a run at the selected sha");
+        var handoff = Step(select, "Tag the selected sha and re-dispatch this workflow at it");
+        handoff.Should().Contain("tag=\"nightly-candidate-${CANDIDATE_SHA:0:7}\"");
         route.Should().Contain("refs/tags/nightly-candidate-*) mode=build-candidate ;;",
             "a candidate-tag run builds and never re-dispatches, so the hand-off cannot loop");
         route.Should().Contain("if [ \"${CANDIDATE_SHA}\" = \"${GITHUB_SHA}\" ]; then mode=build-trunk; else mode=redirect; fi",
             "only a trunk run whose head is not the candidate hands off");
         route.Should().Contain("if [ \"${mode}\" != redirect ] && [ \"${CANDIDATE_SHA}\" != \"${GITHUB_SHA}\" ]; then");
-        route.Should().Contain("select(.status != \"completed\")", "a queued or running candidate build is not duplicated");
+        handoff.Should().Contain("select(.status != \"completed\")", "a queued or running candidate build is not duplicated");
+        select.Should().Contain("--already-imaged", "registry tags, including partial failed runs and trunk-head builds, are authoritative");
 
         // A candidate-tag run images exactly its own commit, re-proving certification.
         var selectStep = select[select.IndexOf("id: select", StringComparison.Ordinal)..select.IndexOf("id: route", StringComparison.Ordinal)];
         selectStep.Should().Contain("\"refs/tags/nightly-candidate-${GITHUB_SHA:0:7}\"");
         selectStep.Should().Contain("--sha \"${GITHUB_SHA}\"");
 
-        // Only the selector may write; every other job keeps contents: read.
-        nightly.Should().Contain("      contents: write\n", Exactly.Once());
-        nightly.Should().Contain("      actions: write\n", Exactly.Once());
+        // honua-io/honua-server#6613 (founder decision D10): the Actions token cannot create a
+        // candidate tag whose workflow files differ from trunk head (403, it can never hold
+        // `workflows`). It is read-only in every job; the two hand-off writes use a short-lived,
+        // repository-scoped GitHub App token, and a missing app fails by name, never by fallback.
+        Regex.IsMatch(nightly, @"^\s+(contents|actions): write$", RegexOptions.Multiline).Should().BeFalse(
+            "no job grants the Actions token a write to contents or actions");
+        select.Should().Contain("      actions: read\n      checks: read\n      contents: read\n");
+
+        var require = Step(select, "Require the release GitHub App for the candidate hand-off");
+        var mint = Step(select, "Mint the release GitHub App token for the candidate hand-off");
+        foreach (var step in new[] { require, mint, handoff })
+        {
+            step.Should().Contain("        if: steps.route.outputs.mode == 'redirect' && steps.existing.outputs.imaged != '1'\n",
+                "only a hand-off needs the app; trunk-head, candidate-tag and proof runs never touch it");
+        }
+
+        select.IndexOf(require, StringComparison.Ordinal).Should().BeLessThan(select.IndexOf(mint, StringComparison.Ordinal));
+        select.IndexOf(mint, StringComparison.Ordinal).Should().BeLessThan(select.IndexOf(handoff, StringComparison.Ordinal));
+        require.Should().Contain("HAS_APP_ID: ${{ secrets.HONUA_RELEASE_APP_ID != '' }}");
+        require.Should().Contain("HAS_APP_PRIVATE_KEY: ${{ secrets.HONUA_RELEASE_APP_PRIVATE_KEY != '' }}");
+        require.Should().Contain("missing+=(HONUA_RELEASE_APP_ID)");
+        require.Should().Contain("missing+=(HONUA_RELEASE_APP_PRIVATE_KEY)");
+        require.Should().Contain("::error::Nightly candidate hand-off needs the honua-release GitHub App");
+        require.Should().Contain("Contents: write, Workflows: write and Actions: write; install it on honua-server only",
+            "the failure names the exact setup the founder must perform");
+        require.Should().Contain("exit 1");
+        require.Should().NotContain("secrets.HONUA_RELEASE_APP_PRIVATE_KEY }}", "the key never enters the guard's environment");
+
+        mint.Should().Contain("id: handoff-token");
+        mint.Should().Contain("uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0");
+        mint.Should().Contain("app-id: ${{ secrets.HONUA_RELEASE_APP_ID }}");
+        mint.Should().Contain("private-key: ${{ secrets.HONUA_RELEASE_APP_PRIVATE_KEY }}");
+        mint.Should().Contain("repositories: honua-server\n");
+        mint.Should().Contain("permission-contents: write\n");
+        mint.Should().Contain("permission-workflows: write\n");
+        mint.Should().Contain("permission-actions: write\n");
+        Regex.Count(mint, @"permission-[a-z-]+:").Should().Be(3, "the token is scoped to exactly the hand-off's writes");
+        mint.Should().NotContain("continue-on-error");
+
+        // Reads use the Actions token; only the tag create and the dispatch use the app token.
+        handoff.Should().Contain("GH_TOKEN: ${{ github.token }}");
+        handoff.Should().Contain("HANDOFF_TOKEN: ${{ steps.handoff-token.outputs.token }}");
+        handoff.Should().Contain("GH_TOKEN=\"${HANDOFF_TOKEN}\" gh api -X POST \"repos/${GITHUB_REPOSITORY}/git/refs\" \\\n              -f ref=\"refs/tags/${tag}\" -f sha=\"${CANDIDATE_SHA}\"");
+        handoff.Should().Contain("GH_TOKEN=\"${HANDOFF_TOKEN}\" gh workflow run nightly-container-build.yml --repo \"${GITHUB_REPOSITORY}\" --ref \"${tag}\"");
+        Regex.Count(handoff, @"gh api -X POST").Should().Be(1);
+        Regex.Count(handoff, @"gh workflow run").Should().Be(1);
+        route.Should().NotContain("GH_TOKEN", "routing decides the mode and holds no token");
 
         // Candidate-tag runs share trunk base mirrors, one build per candidate sha.
         nightly.Should().Contain("!startsWith(github.ref, 'refs/tags/nightly-candidate-')) && format('/proof-{0}', github.run_id)");
@@ -149,7 +200,7 @@ public sealed partial class NightlyImageCertificationTests
 
         foreach (var job in new[] { "mirror-base-images", "verify-functions-aot" })
         {
-            IfOf(Job(nightly, job)).Should().Be("needs.select-candidate.outputs.mode != 'redirect'",
+            IfOf(Job(nightly, job)).Should().Be("needs.select-candidate.outputs.mode != 'redirect' && needs.select-candidate.outputs.imaged != '1'",
                 $"{job} must not build in a run that handed the candidate off");
         }
     }
@@ -190,9 +241,9 @@ public sealed partial class NightlyImageCertificationTests
 
         foreach (var staging in new[]
                  {
-                     "boundary-candidate-nightly-aot-${{ matrix.arch }}-" + CandidateSha,
-                     "boundary-candidate-nightly-lambda-aot-${{ matrix.arch }}-" + CandidateSha,
-                     "boundary-candidate-nightly-functions-aot-" + CandidateSha,
+                     "boundary-candidate-nightly-aot-${{ matrix.arch }}-${{ github.run_id }}-${{ github.run_attempt }}",
+                     "boundary-candidate-nightly-lambda-aot-${{ matrix.arch }}-${{ github.run_id }}-${{ github.run_attempt }}",
+                     "boundary-candidate-nightly-functions-aot-${{ github.run_id }}-${{ github.run_attempt }}",
                  })
         {
             nightly.Should().Contain(staging);
@@ -213,6 +264,9 @@ public sealed partial class NightlyImageCertificationTests
                 $"{job} verifies and promotes from the staged tooling");
         }
 
+        Job(nightly, "mirror-base-images").Should().Contain(
+            "if [ -n \"$current\" ] && [ \"$current\" = \"${src##*@}\" ]; then",
+            "a mirror tag already at the pinned digest is not pulled from the upstream registry again");
         Job(nightly, "mirror-base-images").Should().Contain(
             "scripts/ci/base-image-mirrors.sh --verify \"${RUNNER_TEMP}/nightly-container-build.yml\"",
             "the running workflow consumes the mirror tags; the candidate's Dockerfiles produce them");
@@ -241,6 +295,8 @@ public sealed partial class NightlyImageCertificationTests
         }
 
         await RunPython("scripts/ci/select-certified-nightly-sha.test.py");
+        await RunPython("scripts/ci/test_container_version.py");
+        await RunPython("scripts/ci/test_immutable_container_tags.py");
     }
 
     [ArchitectureTest]
@@ -385,6 +441,14 @@ public sealed partial class NightlyImageCertificationTests
         start.Should().BeGreaterThan(-1, $"job '{jobId}' must exist");
         var next = NextJob().Match(workflow, start + jobId.Length + 4);
         return next.Success ? workflow[(start + 1)..next.Index] : workflow[(start + 1)..];
+    }
+
+    private static string Step(string job, string name)
+    {
+        var start = job.IndexOf($"\n      - name: {name}\n", StringComparison.Ordinal);
+        start.Should().BeGreaterThan(-1, $"step '{name}' must exist");
+        var next = job.IndexOf("\n      - name: ", start + 1, StringComparison.Ordinal);
+        return next > -1 ? job[(start + 1)..(next + 1)] : job[(start + 1)..];
     }
 
     private static string JobName(string workflow, string jobId)

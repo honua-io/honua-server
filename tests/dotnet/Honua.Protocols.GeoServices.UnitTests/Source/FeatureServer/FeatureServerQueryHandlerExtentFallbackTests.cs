@@ -8,6 +8,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
+using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -63,6 +64,20 @@ public sealed class FeatureServerQueryHandlerExtentFallbackTests
         };
 
         FeatureServerQueryHandler.ShouldBypassQueryResponseCache(queryParams).Should().BeTrue();
+    }
+
+    [UnitTheory]
+    [InlineData(null, false)]
+    [InlineData("", false)]
+    [InlineData("   ", false)]
+    [InlineData("sde.default", false)]
+    [InlineData("SDE.DEFAULT", false)]
+    [InlineData("DEFAULT", true)]
+    [InlineData("owner.branch", true)]
+    public void ShouldBypassQueryResponseCache_WithGdbVersion_MatchesDefaultVersion(string? gdbVersion, bool expected)
+    {
+        FeatureServerQueryHandler.ShouldBypassQueryResponseCache(new QueryParameters { GdbVersion = gdbVersion })
+            .Should().Be(expected);
     }
 
     [Fact]

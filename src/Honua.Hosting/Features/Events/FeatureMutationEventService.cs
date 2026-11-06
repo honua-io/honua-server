@@ -24,16 +24,36 @@ internal sealed class FeatureMutationEventService(
     private readonly ILogger<FeatureMutationEventService> _logger = logger ?? NullLogger<FeatureMutationEventService>.Instance;
     private readonly IOutboxCapabilityProvider? _outboxCapabilityProvider = outboxCapabilityProvider;
 
-    /// <summary>
-    /// True when the active provider records feature-change events through the durable
-    /// transactional outbox. Protocol handlers use this to skip the redundant post-commit
-    /// publish and let the dispatcher own delivery.
-    /// </summary>
     public bool OutboxEnabled => _outboxCapabilityProvider?.SupportsTransactionalOutbox == true;
 
     public Task InvalidateLayerAsync(string? serviceId, int layerId, CancellationToken cancellationToken)
         => _outputCacheInvalidationService?.InvalidateLayerAsync(serviceId, layerId, cancellationToken)
            ?? Task.CompletedTask;
+
+    public Task InvalidateCollectionAsync(string? collectionId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(collectionId) || _outputCacheInvalidationService is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        return _outputCacheInvalidationService.InvalidateCollectionAsync(collectionId, cancellationToken);
+    }
+
+    public async Task InvalidatePublishedLayerAsync(MetadataV2Publication publication, int storageLayerId)
+    {
+        ArgumentNullException.ThrowIfNull(publication);
+        await InvalidateLayerAsync(
+            null,
+            LayerValidationHelpers.QueryCacheLayerId(publication, storageLayerId),
+            CancellationToken.None).ConfigureAwait(false);
+
+        var publicationId = publication.Metadata.Id;
+        if (!string.IsNullOrWhiteSpace(publicationId))
+        {
+            await InvalidateCollectionAsync(publicationId, CancellationToken.None).ConfigureAwait(false);
+        }
+    }
 
     public static async Task<string> ResolveServiceIdAsync(
         HttpContext context,
@@ -52,26 +72,7 @@ internal sealed class FeatureMutationEventService(
         return serviceId ?? layerId.ToString(CultureInfo.InvariantCulture);
     }
 
-    /// <summary>
-    /// Resolve a transactional outbox scope for the next feature-mutation call. Returns
-    /// <c>null</c> when the active provider does not support a transactional outbox so the
-    /// caller's <c>using</c> wrapper becomes a no-op. The caller activates the scope
-    /// synchronously via <see cref="FeatureMutationOutboxScope.BeginIfNotNull"/> so the
-    /// <see cref="AsyncLocal{T}"/> mutation lands in the caller's ExecutionContext (mutations
-    /// inside this <c>async</c> method are not observed by the caller after the awaiter
-    /// completes — the canonical .NET behavior for AsyncLocal in async callees).
-    /// When <c>perOperationRequestIds</c> is provided, the entry factory dequeues a
-    /// per-row request id from the kind-keyed queue ("create"/"update"/"delete") on each
-    /// invocation so batch protocol handlers (OData $batch atomic groups, OGC Features
-    /// transactions) preserve subrequest correlation; otherwise the resolved
-    /// <c>requestId</c> (or the parent trace identifier) flows through.
-    /// <c>geometryChanged</c> and <c>perOperationGeometryChanged</c> let the protocol
-    /// layer signal whether the originating request actually intended to mutate geometry;
-    /// otherwise <c>GeometryChanged</c> defaults to <c>false</c> (matching the inline
-    /// publish path) so attribute-only PATCH/merge updates are not over-reported as
-    /// geometry changes by inferring from the post-mutation snapshot, which still carries
-    /// the prior geometry on partial updates.
-    /// </summary>
+    // The scope is activated synchronously because an async callee's execution-context changes are invisible to the caller, and geometry-changed defaults to false so a partial update is not reported as a geometry change.
     public async Task<FeatureMutationOutboxScopeData?> ResolveOutboxScopeAsync(
         HttpContext context,
         int layerId,

@@ -15,6 +15,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Validation;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
@@ -36,9 +37,6 @@ using Honua.Protocols.GeoServices;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
-/// <summary>
-/// Handler for storage-backed ImageServer tile archive export operations.
-/// </summary>
 internal sealed class ImageServerExportTilesHandler
 {
     private const string ExportTilesContentType = "application/zip";
@@ -83,9 +81,6 @@ internal sealed class ImageServerExportTilesHandler
         _tileExportJobService = tileExportJobService;
     }
 
-    /// <summary>
-    /// Estimates a storage-backed ImageServer tile archive request.
-    /// </summary>
     public async Task<IResult> EstimateAsync(
         HttpContext context,
         int layerId,
@@ -122,9 +117,6 @@ internal sealed class ImageServerExportTilesHandler
         return Results.Json(response, ImageServerJsonContext.Default.ImageServerExportTilesEstimateResponse);
     }
 
-    /// <summary>
-    /// Exports a bounded ImageServer tile archive into configured cloud file storage.
-    /// </summary>
     public async Task<IResult> ExportTilesAsync(
         HttpContext context,
         int layerId,
@@ -137,9 +129,6 @@ internal sealed class ImageServerExportTilesHandler
             publicationId: null,
             cancellationToken).ConfigureAwait(false);
 
-    /// <summary>
-    /// Exports tiles for the exact publication already resolved by a publication-aware caller.
-    /// </summary>
     public async Task<IResult> ExportTilesAsync(
         HttpContext context,
         int layerId,
@@ -714,14 +703,14 @@ internal sealed class ImageServerExportTilesHandler
     private static bool TryParseBbox(string value, out SkiaMapRenderer.RenderExtent extent)
     {
         extent = default;
-        var parts = value.Split(',', StringSplitOptions.TrimEntries);
-        if (parts.Length != 4 ||
-            !double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var xmin) ||
-            !double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var ymin) ||
-            !double.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var xmax) ||
-            !double.TryParse(parts[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var ymax) ||
-            ymin >= ymax ||
-            xmin >= xmax)
+        var parsed = BoundingBoxOrdinates.Parse(value);
+        if (!parsed.Succeeded || parsed.Ordinates.Length != 4)
+        {
+            return false;
+        }
+
+        var (xmin, ymin, xmax, ymax) = BoundingBoxOrdinates.Horizontal(parsed.Ordinates);
+        if (ymin >= ymax || xmin >= xmax)
         {
             return false;
         }
@@ -850,11 +839,6 @@ internal sealed class ImageServerExportTilesHandler
 
     private const string CompactV2StorageMode = "esriMapCacheStorageModeCompactV2";
 
-    /// <summary>
-    /// Detects an explicit Compact Cache V2 negotiation via the official
-    /// <c>storageFormatType=esriMapCacheStorageModeCompactV2</c> parameter or the documented
-    /// compatible TPKX aliases on <c>storageFormat</c>/<c>exportBy</c>.
-    /// </summary>
     private static bool IsCompactV2Requested(IReadOnlyDictionary<string, StringValues> values)
     {
         var storageFormatType = GetString(values, "storageFormatType");
@@ -868,11 +852,6 @@ internal sealed class ImageServerExportTilesHandler
         return storageFormat?.Trim().ToLowerInvariant() is "tpkx" or "compact" or "compactv2";
     }
 
-    /// <summary>
-    /// Builds and submits a durable tile-export job for a Compact Cache V2 request, returning the
-    /// ArcGIS <c>{ jobId, jobStatus: "esriJobSubmitted" }</c> envelope. Validation, ownership,
-    /// admission, and store-availability failures surface through the shared sanitized mapping.
-    /// </summary>
     private async Task<IResult> SubmitDurableExportAsync(
         HttpContext context,
         int layerId,
@@ -910,11 +889,9 @@ internal sealed class ImageServerExportTilesHandler
         }
     }
 
-    /// <summary>Projects a durable tile-export job's status onto the ArcGIS Image Service status envelope.</summary>
     public Task<IResult> GetJobStatusAsync(HttpContext context, int layerId, string jobId, CancellationToken cancellationToken)
         => GetJobStatusCoreAsync(context, jobId, ScopeFor(layerId), cancellationToken);
 
-    /// <summary>Projects job status after reauthorizing the exact resolved publication.</summary>
     public async Task<IResult> GetJobStatusAsync(
         HttpContext context,
         int layerId,
@@ -965,11 +942,9 @@ internal sealed class ImageServerExportTilesHandler
         }
     }
 
-    /// <summary>Cancels a durable tile-export job scoped to the submitting principal and this image service.</summary>
     public Task<IResult> CancelJobAsync(HttpContext context, int layerId, string jobId, CancellationToken cancellationToken)
         => CancelJobCoreAsync(context, jobId, ScopeFor(layerId), cancellationToken);
 
-    /// <summary>Cancels a job after reauthorizing the exact resolved publication.</summary>
     public async Task<IResult> CancelJobAsync(
         HttpContext context,
         int layerId,
@@ -1020,11 +995,9 @@ internal sealed class ImageServerExportTilesHandler
         }
     }
 
-    /// <summary>Returns the ArcGIS <c>results/out_service_url</c> for a completed durable tile-export job.</summary>
     public Task<IResult> GetJobResultAsync(HttpContext context, int layerId, string jobId, CancellationToken cancellationToken)
         => GetJobResultCoreAsync(context, jobId, ScopeFor(layerId), cancellationToken);
 
-    /// <summary>Returns a job result after reauthorizing the exact resolved publication.</summary>
     public async Task<IResult> GetJobResultAsync(
         HttpContext context,
         int layerId,

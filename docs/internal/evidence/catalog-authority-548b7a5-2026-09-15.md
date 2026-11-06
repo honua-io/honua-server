@@ -16,7 +16,7 @@ Each merge commit was checked with `git merge-base --is-ancestor <merge> 548b7a5
 
 ### Replay
 
-`catalog-authority-548b7a5-2026-09-15-replay.sh` boots the digest with PostGIS 16-3.4, Redis, a throwaway key-ring PKCS#12 and `Licensing__Mode=Disabled`. It seeds the authz fixture the issue was reported on: honua-esri-compat `docker/seed/arcgis-compat.sql` at `a235e3e` (sha256 `d48e8b6b…`), compiled to Metadata v2 with the pin's own `tests/seed/base-schema.sql` helper. It then runs `catalog-authority-548b7a5-2026-09-15-probe.py` and tears everything down.
+`catalog-authority-548b7a5-2026-09-15-replay.sh` boots the digest with PostGIS 16-3.4, Redis, a throwaway key-ring PKCS#12 and `Licensing__Mode=Disabled`. It seeds the authz fixture the issue was reported on: a local SQL seed (sha256 `d48e8b6b…`), compiled to Metadata v2 with the pin's own `tests/seed/base-schema.sql` helper. It then runs `catalog-authority-548b7a5-2026-09-15-probe.py` and tears everything down.
 
 | Service | Seeded policy |
 |---|---|
@@ -66,11 +66,11 @@ This is the defect from the issue, inverted. On `7ba4226` admin saw `arcgis_comp
 
 Observation, not a defect of this issue: `allowedRoles` names a role. Every scoped non-admin API key authenticates as `scoped-api-key`, whatever service its permission names. So `second-scoped-key` (`read:browser_compat`) opens `arcgis_compat_scoped`, exactly as the catalogs advertise to it. A policy that must admit only one key has to name something narrower than the shared role.
 
-Rerun for a later pin: `HONUA_SERVER_IMAGE=<ref@digest> HONUA_SERVER_REVISION=<sha> ESRI_COMPAT_REF=<commit> ./catalog-authority-548b7a5-2026-09-15-replay.sh <transcript.json>`. It takes about 3 minutes, on port 18780 by default (`REPLAY_PORT`).
+Rerun for a later pin: `HONUA_SERVER_IMAGE=<ref@digest> HONUA_SERVER_REVISION=<sha> REPLAY_SEED_SQL=<local SQL file> ./catalog-authority-548b7a5-2026-09-15-replay.sh <transcript.json>`. It takes about 3 minutes, on port 18780 by default (`REPLAY_PORT`).
 
 ### Other evidence on the same digest
 
-- **SOAP-CAT-EXT-04:** honua-esri-compat#101 license-free run [34914670765](https://github.com/honua-io/honua-esri-compat/actions/runs/34914670765) reports `C/-OP-SOAP-CATALOG-REST-HANDOFF` passing: "all 13 advertised REST handoff URL(s) resolved". Its `logs/soap-catalog.json` shows 13 authenticated handoffs, all 200, with 7 services for the anonymous control. #4744, which the criterion also waited on, closed on 2026-09-13.
+- **SOAP-CAT-EXT-04:** license-free run 34914670765 reports `C/-OP-SOAP-CATALOG-REST-HANDOFF` passing: "all 13 advertised REST handoff URL(s) resolved". Its `logs/soap-catalog.json` shows 13 authenticated handoffs, all 200, with 7 services for the anonymous control. #4744, which the criterion also waited on, closed on 2026-09-13.
 - **In-repo regressions (on trunk):**
   - `GeoservicesSoapCatalogDiscoveryTests.RestCatalog_AdminAndRoleOperationHandoffsAgreeWithCatalogVisibility` (#4855): 22 operation handoffs for admin, role-matched, wrong-role and anonymous callers.
   - The #4823 metadata handoff tests.
@@ -79,7 +79,7 @@ Rerun for a later pin: `HONUA_SERVER_IMAGE=<ref@digest> HONUA_SERVER_REVISION=<s
 
 ### Installed ArcGIS API for Python and ArcPy replay
 
-honua-esri-compat `gp-toolbox-replay.yml` on trunk, [run 34915379462](https://github.com/honua-io/honua-esri-compat/actions/runs/34915379462) (2026-09-15, success, workflow commit `78bd077c`). The fixture image is `sha256:29974ee7…`. Artifact `focused-gp-replay` (id 10375769912, digest `sha256:6e49e698…`) is retained here as `gp-toolbox-replay-548b7a5-2026-09-15-licensed-execution.json`. Runner and licence setup stay in honua-esri-compat.
+A prior `gp-toolbox-replay.yml` run 34915379462 (2026-09-15, success, workflow commit `78bd077c`). The fixture image is `sha256:29974ee7…`. Artifact `focused-gp-replay` (id 10375769912, digest `sha256:6e49e698…`) is retained here as `gp-toolbox-replay-548b7a5-2026-09-15-licensed-execution.json`. Runner and licence setup are not in this repository.
 
 | Receipt field | Value |
 |---|---|
@@ -91,7 +91,7 @@ honua-esri-compat `gp-toolbox-replay.yml` on trunk, [run 34915379462](https://gi
 | `arcpy_import` | passed |
 | `arcpy_remote_area` | passed, `job_status` 4 `Completed`, decoded `value` 12 |
 
-The job log records Windows fatal exception `0xe0000001` during import. The run still completed and wrote the passing receipt. That log line is not a failed result for this receipt. Import-path detail stays in honua-esri-compat.
+The job log records Windows fatal exception `0xe0000001` during import. The run still completed and wrote the passing receipt. That log line is not a failed result for this receipt. Import-path detail is not retained in this repository.
 
 ### Typed defaults across the full callable catalog
 
@@ -117,7 +117,7 @@ Canonical/OGC textual defaults under fr-FR (`GPServerDefaultValueTests`), typed 
 |---|---|
 | One admin authority rule for role-restricted services across the REST catalog, the SOAP catalog and the FeatureServer, MapServer and GPServer service and task routes | #4823 + #4855, confirmed on the candidate by the 348/348 replay |
 | HTTP test pinning catalog visibility and service/task access for admin, role-matched, non-matching and anonymous callers | `RestCatalog_AdminAndRoleOperationHandoffsAgreeWithCatalogVisibility` (#4855), plus this replay on the certified image |
-| honua-esri-compat#101 `SOAP-CAT-EXT-04` passes at the next certified image, with #4744 fixed | run 34914670765 on `sha256:29974ee7…`; #4744 closed |
+| `SOAP-CAT-EXT-04` passes at the next certified image, with #4744 fixed | run 34914670765 on `sha256:29974ee7…`; #4744 closed |
 
 **server#4634**, all five acceptance criteria met:
 

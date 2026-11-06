@@ -12,37 +12,9 @@ using Microsoft.OpenApi;
 
 namespace Honua.Infrastructure.Capabilities;
 
-/// <summary>
-/// OpenAPI document transformer that prunes operations gated on a capability that
-/// resolves <b>experimental-disabled</b> (Track T7 / #2343). It is the description
-/// layer's counterpart to the runtime <see cref="CapabilityGateEndpointFilter"/>
-/// (Track T5): the filter returns <c>404</c> for a disabled-experimental route, and
-/// this transformer removes the matching operation from the generated OpenAPI
-/// document so the published contract never advertises an endpoint that 404s.
-/// </summary>
-/// <remarks>
-/// <para>
-/// For every <see cref="ApiDescription"/> that carries a
-/// <see cref="CapabilityGateMetadata"/> marker (attached by <c>WithCapabilityGate</c>),
-/// the transformer resolves the descriptor id through the <see cref="ICapabilityRegistry"/>
-/// with the config-driven experimental precedence (#2339 / T2). Only the
-/// <see cref="CapabilityReasonCodes.ExperimentalDisabled"/> outcome drops the
-/// operation — exactly the outcome the endpoint filter short-circuits. Enabled
-/// capabilities (including flag-on experimental ones), unregistered ids, and the
-/// wrong-edition (<see cref="CapabilityReasonCodes.LicenseRequired"/>) outcome all
-/// stay in the document, mirroring the filter's pass-through set.
-/// </para>
-/// <para>
-/// This is a behavioural no-op until an experimental capability is actually flipped
-/// off-by-default (Track T10 / #2346): with no experimental descriptors gated, no
-/// operation resolves experimental-disabled and the document is unchanged. It is
-/// registered into the <c>AddOpenApi(...)</c> pipeline via
-/// <c>OpenApiOptions.AddCapabilityGate()</c>.
-/// </para>
-/// </remarks>
+// The document drops only operations the runtime filter answers with 404, so a 402 entitlement gate stays advertised.
 internal sealed class CapabilityGateOpenApiDocumentTransformer : IOpenApiDocumentTransformer
 {
-    /// <inheritdoc />
     public Task TransformAsync(
         OpenApiDocument document,
         OpenApiDocumentTransformerContext context,

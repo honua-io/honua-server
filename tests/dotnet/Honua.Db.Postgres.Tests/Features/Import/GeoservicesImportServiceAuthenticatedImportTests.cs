@@ -114,7 +114,7 @@ public sealed class GeoservicesImportServiceAuthenticatedImportTests(PostgresFix
 
             result.Success.Should().BeFalse();
             result.ErrorMessage.Should().NotBeNullOrEmpty();
-            result.ErrorMessage.Should().Contain(ImportCompatibilityCodes.ArcGisAccessDenied);
+            result.ErrorMessage.Should().Contain(ImportCompatibilityCodes.GeoServicesAccessDenied);
             result.ErrorMessage.Should().NotContain(accessToken);
             result.ErrorMessage.Should().NotContain(secretReference);
             result.SourceServiceUrl.Should().NotContain(accessToken);
@@ -129,9 +129,9 @@ public sealed class GeoservicesImportServiceAuthenticatedImportTests(PostgresFix
 
     private GeoservicesImportService CreateService(HttpMessageHandler handler, string? targetSchema = null)
     {
-        var restClient = new ArcGisRestClient(
+        var restClient = new GeoServicesRestClient(
             new HttpClient(handler),
-            NullLogger<ArcGisRestClient>.Instance,
+            NullLogger<GeoServicesRestClient>.Instance,
             (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
 
         var crsRegistry = new Mock<ICrsRegistry>(MockBehavior.Strict);
@@ -146,7 +146,7 @@ public sealed class GeoservicesImportServiceAuthenticatedImportTests(PostgresFix
             restClient,
             new FixtureConnectionProvider(fixture),
             crsRegistry.Object,
-            new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors),
+            new GeoServicesConstructCapabilityRegistry(GeoServicesConstructCapabilityRegistry.BuiltInDescriptors),
             NullLogger<GeoservicesImportService>.Instance,
             new GeoservicesLayerPublicationService(NullLogger<GeoservicesLayerPublicationService>.Instance),
             schemaConfiguration: ImportTestSchemaConfiguration.WithOperational(targetSchema));

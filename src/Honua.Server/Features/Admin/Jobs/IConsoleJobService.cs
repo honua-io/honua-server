@@ -46,10 +46,6 @@ internal interface IConsoleJobService
         string? eventCursor,
         CancellationToken cancellationToken);
 
-    /// <summary>
-    /// The same projection for a principal without an HTTP request (MCP tools). <paramref name="pathBase"/>
-    /// prefixes the links; pass an empty string for root-mounted hosts.
-    /// </summary>
     Task<ConsoleJobDiagnostics?> GetDiagnosticsAsync(
         System.Security.Claims.ClaimsPrincipal user,
         string pathBase,

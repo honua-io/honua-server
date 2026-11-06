@@ -22,7 +22,13 @@ public sealed class PostgresFixture : IAsyncLifetime
     private static readonly SemaphoreSlim _sharedLock = new(1, 1);
     private static readonly PostgresSharedState SharedState = new();
     private static readonly string[] SharedStoreMigrations =
-        ["113_AddDurableQuerySnapshots.sql", "119_CreateGeoprocessingWorkspaces.sql", "122_CreateWorkflowPackages.sql"];
+        ["113_AddDurableQuerySnapshots.sql", "119_CreateGeoprocessingWorkspaces.sql", "122_CreateWorkflowPackages.sql",
+            "141_CreateImportedDatasetSpatialMetadata.sql"];
+
+    // Upload tests run with HONUA_SKIP_MIGRATIONS and a seed that mirrors older import
+    // functions, not this script. The importer calls these after every committed load.
+    private static readonly string[] SharedImportFunctionMigrations =
+        ["070_AddImportLoadModes.sql", "143_PromoteImportTypedColumns.sql"];
 
     private sealed class PostgresSharedState
     {
@@ -94,14 +100,18 @@ public sealed class PostgresFixture : IAsyncLifetime
                         SharedState.SharedContainer = containerBuilder.Build();
                         SharedState.BoundedResources = _boundedResources;
                         await SharedState.SharedContainer.StartAsync();
-                        SharedState.SharedConnectionString = SharedState.SharedContainer.GetConnectionString();
+                        var publishedConnectionString = SharedState.SharedContainer.GetConnectionString();
+                        SharedState.SharedConnectionString = publishedConnectionString;
+                        await PostgresEndpointProbe.WaitUntilAcceptingAsync(publishedConnectionString).ConfigureAwait(false);
                     }
                     else
                     {
                         SharedState.SharedConnectionString = externalConnectionString;
                     }
 
-                    SharedState.SharedDataSource = NpgsqlDataSource.Create(SharedState.SharedConnectionString);
+                    var connectionString = SharedState.SharedConnectionString
+                        ?? throw new InvalidOperationException("Postgres fixture has no connection string.");
+                    SharedState.SharedDataSource = NpgsqlDataSource.Create(connectionString);
 
                     await ExecuteWithInitializationRetryAsync(async () =>
                     {
@@ -118,7 +128,7 @@ public sealed class PostgresFixture : IAsyncLifetime
                         // so registered providers have their required tables.
                         var assembly = typeof(PostgresFixture).Assembly;
                         // codeql[cs/linq/missed-select]: executes each embedded migration before the next script is read
-                        foreach (var filename in SharedStoreMigrations)
+                        foreach (var filename in SharedStoreMigrations.Concat(SharedImportFunctionMigrations))
                         {
                             var migration = assembly.GetManifestResourceNames().Single(name =>
                                 name.EndsWith(filename, StringComparison.Ordinal));

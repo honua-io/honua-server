@@ -6,9 +6,6 @@ using System.Xml.Linq;
 
 namespace Honua.Infrastructure.Helpers;
 
-/// <summary>
-/// Parses XML documents with DTDs and external entity resolution disabled.
-/// </summary>
 internal static class SecureXmlDocumentParser
 {
     public static XDocument Parse(string xml, LoadOptions loadOptions = LoadOptions.None)

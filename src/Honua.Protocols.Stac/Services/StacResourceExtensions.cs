@@ -8,29 +8,10 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Protocols.Stac.Services;
 
-/// <summary>
-/// Reads STAC-specific projection extras (license, keywords, declared STAC extensions)
-/// from a <see cref="MetadataV2Resource"/>'s extension data. STAC-specific configuration
-/// lives under <c>resource.Extensions["stac"]</c> as JSON; this helper exposes the small
-/// surface STAC handlers actually consume so callers do not parse the JsonElement inline.
-///
-/// Expected shape under <c>resource.Extensions["stac"]</c>:
-/// <code>
-/// {
-///   "license": "CC-BY-4.0",
-///   "keywords": ["earth-observation", "weather"],
-///   "extensions": ["https://stac-extensions.github.io/eo/v1.0.0/schema.json"]
-/// }
-/// </code>
-/// </summary>
 internal static class StacResourceExtensions
 {
     private const string StacExtensionKey = "stac";
 
-    /// <summary>
-    /// Applies service governance defaults without inheriting service license metadata when
-    /// the resource declares its license through the STAC extension.
-    /// </summary>
     public static MetadataV2ObjectMetadata WithStacServiceGovernanceFallbacks(
         this MetadataV2Resource resource,
         MetadataV2ObjectMetadata serviceMetadata)
@@ -53,11 +34,6 @@ internal static class StacResourceExtensions
         return resource.Metadata.WithServiceGovernanceFallbacks(nonLicenseFallbacks);
     }
 
-    /// <summary>
-    /// Resolves the SPDX or STAC-recognized license identifier for a resource. Returns
-    /// <c>"various"</c> for link-only declarations and <c>"proprietary"</c> when no
-    /// license is declared (matches the v1 default).
-    /// </summary>
     public static string ResolveLicense(
         this MetadataV2Resource resource,
         MetadataV2ObjectMetadata? fallbackMetadata = null)
@@ -102,10 +78,6 @@ internal static class StacResourceExtensions
         return LayerSourceGovernance.IsSpdxLicenseIdentifier(license);
     }
 
-    /// <summary>
-    /// Resolves the keywords declared for the resource. Returns null when none declared
-    /// so the STAC collection response omits the field entirely.
-    /// </summary>
     public static ImmutableArray<string>? ResolveKeywords(this MetadataV2Resource resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
@@ -117,9 +89,6 @@ internal static class StacResourceExtensions
         return keywords;
     }
 
-    /// <summary>
-    /// Resolves the STAC extension URIs declared by the resource.
-    /// </summary>
     public static ImmutableArray<string>? ResolveDeclaredExtensions(this MetadataV2Resource resource)
     {
         ArgumentNullException.ThrowIfNull(resource);

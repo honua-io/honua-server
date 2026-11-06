@@ -3,19 +3,8 @@
 
 namespace Honua.Core.Features.Mobile.FieldCollection.Domain;
 
-/// <summary>
-/// Pure matching logic that decides which configured automation actions fire for
-/// an applied FieldCollection change. Kept free of I/O so the trigger decision is
-/// deterministic and exhaustively unit-testable.
-/// </summary>
 public static class FieldCollectionAutomationMatcher
 {
-    /// <summary>
-    /// Returns whether <paramref name="action"/> should run for
-    /// <paramref name="automationEvent"/>. An action matches when it is enabled,
-    /// its layer scope is unset or equal to the event's layer, and its operation
-    /// filter is empty or contains the event's operation.
-    /// </summary>
     public static bool Matches(
         FieldCollectionAutomationAction action,
         FieldCollectionAutomationEvent automationEvent)
@@ -42,11 +31,6 @@ public static class FieldCollectionAutomationMatcher
         return true;
     }
 
-    /// <summary>
-    /// Materializes the invocations that should be dispatched for
-    /// <paramref name="automationEvent"/> from the supplied action definitions,
-    /// preserving the order the actions were provided in.
-    /// </summary>
     public static IReadOnlyList<FieldCollectionActionInvocation> Match(
         IEnumerable<FieldCollectionAutomationAction> actions,
         FieldCollectionAutomationEvent automationEvent)

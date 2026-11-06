@@ -12,16 +12,10 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for role and permission management.
-/// </summary>
 internal static partial class RoleEndpoints
 {
     private const string ConsoleAccessService = "console-access";
     private const string WorkspaceMembershipOperation = "workspace-membership";
-    /// <summary>
-    /// Log category for role endpoints.
-    /// </summary>
     internal sealed class RoleEndpointsLog;
 
     internal static partial class RoleLog
@@ -43,9 +37,6 @@ internal static partial class RoleEndpoints
         public static partial void PermissionsUpdated(ILogger logger, Guid roleId, int count);
     }
 
-    /// <summary>
-    /// Configure role management admin endpoints.
-    /// </summary>
     public static void MapRoleEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/roles")

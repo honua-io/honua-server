@@ -55,7 +55,7 @@ SDK generation, usage examples, and the breaking-change upgrade flow are covered
 
 ## Standards protocols (OGC, GeoServices, OData, STAC)
 
-Standards APIs are versioned by their specifications, not by Honua: OGC API building blocks declare conformance classes on each landing page, classic OGC services negotiate spec versions (WMS 1.3.0, WFS 2.0, WCS 2.0.1, WMTS 1.0), the GeoServices REST adapter tracks the ArcGIS REST contract, and OData follows OData v4. Compatibility status per protocol lives in [OGC conformance](compatibility/ogc-conformance.md), [GeoServices parity](compatibility/geoservices-parity.md), and the [protocols overview](../concepts/protocols.md).
+Standards APIs are versioned by their specifications, not by Honua: OGC API building blocks declare conformance classes on each landing page, classic OGC services negotiate spec versions (WMS 1.3.0, WFS 2.0, WCS 2.0.1, WMTS 1.0), the GeoServices REST adapter tracks the GeoServices REST contract, and OData follows OData v4. Compatibility status per protocol lives in [OGC conformance](compatibility/ogc-conformance.md), [GeoServices parity](compatibility/geoservices-parity.md), and the [protocols overview](../concepts/protocols.md).
 
 ## gRPC (`geospatial.v1`)
 

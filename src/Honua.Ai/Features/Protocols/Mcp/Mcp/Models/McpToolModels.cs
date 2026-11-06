@@ -10,18 +10,12 @@ namespace Honua.Ai.Protocols.Mcp.Models;
 // Tool input shapes (arguments passed via tools/call)
 // -----------------------------------------------------------------------
 
-/// <summary>
-/// Arguments for <c>honua_validate_plan</c> and <c>honua_dry_run_plan</c>.
-/// </summary>
 internal sealed class McpPlanArgument
 {
     [JsonPropertyName("plan")]
     public McpPlanInput? Plan { get; set; }
 }
 
-/// <summary>
-/// Arguments for <c>honua_execute_plan</c>.
-/// </summary>
 internal sealed class McpExecutePlanArgument
 {
     [JsonPropertyName("plan")]
@@ -32,18 +26,12 @@ internal sealed class McpExecutePlanArgument
 
 }
 
-/// <summary>
-/// Arguments for <c>honua_cancel_job</c>.
-/// </summary>
 internal sealed class McpCancelJobArgument
 {
     [JsonPropertyName("jobId")]
     public string? JobId { get; set; }
 }
 
-/// <summary>
-/// Arguments for <c>honua_diagnose_job</c> (honua-server#6219).
-/// </summary>
 internal sealed class McpDiagnoseJobArgument
 {
     [JsonPropertyName("jobId")]
@@ -56,9 +44,6 @@ internal sealed class McpDiagnoseJobArgument
     public string? EventCursor { get; set; }
 }
 
-/// <summary>
-/// Arguments for <c>honua_job_evidence</c> (honua-server#6219).
-/// </summary>
 internal sealed class McpJobEvidenceArgument
 {
     [JsonPropertyName("jobId")]
@@ -71,10 +56,6 @@ internal sealed class McpJobEvidenceArgument
     public string? EventCursor { get; set; }
 }
 
-/// <summary>
-/// Arguments for <c>honua_ops_findings</c>: list active deterministic ops
-/// findings, or fetch a single finding by its stable identifier.
-/// </summary>
 internal sealed class McpOpsFindingsArgument
 {
     [JsonPropertyName("findingId")]
@@ -87,10 +68,6 @@ internal sealed class McpOpsFindingsArgument
     public string? Rule { get; set; }
 }
 
-/// <summary>
-/// Arguments for <c>honua_alert_events</c>: cursor-paged alert-event reads
-/// across GIS alert rules and ops notifications.
-/// </summary>
 internal sealed class McpAlertEventsArgument
 {
     [JsonPropertyName("source")]
@@ -118,10 +95,6 @@ internal sealed class McpAlertEventsArgument
     public string? Cursor { get; set; }
 }
 
-/// <summary>
-/// Arguments for <c>honua_operate_events</c>: paged reads over the fused
-/// Operate timeline.
-/// </summary>
 internal sealed class McpOperateEventsArgument
 {
     [JsonPropertyName("kind")]
@@ -146,10 +119,6 @@ internal sealed class McpOperateEventsArgument
     public int? PageSize { get; set; }
 }
 
-/// <summary>
-/// Arguments for <c>honua_deploy_operations</c>: list deploy operations or
-/// fetch one deploy operation by stable operation id.
-/// </summary>
 internal sealed class McpDeployOperationsArgument
 {
     [JsonPropertyName("operationId")]
@@ -168,10 +137,6 @@ internal sealed class McpDeployOperationsArgument
     public int? PageSize { get; set; }
 }
 
-/// <summary>
-/// Arguments for <c>honua_propose_rollback</c>: propose rolling a deploy
-/// target forward to a prior revision through the shared operation gateway.
-/// </summary>
 internal sealed class McpProposeRollbackArgument
 {
     [JsonPropertyName("targetId")]
@@ -188,6 +153,9 @@ internal sealed class McpProposeRollbackArgument
 
     [JsonPropertyName("parameterOverrides")]
     public Dictionary<string, string>? ParameterOverrides { get; set; }
+
+    [JsonPropertyName("backupId")]
+    public string? BackupId { get; set; }
 }
 
 internal sealed class McpProposeFindingArgument
@@ -249,12 +217,6 @@ internal sealed class McpMetadataReleaseMutationArgument
 
 internal sealed class McpPlatformReleaseConvergenceArgument
 {
-    /// <summary>
-    /// Optional release the agent intends to converge to (for example <c>2026.1-rc.3</c>). When set
-    /// and it does not name the declared <c>ControlPlane:PlatformRelease:Version</c> (compared with
-    /// <c>PlatformReleaseVersion.Normalize</c>), the proposal is rejected with
-    /// <c>platform_release_version_mismatch</c> instead of sealing a convergence to a different release.
-    /// </summary>
     [JsonPropertyName("targetVersion")]
     public string? TargetVersion { get; set; }
 
@@ -265,10 +227,6 @@ internal sealed class McpPlatformReleaseConvergenceArgument
     public string? IdempotencyKey { get; set; }
 }
 
-/// <summary>
-/// Shared output for typed governed proposal tools. On <c>requiresApproval</c> the
-/// agent polls the <c>resourceUri</c> until the proposal resolves (#1696).
-/// </summary>
 internal sealed class McpProposeOperationOutput
 {
     [JsonPropertyName("outcome")]
@@ -286,13 +244,6 @@ internal sealed class McpProposeOperationOutput
     [JsonPropertyName("executionOperationId")]
     public string? ExecutionOperationId { get; set; }
 
-    /// <summary>
-    /// Operation classes that have a genuinely registered executor and are therefore routable
-    /// through the gateway (#2563). Reported on every response, including rejections, so an
-    /// agent proposing an unsupported kind (Seed today) learns the real supported set instead of
-    /// discovering it only after a dead-end <c>NotSupported</c> outcome. Null when the executor
-    /// catalog is unavailable.
-    /// </summary>
     [JsonPropertyName("supportedKinds")]
     public string[]? SupportedKinds { get; set; }
 
@@ -305,23 +256,18 @@ internal sealed class McpProposeOperationOutput
     [JsonPropertyName("targets")]
     public McpConvergenceTargetOutput[]? Targets { get; set; }
 
-    /// <summary>Stable machine-readable rejection code (for example <c>platform_release_version_mismatch</c>).</summary>
     [JsonPropertyName("code")]
     public string? Code { get; set; }
 
-    /// <summary>Declared platform-release version, echoed on a platform-release version mismatch.</summary>
     [JsonPropertyName("declaredVersion")]
     public string? DeclaredVersion { get; set; }
 
-    /// <summary>The requested target version, echoed on a platform-release version mismatch.</summary>
     [JsonPropertyName("targetVersion")]
     public string? TargetVersion { get; set; }
 
-    /// <summary>Declared serving artifact reference, echoed on a platform-release version mismatch.</summary>
     [JsonPropertyName("servingArtifactReference")]
     public string? ServingArtifactReference { get; set; }
 
-    /// <summary>Deploy-preflight co-versioning summary, echoed on a platform-release version mismatch.</summary>
     [JsonPropertyName("isCoVersioned")]
     public bool? IsCoVersioned { get; set; }
 }
@@ -341,25 +287,12 @@ internal sealed class McpConvergenceTargetOutput
     public string? Message { get; set; }
 }
 
-/// <summary>
-/// Read-only projection of the operation kinds that the live gateway can route.
-/// </summary>
 internal sealed class McpSupportedOperationKindsOutput
 {
-    /// <summary>
-    /// Stable <see cref="Honua.Core.Features.Guardrails.Domain.OperationClass"/> identifiers
-    /// backed by registered operation executors.
-    /// </summary>
     [JsonPropertyName("supportedKinds")]
     public IReadOnlyList<string> SupportedKinds { get; set; } = [];
 }
 
-/// <summary>
-/// Arguments for <c>honua_publish_service</c>: publish a source table as a
-/// hosted layer/service through the canonical <c>service.publish</c> operation
-/// (#1951). Field names mirror the <c>service.publish</c> operation parameters
-/// the <c>ServicePublishExecutor</c> maps onto a <c>LayerPublishRequest</c>.
-/// </summary>
 internal sealed class McpPublishServiceArgument
 {
     [JsonPropertyName("connectionId")]
@@ -396,14 +329,6 @@ internal sealed class McpPublishServiceArgument
     public IReadOnlyList<string>? Fields { get; set; }
 }
 
-/// <summary>
-/// Output for <c>honua_publish_service</c>. Projects the canonical
-/// <c>OperationHandle</c> returned by the operations dispatcher: a
-/// <c>Completed</c> publish carries the resulting service URI, layer id, and
-/// metadata revision; a <c>RequiresApproval</c> outcome carries the approval
-/// lane the agent must wait on; a <c>Queued</c> outcome carries the durable job
-/// id (#1951).
-/// </summary>
 internal sealed class McpPublishServiceOutput
 {
     [JsonPropertyName("status")]
@@ -421,12 +346,6 @@ internal sealed class McpPublishServiceOutput
     [JsonPropertyName("handleId")]
     public string HandleId { get; set; } = string.Empty;
 
-    /// <summary>
-    /// <see langword="false"/> when the operation instance record was not durably persisted: a
-    /// direct publish on a host started without Redis (owner decision 20). The identities and
-    /// audit receipts are real, but the handle cannot be read back through the operation status
-    /// surfaces. Omitted when the record went to the composed instance store.
-    /// </summary>
     [JsonPropertyName("durable")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? Durable { get; set; }
@@ -488,15 +407,6 @@ internal sealed class McpPublishServiceOutput
     public IReadOnlyList<string> EvidenceRefs { get; set; } = [];
 }
 
-/// <summary>
-/// Structured result of invoking a published operations-toolset operation projected
-/// as a first-class MCP tool (#2483, ADR-0056 Increment 4). Projects the canonical
-/// <c>OperationHandle</c> returned by the operations dispatcher, plus the
-/// determinism/cache provenance the published-tool contract adds: <c>deterministic</c>
-/// reports whether the backing descriptor is AI-free, and <c>cacheHit</c> /
-/// <c>cacheKey</c> report the param-keyed cache decision for a deterministic,
-/// read-only invocation.
-/// </summary>
 internal sealed class McpOperationToolOutput
 {
     [JsonPropertyName("status")]
@@ -505,29 +415,14 @@ internal sealed class McpOperationToolOutput
     [JsonPropertyName("requiresApproval")]
     public bool RequiresApproval { get; set; }
 
-    /// <summary>
-    /// Whether the backing operation descriptor is deterministic (AI-free). A
-    /// deterministic tool is what "deterministic mode" (a toolset with AI off)
-    /// publishes; only deterministic, read-only invocations are param-keyed cached.
-    /// </summary>
     [JsonPropertyName("deterministic")]
     public bool Deterministic { get; set; }
 
-    /// <summary>
-    /// True when this result was served from the param-keyed deterministic cache
-    /// rather than re-executed. Always false for non-deterministic or side-effecting
-    /// operations, which are never cached.
-    /// </summary>
+    // Non-deterministic or side-effecting operations are never cached, so this flag is always false for them.
     [JsonPropertyName("cacheHit")]
     public bool CacheHit { get; set; }
 
-    /// <summary>
-    /// Opaque <c>sha256:</c> cache key for a deterministic, read-only invocation. The
-    /// digest covers the operation id, catalog version, normalized parameters, the
-    /// invoking principal context, and the effective tenant/schema scope; treat it as
-    /// an equality token only and do not parse it. Null when the operation is not
-    /// cacheable.
-    /// </summary>
+    // The cache key is an opaque equality token and must not be parsed.
     [JsonPropertyName("cacheKey")]
     public string? CacheKey { get; set; }
 
@@ -588,18 +483,6 @@ internal sealed class McpOperationToolOutput
     public IReadOnlyList<string> EvidenceRefs { get; set; } = [];
 }
 
-/// <summary>
-/// Arguments for <c>honua_publish_result</c> (geospatial-mcp <c>publish_result</c>,
-/// #2482): promote a completed analysis job's materialized feature/table artifact
-/// into a hosted service + layer. Per the standard schema only <c>sourceId</c>
-/// (the completed job whose result is promoted) is required; the honua extension
-/// selectors below name the artifact and target service/layer. <c>targetKind</c>,
-/// <c>visibility</c>, and <c>routePrefix</c> mirror the standard's promotion-surface
-/// fields — the reference implementation supports the
-/// <c>published_service</c> promotion (Analyze / Publish Data); <c>deployment</c>
-/// (Build App) is not yet materialized server-side and returns a structured
-/// <c>failed_precondition</c>.
-/// </summary>
 internal sealed class McpPublishResultArgument
 {
     [JsonPropertyName("sourceId")]
@@ -624,17 +507,6 @@ internal sealed class McpPublishResultArgument
     public string? RoutePrefix { get; set; }
 }
 
-/// <summary>
-/// Output for <c>honua_publish_result</c>. Projects the same canonical
-/// <c>OperationHandle</c> shape as <c>honua_publish_service</c> (the promotion
-/// routes through the shared <c>service.publish</c> operation): a
-/// <c>Completed</c> promotion carries <c>serviceId</c> + <c>layerId</c> the agent
-/// chains straight into <c>honua_query_features</c> / <c>honua_render_map</c>; a
-/// <c>RequiresApproval</c> outcome carries the approval lane; a <c>Queued</c>
-/// outcome carries the durable job id; a <c>Denied</c> outcome carries the
-/// reason. <c>sourceJobId</c> / <c>artifactId</c> echo the promoted result
-/// (#2482).
-/// </summary>
 internal sealed class McpPublishResultOutput
 {
     [JsonPropertyName("status")]
@@ -715,95 +587,68 @@ internal sealed class McpPublishResultOutput
     public IReadOnlyList<string> EvidenceRefs { get; set; } = [];
 }
 
-/// <summary>
-/// Arguments for <c>honua_ingest_dataset</c>: load a small inline CSV or
-/// GeoJSON dataset into the catalog database through the canonical
-/// <c>IFileImportService</c> pipeline so it can be published with
-/// <c>honua_publish_service</c>.
-/// </summary>
 internal sealed class McpIngestDatasetArgument
 {
-    /// <summary>Inline data format: "csv" or "geojson".</summary>
     [JsonPropertyName("format")]
     public string? Format { get; set; }
 
-    /// <summary>The dataset content, inline (4 MB cap).</summary>
     [JsonPropertyName("data")]
     public string? Data { get; set; }
 
-    /// <summary>Target dataset/table name.</summary>
     [JsonPropertyName("datasetName")]
     public string? DatasetName { get; set; }
 
-    /// <summary>Spatial reference (SRID/WKID) of the input coordinates. Defaults to 4326.</summary>
     [JsonPropertyName("sourceSrid")]
     public int? SourceSrid { get; set; }
 
-    /// <summary>CSV only: explicit longitude (X) column name.</summary>
     [JsonPropertyName("longitudeColumn")]
     public string? LongitudeColumn { get; set; }
 
-    /// <summary>CSV only: explicit latitude (Y) column name.</summary>
     [JsonPropertyName("latitudeColumn")]
     public string? LatitudeColumn { get; set; }
 
-    /// <summary>CSV only: address column geocoded server-side into point geometry.</summary>
     [JsonPropertyName("addressColumn")]
     public string? AddressColumn { get; set; }
 }
 
-/// <summary>
-/// Arguments for <c>honua_ingest_job_artifact</c>. Identity only: the server reads the artifact it already stored.
-/// </summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed class McpIngestJobArtifactArgument
 {
-    /// <summary>Caller-persisted command id. Reuse it to recover the original import.</summary>
     [JsonPropertyName("intentId")]
     public string? IntentId { get; set; }
 
-    /// <summary>browser-file, local-process-artifact, or server-job-artifact. Only the last is admitted.</summary>
     [JsonPropertyName("kind")]
     public string? Kind { get; set; }
 
-    /// <summary>Deployment target the reference is bound to.</summary>
     [JsonPropertyName("targetId")]
     public string? TargetId { get; set; }
 
-    /// <summary>Completed built-in job.</summary>
     [JsonPropertyName("jobId")]
     public string? JobId { get; set; }
 
-    /// <summary>Immutable result package id (<c>{jobId}:v{version}</c>).</summary>
     [JsonPropertyName("resultPackageId")]
     public string? ResultPackageId { get; set; }
 
-    /// <summary>Artifact id (<c>{jobId}:artifact:{ordinal}</c>).</summary>
     [JsonPropertyName("artifactId")]
     public string? ArtifactId { get; set; }
 
-    /// <summary>Lowercase SHA-256 of the server-stored artifact reference.</summary>
     [JsonPropertyName("referenceSha256")]
     public string? ReferenceSha256 { get; set; }
 
-    /// <summary>Destination schema.</summary>
     [JsonPropertyName("schema")]
     public string? Schema { get; set; }
 
-    /// <summary>Destination table.</summary>
     [JsonPropertyName("table")]
     public string? Table { get; set; }
 
-    /// <summary>CRS stored on the imported table. Known producer coordinates are transformed when this differs.</summary>
     [JsonPropertyName("targetSrid")]
     public int? TargetSrid { get; set; }
 
-    /// <summary>Required only when the producer CRS is unknown. Ignored as an override of a known producer CRS.</summary>
+    // The CRS is required only when the producer CRS is unknown and is ignored when the producer CRS is already known.
     [JsonPropertyName("sourceSrid")]
     public int? SourceSrid { get; set; }
 }
 
-/// <summary>Output for <c>honua_ingest_job_artifact</c>. Publication remains a separate <c>honua_publish_service</c> call.</summary>
 internal sealed class McpIngestJobArtifactOutput
 {
     [JsonPropertyName("success")]
@@ -852,35 +697,21 @@ internal sealed class McpIngestJobArtifactOutput
     public string? ErrorMessage { get; set; }
 }
 
-/// <summary>
-/// A per-row issue surfaced by <c>honua_ingest_dataset</c> (for example a CSV
-/// address that failed to geocode, imported without geometry).
-/// </summary>
 internal sealed class McpIngestRowError
 {
-    /// <summary>1-based data row (header excluded), when known.</summary>
     [JsonPropertyName("row")]
     public int? Row { get; set; }
 
-    /// <summary>Stable machine-readable issue code (e.g. import.address_geocode_failed).</summary>
     [JsonPropertyName("code")]
     public string Code { get; set; } = string.Empty;
 
-    /// <summary>Human-readable issue message.</summary>
     [JsonPropertyName("message")]
     public string Message { get; set; } = string.Empty;
 
-    /// <summary>Offending field/column name, when known.</summary>
     [JsonPropertyName("field")]
     public string? Field { get; set; }
 }
 
-/// <summary>
-/// Output for <c>honua_ingest_dataset</c>. A successful ingest returns the
-/// connectionId/schema/table triple (plus geometry column and primary key)
-/// that chains directly into <c>honua_publish_service</c>; per-row issues ride
-/// alongside without failing the ingest.
-/// </summary>
 internal sealed class McpIngestDatasetOutput
 {
     [JsonPropertyName("success")]
@@ -923,19 +754,7 @@ internal sealed class McpIngestDatasetOutput
     public string? ErrorMessage { get; set; }
 }
 
-/// <summary>
-/// Arguments for <c>honua_create_map_package</c>: the structured geospatial-mcp
-/// <c>create_map_package</c> composition selectors, projected onto a
-/// deterministic MapPackage draft (ADR-0076, #3255).
-/// </summary>
-/// <remarks>
-/// There is deliberately no <c>prompt</c>, <c>provider</c>, or <c>model</c>
-/// member: draft creation performs no model inference, so a caller that still
-/// sends prose has it ignored as an unmodelled property rather than having it
-/// change the result. <c>sourceBindings</c> and <c>initialView</c> are parsed and
-/// honored — before D5 the first was rejected outright and the second was
-/// published in the schema and silently dropped by the parser.
-/// </remarks>
+// Draft creation performs no inference, so a prompt, provider, or model member is ignored rather than changing the result.
 internal sealed class McpCreateMapPackageArgument
 {
     [JsonPropertyName("templateId")]
@@ -954,13 +773,6 @@ internal sealed class McpCreateMapPackageArgument
     public McpInitialViewArgument? InitialView { get; set; }
 }
 
-/// <summary>
-/// Wire shape of a <c>create_map_package</c> source binding entry. The standard
-/// leaves the item shape open (<c>additionalProperties: true</c>); Honua parses
-/// the canonical <c>SourceBinding</c> members and additionally accepts
-/// <c>bindingId</c> as an alias for <c>sourceId</c>, which is the spelling the
-/// vendored standard fixture uses.
-/// </summary>
 internal sealed class McpSourceBindingArgument
 {
     [JsonPropertyName("sourceId")]
@@ -988,11 +800,6 @@ internal sealed class McpSourceBindingArgument
     public IReadOnlyDictionary<string, string>? Metadata { get; set; }
 }
 
-/// <summary>
-/// Wire shape of the <c>create_map_package</c> initial view. <c>crs</c> is
-/// declared by the standard as either a string or an integer EPSG code, so it is
-/// carried as a raw element and normalized by the tool.
-/// </summary>
 internal sealed class McpInitialViewArgument
 {
     [JsonPropertyName("bbox")]
@@ -1002,16 +809,6 @@ internal sealed class McpInitialViewArgument
     public JsonElement? Crs { get; set; }
 }
 
-/// <summary>
-/// Arguments for <c>honua_create_app_package</c>: the structured geospatial-mcp
-/// <c>create_app_package</c> fields, projected onto a deterministic AppPackage
-/// draft (ADR-0076, #3255).
-/// </summary>
-/// <remarks>
-/// As with <see cref="McpCreateMapPackageArgument"/> there is no prompt,
-/// provider, or model member, and <c>runtimeConfig</c> — published by the
-/// standard but never previously parsed — is now honored.
-/// </remarks>
 internal sealed class McpCreateAppPackageArgument
 {
     [JsonPropertyName("templateId")]
@@ -1030,43 +827,24 @@ internal sealed class McpCreateAppPackageArgument
     public JsonElement? RuntimeConfig { get; set; }
 }
 
-/// <summary>
-/// Result of <c>honua_create_map_package</c> / <c>honua_create_app_package</c>:
-/// a real, addressable draft package rather than a generation envelope.
-/// </summary>
-/// <remarks>
-/// ADR-0076 names the failure mode this shape exists to prevent — a tool that
-/// stays advertised while permanently returning <c>capability_unavailable</c>.
-/// The status vocabulary therefore has a single success value and no
-/// unavailable state: either a package with a stable identifier comes back, or
-/// the call fails as a structured <c>invalid_argument</c>.
-/// </remarks>
 internal sealed class McpPackageDraftOutput
 {
-    /// <summary>Always <c>created</c> on the success path.</summary>
     [JsonPropertyName("status")]
     public string Status { get; set; } = "created";
 
-    /// <summary>Stable <c>map_…</c> / <c>app_…</c> identifier for the draft.</summary>
     [JsonPropertyName("packageId")]
     public string PackageId { get; set; } = string.Empty;
 
-    /// <summary>Canonical resource URI addressing the draft.</summary>
     [JsonPropertyName("resourceUri")]
     public string ResourceUri { get; set; } = string.Empty;
 
-    /// <summary>The created package body.</summary>
     [JsonPropertyName("package")]
     public JsonElement? Package { get; set; }
 
-    /// <summary>Non-blocking findings deferred to publish-time resolution.</summary>
     [JsonPropertyName("warnings")]
     public IReadOnlyList<McpPackageDraftFinding> Warnings { get; set; } = [];
 }
 
-/// <summary>
-/// A single structural finding raised while building a draft package.
-/// </summary>
 internal sealed class McpPackageDraftFinding
 {
     [JsonPropertyName("code")]
@@ -1079,10 +857,6 @@ internal sealed class McpPackageDraftFinding
     public string Message { get; set; } = string.Empty;
 }
 
-/// <summary>
-/// Canonical-object plan wire shape consumed by MCP plan tools.
-/// Maps directly to <see cref="Honua.Core.Features.Geoprocessing.Domain.AnalysisPlan"/>.
-/// </summary>
 internal sealed class McpPlanInput
 {
     [JsonPropertyName("planId")]
@@ -1123,9 +897,6 @@ internal sealed class McpPlanStepInput
 // Tool output shapes (serialized into structuredContent of the call result)
 // -----------------------------------------------------------------------
 
-/// <summary>
-/// Output for <c>honua_validate_plan</c>.
-/// </summary>
 internal sealed class McpValidatePlanOutput
 {
     [JsonPropertyName("isExecutable")]
@@ -1141,20 +912,12 @@ internal sealed class McpValidatePlanOutput
     public IReadOnlyList<string> Warnings { get; set; } = [];
 }
 
-/// <summary>
-/// Output for <c>honua_dry_run_plan</c>.
-/// </summary>
 internal sealed class McpDryRunOutput
 {
     [JsonPropertyName("estimatedDurationSeconds")]
     public double EstimatedDurationSeconds { get; set; }
 
-    /// <summary>
-    /// Whether <see cref="EstimatedDurationSeconds"/> is a real estimate. When
-    /// <see langword="false"/> (the current default), the duration is a placeholder — the
-    /// dry-run path does not model runtime cost — so callers must not treat <c>0</c> as an
-    /// "instant" prediction. The <c>sideEffects</c> list carries the same disclosure in prose.
-    /// </summary>
+    // The duration is a placeholder, so callers must not treat 0 as an instant prediction.
     [JsonPropertyName("durationEstimateAvailable")]
     public bool DurationEstimateAvailable { get; set; }
 
@@ -1165,9 +928,6 @@ internal sealed class McpDryRunOutput
     public IReadOnlyList<string> SideEffects { get; set; } = [];
 }
 
-/// <summary>
-/// Output for <c>honua_execute_plan</c>.
-/// </summary>
 internal sealed class McpExecuteOutput
 {
     [JsonPropertyName("jobId")]
@@ -1183,9 +943,6 @@ internal sealed class McpExecuteOutput
     public string ResourceUri { get; set; } = string.Empty;
 }
 
-/// <summary>
-/// Output for <c>honua_cancel_job</c>.
-/// </summary>
 internal sealed class McpCancelJobOutput
 {
     [JsonPropertyName("jobId")]
@@ -1198,13 +955,6 @@ internal sealed class McpCancelJobOutput
     public bool CancellationRequested { get; set; }
 }
 
-/// <summary>
-/// Structured envelope emitted in <see cref="McpToolsCallResult.StructuredContent"/>
-/// when a tool execution fails (auth, validation, approval, domain error). Per
-/// MCP 2025-03-26 tool errors surface inside <c>result</c> with
-/// <c>isError: true</c>, not as JSON-RPC protocol errors, so clients can still
-/// read the tool-level payload for recovery hints.
-/// </summary>
 internal sealed class McpToolErrorOutput
 {
     [JsonPropertyName("status")]
@@ -1243,35 +993,18 @@ internal sealed class McpToolErrorOutput
     [JsonPropertyName("retryable")]
     public bool? Retryable { get; set; }
 
-    /// <summary>
-    /// Identifier of the infrastructure dependency the install never composed (for example
-    /// <c>redis</c>) when this is a capability-unavailable refusal (honua-release#202). Present
-    /// only on that refusal; an agent can branch on it to stop retrying and report what an
-    /// operator must change.
-    /// </summary>
     [JsonPropertyName("missingDependency")]
     public string? MissingDependency { get; set; }
 
-    /// <summary>
-    /// Capability-manifest id the missing dependency disables (for example <c>jobs.runner</c>),
-    /// joinable to <c>GET /api/v1/capabilities/manifest</c>.
-    /// </summary>
     [JsonPropertyName("capability")]
     public string? Capability { get; set; }
 
-    /// <summary>
-    /// Identifier of the entitlement whose absence composed the capability out (for example
-    /// <c>caching.redis</c>). Present instead of <see cref="MissingDependency"/> when the
-    /// dependency is deployed but not licensed.
-    /// </summary>
     [JsonPropertyName("missingEntitlement")]
     public string? MissingEntitlement { get; set; }
 
-    /// <summary>Operator-facing remediation sentence for a capability-unavailable refusal.</summary>
     [JsonPropertyName("remediation")]
     public string? Remediation { get; set; }
 
-    /// <summary>Documentation reference for <see cref="Remediation"/>.</summary>
     [JsonPropertyName("remediationRef")]
     public string? RemediationRef { get; set; }
 

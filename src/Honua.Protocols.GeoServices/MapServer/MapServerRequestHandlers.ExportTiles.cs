@@ -309,11 +309,6 @@ internal static partial class MapServerEndpoints
         }
     }
 
-    /// <summary>
-    /// Client-facing rejection for a synchronous export whose tile count exceeds
-    /// <paramref name="maxTiles"/>. The estimate operation reports the same counts
-    /// with <c>exceededTransferLimit</c> instead of failing.
-    /// </summary>
     internal static string DescribeExportTilesTransferLimit(long requestedTileCount, int maxTiles)
         => string.Create(
             CultureInfo.InvariantCulture,
@@ -680,13 +675,7 @@ internal static partial class MapServerEndpoints
         return [minLon, minLat, maxLon, maxLat];
     }
 
-    /// <summary>
-    /// Counts the total number of tiles the request would produce as
-    /// <c>Σ (xMax-xMin+1)*(yMax-yMin+1)</c> across the requested zoom levels, using
-    /// <see cref="long"/> arithmetic so a whole-world high-zoom request cannot overflow.
-    /// This is computed before the grid is materialized so the caller can reject an
-    /// over-limit request without allocating the full coordinate list (#2065).
-    /// </summary>
+    // The tile count is computed with checked arithmetic before the grid is allocated, so a whole-world high zoom cannot overflow or force the full coordinate list.
     private static long CountExportTileCoordinates(double[] bounds, IReadOnlyList<int> levels)
     {
         var minLon = bounds[0];

@@ -7,15 +7,13 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for row-level security (RLS) policy management (#502, epic #1275).
-/// </summary>
 internal static partial class RlsPolicyEndpoints
 {
     internal sealed class RlsPolicyEndpointsLog;
@@ -36,9 +34,6 @@ internal static partial class RlsPolicyEndpoints
         public static partial void OperationFailed(ILogger logger, Exception exception);
     }
 
-    /// <summary>
-    /// Configure RLS policy management admin endpoints.
-    /// </summary>
     public static void MapRlsPolicyEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/rls-policies")
@@ -181,6 +176,7 @@ internal static partial class RlsPolicyEndpoints
             };
 
             var created = await store.CreatePolicyAsync(policy, context.RequestAborted);
+            await ResponseCacheUtilities.InvalidateSharedQueryResponsesAsync(context).ConfigureAwait(false);
             RlsPolicyLog.PolicyCreated(logger, created.PolicyId, created.Role, created.Service, created.Layer);
             return TypedResults.Created(
                 $"/api/v1/admin/rls-policies/{created.PolicyId}",
@@ -218,6 +214,7 @@ internal static partial class RlsPolicyEndpoints
                 return TypedResults.NotFound(ApiResponse<object>.Failure("RLS policy not found"));
             }
 
+            await ResponseCacheUtilities.InvalidateSharedQueryResponsesAsync(context).ConfigureAwait(false);
             RlsPolicyLog.PolicyDeleted(logger, id);
             return TypedResults.Ok(ApiResponse<object>.SuccessWithMessage("RLS policy deleted"));
         }

@@ -11,11 +11,6 @@ using Honua.Core.Features.Operations.Domain;
 
 namespace Honua.Server.Features.Operations;
 
-/// <summary>
-/// Maps <c>service.publish</c> approval requests to the publish actuator's durable,
-/// typed replay payload. The operation has its own class and is never aliased to an
-/// unrelated legacy actuator.
-/// </summary>
 internal sealed class ServicePublishApprovalRequestMapper : IOperationApprovalRequestMapper
 {
     public string OperationId => ServicePublishOperation.OperationId;

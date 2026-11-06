@@ -30,5 +30,17 @@ public sealed class GpContainerConfigurationTests
         configuration["GdalContainer:Image"].Should().Be("worker@sha256:abc");
         configuration["GdalContainer:DockerExecutable"].Should().Be("podman");
         configuration["GdalContainer:User"].Should().Be("1234:5678");
+        configuration["Geoprocessing:Executors:OutputRootDirectory"].Should().BeNull();
+    }
+
+    [Fact]
+    public void ScratchRoot_RedirectsExecutorOutputsUnderThatRoot()
+    {
+        var scratch = Path.Join(Path.GetTempPath(), "honua-gp-scratch-" + Guid.NewGuid().ToString("N"));
+        var configuration = GpContainerConfiguration.Create(_ => null, scratchRoot: scratch);
+
+        var outputRoot = configuration["Geoprocessing:Executors:OutputRootDirectory"];
+        outputRoot.Should().Be(Path.Join(scratch, "executor-output"));
+        configuration["GdalWorker:ScratchRoot"].Should().Be(scratch);
     }
 }

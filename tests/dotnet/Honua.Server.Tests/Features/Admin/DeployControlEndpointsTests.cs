@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Configuration;
+using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -22,6 +23,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Admin;
 
@@ -34,13 +36,17 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
     private readonly InMemoryWorkflowOperationStore _workflowStore = new();
     private readonly StubWorkflowOperationReconciler _reconciler = new();
     private readonly WebAppFixture _fixture;
+    private readonly IManagedComposeObserver _managedObserver = Substitute.For<IManagedComposeObserver>();
     private HttpClient _client = null!;
 
     public DeployControlEndpointsTests()
     {
+        _managedObserver.ReadAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<OpsManagedTargetHealthView>());
         _fixture = new WebAppFixture()
             .ConfigureServices(services =>
             {
+                services.RemoveAll<IManagedComposeObserver>();
+                services.AddSingleton(_managedObserver);
                 services.RemoveAll<IDatabaseMigrationRunner>();
                 services.AddSingleton<IDatabaseMigrationRunner>(_migrationRunner);
                 services.RemoveAll<IOptions<MigrationSafetyOptions>>();
@@ -64,6 +70,45 @@ public sealed class DeployControlEndpointsTests : IAsyncLifetime
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/deploy/preflight")]
+    public async Task GetDeployPreflight_ManagedTargetStillOnPriorImage_ReportsLiveSkew()
+    {
+        var desired = "sha256:" + new string('a', 64);
+        var prior = "sha256:" + new string('b', 64);
+        var options = _fixture.GetService<IOptionsMonitor<ControlPlaneOptions>>().CurrentValue;
+        options.PlatformRelease = new() { Version = "2026.1-rc.2", ServingArtifactReference = desired };
+        options.DeployTargets = [new()
+        {
+            TargetId = "compose-local",
+            TargetKind = DeployTargetKind.LocalCompose,
+            Backend = ComposeDeployBackend.AdapterBackendName,
+            ArtifactReference = desired
+        }];
+        _managedObserver.ReadAsync(Arg.Any<CancellationToken>()).Returns(new OpsManagedTargetHealthView[]
+        {
+            new()
+            {
+                TargetId = "compose-local",
+                Available = true,
+                Status = "Healthy",
+                ObservedAt = DateTimeOffset.UtcNow,
+                RunningImage = prior,
+                ImageId = prior,
+                ServerVersion = "2026.1-rc.1"
+            }
+        });
+        var response = await _client.GetAsync("/api/v1/admin/deploy/preflight?includeDiagnostics=true");
+        response.EnsureSuccessStatusCode();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var release = document.RootElement.GetProperty("platformRelease");
+        Assert.False(release.GetProperty("isCoVersioned").GetBoolean());
+        var serving = Assert.Single(release.GetProperty("serving").EnumerateArray());
+        Assert.Equal(prior, serving.GetProperty("observedImageId").GetString());
+        Assert.Equal("2026.1-rc.1", serving.GetProperty("serverVersion").GetString());
+        Assert.True(serving.GetProperty("skewed").GetBoolean());
+    }
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/deploy/preflight")]

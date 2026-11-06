@@ -17,7 +17,7 @@ SERVER_COMMIT="$(git -C "$ROOT_DIR" rev-parse HEAD)"
 export HONUA_SERVER_COMMIT="$SERVER_COMMIT"
 
 # Mirror the lane matrix in .github/workflows/client-interop-nightly.yml.
-DEFAULT_LANES=(gdal pyqgis openlayers cesium arcgis-stub geopandas owslib duckdb r-sf pystac)
+DEFAULT_LANES=(gdal pyqgis openlayers cesium geoservices-rest-stub geopandas owslib duckdb r-sf pystac)
 ALLOWED_LANES=("${DEFAULT_LANES[@]}")
 
 if (( $# == 0 )); then
@@ -62,7 +62,7 @@ for lane in "${LANES[@]}"; do
         build seed honua "$lane"
     if docker compose -f "$COMPOSE_FILE" \
             --profile "$lane" \
-            run --no-build --rm \
+            run --rm \
             "$lane"; then
         echo "lane $lane: ok"
     else

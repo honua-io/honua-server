@@ -6,9 +6,6 @@ using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Admin.Models;
 
-/// <summary>
-/// JSON source generation context for admin API key management models.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
@@ -19,6 +16,7 @@ namespace Honua.Server.Features.Admin.Models;
 [JsonSerializable(typeof(ApiResponse<AdminApiKeyEffectivePermissionsResponse>))]
 [JsonSerializable(typeof(ApiResponse<object>))]
 [JsonSerializable(typeof(CreateAdminApiKeyRequest))]
+[JsonSerializable(typeof(UpdateAdminApiKeyRestrictionsRequest))]
 [JsonSerializable(typeof(AdminApiKeyResponse))]
 [JsonSerializable(typeof(AdminApiKeySecretResponse))]
 [JsonSerializable(typeof(AdminApiKeyEffectivePermissionsResponse))]

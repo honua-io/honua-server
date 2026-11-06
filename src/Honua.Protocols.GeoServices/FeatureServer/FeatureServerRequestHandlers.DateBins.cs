@@ -226,15 +226,6 @@ internal static partial class FeatureServerEndpoints
         return Results.Json(response, FeatureServerJsonContext.Default.QueryResponse, contentType: "application/json");
     }
 
-    /// <summary>
-    /// Pro-edition gate for the queryDateBins temporal histogram. Mirrors
-    /// <c>RequireProEditionForTimeSeriesTiles</c> in FeatureServerRequestHandlers.Tiles.cs:
-    /// resolves the active license, returns an HTTP 402 with a remediation
-    /// message when the entitlement is inactive. Exposed as
-    /// <c>internal</c> so the gate decision can be unit-tested directly without
-    /// booting the full HTTP pipeline (mirrors the
-    /// <c>SpatialAnalyticsRequestHandlers.RequireProEdition</c> shape).
-    /// </summary>
     internal static IResult? RequireProEditionForDateBins(HttpContext context)
     {
         return LicenseGate.RequireEntitlement(

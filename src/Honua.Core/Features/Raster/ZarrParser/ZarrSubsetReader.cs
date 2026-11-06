@@ -1,9 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Buffers.Binary;
 using System.Globalization;
-using System.IO.Compression;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
@@ -242,7 +240,7 @@ public sealed class ZarrSubsetReader : IZarrSubsetReader
             var objectSize = await reader.GetObjectSizeAsync(bucket, chunkPath, cancellationToken).ConfigureAwait(false);
             if (objectSize <= 0)
             {
-                raw = null;
+                throw new InvalidDataException("An existing Zarr chunk object must contain its encoded payload.");
             }
             else
             {
@@ -251,10 +249,13 @@ public sealed class ZarrSubsetReader : IZarrSubsetReader
                 // streams are not truncated, while the larger compressed cap keeps
                 // attacker-controlled objects bounded.
                 var readLimit = array.Compressor is null ? chunkBytes : MaxCompressedChunkBytes;
-                var readLength = Math.Min(objectSize, readLimit);
+                if (objectSize > readLimit || array.Compressor is null && objectSize != chunkBytes)
+                    throw new InvalidDataException("Zarr chunk object length exceeds its encoded limit or does not match its declared shape.");
                 raw = await reader.ReadRangeAsync(
-                        bucket, chunkPath, 0, checked((int)readLength), cancellationToken)
+                        bucket, chunkPath, 0, checked((int)objectSize), cancellationToken)
                     .ConfigureAwait(false);
+                if (raw.LongLength != objectSize)
+                    throw new InvalidDataException("Zarr chunk range read did not return the complete encoded object.");
             }
         }
         catch (FileNotFoundException)
@@ -267,13 +268,13 @@ public sealed class ZarrSubsetReader : IZarrSubsetReader
         }
 
         var chunkBuffer = new byte[chunkBytes];
-        if (raw is null || raw.Length == 0)
+        if (raw is null)
         {
-            FillWithFillValue(chunkBuffer, array, elementSize);
+            FillWithFillValue(chunkBuffer, array, elementSize, cancellationToken);
         }
         else
         {
-            DecompressChunk(raw, array.Compressor, chunkBuffer);
+            ZarrChunkDecoder.Decode(raw, array.Compressor, chunkBuffer, cancellationToken);
         }
 
         // For each cell in the chunk intersected with the request bounds, copy
@@ -328,124 +329,8 @@ public sealed class ZarrSubsetReader : IZarrSubsetReader
         return bytes;
     }
 
-    private static void FillWithFillValue(byte[] buffer, ZarrArrayMetadata array, int elementSize)
-    {
-        if (array.FillValue is null)
-        {
-            return; // zero-filled by default.
-        }
-
-        // For MVP we only fill numeric fill values that round-trip to little-endian bytes.
-        // String fill values (e.g. NaN encoded as "NaN") are out of scope.
-        if (array.FillValue is double d)
-        {
-            WriteFillScalar(buffer, array.DataType, elementSize, d);
-        }
-    }
-
-    private static void WriteFillScalar(byte[] buffer, string dtype, int elementSize, double value)
-    {
-        // Best-effort fill for f4/f8/i*/u*; out-of-range values silently clamp to defaults.
-        // BinaryPrimitives is used throughout to match Zarr's explicit < (little-endian)
-        // dtype prefix contract — BitConverter is platform-endian and would produce incorrect
-        // fill bytes on big-endian hosts.
-        // BH2-015: added <i8 / <u8 cases that were previously falling through to default:return.
-        Span<byte> scratch = stackalloc byte[8];
-        switch (dtype)
-        {
-            case "<f8":
-                BinaryPrimitives.WriteDoubleLittleEndian(scratch, value);
-                break;
-            case "<f4":
-                BinaryPrimitives.WriteSingleLittleEndian(scratch, (float)value);
-                break;
-            case "<i8":
-                BinaryPrimitives.WriteInt64LittleEndian(scratch, (long)value);
-                break;
-            case "<i4":
-            case "|i4":
-                BinaryPrimitives.WriteInt32LittleEndian(scratch, (int)value);
-                break;
-            case "<i2":
-            case "|i2":
-                BinaryPrimitives.WriteInt16LittleEndian(scratch, (short)value);
-                break;
-            case "|i1":
-            case "<i1":
-                scratch[0] = (byte)(sbyte)value;
-                break;
-            case "<u8":
-                BinaryPrimitives.WriteUInt64LittleEndian(scratch, (ulong)value);
-                break;
-            case "<u4":
-            case "|u4":
-                BinaryPrimitives.WriteUInt32LittleEndian(scratch, (uint)value);
-                break;
-            case "<u2":
-            case "|u2":
-                BinaryPrimitives.WriteUInt16LittleEndian(scratch, (ushort)value);
-                break;
-            case "|u1":
-            case "<u1":
-                scratch[0] = (byte)value;
-                break;
-            default:
-                return;
-        }
-
-        for (var offset = 0; offset + elementSize <= buffer.Length; offset += elementSize)
-        {
-            for (var k = 0; k < elementSize; k++)
-            {
-                buffer[offset + k] = scratch[k];
-            }
-        }
-    }
-
-    private static void DecompressChunk(byte[] raw, string? compressor, byte[] destination)
-    {
-        if (compressor is null)
-        {
-            if (raw.Length < destination.Length)
-            {
-                throw new InvalidDataException(
-                    $"Zarr chunk is {raw.Length} bytes but the array expects {destination.Length} uncompressed bytes.");
-            }
-            Buffer.BlockCopy(raw, 0, destination, 0, destination.Length);
-            return;
-        }
-
-        if (string.Equals(compressor, "zlib", StringComparison.Ordinal) ||
-            string.Equals(compressor, "gzip", StringComparison.Ordinal))
-        {
-            // MemoryStream(byte[]) is a non-copying wrapper; the destination buffer is supplied
-            // by the caller (already pool-friendly), so we decompress straight into it via the
-            // Span<byte> overload, avoiding any intermediate MemoryStream/ToArray() allocation.
-            // zlib (v2 zlib codec) and gzip (v3 gzip codec) differ only in container framing.
-            using var input = new MemoryStream(raw);
-            using Stream decoder = string.Equals(compressor, "gzip", StringComparison.Ordinal)
-                ? new GZipStream(input, CompressionMode.Decompress)
-                : new ZLibStream(input, CompressionMode.Decompress);
-            var totalRead = 0;
-            while (totalRead < destination.Length)
-            {
-                var read = decoder.Read(destination.AsSpan(totalRead));
-                if (read <= 0)
-                {
-                    break;
-                }
-                totalRead += read;
-            }
-            if (totalRead < destination.Length)
-            {
-                throw new InvalidDataException(
-                    $"Zarr {compressor} chunk decoded to {totalRead} bytes; expected {destination.Length}.");
-            }
-            return;
-        }
-
-        throw new InvalidOperationException($"Zarr compressor '{compressor}' is not supported.");
-    }
+    private static void FillWithFillValue(byte[] buffer, ZarrArrayMetadata array, int elementSize, CancellationToken cancellationToken)
+        => ZarrFillValueCodec.Fill(buffer, array.DataType, elementSize, array.FillValue, cancellationToken);
 
     private static long ComputeChunkOffset(int[] cell, int[] chunkStart, int[] chunkShape)
     {

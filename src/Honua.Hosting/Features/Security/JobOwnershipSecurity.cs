@@ -10,7 +10,6 @@ using Honua.Infrastructure.Authentication;
 
 namespace Honua.Infrastructure.Security;
 
-/// <summary>Shared tenant and durable actor binding for background job lifecycles.</summary>
 internal static class JobOwnershipSecurity
 {
     internal static string? ResolveOwner(ClaimsPrincipal principal)
@@ -44,19 +43,7 @@ internal static class JobOwnershipSecurity
             && string.Equals(submitter.OwnerActorId, owner, StringComparison.Ordinal)
             && string.Equals(audit.RequestedBy, owner, StringComparison.Ordinal);
 
-    /// <summary>
-    /// Matches a record written before the durable owner actor was stored: its snapshot has no
-    /// <see cref="JobSecurityContext.OwnerActorId"/> and <c>RequestedBy</c> holds the raw subject or
-    /// API-key id. The caller owns it only when the snapshot was captured from an authenticated
-    /// submitter whose subject and issuer, or API-key id, equal the caller's durable identity.
-    /// The caller's display name is never compared.
-    /// </summary>
-    /// <remarks>
-    /// The prior tile-export resolver never read <c>api_key_id</c>, so its API-key records hold
-    /// the key's display name in <c>RequestedBy</c>. That form is accepted only when the snapshot
-    /// carries no subject (so the old resolver fell through to the name), the stored name equals
-    /// the name captured in that same snapshot, and the captured key id is the caller's.
-    /// </remarks>
+    // A legacy record matches the snapshot subject or key id, and a display name matches only when that snapshot has no subject.
     internal static bool MatchesPriorFormatSubmitter(OperationAuditInfo audit, ClaimsPrincipal principal, string? tenant)
     {
         if (audit.SubmitterSecurityContext is not { OwnerActorId: null } submitter
@@ -97,14 +84,10 @@ internal static class JobOwnershipSecurity
             ? $"{prefix}-{Guid.NewGuid():N}"
             : $"{prefix}-{Convert.ToHexStringLower(Digest("job-owner-v1", key, owner, tenant).AsSpan(0, 12))}";
 
-    /// <summary>Key-only job id that keyed submissions derived before ids were scoped by tenant and owner.</summary>
     internal static string CreatePriorFormatJobId(string prefix, string key)
         => $"{prefix}-{Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(key.Trim())).AsSpan(0, 12))}";
 
-    /// <summary>
-    /// Approval-proposal idempotency key scoped to the tenant and durable owner, so two actors
-    /// presenting the same client key never resolve to one proposal.
-    /// </summary>
+    // The approval idempotency key includes the tenant and durable owner so two actors with the same client key do not share a proposal.
     internal static string? CreateOwnerScopedKey(string? key, string? owner, string? tenant)
         => string.IsNullOrWhiteSpace(key)
             ? null

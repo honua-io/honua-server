@@ -9,30 +9,8 @@ using Honua.Core.Features.Temporal.Domain;
 
 namespace Honua.Core.Features.Temporal.Services;
 
-/// <summary>
-/// Slices 2-5 of the temporal history service (honua-server#1166): diff, feature timeline, attribution,
-/// and governed rollback planning/execution.
-/// </summary>
-/// <remarks>
-/// <para>
-/// All four surfaces build on the same change-log foundation as slice 1. The DEFAULT change log records
-/// only object identity, net operation, generation, timestamp, and (after the slice-4 migration)
-/// attribution — it does NOT retain historical attribute or geometry snapshots. The diff and timeline
-/// therefore classify changes by the recorded operation and surface the CURRENT attribute snapshot for
-/// surviving features (masked per policy); prior-snapshot values are unavailable, consistent with the
-/// slice-1 as-of read's documented limitation. The contract carries old/new field slots and a geometry
-/// indicator so richer detail can be filled in once snapshot storage exists.
-/// </para>
-/// <para>
-/// Governed rollback never deletes history: <see cref="ExecuteRollbackAsync"/> submits a NEW forward
-/// corrective operation through the job runner (<see cref="ITemporalRollbackRunner"/>) which re-applies the
-/// target state via the canonical edit pipeline, recording new change-log rows and advancing the
-/// generation — producing a new checkpoint while leaving the immutable audit history intact.
-/// </para>
-/// </remarks>
 public sealed partial class TemporalHistoryService
 {
-    /// <inheritdoc />
     public async Task<TemporalDiffResult> DiffAsync(
         string serviceId,
         int layerId,
@@ -143,7 +121,6 @@ public sealed partial class TemporalHistoryService
             NextCursor: nextCursor);
     }
 
-    /// <inheritdoc />
     public async Task<TemporalTimeline> GetTimelineAsync(
         string serviceId,
         int layerId,
@@ -194,7 +171,6 @@ public sealed partial class TemporalHistoryService
             NextCursor: nextCursor);
     }
 
-    /// <inheritdoc />
     public async Task<TemporalRollbackPlan> PlanRollbackAsync(
         string serviceId,
         int layerId,
@@ -215,7 +191,6 @@ public sealed partial class TemporalHistoryService
             .ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<TemporalRollbackJobHandle> ExecuteRollbackAsync(
         string serviceId,
         int layerId,

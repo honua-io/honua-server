@@ -6,11 +6,13 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Styling.Abstractions;
+using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.Tiles;
 
@@ -59,8 +61,11 @@ public sealed class TileJsonCredentialEndpointTests : IAsyncLifetime
         var firstToken = await IssueTokenAsync(client);
         var secondToken = await IssueTokenAsync(client);
         secondToken.Should().NotBe(firstToken);
-        // The existing API-key-as-token contract uses the same URL carrier.
-        foreach (var token in new[] { firstToken, secondToken, WebAppFixture.SharedAdminPassword })
+        // The existing API-key-as-token contract uses the same URL carrier. Keys with
+        // administrative authority are refused in the URL (#6610), so the API-key case uses
+        // a read-scoped managed key; the admin-key refusal is asserted below.
+        var readKey = await CreateReadScopedApiKeyAsync();
+        foreach (var token in new[] { firstToken, secondToken, readKey })
         {
             using var metadata = await ReadJsonAsync(client, metadataPath + "?token=" + Uri.EscapeDataString(token));
             var tileUrl = metadata.RootElement.GetProperty("tiles")[0].GetString()!;
@@ -93,6 +98,10 @@ public sealed class TileJsonCredentialEndpointTests : IAsyncLifetime
         anonymousStyle.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         using var anonymousTile = await client.GetAsync("/tiles/0/0/0/0.mvt");
         anonymousTile.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        client.DefaultRequestHeaders.Referrer = new Uri(Referer);
+        using var adminKeyInUrl = await client.GetAsync(metadataPath + "?token=" + Uri.EscapeDataString(WebAppFixture.SharedAdminPassword));
+        adminKeyInUrl.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
+            "a key with administrative authority is never accepted from the URL (#6610)");
         using var conflictingTokens = await client.GetAsync(metadataPath + "?token=" + Uri.EscapeDataString(firstToken) + "&token=" + Uri.EscapeDataString(secondToken));
         conflictingTokens.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
@@ -135,6 +144,14 @@ public sealed class TileJsonCredentialEndpointTests : IAsyncLifetime
         var stored = await catalog.GetLayerStyleAsync(0);
         stored.Should().NotBeNull();
         stored!.MapLibreStyleJson.Should().NotContain(token);
+    }
+
+    private async Task<string> CreateReadScopedApiKeyAsync()
+    {
+        var store = _fixture.Services.GetRequiredService<IAdminApiKeyStore>();
+        var created = await store.CreateAsync("tilejson-token-read", ["read:" + WebAppFixture.TestServiceId],
+            DateTimeOffset.UtcNow.AddMinutes(10), "test", CancellationToken.None);
+        return created.Key;
     }
 
     private static void AssertToken(string url, string expected)

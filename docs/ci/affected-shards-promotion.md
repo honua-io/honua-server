@@ -251,3 +251,46 @@ The offline auditor and selector/verdict fixtures validate the replay. A
 consistency check matches all 51 unique run/attempt/head/shard identities to
 the original observations, matches the five accepted decisions to their
 reconciliation rows, and reproduces the retained audit as JSON values.
+
+## Disposition on 2026-10-27 (#6673)
+
+**Decision: keep `AFFECTED_SHARDS_MODE: report`.** Do not flip the mode and do
+not edit branch protection. The corrected 2026-10-08 window is still the
+retained measurement (`promotion_ready: false`: 206 executed samples, 39
+unresolved red runs, false-red bounds 0.97%–19.90%). No newer qualifying
+seven-day audit is claimed. The bar is unchanged: a complete seven-day window,
+at least 60 executed samples, a false-red rate strictly below 2%, and every
+red reconciled. Unresolved reds still block promotion. The shard cap,
+selection, timeouts, and advisory exclusions are unchanged.
+
+Trunk branch protection was read back on 2026-10-27
+(`GET /repos/honua-io/honua-server/branches/trunk/protection`, enforcement
+`non_admins`, app id 15368). It already requires `PR Gate` and
+`PR Gate / Affected shards`. That required-context entry is **not** promotion.
+The 2026-10-08 decision said not to add the context on this evidence; removing
+it would be a protection edit, which this disposition does not make, and the
+lander still expects the check to exist. While the mode is `report`, a
+successful required check only means the verdict was published.
+`scripts/ci/affected-shard-verdict.py` sets `test_pass` false for every
+report-mode result, including a green shard table, a skipped selection, a red
+receipt, and a missing receipt. Enforce mode still fails closed on a red
+receipt and on missing evidence, and `test_pass` is true only for a complete
+green table in that mode.
+
+The readback, the workflow mode, and this decision are recorded in
+[affected-shards-disposition-20261027.json](affected-shards-disposition-20261027.json).
+Offline coverage is `python3 scripts/ci/affected-shard-verdict.test.py`.
+
+PR #6663 head `a818f3421d78d65049f2b15dad9e81a25446d317`, run
+[40423291836](https://github.com/honua-io/honua-server/actions/runs/40423291836),
+is the evidence that prompted the issue. The Reporting raw job
+[121932881392](https://github.com/honua-io/honua-server/actions/runs/40423291836/job/121932881392)
+recorded 284 passed / 34 failed / 0 skipped. The aggregate job
+[121938616240](https://github.com/honua-io/honua-server/actions/runs/40423291836/job/121938616240)
+concluded success because the mode was `report`. That success is not a test
+pass, and a later green run is not evidence that this red was false.
+
+The closed diagnostic PR #6683 (run 40447538109, raw job 122012246948) is an
+intentional pre-fix control. Exclude it from the seven-day / 60-sample
+promotion window. It changes no denominator, reconciliation verdict, or
+false-red classification.

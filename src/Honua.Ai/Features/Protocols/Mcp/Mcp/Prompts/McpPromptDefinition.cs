@@ -7,13 +7,6 @@ using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.Protocols.Mcp.Prompts;
 
-/// <summary>
-/// One curated prompt in <see cref="McpPromptCatalog"/>: a stable name, display
-/// metadata, the templated arguments it accepts, and the message template that
-/// <c>prompts/get</c> renders. Templates use <c>{argumentName}</c> placeholders;
-/// a placeholder for an omitted optional argument is replaced with a neutral
-/// "not specified" phrase so the rendered prompt stays grammatical.
-/// </summary>
 internal sealed record McpPromptDefinition(
     string Name,
     string Title,
@@ -23,7 +16,6 @@ internal sealed record McpPromptDefinition(
 {
     private const string UnspecifiedOptionalPlaceholder = "(not specified)";
 
-    /// <summary>Projects the definition onto the <c>prompts/list</c> descriptor.</summary>
     public McpPromptDescriptor Describe() => new()
     {
         Name = Name,
@@ -39,13 +31,6 @@ internal sealed record McpPromptDefinition(
             .ToList(),
     };
 
-    /// <summary>
-    /// Validates required arguments and renders the template into a single
-    /// user-role prompt message for <c>prompts/get</c>.
-    /// </summary>
-    /// <exception cref="GeoprocessingValidationException">
-    /// A required argument was omitted or blank.
-    /// </exception>
     public McpPromptGetResult Render(IReadOnlyDictionary<string, string>? arguments)
     {
         var rendered = Substitute(arguments);
@@ -89,7 +74,4 @@ internal sealed record McpPromptDefinition(
     }
 }
 
-/// <summary>
-/// A single templated argument a <see cref="McpPromptDefinition"/> accepts.
-/// </summary>
 internal sealed record McpPromptArgumentDefinition(string Name, string Description, bool Required);

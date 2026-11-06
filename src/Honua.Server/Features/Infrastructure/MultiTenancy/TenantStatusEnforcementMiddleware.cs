@@ -8,16 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Infrastructure.MultiTenancy;
 
-/// <summary>
-/// Blocks requests for a tenant that is not <see cref="TenantStatus.Active"/> (issue #2156).
-/// </summary>
-/// <remarks>
-/// Runs after <c>TenantContextMiddleware</c> has resolved the tenant. A tenant that is not present
-/// in the catalog is treated as unmanaged and allowed through, so default single-tenant and the
-/// anonymous <c>public</c> tenant are unaffected. A suspended or deleted tenant receives
-/// <c>403 Forbidden</c> so suspension blocks both read and write access consistently across every
-/// protocol, enforced centrally rather than by caller discipline.
-/// </remarks>
+// A tenant missing from the catalog is allowed through, and a suspended or deleted tenant is forbidden for both reads and writes.
 internal sealed class TenantStatusEnforcementMiddleware(RequestDelegate next)
 {
     private readonly RequestDelegate _next = next ?? throw new ArgumentNullException(nameof(next));

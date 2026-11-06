@@ -5,11 +5,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Server.Features.Admin.Models;
 
-/// <summary>
-/// Source-generated JSON context for the LAS/LAZ/COPC point-cloud scene ingest
-/// admin API response (#1201). The request is multipart/form-data, so only the
-/// response model needs source-generated serialization.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

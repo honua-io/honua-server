@@ -233,19 +233,44 @@ internal sealed partial class PostgreSqlLayerPublishingService
     /// serve none of its copied rows and its edits would land elsewhere.
     /// </summary>
     /// <exception cref="LayerPublishingException">The connections resolve different tables.</exception>
+    private sealed record ManagedStoreIdentitySnapshot(string? Value);
+
+    private string ResolveManagedStoreTableName() => _configuredFeatureSchema is null
+        ? ManagedFeaturesTableName
+        : $"{QuoteIdentifier(_configuredFeatureSchema)}.{QuoteIdentifier(ManagedFeaturesTableName)}";
+
+    private async Task<ManagedStoreIdentitySnapshot> CaptureManagedStoreIdentityAsync(CancellationToken cancellationToken)
+    {
+        if (_featureStoreConnections is null)
+        {
+            return new ManagedStoreIdentitySnapshot(null);
+        }
+        var serverConnection = await _featureStoreConnections.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using (serverConnection.ConfigureAwait(false))
+        {
+            await using var command = serverConnection.CreateCommand();
+            command.CommandText = ManagedStoreIdentitySql;
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = "managedTable";
+            parameter.Value = ResolveManagedStoreTableName();
+            command.Parameters.Add(parameter);
+            return new ManagedStoreIdentitySnapshot(
+                await ReadManagedStoreIdentityAsync(command, cancellationToken).ConfigureAwait(false));
+        }
+    }
+
     private async Task VerifyManagedStoreConnectionAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction? transaction,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ManagedStoreIdentitySnapshot? capturedIdentity = null)
     {
         if (_featureStoreConnections is null)
         {
             return;
         }
 
-        var managedTable = _configuredFeatureSchema is null
-            ? ManagedFeaturesTableName
-            : $"{QuoteIdentifier(_configuredFeatureSchema)}.{QuoteIdentifier(ManagedFeaturesTableName)}";
+        var managedTable = ResolveManagedStoreTableName();
 
         string? publishIdentity;
         await using (var command = new NpgsqlCommand(ManagedStoreIdentitySql, connection, transaction))
@@ -254,18 +279,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             publishIdentity = await ReadManagedStoreIdentityAsync(command, cancellationToken).ConfigureAwait(false);
         }
 
-        string? serverIdentity;
-        var serverConnection = await _featureStoreConnections.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using (serverConnection.ConfigureAwait(false))
-        {
-            await using var command = serverConnection.CreateCommand();
-            command.CommandText = ManagedStoreIdentitySql;
-            var parameter = command.CreateParameter();
-            parameter.ParameterName = "managedTable";
-            parameter.Value = managedTable;
-            command.Parameters.Add(parameter);
-            serverIdentity = await ReadManagedStoreIdentityAsync(command, cancellationToken).ConfigureAwait(false);
-        }
+        var serverIdentity = (capturedIdentity ?? await CaptureManagedStoreIdentityAsync(cancellationToken).ConfigureAwait(false)).Value;
 
         if (publishIdentity is null || !string.Equals(publishIdentity, serverIdentity, StringComparison.Ordinal))
         {

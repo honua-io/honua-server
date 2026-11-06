@@ -6,9 +6,9 @@ using System.Buffers.Binary;
 namespace Honua.Core.Features.FeatureStore.Services;
 
 /// <summary>
-/// Removes embedded EWKB SRID words while preserving geometry payload bytes exactly.
+/// Inspects WKB dimensions and removes embedded EWKB SRID words without changing coordinate bytes.
 /// </summary>
-internal static class WkbSridNormalizer
+public static class WkbSridNormalizer
 {
     private const uint EwkbZFlag = 0x80000000;
     private const uint EwkbMFlag = 0x40000000;
@@ -28,12 +28,42 @@ internal static class WkbSridNormalizer
         using var output = new MemoryStream(wkb.Length);
         var offset = 0;
         var changed = false;
-        if (!TryCopyGeometry(wkb, ref offset, output, ref changed) || offset != wkb.Length)
+        var hasZ = false;
+        var hasM = false;
+        if (!TryCopyGeometry(wkb, ref offset, output, ref changed, ref hasZ, ref hasM) || offset != wkb.Length)
         {
             return wkb;
         }
 
         return changed ? output.ToArray() : wkb;
+    }
+
+    /// <summary>
+    /// Validates the complete WKB/EWKB payload and reports declared Z and M ordinates across
+    /// every geometry node, including empty geometries. Supports geometry types 1 through 7
+    /// and at most 128 nested geometry levels. Malformed, unsupported, over-depth, or
+    /// trailing-junk input returns false with both flags reset; coordinate values are not inferred.
+    /// </summary>
+    public static bool TryGetDeclaredOrdinates(byte[] wkb, out bool hasZ, out bool hasM)
+    {
+        hasZ = false;
+        hasM = false;
+        if (wkb == null)
+        {
+            return false;
+        }
+
+        var offset = 0;
+        var changed = false;
+        if (TryCopyGeometry(wkb, ref offset, Stream.Null, ref changed, ref hasZ, ref hasM,
+                maximumDepth: 128) && offset == wkb.Length)
+        {
+            return true;
+        }
+
+        hasZ = false;
+        hasM = false;
+        return false;
     }
 
     /// <summary>
@@ -96,11 +126,16 @@ internal static class WkbSridNormalizer
     private static bool TryCopyGeometry(
         byte[] input,
         ref int offset,
-        MemoryStream output,
+        Stream output,
         ref bool changed,
-        uint? expectedGeometryType = null)
+        ref bool hasZ,
+        ref bool hasM,
+        uint? expectedGeometryType = null,
+        int depth = 0,
+        int maximumDepth = int.MaxValue)
     {
-        if (!TryReadByteOrder(input, ref offset, output, out var littleEndian) ||
+        if (depth >= maximumDepth ||
+            !TryReadByteOrder(input, ref offset, output, out var littleEndian) ||
             !TryReadUInt32(input, ref offset, littleEndian, out var rawType))
         {
             return false;
@@ -119,10 +154,13 @@ internal static class WkbSridNormalizer
             changed = true;
         }
 
-        if (!TryResolveType(rawType, out var geometryType, out var ordinateCount))
+        if (!TryResolveType(rawType, out var geometryType, out var ordinateCount, out var nodeHasZ, out var nodeHasM))
         {
             return false;
         }
+
+        hasZ |= nodeHasZ;
+        hasM |= nodeHasM;
 
         if (expectedGeometryType.HasValue && geometryType != expectedGeometryType.Value)
         {
@@ -140,7 +178,11 @@ internal static class WkbSridNormalizer
                 output,
                 littleEndian,
                 geometryType == 7 ? null : geometryType - 3,
-                ref changed),
+                ref changed,
+                ref hasZ,
+                ref hasM,
+                depth + 1,
+                maximumDepth),
             _ => false
         };
     }
@@ -148,7 +190,7 @@ internal static class WkbSridNormalizer
     private static bool TryCopyPolygon(
         byte[] input,
         ref int offset,
-        MemoryStream output,
+        Stream output,
         bool littleEndian,
         int ordinateCount)
     {
@@ -171,10 +213,14 @@ internal static class WkbSridNormalizer
     private static bool TryCopyCollection(
         byte[] input,
         ref int offset,
-        MemoryStream output,
+        Stream output,
         bool littleEndian,
         uint? expectedChildType,
-        ref bool changed)
+        ref bool changed,
+        ref bool hasZ,
+        ref bool hasM,
+        int depth,
+        int maximumDepth)
     {
         if (!TryReadAndCopyCount(input, ref offset, output, littleEndian, out var geometryCount))
         {
@@ -183,7 +229,8 @@ internal static class WkbSridNormalizer
 
         for (uint geometry = 0; geometry < geometryCount; geometry++)
         {
-            if (!TryCopyGeometry(input, ref offset, output, ref changed, expectedChildType))
+            if (!TryCopyGeometry(input, ref offset, output, ref changed, ref hasZ, ref hasM,
+                    expectedChildType, depth, maximumDepth))
             {
                 return false;
             }
@@ -195,7 +242,7 @@ internal static class WkbSridNormalizer
     private static bool TryCopyCoordinateSequence(
         byte[] input,
         ref int offset,
-        MemoryStream output,
+        Stream output,
         bool littleEndian,
         int ordinateCount)
     {
@@ -206,7 +253,7 @@ internal static class WkbSridNormalizer
     private static bool TryCopyCoordinates(
         byte[] input,
         ref int offset,
-        MemoryStream output,
+        Stream output,
         uint coordinateCount,
         int ordinateCount)
     {
@@ -220,7 +267,13 @@ internal static class WkbSridNormalizer
     }
 
     private static bool TryResolveType(uint rawType, out uint geometryType, out int ordinateCount)
+        => TryResolveType(rawType, out geometryType, out ordinateCount, out _, out _);
+
+    private static bool TryResolveType(
+        uint rawType, out uint geometryType, out int ordinateCount, out bool hasZ, out bool hasM)
     {
+        hasZ = false;
+        hasM = false;
         var type = rawType & ~EwkbFlagMask;
         var isoDimension = type / 1000;
         if (isoDimension is > 3)
@@ -231,8 +284,8 @@ internal static class WkbSridNormalizer
         }
 
         geometryType = type % 1000;
-        var hasZ = (rawType & EwkbZFlag) != 0 || isoDimension is 1 or 3;
-        var hasM = (rawType & EwkbMFlag) != 0 || isoDimension is 2 or 3;
+        hasZ = (rawType & EwkbZFlag) != 0 || isoDimension is 1 or 3;
+        hasM = (rawType & EwkbMFlag) != 0 || isoDimension is 2 or 3;
         ordinateCount = 2 + (hasZ ? 1 : 0) + (hasM ? 1 : 0);
         return geometryType is >= 1 and <= 7;
     }
@@ -240,7 +293,7 @@ internal static class WkbSridNormalizer
     private static bool TryReadByteOrder(
         byte[] input,
         ref int offset,
-        MemoryStream output,
+        Stream output,
         out bool littleEndian)
     {
         if (offset >= input.Length || input[offset] is not (0 or 1))
@@ -258,7 +311,7 @@ internal static class WkbSridNormalizer
     private static bool TryReadAndCopyCount(
         byte[] input,
         ref int offset,
-        MemoryStream output,
+        Stream output,
         bool littleEndian,
         out uint count)
     {
@@ -287,7 +340,7 @@ internal static class WkbSridNormalizer
         return true;
     }
 
-    private static void WriteUInt32(MemoryStream output, uint value, bool littleEndian)
+    private static void WriteUInt32(Stream output, uint value, bool littleEndian)
     {
         Span<byte> bytes = stackalloc byte[sizeof(uint)];
         if (littleEndian)
@@ -302,7 +355,7 @@ internal static class WkbSridNormalizer
         output.Write(bytes);
     }
 
-    private static bool TryCopy(byte[] input, ref int offset, MemoryStream output, int byteCount)
+    private static bool TryCopy(byte[] input, ref int offset, Stream output, int byteCount)
     {
         if (byteCount < 0 || input.Length - offset < byteCount)
         {

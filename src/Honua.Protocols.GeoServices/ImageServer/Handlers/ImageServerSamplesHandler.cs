@@ -15,17 +15,8 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Handlers;
 
-/// <summary>
-/// Handler for the Image Server <c>getSamples</c> operation. Samples pixel values at
-/// the points of (or vertices along) a geometry, reusing the shared raster identify
-/// pipeline rather than building a parallel raster reader.
-/// </summary>
 internal sealed class ImageServerSamplesHandler
 {
-    /// <summary>
-    /// Default cap on the number of sampled points. Matches the Esri default
-    /// <c>sampleCount</c> ceiling and bounds per-point identify work.
-    /// </summary>
     private const int DefaultMaxSampleCount = 1000;
 
     private readonly IMetadataV2GraphProvider _graphProvider;
@@ -45,9 +36,6 @@ internal sealed class ImageServerSamplesHandler
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// Samples pixel values at the requested geometry locations.
-    /// </summary>
     public async Task<IResult> GetSamplesAsync(
         HttpContext context,
         int layerId,
@@ -238,12 +226,6 @@ internal sealed class ImageServerSamplesHandler
         }
     }
 
-    /// <summary>
-    /// Samples each requested point on the slice pinned by a
-    /// <c>multidimensionalDefinition</c> against the layer's servable Zarr store
-    /// (#1869). Returns a 501 when the layer has no readable multidimensional
-    /// backing store, and a 400 when the requested slice cannot be resolved.
-    /// </summary>
     private async Task<IResult> GetMultidimensionalSamplesAsync(
         HttpContext context,
         int layerId,
@@ -303,7 +285,7 @@ internal sealed class ImageServerSamplesHandler
                     : StandardErrorHelpers.CreateBadRequest(context, message);
             }
 
-            var value = read.Value!.Value;
+            var value = read.Value is { } sample && double.IsFinite(sample) ? (double?)sample : null;
             var srid = point.Srid ?? requestSrid;
 
             samples.Add(new SampleEntry
@@ -315,7 +297,7 @@ internal sealed class ImageServerSamplesHandler
                     Y = point.Y,
                     SpatialReference = srid is null ? null : new SpatialReference { Wkid = srid.Value, LatestWkid = srid.Value },
                 },
-                Value = FormatValue(value),
+                Value = value is { } numeric ? FormatValue(numeric) : "NoData",
                 Resolution = null,
                 Attributes = new Dictionary<string, object?> { ["Value"] = value },
             });

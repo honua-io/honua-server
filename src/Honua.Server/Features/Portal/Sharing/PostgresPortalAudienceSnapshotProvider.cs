@@ -6,10 +6,6 @@ using Npgsql;
 
 namespace Honua.Server.Features.Portal.Sharing;
 
-/// <summary>
-/// Reads membership and item audiences in one PostgreSQL statement. A revocation
-/// committed before this statement is visible on every replica's next request.
-/// </summary>
 internal sealed class PostgresPortalAudienceSnapshotProvider(
     NpgsqlDataSource dataSource, string? schema = null) : IPortalAudienceSnapshotProvider
 {

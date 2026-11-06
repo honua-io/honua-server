@@ -6,11 +6,6 @@ using System.Text;
 
 namespace Honua.Geoprocessing.Cli;
 
-/// <summary>
-/// The installed devkit carries the matching local harness and authoring SDK sources.
-/// A scaffold extracts this versioned payload under .honua/toolchain; no server checkout
-/// or unpublished package is required. Language runtimes remain developer prerequisites.
-/// </summary>
 internal static class GpBundledToolchain
 {
     private const string Prefix = "Toolchain/";
@@ -41,10 +36,6 @@ internal static class GpBundledToolchain
         return destination;
     }
 
-    /// <summary>
-    /// True when <paramref name="toolchainDirectory"/> is the payload extracted by this devkit.
-    /// Harness directories alone are not enough: a leftover tree from another version is stale.
-    /// </summary>
     internal static bool IsCurrent(string toolchainDirectory)
     {
         var stampPath = Path.Join(toolchainDirectory, VersionFileName);

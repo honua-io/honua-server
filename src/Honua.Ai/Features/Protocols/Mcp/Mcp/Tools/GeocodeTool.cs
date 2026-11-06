@@ -13,24 +13,6 @@ using Honua.Ai.Protocols.Mcp.Models;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-/// <summary>
-/// MCP tool that forward-geocodes a freeform address into ranked candidate
-/// locations. Thin adapter over the canonical
-/// <see cref="IGeocodeCoordinatorService"/> pipeline (the same provider
-/// registry, priority order, and failover behavior the GeoServices
-/// GeocodeServer surface uses), so the MCP surface never grows its own
-/// geocoding logic.
-/// </summary>
-/// <remarks>
-/// Single-address forward geocoding is a Community capability
-/// (<c>geocoding.forward</c> in
-/// <see cref="Honua.Core.Features.Licensing.Domain.CapabilityKeyCatalog"/>) — the
-/// demo/adoption showcase path, so this tool does not gate invocation behind any
-/// entitlement (#2981). It previously checked the Pro
-/// <see cref="Honua.Core.Features.Licensing.Domain.FeatureCatalog"/> entry of the
-/// same key before that key moved to Community; batch geocoding
-/// (<see cref="GeocodeAddressesTool"/>) remains the gated, Enterprise workload.
-/// </remarks>
 internal sealed class GeocodeTool : IMcpTool
 {
     public const string ToolName = "honua_geocode_address";
@@ -92,6 +74,13 @@ internal sealed class GeocodeTool : IMcpTool
 
         if (!result.IsSuccess)
         {
+            // A named provider that is not registered must fail closed. Store-unavailable
+            // would look retryable and used to hide a silent Nominatim substitution (#6601).
+            if (result.ErrorMessage?.StartsWith("provider_unavailable:", StringComparison.Ordinal) == true)
+            {
+                throw new GeoprocessingPreconditionFailedException(result.ErrorMessage);
+            }
+
             throw new GeoprocessingStoreUnavailableException(
                 $"Geocoding failed: {result.ErrorMessage ?? "no provider produced a result."}");
         }

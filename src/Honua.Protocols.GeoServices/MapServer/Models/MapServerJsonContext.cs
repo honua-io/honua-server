@@ -6,9 +6,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Protocols.GeoServices.MapServer.Models;
 
-/// <summary>
-/// AOT-compatible JSON serialization context for MapServer models.
-/// </summary>
 [JsonSerializable(typeof(MapServerResponse))]
 [JsonSerializable(typeof(MapServerDocumentInfo))]
 [JsonSerializable(typeof(MapServerLayerInfo))]
@@ -58,8 +55,8 @@ namespace Honua.Protocols.GeoServices.MapServer.Models;
 [JsonSerializable(typeof(TileOrigin))]
 [JsonSerializable(typeof(LevelOfDetail))]
 [JsonSerializable(typeof(LevelOfDetail[]))]
-[JsonSerializable(typeof(EsriSpatialReference))]
-[JsonSerializable(typeof(EsriExtent))]
+[JsonSerializable(typeof(SpatialReferenceJson))]
+[JsonSerializable(typeof(GeoServicesExtent))]
 [JsonSerializable(typeof(Dictionary<string, object>))]
 [JsonSerializable(typeof(Dictionary<string, object?>))]
 [JsonSerializable(typeof(JsonElement))]

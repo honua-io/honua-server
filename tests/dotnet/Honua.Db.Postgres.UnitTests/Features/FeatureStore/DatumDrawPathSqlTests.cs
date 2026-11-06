@@ -20,7 +20,7 @@ namespace Honua.Db.Postgres.UnitTests.Features.FeatureStore;
 /// </summary>
 public sealed class DatumDrawPathSqlTests
 {
-    private static readonly IDatumTransformationCatalog Catalog = EsriDatumTransformationCatalog.Create();
+    private static readonly IDatumTransformationCatalog Catalog = GeoServicesDatumTransformationCatalog.Create();
 
     [UnitTest]
     public void Mvt_Nad27ToWebMercator_UsesTheGridThatContainsTheTile()

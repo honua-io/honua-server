@@ -12,13 +12,6 @@ using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.VectorTileServer;
 
-/// <summary>
-/// Integration tests for the GeoServices VectorTileServer service-metadata foundation
-/// (honua-server#1777). The service is resolved by NAME against an EsriVectorTileLayer
-/// publication seeded into the default Metadata v2 test graph. The tile / resources /
-/// tileMap routes are stubbed (501) in the foundation and asserted here so the API-surface
-/// coverage gate is satisfied before the parallel wave fills them in.
-/// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.VectorTileServer)]
 public sealed class VectorTileServerEndpointTests : IAsyncLifetime

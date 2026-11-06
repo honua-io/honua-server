@@ -54,9 +54,7 @@ internal static class GdalRuntimeHardening
             // Exclude the indirection / network / archive drivers so a content-sniffed
             // VRT / OGR VRT / WMS / … is never registered and cannot open, no matter
             // what bytes an untrusted input claims to be.
-            ["GDAL_SKIP"] = string.Join(
-                ' ',
-                options.SkipDrivers.Where(d => !string.IsNullOrWhiteSpace(d)).Select(d => d.Trim())),
+            ["GDAL_SKIP"] = string.Join(' ', EffectiveSkipDrivers(options)),
 
             // Never negotiate around an invalid TLS certificate.
             ["GDAL_HTTP_UNSAFESSL"] = "NO",
@@ -90,6 +88,32 @@ internal static class GdalRuntimeHardening
         }
 
         return env;
+    }
+
+    /// <summary>
+    /// Driver short names written to <c>GDAL_SKIP</c>. Blank entries are dropped
+    /// and the rest are trimmed, in configured order. Output-driver admission
+    /// must use this sequence so a padded token cannot disagree with the
+    /// subprocess environment.
+    /// </summary>
+    /// <param name="options">The configured hardening policy.</param>
+    /// <returns>The effective skip list, possibly empty.</returns>
+    public static IReadOnlyList<string> EffectiveSkipDrivers(GdalHardeningOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        var skipped = new List<string>();
+        foreach (var driver in options.SkipDrivers)
+        {
+            if (string.IsNullOrWhiteSpace(driver))
+            {
+                continue;
+            }
+
+            skipped.Add(driver.Trim());
+        }
+
+        return skipped;
     }
 
     private static void AddAmbientS3Credentials(

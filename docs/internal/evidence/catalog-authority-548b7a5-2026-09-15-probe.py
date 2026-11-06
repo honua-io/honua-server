@@ -241,8 +241,7 @@ def main():
         "image": os.environ["REPLAY_IMAGE_REF"],
         "image_id": os.environ["REPLAY_IMAGE_ID"],
         "revision": os.environ["REPLAY_IMAGE_REVISION"],
-        "fixture": {"repo": "honua-io/honua-esri-compat", "ref": os.environ["REPLAY_COMPAT_REF"],
-                    "file": "docker/seed/arcgis-compat.sql", "sha256": os.environ["REPLAY_SEED_SHA256"]},
+        "fixture": {"sha256": os.environ["REPLAY_SEED_SHA256"]},
         "principals": {p: KEY_GRANTS.get(p, "admin password" if p == "bootstrap" else "none")
                        for p in EXPECTED_VISIBLE},
         "passed": sum(r["passed"] for r in rows),

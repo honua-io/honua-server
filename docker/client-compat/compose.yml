@@ -156,7 +156,7 @@ services:
       Licensing__DevGrantEdition: ${HONUA_CLIENT_COMPAT_DEV_GRANT_EDITION:-Enterprise}
       # Portal/Sharing facade token issuance (epic #1240). The client-compat docker
       # network is HTTP-only, so relax the HTTPS-only guard on generateToken /
-      # oauth2 so the arcgis-stub Portal lane can mint and exercise a named-user
+      # oauth2 so the geoservices-rest-stub Portal lane can mint and exercise a named-user
       # token. Production keeps the RequireHttps=true default. The read surface
       # (info/portals-self/search/content-items) is anonymous and needs no token.
       Authentication__PortalToken__RequireHttps: "false"
@@ -192,10 +192,9 @@ services:
     networks:
       - compat
     healthcheck:
-      # GNU wget --spider probes with HEAD, but Honua's health routes intentionally
-      # accept GET only. Use a discarded GET so this remains portable across the
-      # Debian runtime image introduced on 2026-08-21 and BusyBox-based images.
-      test: ["CMD", "wget", "--quiet", "--output-document=/dev/null", "http://localhost:5000/healthz/ready"]
+      # Published server images are Ubuntu and do not install an HTTP client
+      # (CVE-2021-31879). Probe with bash /dev/tcp. Health routes accept GET only.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/5000 && printf 'GET /healthz/ready HTTP/1.0\\r\\nHost: 127.0.0.1\\r\\nConnection: close\\r\\n\\r\\n' >&3 && IFS= read -r status <&3 && case \"$$status\" in *' 200 '*) exit 0 ;; *) exit 1 ;; esac"]
       interval: 10s
       timeout: 5s
       retries: 30
@@ -349,21 +348,21 @@ services:
       - ../../tests:/workspace/tests:rw
       - ./output/cesium:/output
 
-  arcgis-stub:
-    profiles: ["matrix", "arcgis-stub"]
+  geoservices-rest-stub:
+    profiles: ["matrix", "geoservices-rest-stub"]
     build:
       context: ../..
-      dockerfile: docker/client-compat/arcgis-stub/Dockerfile
+      dockerfile: docker/client-compat/geoservices-rest-stub/Dockerfile
     environment:
       GITHUB_SHA: "${HONUA_SERVER_COMMIT:-}"
       HONUA_BASE_URL: http://honua:5000
-      ARCGIS_STUB_SERVICE_NAME: browser_compat
-      ARCGIS_STUB_LAYER_ID: "2000"
+      GEOSERVICES_STUB_SERVICE_NAME: browser_compat
+      GEOSERVICES_STUB_LAYER_ID: "2000"
       # Portal/Sharing facade lane (epic #1240 / #1372). The stub discovers the
       # tiered portal-compat fixture through /sharing/rest and mints a named-user
       # token with these admin credentials (mirrors the honua service env above).
-      ARCGIS_STUB_ADMIN_USERNAME: admin
-      ARCGIS_STUB_ADMIN_PASSWORD: ClientCompatAdmin123!
+      GEOSERVICES_STUB_ADMIN_USERNAME: admin
+      GEOSERVICES_STUB_ADMIN_PASSWORD: ClientCompatAdmin123!
     depends_on:
       honua:
         condition: service_healthy
@@ -372,7 +371,7 @@ services:
     networks:
       - compat
     volumes:
-      - ./output/arcgis-stub:/output
+      - ./output/geoservices-rest-stub:/output
 
   # ---------------------------------------------------------------------
   # Canonical analyst-client lanes (#3392, parent #3389).

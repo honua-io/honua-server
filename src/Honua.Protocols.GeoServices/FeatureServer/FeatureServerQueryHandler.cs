@@ -43,17 +43,11 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Protocols.GeoServices.FeatureServer;
 
-/// <summary>
-/// Handler for FeatureServer query operations.
-/// </summary>
 internal sealed partial class FeatureServerQueryHandler(
     FeatureServerQueryDependencies dependencies,
     ILogger<FeatureServerQueryHandler> logger) : IFeatureQueryDispatcher
 {
     private static readonly IResult _streamingResult = new StreamingResult();
-    private static readonly Regex _projectedUnitFactorPattern = new(
-        @"(?:LENGTHUNIT|UNIT)\s*\[\s*""[^""]+""\s*,\s*(?<factor>[-+]?(?:\d+\.?\d*|\.\d+)(?:[Ee][-+]?\d+)?)",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
     private readonly IResourceValidator _resourceValidator = dependencies?.ResourceValidator
         ?? throw new ArgumentNullException(nameof(dependencies));
     private readonly IFeatureServerQueryServices _queryServices = dependencies.QueryServices;
@@ -79,9 +73,6 @@ internal sealed partial class FeatureServerQueryHandler(
         int PublicLayerId,
         int StorageLayerId);
 
-    /// <summary>
-    /// Executes a feature query operation with proper validation and formatting.
-    /// </summary>
     public async Task<IResult> HandleQueryFeaturesAsync(
         string serviceId,
         int layerId,
@@ -125,9 +116,6 @@ internal sealed partial class FeatureServerQueryHandler(
             cancellationToken);
     }
 
-    /// <summary>
-    /// Executes a feature query operation with parsed query parameters.
-    /// </summary>
     public async Task<IResult> HandleQueryFeaturesAsync(
         string serviceId,
         int layerId,
@@ -575,6 +563,14 @@ internal sealed partial class FeatureServerQueryHandler(
                     payload = JsonReindenter.ToIndentedUtf8Bytes(payload);
                 }
 
+                // Re-check admission at store time. Only headers already written on the
+                // response are visible; a later middleware that sets Cache-Control is
+                // not part of this check. Admission still requires an empty principal.
+                if (!ResponseCacheUtilities.ShouldCache(context, _cacheOptions))
+                {
+                    return Results.Bytes(payload, contentType);
+                }
+
                 var cachedResponse = ResponseCacheUtilities.CreateCachedResponse(payload, contentType, _etagService);
                 await _responseCache.SetAsync(currentCacheKey, cachedResponse, cacheTtl, cancellationToken);
                 return ResponseCacheUtilities.CreateResultFromCachedResponse(context, cachedResponse, _etagService);
@@ -584,6 +580,11 @@ internal sealed partial class FeatureServerQueryHandler(
             {
                 var currentCacheKey = GetCacheKey();
                 if (currentCacheKey is null)
+                {
+                    return Results.Bytes(payload, contentType);
+                }
+
+                if (!ResponseCacheUtilities.ShouldCache(context, _cacheOptions))
                 {
                     return Results.Bytes(payload, contentType);
                 }
@@ -602,9 +603,26 @@ internal sealed partial class FeatureServerQueryHandler(
                 }
 
                 var payloadArray = payload.ToArray();
+                if (!ResponseCacheUtilities.ShouldCache(context, _cacheOptions))
+                {
+                    return Results.Bytes(payloadArray, contentType);
+                }
+
                 var cachedResponse = ResponseCacheUtilities.CreateCachedResponse(payloadArray, contentType, _etagService);
                 await _responseCache.SetAsync(currentCacheKey, cachedResponse, cacheTtl, cancellationToken);
                 return ResponseCacheUtilities.CreateResultFromCachedResponse(context, cachedResponse, _etagService);
+            }
+
+            // Ordinary reads look up before query preparation. Statistics reads defer
+            // the lookup until field access has been checked. A miss falls through and
+            // the bound key is reused on store.
+            if (string.IsNullOrWhiteSpace(validatedParams.OutStatistics))
+            {
+                var earlyCached = await TryGetCachedResponseAsync().ConfigureAwait(false);
+                if (earlyCached != null)
+                {
+                    return earlyCached;
+                }
             }
 
             var (preparedQuery, outputSrid, preparationError) = await PrepareFeatureQueryAsync(
@@ -724,10 +742,12 @@ internal sealed partial class FeatureServerQueryHandler(
                     Distinct = false
                 };
 
-                var cached = await TryGetCachedResponseAsync();
-                if (cached != null)
+                // Field access has been checked. A hit reuses the bound key; a miss
+                // stores under that same key.
+                var statisticsCached = await TryGetCachedResponseAsync().ConfigureAwait(false);
+                if (statisticsCached != null)
                 {
-                    return cached;
+                    return statisticsCached;
                 }
 
                 var stopwatch = Stopwatch.StartNew();
@@ -758,12 +778,6 @@ internal sealed partial class FeatureServerQueryHandler(
             // takes precedence over the count-only branch.
             if (validatedParams.ReturnCountOnly && !validatedParams.ReturnExtentOnly)
             {
-                var cached = await TryGetCachedResponseAsync();
-                if (cached != null)
-                {
-                    return cached;
-                }
-
                 var stopwatch = Stopwatch.StartNew();
                 var (count, countError) = await ResolveReturnCountAsync(
                     queryLayer.Service,
@@ -804,12 +818,6 @@ internal sealed partial class FeatureServerQueryHandler(
 
             if (validatedParams.ReturnExtentOnly)
             {
-                var cached = await TryGetCachedResponseAsync();
-                if (cached != null)
-                {
-                    return cached;
-                }
-
                 var stopwatch = Stopwatch.StartNew();
                 var extent = await _queryExecutor.GetExtentAsync(
                     queryLayer.Service,
@@ -879,12 +887,6 @@ internal sealed partial class FeatureServerQueryHandler(
                         context,
                         cancellationToken);
                     return _streamingResult;
-                }
-
-                var cached = await TryGetCachedResponseAsync();
-                if (cached != null)
-                {
-                    return cached;
                 }
 
                 var stopwatch = Stopwatch.StartNew();
@@ -976,12 +978,6 @@ internal sealed partial class FeatureServerQueryHandler(
 
             if (!useStreaming)
             {
-                var cached = await TryGetCachedResponseAsync();
-                if (cached != null)
-                {
-                    return cached;
-                }
-
                 if (isFgb)
                 {
                     if (validatedParams.ReturnDistinctValues)
@@ -1017,8 +1013,9 @@ internal sealed partial class FeatureServerQueryHandler(
                     FeatureServerLog.QueryExecuted(_logger, "query_fgb", serviceId, layerId, fgbStopwatch.Elapsed.TotalMilliseconds);
 
                     var payload = flatGeobufPayload ?? [];
-                    FeatureServerLog.QueryCompleted(_logger, serviceId, layerId, payload.Length > 0 ? 1 : 0, payload.Length > 0 ? 1 : 0);
-                    HonuaTelemetry.SetSuccess(featureActivity, payload.Length > 0 ? 1 : 0);
+                    // A valid empty FlatGeobuf file still has header bytes. The encoded
+                    // store contract carries no row count, so do not infer one from length.
+                    HonuaTelemetry.SetSuccess(featureActivity);
 
                     return await CreateCachedBytesResultAsync(payload, "application/vnd.flatgeobuf");
                 }
@@ -1301,6 +1298,12 @@ internal sealed partial class FeatureServerQueryHandler(
                 return StandardErrorHelpers.CreateFromException(context, ex);
             }
 
+            if (string.Equals(ex.Message, GeoParquetFeatureWriter.CoordinateEpochOutputUnsupportedMessage, StringComparison.Ordinal))
+            {
+                return StandardErrorHelpers.CreateBadRequest(
+                    context, GeoParquetFeatureWriter.CoordinateEpochOutputUnsupportedMessage);
+            }
+
             if (IsClientSafeInvalidOperation(ex))
             {
                 return StandardErrorHelpers.CreateBadRequest(context, ErrorMessages.Validation.InvalidParameter);
@@ -1430,7 +1433,13 @@ internal sealed partial class FeatureServerQueryHandler(
            parameters.Distance.HasValue ||
            !string.IsNullOrWhiteSpace(parameters.Units) ||
            parameters.ReturnDistance ||
-           !string.IsNullOrWhiteSpace(parameters.SpatialRel);
+           !string.IsNullOrWhiteSpace(parameters.SpatialRel) ||
+           IsNonDefaultGdbVersion(parameters.GdbVersion);
+
+    // Same default as FeatureServerVersioning: blank or sde.default only.
+    private static bool IsNonDefaultGdbVersion(string? gdbVersion)
+        => !string.IsNullOrWhiteSpace(gdbVersion) &&
+           !gdbVersion.Trim().Equals("sde.default", StringComparison.OrdinalIgnoreCase);
 
     private async Task<(FeatureQuery? Query, int? OutputSrid, IResult? Error)> PrepareFeatureQueryAsync(
         HttpContext context,
@@ -1589,7 +1598,7 @@ internal sealed partial class FeatureServerQueryHandler(
         FilterExpression? filterExpression = null;
         if (!string.IsNullOrWhiteSpace(validatedParams.Where))
         {
-            var parseResult = _filterExpressionService.Parse(FilterLanguage.ArcGisSql, validatedParams.Where);
+            var parseResult = _filterExpressionService.Parse(FilterLanguage.GeoServicesSql, validatedParams.Where);
             if (!parseResult.IsSuccess)
             {
                 return (null, null, StandardErrorHelpers.CreateBadRequest(context,
@@ -1784,12 +1793,6 @@ internal sealed partial class FeatureServerQueryHandler(
         return (query, outputSrid, null);
     }
 
-    /// <summary>
-    /// Resolves the datum transformation for a layer-to-output reprojection. Honors a
-    /// client-supplied <c>datumTransformation</c> WKID/composite when present; otherwise
-    /// applies the catalog's Esri default for the SRID pair. An unknown or inapplicable
-    /// client request yields an explicit Esri-style error rather than a silent substitute.
-    /// </summary>
     private bool TryResolveDatumTransformation(
         HttpContext context,
         string? datumTransformationValue,
@@ -1842,11 +1845,7 @@ internal sealed partial class FeatureServerQueryHandler(
         return true;
     }
 
-    /// <summary>
-    /// Explicit datum transformations are catalogued on the geographic pair. Projected
-    /// layer or output SRIDs use the resolved geodetic bases; omitted transformations
-    /// keep the raw SRIDs so a projected query stays on PROJ's SRID-only pipeline.
-    /// </summary>
+    // An explicit datum transformation is catalogued on the geographic pair, so projected SRIDs use their geodetic bases, while an omitted transformation keeps the raw SRIDs for PROJ's SRID-only pipeline.
     internal static (int FromSrid, int? ToSrid) SelectDatumResolutionSrids(
         int layerSrid,
         int? outputSrid,
@@ -1948,13 +1947,6 @@ internal sealed partial class FeatureServerQueryHandler(
             : Equals(left.Value, right.Value);
     }
 
-    /// <summary>
-    /// Recovers a client-requested Web Mercator alias outSR (e.g. 102100) that the resolver
-    /// normalized to the canonical <paramref name="outputSrid"/> (e.g. 3857), so the response
-    /// spatialReference can echo <c>{wkid:102100, latestWkid:3857}</c> per Esri convention.
-    /// Returns null when outSR was absent, already canonical, or not a Web Mercator alias of the
-    /// resolved SRID (#2736).
-    /// </summary>
     private async Task<int?> ResolveRequestedWebMercatorAliasAsync(
         QueryParameters validatedParams,
         int? outputSrid,
@@ -2633,28 +2625,17 @@ internal sealed partial class FeatureServerQueryHandler(
             ? $"{parameterName} must not be empty."
             : $"Unsupported {parameterName} value: {rawValue}";
 
-    /// <summary>
-    /// How a query treats an unresolved input spatial reference.
-    /// </summary>
     internal enum MissingInputSridDecision
     {
-        /// <summary>The resolver produced a supported SRID.</summary>
         UseResolved,
 
-        /// <summary>The caller supplied inSR and it could not be resolved.</summary>
         RejectInSr,
 
-        /// <summary>The geometry carried a spatial reference and it could not be resolved.</summary>
         RejectGeometrySpatialReference,
 
-        /// <summary>No input spatial reference was supplied, so the layer SR may apply.</summary>
         FallBackToLayer,
     }
 
-    /// <summary>
-    /// Chooses whether an unresolved input SR is a client error or a layer-SR fallback.
-    /// A geometry spatial reference counts as supplied when wkid, latestWkid, or WKT is present.
-    /// </summary>
     internal static MissingInputSridDecision DecideMissingInputSrid(
         bool inSrSpecified,
         int? resolvedSrid,
@@ -2678,10 +2659,6 @@ internal sealed partial class FeatureServerQueryHandler(
         return MissingInputSridDecision.FallBackToLayer;
     }
 
-    /// <summary>
-    /// True when the geometry object included a horizontal spatial reference.
-    /// A missing object, an empty object, or wkid 0 is treated as absent.
-    /// </summary>
     internal static bool GeometryCarriesSpatialReference(GeoServicesSpatialReference? spatialReference)
         => spatialReference is { Wkid: > 0 }
             || spatialReference?.LatestWkid is > 0
@@ -2803,25 +2780,13 @@ internal sealed partial class FeatureServerQueryHandler(
             return true;
         }
 
-        if (string.IsNullOrWhiteSpace(spatialReference.Wkt))
+        if (CrsLinearUnitFactor.LinearUnitFromWkt(spatialReference.Wkt) is not { } fromWkt)
         {
             return false;
         }
 
-        var matches = _projectedUnitFactorPattern.Matches(spatialReference.Wkt);
-        if (matches.Count == 0)
-        {
-            return false;
-        }
-
-        var factorValue = matches[^1].Groups["factor"].Value;
-        if (!double.TryParse(factorValue, NumberStyles.Float, CultureInfo.InvariantCulture, out metersPerUnit))
-        {
-            metersPerUnit = 0;
-            return false;
-        }
-
-        return double.IsFinite(metersPerUnit) && metersPerUnit > 0;
+        metersPerUnit = fromWkt;
+        return true;
     }
 
     // Parameters that change *result semantics* — rejecting them is correct because
@@ -2857,12 +2822,7 @@ internal sealed partial class FeatureServerQueryHandler(
         return false;
     }
 
-    /// <summary>
-    /// Validates the Esri <c>sqlFormat</c> parameter. ArcGIS Pro and the SDKs send
-    /// <c>standard</c> (SQL-92 standardized where syntax) or <c>native</c> (provider-native).
-    /// Honua parses the where clause under its standardized ArcGIS-SQL dialect for both, so the
-    /// value is accepted and honored; only an unrecognized token is rejected.
-    /// </summary>
+    // Accepting sqlFormat=native never enables provider-native SQL: standard, native, and none all parse the where clause in the standardized ArcGIS-SQL dialect, and only an unrecognized token is rejected.
     private static bool TryValidateSqlFormat(QueryParameters queryParams, out string? errorMessage)
     {
         errorMessage = null;

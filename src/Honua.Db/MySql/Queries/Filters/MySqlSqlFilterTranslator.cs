@@ -182,11 +182,11 @@ internal sealed class MySqlSqlFilterTranslator : SqlFilterExpressionVisitorBase,
         var right = TranslateGeometryExpression(spatial.Right, context);
         var distance = TranslateExpression(spatial.Distance, context);
 
+        var geodesic = MySqlSpatialSql.GeodesicDistance(left, right, context.Wkid, _engineFlavor);
         return spatial.Operator switch
         {
-            // ST_Distance_Sphere is a sphere on an explicit mean radius, not a WGS 84 spheroid.
-            SpatialOperator.DWithin => $"{MySqlSpatialSql.DistanceSphere(left, right)} <= {distance}",
-            SpatialOperator.Beyond => $"{MySqlSpatialSql.DistanceSphere(left, right)} > {distance}",
+            SpatialOperator.DWithin => $"{geodesic} <= {distance}",
+            SpatialOperator.Beyond => $"{geodesic} > {distance}",
             _ => throw MySqlUnsupportedFeature.Create(
                 $"Spatial distance operator '{spatial.Operator}' is not supported by the MySQL/MariaDB provider.")
         };

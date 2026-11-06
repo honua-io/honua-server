@@ -93,6 +93,12 @@
       "path": "/field-workflows/submissions/{submissionId}/assignment"
     },
     {
+      "operationId": "attestObservabilityAuditGap",
+      "catalogOperationId": null,
+      "method": "POST",
+      "path": "/observability/audit/gap-attestations"
+    },
+    {
       "operationId": "cancelCompatibilityImportJob",
       "catalogOperationId": null,
       "method": "POST",
@@ -243,6 +249,12 @@
       "path": "/field-workflows/exports"
     },
     {
+      "operationId": "createFolder",
+      "catalogOperationId": "folder.create",
+      "method": "POST",
+      "path": "/folders"
+    },
+    {
       "operationId": "createFormPackageDraft",
       "catalogOperationId": null,
       "method": "POST",
@@ -343,6 +355,12 @@
       "catalogOperationId": "admin.field-mask-policy.delete",
       "method": "DELETE",
       "path": "/field-mask-policies/{id}"
+    },
+    {
+      "operationId": "deleteFolder",
+      "catalogOperationId": "folder.delete",
+      "method": "DELETE",
+      "path": "/folders/{id}"
     },
     {
       "operationId": "deleteImportedRaster",
@@ -627,18 +645,6 @@
       "path": "/alerts/zones/{zoneId}"
     },
     {
-      "operationId": "getArcGisMigrationManifest",
-      "catalogOperationId": null,
-      "method": "GET",
-      "path": "/import/arcgis/migrations/{runId}/manifest"
-    },
-    {
-      "operationId": "getArcGisMigrationParity",
-      "catalogOperationId": null,
-      "method": "GET",
-      "path": "/import/arcgis/migrations/{runId}/parity"
-    },
-    {
       "operationId": "getClientCertificateTrustProfile",
       "catalogOperationId": null,
       "method": "GET",
@@ -877,6 +883,18 @@
       "catalogOperationId": null,
       "method": "GET",
       "path": "/import/geoserver/jobs/{jobId}"
+    },
+    {
+      "operationId": "getGeoServicesMigrationManifest",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/import/geoservices-rest/migrations/{runId}/manifest"
+    },
+    {
+      "operationId": "getGeoServicesMigrationParity",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/import/geoservices-rest/migrations/{runId}/parity"
     },
     {
       "operationId": "getGeocodingProviders",
@@ -1431,12 +1449,6 @@
       "path": "/alerts/zones"
     },
     {
-      "operationId": "listArcGisMigrationRuns",
-      "catalogOperationId": null,
-      "method": "GET",
-      "path": "/import/arcgis/migrations"
-    },
-    {
       "operationId": "listClientCertificatePrincipalMappings",
       "catalogOperationId": null,
       "method": "GET",
@@ -1509,6 +1521,12 @@
       "path": "/field-workflows/submissions"
     },
     {
+      "operationId": "listFolders",
+      "catalogOperationId": "folder.list",
+      "method": "GET",
+      "path": "/folders"
+    },
+    {
       "operationId": "listFormPackageVersions",
       "catalogOperationId": null,
       "method": "GET",
@@ -1525,6 +1543,12 @@
       "catalogOperationId": null,
       "method": "GET",
       "path": "/import/geoserver/jobs"
+    },
+    {
+      "operationId": "listGeoServicesMigrationRuns",
+      "catalogOperationId": null,
+      "method": "GET",
+      "path": "/import/geoservices-rest/migrations"
     },
     {
       "operationId": "listGeoservicesImportJobs",
@@ -1743,6 +1767,12 @@
       "path": "/auth/logout"
     },
     {
+      "operationId": "moveService",
+      "catalogOperationId": "service.move",
+      "method": "PUT",
+      "path": "/services/{serviceName}/folder"
+    },
+    {
       "operationId": "pauseAlertChannel",
       "catalogOperationId": null,
       "method": "POST",
@@ -1845,16 +1875,16 @@
       "path": "/metadata/environment-bindings/query"
     },
     {
-      "operationId": "recordArcGisMigrationManifest",
+      "operationId": "recordGeoServicesMigrationManifest",
       "catalogOperationId": null,
       "method": "POST",
-      "path": "/import/arcgis/migrations/{runId}/manifest"
+      "path": "/import/geoservices-rest/migrations/{runId}/manifest"
     },
     {
-      "operationId": "recordArcGisMigrationParity",
+      "operationId": "recordGeoServicesMigrationParity",
       "catalogOperationId": null,
       "method": "POST",
-      "path": "/import/arcgis/migrations/{runId}/parity"
+      "path": "/import/geoservices-rest/migrations/{runId}/parity"
     },
     {
       "operationId": "recordMigrationRunScorecard",
@@ -2295,6 +2325,12 @@
       "path": "/zarr-stores/{id}"
     },
     {
+      "operationId": "updateAdminApiKeyRestrictions",
+      "catalogOperationId": "admin.api-key.update-restrictions",
+      "method": "PATCH",
+      "path": "/api-keys/{id}/restrictions"
+    },
+    {
       "operationId": "updateAdminLayerFields",
       "catalogOperationId": "admin.layer.fields.set",
       "method": "PUT",
@@ -2341,6 +2377,12 @@
       "catalogOperationId": null,
       "method": "PUT",
       "path": "/connections/{id}"
+    },
+    {
+      "operationId": "updateFolder",
+      "catalogOperationId": "folder.update",
+      "method": "PATCH",
+      "path": "/folders/{id}"
     },
     {
       "operationId": "updateFormPackageDraft",

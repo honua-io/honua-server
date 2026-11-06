@@ -5,11 +5,6 @@ using Microsoft.Extensions.Hosting;
 
 namespace Honua.Protocols.SensorThings.Streaming;
 
-/// <summary>
-/// Pulses observation-stream heartbeats so idle SSE/WebSocket connections stay alive
-/// behind proxies. Lightweight: a single timer loop that fans a keep-alive frame out to
-/// all sessions; transports also self-heartbeat on read timeout, so this is belt-and-braces.
-/// </summary>
 internal sealed class ObservationStreamHeartbeatService : BackgroundService
 {
     private static readonly TimeSpan Interval = TimeSpan.FromSeconds(25);

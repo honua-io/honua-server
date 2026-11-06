@@ -24,7 +24,7 @@ All endpoints require admin authentication — see [Authentication](../../guides
 
 In the authorized [API explorer](../openapi-and-explorer.md), run `POST /api/v1/admin/import/upload` and attach `parcels.geojson` to the `file` form field.
 
-Esri File Geodatabases must be uploaded as a `.gdb.zip` archive that preserves the `.gdb` directory structure. FlatGeobuf and GeoParquet files upload directly; provide `sourceSrid` when the file does not embed a CRS. See [Import files](../../guides/publish/import-files.md) for format-specific behavior.
+Esri File Geodatabases must be uploaded as a `.gdb.zip` archive that preserves the `.gdb` directory structure. FlatGeobuf and GeoParquet files upload directly. FlatGeobuf without a header CRS requires `sourceSrid`. GeoParquet with omitted `crs` defaults to OGC:CRS84; explicit `crs: null` instead requires `sourceSrid`. GeoParquet validates complete PROJJSON definitions and refuses spherical edges and multiple geometry columns before writes. See [Import files](../../guides/publish/import-files.md) for format-specific behavior.
 
 For URL imports, send one `Idempotency-Key` header (1–200 characters). The key is scoped to the authenticated principal and tenant. Repeating the same effective request returns its accepted response and original job without another download or import; the `/api/v1/admin/imports` compatibility route uses the same identity. Reusing the key with a changed request returns HTTP 409. A retry while the first request is still being accepted or executed also returns HTTP 409 with a retry-later message; retry the same key and request after the first response completes. Omitted fields and their explicit defaults are equivalent. Changing a signed source URL changes the request.
 
@@ -58,7 +58,7 @@ With a durable runner the job document is stored in Redis, so it survives a rest
 |---|---|---|
 | POST | `/api/v1/admin/import/scan` | Scan a GeoServer or ArcGIS GeoServices source and return a deterministic migration inventory artifact (`?export=json` returns it as a JSON attachment) |
 
-`sourceKind` accepts `geoserver`, `geoserver-rest`, `geoservices`, and `arcgis-geoservices-rest`. Run a scan before any migration import job; use `scanCompleteness.status` and `overallCompatibility.level` as the planning gate.
+`sourceKind` accepts `geoserver`, `geoserver-rest`, `geoservices`, and `geoservices-rest`; the legacy value `arcgis-geoservices-rest` is still accepted. Run a scan before any migration import job; use `scanCompleteness.status` and `overallCompatibility.level` as the planning gate.
 
 Run `POST /api/v1/admin/import/scan` with `{"sourceKind":"geoservices","sourceUrl":"https://example.com/arcgis/rest/services/Parcels/FeatureServer"}`.
 
@@ -152,8 +152,8 @@ Run `GET /api/v1/admin/operations/{operationId}` with the operation id returned 
 
 - [Import files](../../guides/publish/import-files.md)
 - [Import from object storage](../../guides/publish/import-from-object-storage.md)
-- [Import from ArcGIS services](../../guides/publish/import-from-arcgis-services.md)
-- [Migrate from GeoServer](../../guides/migrate/from-geoserver.md) and [from ArcGIS Server](../../guides/migrate/from-arcgis-server.md)
+- [Import from ArcGIS services](../../guides/publish/import-from-geoservices-rest.md)
+- [Migrate from GeoServer](../../guides/migrate/from-geoserver.md) and [from ArcGIS Server](../../guides/migrate/from-geoservices-rest.md)
 - [Publish rasters](../../guides/publish/publish-rasters.md)
 - [Publish tiles](../../guides/publish/publish-tiles.md)
 - [Monitor Honua Server](../../guides/deploy/monitoring.md)

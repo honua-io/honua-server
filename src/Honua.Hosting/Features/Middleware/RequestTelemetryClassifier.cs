@@ -18,11 +18,7 @@ internal static class RequestTelemetryClassifier
     private const string HostedSceneProtocol = "Scene-3DTiles";
     private const string OpenUsdProtocol = "openusd";
 
-    /// <summary>
-    /// <c>HttpContext.Items</c> key holding the completed call's gRPC status, captured inside the
-    /// gRPC-Web middleware (see <c>UseGrpcServingStatusCapture</c>) because gRPC-Web trailers are
-    /// detached from the response before the outer serving-latency recorder runs.
-    /// </summary>
+    // The gRPC status is captured inside gRPC-Web because those trailers are gone before the outer latency recorder runs.
     internal const string GrpcStatusItemKey = "__honua.telemetry.grpc-status";
 
     private const string McpPath = "/mcp";
@@ -887,13 +883,6 @@ internal static class RequestTelemetryClassifier
         return "serviceInfo";
     }
 
-    /// <summary>
-    /// Resolves the status code recorded for a serving sample. gRPC reports its outcome in the
-    /// <c>grpc-status</c> trailer while the transport status stays 200, so a failed call is mapped
-    /// to its HTTP equivalent; without that every gRPC error would be counted as a success. A
-    /// gRPC response that completed without any status (an aborted or truncated stream) is a
-    /// failure: 499 when the client went away, otherwise 500.
-    /// </summary>
     internal static int ResolveServingStatusCode(HttpContext context, string protocol)
     {
         var statusCode = context.Response.StatusCode;
@@ -913,10 +902,7 @@ internal static class RequestTelemetryClassifier
             : StatusCodes.Status500InternalServerError;
     }
 
-    /// <summary>
-    /// Records the completed gRPC call's status in <see cref="GrpcStatusItemKey"/>. Must run inside
-    /// the gRPC-Web middleware, where the gRPC-Web trailers are still attached to the response.
-    /// </summary>
+    // Record the gRPC status inside the gRPC-Web middleware, where the trailers are still attached.
     internal static void CaptureGrpcStatus(HttpContext context)
     {
         if (!string.Equals(ResolveProtocol(context.Request.Path), HonuaTelemetry.Protocols.Grpc, StringComparison.Ordinal))

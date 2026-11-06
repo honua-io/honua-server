@@ -12,7 +12,6 @@ using NetTopologySuite.IO;
 
 namespace Honua.Protocols.GeoServices.GPServer;
 
-/// <summary>Formats canonical artifacts using the Esri GP value contract.</summary>
 internal static class GPServerEsriOutputTranslation
 {
     private const string GeoJsonPrefix = "data:application/geo+json;base64,";

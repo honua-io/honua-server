@@ -127,7 +127,7 @@ The server is organized by vertical slices under `src/Honua.Server/Features/`.
 
 - **No controllers**: Minimal APIs only.
 - **Dependency flow**: Core <- Postgres / DuckDB / SqlServer / Oracle / MySql <- Server.
-- **Public API docs**: all public types require XML documentation.
+- **No XML docs in application code**: names carry the meaning (see the Clean Code rules in [architecture criteria](architecture-criteria.md#clean-code-robert-c-martin)).
 - **AOT compatibility**: reflection avoided in hot paths; source-gen JSON.
 
 For deployment architecture and infrastructure details, see:

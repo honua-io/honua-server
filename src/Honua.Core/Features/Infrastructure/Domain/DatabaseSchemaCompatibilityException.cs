@@ -29,7 +29,8 @@ public sealed class DatabaseSchemaCompatibilityException : InvalidOperationExcep
         IReadOnlyDictionary<string, string>? declarationRefusals)
         : base($"{ErrorCode}: this server cannot verify compatibility with applied migration(s): " +
             $"{string.Join(", ", unknownMigrations)}. Start a compatible server or restore the database " +
-            "backup matching this revision. Application rollback does not reverse database migrations." +
+            "backup matching this revision. Application rollback does not reverse database migrations. " +
+            "See the Rollback boundaries table in Upgrade and roll back." +
             DescribeRefusals(declarationRefusals))
     {
         UnknownMigrations = unknownMigrations.ToArray();

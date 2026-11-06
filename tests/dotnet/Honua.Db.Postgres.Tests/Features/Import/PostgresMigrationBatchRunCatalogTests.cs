@@ -143,7 +143,7 @@ public sealed class PostgresMigrationBatchRunCatalogTests(PostgresFixture fixtur
     private static MigrationBatchRunRecord NewBatch(string batchId, int total) => new()
     {
         BatchId = batchId,
-        SourceKind = "arcgis-geoservices-rest",
+        SourceKind = "geoservices-rest",
         SourceUrl = "https://example.com/FeatureServer",
         Status = MigrationBatchRunStatus.Running,
         StartedAt = DateTimeOffset.UtcNow,

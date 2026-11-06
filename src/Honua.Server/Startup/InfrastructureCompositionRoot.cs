@@ -27,20 +27,11 @@ using StackExchange.Redis;
 
 namespace Honua.Server.Startup;
 
-/// <summary>
-/// Composition root for swapping Core abstractions over to their Infrastructure
-/// implementations (provider routing plus shared cache, tile, and limits-options binders
-/// that the rest of the registration pipeline depends on).
-/// </summary>
 internal static class InfrastructureCompositionRoot
 {
-    /// <summary>
-    /// Registers the configured database provider's services, the SQL Server read-only
-    /// feature provider, the feature-provider routing surface, and the caching decorators
-    /// for <see cref="ILayerStyleCatalog"/>.
-    /// </summary>
     public static void RegisterInfrastructureServices(IServiceCollection services, IConfiguration configuration)
     {
+        RenamedConfigurationSections.ThrowIfRetiredSectionPresent(configuration);
         var warehouseProviders = new WarehouseProviderDecisions(configuration);
         warehouseProviders.MarkInfrastructureCompositionApplied();
         services.TryAddSingleton(warehouseProviders);
@@ -112,13 +103,12 @@ internal static class InfrastructureCompositionRoot
             Honua.Db.Redshift.ServiceCollectionExtensions.AddRedshiftFeatureProvider(services, configuration);
         }
 
-        // Register the federated ArcGIS REST read-through provider (#1251). Metadata v2 publications whose
-        // backing connection resolves to provider 'arcgis-rest' are routed here so customers can register a
-        // live ArcGIS FeatureServer/MapServer as a Honua layer on day one without copying data. Disabled
-        // when ArcGisRest:Enabled is explicitly false.
-        if (configuration.GetValue("ArcGisRest:Enabled", true))
+        // Metadata v2 publications whose backing connection resolves to provider 'arcgis-rest' read through a
+        // live GeoServices REST FeatureServer/MapServer without copying data. Disabled when
+        // GeoServicesRest:Enabled is explicitly false.
+        if (configuration.GetValue("GeoServicesRest:Enabled", true))
         {
-            Honua.GeoServicesRest.ServiceCollectionExtensions.AddArcGisRestFeatureProvider(services, configuration);
+            Honua.GeoServicesRest.ServiceCollectionExtensions.AddGeoServicesRestFeatureProvider(services, configuration);
         }
 
         // Register the Oracle spatial provider as an additional read-only feature backend (#1252).
@@ -229,7 +219,6 @@ internal static class InfrastructureCompositionRoot
             .AddVectorAwareRasterMapRendering(services);
     }
 
-    /// <summary>Bind + validate <see cref="LimitsOptions"/> from configuration.</summary>
     public static void ConfigureLimits(IServiceCollection services, IConfiguration configuration)
     {
         services.Configure<LimitsOptions>(options =>
@@ -248,7 +237,6 @@ internal static class InfrastructureCompositionRoot
         });
     }
 
-    /// <summary>Bind <see cref="Honua.Core.Features.Tiles.TileOptions"/> with default values.</summary>
     public static void ConfigureTileOptions(IServiceCollection services, IConfiguration configuration)
     {
         services.Configure<Honua.Core.Features.Tiles.TileOptions>(options =>
@@ -266,10 +254,6 @@ internal static class InfrastructureCompositionRoot
         services.AddSingleton<Honua.Core.Features.Tiles.ITileMatrixSetRegistry, Honua.Core.Features.Tiles.TileMatrixSetRegistry>();
     }
 
-    /// <summary>
-    /// Wires the unified cache service (Redis + in-memory fallback), the response cache,
-    /// and the distributed cache-refresh coordinator hosted service.
-    /// </summary>
     public static void ConfigureCaching(IServiceCollection services, IConfiguration configuration, bool redisCacheEntitled)
     {
         services.AddOptions<CacheOptions>()
@@ -304,7 +288,8 @@ internal static class InfrastructureCompositionRoot
         services.AddSingleton<IResponseCache>(sp =>
         {
             var innerCache = new CacheServiceResponseCache(
-                sp.GetRequiredService<ICacheService>());
+                sp.GetRequiredService<ICacheService>(),
+                sp.GetRequiredService<IOptions<CacheOptions>>().Value);
             return new MonitoredResponseCacheDecorator(
                 innerCache,
                 sp.GetRequiredService<IPerformanceMonitor>(),
@@ -328,16 +313,6 @@ internal static class InfrastructureCompositionRoot
         ConfigureMetadataGraphCacheInvalidation(services);
     }
 
-    /// <summary>
-    /// Makes Metadata v2 graph snapshot invalidation cluster-wide when Redis is composed. Each node
-    /// caches the catalog snapshot in-process for <c>Cache:MetadataGraphTtlSeconds</c>; without a
-    /// broadcast, a catalog write on one node is invisible to the others until their TTL expires, so a
-    /// publish followed by an admin call routed to another node 404s. When an
-    /// <see cref="IConnectionMultiplexer"/> is registered, the invalidator publishes every write on a
-    /// Redis channel that every node subscribes to. Without Redis (single-node) the in-process
-    /// invalidator registered by the store composition is left untouched.
-    /// </summary>
-    /// <param name="services">The service collection.</param>
     public static void ConfigureMetadataGraphCacheInvalidation(IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -345,6 +320,8 @@ internal static class InfrastructureCompositionRoot
         // Correctness, not a licensed capability: keyed on the multiplexer being composed at all,
         // not on the Redis cache entitlement. Multi-node mode already requires Redis
         // (ConfigurationValidationService), so a Redis-off deployment is single-node by contract.
+        // Lambda is the exception (many instances, no Redis required): its read path revalidates the
+        // cached snapshot per request instead (Cache:MetadataGraphRevalidateOnRead, #6762).
         if (!services.Any(static d => d.ServiceType == typeof(IConnectionMultiplexer)))
         {
             return;

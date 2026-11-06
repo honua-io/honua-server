@@ -1,9 +1,13 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Buffers.Binary;
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -242,6 +246,58 @@ public sealed class DatacubeTileEndpointTests : IAsyncLifetime
         AssertTilePixels(png, windowRow: 0, windowCol: 0, windowRows: Grid, windowCols: Grid);
     }
 
+    [IntegrationTheory]
+    [InlineData("<f4")]
+    [InlineData("<i8")]
+    [InlineData("<u8")]
+    [InlineData("|b1")]
+    [InlineData("<i8", true)]
+    [InlineData("<u8", true)]
+    [Endpoint("GET /api/v1/datacubes/{layerId}/tiles/{tileMatrixSetId}/{z}/{x}/{y}")]
+    public async Task DatacubeTile_TypedFill_MasksStoredAndAbsentChunksThroughService(string dtype, bool wide = false)
+    {
+        var objects = ZarrFixtureBuilder.BuildGroupedZlib(CubeRoot, 2, 2, 1, 1,
+            (_, _) => 0, 3857, -WorldExtent, -WorldExtent, WorldExtent, WorldExtent);
+        object fill = dtype switch { "<f4" => -9999f, "<i8" => -9999L, "<u8" => 9999UL, _ => true };
+        if (wide) fill = dtype == "<i8" ? (object)9007199254740993L : 9007199254740993UL;
+        var arrayKey = CubeRoot + "/temperature/.zarray";
+        var array = JsonNode.Parse(Encoding.UTF8.GetString(objects[arrayKey]))!.AsObject();
+        array["dtype"] = dtype;
+        array["compressor"] = null;
+        array["fill_value"] = JsonSerializer.SerializeToNode(fill);
+        objects[arrayKey] = Encoding.UTF8.GetBytes(array.ToJsonString());
+        objects.Remove(CubeRoot + "/temperature/0.0"); // Must synthesize the declared typed fill.
+        objects[CubeRoot + "/temperature/0.1"] = Cell(fill);
+        objects[CubeRoot + "/temperature/1.0"] = Cell(dtype == "|b1" ? false : wide ? 9007199254740992L : 10L);
+        objects[CubeRoot + "/temperature/1.1"] = Cell(dtype == "|b1" ? false : 30L);
+        var fixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.RemoveAll<ICloudRangeReader>();
+            services.AddSingleton<ICloudRangeReader>(new InMemoryZarrRangeReader(objects));
+        });
+        var client = await StartCubeAsync(fixture);
+        var image = MiniPngDecoder.Decode(await ReadTilePngAsync(await client.GetAsync(
+            $"/api/v1/datacubes/{CubeLayerId}/tiles/WebMercatorQuad/0/0/0")));
+        image.Pixel(0, 0).Item4.Should().Be(0, "an absent chunk must be transparent after service conversion");
+        image.Pixel(TileSize - 1, 0).Item4.Should().Be(0, "a stored sentinel must be transparent too");
+        var neighborGray = wide ? (byte)255 : (byte)0;
+        image.Pixel(0, TileSize - 1).Should().Be((neighborGray, neighborGray, neighborGray, (byte)255));
+        image.Pixel(TileSize - 1, TileSize - 1).Item4.Should().Be(255);
+        if (dtype != "|b1")
+            image.Pixel(TileSize - 1, TileSize - 1).Item1.Should().Be(wide ? (byte)0 : (byte)255,
+                "stored/missing fill values must not enter the stretch range");
+
+        byte[] Cell(object value)
+        {
+            if (dtype == "|b1") return [(bool)value ? (byte)1 : (byte)0];
+            var bytes = new byte[dtype == "<f4" ? 4 : 8];
+            if (dtype == "<f4") BinaryPrimitives.WriteSingleLittleEndian(bytes, Convert.ToSingle(value, CultureInfo.InvariantCulture));
+            else if (dtype == "<i8") BinaryPrimitives.WriteInt64LittleEndian(bytes, Convert.ToInt64(value, CultureInfo.InvariantCulture));
+            else BinaryPrimitives.WriteUInt64LittleEndian(bytes, Convert.ToUInt64(value, CultureInfo.InvariantCulture));
+            return bytes;
+        }
+    }
+
     /// <summary>
     /// Each tile index must select its own window of the cube, not the whole cube (#4395).
     /// </summary>
@@ -281,9 +337,9 @@ public sealed class DatacubeTileEndpointTests : IAsyncLifetime
     /// Registers the in-memory cube through the production admin endpoints and scans its metadata,
     /// so the served tiles depend on the same registration/scan path an operator drives.
     /// </summary>
-    private async Task<HttpClient> StartCubeAsync()
+    private async Task<HttpClient> StartCubeAsync(WebAppFixture? fixture = null)
     {
-        var client = await StartAsync(_cubeFixture);
+        var client = await StartAsync(fixture ?? _cubeFixture);
         var register = await client.PostAsJsonAsync(
             "/api/v1/admin/zarr-stores",
             new

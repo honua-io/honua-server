@@ -44,9 +44,6 @@ internal static partial class MapServerEndpoints
         MetadataV2Resource Resource,
         string? DefinitionExpression);
 
-    /// <summary>
-    /// Handle MapServer generateKml requests.
-    /// </summary>
     private static async Task<IResult> HandleGenerateKml(HttpContext context)
     {
         var serviceError = RouteValidationHelpers.ValidateServiceId(context, out var serviceId);
@@ -669,7 +666,7 @@ internal static partial class MapServerEndpoints
         FilterExpression? filterExpression = null;
         if (!string.IsNullOrWhiteSpace(where))
         {
-            var parseResult = filterExpressionService.Parse(FilterLanguage.ArcGisSql, where);
+            var parseResult = filterExpressionService.Parse(FilterLanguage.GeoServicesSql, where);
             if (!parseResult.IsSuccess)
             {
                 error = parseResult.ErrorMessage ?? "Invalid filter syntax.";

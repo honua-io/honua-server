@@ -8,33 +8,13 @@ using Honua.Core.Features.AuditLog.Export;
 
 namespace Honua.Server.Features.Infrastructure.AuditLog.Export;
 
-/// <summary>
-/// Audit sink that PUTs a newline-delimited JSON object to an S3-compatible REST
-/// endpoint at <c>{Endpoint}/{Bucket}/{KeyPrefix}{yyyy/MM/dd}/{guid}.jsonl</c>
-/// (#2157).
-/// </summary>
-/// <remarks>
-/// Request signing (AWS SigV4) is intentionally not implemented to keep the sink
-/// dependency-free. When <see cref="S3SinkOptions.AuthHeaderValue"/> is supplied
-/// it is sent verbatim as the <c>Authorization</c> header; otherwise signing is
-/// expected to be delegated to a sidecar/proxy or to a pre-signed endpoint.
-/// </remarks>
+// This sink does not implement request signing, so an omitted authorization header needs a sidecar, a proxy, or a presigned endpoint.
 internal sealed class S3AuditSink : IAuditSink
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly string _httpClientName;
     private readonly S3SinkOptions _options;
 
-    /// <summary>
-    /// Initializes a new S3 sink.
-    /// </summary>
-    /// <param name="httpClientFactory">
-    /// Factory used to resolve a fresh named <see cref="HttpClient"/> per send — see
-    /// <see cref="SplunkHecAuditSink"/> for why capturing a single client at construction
-    /// would bypass <see cref="IHttpClientFactory"/> handler rotation.
-    /// </param>
-    /// <param name="httpClientName">The named client to resolve on each send.</param>
-    /// <param name="options">S3 configuration.</param>
     public S3AuditSink(IHttpClientFactory httpClientFactory, string httpClientName, S3SinkOptions options)
     {
         ArgumentNullException.ThrowIfNull(httpClientFactory);
@@ -45,13 +25,10 @@ internal sealed class S3AuditSink : IAuditSink
         _options = options;
     }
 
-    /// <inheritdoc />
     public string SinkType => "s3";
 
-    /// <inheritdoc />
     public string? Region => _options.Region;
 
-    /// <inheritdoc />
     public async Task<AuditSinkResult> SendAsync(IReadOnlyList<AuditEvent> events, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(events);

@@ -11,6 +11,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
+using Honua.Core.Features.Validation;
 using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
@@ -24,9 +25,6 @@ using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.Servic
 
 namespace Honua.Server.Features.StaticMap;
 
-/// <summary>
-/// Request handlers for static map image endpoints.
-/// </summary>
 internal static partial class StaticMapEndpoints
 {
     private const int DefaultWidth = 600;
@@ -42,10 +40,6 @@ internal static partial class StaticMapEndpoints
     private const long MaxRenderPixels = 64_000_000; // ~8192x8192, caps surface at ~244 MB
     private const double EarthCircumference = SpatialConstants.EarthRadius * 2 * Math.PI;
 
-    /// <summary>
-    /// Handles center+zoom static map requests.
-    /// Route: /static/{serviceId}/{lon},{lat},{zoom}/{width}x{height}.{format}
-    /// </summary>
     internal static async Task<IResult> HandleCenterZoom(HttpContext context)
     {
         var serviceError = RouteValidationHelpers.ValidateServiceId(context, out var serviceId);
@@ -91,10 +85,6 @@ internal static partial class StaticMapEndpoints
         return await RenderStaticMap(context, serviceId, parameters, extent, renderSrid: 3857);
     }
 
-    /// <summary>
-    /// Handles bbox-based static map requests.
-    /// Route: /static/{serviceId}/bbox/{bbox}/{width}x{height}.{format}
-    /// </summary>
     internal static async Task<IResult> HandleBbox(HttpContext context)
     {
         var serviceError = RouteValidationHelpers.ValidateServiceId(context, out var serviceId);
@@ -134,9 +124,6 @@ internal static partial class StaticMapEndpoints
         return await RenderStaticMap(context, serviceId, parameters, extent);
     }
 
-    /// <summary>
-    /// Core rendering pipeline shared by center+zoom and bbox handlers.
-    /// </summary>
     private static async Task<IResult> RenderStaticMap(
         HttpContext context,
         string serviceId,
@@ -460,25 +447,13 @@ internal static partial class StaticMapEndpoints
     private static bool TryParseBbox(string? value, out RenderExtent extent)
     {
         extent = default;
-        if (string.IsNullOrWhiteSpace(value))
+        var parsed = BoundingBoxOrdinates.Parse(value);
+        if (!parsed.Succeeded || parsed.Ordinates.Length != 4)
         {
             return false;
         }
 
-        var parts = value.Split(',');
-        if (parts.Length != 4)
-        {
-            return false;
-        }
-
-        if (!double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var xmin) ||
-            !double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var ymin) ||
-            !double.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var xmax) ||
-            !double.TryParse(parts[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var ymax))
-        {
-            return false;
-        }
-
+        var (xmin, ymin, xmax, ymax) = BoundingBoxOrdinates.Horizontal(parsed.Ordinates);
         if (xmin < -180.0 || xmin > 180.0 ||
             xmax < -180.0 || xmax > 180.0 ||
             ymin < -90.0 || ymin > 90.0 ||
@@ -681,12 +656,6 @@ internal static partial class StaticMapEndpoints
 
     // ----- Coordinate helpers -----
 
-    /// <summary>
-    /// Converts center point and zoom level to a geographic bounding box.
-    /// Projects to Web Mercator, offsets in projected metres, then inverse-projects
-    /// the corners back to geographic coordinates. At zoom z each pixel represents
-    /// <c>2πR / (256 × 2^z)</c> metres in projected space.
-    /// </summary>
     internal static RenderExtent CenterZoomToExtent(
         double lon, double lat, int zoom, int width, int height)
     {

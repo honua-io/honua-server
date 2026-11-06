@@ -9,26 +9,31 @@ namespace Honua.Db.Postgres.Features.Admin;
 
 internal sealed partial class PostgreSqlLayerPublishingService
 {
-    private async Task<string> ValidateManagedCopyTargetAsync(
-        string connectionString,
-        IReadOnlyList<LayerFieldInsert> fields,
-        CancellationToken cancellationToken)
+    private sealed record ManagedCopyTargetIdentity(string? Host, int Port, string Database, string Schema, long ObjectId);
+
+    private async Task<ManagedCopyTargetIdentity> ReadManagedCopyTargetAsync(CancellationToken cancellationToken)
+    {
+        if (_managedConnectionProvider is null)
+        {
+            throw new LayerPublishingException(LayerPublishingErrorKind.Validation,
+                "The managed feature store is not configured for editable publication.");
+        }
+        // Capture and release the managed lease before publication holds its source connection.
+        await using var managed = await _managedConnectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var target = managed.Connection;
+        var identity = await ReadManagedStoreIdentityAsync(target, _managedFeaturesTable, cancellationToken).ConfigureAwait(false);
+        return new ManagedCopyTargetIdentity(target.Host, target.Port, target.Database, identity.Schema, identity.ObjectId);
+    }
+
+    private static async Task<string> ValidateManagedCopyTargetAsync(
+        NpgsqlConnection source, IReadOnlyList<LayerFieldInsert> fields,
+        ManagedCopyTargetIdentity target, CancellationToken cancellationToken)
     {
         if (fields.Any(field => field.Name.Equals(ManagedSourceIdField, StringComparison.OrdinalIgnoreCase)))
         {
             throw new LayerPublishingException(LayerPublishingErrorKind.Validation,
                 $"The field '{ManagedSourceIdField}' is reserved for managed-copy identity mapping.");
         }
-        if (_managedConnectionProvider is null)
-        {
-            throw new LayerPublishingException(LayerPublishingErrorKind.Validation,
-                "The managed feature store is not configured for editable publication.");
-        }
-
-        await using var managed = await _managedConnectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var source = new NpgsqlConnection(connectionString);
-        await source.OpenAsync(cancellationToken).ConfigureAwait(false);
-        var target = managed.Connection;
         if (!string.Equals(source.Host, target.Host, StringComparison.OrdinalIgnoreCase) ||
             source.Port != target.Port || !string.Equals(source.Database, target.Database, StringComparison.Ordinal))
         {
@@ -37,13 +42,12 @@ internal sealed partial class PostgreSqlLayerPublishingService
         }
 
         var sourceStore = await ReadManagedStoreIdentityAsync(source, "features", cancellationToken).ConfigureAwait(false);
-        var targetStore = await ReadManagedStoreIdentityAsync(target, _managedFeaturesTable, cancellationToken).ConfigureAwait(false);
-        if (sourceStore != targetStore)
+        if (sourceStore != (target.Schema, target.ObjectId))
         {
             throw new LayerPublishingException(LayerPublishingErrorKind.Validation,
                 "The publication connection must resolve the same features table as the managed writer. Check its search path.");
         }
-        return targetStore.Schema;
+        return target.Schema;
     }
 
     private static async Task<(string Schema, long ObjectId)> ReadManagedStoreIdentityAsync(

@@ -15,7 +15,9 @@ readers (validated: each entry round-trips to its own EPSG code).
 Format: top-level object is pretty-printed, but each SRID's PROJJSON value is a
 single compact line so the resource diffs one line per CRS.
 """
+import argparse
 import json
+from pathlib import Path
 import sys
 from pyproj import CRS
 
@@ -24,7 +26,7 @@ OUTPUT = "src/Honua.Core/Features/Infrastructure/Crs/Resources/geoparquet-crs-pr
 def codes():
     yield 3857  # WGS 84 / Pseudo-Mercator (Web Mercator)
     # Common geographic datums (4326 included though normally emitted as the CRS84 default)
-    yield from [4269, 4267, 4258, 4283, 4171, 4173, 4979, 4617, 4759, 4326]
+    yield from [4269, 4267, 4258, 4283, 4171, 4173, 4979, 4617, 4759, 4326, 7912]
     yield from range(32601, 32661)  # WGS 84 / UTM zone N
     yield from range(32701, 32761)  # WGS 84 / UTM zone S
     yield from range(25828, 25839)  # ETRS89 / UTM zone (Europe)
@@ -34,12 +36,20 @@ def codes():
     ]
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--extend-existing", action="store_true",
+                        help="Preserve existing authoritative definitions and generate only missing entries")
+    args = parser.parse_args()
+    existing = json.loads(Path(OUTPUT).read_text()) if args.extend_existing else {}
     entries = []
     seen = set()
     for code in sorted(set(codes())):
         if code in seen:
             continue
         seen.add(code)
+        if str(code) in existing.get("crs", {}):
+            entries.append((str(code), json.dumps(existing["crs"][str(code)], sort_keys=True, separators=(",", ":"))))
+            continue
         crs = CRS.from_epsg(code)
         pj = crs.to_json_dict()
         rt = CRS.from_json(json.dumps(pj))
@@ -56,7 +66,12 @@ def main():
         comma = "," if i < len(entries) - 1 else ""
         # code is a stringified int; embed the compact PROJJSON verbatim as the value.
         lines.append(f'    {json.dumps(code)}: {compact}{comma}')
-    lines.append("  }")
+    lines.append("  },")
+    crs84 = CRS.from_user_input("OGC:CRS84")
+    crs84_json = existing.get("crs84", crs84.to_json_dict())
+    if CRS.from_json(json.dumps(crs84_json)).to_authority() != ("OGC", "CRS84"):
+        raise RuntimeError("OGC:CRS84 failed its authority round-trip")
+    lines.append('  "crs84": ' + json.dumps(crs84_json, sort_keys=True, separators=(",", ":")))
     lines.append("}")
     with open(OUTPUT, "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(lines) + "\n")

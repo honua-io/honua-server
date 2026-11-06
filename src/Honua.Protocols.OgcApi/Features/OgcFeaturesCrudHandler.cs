@@ -163,7 +163,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
                 return StandardErrorHelpers.CreateInternalServerError(context, "Created feature response could not be projected.");
             }
 
-            await _mutationEventService.InvalidateLayerAsync(null, layerId, CancellationToken.None);
+            await _mutationEventService.InvalidatePublishedLayerAsync(publication, layerId);
             await TryPublishFeatureChangeAsync(
                 context,
                 layerId,
@@ -313,7 +313,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
                 return MapDeleteFailure(context, deleteResult, featureId);
             }
 
-            await _mutationEventService.InvalidateLayerAsync(null, layerId, CancellationToken.None);
+            await _mutationEventService.InvalidatePublishedLayerAsync(publication, layerId);
             await TryPublishFeatureChangeAsync(
                 context,
                 layerId,

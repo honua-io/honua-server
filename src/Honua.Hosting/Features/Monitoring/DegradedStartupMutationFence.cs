@@ -8,13 +8,6 @@ using Microsoft.AspNetCore.Http;
 
 namespace Honua.Infrastructure.Monitoring;
 
-/// <summary>
-/// Refuses data-plane writes while a degraded start is still waiting on the database
-/// (honua-server#6008). Readiness already answers 503, but FeatureServer applyEdits and
-/// other mutations would still run. GET, HEAD, <c>/healthz</c>, and read-only POSTs
-/// (GeocodeServer and known WFS reads, honua-server#6044) stay available. This fence
-/// does not migrate.
-/// </summary>
 internal sealed class DegradedStartupMutationFenceMiddleware(RequestDelegate next)
 {
     private const string UnreadableOperation = "\u0000";
@@ -67,10 +60,6 @@ internal sealed class DegradedStartupMutationFenceMiddleware(RequestDelegate nex
         return await IsWfsReadAsync(context).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// A path segment equal to GeocodeServer. Every published GeocodeServer POST
-    /// (metadata, find, reverse, suggest, batch) is a read.
-    /// </summary>
     private static bool IsGeocodeServer(PathString path)
     {
         var segments = path.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries);
@@ -90,11 +79,6 @@ internal sealed class DegradedStartupMutationFenceMiddleware(RequestDelegate nex
         return false;
     }
 
-    /// <summary>
-    /// Allow only a known WFS read. XML or form body wins over the query when both
-    /// name an operation, and either side naming something other than a known read
-    /// fails closed. The body is rewound so the dispatcher can parse it again.
-    /// </summary>
     private static async Task<bool> IsWfsReadAsync(HttpContext context)
     {
         var queryOperation = QueryOperation(context.Request);
@@ -321,13 +305,9 @@ internal sealed class DegradedStartupMutationFenceMiddleware(RequestDelegate nex
     }
 }
 
-/// <summary>Extension methods for <see cref="DegradedStartupMutationFenceMiddleware"/>.</summary>
 internal static class DegradedStartupMutationFenceExtensions
 {
-    /// <summary>
-    /// Registers the degraded-start write fence. Place it as soon as the client HTTP method
-    /// is visible so a mutation never reaches a handler that writes.
-    /// </summary>
+    // The write fence is registered as soon as the method is visible so a mutation never reaches a handler.
     public static IApplicationBuilder UseDegradedStartupMutationFence(this IApplicationBuilder app)
     {
         ArgumentNullException.ThrowIfNull(app);

@@ -6,9 +6,6 @@ using Honua.Core.Features.Admin.Domain;
 
 namespace Honua.Server.Features.Admin.Models;
 
-/// <summary>
-/// Response model with JSON source generation for AOT compatibility.
-/// </summary>
 [JsonSerializable(typeof(TableDiscoveryResponse))]
 [JsonSerializable(typeof(TableInfo))]
 [JsonSerializable(typeof(ColumnInfo))]

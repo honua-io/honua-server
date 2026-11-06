@@ -13,7 +13,7 @@ You'll roll a new Honua version forward safely — preflight first, backward-com
 
 1. Zero-downtime upgrades are supported only for backward-compatible (expand-contract) migrations: add columns/tables first, deploy, drop old columns in a later release. Potentially breaking migrations carry an explicit `-- honua:compatibility-review` marker in the SQL — treat those as gated rollouts with a documented rollback path. On an existing database you can require explicit approval before those apply: set `Database__MigrationSafety__ContractApplyPolicy=Gate` (fresh installs are unaffected), set `HONUA_APPROVE_CONTRACT_MIGRATIONS` to the nonce printed by the migration safety error, and optionally run a pre-migration backup hook via `Database__MigrationSafety__BackupCommand` — see [Deploy with Docker Compose — Upgrade & Rollback](docker-compose.md#upgrade--rollback).
 2. Application rollback is allowed only when the previous reader qualifies every applied migration. A reader qualifies a migration it ships. It can also qualify one it does not ship, but only when the migration is expand-only and the reader verifies the forward-compatibility declaration the newer server recorded for it (see [Rollback across additive migrations](#rollback-across-additive-migrations)). On startup any other unrecognized journal entry raises `DatabaseSchemaCompatibilityException` with code `schema_reader_incompatible`, before serving. The check runs the same way with `HONUA_SKIP_MIGRATIONS=true`, and degraded-start mode cannot bypass it. A migration's presence alone never proves that an older image can serve it.
-3. Database restore is the last resort when the previous version cannot safely serve the live schema or the data is corrupt.
+3. Database restore is the last resort when the previous version cannot safely serve the live schema or the data is corrupt. On an installed Compose project with the [Compose executor](../../get-started/quickstart.md#approved-operations-and-recovery) enabled, that restore is part of an approved rollback: the executor checks the backup, restores it, and only then starts the prior image.
 
 ### In-flight geoprocessing jobs
 
@@ -149,6 +149,28 @@ Review those values before upgrading, especially environment variables already p
 in deployment manifests. Defaults are unchanged when a key is absent. Existing
 `Alerts:Enabled` / `Alerts__Enabled` behavior is unchanged; this correction applies to
 the nested evaluation, dispatch, delivery-channel, and operations settings.
+
+### Credential and identity management requires full-administrator authority
+
+API keys that hold only `admin:write` or `admin:manage` now receive `403` on the routes
+that create, rotate or revoke API keys, change user roles, deprovision users, and register
+or delete OAuth clients. Earlier builds accepted those keys there. Request and response
+shapes are unchanged, and the keys keep read access to these resources and admin write
+access elsewhere.
+
+Before upgrading, find automation that manages credentials with a scoped key and move it to
+one of these:
+
+1. **A full-administrator key.** Mint a dedicated key granted `admin:*`, store it in your
+   secret manager, and use it only for credential and identity management. Keep the scoped
+   key for everything else.
+2. **The bootstrap credential** (`HONUA_ADMIN_PASSWORD`) for one-off or break-glass changes.
+3. **An approved operation.** Submit the change as a proposal; after a separate approver
+   accepts it, Honua replays it with a credential bound to that exact method and path.
+
+After upgrading, a `403` on these routes with `CredentialManagementDenied` (event id 4119)
+in the server log identifies a caller that still needs moving. The route list is in
+[Credential and identity management](../../reference/admin-api/users-roles-licensing.md#credential-and-identity-management).
 
 ### Preview raster and coverage surfaces
 
@@ -296,8 +318,14 @@ An MCP agent follows the same path with a human approval in the middle; it never
 1. `honua_platform_release_status` — read the declared release (`releaseVersion`), the serving/execution projections and `isCoVersioned`.
 2. `GET /api/v1/admin/deploy/preflight` — confirm readiness, pending migrations and database compatibility (its `platformRelease` block is the same projection).
 3. `honua_propose_platform_release_convergence` with `{"targetVersion":"2026.1-rc.N"}` — when the version names the declared release, the server seals one deploy proposal per divergent serving target (the same contract as converge above). When it does not, the tool returns `outcome: "rejected"`, `code: "platform_release_version_mismatch"`, `declaredVersion`, `servingArtifactReference` and `isCoVersioned`, so the agent can explain that the server has not been re-provisioned with that release yet. A tenant-bound key still gets `platform_admin_required` before any version comparison.
-4. A separate authorized principal approves each proposal in the Console inbox or with the Admin CLI; the agent polls the returned `honua://proposals/{proposalId}`.
-5. `honua_propose_rollback` — if the observation window regresses, propose rolling the target back to its prior succeeded revision (again approved by a human).
+4. A separate authorized principal approves each proposal in the Console inbox or with the Admin CLI; the agent polls the returned `honua://proposals/{proposalId}`. Approval submits the deploy to the product executor for that registered target. On ECS the executor registers a task definition pinned to the immutable serving-artifact digest, runs the product migrate-only task first when the deployment names one, updates the service to that task definition, and waits for steady state. The workflow operation id is the durable record. A GitOps hand-off is not a completed rollout, and a schema migration is not implied by the service or function update.
+5. `honua_propose_rollback` — if the observation window regresses, propose rolling the target back to its prior succeeded revision (again approved by a human). That rollback is a new deploy of the prior digest through the same executor, or a typed refusal when no prior revision exists.
+
+For an ECS image convergence target, configure `aws.ecs.stable_service` as a distinct service. Before shifting traffic or updating the canary service, the executor records the stable revision, candidate service revision, registered revision, and successful migration preparation in the durable operation. Reconciliation then submits activation and watches the rollout. If the host stops during migration preparation, the operation requires manual verification; it does not automatically repeat a migration whose outcome is unknown.
+
+### Governed restart and config
+
+An approved admin-config proposal can restart the registered deployment or change one allowlisted field. The action names are `workload.restart_ecs`, `workload.restart_lambda`, and `workload.set_config`. The `target` is a deploy-target id. Restart forces a new ECS deployment of that service, or publishes a new Lambda version of the alias's current image. That publish sets only the function description, and only after the unpublished configuration matches the serving version. The alias moves only when the published version is new and the image is unchanged. `workload.set_config` accepts only `ecs.desired_count` (an integer from 0 through 10) and fails if the task definition would change. Any other action or field fails before a provider write. The returned id is the durable `opsaction-…` record. Approval still requires a different principal than the proposer.
 
 Version-to-digest resolution lives in the signed release lock published with each Honua release, not in the server. The provisioning executor writes the lock's resolved artifacts into `ControlPlane__PlatformRelease__Version`, `ControlPlane__PlatformRelease__ServingArtifactReference` and `ControlPlane__PlatformRelease__Workers__*`; to move to another release, re-provision with that release's lock and then propose convergence.
 
@@ -431,6 +459,20 @@ kubectl rollout status deployment/honua-server --namespace honua --timeout=600s
 
 For deploy-API-managed rollouts, `POST .../operations/{operationId}/rollback` drives the platform backend (re-point alias, shift ALB weights back, reverse slot swap). Single-instance Docker: restart the previous image tag.
 
+For an RDS-backed cell using the product restore executor, configure the cell's authorized
+database security group IDs in `ControlPlane:Restore:RdsSecurityGroupIds`, alongside its
+cell prefix, subnet group, connection secret, audit destination, and revision schema catalog.
+The executor refuses a restore when the security groups are absent or the cell prefix cannot
+fit a unique replacement instance ID. A failed restore retains the cell ownership record for
+operator investigation before another restore is attempted.
+
+Restore progress is recorded durably. After a restart, the executor resumes a known
+RDS restore or deployment from its checkpoint. If interruption leaves the provider
+submission outcome uncertain, the operation fails and requires operator attention;
+it does not submit another restore blindly. Inspect the operation and the database
+before attempting recovery. Success is recorded only after the restored deployment
+and its protection window complete and the restore is verified.
+
 ### Rollback target eligibility
 
 Before you roll back the image, check that the target image can protect itself
@@ -451,6 +493,22 @@ against the schema it will find. Image rollback never reverses migrations.
   only safe path back to 2026.1 is to restore the backup you took before you
   upgraded. Pin rollback targets by digest. The tag named in the 2026.1 release
   notes has since moved to a rebuild (honua-io/honua-release#776).
+
+### Rollback boundaries
+
+These migrations are reader-incompatible. A server that does not ship one refuses to start
+against a database it was applied to, with `schema_reader_incompatible` naming the script.
+To roll back across one, restore the backup you took before the upgrade
+([Back up and restore](backup-and-restore.md)).
+
+| Migration | Servers that refuse | Why |
+| --- | --- | --- |
+| `142_CreateAiFinancialAccounting.sql` | 2026.1-rc.1 and earlier | Financial-mode writer fences need the matching financial admission contract. |
+| `144_RenameGeoServicesRestSourceKind.sql` | 2026.1-rc.1 and every earlier build | Stored migration source kinds become `geoservices-rest`, and older servers read only `arcgis-geoservices-rest`. |
+
+After migration 144, servers older than the release that ships it (2026.1-rc.1 and every
+earlier build) refuse to start against the database; restore from the pre-upgrade backup to
+roll back.
 
 ### Rollback completion proof
 

@@ -31,3 +31,13 @@ Defer the following operational/enterprise features to post-MVP:
 - Document deferrals in MVP guidance and roadmap.
 - Provide edge rate limiting templates (nginx/ALB/WAF).
 - Reintroduce compliance/audit features in GA when demand justifies.
+
+## Update (2026-10)
+
+Application-level rate limiting has since shipped as an opt-in limiter (#355). It is off by
+default (`RateLimiting:Enabled`), partitions by tenant, user or API key, and returns `429` with
+`Retry-After`. Edge enforcement (nginx/ALB/WAF, ADR-0004) remains the default posture, and the
+opt-in limiter does not replace it. The other two deferrals still stand:
+
+- there is no secure-connection allowlist or connection audit trail;
+- there is no compliance framework, audit-log storage or compliance dashboard.

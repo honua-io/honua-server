@@ -357,6 +357,32 @@ public sealed class PackageReviewServiceTests
         response.ReviewId.Should().NotBeNullOrEmpty();
     }
 
+    [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task ReviewAsync_WithPartialRequirementsObject_TreatsOmittedListsAsEmpty()
+    {
+        // MCP and console clients send only the requirement lists that apply. Source-generated
+        // JSON assigns null to every omitted init-only list; the review must still run instead of
+        // failing with an internal error (geospatial-mcp app-package certification on 8cb074f7).
+        var request = JsonSerializer.Deserialize(
+            """
+            { "packageFamily": "app_package", "packageId": "app-partial", "requestedAction": "publish",
+              "requirements": {
+                "dataBindings": [ { "id": "map", "sourceId": "map-1", "isResolved": true, "required": true } ],
+                "approvals": [ { "policyRef": "explicit-approval", "appliesTo": "publish", "required": true, "approved": false } ] } }
+            """,
+            PackageReviewCoreJsonContext.Default.PackageReviewRequest)!;
+
+        request.Requirements.Permissions.Should().NotBeNull().And.BeEmpty();
+        request.Requirements.Schemas.Should().NotBeNull().And.BeEmpty();
+        request.Requirements.Formats.Should().NotBeNull().And.BeEmpty();
+
+        var response = await CreateService().ReviewAsync(request, CreateContext());
+
+        response.RequiresApproval.Should().BeTrue();
+        response.CanPublish.Should().BeFalse();
+    }
+
     private static IPackageReviewService CreateService()
     {
         var services = new ServiceCollection();

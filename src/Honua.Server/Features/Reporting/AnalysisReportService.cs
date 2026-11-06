@@ -1,14 +1,15 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Diagnostics;
 using System.Diagnostics.Metrics;
+using System.Diagnostics;
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Domain;
-using Honua.Core.Features.Reporting;
 using Honua.Core.Features.Reporting.Abstractions;
 using Honua.Core.Features.Reporting.Domain;
+using Honua.Core.Features.Reporting;
 using Honua.Geoprocessing;
+using Honua.Infrastructure.Security.Admission;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
@@ -16,12 +17,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Reporting;
 
-/// <summary>
-/// Orchestrates analysis report retrieval. Authorizes the caller through
-/// <see cref="IGeoprocessingJobService"/>, builds the report once per
-/// (jobId, contractVersion, resultPackageId), and caches rendered Markdown /
-/// HTML output for the configured TTL.
-/// </summary>
 internal sealed class AnalysisReportService : IAnalysisReportService
 {
     public static readonly ActivitySource ActivitySource = new("Honua.Server.Reporting");
@@ -58,6 +53,7 @@ internal sealed class AnalysisReportService : IAnalysisReportService
     private readonly IMemoryCache _cache;
     private readonly ReportingConfiguration _configuration;
     private readonly ILogger<AnalysisReportService> _logger;
+    private readonly AiExecutionContextFactory? _contextFactory;
 
     public AnalysisReportService(
         IGeoprocessingJobService jobService,
@@ -66,8 +62,10 @@ internal sealed class AnalysisReportService : IAnalysisReportService
         IEnumerable<IAnalysisReportRenderer> renderers,
         IMemoryCache cache,
         IOptions<ReportingConfiguration> configuration,
-        ILogger<AnalysisReportService> logger)
+        ILogger<AnalysisReportService> logger,
+        AiExecutionContextFactory? contextFactory = null)
     {
+        _contextFactory = contextFactory;
         _jobService = jobService;
         _builder = builder;
         _store = store;
@@ -77,7 +75,6 @@ internal sealed class AnalysisReportService : IAnalysisReportService
         _renderers = renderers.ToDictionary(r => r.Format);
     }
 
-    /// <inheritdoc />
     public async Task<AnalysisReport> GetReportAsync(
         string jobId,
         ClaimsPrincipal principal,
@@ -113,9 +110,12 @@ internal sealed class AnalysisReportService : IAnalysisReportService
             await _store.RemoveAsync(jobId, cancellationToken).ConfigureAwait(false);
         }
 
-        var report = await _builder
-            .BuildAsync(jobId, package, cancellationToken)
-            .ConfigureAwait(false);
+        // The service read authorizes both the current caller and the actual durable job identity.
+        var executionContext = _contextFactory is null ? null : _contextFactory.ForPrincipal(principal,
+            "reporting-narrative", "job:" + (await _jobService.GetJobAsync(jobId, principal, cancellationToken).ConfigureAwait(false)).OperationId);
+        var report = executionContext is null
+            ? await _builder.BuildAsync(jobId, package, cancellationToken).ConfigureAwait(false)
+            : await _builder.BuildAsync(jobId, package, executionContext, cancellationToken).ConfigureAwait(false);
 
         await _store.StoreAsync(report, cancellationToken).ConfigureAwait(false);
 
@@ -133,7 +133,6 @@ internal sealed class AnalysisReportService : IAnalysisReportService
         return report;
     }
 
-    /// <inheritdoc />
     public async Task<RenderedAnalysisReport> GetRenderedAsync(
         string jobId,
         AnalysisReportFormat format,

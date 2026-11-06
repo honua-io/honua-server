@@ -6,94 +6,45 @@ using System.Text;
 
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
-/// <summary>
-/// Metadata v2 cache entry family.
-/// </summary>
 public enum MetadataV2CacheEntryKind
 {
-    /// <summary>
-    /// Versioned metadata snapshot.
-    /// </summary>
     Snapshot,
 
-    /// <summary>
-    /// Derived metadata projection.
-    /// </summary>
     Projection
 }
 
-/// <summary>
-/// Request used to build metadata v2 snapshot and projection cache keys.
-/// </summary>
 public sealed record MetadataV2CacheKeyRequest
 {
-    /// <summary>
-    /// Cache key namespace prefix.
-    /// </summary>
     public string KeyPrefix { get; init; } = MetadataV2CacheKeyBuilder.DefaultKeyPrefix;
 
-    /// <summary>
-    /// Environment dimension, for example <c>dev</c>, <c>staging</c>, or <c>prod</c>.
-    /// </summary>
     public string? Environment { get; init; }
 
-    /// <summary>
-    /// Catalog dimension.
-    /// </summary>
     public string? CatalogId { get; init; }
 
-    /// <summary>
-    /// Metadata schema version dimension.
-    /// </summary>
     public string? SchemaVersion { get; init; }
 
-    /// <summary>
-    /// Metadata revision dimension.
-    /// </summary>
     public string? Revision { get; init; }
 
-    /// <summary>
-    /// Projection target dimension.
-    /// </summary>
     public string? ProjectionTarget { get; init; }
 
-    /// <summary>
-    /// Projection profile version dimension.
-    /// </summary>
     public string? ProjectionProfileVersion { get; init; }
 }
 
-/// <summary>
-/// Built metadata v2 cache key.
-/// </summary>
 public sealed record MetadataV2CacheKey(MetadataV2CacheEntryKind Kind, string Value)
 {
-    /// <inheritdoc />
     public override string ToString() => Value;
 }
 
-/// <summary>
-/// Builds deterministic metadata v2 cache keys for snapshots and projections.
-/// </summary>
 public static class MetadataV2CacheKeyBuilder
 {
-    /// <summary>
-    /// Default namespace for metadata v2 cache entries.
-    /// </summary>
     public const string DefaultKeyPrefix = "honua:metadata:v2";
 
     private const int MaxComponentLength = 96;
     private const int ComponentFingerprintLength = 16;
 
-    /// <summary>
-    /// Builds a metadata v2 snapshot cache key.
-    /// </summary>
     public static MetadataV2CacheKey BuildSnapshot(MetadataV2CacheKeyRequest request)
         => Build(MetadataV2CacheEntryKind.Snapshot, request);
 
-    /// <summary>
-    /// Builds a metadata v2 projection cache key.
-    /// </summary>
     public static MetadataV2CacheKey BuildProjection(MetadataV2CacheKeyRequest request)
         => Build(MetadataV2CacheEntryKind.Projection, request);
 

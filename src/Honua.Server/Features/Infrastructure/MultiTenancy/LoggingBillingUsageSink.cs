@@ -6,19 +6,10 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Infrastructure.MultiTenancy;
 
-/// <summary>
-/// Default <see cref="IBillingUsageSink"/> that records per-tenant usage to structured logs
-/// (issue #2156). Cloud-marketplace metering connectors replace this with a sink that forwards
-/// usage to the billing provider. Best-effort: never throws into the caller's path.
-/// </summary>
 internal sealed partial class LoggingBillingUsageSink : IBillingUsageSink
 {
     private readonly ILogger<LoggingBillingUsageSink> _logger;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="LoggingBillingUsageSink"/> class.
-    /// </summary>
-    /// <param name="logger">The logger.</param>
     public LoggingBillingUsageSink(ILogger<LoggingBillingUsageSink> logger)
     {
         _logger = logger;

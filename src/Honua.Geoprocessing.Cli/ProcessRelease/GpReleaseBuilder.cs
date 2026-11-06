@@ -9,62 +9,39 @@ using Honua.Geoprocessing.Release;
 
 namespace Honua.Geoprocessing.Cli.Release;
 
-/// <summary>
-/// Inputs the CLI resolved for one release build.
-/// </summary>
 internal sealed record GpReleaseRequest
 {
-    /// <summary>Absolute path of <c>honua-gp.yaml</c>.</summary>
     public required string DescriptorPath { get; init; }
 
-    /// <summary><c>owner/name</c>; overrides the descriptor's <c>source.repository</c>.</summary>
     public string? SourceRepository { get; init; }
 
-    /// <summary>Full commit SHA; must equal the checkout's HEAD when a checkout is present.</summary>
     public string? SourceSha { get; init; }
 
-    /// <summary>Runtime image <c>registry/repository@sha256:...</c>; overrides the descriptor.</summary>
     public string? RuntimeImage { get; init; }
 
-    /// <summary>Overrides the lock's <c>generatedAt</c> (defaults to the source commit's committer time).</summary>
     public string? GeneratedAt { get; init; }
 
-    /// <summary>Directory receiving <c>process-release-lock.json</c> and <c>artifacts/</c>.</summary>
     public required string OutputDirectory { get; init; }
 }
 
-/// <summary>What a release build produced.</summary>
 internal sealed record GpReleaseResult
 {
-    /// <summary>The lock that was written.</summary>
     public required GpProcessReleaseLock Lock { get; init; }
 
-    /// <summary>Absolute path of the written lock file.</summary>
     public required string LockPath { get; init; }
 
-    /// <summary>Absolute paths of the written artifacts, in lock order.</summary>
     public required IReadOnlyList<string> ArtifactPaths { get; init; }
 }
 
-/// <summary>
-/// Builds a release lock from a descriptor and a Git checkout. Every value in the lock is either
-/// declared in the descriptor, read from the checkout (commit SHA, commit time, file digests) or
-/// passed explicitly; the same descriptor at the same commit always produces the same bytes
-/// and therefore the same digest, which is what makes re-running a release a no-op.
-/// </summary>
 internal static class GpReleaseBuilder
 {
-    /// <summary>The lock file name the release workflow expects.</summary>
     public const string LockFileName = "process-release-lock.json";
 
-    /// <summary>The artifacts sub-directory the release workflow expects.</summary>
     public const string ArtifactsDirectoryName = "artifacts";
 
     private static readonly string[] ExcludedDirectoryNames =
         [".git", ".venv", "venv", "__pycache__", ".pytest_cache", "node_modules", "bin", "obj", ".vs", ".idea", "artifacts", ".honua-gp"];
 
-    /// <summary>Builds the release and writes the lock plus artifacts.</summary>
-    /// <exception cref="GpReleaseException">The descriptor, checkout or inputs do not allow a release.</exception>
     public static GpReleaseResult Build(GpReleaseRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -267,10 +244,6 @@ internal static class GpReleaseBuilder
         return new GpReleaseResult { Lock = lockDocument, LockPath = lockPath, ArtifactPaths = [artifactPath] };
     }
 
-    /// <summary>
-    /// Verifies that the artifacts on disk are the exact bytes a lock names.
-    /// </summary>
-    /// <returns>One finding per missing or mismatched artifact; empty when all match.</returns>
     public static IReadOnlyList<string> VerifyArtifacts(GpProcessReleaseLock lockDocument, string artifactsDirectory)
     {
         ArgumentNullException.ThrowIfNull(lockDocument);
@@ -424,11 +397,6 @@ internal static class GpReleaseBuilder
     private static string ToRelative(string root, string path)
         => Path.GetRelativePath(root, path).Replace('\\', '/');
 
-    /// <summary>
-    /// Packs the included files into a deterministic tar.gz: entries in ordinal path order,
-    /// ustar format, uid/gid 0, mode 0644, and the release's generatedAt as every mtime, so the
-    /// same inputs produce the same bytes on every run.
-    /// </summary>
     private static byte[] PackArtifact(List<(string Relative, string Absolute)> files, DateTimeOffset modificationTime)
     {
         using var tarStream = new MemoryStream();
@@ -461,7 +429,6 @@ internal static class GpReleaseBuilder
         return gzStream.ToArray();
     }
 
-    /// <summary>Facts read from the Git checkout holding the descriptor.</summary>
     private sealed class GitFacts
     {
         private readonly string _root;

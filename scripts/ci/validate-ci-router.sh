@@ -46,12 +46,14 @@ echo "Validating PR Gate impact observation..."
 if [[ -n "${PYTHON_BIN}" ]]; then
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-testcontainer-images.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-native-tools-image.py
+  "${PYTHON_BIN}" scripts/ci/fixtures/validate-pr-gate-apt-provisioning.py --self-test
   "${PYTHON_BIN}" scripts/ci/source-inventory-pilot/test_run.py
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-mcp-server-auth.py
   HONUA_PR_GATE_IMPACT_PYTHON="${PYTHON_BIN}" scripts/ci/validate-pr-gate-impact.sh
   "${PYTHON_BIN}" scripts/ci/audit-impact-routing-evidence.test.py
   "${PYTHON_BIN}" scripts/ci/collect-impact-routing-runs.test.py
   "${PYTHON_BIN}" scripts/ci/audit-affected-shards.test.py
+  "${PYTHON_BIN}" scripts/ci/affected-shard-verdict.test.py
 else
   echo "⚠️  Skipping PR Gate impact observation validation (no working Python 3)."
 fi
@@ -1890,6 +1892,10 @@ echo "Checking shard filter/test-class coverage in both directions..."
     "Honua.Server.Tests.Features.Admin.ExternalServiceDiscoveryServiceTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Server Features Admin Integrations and Automation" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Admin.AlertAdminEndpointsTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Server Features Admin Alert Endpoints" \
   --assert-owner \
     "Honua.Server.Tests.Features.Admin.AgenticOpsLoopDeadLetterE2eTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \

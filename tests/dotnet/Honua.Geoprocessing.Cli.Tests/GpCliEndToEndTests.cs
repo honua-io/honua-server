@@ -110,6 +110,55 @@ public sealed class GpCliEndToEndTests
     }
 
     [Fact]
+    public async Task RunAsync_DescribeProject_ReportsPrerequisitesAndRefusesAMissingLock()
+    {
+        if (!GpCustomProjectTests.PythonAvailable())
+        {
+            return; // python3 is not on PATH; project discovery's runtime verdict is covered by GpProjectDiscoveryTests.
+        }
+
+        var output = Path.Join(Path.GetTempPath(), $"gp-discover-{Guid.NewGuid():N}");
+        try
+        {
+            (await InvokeAsync("init", "--language", "python", "--name", "parcel-summary", "--output", output)).ExitCode.Should().Be(0);
+            var project = Path.Join(output, "parcel-summary");
+
+            var (exit, stdout, stderr) = await InvokeAsync("describe", "--project", project, "--json");
+            exit.Should().Be(0, stdout + stderr);
+            using var document = JsonDocument.Parse(stdout.Trim());
+            document.RootElement.GetProperty("id").GetString().Should().Be("parcel-summary");
+            document.RootElement.GetProperty("source").GetString().Should().Be("project");
+            document.RootElement.GetProperty("executionMode").GetString().Should().Be("custom");
+            document.RootElement.GetProperty("runnableHere").GetBoolean().Should().BeTrue();
+            document.RootElement.GetProperty("blockedBy").ValueKind.Should().Be(JsonValueKind.Null);
+            var prerequisites = document.RootElement.GetProperty("prerequisites").EnumerateArray().ToArray();
+            prerequisites.Select(p => p.GetProperty("name").GetString()).Should().Contain(name => name!.StartsWith("dependency lock", StringComparison.Ordinal));
+            prerequisites.Should().OnlyContain(p => p.GetProperty("status").GetString() == "satisfied");
+            document.RootElement.GetProperty("supportedTargets").EnumerateArray().Select(t => t.GetString()).Should().Contain("local-harness");
+
+            var (listExit, listOut, listErr) = await InvokeAsync("list", "--project", project, "--json");
+            listExit.Should().Be(0, listOut + listErr);
+            using var listed = JsonDocument.Parse(listOut.Trim());
+            listed.RootElement.EnumerateArray().Should().Contain(item =>
+                item.GetProperty("id").GetString() == "parcel-summary"
+                && item.GetProperty("source").GetString() == "project"
+                && item.GetProperty("runnableHere").GetBoolean());
+
+            File.Delete(Path.Join(project, "requirements.lock"));
+            var (blocked, _, blockedError) = await InvokeAsync("test", "--project", project);
+            blocked.Should().Be(1);
+            blockedError.Should().Contain("dependency lock").And.Contain("does not submit to a server");
+        }
+        finally
+        {
+            if (Directory.Exists(output))
+            {
+                Directory.Delete(output, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public async Task RunAsync_Init_Dotnet_UsesBundledToolchainWithoutCheckout()
     {
         var output = Path.Join(Path.GetTempPath(), $"gp-init-{Guid.NewGuid():N}");
@@ -209,6 +258,30 @@ public sealed class GpCliEndToEndTests
         root.GetProperty("nativeWorker").GetString().Should().Be("notChecked");
         root.GetProperty("registeredProcessCount").GetInt32().Should().BeGreaterThan(0);
         root.GetProperty("serviceBacked").GetString().Should().Be("requiresIntegrationStack");
+        var integrationProfile = root.GetProperty("integrationProfile").GetString();
+        integrationProfile.Should().Contain("Docker Compose v2");
+        integrationProfile.Should().Contain("5432").And.Contain("6379").And.Contain("8080").And.Contain("8081");
+        integrationProfile.Should().Contain("docker compose -f docker-compose.gp-dev.yml --profile integration up --build -d");
+        foreach (var tool in new[] { "docker", "kind", "kubectl", "helm" })
+        {
+            root.GetProperty(tool).GetString().Should().BeOneOf("found", "missing");
+            root.GetProperty(tool + "Remediation").GetString().Should().NotBeNullOrWhiteSpace()
+                .And.Contain("does not fail doctor");
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_DoctorText_ReportsToolchainStatusAndRemediation()
+    {
+        var (exit, stdout, _) = await InvokeAsync("doctor", "--managed-only");
+
+        exit.Should().Be(0);
+        foreach (var tool in new[] { "docker", "kind", "kubectl", "helm" })
+        {
+            stdout.Should().ContainAny($"{tool}: found", $"{tool}: missing");
+        }
+
+        stdout.Should().Contain("does not fail doctor");
     }
 
     [Fact]
@@ -237,6 +310,8 @@ public sealed class GpCliEndToEndTests
         exit.Should().Be(0);
         stdout.Should().Contain("Usage:");
         stdout.Should().Contain("honua gp list");
+        stdout.Should().Contain("docker, kind, kubectl, and helm");
+        stdout.Should().Contain("Missing tools do not change the exit code.");
     }
 
     [Fact]

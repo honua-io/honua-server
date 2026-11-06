@@ -755,10 +755,84 @@ public class SqlServerFeatureQueryBuilderTests
         var mapping = BuildMapping();
         var query = new FeatureQuery { Where = "name = 'Alpha'" };
 
-        var result = SqlServerFeatureQueryBuilder.BuildObjectIdsQuery(mapping, query);
+        var result = SqlServerFeatureQueryBuilder.BuildObjectIdsQuery(mapping, query, _attributeColumns);
 
         Assert.StartsWith("SELECT [objectid] AS [__objectid]", result.Sql, StringComparison.Ordinal);
         Assert.DoesNotContain("STAsBinary", result.Sql, StringComparison.Ordinal);
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("missing_field = 1")]
+    [InlineData("missing_field IS NULL")]
+    [InlineData("missing_field IN (1, 2)")]
+    [InlineData("name = 'x' AND missing_field = 2")]
+    public void BuildSelectQuery_WhereReferencesUndeclaredField_ThrowsArgumentException(string whereClause)
+    {
+        // A column of the backing table that is not published on the layer must not be
+        // reachable through WHERE: it would let a caller probe unpublished data, and a typo
+        // would only fail at SQL Server as a SqlException (HTTP 500). Mirrors the MySQL guard.
+        var query = new FeatureQuery { Where = whereClause };
+
+        var ex = Assert.Throws<ArgumentException>(
+            () => SqlServerFeatureQueryBuilder.BuildSelectQuery(BuildMapping(), query, _attributeColumns));
+
+        Assert.Contains($"WHERE field 'missing_field' is not declared on layer {TestLayerId}", ex.Message, StringComparison.Ordinal);
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void AllQueryShapes_WhereReferencesUndeclaredField_Throw()
+    {
+        var mapping = BuildMapping();
+        var query = new FeatureQuery { Where = "secret_column = 'x'" };
+
+        Assert.Throws<ArgumentException>(() => SqlServerFeatureQueryBuilder.BuildCountQuery(mapping, query, _attributeColumns));
+        Assert.Throws<ArgumentException>(() => SqlServerFeatureQueryBuilder.BuildCountQuery(mapping, query));
+        Assert.Throws<ArgumentException>(() => SqlServerFeatureQueryBuilder.BuildObjectIdsQuery(mapping, query, _attributeColumns));
+        Assert.Throws<ArgumentException>(() => SqlServerFeatureQueryBuilder.BuildExtentQuery(mapping, query, _attributeColumns));
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildSelectQuery_WhereReferencesPrimaryKeyAndGeometry_DoesNotThrow()
+    {
+        // The primary key and geometry columns come from the storage mapping rather than the
+        // attribute list, but they are legitimate WHERE targets.
+        var query = new FeatureQuery { Where = "objectid = 42 AND shape IS NOT NULL" };
+
+        var result = SqlServerFeatureQueryBuilder.BuildSelectQuery(BuildMapping(), query, _attributeColumns);
+
+        Assert.Contains("[objectid] = @p0", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("[shape] IS NOT NULL", result.Sql, StringComparison.Ordinal);
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void BuildSelectQuery_WhereFieldCaseDiffers_UsesDeclaredSpelling()
+    {
+        var query = new FeatureQuery { Where = "NAME = 'Alpha'" };
+
+        var result = SqlServerFeatureQueryBuilder.BuildSelectQuery(BuildMapping(), query, _attributeColumns);
+
+        Assert.Contains("[name] = @p0", result.Sql, StringComparison.Ordinal);
+    }
+
+    [global::Xunit.Trait("Tier", "Fast")]
+    [Fact]
+    public void OrderBy_UndeclaredField_ThrowsArgumentException()
+    {
+        var mapping = BuildMapping();
+        var query = new FeatureQuery
+        {
+            OrderBy = ImmutableArray.Create(OrderByClause.Asc("secret_column"))
+        };
+
+        var ex = Assert.Throws<ArgumentException>(
+            () => SqlServerFeatureQueryBuilder.BuildSelectQuery(mapping, query, _attributeColumns));
+        Assert.Contains($"ORDER BY field 'secret_column' is not declared on layer {TestLayerId}", ex.Message, StringComparison.Ordinal);
+        Assert.Throws<ArgumentException>(
+            () => SqlServerFeatureQueryBuilder.BuildObjectIdsQuery(mapping, query, _attributeColumns));
     }
 
     [global::Xunit.Trait("Tier", "Fast")]

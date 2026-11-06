@@ -5,40 +5,13 @@ using Honua.Core.Features.Collaboration.Operations;
 
 namespace Honua.Server.Features.Collaboration.Sessions;
 
-/// <summary>
-/// Computes the collaboration capabilities advertised to joining participants, ON DEMAND.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The advertised flags must match what the endpoints will actually accept: a surface that
-/// answers a request it declared unavailable is worse than one that refuses it, because the
-/// client cannot tell the answer is untrustworthy (honua-server#2999 review).
-/// </para>
-/// <para>
-/// This is deliberately a source rather than a captured record. The flags depend on
-/// <see cref="ICollaborationSessionBackplane.SupportsCrossReplicaDelivery"/>, which reports
-/// ACTIVATION and only becomes true inside <c>RedisCollaborationSessionBackplane.StartAsync</c>.
-/// That method resolves <see cref="InMemoryCollaborationSessionService"/> to close a
-/// constructor dependency cycle, so a capabilities value captured at construction time was
-/// computed while the backplane still read as inactive — and then kept that value for the
-/// lifetime of the process. Recomputing per read removes that ordering dependency. Activation
-/// alone is deliberately not enough to advertise a live feature: the backplane must also report
-/// the distributed ordering or retained-presence guarantee that feature consumes
-/// (honua-server#2999 review).
-/// </para>
-/// </remarks>
+// Advertised flags are recomputed on every read and require the backplane's ordering or retained-presence guarantee, because a value captured at construction is taken before the backplane activates.
 internal sealed class CollaborationCapabilitySource
 {
     private readonly SavedMapCollaborationTopology _topology;
     private readonly ISavedMapOperationLogRepository _log;
     private readonly ICollaborationSessionBackplane _backplane;
 
-    /// <summary>
-    /// Creates the source over the topology declaration, the operation log, and the backplane.
-    /// </summary>
-    /// <param name="topology">Declared deployment topology.</param>
-    /// <param name="log">Operation log whose replay guarantees gate replay and checkpoints.</param>
-    /// <param name="backplane">Backplane whose activation and guarantees gate live delivery.</param>
     public CollaborationCapabilitySource(
         SavedMapCollaborationTopology topology,
         ISavedMapOperationLogRepository log,
@@ -49,9 +22,6 @@ internal sealed class CollaborationCapabilitySource
         _backplane = backplane ?? throw new ArgumentNullException(nameof(backplane));
     }
 
-    /// <summary>
-    /// The capabilities as they stand right now.
-    /// </summary>
     public CollaborationCapabilities Current
     {
         get

@@ -14,65 +14,42 @@ using Yarp.ReverseProxy.Configuration;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Options for the embedded-YARP self-hosted rolling deploy backend (<c>ControlPlane:SelfHosted</c>).
-/// When <see cref="Enabled"/> is false the reverse proxy is never wired into the request pipeline, so
-/// default deployments are completely untouched.
-/// </summary>
+// When the proxy is disabled it is never wired into the request pipeline.
 internal sealed class SelfHostedDeployOptions
 {
-    /// <summary>Configuration section name.</summary>
     public const string SectionName = "ControlPlane:SelfHosted";
 
-    /// <summary>Whether the embedded reverse proxy and rolling deploy backend are active on this host.</summary>
     public bool Enabled { get; set; }
 
-    /// <summary>Reverse-proxy route id.</summary>
     public string RouteId { get; set; } = "honua-selfhosted";
 
-    /// <summary>Reverse-proxy cluster id whose single destination is swapped at cutover.</summary>
     public string ClusterId { get; set; } = "honua-selfhosted";
 
-    /// <summary>Path pattern the reverse-proxy route matches.</summary>
     public string RoutePath { get; set; } = "/{**catch-all}";
 
-    /// <summary>Container runtime executable (<c>docker</c> or <c>podman</c>).</summary>
     public string ContainerRuntime { get; set; } = "docker";
 
-    /// <summary>Prefix for deterministic replica container names (name = prefix-port).</summary>
     public string ContainerNamePrefix { get; set; } = "honua-app";
 
-    /// <summary>Loopback host the replicas bind to.</summary>
     public string Host { get; set; } = "127.0.0.1";
 
-    /// <summary>Health endpoint path probed on each replica.</summary>
     public string HealthPath { get; set; } = "/healthz/ready";
 
-    /// <summary>Host port the currently active replica listens on (initial proxy destination).</summary>
     public int ActivePort { get; set; } = 18080;
 
-    /// <summary>Host port the standby (new revision) replica listens on.</summary>
     public int StandbyPort { get; set; } = 18081;
 
-    /// <summary>Container port the replica image exposes.</summary>
     public int ContainerPort { get; set; } = 8080;
 
-    /// <summary>Number of sequential health probes issued per observation.</summary>
     public int HealthProbeSamples { get; set; } = 3;
 
-    /// <summary>Per-probe timeout in seconds.</summary>
     public int HealthProbeTimeoutSeconds { get; set; } = 5;
 
-    /// <summary>HTTP status a healthy replica returns.</summary>
     public int HealthProbeExpectedStatusCode { get; set; } = 200;
 
-    /// <summary>Seconds to wait after cutover before stopping the old replica so in-flight requests drain.</summary>
     public int DrainDelaySeconds { get; set; } = 5;
 }
 
-/// <summary>
-/// Validates <see cref="SelfHostedDeployOptions"/> at startup when the backend is enabled.
-/// </summary>
 internal sealed class SelfHostedDeployOptionsValidator : OptionsValidator<SelfHostedDeployOptions>
 {
     protected override void ValidateOptions(SelfHostedDeployOptions options, List<string> failures)
@@ -114,31 +91,9 @@ internal sealed class SelfHostedDeployOptionsValidator : OptionsValidator<SelfHo
     }
 }
 
-/// <summary>
-/// Reconstructs the reverse proxy's forwarding destination from live container state instead of
-/// process-local memory. After a promote+restart the in-memory active address is reset to the
-/// configured active port whose replica was deleted at cutover, which would blackhole traffic; the
-/// running-replica lookup here restores the correct destination from ground truth.
-/// </summary>
 internal static class SelfHostedProxyReconstruction
 {
-    /// <summary>
-    /// Resolves the address the proxy should forward to by inspecting running replica containers.
-    /// Prefers the configured active port; falls back to the standby port when the active replica is
-    /// gone. Returns null when neither replica is running so the caller can keep its configured default.
-    /// </summary>
-    /// <param name="containers">Live containers discovered from the container runtime.</param>
-    /// <param name="options">Self-hosted deploy configuration (ports, naming).</param>
-    /// <param name="activeDeployOperations">
-    /// Active <see cref="WorkflowOperationKind.Deploy"/> operations, when the durable workflow store is
-    /// available. Since the old replica is now retained (not removed) through the post-activation
-    /// observation window (honua-server#4618), container ground truth alone cannot distinguish "still
-    /// baking" (both replicas running, traffic still on active) from "cutover complete, old replica
-    /// retained for recovery" (both replicas running, traffic now on standby) — container labels never
-    /// change between the two. A durable operation whose <c>Deploy.Protection</c> is set is unambiguous
-    /// proof that cutover already completed for that target, so it takes priority over the container-only
-    /// heuristic below. Pass null (the container-only heuristic) when the workflow store is unavailable.
-    /// </param>
+    // Container labels do not show that cutover completed, so a protected operation is what proves traffic has moved.
     public static string? ResolveRunningDestination(
         IReadOnlyList<ContainerSummary> containers,
         SelfHostedDeployOptions options,
@@ -181,10 +136,6 @@ internal static class SelfHostedProxyReconstruction
         => $"http://{host}:{port.ToString(CultureInfo.InvariantCulture)}/";
 }
 
-/// <summary>
-/// <see cref="IProxyStateSwapper"/> that rewrites the embedded reverse proxy's single cluster
-/// destination through YARP's <see cref="InMemoryConfigProvider"/>, making the cutover an atomic swap.
-/// </summary>
 internal sealed class YarpInMemoryProxyStateSwapper : IProxyStateSwapper
 {
     private static readonly IReadOnlyDictionary<string, string> NoLabelSelectors =
@@ -239,14 +190,6 @@ internal sealed class YarpInMemoryProxyStateSwapper : IProxyStateSwapper
         return Task.CompletedTask;
     }
 
-    /// <summary>
-    /// Repoints the proxy at the replica that is actually running, discovered from the container
-    /// runtime. Called at startup so a front-process restart that lost the in-memory swap decision does
-    /// not keep forwarding to a stale replica — including, since honua-server#4618, a restart that lands
-    /// mid post-activation observation window, where both replicas are legitimately running at once and
-    /// only the durable workflow store (when available) can prove which one already has traffic.
-    /// Best-effort: when no replica is discovered the configured active destination is left in place.
-    /// </summary>
     public async Task ReconcileFromRuntimeAsync(CancellationToken cancellationToken)
     {
         var containers = await _containerRuntime
@@ -270,11 +213,6 @@ internal sealed class YarpInMemoryProxyStateSwapper : IProxyStateSwapper
         => $"http://{options.Host}:{options.ActivePort.ToString(CultureInfo.InvariantCulture)}/";
 }
 
-/// <summary>
-/// Startup reconciliation that restores the reverse-proxy forwarding destination from live container
-/// state after a front-process restart, closing the window where a post-promotion restart would
-/// blackhole traffic by re-pointing the proxy at a deleted active replica.
-/// </summary>
 internal sealed partial class SelfHostedProxyReconciliationService(
     YarpInMemoryProxyStateSwapper swapper,
     ILogger<SelfHostedProxyReconciliationService> logger) : IHostedService
@@ -302,11 +240,6 @@ internal sealed partial class SelfHostedProxyReconciliationService(
     }
 }
 
-/// <summary>
-/// Inert <see cref="IProxyStateSwapper"/> registered when the self-hosted backend is disabled so the
-/// unconditionally-registered <see cref="YarpRollingDeployBackend"/> can still be constructed. Any swap
-/// attempt is a misconfiguration (PlanAsync blocks a disabled proxy) and throws.
-/// </summary>
 internal sealed class DisabledProxyStateSwapper : IProxyStateSwapper
 {
     public bool IsConfigured => false;
@@ -318,9 +251,6 @@ internal sealed class DisabledProxyStateSwapper : IProxyStateSwapper
             "The embedded reverse proxy is not enabled; set ControlPlane:SelfHosted:Enabled=true to use the self-hosted rolling deploy backend.");
 }
 
-/// <summary>
-/// Builds the in-memory YARP route/cluster config for the self-hosted rolling proxy.
-/// </summary>
 internal static class SelfHostedProxyConfig
 {
     public static IReadOnlyList<RouteConfig> BuildRoutes(SelfHostedDeployOptions options)
@@ -348,12 +278,7 @@ internal static class SelfHostedProxyConfig
         ];
 }
 
-/// <summary>
-/// <see cref="ILocalReplicaHealthProbe"/> that issues plain HTTP GETs to a co-located replica. This path
-/// deliberately does not run the shared outbound SSRF guard: the target is a sibling replica on this host
-/// (loopback), which that guard exists to block for untrusted outbound calls. The URL is composed by the
-/// backend from validated numeric ports and never from client input.
-/// </summary>
+// This local probe skips the outbound address guard because the target is a sibling replica, and the URL is built from validated ports.
 internal sealed partial class HttpLocalReplicaHealthProbe(
     IHttpClientFactory httpClientFactory,
     ILogger<HttpLocalReplicaHealthProbe>? logger = null) : ILocalReplicaHealthProbe
@@ -462,12 +387,6 @@ internal sealed partial class HttpLocalReplicaHealthProbe(
     }
 }
 
-/// <summary>
-/// Production <see cref="IContainerRuntimeClient"/> that drives <c>docker</c>/<c>podman</c> as a child
-/// process with no shell (argument lists only), mirroring the child-process management of
-/// <c>ProcessDockerCommandInvoker</c>. Exercised end-to-end only where a container daemon is present; the
-/// unit tests fake this seam.
-/// </summary>
 internal sealed partial class ProcessContainerRuntimeClient(ILogger<ProcessContainerRuntimeClient> logger)
     : IContainerRuntimeClient
 {
@@ -691,10 +610,6 @@ internal sealed partial class ProcessContainerRuntimeClient(ILogger<ProcessConta
     }
 }
 
-/// <summary>
-/// Registration for the self-hosted rolling deploy proxy seams. The reverse proxy itself is wired in
-/// only when <see cref="SelfHostedDeployOptions.Enabled"/> is true, so default deployments are untouched.
-/// </summary>
 internal static class SelfHostedRollingProxyRegistration
 {
     public static IServiceCollection AddHonuaSelfHostedRollingProxy(
@@ -737,10 +652,6 @@ internal static class SelfHostedRollingProxyRegistration
         return services;
     }
 
-    /// <summary>
-    /// Whether the self-hosted reverse proxy is enabled in configuration. Used by the request-pipeline
-    /// wiring so <c>MapReverseProxy</c> is only invoked when the backend is active.
-    /// </summary>
     public static bool IsSelfHostedProxyEnabled(IConfiguration configuration)
         => configuration.GetSection(SelfHostedDeployOptions.SectionName).GetValue<bool>("Enabled");
 }

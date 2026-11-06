@@ -15,63 +15,20 @@ using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.Servic
 
 namespace Honua.Infrastructure.Validation;
 
-/// <summary>
-/// Shared helper methods for layer validation and access checking across CRUD handlers.
-/// Eliminates DRY violations by providing a unified validation pattern for all protocols.
-/// </summary>
-/// <remarks>
-/// Audit-A1: protocol-specific error formatting and cancellation-token resolution
-/// plug in via the static <see cref="ODataErrorFactoryOverride"/> and
-/// <see cref="ODataCancellationTokenResolverOverride"/> delegates so this
-/// Honua.Infrastructure.Validation file does not need a using-clause dependency on
-/// any protocol assembly. <c>ODataServiceCollectionExtensions.AddOData</c>
-/// installs both delegates at startup.
-/// </remarks>
 internal static class LayerValidationHelpers
 {
-    /// <summary>
-    /// Builds an OData-formatted error result. Set by
-    /// <c>ODataServiceCollectionExtensions.AddOData</c>; when null, OData
-    /// validation errors fall through to the generic StandardErrorHelpers
-    /// path. Signature: (context, errorCode, message, statusCode) → IResult.
-    /// </summary>
     internal static Func<HttpContext, string, string, int, IResult>? ODataErrorFactoryOverride { get; set; }
 
-    /// <summary>
-    /// Resolves the OData timeout-aware cancellation token from the request
-    /// pipeline. Set by <c>ODataServiceCollectionExtensions.AddOData</c>;
-    /// when null, the caller's cancellation token is used unchanged.
-    /// </summary>
     internal static Func<HttpContext, CancellationToken>? ODataCancellationTokenResolverOverride { get; set; }
-    /// <summary>
-    /// Protocol-specific error format options for layer validation.
-    /// </summary>
     internal enum ValidationProtocol
     {
         OData,
         OgcFeatures,
 
-        /// <summary>
-        /// RFC 7807 <c>application/problem+json</c> formatting with a real HTTP status
-        /// code, bypassing the path-classified <see cref="StandardErrorResponseFormatter"/>
-        /// (which treats every <c>/tiles</c> path as GeoServices and wraps errors in a
-        /// 200-envelope). Used by the tiles surface (tile.json / .mvt / h3 .mvt), which is
-        /// not an Esri protocol and must return real error status codes (honua-server#2945).
-        /// </summary>
+        // A tile route must not use the path-classified GeoServices formatter, which would wrap its error as HTTP 200.
         ProblemJson
     }
 
-    /// <summary>
-    /// Result of V2 publication validation + access checking. Carries the publication,
-    /// the canonical resource, and the resolved service so callers have everything
-    /// needed for downstream operations.
-    /// </summary>
-    /// <param name="IsValid">Whether validation succeeded.</param>
-    /// <param name="Publication">The matched V2 publication, if any.</param>
-    /// <param name="Resource">The canonical resource backing the publication.</param>
-    /// <param name="Service">The service through which the resource is published.</param>
-    /// <param name="ErrorResult">IResult to return when validation failed.</param>
-    /// <param name="Snapshot">The immutable graph snapshot used for resolution and authorization.</param>
     internal readonly record struct MetadataV2ValidationResult(
         bool IsValid,
         MetadataV2Publication? Publication,
@@ -80,10 +37,6 @@ internal static class LayerValidationHelpers
         IResult? ErrorResult,
         MetadataV2GraphSnapshot? Snapshot = null);
 
-    /// <summary>
-    /// Creates OData-formatted error response with correct status code mapping.
-    /// Preserves existing OData error message formats and status code logic.
-    /// </summary>
     private static IResult CreateODataError(HttpContext context, string message, int statusCode)
     {
         var errorCode = statusCode switch
@@ -101,10 +54,6 @@ internal static class LayerValidationHelpers
         return factory(context, errorCode, message, statusCode);
     }
 
-    /// <summary>
-    /// Creates OGC-formatted error response with appropriate status code.
-    /// Preserves existing OGC error message formats.
-    /// </summary>
     private static IResult CreateOgcError(HttpContext context, string message, int statusCode)
     {
         return statusCode switch
@@ -115,11 +64,6 @@ internal static class LayerValidationHelpers
         };
     }
 
-    /// <summary>
-    /// Creates an RFC 7807 problem+json error response with the real HTTP status code,
-    /// independent of <see cref="StandardErrorResponseFormatter"/>'s path-based protocol
-    /// classification. See <see cref="ValidationProtocol.ProblemJson"/>.
-    /// </summary>
     private static IResult CreateProblemJsonError(HttpContext context, string message, int statusCode)
     {
         var title = statusCode switch
@@ -133,13 +77,6 @@ internal static class LayerValidationHelpers
         return ProblemDetailsHelpers.CreateProblem(context, "about:blank", statusCode, title, message);
     }
 
-    /// <summary>
-    /// Evaluates resource access and formats a denial as RFC 7807 problem+json with the
-    /// real 401/403 status, bypassing <see cref="AccessPolicyHelpers.RequireResourceAccessAsync(HttpContext, MetadataV2Resource, MetadataV2Service?, AccessScope, CancellationToken)"/>'s
-    /// use of <see cref="StandardErrorHelpers"/> (which the path-classified
-    /// <see cref="StandardErrorResponseFormatter"/> would otherwise wrap as a GeoServices
-    /// 200-envelope for <c>/tiles</c> paths). See <see cref="ValidationProtocol.ProblemJson"/>.
-    /// </summary>
     private static async Task<IResult?> RequireResourceAccessAsProblemJsonAsync(
         HttpContext context,
         MetadataV2Resource resource,
@@ -167,10 +104,6 @@ internal static class LayerValidationHelpers
     // from the V2 graph snapshot for the given layer id (or collection id) and applies
     // the same access-policy + protocol-enablement checks as the v1 methods above.
 
-    /// <summary>
-    /// Validates a layer index against the V2 graph snapshot and returns the matched
-    /// publication + resource + service, gated on access policy.
-    /// </summary>
     public static async Task<MetadataV2ValidationResult> ValidateLayerWithAccessV2Async(
         HttpContext context,
         int layerId,
@@ -241,16 +174,7 @@ internal static class LayerValidationHelpers
         return new MetadataV2ValidationResult(true, publication, resource, service, null, snapshot);
     }
 
-    /// <summary>
-    /// Challenges an unauthenticated request for a routable layer that tenant scoping hid.
-    /// </summary>
-    /// <remarks>
-    /// Without a valid credential a request resolves the default tenant, which cannot see a
-    /// layer scoped to another tenant. Answering 404 there made a missing, invalid, expired or
-    /// revoked credential indistinguishable from a deleted layer, so the client could not tell
-    /// that authenticating would help (honua-server#4778). An authenticated principal of
-    /// another tenant has already presented its credential and keeps tenant concealment.
-    /// </remarks>
+    // An unauthenticated request for a layer another tenant owns is a challenge rather than 404, so the client can tell that authenticating would help; an authenticated other-tenant principal still gets concealment.
     private static IResult? ChallengeTenantHiddenLayer(
         HttpContext context,
         MetadataV2GraphSnapshot snapshot,
@@ -283,10 +207,6 @@ internal static class LayerValidationHelpers
         return AccessPolicyHelpers.CreateAccessDeniedResult(context, AccessDecision.RequiresAuth());
     }
 
-    /// <summary>
-    /// Validates a layer index against the V2 graph snapshot using standard error
-    /// responses (no protocol-specific formatting).
-    /// </summary>
     public static Task<MetadataV2ValidationResult> ValidateLayerWithAccessV2Async(
         HttpContext context,
         int layerId,
@@ -296,9 +216,6 @@ internal static class LayerValidationHelpers
         => ValidateLayerWithAccessV2Async(context, layerId, AccessPolicyHelpers.DefaultOperationForScope(scope),
             scope, requiredProtocol, cancellationToken);
 
-    /// <summary>
-    /// Validates a layer using an explicit operation, including metadata administration.
-    /// </summary>
     public static async Task<MetadataV2ValidationResult> ValidateLayerWithAccessV2Async(
         HttpContext context,
         int layerId,
@@ -338,14 +255,6 @@ internal static class LayerValidationHelpers
         return new MetadataV2ValidationResult(true, publication, resource, service, null, snapshot);
     }
 
-    /// <summary>
-    /// Validates a collection identifier against the V2 graph snapshot. The collection id
-    /// is matched against publication serviceLocalId, path, name, or id (case-insensitive),
-    /// in that order. For unambiguous routing, callers should ensure publications carry a
-    /// distinct <c>ServiceLocalId</c>.
-    /// Storage-keyed surfaces can opt into numeric storage-layer identity; their
-    /// discovery and detail routes then share publication selection and access checks.
-    /// </summary>
     public static Task<MetadataV2ValidationResult> ValidateCollectionWithAccessV2Async(
         HttpContext context,
         string collectionId,
@@ -364,20 +273,6 @@ internal static class LayerValidationHelpers
             preferAdvertisedCollectionId: preferAdvertisedCollectionId,
             cancellationToken: cancellationToken);
 
-    /// <summary>
-    /// Validates a collection using a captured snapshot, optionally preferring its stable publication ID.
-    /// </summary>
-    /// <param name="context">The current request context.</param>
-    /// <param name="collectionId">The collection identifier or alias.</param>
-    /// <param name="snapshot">The captured snapshot used for validation.</param>
-    /// <param name="preferExactPublicationId">Whether a stable publication ID takes precedence over aliases.</param>
-    /// <param name="scope">The requested access scope.</param>
-    /// <param name="requiredProtocol">The protocol that must be enabled.</param>
-    /// <param name="preferAdvertisedCollectionId">
-    /// Whether the collection id advertised by Features and Tiles
-    /// (service-local id, else path, else resource name) takes precedence over aliases.
-    /// </param>
-    /// <param name="cancellationToken">The cancellation token.</param>
     public static Task<MetadataV2ValidationResult> ValidateCollectionWithAccessV2Async(
         HttpContext context,
         string collectionId,
@@ -398,10 +293,6 @@ internal static class LayerValidationHelpers
             preferAdvertisedCollectionId,
             cancellationToken);
 
-    /// <summary>
-    /// Validates numeric collection IDs as storage identities, sharing publication
-    /// selection with discovery. Nonnumeric publication aliases retain existing routing.
-    /// </summary>
     public static Task<MetadataV2ValidationResult> ValidateStorageCollectionWithAccessV2Async(
         HttpContext context,
         string collectionId,
@@ -411,21 +302,15 @@ internal static class LayerValidationHelpers
         => ValidateCollectionWithAccessV2CoreAsync(
             context, collectionId, true, scope, requiredProtocol, cancellationToken: cancellationToken);
 
-    /// <summary>
-    /// Collection id written into an OGC API Features or Tiles collection document.
-    /// </summary>
     internal static string? AdvertisedCollectionId(MetadataV2Publication publication, MetadataV2Resource? resource)
     {
         var collectionId = publication.ServiceLocalId ?? publication.Path ?? resource?.Metadata.Name;
         return string.IsNullOrWhiteSpace(collectionId) ? resource?.Metadata.Id : collectionId;
     }
 
-    /// <summary>
-    /// Picks the tenant-visible publication whose predicate matches the requested collection id.
-    /// Protocol-enabled publications win, then the preferred publication type, then a primary publication.
-    /// When none of the matches enable the protocol, the first visible match is returned so a later
-    /// protocol check can reject it instead of binding a different alias.
-    /// </summary>
+    internal static int QueryCacheLayerId(MetadataV2Publication publication, int storageLayerId)
+        => publication.LayerIndex ?? storageLayerId;
+
     internal static MetadataV2Publication? SelectMatchingCollectionPublication(
         IEnumerable<MetadataV2Publication> publications,
         Func<MetadataV2Publication, bool> matches,
@@ -636,12 +521,6 @@ internal static class LayerValidationHelpers
         return new MetadataV2ValidationResult(true, publication, resource, service, null, snapshot);
     }
 
-    /// <summary>
-    /// Selects one publication per storage-keyed collection for both discovery and
-    /// detail routes. Accessible candidates precede denied aliases, then primary
-    /// publications win; graph order breaks remaining ties. Denied-only entries
-    /// retain the shared access error for detail routes and are hidden by discovery.
-    /// </summary>
     public static async Task<IReadOnlyDictionary<int, MetadataV2ValidationResult>> ResolveStorageCollectionsWithAccessV2Async(
         HttpContext context,
         MetadataV2GraphSnapshot snapshot,
@@ -682,39 +561,12 @@ internal static class LayerValidationHelpers
         return collections;
     }
 
-    /// <summary>
-    /// Outcome of a non-HTTP (e.g. gRPC) layer read-access evaluation. Unlike the
-    /// <see cref="MetadataV2ValidationResult"/> path this carries no
-    /// <see cref="IResult"/>; instead it reports a structured outcome plus the
-    /// <see cref="AccessDecision"/> so a gRPC adapter can map denial to the
-    /// appropriate <c>RpcException</c> status. <see cref="NotFound"/> means the
-    /// layer is absent or retired; <see cref="Decision"/> is the evaluated access
-    /// decision when the layer was resolved.
-    /// </summary>
-    /// <param name="NotFound">True when no live publication/resource matched the layer.</param>
-    /// <param name="Decision">The evaluated access decision (only meaningful when not <see cref="NotFound"/>).</param>
-    /// <param name="Resource">The resolved resource, when found.</param>
-    /// <param name="Service">The resolved service, when found.</param>
     internal readonly record struct LayerReadAccessResult(
         bool NotFound,
         AccessDecision Decision,
         MetadataV2Resource? Resource,
         MetadataV2Service? Service);
 
-    /// <summary>
-    /// Resolves the (publication, resource, service) triple for a layer index from
-    /// the V2 graph snapshot and evaluates read access through the shared
-    /// <see cref="AccessPolicyHelpers.EvaluateResourceAccessAsync"/> seam — the
-    /// same per-operation-grant-then-coarse-policy pipeline the HTTP layer
-    /// validators use — returning a structured <see cref="LayerReadAccessResult"/>
-    /// rather than an <see cref="IResult"/>. This is the shared enforcement seam
-    /// for non-HTTP adapters (gRPC) so a protected layer is gated identically to
-    /// the HTTP surface without duplicating resolution or policy logic.
-    /// </summary>
-    /// <param name="context">The request context (carries principal + request services).</param>
-    /// <param name="layerId">The publication layer index to resolve.</param>
-    /// <param name="requiredProtocol">Optional protocol gate for triple resolution.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     public static async Task<LayerReadAccessResult> EvaluateLayerReadAccessV2Async(
         HttpContext context,
         int layerId,
@@ -739,13 +591,6 @@ internal static class LayerValidationHelpers
         return new LayerReadAccessResult(NotFound: false, decision, resource, service);
     }
 
-    /// <summary>
-    /// Builds a deterministic layerIndex → <see cref="MetadataV2Service"/> map for a protocol-
-    /// specific route surface. When a publication's layer index could belong to several
-    /// services, the one whose <see cref="MetadataV2Service.Protocols"/> contains
-    /// <paramref name="requiredProtocol"/> wins; otherwise the service with the
-    /// lexicographically earliest name keeps routing deterministic.
-    /// </summary>
     public static IReadOnlyDictionary<int, MetadataV2Service> BuildPrimaryServiceMapV2(
         MetadataV2GraphSnapshot snapshot,
         string? requiredProtocol = null)
@@ -806,11 +651,6 @@ internal static class LayerValidationHelpers
         return byLayer.ToDictionary(kv => kv.Key, kv => kv.Value.Service);
     }
 
-    /// <summary>
-    /// Resolves the primary V2 service for a layer index. Preferred match is on
-    /// <paramref name="requiredProtocol"/>; falls back to the lexicographically earliest
-    /// service name. Returns null when no publication matches.
-    /// </summary>
     public static async Task<MetadataV2Service?> ResolvePrimaryServiceV2Async(
         HttpContext context,
         int layerId,
@@ -822,9 +662,6 @@ internal static class LayerValidationHelpers
         return service;
     }
 
-    /// <summary>
-    /// Resolves the primary V2 service name for a layer index.
-    /// </summary>
     public static async Task<string?> ResolvePrimaryServiceNameV2Async(
         HttpContext context,
         int layerId,
@@ -836,12 +673,6 @@ internal static class LayerValidationHelpers
         return service?.Metadata.Name;
     }
 
-    /// <summary>
-    /// Resolves the primary V2 service name for a layer index, preferring services
-    /// whose <see cref="MetadataV2Service.Protocols"/> list contains
-    /// <paramref name="requiredProtocol"/>. Kept as a distinct entry point so call
-    /// sites self-document the protocol-string gating contract.
-    /// </summary>
     public static async Task<string?> ResolvePrimaryServiceNameByProtocolV2Async(
         HttpContext context,
         int layerId,
@@ -898,13 +729,7 @@ internal static class LayerValidationHelpers
             : null;
     }
 
-    /// <summary>
-    /// Treats a publication or resource whose <see cref="MetadataV2Status.Lifecycle"/> is
-    /// <see cref="MetadataV2LifecycleStatus.Retired"/> as missing. Admin-driven enable/disable
-    /// (and the WebAppFixture <c>SetV2LayerEnabled</c> helper that mirrors it in tests) flip
-    /// the lifecycle to Retired, so route resolution must 404 rather than serving the
-    /// disabled layer.
-    /// </summary>
+    // A retired publication is missing, so a disabled layer answers 404 instead of being served.
     internal static bool IsRetired(MetadataV2Resource resource)
         => resource.Status.Lifecycle == MetadataV2LifecycleStatus.Retired;
 
@@ -929,23 +754,6 @@ internal static class LayerValidationHelpers
             TenantScopeHelpers.ResolveRequestTenantId(context),
             applyTenantScope: true);
 
-    /// <summary>
-    /// Request-context-free layer-triple resolution (honua-server#3046). The
-    /// <see cref="ResolveV2Triple"/> overload above is the HTTP entry point and simply
-    /// supplies the request's resolved tenant id; non-HTTP callers (the geoprocessing
-    /// submit pipeline via <see cref="Honua.Infrastructure.Authentication.LayerAccessAuthorizer"/>)
-    /// call this directly so both paths resolve a layer id through ONE implementation.
-    /// </summary>
-    /// <param name="snapshot">The Metadata v2 graph snapshot to resolve against.</param>
-    /// <param name="layerId">The layer index being resolved.</param>
-    /// <param name="requiredProtocol">Optional protocol preference for publication selection.</param>
-    /// <param name="tenantId">The tenant the resolution is scoped to, when <paramref name="applyTenantScope"/> is set.</param>
-    /// <param name="applyTenantScope">
-    /// Whether tenant visibility filtering applies. HTTP callers always pass
-    /// <see langword="true"/>. Server-internal callers running outside a request (no
-    /// tenant rail exists to resolve) pass <see langword="false"/>, which keeps
-    /// tenant-scoped layers resolvable instead of failing closed on every one of them.
-    /// </param>
     internal static (MetadataV2Publication? Publication, MetadataV2Resource? Resource, MetadataV2Service? Service)
         ResolveV2TripleForTenant(
             MetadataV2GraphSnapshot snapshot,
@@ -1016,22 +824,7 @@ internal static class LayerValidationHelpers
         return (publication, resource, service);
     }
 
-    /// <summary>
-    /// Combines <see cref="ValidateCollectionWithAccessV2Async(HttpContext, string, AccessScope, string?, bool, bool, CancellationToken)"/> with the V2 RBAC data-editor
-    /// helper so OGC API Features CRUD/Transaction handlers can run a single check.
-    /// Returns the matched publication + resource + service plus an
-    /// <see cref="IResult"/> error when validation or authorization fails.
-    /// </summary>
-    /// <param name="context">HTTP context carrying request services and principal.</param>
-    /// <param name="collectionId">Collection identifier from the route.</param>
-    /// <param name="requiredProtocol">Optional protocol gate. Defaults to
-    /// <c>OgcFeatures</c> protocol constant to mirror the v1 method.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <param name="operation">Per-operation authorization narrowing (BH3-001/BH3-014):
-    /// when supplied (POST=Insert, PUT/PATCH/Replace=Update, DELETE=Delete), the RBAC
-    /// data-editor gate bypass is limited to that operation so a grant for one operation
-    /// cannot authorize another. Null preserves the coarse any-write behavior (e.g. a mixed
-    /// batch that runs its own per-operation-kind checks after parsing the body).</param>
+    // A grant for one edit operation does not authorize another; a null operation keeps the coarse any-write check for a mixed batch.
     public static async Task<MetadataV2ValidationResult> ValidateCollectionWriteAccessV2Async(
         HttpContext context,
         string collectionId,
@@ -1125,40 +918,41 @@ internal static class LayerValidationHelpers
         return validation;
     }
 
-    /// <summary>
-    /// Rejects a mutation whose edit kind the validated publication does not declare.
-    /// Returns null when no specific operation was requested (the batch surface checks
-    /// each kind present in its body separately) or when the capability is declared.
-    /// </summary>
-    /// <param name="context">Current HTTP context.</param>
-    /// <param name="validation">Successful write-access validation result.</param>
-    /// <param name="operation">Authorization operation the caller is performing, when known.</param>
-    /// <returns>A 405 result when the capability is undeclared, otherwise null.</returns>
     private static IResult? ValidateDeclaredEditCapability(
         HttpContext context,
         MetadataV2ValidationResult validation,
         AuthorizationOperation? operation)
     {
-        if (validation.Service is null || operation is not { } requested)
+        if (operation is not { } requested)
         {
             return null;
         }
 
-        var capability = MapToEditCapability(requested);
+        var capability = FindUndeclaredEditCapability(validation.Service, validation.Publication, requested);
         return capability is null
             ? null
-            : ValidateDeclaredEditCapability(context, validation.Service, validation.Publication, capability);
+            : ValidateDeclaredEditCapability(context, validation.Service!, validation.Publication, capability);
     }
 
-    /// <summary>
-    /// Rejects a mutation whose edit kind the supplied publication does not declare.
-    /// </summary>
-    /// <param name="context">Current HTTP context.</param>
-    /// <param name="service">Service hosting the publication.</param>
-    /// <param name="publication">Publication being written through.</param>
-    /// <param name="capability">Edit capability token the request needs
-    /// (<see cref="MetadataV2EditCapabilities.Create"/> and friends).</param>
-    /// <returns>A 405 result when the capability is undeclared, otherwise null.</returns>
+    // A publication that declares no capabilities keeps the legacy allow; a declared set that omits this operation rejects the mutation.
+    internal static string? FindUndeclaredEditCapability(
+        MetadataV2Service? service,
+        MetadataV2Publication? publication,
+        AuthorizationOperation operation)
+    {
+        if (service is null || MapToEditCapability(operation) is not { } capability)
+        {
+            return null;
+        }
+
+        return MetadataV2EditCapabilities.SupportsDeclared(service, publication, capability) == false
+            ? capability
+            : null;
+    }
+
+    internal static string DescribeUndeclaredEditCapability(string capability)
+        => $"{capability} edits are not enabled for this collection.";
+
     internal static IResult? ValidateDeclaredEditCapability(
         HttpContext context,
         MetadataV2Service service,
@@ -1180,16 +974,10 @@ internal static class LayerValidationHelpers
         context.Response.Headers.Allow = "GET, HEAD, OPTIONS";
         return StandardErrorHelpers.CreateMethodNotAllowed(
             context,
-            $"{capability} edits are not enabled for this collection.",
+            DescribeUndeclaredEditCapability(capability),
             [$"Declare the {capability} capability on the publication before submitting {capability.ToLowerInvariant()} edits."]);
     }
 
-    /// <summary>
-    /// Maps an authorization operation onto the edit capability token a publication must
-    /// declare for it. Returns null for operations that are not feature mutations.
-    /// </summary>
-    /// <param name="operation">Authorization operation being performed.</param>
-    /// <returns>The required capability token, or null when the operation is not an edit.</returns>
     private static string? MapToEditCapability(AuthorizationOperation operation)
         => operation switch
         {
@@ -1199,18 +987,7 @@ internal static class LayerValidationHelpers
             _ => null
         };
 
-    /// <summary>
-    /// Rejects a mutation against a publication whose storage the managed feature writer
-    /// cannot service. The managed writer only ever writes the shared features table keyed
-    /// by layer id; a layer published over an arbitrary source table reads that source
-    /// table, so the write would land in the publish-time snapshot and never be readable
-    /// back. Answering 501 is the honest outcome — the alternative the server used to
-    /// produce was a 201 for a feature that could not be fetched or listed (#4707).
-    /// </summary>
-    /// <param name="context">Current HTTP context.</param>
-    /// <param name="validation">Successful write-access validation result.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>A 501 result when the write cannot be serviced, otherwise null.</returns>
+    // A write whose storage is not the shared features table returns 501, because the write would land where it cannot be read back.
     private static async Task<IResult?> ValidateWriteRoutingAsync(
         HttpContext context,
         MetadataV2ValidationResult validation,
@@ -1257,12 +1034,7 @@ internal static class LayerValidationHelpers
             ]);
     }
 
-    /// <summary>
-    /// Enforces the canonical-service boundary for writes: when the validated publication
-    /// is not the resource's IsPrimary publication, the caller must also satisfy data-editor
-    /// authorization on the canonical service. Returns a 403 IResult when the caller can
-    /// write through the secondary publication but not the canonical one, otherwise null.
-    /// </summary>
+    // A write through a non-primary publication also requires data-editor authorization on the canonical service.
     private static async Task<IResult?> EnforceCanonicalServiceWriteAccessAsync(
         HttpContext context,
         MetadataV2ValidationResult validation,
@@ -1331,10 +1103,6 @@ internal static class LayerValidationHelpers
                 cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// V2 sibling of write-access validation. Combines V2 layer access validation
-    /// with the V2 RBAC data-editor helper and preserves protocol-specific error formatting.
-    /// </summary>
     public static async Task<MetadataV2ValidationResult> ValidateLayerWriteAccessV2Async(
         HttpContext context,
         int layerId,
@@ -1396,23 +1164,23 @@ internal static class LayerValidationHelpers
                 canonicalError);
         }
 
+        // Declared capabilities bound single-entity writes here exactly as they bound the
+        // OGC API Features surface above (SEC-5). Callers that pass no operation (for example
+        // the geoprocessing sink) keep the coarse any-write behaviour.
+        var capabilityError = ValidateDeclaredEditCapability(context, validation, operation);
+        if (capabilityError != null)
+        {
+            return new MetadataV2ValidationResult(
+                false,
+                validation.Publication,
+                validation.Resource,
+                validation.Service,
+                capabilityError);
+        }
+
         return validation;
     }
 
-    /// <summary>
-    /// V2 service-level validation. Looks up a <see cref="MetadataV2Service"/> by name and gates
-    /// it on the access policy. Returns the resolved service plus all of its publications and
-    /// their resources, so capability/metadata handlers can build their response without further
-    /// snapshot walking.
-    /// </summary>
-    /// <param name="context">HTTP context.</param>
-    /// <param name="serviceName">Public service name (case-insensitive).</param>
-    /// <param name="requiredProtocol">Optional protocol gate; when set, only matches
-    /// services whose <see cref="MetadataV2Service.Protocols"/> list contains the
-    /// protocol. Use to route a request to (for example) the MapServer publication
-    /// when a service name is shared across multiple protocols.</param>
-    /// <param name="scope">Access scope to check.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     public static async Task<MetadataV2ServiceValidationResult> ValidateServiceWithAccessV2Async(
         HttpContext context,
         string serviceName,
@@ -1489,11 +1257,6 @@ internal static class LayerValidationHelpers
     }
 }
 
-/// <summary>
-/// Result of V2 service-level validation. Carries the service plus its full publication set and
-/// the resources visible to the caller, so capability-document handlers don't have to walk the
-/// graph again.
-/// </summary>
 internal readonly record struct MetadataV2ServiceValidationResult(
     bool IsValid,
     MetadataV2Service? Service,

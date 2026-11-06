@@ -6,12 +6,7 @@ using Honua.Core.Features.Guardrails.Domain;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Default <see cref="IOperationExecutorCatalog"/> that derives the supported-kinds set directly
-/// from the same <see cref="IOperationExecutor"/> registrations the gateway itself resolves
-/// (#2563). Registered alongside <see cref="OperationGateway"/> and its executors so the two can
-/// never drift apart.
-/// </summary>
+// The supported kinds come from the same registrations the gateway resolves, so the catalog and the executors cannot drift.
 internal sealed class OperationExecutorCatalog : IOperationExecutorCatalog
 {
     public OperationExecutorCatalog(IEnumerable<IOperationExecutor> executors)

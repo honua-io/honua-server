@@ -64,4 +64,44 @@ public sealed class CrsLinearUnitFactorTests
 
         factor.Should().BeApproximately(CrsLinearUnitFactor.UsSurveyFootMeters, 1e-15);
     }
+
+    [UnitTest]
+    public void Resolve_Wkt2ProjectedWithoutLengthUnit_IgnoresTheBaseAngleUnit()
+    {
+        const string wkt =
+            """PROJCRS["x",BASEGEOGCRS["WGS 84",ELLIPSOID["WGS 84",6378137,298.257223563],ANGLEUNIT["degree",0.0174532925199433]],CS[Cartesian,2]]""";
+
+        var factor = CrsLinearUnitFactor.Resolve(proj4Text: null, wkt, isGeographic: false);
+
+        factor.Should().Be(1d);
+    }
+
+    [UnitTest]
+    public void Resolve_Wkt2GeographicWithEllipsoidLengthUnit_ReturnsTheAngleUnit()
+    {
+        const string wkt =
+            """GEOGCRS["WGS 84",DATUM["World Geodetic System 1984",ELLIPSOID["WGS 84",6378137,298.257223563,LENGTHUNIT["metre",1]]],CS[ellipsoidal,2],AXIS["latitude",north],AXIS["longitude",east],ANGLEUNIT["degree",0.0174532925199433]]""";
+
+        var factor = CrsLinearUnitFactor.Resolve(proj4Text: null, wkt, isGeographic: true);
+
+        factor.Should().BeApproximately(Math.PI / 180d, 1e-12);
+    }
+
+    [UnitTest]
+    public void LinearUnitFromWkt_Wkt2ProjectedWithoutLengthUnit_ReportsTheUnitUnknown()
+    {
+        const string wkt =
+            """PROJCRS["x",BASEGEOGCRS["WGS 84",ELLIPSOID["WGS 84",6378137,298.257223563],ANGLEUNIT["degree",0.0174532925199433]],CS[Cartesian,2]]""";
+
+        CrsLinearUnitFactor.LinearUnitFromWkt(wkt).Should().BeNull();
+    }
+
+    [UnitTest]
+    public void LinearUnitFromWkt_Wkt1ProjectedFoot_ReturnsTheLastLinearUnit()
+    {
+        const string wkt =
+            """PROJCS["x",GEOGCS["NAD83",DATUM["NAD83",SPHEROID["GRS 1980",6378137,298.257222101]],UNIT["degree",0.0174532925199433]],PROJECTION["Lambert_Conformal_Conic_2SP"],UNIT["US survey foot",0.3048006096012192]]""";
+
+        CrsLinearUnitFactor.LinearUnitFromWkt(wkt).Should().BeApproximately(CrsLinearUnitFactor.UsSurveyFootMeters, 1e-15);
+    }
 }

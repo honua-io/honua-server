@@ -7,20 +7,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Events;
 
-/// <summary>
-/// Concrete <see cref="IFeatureChangeEventSink"/> that publishes committed
-/// feature-change events to Apache Kafka (#357).
-/// </summary>
-/// <remarks>
-/// Events are serialized as JSON and keyed by <c>service/layer/feature</c> so all
-/// mutations to the same feature land on the same partition and preserve order.
-/// The underlying producer is idempotent (producer-side exactly-once) so a
-/// broker-acknowledged message is never duplicated on retry. When a delivery
-/// still fails after the producer's own retries, the event is routed to the
-/// configured dead-letter topic with diagnostic headers; if dead-lettering is
-/// disabled or itself fails, the failure surfaces to the broadcaster, which
-/// isolates and meters it without affecting durable storage or sibling sinks.
-/// </remarks>
 internal sealed partial class KafkaFeatureChangeEventSink : IFeatureChangeEventSink
 {
     private const string ContentType = "application/json";
@@ -39,10 +25,8 @@ internal sealed partial class KafkaFeatureChangeEventSink : IFeatureChangeEventS
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <inheritdoc />
     public string Name => "kafka";
 
-    /// <inheritdoc />
     public async Task PublishAsync(FeatureChangeEvent featureEvent, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(featureEvent);
@@ -114,6 +98,7 @@ internal sealed partial class KafkaFeatureChangeEventSink : IFeatureChangeEventS
         }
     }
 
+    // Mutations of the same feature share a partition key so order is preserved.
     private static string BuildKey(FeatureChangeEvent featureEvent)
         => string.Create(
             CultureInfo.InvariantCulture,

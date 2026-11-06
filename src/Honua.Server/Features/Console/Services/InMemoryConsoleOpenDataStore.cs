@@ -7,11 +7,6 @@ using Honua.Core.Features.Console.Domain;
 
 namespace Honua.Server.Features.Console.Services;
 
-/// <summary>
-/// Baseline in-memory <see cref="IConsoleOpenDataStore"/>. Suitable for tests and
-/// early Console wiring; a persistent implementation lands alongside the
-/// persistent content/share stores (#1163).
-/// </summary>
 internal sealed class InMemoryConsoleOpenDataStore : IConsoleOpenDataStore
 {
     private readonly ConcurrentDictionary<string, ConsoleOpenDataPage> _pages = new(StringComparer.Ordinal);

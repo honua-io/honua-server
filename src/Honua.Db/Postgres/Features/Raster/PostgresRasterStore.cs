@@ -553,11 +553,6 @@ internal sealed class PostgresRasterStore : IRasterStore
             throw new ArgumentException($"Unsupported GDAL driver name: {formatName}");
         }
 
-        // COG creation options are resolved from a concrete source raster's overviews; an empty
-        // canvas has none, so it is written with the plain GeoTIFF driver COG already falls back to.
-        var effectiveFormat = formatName == "COG" ? "GTiff" : formatName;
-        var creationOptionsClause = BuildCreationOptionsClause(BuildExportCreationOptions(query, effectiveFormat));
-
         // Find one source raster to provide the layer's output layout. The source expression below
         // deliberately mirrors the populated export pipeline: selection and rendering functions
         // can change both the band count and the pixel type before the empty canvas is assembled.
@@ -585,6 +580,13 @@ internal sealed class PostgresRasterStore : IRasterStore
         }
 
         var referenceRasterId = Convert.ToInt64(referenceIdValue, CultureInfo.InvariantCulture);
+        var effectiveFormat = formatName;
+        var creationOptionsClause = BuildCreationOptionsClause(BuildExportCreationOptions(query, effectiveFormat));
+        if (formatName == "COG")
+        {
+            (effectiveFormat, creationOptionsClause) = await ResolveCogOptionsAsync(
+                connection, blockSize: 512, includeOverviewResampling: true, cancellationToken).ConfigureAwait(false);
+        }
         var sourceExpr = "raster";
         var sourceParams = new List<(string Name, object Value)>();
         if (query.Bands is { Length: > 0 } bands)
@@ -608,7 +610,7 @@ internal sealed class PostgresRasterStore : IRasterStore
             sourceExpr = BuildTerrainExpression(sourceExpr, terrain);
         }
 
-        if (query.Stretch is { } stretch && CanResolveStretchBounds(stretch, query.BandArithmetic))
+        if (query.Stretch is { } stretch && CanResolveStretchBounds(stretch, query.BandArithmetic, query.Terrain))
         {
             var stretchBounds = await ResolveStretchBoundsAsync(
                 stretch, layerId, referenceRasterId, query.Bands, cancellationToken).ConfigureAwait(false);
@@ -815,11 +817,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         }
 
         // 1b. Apply display stretch (renderingRule Stretch) on the selected bands.
-        // The persisted whole-raster band statistics describe the source pixels, not a
-        // band-math output, so when BandArithmetic is set only an explicitly-supplied
-        // stretch range is honoured; auto-derived bounds are skipped to avoid mis-stretching
-        // the analytic band (NDVI's [-1, 1] range pairs with an explicit Colormap instead).
-        if (query.Stretch is { } stretch && CanResolveStretchBounds(stretch, query.BandArithmetic))
+        if (query.Stretch is { } stretch && CanResolveStretchBounds(stretch, query.BandArithmetic, query.Terrain))
         {
             var stretchBounds = await ResolveStretchBoundsAsync(
                 stretch, layerId, rasterId, query.Bands, cancellationToken).ConfigureAwait(false);
@@ -880,14 +878,13 @@ internal sealed class PostgresRasterStore : IRasterStore
             : string.Empty;
 
         // COG export: use creation options for proper internal tiling.
-        // If the COG GDAL driver is unavailable, fall back to GTiff with COG-compatible options.
         var creationOptionsClause = "";
         var effectiveFormat = formatName;
         const int exportBlockSize = 512;
         if (formatName == "COG")
         {
             (effectiveFormat, creationOptionsClause) = await ResolveCogOptionsAsync(
-                connection, blockSize: exportBlockSize, layerId, rasterId,
+                connection, blockSize: exportBlockSize,
                 includeOverviewResampling: true, cancellationToken).ConfigureAwait(false);
         }
         else
@@ -1268,16 +1265,10 @@ internal sealed class PostgresRasterStore : IRasterStore
         }
     }
 
-    // Persisted band statistics describe the source pixels, not a band-math output. When
-    // BandArithmetic is set, only an explicitly-supplied stretch range (Statistics on the
-    // rule) is meaningful over the derived band; auto-derived bounds are skipped.
-    private static bool CanResolveStretchBounds(RasterStretch stretch, RasterBandArithmetic? bandArithmetic)
-        => bandArithmetic is null || (stretch.StatisticsMin is not null && stretch.StatisticsMax is not null);
-
-    // Mosaic equivalent of CanResolveStretchBounds: when band arithmetic OR an inline terrain
-    // function has reshaped the band semantics, the persisted whole-mosaic statistics no longer
-    // describe the analytic band, so only an explicitly-supplied stretch range is honoured.
-    private static bool CanResolveMosaicStretchBounds(
+    // Persisted statistics describe the source pixels, not a band that band arithmetic or a
+    // terrain function (NDVI, hillshade, slope, aspect) has reshaped. Such a band is stretched
+    // only by an explicit range.
+    internal static bool CanResolveStretchBounds(
         RasterStretch stretch,
         RasterBandArithmetic? bandArithmetic,
         RasterTerrainFunction? terrain)
@@ -1337,8 +1328,7 @@ internal sealed class PostgresRasterStore : IRasterStore
             return rasterToken;
         }
 
-        // Tile ground resolution: world span / (256 px * 2^level) metres-per-pixel.
-        var metresPerPixel = WebMercatorWorldSpanMeters / (256.0 * Math.Pow(2, level));
+        var metresPerPixel = TileGroundResolutionMeters(level);
         var mpp = metresPerPixel.ToString("G17", CultureInfo.InvariantCulture);
 
         // Reduce only a source already in the tile CRS. Transforming another CRS here would
@@ -1356,73 +1346,6 @@ internal sealed class PostgresRasterStore : IRasterStore
     /// </summary>
     internal static double TileGroundResolutionMeters(int level)
         => WebMercatorWorldSpanMeters / (256.0 * Math.Pow(2, level));
-
-    /// <summary>
-    /// Resolves the best persisted overview row id for a raster at the requested tile zoom, or
-    /// <c>null</c> when no persisted overview is coarser-or-equal to the tile resolution (or the
-    /// overview table is not provisioned). The selection reuses the shared
-    /// <see cref="OverviewLevelSelector"/> scoring so the persisted-pyramid read path ranks levels
-    /// the same way the COG read path does (#1836). Persisted overviews are already in EPSG:3857,
-    /// so reading one skips both the full-resolution scan and the on-the-fly reduction.
-    /// </summary>
-    private async Task<long?> ResolveBestOverviewIdAsync(
-        DbConnection connection,
-        long rasterId,
-        int level,
-        CancellationToken cancellationToken)
-    {
-        // Native/finer zoom reads full resolution: never substitute an overview.
-        if (level >= OverviewMaxZoom)
-        {
-            return null;
-        }
-
-        var tileResolution = TileGroundResolutionMeters(level);
-
-        var candidates = new List<(long Id, double Resolution)>();
-        try
-        {
-            await using var command = connection.CreateCommand();
-            command.CommandText = $"""
-                SELECT id, ground_resolution
-                FROM {_rasterOverviewsTable}
-                WHERE raster_data_id = @rasterId
-                ORDER BY ground_resolution
-                """;
-            AddParameter(command, "@rasterId", rasterId);
-
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-            {
-                candidates.Add((reader.GetInt64(0), reader.GetDouble(1)));
-            }
-        }
-        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedTable)
-        {
-            // Schema predates migration 061: fall back to the on-the-fly reduction.
-            return null;
-        }
-
-        if (candidates.Count == 0)
-        {
-            return null;
-        }
-
-        // Only consider overviews that do not over-coarsen relative to the tile (resolution
-        // <= tile resolution), so a tile never reads a level coarser than it needs and loses
-        // detail. Among those, pick the closest match via the shared selector. A 256x256 tile
-        // spans 256 * tileResolution metres on each axis.
-        var usable = candidates.Where(c => c.Resolution <= tileResolution * (1 + 1e-9)).ToList();
-        if (usable.Count == 0)
-        {
-            return null;
-        }
-
-        var tileSpan = 256.0 * tileResolution;
-        var resolutions = usable.Select(c => (c.Resolution, c.Resolution)).ToList();
-        var bestIndex = OverviewLevelSelector.SelectBestIndex(tileSpan, tileSpan, 256, 256, resolutions);
-        return bestIndex >= 0 ? usable[bestIndex].Id : null;
-    }
 
     private static string ResolveResamplingAlgorithm(ResamplingAlgorithm resamplingAlgorithm)
     {
@@ -1609,7 +1532,7 @@ internal sealed class PostgresRasterStore : IRasterStore
             rasterExpr = BuildTerrainExpression(rasterExpr, terrain);
         }
 
-        if (rendering.Stretch is { } stretch)
+        if (rendering.Stretch is { } stretch && CanResolveStretchBounds(stretch, rendering.BandArithmetic, rendering.Terrain))
         {
             var bounds = await resolveStretchBounds(stretch).ConfigureAwait(false);
             if (bounds is { Count: > 0 })
@@ -2204,11 +2127,8 @@ internal sealed class PostgresRasterStore : IRasterStore
             postMergeRasterExpr = BuildTerrainExpression(postMergeRasterExpr, mosaicTerrain);
         }
 
-        // Apply display stretch (renderingRule Stretch) on the merged mosaic bands. When band
-        // arithmetic or a terrain function reshaped the band semantics the persisted mosaic
-        // statistics no longer describe the analytic band, so only an explicitly-supplied stretch
-        // range is honoured (mirrors the single-raster CanResolveStretchBounds guard).
-        if (query.Stretch is { } stretch && CanResolveMosaicStretchBounds(stretch, query.BandArithmetic, query.Terrain))
+        // Apply display stretch (renderingRule Stretch) on the merged mosaic bands.
+        if (query.Stretch is { } stretch && CanResolveStretchBounds(stretch, query.BandArithmetic, query.Terrain))
         {
             var stretchBounds = await ResolveMosaicStretchBoundsAsync(
                 stretch, layerId, rasterIds, mergeStrategy, cancellationToken).ConfigureAwait(false);
@@ -2271,7 +2191,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         if (formatName == "COG")
         {
             (effectiveFormat, creationOptionsClause) = await ResolveCogOptionsAsync(
-                connection, blockSize: exportBlockSize, layerId, rasterIds[0],
+                connection, blockSize: exportBlockSize,
                 includeOverviewResampling: true, cancellationToken).ConfigureAwait(false);
         }
         else
@@ -2483,7 +2403,8 @@ internal sealed class PostgresRasterStore : IRasterStore
                 Y = y,
                 Srid = srid,
                 BandValues = new Dictionary<int, object?>(),
-                HasData = false
+                HasData = false,
+                ContributingRasterIds = []
             };
         }
 
@@ -2512,6 +2433,13 @@ internal sealed class PostgresRasterStore : IRasterStore
         // Resolve a contested pixel with the ordering exportImage renders for the same mosaic rule
         // (#4064): seamline clips, nadir/attribute projections and the ordered union are shared.
         var mosaicSource = BuildMosaicSourceSelect("raster", ordering, attributeSort);
+        // The contributor probe uses the same point as the merged sample. Mixed raster SRIDs
+        // transform onto each aligned raster; a uniform SRID reuses the merged sample point.
+        var contributorPoint = rasterSrid is int
+            ? samplePoint
+            : "ST_Transform(ST_SetSRID(ST_MakePoint(@x, @y), @pointSrid), ST_SRID(candidate.aligned_rast))";
+        var contributorsSql = RasterMosaicSql.CreateIdentifyContributorArraySql(
+            mergeStrategy, ordering, attributeSort, contributorPoint);
 
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
@@ -2531,8 +2459,9 @@ internal sealed class PostgresRasterStore : IRasterStore
                 FROM merged
                 WHERE rast IS NOT NULL
             )
-            SELECT band, val
-            FROM rendered,
+            SELECT band, val, contributors.ids
+            FROM rendered
+            CROSS JOIN (SELECT {contributorsSql} AS ids) AS contributors,
                  LATERAL generate_series(1, ST_NumBands(rast)) AS band,
                  LATERAL ST_Value(rast, band,
                     {samplePoint}
@@ -2552,6 +2481,7 @@ internal sealed class PostgresRasterStore : IRasterStore
 
         var bandValues = new Dictionary<int, object?>();
         var hasData = false;
+        long[] contributing = [];
 
         await using var reader = await ExecuteIdentifyReaderAsync(command, cancellationToken).ConfigureAwait(false);
         while (await ReadIdentifyRowAsync(reader, cancellationToken).ConfigureAwait(false))
@@ -2563,6 +2493,11 @@ internal sealed class PostgresRasterStore : IRasterStore
             {
                 hasData = true;
             }
+
+            if (contributing.Length == 0 && !reader.IsDBNull(2))
+            {
+                contributing = reader.GetFieldValue<long[]>(2);
+            }
         }
 
         return new PixelValueResult
@@ -2571,7 +2506,8 @@ internal sealed class PostgresRasterStore : IRasterStore
             Y = y,
             Srid = srid,
             BandValues = bandValues,
-            HasData = hasData
+            HasData = hasData,
+            ContributingRasterIds = contributing
         };
     }
 
@@ -2631,13 +2567,13 @@ internal sealed class PostgresRasterStore : IRasterStore
             throw new ArgumentException($"Unsupported GDAL driver name: {formatName}");
         }
 
-        // COG driver check: same fallback as ExportImageAsync
+        // Require writable native COG support on this connection, as ExportImageAsync does.
         var effectiveTileFormat = formatName;
         var tileCreationOptions = "";
         if (formatName == "COG")
         {
             (effectiveTileFormat, tileCreationOptions) = await ResolveCogOptionsAsync(
-                connection, blockSize: 256, layerId, rasterId,
+                connection, blockSize: 256,
                 includeOverviewResampling: false, cancellationToken).ConfigureAwait(false);
         }
 
@@ -2737,7 +2673,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         if (formatName == "COG")
         {
             (effectiveTileFormat, tileCreationOptions) = await ResolveCogOptionsAsync(
-                connection, blockSize: 256, layerId, rasterIds[0],
+                connection, blockSize: 256,
                 includeOverviewResampling: false, cancellationToken).ConfigureAwait(false);
         }
 
@@ -2845,7 +2781,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         if (formatName == "COG")
         {
             (effectiveTileFormat, tileCreationOptions) = await ResolveCogOptionsAsync(
-                connection, blockSize: 256, layerId, rasterId,
+                connection, blockSize: 256,
                 includeOverviewResampling: false, cancellationToken).ConfigureAwait(false);
         }
 
@@ -2919,7 +2855,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         if (formatName == "COG")
         {
             (effectiveTileFormat, tileCreationOptions) = await ResolveCogOptionsAsync(
-                connection, blockSize: 256, layerId, rasterIds[0],
+                connection, blockSize: 256,
                 includeOverviewResampling: false, cancellationToken).ConfigureAwait(false);
         }
 
@@ -5200,55 +5136,30 @@ internal sealed class PostgresRasterStore : IRasterStore
         }
     }
 
-    // GDAL driver availability is static for the PostGIS process lifetime.
-    // Cache per driver name to avoid querying ST_GDALDrivers() on every export.
-    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _gdalDriverCache = new();
-
     /// <summary>
-    /// Resolves the effective GDAL format and creation options for COG output.
-    /// Falls back to GTiff with COG-compatible options if the native COG driver is unavailable.
+    /// Resolves native COG creation options on the actual export connection.
+    /// Driver policy is session-specific; a GeoTIFF fallback cannot guarantee COG layout.
     /// </summary>
-    private async Task<(string EffectiveFormat, string CreationOptionsClause)> ResolveCogOptionsAsync(
+    private static async Task<(string EffectiveFormat, string CreationOptionsClause)> ResolveCogOptionsAsync(
         DbConnection connection,
         int blockSize,
-        int layerId,
-        long rasterId,
         bool includeOverviewResampling,
         CancellationToken cancellationToken)
     {
-        var hasCogDriver = await CheckGdalDriverAsync(connection, "COG", cancellationToken).ConfigureAwait(false);
-        if (hasCogDriver)
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT 1 FROM ST_GDALDrivers() WHERE short_name = 'COG' AND can_write LIMIT 1";
+        if (await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is null)
         {
-            var options = $"'COMPRESS=DEFLATE', 'BLOCKSIZE={blockSize}'";
-            if (includeOverviewResampling)
-            {
-                options += ", 'OVERVIEW_RESAMPLING=NEAREST'";
-            }
-
-            return ("COG", $", ARRAY[{options}]");
+            throw new NotSupportedException("A writable GDAL COG driver is required for COG export.");
         }
 
-        PostgresRasterLog.CogDriverFallback(_logger, layerId, rasterId);
-        return ("GTiff", $", ARRAY['TILED=YES', 'COMPRESS=DEFLATE', 'BLOCKXSIZE={blockSize}', 'BLOCKYSIZE={blockSize}']");
-    }
-
-    private static async Task<bool> CheckGdalDriverAsync(
-        DbConnection connection,
-        string driverName,
-        CancellationToken cancellationToken)
-    {
-        if (_gdalDriverCache.TryGetValue(driverName, out var cached))
+        var options = $"'COMPRESS=DEFLATE', 'BLOCKSIZE={blockSize}'";
+        if (includeOverviewResampling)
         {
-            return cached;
+            options += ", 'OVERVIEW_RESAMPLING=NEAREST'";
         }
 
-        await using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT 1 FROM ST_GDALDrivers() WHERE short_name = @driver LIMIT 1";
-        AddParameter(cmd, "@driver", driverName);
-        var result = await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        var available = result != null;
-        _gdalDriverCache.TryAdd(driverName, available);
-        return available;
+        return ("COG", $", ARRAY[{options}]");
     }
 
     private async Task<int?> ReadRasterSridAsync(

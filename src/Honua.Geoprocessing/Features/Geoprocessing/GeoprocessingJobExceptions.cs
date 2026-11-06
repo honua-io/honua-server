@@ -170,6 +170,13 @@ internal sealed class GeoprocessingCancellationUnconfirmedException : Geoprocess
 internal sealed class GeoprocessingValidationException : Exception
 {
     public GeoprocessingValidationException(string message) : base(message) { }
+
+    public GeoprocessingValidationException(string message, string violationCode) : base(message)
+    {
+        ViolationCode = violationCode;
+    }
+
+    public string? ViolationCode { get; }
 }
 
 /// <summary>

@@ -124,6 +124,178 @@ public sealed class AuditChainLinkTests
         Walk(other, row).Verified.Should().BeFalse();
     }
 
+    // Downgrade history the gap attestation exists for: a hashing build wrote rows 1-2,
+    // a pre-hash-chain build appended rows 3-4 with no hash, the hashing build came back
+    // and started a new chain at row 5 (its tail read found no hash), and the key was
+    // activated before row 6.
+    private static (AuditChainLink[] History, AuditChainGapAttestation Gap) DowngradeHistory()
+    {
+        var first = Link(1, "auth.failure", previous: null, keyed: false);
+        var anchor = Link(2, "auth.token.issue", previous: first.EntryHash, keyed: false);
+        var gapStart = Link(3, "auth.failure", previous: null, keyed: false) with { EntryHash = null };
+        var gapEnd = Link(4, "auth.failure", previous: null, keyed: false) with { EntryHash = null };
+        var resume = Link(5, "auth.failure", previous: null, keyed: false);
+        var keyed = Link(6, "auth.token.issue", previous: resume.EntryHash, keyed: true);
+        var gap = new AuditChainGapAttestation
+        {
+            AttestationAuditId = 7,
+            AnchorAuditId = 2,
+            AnchorEntryHash = anchor.EntryHash!,
+            GapFirstAuditId = 3,
+            GapLastAuditId = 4,
+            GapRowCount = 2,
+            ResumeAuditId = 5,
+            ResumePreviousHash = null,
+            Reason = "rolled back to a pre-hash-chain build",
+        };
+
+        return ([first, anchor, gapStart, gapEnd, resume, keyed], gap);
+    }
+
+    [Fact]
+    public void DowngradeGap_WithoutAttestation_DoesNotVerify()
+    {
+        var (history, _) = DowngradeHistory();
+
+        var report = Walk(Key, history);
+
+        report.Verified.Should().BeFalse();
+        report.FirstBrokenAuditId.Should().Be(3);
+        report.FailureReason.Should().Contain("unhashed row follows a hashed row");
+    }
+
+    [Fact]
+    public void DowngradeGap_WithKeyedAttestation_VerifiesAndReportsTheGap()
+    {
+        var (history, gap) = DowngradeHistory();
+        var attestation = AttestationRow(gap, previous: history[^1].EntryHash, keyed: true);
+
+        var report = Walk(Key, [gap], [.. history, attestation]);
+
+        report.Verified.Should().BeTrue(report.FailureReason);
+        report.AttestedGapRows.Should().Be(2);
+        report.UnhashedRows.Should().Be(0);
+        report.RowsChecked.Should().Be(7);
+    }
+
+    [Fact]
+    public void DowngradeGap_ResumedByLinkingOverTheGap_VerifiesWhenAttestedThatWay()
+    {
+        var (history, gap) = DowngradeHistory();
+        var anchorHash = history[1].EntryHash;
+        var resume = Link(5, "auth.failure", previous: anchorHash, keyed: false);
+        var keyed = Link(6, "auth.token.issue", previous: resume.EntryHash, keyed: true);
+        gap = gap with { ResumePreviousHash = anchorHash };
+        var attestation = AttestationRow(gap, previous: keyed.EntryHash, keyed: true);
+
+        var report = Walk(Key, [gap], [history[0], history[1], history[2], history[3], resume, keyed, attestation]);
+
+        report.Verified.Should().BeTrue(report.FailureReason);
+        report.AttestedGapRows.Should().Be(2);
+    }
+
+    [Fact]
+    public void GapAttestation_WrittenAsLegacyDigest_DoesNotExcuseTheGap()
+    {
+        var (history, gap) = DowngradeHistory();
+        var resume = history[4];
+        var legacyAttestation = AttestationRow(gap with { AttestationAuditId = 6 }, previous: resume.EntryHash, keyed: false);
+        var keyed = Link(7, "auth.token.issue", previous: legacyAttestation.EntryHash, keyed: true);
+
+        var report = Walk(
+            Key,
+            [gap with { AttestationAuditId = 6 }],
+            [.. history[..5], legacyAttestation, keyed]);
+
+        report.Verified.Should().BeFalse();
+        report.FirstBrokenAuditId.Should().Be(6);
+        report.FailureReason.Should().Contain("gap attestation");
+    }
+
+    [Fact]
+    public void GapAttestation_NamingAnotherAnchorHash_DoesNotExcuseTheGap()
+    {
+        var (history, gap) = DowngradeHistory();
+        var forged = gap with { AnchorEntryHash = new string('a', 64) };
+        var attestation = AttestationRow(forged, previous: history[^1].EntryHash, keyed: true);
+
+        var report = Walk(Key, [forged], [.. history, attestation]);
+
+        report.Verified.Should().BeFalse();
+        report.FirstBrokenAuditId.Should().Be(3);
+        report.FailureReason.Should().Contain("unhashed row follows a hashed row");
+    }
+
+    [Fact]
+    public void GapAttestation_UnderstatingTheGap_DoesNotVerify()
+    {
+        var (history, gap) = DowngradeHistory();
+        var narrow = gap with { GapLastAuditId = 3, GapRowCount = 1 };
+        var attestation = AttestationRow(narrow, previous: history[^1].EntryHash, keyed: true);
+
+        var report = Walk(Key, [narrow], [.. history, attestation]);
+
+        report.Verified.Should().BeFalse();
+        report.FirstBrokenAuditId.Should().Be(4);
+    }
+
+    [Fact]
+    public void GapAttestation_OverstatingTheGap_DoesNotVerify()
+    {
+        var (history, gap) = DowngradeHistory();
+        var wide = gap with { GapLastAuditId = 5, GapRowCount = 3, ResumeAuditId = 6 };
+        var attestation = AttestationRow(wide, previous: history[^1].EntryHash, keyed: true);
+
+        var report = Walk(Key, [wide], [.. history, attestation]);
+
+        report.Verified.Should().BeFalse();
+        report.FirstBrokenAuditId.Should().Be(5);
+        report.FailureReason.Should().Contain("inside the gap");
+    }
+
+    [Fact]
+    public void ResumeRow_WithAnotherPreviousHash_DoesNotVerify()
+    {
+        var (history, gap) = DowngradeHistory();
+        var relinked = gap with { ResumePreviousHash = history[1].EntryHash };
+        var attestation = AttestationRow(relinked, previous: history[^1].EntryHash, keyed: true);
+
+        var report = Walk(Key, [relinked], [.. history, attestation]);
+
+        report.Verified.Should().BeFalse();
+        report.FirstBrokenAuditId.Should().Be(5);
+        report.FailureReason.Should().Contain("does not resume the chain");
+    }
+
+    [Fact]
+    public void SecondUnattestedGap_AfterAnAttestedOne_DoesNotVerify()
+    {
+        var (history, gap) = DowngradeHistory();
+        var attestation = AttestationRow(gap, previous: history[^1].EntryHash, keyed: true);
+        var later = Link(8, "auth.failure", previous: null, keyed: false) with { EntryHash = null };
+
+        var report = Walk(Key, [gap], [.. history, attestation, later]);
+
+        report.Verified.Should().BeFalse();
+        report.FirstBrokenAuditId.Should().Be(8);
+        report.AttestedGapRows.Should().Be(2);
+    }
+
+    [Fact]
+    public void GapAttestation_Details_RoundTrip_AndRejectInconsistentDeclarations()
+    {
+        var (_, gap) = DowngradeHistory();
+
+        AuditChainGapAttestation.TryParse(7, gap.ToDetails()).Should().Be(gap);
+        AuditChainGapAttestation.TryParse(7, gap.ToDetails().Replace("\"gapRowCount\":2", "\"gapRowCount\":3", StringComparison.Ordinal))
+            .Should().BeNull("three rows cannot fit in ids 3-4");
+        AuditChainGapAttestation.TryParse(5, gap.ToDetails()).Should().BeNull("the attestation must follow the resume row");
+        AuditChainGapAttestation.TryParse(7, (gap with { ResumePreviousHash = new string('b', 64) }).ToDetails())
+            .Should().BeNull("a resumed chain links to the anchor or starts fresh");
+        AuditChainGapAttestation.TryParse(7, "{}").Should().BeNull();
+        AuditChainGapAttestation.TryParse(7, "not json").Should().BeNull();
+    }
+
     [Fact]
     public void AbsentKey_DecodesEmpty_AndShortKey_FailsClosed()
     {
@@ -166,8 +338,14 @@ public sealed class AuditChainLinkTests
     }
 
     private static AuditIntegrityReport Walk(ReadOnlyMemory<byte> chainKey, params AuditChainLink[] rows)
+        => Walk(chainKey, [], rows);
+
+    private static AuditIntegrityReport Walk(
+        ReadOnlyMemory<byte> chainKey,
+        IReadOnlyList<AuditChainGapAttestation> attestations,
+        AuditChainLink[] rows)
     {
-        var cursor = new AuditChainVerificationCursor();
+        var cursor = new AuditChainVerificationCursor(attestations);
         foreach (var failed in rows.Select(row => cursor.Observe(row, chainKey)))
         {
             if (failed is not null)
@@ -177,6 +355,20 @@ public sealed class AuditChainLinkTests
         }
 
         return cursor.Complete(chainKey);
+    }
+
+    private static AuditChainLink AttestationRow(AuditChainGapAttestation gap, string? previous, bool keyed)
+    {
+        var bare = Link(gap.AttestationAuditId, AuditChainGapAttestation.Action, previous, keyed: false) with
+        {
+            EventType = AuditEventType.AdminAction,
+            ResourceType = AuditChainGapAttestation.ResourceType,
+            ResourceId = gap.ResourceId,
+            Outcome = AuditOutcome.Success,
+            Details = gap.ToDetails(),
+        };
+
+        return bare with { EntryHash = keyed ? MacHash(bare) : LegacyHash(bare) };
     }
 
     private static AuditChainLink Link(long id, string action, string? previous, bool keyed)

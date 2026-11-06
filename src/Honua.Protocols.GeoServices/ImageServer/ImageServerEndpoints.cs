@@ -1,7 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 //
-// Read-only Esri-compatible ImageServer surface; anonymous by design. POST
+// Read-only GeoServices REST ImageServer surface; anonymous by design. POST
 // variants of exportImage/identify/query/computeStatistics mirror the GET form
 // and perform no server-side mutation. Each route group opts into
 // AllowAnonymous explicitly so authorization-policy tooling can see the intent
@@ -21,19 +21,12 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.GeoServices.ImageServer;
 
-/// <summary>
-/// Esri Image Server endpoints providing raster imagery capabilities.
-/// Supports the Esri Image Server REST API specification.
-/// </summary>
 internal static class ImageServerEndpoints
 {
     private const string JsonContentType = "application/json";
     private const string KmzContentType = "application/vnd.google-earth.kmz";
     private const string InlineImageFormat = "image";
 
-    /// <summary>
-    /// Maps Image Server endpoints to the application.
-    /// </summary>
     public static void MapImageServerEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapImageServerSoapEndpoints();
@@ -161,7 +154,7 @@ internal static class ImageServerEndpoints
             .WithDisplayName("Query Image Catalog (GET)")
             .WithName("QueryImageCatalogGet")
             .WithSummary("Query the raster catalog with where/objectIds filters")
-            .WithDescription("Returns Esri-compatible raster catalog features for the layer with optional WHERE filtering and pagination")
+            .WithDescription("Returns GeoServices REST raster catalog features for the layer with optional WHERE filtering and pagination")
             .Produces<CatalogQueryResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(400)
             .Produces(404);
@@ -543,7 +536,7 @@ internal static class ImageServerEndpoints
             .WithDisplayName("Get Image Server Legend")
             .WithName("GetImageServerLegend")
             .WithSummary("Get raster legend swatches")
-            .WithDescription("Returns Esri-compatible legend swatches or a composed PNG with f=png for the layer's primary raster")
+            .WithDescription("Returns GeoServices REST legend swatches or a composed PNG with f=png for the layer's primary raster")
             .Produces<LegendResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(StatusCodes.Status200OK, contentType: "image/png")
             .Produces(400)
@@ -1274,12 +1267,7 @@ internal static class ImageServerEndpoints
             .Produces(404);
     }
 
-    /// <summary>
-    /// Replaces handler-bound <see cref="CancellationToken"/> arguments (which minimal
-    /// APIs bind to <see cref="HttpContext.RequestAborted"/> only) with the per-request
-    /// limits timeout token, so long-running raster operations honor the configured
-    /// request timeout the same way the other GeoServices protocols do.
-    /// </summary>
+    // Handler-bound arguments are replaced with the per-request timeout token, because minimal APIs would otherwise ignore the configured request timeout.
     private static ValueTask<object?> ApplyLimitsTimeoutToken(
         EndpointFilterInvocationContext invocationContext,
         EndpointFilterDelegate next)
@@ -1296,9 +1284,6 @@ internal static class ImageServerEndpoints
         return next(invocationContext);
     }
 
-    /// <summary>
-    /// Get Image Server service metadata.
-    /// </summary>
     private static async Task<IResult> GetServiceInfo(
         int id,
         string? f,
@@ -1364,9 +1349,6 @@ internal static class ImageServerEndpoints
         return resolution.ErrorResult ?? await GetTileCacheConf(resolution.LayerId, context, handler, cancellationToken);
     }
 
-    /// <summary>
-    /// Get the Esri multidimensionalInfo document for a multidimensional raster layer.
-    /// </summary>
     private static async Task<IResult> GetMultidimensionalInfo(
         int id,
         string? f,
@@ -1430,9 +1412,6 @@ internal static class ImageServerEndpoints
         return await GetMultidimensionalInfoPost(resolution.LayerId, context, handler, cancellationToken);
     }
 
-    /// <summary>
-    /// Get the Esri slices document (discrete multidimensional slices) for a layer.
-    /// </summary>
     private static async Task<IResult> GetSlices(
         int id,
         string? f,
@@ -1496,9 +1475,6 @@ internal static class ImageServerEndpoints
         return await GetSlicesPost(resolution.LayerId, context, handler, cancellationToken);
     }
 
-    /// <summary>
-    /// Export rendered image from raster data.
-    /// </summary>
     private static async Task<IResult> ExportImage(
         int id,
         [AsParameters] ExportImageRequest request,
@@ -1614,9 +1590,6 @@ internal static class ImageServerEndpoints
             cancellationToken);
     }
 
-    /// <summary>
-    /// Identify pixel values at a geographic point.
-    /// </summary>
     private static async Task<IResult> Identify(
         int id,
         [AsParameters] IdentifyRequest request,
@@ -1695,9 +1668,6 @@ internal static class ImageServerEndpoints
         return await handler.IdentifyAsync(context, id, request, cancellationToken);
     }
 
-    /// <summary>
-    /// Query the raster catalog using GET parameters.
-    /// </summary>
     private static async Task<IResult> QueryCatalogGet(
         int id,
         HttpContext context,
@@ -1724,9 +1694,6 @@ internal static class ImageServerEndpoints
         return resolution.ErrorResult ?? await QueryCatalogGet(resolution.LayerId, context, handler, cancellationToken);
     }
 
-    /// <summary>
-    /// Query the raster catalog using POST body (JSON or form-encoded).
-    /// </summary>
     private static async Task<IResult> QueryCatalogPost(
         int id,
         HttpContext context,
@@ -1769,9 +1736,6 @@ internal static class ImageServerEndpoints
         return resolution.ErrorResult ?? await QueryCatalogPost(resolution.LayerId, context, handler, cancellationToken);
     }
 
-    /// <summary>
-    /// Get one raster catalog item as an Esri feature resource.
-    /// </summary>
     private static async Task<IResult> GetRasterCatalogItem(
         int id,
         long rasterId,
@@ -2067,9 +2031,6 @@ internal static class ImageServerEndpoints
             cancellationToken);
     }
 
-    /// <summary>
-    /// Get the image service as an OGC KML 2.2 KMZ (GroundOverlay over the service extent).
-    /// </summary>
     private static async Task<IResult> GetKml(
         int id,
         HttpContext context,
@@ -2095,9 +2056,6 @@ internal static class ImageServerEndpoints
         return resolution.ErrorResult ?? await GetKml(resolution.LayerId, context, handler, cancellationToken);
     }
 
-    /// <summary>
-    /// Find raster catalog images containing the target geometry (GET).
-    /// </summary>
     private static async Task<IResult> FindGet(
         int id,
         HttpContext context,
@@ -2129,9 +2087,6 @@ internal static class ImageServerEndpoints
         return resolution.ErrorResult ?? await FindGet(resolution.LayerId, context, handler, cancellationToken);
     }
 
-    /// <summary>
-    /// Find raster catalog images containing the target geometry (POST).
-    /// </summary>
     private static async Task<IResult> FindPost(
         int id,
         HttpContext context,
@@ -2169,9 +2124,6 @@ internal static class ImageServerEndpoints
         return resolution.ErrorResult ?? await FindPost(resolution.LayerId, context, handler, cancellationToken);
     }
 
-    /// <summary>
-    /// Measure ImageServer geometry in map space (GET).
-    /// </summary>
     private static async Task<IResult> MeasureGet(
         int id,
         HttpContext context,
@@ -2203,9 +2155,6 @@ internal static class ImageServerEndpoints
         return resolution.ErrorResult ?? await MeasureGet(resolution.LayerId, context, handler, cancellationToken);
     }
 
-    /// <summary>
-    /// Measure ImageServer geometry in map space (POST).
-    /// </summary>
     private static async Task<IResult> MeasurePost(
         int id,
         HttpContext context,
@@ -2243,9 +2192,6 @@ internal static class ImageServerEndpoints
         return resolution.ErrorResult ?? await MeasurePost(resolution.LayerId, context, handler, cancellationToken);
     }
 
-    /// <summary>
-    /// Compute statistics and histograms for the primary raster (GET).
-    /// </summary>
     private static async Task<IResult> ComputeStatisticsHistogramsGet(
         int id,
         HttpContext context,
@@ -2282,9 +2228,6 @@ internal static class ImageServerEndpoints
         return resolution.ErrorResult ?? await ComputeStatisticsHistogramsGet(resolution.LayerId, context, handler, cancellationToken);
     }
 
-    /// <summary>
-    /// Compute statistics and histograms for the primary raster (POST).
-    /// </summary>
     private static async Task<IResult> ComputeStatisticsHistogramsPost(
         int id,
         HttpContext context,
@@ -2337,9 +2280,6 @@ internal static class ImageServerEndpoints
         return resolution.ErrorResult ?? await ComputeStatisticsHistogramsPost(resolution.LayerId, context, handler, cancellationToken);
     }
 
-    /// <summary>
-    /// Compute histograms only for the primary raster (GET).
-    /// </summary>
     private static async Task<IResult> ComputeHistogramsGet(
         int id,
         HttpContext context,
@@ -2376,9 +2316,6 @@ internal static class ImageServerEndpoints
         return resolution.ErrorResult ?? await ComputeHistogramsGet(resolution.LayerId, context, handler, cancellationToken);
     }
 
-    /// <summary>
-    /// Compute histograms only for the primary raster (POST).
-    /// </summary>
     private static async Task<IResult> ComputeHistogramsPost(
         int id,
         HttpContext context,
@@ -2421,9 +2358,6 @@ internal static class ImageServerEndpoints
         return resolution.ErrorResult ?? await ComputeHistogramsPost(resolution.LayerId, context, handler, cancellationToken);
     }
 
-    /// <summary>
-    /// Sample pixel values at points / along a geometry (GET).
-    /// </summary>
     private static async Task<IResult> GetSamplesGet(
         int id,
         HttpContext context,
@@ -2460,9 +2394,6 @@ internal static class ImageServerEndpoints
         return resolution.ErrorResult ?? await GetSamplesGet(resolution.LayerId, context, handler, cancellationToken);
     }
 
-    /// <summary>
-    /// Sample pixel values at points / along a geometry (POST).
-    /// </summary>
     private static async Task<IResult> GetSamplesPost(
         int id,
         HttpContext context,
@@ -2505,9 +2436,6 @@ internal static class ImageServerEndpoints
         return resolution.ErrorResult ?? await GetSamplesPost(resolution.LayerId, context, handler, cancellationToken);
     }
 
-    /// <summary>
-    /// Compute cache metadata for a dynamic ImageServer layer (GET).
-    /// </summary>
     private static async Task<IResult> ComputeCacheInfoGet(
         int id,
         HttpContext context,
@@ -2539,9 +2467,6 @@ internal static class ImageServerEndpoints
         return resolution.ErrorResult ?? await ComputeCacheInfoGet(resolution.LayerId, context, handler, cancellationToken);
     }
 
-    /// <summary>
-    /// Compute cache metadata for a dynamic ImageServer layer (POST).
-    /// </summary>
     private static async Task<IResult> ComputeCacheInfoPost(
         int id,
         HttpContext context,
@@ -2579,9 +2504,6 @@ internal static class ImageServerEndpoints
         return resolution.ErrorResult ?? await ComputeCacheInfoPost(resolution.LayerId, context, handler, cancellationToken);
     }
 
-    /// <summary>
-    /// Compute raster pixel column/row coordinates for map points (GET).
-    /// </summary>
     private static async Task<IResult> ComputePixelLocationGet(
         int id,
         HttpContext context,
@@ -2613,9 +2535,6 @@ internal static class ImageServerEndpoints
         return resolution.ErrorResult ?? await ComputePixelLocationGet(resolution.LayerId, context, handler, cancellationToken);
     }
 
-    /// <summary>
-    /// Compute raster pixel column/row coordinates for map points (POST).
-    /// </summary>
     private static async Task<IResult> ComputePixelLocationPost(
         int id,
         HttpContext context,
@@ -2653,9 +2572,6 @@ internal static class ImageServerEndpoints
         return resolution.ErrorResult ?? await ComputePixelLocationPost(resolution.LayerId, context, handler, cancellationToken);
     }
 
-    /// <summary>
-    /// Query the aggregate raster footprint boundary (GET).
-    /// </summary>
     private static async Task<IResult> QueryBoundaryGet(
         int id,
         HttpContext context,
@@ -2687,9 +2603,6 @@ internal static class ImageServerEndpoints
         return resolution.ErrorResult ?? await QueryBoundaryGet(resolution.LayerId, context, handler, cancellationToken);
     }
 
-    /// <summary>
-    /// Query the aggregate raster footprint boundary (POST).
-    /// </summary>
     private static async Task<IResult> QueryBoundaryPost(
         int id,
         HttpContext context,
@@ -2727,9 +2640,6 @@ internal static class ImageServerEndpoints
         return resolution.ErrorResult ?? await QueryBoundaryPost(resolution.LayerId, context, handler, cancellationToken);
     }
 
-    /// <summary>
-    /// Project ImageServer geometries between spatial references (GET).
-    /// </summary>
     private static async Task<IResult> ProjectGet(
         int id,
         HttpContext context,
@@ -2761,9 +2671,6 @@ internal static class ImageServerEndpoints
         return resolution.ErrorResult ?? await ProjectGet(resolution.LayerId, context, handler, cancellationToken);
     }
 
-    /// <summary>
-    /// Project ImageServer geometries between spatial references (POST).
-    /// </summary>
     private static async Task<IResult> ProjectPost(
         int id,
         HttpContext context,
@@ -2801,9 +2708,6 @@ internal static class ImageServerEndpoints
         return resolution.ErrorResult ?? await ProjectPost(resolution.LayerId, context, handler, cancellationToken);
     }
 
-    /// <summary>
-    /// Compute ImageServer tie points from pre-registered control points (GET).
-    /// </summary>
     private static async Task<IResult> ComputeTiePointsGet(
         int id,
         HttpContext context,
@@ -2835,9 +2739,6 @@ internal static class ImageServerEndpoints
         return resolution.ErrorResult ?? await ComputeTiePointsGet(resolution.LayerId, context, handler, cancellationToken);
     }
 
-    /// <summary>
-    /// Compute ImageServer tie points from pre-registered control points (POST).
-    /// </summary>
     private static async Task<IResult> ComputeTiePointsPost(
         int id,
         HttpContext context,
@@ -2875,9 +2776,6 @@ internal static class ImageServerEndpoints
         return resolution.ErrorResult ?? await ComputeTiePointsPost(resolution.LayerId, context, handler, cancellationToken);
     }
 
-    /// <summary>
-    /// Calculate ImageServer cut/fill volumes over the request AOIs against the layer DEM (GET).
-    /// </summary>
     private static async Task<IResult> CalculateVolumeGet(
         int id,
         HttpContext context,
@@ -2909,9 +2807,6 @@ internal static class ImageServerEndpoints
         return resolution.ErrorResult ?? await CalculateVolumeGet(resolution.LayerId, context, handler, cancellationToken);
     }
 
-    /// <summary>
-    /// Calculate ImageServer cut/fill volumes over the request AOIs against the layer DEM (POST).
-    /// </summary>
     private static async Task<IResult> CalculateVolumePost(
         int id,
         HttpContext context,
@@ -2949,9 +2844,6 @@ internal static class ImageServerEndpoints
         return resolution.ErrorResult ?? await CalculateVolumePost(resolution.LayerId, context, handler, cancellationToken);
     }
 
-    /// <summary>
-    /// Estimate ImageServer exportTiles size (GET).
-    /// </summary>
     private static async Task<IResult> EstimateExportTilesSizeGet(
         int id,
         HttpContext context,
@@ -2983,9 +2875,6 @@ internal static class ImageServerEndpoints
         return resolution.ErrorResult ?? await EstimateExportTilesSizeGet(resolution.LayerId, context, handler, cancellationToken);
     }
 
-    /// <summary>
-    /// Estimate ImageServer exportTiles size (POST).
-    /// </summary>
     private static async Task<IResult> EstimateExportTilesSizePost(
         int id,
         HttpContext context,
@@ -3023,9 +2912,6 @@ internal static class ImageServerEndpoints
         return resolution.ErrorResult ?? await EstimateExportTilesSizePost(resolution.LayerId, context, handler, cancellationToken);
     }
 
-    /// <summary>
-    /// Export ImageServer tiles into configured storage (GET).
-    /// </summary>
     private static async Task<IResult> ExportTilesGet(
         int id,
         HttpContext context,
@@ -3085,9 +2971,6 @@ internal static class ImageServerEndpoints
             cancellationToken);
     }
 
-    /// <summary>
-    /// Export ImageServer tiles into configured storage (POST).
-    /// </summary>
     private static async Task<IResult> ExportTilesPost(
         int id,
         HttpContext context,
@@ -3273,9 +3156,6 @@ internal static class ImageServerEndpoints
             cancellationToken);
     }
 
-    /// <summary>
-    /// Get raster key properties for the layer's primary raster.
-    /// </summary>
     private static async Task<IResult> KeyPropertiesGet(
         int id,
         string? f,
@@ -3345,9 +3225,6 @@ internal static class ImageServerEndpoints
         return resolution.ErrorResult ?? await KeyPropertiesPost(resolution.LayerId, context, handler, cancellationToken);
     }
 
-    /// <summary>
-    /// Get the per-class legend swatches for the layer's primary raster.
-    /// </summary>
     private static async Task<IResult> GetLegend(
         int id,
         string? f,
@@ -3423,10 +3300,6 @@ internal static class ImageServerEndpoints
         return resolution.ErrorResult ?? await GetLegendPost(resolution.LayerId, context, handler, cancellationToken);
     }
 
-    /// <summary>
-    /// Get the read-only colormap resource for the layer. Reflects the renderingRule-supplied
-    /// renderer; returns a not-available response when no colormap can be resolved.
-    /// </summary>
     private static async Task<IResult> GetColormap(
         int id,
         string? f,
@@ -3499,9 +3372,6 @@ internal static class ImageServerEndpoints
         return resolution.ErrorResult ?? await GetColormapPost(resolution.LayerId, context, handler, cancellationToken);
     }
 
-    /// <summary>
-    /// Validate public computeClassStatistics GET parameters and compute per-class signatures.
-    /// </summary>
     private static async Task<IResult> ComputeClassStatisticsGet(
         int id,
         HttpContext context,
@@ -3538,9 +3408,6 @@ internal static class ImageServerEndpoints
         return resolution.ErrorResult ?? await ComputeClassStatisticsGet(resolution.LayerId, context, handler, cancellationToken);
     }
 
-    /// <summary>
-    /// Validate public computeClassStatistics POST parameters and compute per-class signatures.
-    /// </summary>
     private static async Task<IResult> ComputeClassStatisticsPost(
         int id,
         HttpContext context,
@@ -3593,9 +3460,6 @@ internal static class ImageServerEndpoints
         return resolution.ErrorResult ?? await ComputeClassStatisticsPost(resolution.LayerId, context, handler, cancellationToken);
     }
 
-    /// <summary>
-    /// Get pre-tiled image for efficient web mapping.
-    /// </summary>
     private static async Task<IResult> GetImageTile(
         int id,
         int level,
@@ -3994,27 +3858,7 @@ internal static class ImageServerEndpoints
     private static ExportImageRequest CreateRasterItemImageRequest(
         IReadOnlyDictionary<string, StringValues> values,
         long rasterId)
-    {
-        var request = CreateExportImageRequest(values);
-        return new ExportImageRequest
-        {
-            Bbox = request.Bbox,
-            Size = request.Size,
-            ImageSr = request.ImageSr,
-            BboxSr = request.BboxSr,
-            Format = request.Format,
-            PixelType = request.PixelType,
-            NoData = request.NoData,
-            NoDataInterpretation = request.NoDataInterpretation,
-            Interpolation = request.Interpolation,
-            Compression = request.Compression,
-            CompressionQuality = request.CompressionQuality,
-            BandIds = request.BandIds,
-            MosaicRule = FormattableString.Invariant($"{{\"mosaicMethod\":\"esriMosaicLockRaster\",\"lockRasterIds\":[{rasterId}]}}"),
-            RenderingRule = request.RenderingRule,
-            F = request.F,
-        };
-    }
+        => LockToRaster(CreateExportImageRequest(values), rasterId);
 
     // Thumbnail is a small rendered preview of one raster item. It reuses the shared export
     // pipeline (no new data pathway): the item is locked via mosaicRule and a small default size
@@ -4027,26 +3871,19 @@ internal static class ImageServerEndpoints
         IReadOnlyDictionary<string, StringValues> values,
         long rasterId)
     {
-        var request = CreateExportImageRequest(values);
-        return new ExportImageRequest
-        {
-            Bbox = request.Bbox,
-            Size = request.Size ?? DefaultThumbnailSize,
-            ImageSr = request.ImageSr,
-            BboxSr = request.BboxSr,
-            Format = request.Format,
-            PixelType = request.PixelType,
-            NoData = request.NoData,
-            NoDataInterpretation = request.NoDataInterpretation,
-            Interpolation = request.Interpolation,
-            Compression = request.Compression,
-            CompressionQuality = request.CompressionQuality,
-            BandIds = request.BandIds,
-            MosaicRule = FormattableString.Invariant($"{{\"mosaicMethod\":\"esriMosaicLockRaster\",\"lockRasterIds\":[{rasterId}]}}"),
-            RenderingRule = request.RenderingRule,
-            F = GetString(values, "f") ?? InlineImageFormat,
-        };
+        var item = LockToRaster(CreateExportImageRequest(values), rasterId);
+        return item with { Size = item.Size ?? DefaultThumbnailSize, F = GetString(values, "f") ?? InlineImageFormat };
     }
+
+    // A raster item renders one locked raster, so the time and multidimensional slices that choose
+    // between rasters are not forwarded.
+    private static ExportImageRequest LockToRaster(ExportImageRequest request, long rasterId)
+        => request with
+        {
+            MosaicRule = FormattableString.Invariant($"{{\"mosaicMethod\":\"esriMosaicLockRaster\",\"lockRasterIds\":[{rasterId}]}}"),
+            MultidimensionalDefinition = null,
+            Time = null,
+        };
 
     private static IdentifyRequest CreateIdentifyRequest(IReadOnlyDictionary<string, StringValues> values)
         => new()

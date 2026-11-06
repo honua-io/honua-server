@@ -8,11 +8,6 @@ using Honua.Geoprocessing;
 
 namespace Honua.Ai.Grounding;
 
-/// <summary>
-/// Applies the ADR-0027 material-ambiguity rule set to a grounding pass.
-/// Centralised here so the rule set is a single reviewable function and the
-/// conformance harness can pin the exact order of findings.
-/// </summary>
 internal static class MaterialAmbiguityEvaluator
 {
     public static IReadOnlyList<MaterialAmbiguityFinding> Evaluate(
@@ -23,18 +18,6 @@ internal static class MaterialAmbiguityEvaluator
         GroundingOptions options)
         => Evaluate(request, classification, candidates, requiredParameterGaps, options, out _);
 
-    /// <summary>
-    /// Evaluates material ambiguity and, as a side output, reports the bindings
-    /// the service auto-resolved instead of clarifying. A binding is
-    /// auto-resolved when exactly one candidate of a kind clears the
-    /// high-confidence floor and dominates any runner-up by more than the
-    /// material spread; in that case no <c>AmbiguousDataset</c>/
-    /// <c>AmbiguousProcess</c> finding is emitted for that kind. Two or more
-    /// viable candidates within the spread still surface the clarification, and
-    /// zero candidates keep the existing missing-input path. The resolved
-    /// bindings are auditable (id + score + runner-up margin) so the silent
-    /// auto-bind stays explainable (honua-server#1949).
-    /// </summary>
     public static IReadOnlyList<MaterialAmbiguityFinding> Evaluate(
         GroundingRequest request,
         WorkflowFamilyClassification classification,
@@ -206,16 +189,7 @@ internal static class MaterialAmbiguityEvaluator
         return findings;
     }
 
-    /// <summary>
-    /// Source is resolved when the caller has pinned at least one explicit
-    /// input or the top-ranked dataset is a high-confidence layer-backed
-    /// candidate. Mirrors the predicate <see cref="IntentDrafter"/> uses to
-    /// decide whether to emit a <c>publishing</c> block — service catalog
-    /// entries are excluded from auto-resolution so the evaluator and drafter
-    /// stay aligned. A pinned <c>ExplicitInputs[0]</c> that matches a service
-    /// candidate in the ranking is treated as unresolved so the drafter
-    /// cannot silently mislabel a service id as <c>FeatureLayer</c>.
-    /// </summary>
+    // A pinned explicit input that matches a service candidate stays unresolved so a service id is not labeled as a feature layer.
     private static bool IsPublishSourceResolved(GroundingRequest request, CandidateRanking candidates)
     {
         if (request.ExplicitInputs.Count > 0)
@@ -231,48 +205,15 @@ internal static class MaterialAmbiguityEvaluator
             && candidates.Datasets[0].DatasetSubtype != DatasetSubtype.Service;
     }
 
-    /// <summary>
-    /// Outcome of classifying a single kind's candidate list.
-    /// </summary>
     private enum ResolutionOutcome
     {
-        /// <summary>No candidate cleared the high-confidence floor.</summary>
         None,
 
-        /// <summary>
-        /// Exactly one candidate is materially dominant — auto-bind it.
-        /// </summary>
         AutoResolved,
 
-        /// <summary>
-        /// Two or more candidates are viable within the material spread — ask.
-        /// </summary>
         Ambiguous
     }
 
-    /// <summary>
-    /// Classifies a kind's ranked candidates into auto-resolve / ambiguous /
-    /// none. The candidates are pre-sorted by descending score
-    /// (<see cref="DeterministicGroundingEngine"/>), so the lead is the top hit.
-    ///
-    /// <list type="bullet">
-    /// <item>Lead below the high-confidence floor → <see cref="ResolutionOutcome.None"/>
-    /// (the existing missing-/low-confidence paths own this case).</item>
-    /// <item>Two or more candidates clear the floor within
-    /// <see cref="GroundingOptions.MaterialSpread"/> of the lead →
-    /// <see cref="ResolutionOutcome.Ambiguous"/>: genuinely competing
-    /// interpretations, keep clarifying.</item>
-    /// <item>Otherwise the lead is the sole dominant high-confidence candidate
-    /// (either the only one above the floor, or it beats the runner-up by more
-    /// than the material spread) → <see cref="ResolutionOutcome.AutoResolved"/>.</item>
-    /// </list>
-    ///
-    /// Reusing <see cref="GroundingOptions.MaterialSpread"/> as the dominance
-    /// margin keeps a single, conservatively-tuned knob: any runner-up close
-    /// enough to make the pair ambiguous is also close enough to block the
-    /// auto-bind, so the two paths can never both fire and a near-tie always
-    /// errs toward asking rather than a wrong silent bind.
-    /// </summary>
     private static ResolutionOutcome ClassifyResolution(
         IReadOnlyList<GroundingCandidate> candidates,
         GroundingOptions options,

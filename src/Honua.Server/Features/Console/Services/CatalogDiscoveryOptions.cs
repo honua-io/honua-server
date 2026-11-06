@@ -5,29 +5,24 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Console.Services;
 
-/// <summary>Explicit workspace mappings for the live discovery projection.</summary>
 public sealed class CatalogDiscoveryOptions
 {
-    /// <summary>Configuration section name.</summary>
     public const string SectionName = "Console:CatalogDiscovery";
 
-    /// <summary>Configured mappings; absent configuration publishes no workspaces.</summary>
     public List<CatalogDiscoveryWorkspaceOptions> Workspaces { get; set; } = [];
 }
 
-/// <summary>A workspace's explicit tenant and metadata namespace, never inferred from its identifier.</summary>
+// Tenant and metadata namespace are explicit and never inferred from the workspace identifier.
 public sealed class CatalogDiscoveryWorkspaceOptions
 {
-    /// <summary>Case-insensitive workspace identifier, matching the existing registry contract.</summary>
     public string Id { get; set; } = string.Empty;
 
-    /// <summary>Exact tenant identifier that must match the resolved request tenant.</summary>
+    // The tenant identifier must match the resolved request tenant.
     public string TenantId { get; set; } = string.Empty;
 
-    /// <summary>Exact metadata namespace required on the service, publication, and resource.</summary>
+    // The metadata namespace is required on the service, publication, and resource.
     public string Namespace { get; set; } = string.Empty;
 
-    /// <summary>Optional workspace display name.</summary>
     public string? DisplayName { get; set; }
 }
 

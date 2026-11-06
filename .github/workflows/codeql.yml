@@ -45,12 +45,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # The scheduled instrumented build needs more disk than the PR no-build lane.
       - name: Free disk space
         if: ${{ github.event_name != 'pull_request' }}
-        uses: jlumbroso/free-disk-space@main
+        uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
         with:
           tool-cache: false
           android: true
@@ -67,7 +67,7 @@ jobs:
 
       - name: Initialize CodeQL (pull request)
         if: ${{ github.event_name == 'pull_request' }}
-        uses: github/codeql-action/init@v4
+        uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           languages: csharp
           config-file: ./.github/codeql/codeql-config.yml
@@ -76,7 +76,7 @@ jobs:
 
       - name: Initialize CodeQL (full scan)
         if: ${{ github.event_name != 'pull_request' }}
-        uses: github/codeql-action/init@v4
+        uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           languages: csharp
           config-file: ./.github/codeql/codeql-config.yml
@@ -92,6 +92,6 @@ jobs:
         run: dotnet build Honua.sln --no-restore --configuration Release
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v4
+        uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           category: "/language:csharp"

@@ -16,8 +16,9 @@ namespace Honua.Snowflake.Features.FeatureStore;
 /// </summary>
 /// <remarks>
 /// <para>Implements the canonical <see cref="IFeatureDataProvider"/> + <see cref="IFeatureReader"/>
-/// surface for layers backed by Snowflake native <c>GEOGRAPHY</c>/<c>GEOMETRY</c> columns. Edits,
-/// native MVT, native FlatGeobuf/Geobuf/GML, statistics aggregates, top-features, bins, and H3 are
+/// surface for layers backed by Snowflake native <c>GEOGRAPHY</c>/<c>GEOMETRY</c> columns. Statistics
+/// aggregates (COUNT/SUM/MIN/MAX/AVG/STDDEV/VAR plus GROUP BY) honor the same WHERE and spatial
+/// filter as SELECT. Edits, native MVT, native FlatGeobuf/Geobuf/GML, top-features, bins, and H3 are
 /// deliberately disabled on this slice and are advertised as such via
 /// <see cref="FeatureProviderCapabilities"/>.</para>
 /// <para>Layer/storage configuration flows through the Metadata v2 provider binding passed by
@@ -30,7 +31,7 @@ internal sealed class SnowflakeFeatureStore : IFeatureDataProvider, IFeatureRead
         SupportsQuery = true,
         SupportsCount = true,
         SupportsExtent = true,
-        SupportsStatistics = false,
+        SupportsStatistics = true,
         Edits = FeatureProviderEditCapabilities.ReadOnly,
         Outputs = new FeatureProviderOutputCapabilities
         {
@@ -165,9 +166,13 @@ internal sealed class SnowflakeFeatureStore : IFeatureDataProvider, IFeatureRead
     }
 
     /// <inheritdoc />
-    public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryStatisticsAsync(
+    public async Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryStatisticsAsync(
         int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
-        => throw NotSupported(nameof(QueryStatisticsAsync), layerId);
+    {
+        var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var sql = SnowflakeFeatureQueryBuilder.BuildStatistics(mapping, query);
+        return await _dataAccess.ExecuteStatisticsAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
+    }
 
     /// <inheritdoc />
     public Task<TemporalExtentResult?> GetTemporalExtentAsync(

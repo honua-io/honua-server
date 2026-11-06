@@ -20,9 +20,6 @@ using Honua.ServiceDefaults;
 
 namespace Honua.Server.Features.PrintingTools;
 
-/// <summary>
-/// Background service that processes queued print jobs for large or high-resolution map compositions.
-/// </summary>
 internal sealed class PrintingToolsBackgroundService : BackgroundService
 {
     private readonly ILicenseOperationPolicy? _licensePolicy;

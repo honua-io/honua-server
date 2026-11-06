@@ -8,6 +8,7 @@ using Honua.Core.Queries.Filters;
 using Honua.Db.Databricks.Features.FeatureStore;
 using Honua.Db.Databricks.Features.FeatureStore.Services;
 using Honua.Db.Databricks.Features.Infrastructure;
+using Honua.Db.Databricks.Features.Security;
 using Honua.Db.Databricks.Queries.Filters;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -89,6 +90,7 @@ public static class ServiceCollectionExtensions
         // dialect per provider). TryAdd so a primary RDBMS provider's dialect wins when
         // Databricks is registered as a secondary backend.
         services.TryAddSingleton<ISqlDialect>(DatabricksSqlDialect.Instance);
+        services.AddDatabricksConnectionDriver();
 
         return services;
     }

@@ -16,7 +16,7 @@ using Honua.Protocols.GeoServices.ImageServer.Handlers;
 using Honua.Protocols.GeoServices.ImageServer.Models;
 using Honua.Protocols.GeoServices.ImageServer.Services;
 using Microsoft.Extensions.Primitives;
-using static Honua.Protocols.GeoServices.Soap.ArcGisSoapProtocol;
+using static Honua.Protocols.GeoServices.Soap.GeoServicesSoapProtocol;
 
 namespace Honua.Protocols.GeoServices.ImageServer;
 
@@ -798,7 +798,10 @@ internal static partial class ImageServerSoapEndpoints
                         bands: bands,
                         cancellationToken: ct);
             },
-            onBudgetExceeded: () => context.Response.Headers.CacheControl = "no-store",
+            onBudgetExceeded: ImageServerStatisticsBudget.MarkResponseIncomplete(
+                context.Response,
+                context.RequestServices.GetRequiredService<ILogger<ImageServerSoapLog>>(),
+                layerId),
             cancellationToken).ConfigureAwait(false);
         return statistics.OrderBy(static statistic => statistic.Band).ToArray();
     }
@@ -1000,11 +1003,7 @@ internal static partial class ImageServerSoapEndpoints
             extent is { Length: > 1 } ? extent[1] : null);
     }
 
-    /// <summary>
-    /// Resolves the caller's catalog field masks exactly as the catalog query does
-    /// (<see cref="ImageServerCatalogSecurity"/>), so SOAP metadata never advertises
-    /// a field the RecordSet would then drop.
-    /// </summary>
+    // SOAP metadata uses the same catalog field masks as the catalog query, so it never advertises a field the record set would drop.
     private static async Task<ImmutableArray<string>> ReadCatalogMasksAsync(
         HttpContext context,
         int layerId,

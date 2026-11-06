@@ -9,20 +9,10 @@ using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Core.Queries.Filters;
 
-/// <summary>
-/// Normalizes filter expressions by coercing literals to match layer field types.
-/// </summary>
 public static class FilterExpressionNormalizer
 {
-    /// <summary>
-    /// Maximum allowed nesting depth for filter expressions.
-    /// Prevents maliciously deep inputs from overflowing recursive normalization/translation paths.
-    /// </summary>
     public const int MaxExpressionDepth = 50;
 
-    /// <summary>
-    /// Normalizes a filter expression for the provided Metadata v2 resource.
-    /// </summary>
     public static FilterExpression Normalize(FilterExpression expression, MetadataV2Resource resource)
     {
         EnsureWithinMaxDepth(expression);
@@ -97,13 +87,6 @@ public static class FilterExpressionNormalizer
     private static void EnsureWithinMaxDepth(FilterExpression expression)
         => EnsureWithinBounds(expression, maxNodes: int.MaxValue);
 
-    /// <summary>
-    /// Iteratively verifies that an expression tree stays within
-    /// <see cref="MaxExpressionDepth"/> and <paramref name="maxNodes"/>. Runs without
-    /// recursion so it is safe on trees of any shape; parsers apply it to the tree they
-    /// produced before any recursive walk may see it. Nodes are counted the way those
-    /// walks visit them: a subtree referenced from several parents counts once per reference.
-    /// </summary>
     internal static void EnsureWithinBounds(FilterExpression expression, int maxNodes)
     {
         var stack = new Stack<(FilterExpression Expression, int Depth)>();

@@ -3,9 +3,6 @@
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// Source-generated structured log methods for geoprocessing service operations.
-/// </summary>
 internal static partial class GeoprocessingServiceLog
 {
     [LoggerMessage(8000, LogLevel.Information, "Plan validated: PlanId={PlanId}, IsExecutable={IsExecutable}, Violations={ViolationCount}")]

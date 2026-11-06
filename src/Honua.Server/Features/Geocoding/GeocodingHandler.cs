@@ -28,11 +28,6 @@ internal sealed class GeocodingHandler(
     private const string PrettyJsonFormat = "pjson";
     private const string JsonContentType = "application/json";
 
-    /// <summary>
-    /// Default spatial reference (WGS84) for a reverseGeocode <c>location</c> when the
-    /// location JSON does not declare its own <c>spatialReference</c>. This matches the
-    /// GeoServices reverseGeocode contract where the input location defaults to 4326.
-    /// </summary>
     private const int GeocodeDefaultLocationWkid = 4326;
 
     private readonly IGeocodeCoordinatorService _coordinatorService = coordinatorService ?? throw new ArgumentNullException(nameof(coordinatorService));
@@ -268,7 +263,7 @@ internal sealed class GeocodingHandler(
                             LatestWkid = outSrid
                         }
                     },
-                    Attributes = ProjectAttributes(EsriAddressAttributes(candidate), outFields)
+                    Attributes = ProjectAttributes(GeoServicesAddressAttributes(candidate), outFields)
                 });
             }
 
@@ -404,7 +399,7 @@ internal sealed class GeocodingHandler(
             }
 
             var address = new Dictionary<string, string?>(
-                EsriGeocodeAddressFields.Apply(match.Address, match.AddressType, match.StructuredAddress, match.Attributes),
+                GeoServicesGeocodeAddressFields.Apply(match.Address, match.AddressType, match.StructuredAddress, match.Attributes),
                 StringComparer.Ordinal);
 
             var response = new ReverseGeocodeResponse
@@ -719,7 +714,7 @@ internal sealed class GeocodingHandler(
                     Address = candidate.Address,
                     Score = candidate.Score,
                     Location = location,
-                    Attributes = ProjectAttributes(EsriAddressAttributes(candidate), outFields)
+                    Attributes = ProjectAttributes(GeoServicesAddressAttributes(candidate), outFields)
                 });
             }
 
@@ -1256,10 +1251,6 @@ internal sealed class GeocodingHandler(
         return tokens.Length == 0 ? null : tokens;
     }
 
-    /// <summary>
-    /// Reprojects a point from the provider's default reference to the requested output SRID,
-    /// returning <see langword="null"/> when the transform is not supported.
-    /// </summary>
     private ValueTask<(double X, double Y)?> TryReprojectGeocodePointAsync(
         HttpContext context,
         double x,
@@ -1268,11 +1259,6 @@ internal sealed class GeocodingHandler(
         CancellationToken cancellationToken)
         => TryReprojectGeocodePointAsync(context, x, y, _options.DefaultSpatialReferenceWkid, outSrid, cancellationToken);
 
-    /// <summary>
-    /// Reprojects a point between two SRIDs using the shared coordinate transform service.
-    /// Returns the input unchanged when both SRIDs match, or <see langword="null"/> when the
-    /// transform cannot be performed.
-    /// </summary>
     private static ValueTask<(double X, double Y)?> TryReprojectGeocodePointAsync(
         HttpContext context,
         double x,
@@ -1350,9 +1336,9 @@ internal sealed class GeocodingHandler(
         return positionalIndex;
     }
 
-    private static IReadOnlyDictionary<string, string?> EsriAddressAttributes(
+    private static IReadOnlyDictionary<string, string?> GeoServicesAddressAttributes(
         Honua.Geocoding.Features.Geocoding.Domain.GeocodeCandidate candidate)
-        => EsriGeocodeAddressFields.Apply(
+        => GeoServicesGeocodeAddressFields.Apply(
             candidate.Address,
             candidate.AddressType,
             candidate.StructuredAddress,
@@ -1493,14 +1479,7 @@ internal sealed class GeocodingHandler(
     private static bool TryParseLocation(string? rawLocation, out double x, out double y)
         => TryParseLocation(rawLocation, out x, out y, out _);
 
-    /// <summary>
-    /// Parses a reverse-geocode <c>location</c> parameter into x/y coordinates and the
-    /// spatial reference declared by the location JSON itself (Esri location geometries
-    /// carry their own <c>spatialReference</c>). The input SR defaults to WGS84 (4326)
-    /// when the location is a bare "x,y" pair or carries no spatialReference, matching
-    /// the GeoServices reverseGeocode default. The output SR (<c>outSR</c>) is handled
-    /// separately by the caller and never used to interpret the input location.
-    /// </summary>
+    // The output spatial reference is never used to interpret the input location.
     private static bool TryParseLocation(string? rawLocation, out double x, out double y, out int? inputWkid)
     {
         x = default;

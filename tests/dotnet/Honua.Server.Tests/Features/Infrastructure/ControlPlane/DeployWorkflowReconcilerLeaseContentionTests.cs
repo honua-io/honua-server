@@ -101,6 +101,195 @@ public sealed class DeployWorkflowReconcilerLeaseContentionTests
         backend.ObserveCalls.Should().Be(0, "a reconciler that cannot acquire the lease must not drive the backend");
     }
 
+    [Fact]
+    [Trait("Tier", "Fast")]
+    public async Task Checkpoint_PersistsMigrationAndRevisionsBeforeActivation()
+    {
+        var store = new InMemoryWorkflowOperationStore();
+        var backend = new CheckpointBackend(store);
+        var operation = CreateOperation() with { Status = WorkflowOperationStatus.Submitted, CurrentPhase = ICheckpointedDeployBackend.PendingPhase };
+        await store.TryCreateAsync(operation);
+        var reconciler = CreateReconciler(store, backend, new NullTelemetryEvaluator());
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        var prepared = (await store.GetAsync(operation.OperationId))!;
+        prepared.CurrentPhase.Should().Be(ICheckpointedDeployBackend.PreparedPhase);
+        prepared.ProviderOperationId.Should().Be("candidate");
+        prepared.Deploy!.CurrentRevision.Should().Be("stable");
+        prepared.ObservedState.Should().Be("original");
+        backend.ActivationCount.Should().Be(0);
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        backend.ActivationCount.Should().Be(1);
+        var activated = (await store.GetAsync(operation.OperationId))!;
+        activated.CurrentPhase.Should().Be(ICheckpointedDeployBackend.ActivatedPhase);
+        activated.Deploy!.TrafficExposedAt.Should().NotBeNull();
+        activated.Deploy.TrafficExposedAt.Should().BeAfter(operation.CreatedAt);
+    }
+
+    [Fact]
+    [Trait("Tier", "Fast")]
+    public async Task Checkpoint_InterruptedMigrationDoesNotRepeatOrActivate()
+    {
+        var store = new InMemoryWorkflowOperationStore();
+        var backend = new CheckpointBackend(store) { InterruptPreparation = true };
+        var operation = CreateOperation() with { Status = WorkflowOperationStatus.Submitted, CurrentPhase = ICheckpointedDeployBackend.PendingPhase };
+        await store.TryCreateAsync(operation);
+        var reconciler = CreateReconciler(store, backend, new NullTelemetryEvaluator());
+        using var shutdown = new CancellationTokenSource();
+        var running = reconciler.ReconcileWorkflowOperationAsync(operation.OperationId, shutdown.Token);
+        await backend.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        shutdown.Cancel();
+        await running;
+        (await store.GetAsync(operation.OperationId))!.CurrentPhase.Should().Be(ICheckpointedDeployBackend.PreparingPhase);
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        (await store.GetAsync(operation.OperationId))!.Status.Should().Be(WorkflowOperationStatus.ManualInterventionRequired);
+        backend.PreparationCount.Should().Be(1);
+        backend.ActivationCount.Should().Be(0);
+    }
+
+    [Fact]
+    [Trait("Tier", "Fast")]
+    public async Task Checkpoint_StagingDoesNotStampExposureUntilTrafficMoves()
+    {
+        var store = new InMemoryWorkflowOperationStore();
+        var backend = new CheckpointBackend(store) { StageOneObservation = true };
+        var original = CreateOperation();
+        var operation = original with
+        {
+            Status = WorkflowOperationStatus.Submitted,
+            CurrentPhase = ICheckpointedDeployBackend.ActivatedPhase,
+            Deploy = original.Deploy! with { CanaryRamp = new CanaryRampSpec { StepWeights = [10, 100], StepBakeDuration = TimeSpan.FromSeconds(1) } }
+        };
+        await store.TryCreateAsync(operation);
+        var reconciler = CreateReconciler(store, backend, new NullTelemetryEvaluator());
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        var staged = (await store.GetAsync(operation.OperationId))!;
+        staged.Deploy!.TrafficExposedAt.Should().BeNull();
+        staged.Deploy.CanaryRamp!.CurrentStepStartedAt.Should().BeNull();
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        (await store.GetAsync(operation.OperationId))!.Deploy!.TrafficExposedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    [Trait("Tier", "Fast")]
+    public async Task Checkpoint_UnhealthyCutoverReplayRequestsRollback()
+    {
+        var store = new InMemoryWorkflowOperationStore();
+        var backend = new CheckpointBackend(store) { CutoverNeedsRollback = true };
+        var operation = CreateOperation() with { Status = WorkflowOperationStatus.Submitted, CurrentPhase = ICheckpointedDeployBackend.CutoverPhase };
+        await store.TryCreateAsync(operation);
+        var reconciler = CreateReconciler(store, backend, new NullTelemetryEvaluator());
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        backend.RollbackCount.Should().Be(1);
+        var recovered = (await store.GetAsync(operation.OperationId))!;
+        recovered.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
+        recovered.Deploy!.TrafficExposedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    [Trait("Tier", "Fast")]
+    public void Checkpoint_ManualCutoverRefusesUnfinishedPreparation()
+    {
+        var operation = CreateOperation() with { ProviderOperationId = "candidate" };
+        foreach (var phase in new[] { ICheckpointedDeployBackend.PendingPhase, ICheckpointedDeployBackend.PreparingPhase,
+                     ICheckpointedDeployBackend.PreparedPhase, ICheckpointedDeployBackend.CutoverPhase })
+        {
+            DeployWorkflowService.IsCheckpointReadyForManualCutover(operation with { CurrentPhase = phase }).Should().BeFalse();
+        }
+
+        DeployWorkflowService.IsCheckpointReadyForManualCutover(operation with { CurrentPhase = ICheckpointedDeployBackend.ActivatedPhase }).Should().BeTrue();
+        DeployWorkflowService.IsCheckpointReadyForManualCutover(operation with { ProviderOperationId = null }).Should().BeFalse();
+    }
+
+    [Fact]
+    [Trait("Tier", "Fast")]
+    public async Task Checkpoint_CanaryRampPersistsStepBeforeTrafficAndStartsBakeAfterward()
+    {
+        var store = new InMemoryWorkflowOperationStore();
+        var backend = new CheckpointBackend(store);
+        var original = CreateOperation();
+        var operation = original with
+        {
+            Deploy = original.Deploy! with
+            {
+                TrafficExposedAt = DateTimeOffset.UtcNow,
+                CanaryRamp = new CanaryRampSpec { StepWeights = [10, 50, 100], StepBakeDuration = TimeSpan.FromSeconds(1) }
+            }
+        };
+        var pending = await DeployWorkflowReconciler.AdvanceOrPromoteAsync(operation, backend, CancellationToken.None);
+        pending.CurrentPhase.Should().Be(ICheckpointedDeployBackend.RampPhase);
+        pending.Deploy!.CanaryRamp!.CurrentStepIndex.Should().Be(1);
+        pending.Deploy.CanaryRamp.CurrentStepStartedAt.Should().BeNull();
+        backend.StartCount.Should().Be(0);
+        await store.TryCreateAsync(pending);
+        await CreateReconciler(store, backend, new NullTelemetryEvaluator()).ReconcileWorkflowOperationAsync(operation.OperationId);
+        backend.StartCount.Should().Be(1);
+        (await store.GetAsync(operation.OperationId))!.Deploy!.CanaryRamp!.CurrentStepStartedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    [Trait("Tier", "Fast")]
+    public async Task Checkpoint_FailedCanaryRampRequestsRollback()
+    {
+        var store = new InMemoryWorkflowOperationStore();
+        var backend = new CheckpointBackend(store) { FailRamp = true };
+        var original = CreateOperation();
+        var operation = original with
+        {
+            Deploy = original.Deploy! with
+            {
+                TrafficExposedAt = DateTimeOffset.UtcNow,
+                CanaryRamp = new CanaryRampSpec { StepWeights = [10, 50, 100], StepBakeDuration = TimeSpan.FromSeconds(1) }
+            }
+        };
+        var pending = await DeployWorkflowReconciler.AdvanceOrPromoteAsync(operation, backend, CancellationToken.None);
+        pending.CurrentPhase.Should().Be(ICheckpointedDeployBackend.RampPhase);
+        pending.Deploy!.CanaryRamp!.CurrentStepStartedAt.Should().BeNull();
+        backend.RollbackCount.Should().Be(0);
+        await store.TryCreateAsync(pending);
+        var reconciler = CreateReconciler(store, backend, new NullTelemetryEvaluator());
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        backend.RollbackCount.Should().Be(1);
+        (await store.GetAsync(operation.OperationId))!.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
+    }
+
+    [Fact]
+    [Trait("Tier", "Fast")]
+    public async Task Checkpoint_StagedProbeMustPassBeforeCutover()
+    {
+        var store = new InMemoryWorkflowOperationStore();
+        var backend = new CheckpointBackend(store) { ReadyForCutover = true };
+        var gate = new StagedGate { Wait = true };
+        var operation = CreateOperation() with { Status = WorkflowOperationStatus.Submitted, CurrentPhase = ICheckpointedDeployBackend.ActivatedPhase };
+        await store.TryCreateAsync(operation);
+        var reconciler = CreateReconciler(store, backend, gate);
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        backend.PromotionCount.Should().Be(0);
+        (await store.GetAsync(operation.OperationId))!.Deploy!.TrafficExposedAt.Should().BeNull();
+        gate.Wait = false;
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        backend.PromotionCount.Should().Be(0);
+        var authorized = (await store.GetAsync(operation.OperationId))!;
+        authorized.CurrentPhase.Should().Be(ICheckpointedDeployBackend.CutoverPhase);
+        authorized.Deploy!.TrafficExposedAt.Should().BeNull();
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        backend.PromotionCount.Should().Be(1);
+        (await store.GetAsync(operation.OperationId))!.Deploy!.TrafficExposedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    [Trait("Tier", "Fast")]
+    public async Task ProviderRollbackRecommendation_DoesNotWaitForTelemetry()
+    {
+        var store = new InMemoryWorkflowOperationStore();
+        var backend = new CheckpointBackend(store) { RecommendRollback = true };
+        var operation = CreateOperation() with { CurrentPhase = ICheckpointedDeployBackend.ActivatedPhase };
+        await store.TryCreateAsync(operation);
+        var reconciler = CreateReconciler(store, backend, new FailingTelemetryEvaluator());
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        backend.RollbackCount.Should().Be(1);
+        (await store.GetAsync(operation.OperationId))!.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
+    }
+
     // ---- helpers ---------------------------------------------------------
 
     private static DeployWorkflowReconciler CreateReconciler(
@@ -208,6 +397,85 @@ public sealed class DeployWorkflowReconcilerLeaseContentionTests
                 ObservedRevision = operation.Deploy?.CurrentRevision,
                 Message = "Rollback requested"
             });
+    }
+
+    private sealed class CheckpointBackend(InMemoryWorkflowOperationStore store) : IDeployBackend, ICheckpointedDeployBackend
+    {
+        public bool InterruptPreparation { get; init; }
+        public bool RecommendRollback { get; init; }
+        public bool FailRamp { get; init; }
+        public bool ReadyForCutover { get; init; }
+        public bool CutoverNeedsRollback { get; init; }
+        public int PromotionCount { get; private set; }
+        public bool StageOneObservation { get; init; }
+        public int ObserveCount { get; private set; }
+        public int RollbackCount { get; private set; }
+        public int StartCount { get; private set; }
+        public int PreparationCount { get; private set; }
+        public int ActivationCount { get; private set; }
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public string BackendName => "honua-gitops-kubernetes";
+        public DeployTargetKind TargetKind => DeployTargetKind.Kubernetes;
+        public bool RequiresCheckpoint(WorkflowOperationRecord operation) => true;
+        public async Task<DeployCheckpoint> PrepareCheckpointAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken)
+        {
+            PreparationCount++;
+            (await store.GetAsync(operation.OperationId, cancellationToken))!.CurrentPhase.Should().Be(ICheckpointedDeployBackend.PreparingPhase);
+            Entered.TrySetResult();
+            if (InterruptPreparation) await Task.Delay(Timeout.Infinite, cancellationToken);
+            return new DeployCheckpoint { CandidateRevision = "candidate", StableRevision = "stable", OriginalServiceRevision = "original" };
+        }
+        public async Task<DeployObservation> ActivateCheckpointAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken)
+        {
+            var saved = (await store.GetAsync(operation.OperationId, cancellationToken))!;
+            saved.CurrentPhase.Should().Be(ICheckpointedDeployBackend.PreparedPhase);
+            saved.ProviderOperationId.Should().Be("candidate");
+            saved.Deploy!.CurrentRevision.Should().Be("stable");
+            ActivationCount++;
+            return new DeployObservation { Status = WorkflowOperationStatus.Reconciling };
+        }
+        public Task<DeployBackendCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken = default) => Task.FromResult(new DeployBackendCapabilities());
+        public Task<DeployPlan> PlanAsync(DeployOperationSpec spec, CancellationToken cancellationToken = default) => Task.FromResult(new DeployPlan { IsReadyToSubmit = true });
+        public Task<DeploySubmissionResult> StartAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
+        {
+            StartCount++;
+            return Task.FromResult(new DeploySubmissionResult { Status = FailRamp ? WorkflowOperationStatus.Failed : WorkflowOperationStatus.Submitted });
+        }
+        public Task<DeployObservation> ObserveAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
+        {
+            ObserveCount++;
+            return Task.FromResult(new DeployObservation
+            {
+                Status = ReadyForCutover || (StageOneObservation && ObserveCount == 1) ? WorkflowOperationStatus.Submitted : WorkflowOperationStatus.Reconciling,
+                PromotionRecommended = ReadyForCutover,
+                RollbackRecommended = RecommendRollback
+            });
+        }
+        public Task<DeployObservation> PromoteAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
+        {
+            PromotionCount++;
+            return Task.FromResult(new DeployObservation { Status = WorkflowOperationStatus.Reconciling, RollbackRecommended = CutoverNeedsRollback });
+        }
+        public Task<DeployObservation> RollbackAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
+        {
+            RollbackCount++;
+            return Task.FromResult(new DeployObservation { Status = WorkflowOperationStatus.RollbackRequested });
+        }
+    }
+
+    private sealed class StagedGate : IDeployTelemetrySignalEvaluator
+    {
+        public bool Wait { get; set; }
+        public Task<DeployTelemetryDecision?> EvaluateAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
+            => Task.FromResult<DeployTelemetryDecision?>(null);
+        public Task<DeployTelemetryDecision?> EvaluateStagedCandidateAsync(WorkflowOperationRecord operation, bool candidateReady, CancellationToken cancellationToken = default)
+            => Task.FromResult<DeployTelemetryDecision?>(new DeployTelemetryDecision { WaitForMoreTelemetry = Wait || !candidateReady });
+    }
+
+    private sealed class FailingTelemetryEvaluator : IDeployTelemetrySignalEvaluator
+    {
+        public Task<DeployTelemetryDecision?> EvaluateAsync(WorkflowOperationRecord operation, CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("Telemetry is unavailable.");
     }
 
     private sealed class NullTelemetryEvaluator : IDeployTelemetrySignalEvaluator

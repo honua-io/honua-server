@@ -9,14 +9,7 @@ using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Coordination;
 
-/// <summary>
-/// Redis-backed durable <see cref="IVersionJobStore"/> (#1553). Persists async reconcile/post job
-/// records so the job surface is pollable across replicas and survives a restart. Mirrors the
-/// execution-job and import-job stores' Redis-string-with-TTL pattern. When Redis is not configured
-/// it delegates to the single-node in-memory store, which is correct for single-node and
-/// development/test deployments; per-operation Redis failures degrade to the in-memory store with a
-/// logged warning rather than failing the job surface outright.
-/// </summary>
+// A Redis failure on one operation falls back to the in-memory store instead of failing the job surface.
 internal sealed partial class RedisVersionJobStore : IVersionJobStore
 {
     private static readonly TimeSpan Retention = TimeSpan.FromDays(7);
@@ -40,7 +33,6 @@ internal sealed partial class RedisVersionJobStore : IVersionJobStore
         }
     }
 
-    /// <inheritdoc />
     public async Task SaveAsync(VersionJob job, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(job);
@@ -66,7 +58,6 @@ internal sealed partial class RedisVersionJobStore : IVersionJobStore
         }
     }
 
-    /// <inheritdoc />
     public async Task<VersionJob?> GetAsync(Guid jobId, CancellationToken cancellationToken = default)
     {
         if (_database is null)

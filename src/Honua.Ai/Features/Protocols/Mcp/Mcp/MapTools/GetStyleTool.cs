@@ -12,26 +12,8 @@ using Honua.Ai.Protocols.Mcp.Tools;
 
 namespace Honua.Ai.Protocols.Mcp.MapTools;
 
-/// <summary>
-/// MCP tool that inspects styles served through the canonical OGC API - Styles
-/// surface (ADR-0048). It is a thin, read-only adapter over the styleId-keyed
-/// <see cref="IStyleCatalog"/> and the neutral <see cref="IOgcStyleProjection"/>
-/// encoding projection — the same seams the <c>/ogc/styles</c> endpoints drive —
-/// so no style storage, conversion, or catalog logic is reimplemented here.
-///
-/// <para>
-/// Three modes, none of which mutate server state:
-/// <list type="bullet">
-///   <item><description>With <c>styleId</c>: resolves that single StyleRef.</description></item>
-///   <item><description>With <c>serviceId</c>+<c>layerId</c>: resolves the primary/default
-///     StyleRef bound to that published layer.</description></item>
-///   <item><description>With none: lists the available styles (a discovery catalog).</description></item>
-/// </list>
-/// </para>
-/// </summary>
 internal sealed class GetStyleTool : IMcpTool
 {
-    /// <summary>The advertised <c>tools/list</c> name of this tool.</summary>
     public const string ToolName = "honua_get_style";
 
     private const string ToolDescription =
@@ -52,13 +34,10 @@ internal sealed class GetStyleTool : IMcpTool
         _logger = logger;
     }
 
-    /// <inheritdoc />
     public string Name => ToolName;
 
-    /// <inheritdoc />
     public string WorkflowFamily => McpTelemetry.WorkflowFamily.Results;
 
-    /// <inheritdoc />
     public McpToolDescriptor Describe() => new()
     {
         Name = ToolName,
@@ -69,7 +48,6 @@ internal sealed class GetStyleTool : IMcpTool
         Annotations = McpToolAnnotationSets.ReadOnly("Get style")
     };
 
-    /// <inheritdoc />
     public async Task<McpToolsCallResult> InvokeAsync(
         HttpContext httpContext,
         JsonElement? arguments,
@@ -120,12 +98,6 @@ internal sealed class GetStyleTool : IMcpTool
             SummarizeStyleOutput);
     }
 
-    /// <summary>
-    /// One-line, information-bearing text summary emitted when the serialized
-    /// style payload is large (a big discovery catalog, or an inlined stylesheet
-    /// body): the essential identifiers and next-step hints live in text while
-    /// the full payload rides in <c>structuredContent</c> (MCP A1 token policy).
-    /// </summary>
     private static string SummarizeStyleOutput(McpGetStyleOutput output)
     {
         if (output.Styles is { } styles)
@@ -258,7 +230,7 @@ internal sealed class GetStyleTool : IMcpTool
             "mapbox-style" => OgcStyleEncoding.MapboxStyle,
             "sld-1.0.0" => OgcStyleEncoding.Sld10,
             "sld-1.1.0" => OgcStyleEncoding.Sld11,
-            "esri-drawing-info" => OgcStyleEncoding.EsriDrawingInfo,
+            "esri-drawing-info" => OgcStyleEncoding.GeoServicesDrawingInfo,
             _ => throw new GeoprocessingValidationException(
                 $"Unsupported style encoding '{encoding}'. Supported encodings: "
                 + "mapbox-style, sld-1.0.0, sld-1.1.0, esri-drawing-info.")
@@ -270,7 +242,7 @@ internal sealed class GetStyleTool : IMcpTool
     private static readonly (OgcStyleEncoding Encoding, string Wire, string MediaType)[] SupportedEncodings =
     [
         (OgcStyleEncoding.MapboxStyle, "mapbox-style", "application/vnd.mapbox.style+json"),
-        (OgcStyleEncoding.EsriDrawingInfo, "esri-drawing-info", "application/vnd.esri.drawinginfo+json"),
+        (OgcStyleEncoding.GeoServicesDrawingInfo, "esri-drawing-info", "application/vnd.esri.drawinginfo+json"),
         (OgcStyleEncoding.Sld10, "sld-1.0.0", "application/vnd.ogc.sld+xml;version=1.0"),
         (OgcStyleEncoding.Sld11, "sld-1.1.0", "application/vnd.ogc.sld+xml;version=1.1"),
     ];

@@ -8,30 +8,6 @@ using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Core.Features.FeatureStore.Domain;
 
-/// <summary>
-/// Provider-neutral runtime binding from a Metadata v2 resource to physical feature storage.
-/// </summary>
-/// <param name="TableName">Physical table or view name.</param>
-/// <param name="SchemaName">Optional schema qualifier.</param>
-/// <param name="CatalogName">Optional catalog qualifier for engines that expose catalogs.</param>
-/// <param name="DatabaseName">Optional database qualifier for engines that route across databases.</param>
-/// <param name="PrimaryKeyColumn">Primary key or stable object identifier column.</param>
-/// <param name="GeometryColumn">Geometry column, or null for non-spatial tables.</param>
-/// <param name="StorageSrid">SRID/CRS used by the stored geometry.</param>
-/// <param name="TemporalColumn">Optional temporal column used for time-aware resources.</param>
-/// <param name="AttributesColumn">Optional JSONB column that stores schema fields as a single
-/// document (e.g. the seed's shared <c>features</c> table). When set, the Postgres feature
-/// reader projects schema fields via <c>{AttributesColumn}-&gt;&gt;'fieldname'</c> instead of
-/// expecting a column per field.</param>
-/// <param name="LayerDiscriminatorColumn">Optional column that discriminates which layer a row
-/// belongs to when the physical table is shared across multiple layers (e.g. the shared
-/// <c>features</c> table's <c>layer_id</c> column). When set together with
-/// <see cref="LayerDiscriminatorValue"/>, every read is constrained with a
-/// <c>WHERE {LayerDiscriminatorColumn} = {LayerDiscriminatorValue}</c> predicate so a query for
-/// one layer cannot return another layer's rows stored in the same table.</param>
-/// <param name="LayerDiscriminatorValue">The discriminator value identifying the bound layer's
-/// rows in a shared table. Paired with <see cref="LayerDiscriminatorColumn"/>.</param>
-/// <param name="ProviderOptions">Provider-specific extension values when a neutral field is not enough.</param>
 public sealed record FeatureStorageMapping(
     string TableName,
     string? SchemaName = null,
@@ -46,48 +22,19 @@ public sealed record FeatureStorageMapping(
     string? LayerDiscriminatorColumn = null,
     int? LayerDiscriminatorValue = null)
 {
-    /// <summary>
-    /// Provider option key indicating that reads should be routed back to the source table.
-    /// </summary>
     public const string SourceBackedOption = "sourceBacked";
 
-    /// <summary>
-    /// Provider-specific extension values, normalized to an empty dictionary when unset.
-    /// </summary>
     public IReadOnlyDictionary<string, string> ProviderOptions { get; init; } =
         ProviderOptions ?? new Dictionary<string, string>();
 
-    /// <summary>
-    /// Gets a value indicating whether the mapping should be read from the source provider.
-    /// </summary>
     public bool IsSourceBacked =>
         ProviderOptions.TryGetValue(SourceBackedOption, out var value)
         && bool.TryParse(value, out var sourceBacked)
         && sourceBacked;
 
-    /// <summary>
-    /// Canonical name of the managed feature store's shared feature table. Layers whose
-    /// rows live in the managed store all map onto this one table and are separated by the
-    /// <see cref="LayerDiscriminatorColumn"/> layer discriminator.
-    /// </summary>
     public const string ManagedFeaturesTableName = "features";
 
-    /// <summary>
-    /// Gets a value indicating whether a mutation applied through the managed feature
-    /// store lands in the rows this mapping reads.
-    /// </summary>
-    /// <remarks>
-    /// <para>The managed feature writer always writes the shared
-    /// <see cref="ManagedFeaturesTableName"/> table keyed by layer id; it has no notion of
-    /// the physical table a mapping names. For a mapping that is not source-backed, or for
-    /// one that is source-backed onto the shared table itself, that is the same storage the
-    /// serving protocols read, so a write is readable back.</para>
-    /// <para>A layer published over an arbitrary source table is different: publishing
-    /// materializes a one-time snapshot into the shared table for the tile path while the
-    /// feature protocols read the live source table. A managed write against such a layer
-    /// therefore lands in the snapshot and is never readable back — the protocols must
-    /// refuse it rather than acknowledge a write that cannot be served (honua-server#4707).</para>
-    /// </remarks>
+    // A managed write against a layer published over an arbitrary source table is not readable back, so the protocols must refuse it.
     public bool SupportsManagedWrites =>
         !IsSourceBacked
         || (ManagedFeaturesTableName.Equals(TableName, StringComparison.OrdinalIgnoreCase)
@@ -95,9 +42,6 @@ public sealed record FeatureStorageMapping(
             && string.Equals(LayerDiscriminatorColumn, "layer_id", StringComparison.OrdinalIgnoreCase)
             && LayerDiscriminatorValue.HasValue);
 
-    /// <summary>
-    /// Gets the best available fully qualified storage name for diagnostics and capability reporting.
-    /// </summary>
     public string QualifiedName
     {
         get
@@ -114,13 +58,6 @@ public sealed record FeatureStorageMapping(
         }
     }
 
-    /// <summary>
-    /// Builds a feature storage mapping from a Metadata v2 resource and storage binding.
-    /// </summary>
-    /// <param name="resource">Canonical Metadata v2 resource.</param>
-    /// <param name="storageBinding">Storage binding that materializes the resource.</param>
-    /// <returns>Resolved feature storage mapping.</returns>
-    /// <exception cref="InvalidOperationException">Thrown when the binding cannot be used as relational feature storage.</exception>
     public static FeatureStorageMapping FromMetadata(
         MetadataV2Resource resource,
         MetadataV2StorageBinding storageBinding)
@@ -184,10 +121,6 @@ public sealed record FeatureStorageMapping(
         return mapping;
     }
 
-    /// <summary>
-    /// Validates the storage mapping.
-    /// </summary>
-    /// <returns>Validation error messages, empty when valid.</returns>
     public IReadOnlyList<string> Validate()
     {
         var errors = new List<string>();

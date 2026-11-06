@@ -7,17 +7,10 @@ using Honua.Infrastructure.Middleware;
 
 namespace Honua.Protocols.GeoServices.GeometryService;
 
-/// <summary>
-/// Maps geometry service REST endpoints under the canonical GeometryServer route.
-/// Supports both GET and POST for each operation per ArcGIS specification.
-/// </summary>
 internal static class GeometryServiceEndpoints
 {
     private const string GeometryRoutePrefix = "/rest/services/Utilities/Geometry/GeometryServer";
 
-    /// <summary>
-    /// Maps geometry service endpoints under the canonical GeometryServer route.
-    /// </summary>
     public static IEndpointRouteBuilder MapGeometryServiceEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
@@ -310,7 +303,7 @@ internal static class GeometryServiceEndpoints
     // their discovery handshake before invoking buffer/simplify/etc.
     private const string GeometryServerInfoJson =
         // No ArcGIS Server version (currentVersion) is advertised — Honua does not impersonate
-        // a specific ArcGIS Server release (guarded by NoArcGisServerVersionTests).
+        // a specific ArcGIS Server release (guarded by NoGeoServicesServerVersionTests).
         "{\"serviceDescription\":\"Honua Geometry Service — buffer, simplify, project, intersect, union, clip, difference, areasAndLengths, lengths, distance, relation, densify, convexHull, generalize, labelPoints, cut, trimExtend, offset, autoComplete, reshape, findTransformations, toGeoCoordinateString, fromGeoCoordinateString.\","
         + "\"maxBufferCount\":1000,"
         + "\"maxSimplifyCount\":1000,"

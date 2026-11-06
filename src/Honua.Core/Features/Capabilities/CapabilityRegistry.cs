@@ -153,6 +153,7 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("honua_studio_remove_layer", "studio_remove_layer", "execution"),
             ("honua_studio_set_layer_style", "studio_set_layer_style", "execution"),
             ("honua_studio_set_layer_visibility", "studio_set_layer_visibility", "execution"),
+            ("honua_studio_set_map_style", "studio_set_map_style", "execution"),
             ("honua_studio_set_view", "studio_set_view", "execution"),
             ("honua_studio_add_widget", "studio_add_widget", "execution"),
             ("honua_studio_remove_widget", "studio_remove_widget", "execution"),
@@ -440,7 +441,7 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             "filegdb",
             "flatgeobuf",
             "geoparquet",
-            "esrijson",
+            "geoservicesjson",
             "wkb",
         ];
 

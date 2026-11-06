@@ -20,37 +20,15 @@ using Honua.Core.Abstractions.Features.Rasters.Abstractions;
 
 namespace Honua.Protocols.Stac.Services;
 
-/// <summary>
-/// Maps Honua catalog entities (layers, services, features) to STAC representations.
-/// </summary>
 internal sealed class StacMappingService
 {
     [ThreadStatic]
     private static GeoJsonWriter? _geoJsonWriter;
 
-    /// <summary>
-    /// A JSON null element used to represent absent geometry.  RFC 7946 §3.2 and STAC 1.0.0
-    /// require the <c>geometry</c> member to be present even when its value is <c>null</c>; a
-    /// missing member is invalid.  Storing an explicit JSON-null <see cref="JsonElement"/>
-    /// (rather than C# <see langword="null"/>) means the property is non-null in C# so the
-    /// source-generated serializer emits <c>"geometry":null</c> instead of omitting the key.
-    /// The <see cref="JsonElement.Clone"/> call makes the element lifetime-independent of the
-    /// originating <see cref="JsonDocument"/>.
-    /// </summary>
+    // RFC 7946 requires the geometry member to be present, so a missing geometry is stored as a cloned JSON null rather than omitted.
     private static readonly JsonElement JsonNullElement = JsonDocument.Parse("null").RootElement.Clone();
 
     private static GeoJsonWriter GetGeoJsonWriter() => _geoJsonWriter ??= new GeoJsonWriter();
-    /// <summary>
-    /// Builds a STAC Collection directly from a Metadata v2 resource/publication.
-    /// </summary>
-    /// <remarks>
-    /// <paramref name="layerIndex"/> is the collection's protocol-facing identifier; the
-    /// feature store probe reads <paramref name="storageLayerId"/>, the publication's
-    /// storage-layer handle, and is skipped when the publication has none. The mapped
-    /// collection metadata — license, keywords, declared extensions — is read from the V2
-    /// resource via <see cref="StacResourceExtensions"/>; spatial/temporal extents come from
-    /// the V2 resource's spatial/temporal extensions plus the feature store probe.
-    /// </remarks>
     public static async Task<StacCollection> MapResourceToCollectionAsync(
         MetadataV2Resource resource,
         MetadataV2Publication publication,
@@ -241,11 +219,6 @@ internal sealed class StacMappingService
             ?? layerIndex.ToString(CultureInfo.InvariantCulture);
     }
 
-    /// <summary>
-    /// Builds a STAC item directly from a Metadata v2 resource + publication, sourcing
-    /// declared STAC extensions, license, keywords, and temporal field hints from the
-    /// resource's STAC + Temporal extensions.
-    /// </summary>
     public static StacItem MapFeatureToItem(
         Feature feature,
         MetadataV2Resource resource,
@@ -445,11 +418,6 @@ internal sealed class StacMappingService
             : "unknown";
     }
 
-    /// <summary>
-    /// Resolves a deterministic, non-null datetime for an Item that carries no per-feature temporal
-    /// value, so the STAC Item datetime invariant is never violated.  Prefers the resource's declared
-    /// temporal-extent start, then its end, then the Unix epoch.
-    /// </summary>
     private static DateTimeOffset ResolveFallbackInstant(MetadataV2Resource resource)
     {
         var extent = resource.Temporal?.Extent;
@@ -534,9 +502,6 @@ internal sealed class StacMappingService
            attributeName.Equals("stac_id", StringComparison.OrdinalIgnoreCase) ||
            attributeName.Equals("item_id", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Builds the STAC extent directly from a V2 resource's spatial/temporal extensions.
-    /// </summary>
     private static async Task<StacExtent> BuildStacExtentV2Async(
         MetadataV2Resource resource,
         int? storageLayerId,
@@ -591,10 +556,6 @@ internal sealed class StacMappingService
         };
     }
 
-    /// <summary>
-    /// Converts a parsed geometry to a GeoJSON JsonElement.
-    /// Returns null if serialization fails — STAC allows null geometry.
-    /// </summary>
     private static JsonElement? ConvertGeometryToGeoJsonElement(NetTopologySuite.Geometries.Geometry geom)
     {
         try

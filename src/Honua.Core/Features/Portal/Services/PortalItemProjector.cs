@@ -13,13 +13,6 @@ using Honua.Core.Features.Security.Domain;
 
 namespace Honua.Core.Features.Portal.Services;
 
-/// <summary>
-/// Default <see cref="IPortalItemProjector"/> implementation. Maps Esri-shaped
-/// Metadata v2 services (FeatureServer / MapServer / ImageServer) to Portal item
-/// documents, deriving the item <c>url</c> from the caller-supplied base URL and
-/// the <c>access</c> tier from the resource/service <see cref="AccessPolicy"/> via
-/// the shared <see cref="IAccessPolicyEvaluator"/>.
-/// </summary>
 public sealed class PortalItemProjector : IPortalItemProjector
 {
     // A throwaway authenticated principal used purely to probe the access tier:
@@ -33,22 +26,6 @@ public sealed class PortalItemProjector : IPortalItemProjector
     private readonly IEsriConstructCapabilityRegistry _capabilityRegistry;
     private readonly IPortalResourceReadAuthorizer _readAuthorizer;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="PortalItemProjector"/> class.
-    /// </summary>
-    /// <param name="accessPolicyEvaluator">
-    /// The shared access-policy evaluator that decides whether a principal may read
-    /// a resource/service. This is the same seam the protocol endpoints enforce
-    /// through, so the Portal <c>access</c> tier cannot drift from the real RBAC
-    /// decision.
-    /// </param>
-    /// <param name="capabilityRegistry">
-    /// The shared Esri construct capability/fidelity registry (#1382). The facade
-    /// lane resolves the "can this service construct be served through the Portal
-    /// facade?" verdict from the registry instead of a private table, so the
-    /// facade, importer, and GP lanes stay aligned on one source of truth.
-    /// </param>
-    /// <param name="readAuthorizer">Resource-aware canonical read authorization, including service group audiences.</param>
     public PortalItemProjector(
         IAccessPolicyEvaluator accessPolicyEvaluator,
         IEsriConstructCapabilityRegistry capabilityRegistry,
@@ -62,7 +39,6 @@ public sealed class PortalItemProjector : IPortalItemProjector
         _readAuthorizer = readAuthorizer;
     }
 
-    /// <inheritdoc />
     public IReadOnlyList<PortalItem> ProjectVisibleItems(
         MetadataV2GraphSnapshot snapshot,
         ClaimsPrincipal principal,
@@ -86,7 +62,6 @@ public sealed class PortalItemProjector : IPortalItemProjector
         return items;
     }
 
-    /// <inheritdoc />
     public PortalItem? ProjectItem(
         MetadataV2GraphSnapshot snapshot,
         ClaimsPrincipal principal,
@@ -191,11 +166,6 @@ public sealed class PortalItemProjector : IPortalItemProjector
         return BuildItem(service, firstVisibleResource, itemType, urlType, access, baseUrl);
     }
 
-    /// <summary>
-    /// Projects the composed (resource, service) access policy into the Esri
-    /// <c>public</c>/<c>org</c>/<c>private</c> tier by probing the shared evaluator
-    /// with synthetic principals — no second ACL model.
-    /// </summary>
     private string DeriveAccessTier(AccessPolicy? layerPolicy, AccessPolicy? servicePolicy)
     {
         if (_accessPolicyEvaluator.Evaluate(AnonymousPrincipal, layerPolicy, servicePolicy, scope: null).IsAllowed)
@@ -245,11 +215,6 @@ public sealed class PortalItemProjector : IPortalItemProjector
         };
     }
 
-    /// <summary>
-    /// Builds the item URL pointing at the existing GeoServices service endpoint,
-    /// mirroring <c>GeoservicesCatalogEndpoints</c> so the Portal item and the
-    /// services directory always agree on host/scheme and route shape.
-    /// </summary>
     private static string BuildServiceUrl(string baseUrl, string serviceName, string urlType)
     {
         var trimmedBase = baseUrl.TrimEnd('/');
@@ -257,13 +222,6 @@ public sealed class PortalItemProjector : IPortalItemProjector
         return $"{trimmedBase}/rest/services/{escapedName}/{urlType}";
     }
 
-    /// <summary>
-    /// Maps a Metadata v2 primary protocol to the Esri Portal item type, the
-    /// GeoServices URL route segment, and the shared capability-registry
-    /// construct key. Returns <see langword="false"/> for non-Esri protocols
-    /// (OGC API, STAC, OData, …) which are never Portal items. The servability
-    /// verdict for the mapped construct is owned by the registry, not this table.
-    /// </summary>
     private static bool TryMapItemType(
         string? primaryProtocol,
         out string itemType,
@@ -275,17 +233,17 @@ public sealed class PortalItemProjector : IPortalItemProjector
             case ServiceProtocols.FeatureServer:
                 itemType = PortalItemTypes.FeatureService;
                 urlType = ServiceProtocols.FeatureServer;
-                constructKey = EsriConstructCapabilityRegistry.Keys.FacadeFeatureService;
+                constructKey = GeoServicesConstructCapabilityRegistry.Keys.FacadeFeatureService;
                 return true;
             case ServiceProtocols.MapServer:
                 itemType = PortalItemTypes.MapService;
                 urlType = ServiceProtocols.MapServer;
-                constructKey = EsriConstructCapabilityRegistry.Keys.FacadeMapService;
+                constructKey = GeoServicesConstructCapabilityRegistry.Keys.FacadeMapService;
                 return true;
             case ServiceProtocols.ImageServer:
                 itemType = PortalItemTypes.ImageService;
                 urlType = ServiceProtocols.ImageServer;
-                constructKey = EsriConstructCapabilityRegistry.Keys.FacadeImageService;
+                constructKey = GeoServicesConstructCapabilityRegistry.Keys.FacadeImageService;
                 return true;
             default:
                 itemType = string.Empty;

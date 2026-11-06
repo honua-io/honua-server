@@ -7,22 +7,11 @@ using System.Text;
 
 namespace Honua.Core.Features.Share.Domain;
 
-/// <summary>
-/// Opaque keyset-pagination cursor over a <c>(timestamp, id)</c> ordering. Shared by the
-/// in-memory and Postgres Share export stores so cursor encoding stays identical across
-/// providers.
-/// </summary>
 public static class ShareCursor
 {
     private const string LosslessPrefix = "v2";
     private const char Separator = ':';
 
-    /// <summary>
-    /// Encodes a keyset position into an opaque, URL-safe cursor token.
-    /// </summary>
-    /// <param name="timestamp">Ordering timestamp of the last item on the page.</param>
-    /// <param name="id">Tiebreak identifier of the last item on the page.</param>
-    /// <returns>An opaque cursor token.</returns>
     public static string Encode(DateTimeOffset timestamp, string id)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(id);
@@ -35,13 +24,6 @@ public static class ShareCursor
         return Convert.ToBase64String(Encoding.UTF8.GetBytes(raw));
     }
 
-    /// <summary>
-    /// Attempts to decode an opaque cursor token into its keyset position.
-    /// </summary>
-    /// <param name="cursor">Cursor token to decode.</param>
-    /// <param name="timestamp">Decoded ordering timestamp.</param>
-    /// <param name="id">Decoded tiebreak identifier.</param>
-    /// <returns><c>true</c> when the cursor was well-formed; otherwise <c>false</c>.</returns>
     public static bool TryDecode(string? cursor, out DateTimeOffset timestamp, out string id)
     {
         timestamp = default;

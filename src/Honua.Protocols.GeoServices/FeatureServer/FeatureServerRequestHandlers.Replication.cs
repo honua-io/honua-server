@@ -23,6 +23,7 @@ using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Security;
 using Honua.Infrastructure.Validation;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
@@ -41,12 +42,7 @@ internal static partial class FeatureServerEndpoints
             FeatureCatalog.FieldOpsOfflineSyncKey,
             "GeoServices offline sync");
 
-    /// <summary>
-    /// Enforces the service-local sync contract after the deployment-wide Preview gate has
-    /// passed. A service without the declared <c>Sync</c> capability advertises
-    /// <c>syncEnabled=false</c>; allowing replica lifecycle calls anyway would create state
-    /// that Esri clients cannot discover or safely reconcile (#4114).
-    /// </summary>
+    // A service that does not advertise Sync cannot accept replica lifecycle calls, or clients would be unable to discover or reconcile that state.
     private static IResult? RequireServiceSyncCapability(
         HttpContext context,
         MetadataV2Service service)
@@ -57,20 +53,7 @@ internal static partial class FeatureServerEndpoints
                 "Offline sync is not enabled for this service.",
                 ["The FeatureServer service must declare the Sync capability before replica operations can be used."]);
 
-    /// <summary>
-    /// Validates a replica upload against the shared edit limits before the sync pipeline runs.
-    /// Returns the client-facing message when a limit is exceeded, or <c>null</c> when the upload is
-    /// within limits.
-    /// </summary>
-    /// <remarks>
-    /// The whole upload must be checked here because under manual review the conflicting rows never
-    /// reach <c>FeatureServerEditsHandler</c> — and if every row conflicts it is not called at all —
-    /// so its own limit checks would let an oversized payload through while still persisting one
-    /// durable conflict per edit. The per-operation counting mirrors
-    /// <c>FeatureServerEditsHandler.ValidateEditLimits</c>, which applies <c>MaxFeaturesPerEdit</c>
-    /// separately to adds/updates/deletes; a combined per-layer count would reject uploads the shared
-    /// pipeline accepts (#2430).
-    /// </remarks>
+    // The whole upload is limit-checked before the sync pipeline because manual review can persist conflicts without ever calling the edits handler, and the shared policy counts adds, updates, and deletes separately.
     internal static string? ValidateUploadEditLimits(
         ImmutableArray<ReplicaUploadLayerEdits> layerEdits,
         EditLimits editLimits)
@@ -105,9 +88,8 @@ internal static partial class FeatureServerEndpoints
                 }
             }
 
-            if (adds > editLimits.MaxFeaturesPerEdit ||
-                updates > editLimits.MaxFeaturesPerEdit ||
-                deletes > editLimits.MaxFeaturesPerEdit)
+            if (EditLimitPolicy.Evaluate(new EditCounts(adds, updates, deletes), editLimits) is
+                { Kind: EditLimitViolationKind.FeaturesPerOperation })
             {
                 return $"Uploaded replica edits exceed the maximum of {editLimits.MaxFeaturesPerEdit} features per operation.";
             }
@@ -116,14 +98,7 @@ internal static partial class FeatureServerEndpoints
         return null;
     }
 
-    /// <summary>
-    /// Rejects replica write operations (createReplica / synchronizeReplica / unRegisterReplica) on
-    /// backends that cannot durably persist replicas — read-only providers (DuckDB, MySQL/MariaDB)
-    /// whose <see cref="IReplicaRepository"/> is a no-op. Returns a conformant Esri-shaped
-    /// <c>501 Not Implemented</c> error so an Esri client receives an explicit "operation not
-    /// supported" response instead of a silently no-op'd sync that is never durably applied (#2136).
-    /// Returns <c>null</c> when the active backend supports replica persistence.
-    /// </summary>
+    // Replica writes on DuckDB and MySQL or MariaDB return 501 because their persistence is a no-op, so a silent sync would not be durable.
     private static IResult? RequireReplicaPersistenceSupport(HttpContext context)
     {
         var replicaRepository = context.RequestServices.GetRequiredService<IReplicaRepository>();
@@ -357,7 +332,7 @@ internal static partial class FeatureServerEndpoints
             return syncCapabilityError;
         }
 
-        if (string.IsNullOrWhiteSpace(EditOwnerSubject.Resolve(context.User)))
+        if (string.IsNullOrWhiteSpace(ServiceDataEditorAuthorization.ResolveOwnerSubject(context.User)))
         {
             return StandardErrorHelpers.CreateForbidden(
                 context,
@@ -712,12 +687,6 @@ internal static partial class FeatureServerEndpoints
             contentType: "application/json");
     }
 
-    /// <summary>
-    /// Reduces one layer's collapsed changes to the rows the caller may read and the replica scope
-    /// covers. The change log holds server history, not the caller's row-visibility view, so current ids
-    /// are re-queried through the shared reader seam (in pages of <paramref name="pageSize"/>) with the
-    /// scope's where clause and geometry applied, keeping counts and payloads in agreement.
-    /// </summary>
     private static async Task<(long[] InsertIds, long[] UpdateIds, long[] DeleteIds)> FilterChangesForReadAsync(
         HttpContext context,
         ReplicaLayerV2 layer,
@@ -811,11 +780,6 @@ internal static partial class FeatureServerEndpoints
             [.. classified.DeleteIds, .. filtered.DeleteIds]);
     }
 
-    /// <summary>
-    /// Returns which object ids' pre-change images (recorded by <paramref name="changeIds"/>) lie inside
-    /// <paramref name="layerScope"/> and the caller's row visibility, queried in pages of
-    /// <paramref name="pageSize"/>.
-    /// </summary>
     private static async Task<HashSet<long>> QueryReadablePreChangeIdsAsync(
         IPreChangeImageReader reader,
         ReplicaLayerV2 layer,
@@ -843,10 +807,6 @@ internal static partial class FeatureServerEndpoints
         return readable;
     }
 
-    /// <summary>
-    /// Returns which of <paramref name="objectIds"/> currently exist inside <paramref name="layerScope"/>
-    /// and the caller's row visibility, queried through the shared reader in pages of <paramref name="pageSize"/>.
-    /// </summary>
     private static async Task<HashSet<long>> QueryReadableReplicaIdsAsync(
         IFeatureReader featureReader,
         ReplicaLayerV2 layer,
@@ -875,15 +835,6 @@ internal static partial class FeatureServerEndpoints
         return readable;
     }
 
-    /// <summary>
-    /// Serves the no-replicaID <c>extractChanges</c> flow: the change tracking the ArcGIS API for Python
-    /// <c>FeatureLayerCollection.extract_changes()</c> uses. The window comes from <c>layerServerGens</c>
-    /// (per layer) or <c>serverGen</c>/<c>serverGens</c> (<c>[min, max]</c>), the data scope from
-    /// <c>geometry</c>/<c>layerQueries</c>, and the change categories from
-    /// <c>returnInserts</c>/<c>returnUpdates</c>/<c>returnDeletes</c>. The response carries the Esri
-    /// <c>edits</c>/<c>layerServerGens</c> envelope beside the legacy Honua <c>layerChanges</c> (#4017).
-    /// Only available on sync/change-tracking-enabled services.
-    /// </summary>
     private static async Task<IResult> HandleExtractChangesWithoutReplicaAsync(
         string serviceId,
         HttpContext context,
@@ -1230,6 +1181,13 @@ internal static partial class FeatureServerEndpoints
                         [uploadKeyError!]);
                 }
 
+                if (IdempotencyCaller.Resolve(context) is not { } uploadCaller)
+                {
+                    return StandardErrorHelpers.CreateBadRequest(context,
+                        "Invalid synchronizeReplica request",
+                        [IdempotencyCaller.UnbindableCallerMessage]);
+                }
+
                 uploadStore = context.RequestServices.GetRequiredService<IReplicaUploadIdempotencyStore>();
                 uploadFingerprint = ComputeReplicaUploadFingerprint(syncDirection, rollbackOnFailure, rollbackOnFailureSupplied, lastWriteWins, editsJson!);
                 keylessUpload = explicitUploadKey is null;
@@ -1238,7 +1196,7 @@ internal static partial class FeatureServerEndpoints
                 var scope = new ReplicaUploadIdempotencyScope(
                     replica.ServiceId,
                     replicaId,
-                    EditOwnerSubject.Resolve(context.User) ?? "anonymous",
+                    uploadCaller,
                     keylessUpload
                         ? FingerprintUploadKey(uploadFingerprint, replica.UploadBaseGeneration)
                         : "key:" + explicitUploadKey);
@@ -1561,12 +1519,7 @@ internal static partial class FeatureServerEndpoints
         return Results.Json(response, FeatureServerJsonContext.Default.SynchronizeReplicaResponse, contentType: "application/json");
     }
 
-    /// <summary>
-    /// Resolves the client-supplied key of a <c>synchronizeReplica</c> upload (#4026): the
-    /// <c>Idempotency-Key</c> header shared with applyEdits, or the Esri <c>editsUploadID</c> parameter a
-    /// retrying client re-sends. Both carriers use the applyEdits key rules and must agree when both are
-    /// present. Returns <see langword="true"/> with a <see langword="null"/> key when neither is supplied.
-    /// </summary>
+    // The Idempotency-Key header and editsUploadId must agree when both are present.
     private static bool TryResolveReplicaUploadKey(
         HttpContext context,
         IReadOnlyDictionary<string, StringValues> values,
@@ -1598,17 +1551,7 @@ internal static partial class FeatureServerEndpoints
         return true;
     }
 
-    /// <summary>
-    /// SHA-256 fingerprint of every input that decides what an upload applies: the sync direction, the
-    /// rollback and conflict-handling modes, and the raw edits payload a retry re-sends byte for byte
-    /// (#4026). A reused key whose fingerprint differs is a different upload, not a retry.
-    /// </summary>
-    /// <remarks>
-    /// An upload that omits <c>rollbackOnFailure</c> keeps the "best-effort" token it hashed to before the
-    /// default became true (#4031). A retry that spans that change must still find the record its first
-    /// attempt wrote inside the dedupe window; a new token would turn a keyless retry into a fresh upload
-    /// that applies its adds again. The cost is that an omitted value and an explicit false fingerprint alike.
-    /// </remarks>
+    // An omitted rollbackOnFailure still hashes the best-effort token, the same token as an explicit false, so a retry inside the dedupe window finds the first upload instead of applying its adds again.
     internal static string ComputeReplicaUploadFingerprint(
         string syncDirection,
         bool rollbackOnFailure,
@@ -1624,17 +1567,10 @@ internal static partial class FeatureServerEndpoints
         return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(material)));
     }
 
-    /// <summary>
-    /// Key of a keyless upload: its fingerprint at the replica upload cursor it was sent from (#4026).
-    /// </summary>
     private static string FingerprintUploadKey(string fingerprint, long uploadCursor)
         => string.Concat("fingerprint:", fingerprint, ":", uploadCursor.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
-    /// <summary>
-    /// Records an upload that committed rows under the reservation this request holds (#4026). The store
-    /// refuses the write when another request now owns the key, so a request that outlived its
-    /// reservation cannot overwrite a newer reservation or record.
-    /// </summary>
+    // The receipt write is refused when another request owns the key, so an expired reservation cannot overwrite a newer one.
     private static Task RecordReplicaUploadAsync(
         IReplicaUploadIdempotencyStore? store,
         ReplicaUploadIdempotencyScope? scope,
@@ -1644,10 +1580,7 @@ internal static partial class FeatureServerEndpoints
             ? store.RecordAsync(heldScope, reservationToken, record)
             : Task.CompletedTask;
 
-    /// <summary>
-    /// Releases the upload reservation this request holds, if any (#4026). Release is compare-and-delete
-    /// against the token, so it can never discard a recorded upload or another request's reservation.
-    /// </summary>
+    // Release compares and deletes only this request's token, so it cannot discard a recorded upload or another request's reservation.
     private static Task ReleaseReplicaUploadReservationAsync(
         IReplicaUploadIdempotencyStore? store,
         ReplicaUploadIdempotencyScope? scope,
@@ -1656,13 +1589,7 @@ internal static partial class FeatureServerEndpoints
             ? store.ReleaseAsync(heldScope, reservationToken)
             : Task.CompletedTask;
 
-    /// <summary>
-    /// Parses the Honua <c>conflictHandling</c> extension parameter for <c>synchronizeReplica</c> into
-    /// the canonical last-write-wins flag (#2430). Accepts <c>lastWriteWins</c> (default) and
-    /// <c>manualReview</c>; anything else is a bad request rather than a silent fallback, so a client
-    /// that misspells the mode never believes its edits are being withheld for review when they are
-    /// being committed.
-    /// </summary>
+    // An unrecognized conflictHandling value is a bad request, not a silent last-write-wins, so a misspelled manual review is not committed.
     private static bool TryParseConflictHandling(
         IReadOnlyDictionary<string, StringValues> values,
         out bool lastWriteWins,
@@ -1691,9 +1618,6 @@ internal static partial class FeatureServerEndpoints
         }
     }
 
-    /// <summary>
-    /// Maps canonical sync conflicts to the wire conflict summary.
-    /// </summary>
     private static SynchronizeReplicaConflict[]? MapSyncConflicts(
         ImmutableArray<ReplicaSyncConflict> conflicts)
     {
@@ -1720,16 +1644,7 @@ internal static partial class FeatureServerEndpoints
         return result;
     }
 
-    /// <summary>
-    /// Serializes a stored feature into the conflict-review state envelope so the captured server
-    /// geometry is directly comparable to the uploaded client geometry (#1287).
-    /// </summary>
-    /// <remarks>
-    /// Z and M are preserved deliberately. This snapshot is not display output: a keep-server, field
-    /// merge, or server-side geometry choice writes it back as an update payload, so dropping the
-    /// ordinates would flatten a 3D or measured feature to 2D and lose those values permanently
-    /// (#2430).
-    /// </remarks>
+    // Conflict snapshots keep Z and M because a keep-server or merge writes that snapshot back, and dropping the ordinates would flatten a 3D or measured feature.
     internal static string CaptureStateEnvelope(Honua.Core.Features.FeatureStore.Domain.Feature feature)
     {
         var geometry = GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
@@ -1739,16 +1654,7 @@ internal static partial class FeatureServerEndpoints
         return SerializeStateEnvelope(feature.Attributes, geometry, includeGeometry: true);
     }
 
-    /// <summary>
-    /// Updates the durable conflict records written by the sync service with the client (uploaded) and
-    /// pre-apply server state snapshots, so the conflict-review detail API can compute the field- and
-    /// geometry-level comparison (#1287). Now that both states are captured, the coarse detection-time
-    /// classification is also refined (a geometry-only divergence becomes a geometry conflict). Returns
-    /// the refined classification for each conflict whose type changed, keyed by (public layer id,
-    /// object id), so the caller can mirror it onto the transient synchronize response. Conflicts whose
-    /// record cannot be loaded, or for which neither side has a captured state (e.g. delete-vs-delete),
-    /// are left unchanged.
-    /// </summary>
+    // A geometry-only divergence is refined to a geometry conflict once both snapshots exist, and a conflict that cannot be loaded or has neither side captured is left unchanged.
     private static async Task<Dictionary<(int PublicLayerId, int EditIndex), ReplicaConflictType>> AttachConflictStatesAsync(
         IReplicaConflictRepository conflictRepository,
         ImmutableArray<ReplicaSyncConflict> conflicts,
@@ -1807,10 +1713,6 @@ internal static partial class FeatureServerEndpoints
         return refinedTypes;
     }
 
-    /// <summary>
-    /// Builds the client (uploaded) state envelopes for update edits, keyed by (public layer id,
-    /// request slot). Delete edits carry no client attributes and are omitted.
-    /// </summary>
     private static Dictionary<(int PublicLayerId, int EditIndex), string> BuildClientConflictStates(
         ImmutableArray<ReplicaUploadLayerEdits> layerEdits)
     {
@@ -1838,14 +1740,7 @@ internal static partial class FeatureServerEndpoints
         return states;
     }
 
-    /// <summary>
-    /// Serializes a feature's attributes and (when present) geometry into the conflict-state envelope
-    /// <c>{"attributes": {...}, "geometry": ...}</c> consumed by the conflict-review diff and the
-    /// geometry-conflict classifier, AOT-safely via the source-generated serializers. The geometry is
-    /// emitted as GeoServices (Esri) JSON on both the client and server sides so the two are directly
-    /// comparable (#1287). <paramref name="includeGeometry"/> distinguishes an attribute-only client
-    /// update (property omitted) from an explicit geometry clear (property present with null).
-    /// </summary>
+    // Omitting geometry means an attribute-only update, while a present null clears the geometry.
     internal static string SerializeStateEnvelope(
         IReadOnlyDictionary<string, object?> attributes,
         GeoServicesGeometry? geometry,
@@ -1869,13 +1764,6 @@ internal static partial class FeatureServerEndpoints
         return $"{{\"attributes\":{attributesJson},\"geometry\":{geometryJson}}}";
     }
 
-    /// <summary>
-    /// Parses the <c>synchronizeReplica</c> <c>edits</c> parameter into canonical per-layer upload
-    /// edits. Accepts the ArcGIS per-layer form (a JSON array of
-    /// <c>{ id, adds, updates, deletes }</c> objects) and, for backward compatibility, the legacy flat
-    /// array of features (interpreted as adds against the replica's first layer). Edits referencing a
-    /// layer not in the replica are rejected.
-    /// </summary>
     private static bool TryParseSynchronizeReplicaEdits(
         string editsJson,
         ReplicaLayerV2[] replicaLayers,
@@ -2139,17 +2027,6 @@ internal static partial class FeatureServerEndpoints
             property => string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase));
     }
 
-    /// <summary>
-    /// Reads the object id attribute from an Esri-JSON update feature for conflict keying. Returns
-    /// null when no recognizable object id attribute is present; conflict detection then treats the
-    /// update as non-conflicting (the shared edit pipeline still rejects updates without an id).
-    /// </summary>
-    /// <param name="feature">The uploaded update feature whose attributes are searched for an OID value.</param>
-    /// <param name="resource">
-    /// The layer's metadata resource used to resolve the actual OID field name via the
-    /// <c>id.primary</c> semantic role. This avoids false misses on layers whose primary key
-    /// column does not match the hardcoded fallback names (BH5-014).
-    /// </param>
     private static long? TryReadObjectId(GeoServicesFeature feature, MetadataV2Resource resource)
     {
         if (feature.Attributes is null)
@@ -2372,12 +2249,6 @@ internal static partial class FeatureServerEndpoints
     private static readonly AuthorizationOperation[] _replicaWriteOperations =
         [AuthorizationOperation.Update, AuthorizationOperation.Insert, AuthorizationOperation.Delete];
 
-    /// <summary>
-    /// Resolves the canonical per-operation access decisions (#4783) for every replica-eligible layer
-    /// of the service, so the synchronous replica layer resolution applies permission grants as well
-    /// as the coarse access policy. A write scope admits any mutating grant (update, insert or
-    /// delete), matching the replica write gates that run around this resolution.
-    /// </summary>
     private static Task<ResourceAccessSet> ResolveReplicaLayerAccessAsync(
         HttpContext context,
         MetadataV2Service service,
@@ -2568,14 +2439,14 @@ internal static partial class FeatureServerEndpoints
     };
 
     private static string ResolveReplicaOwner(HttpContext context)
-        => EditOwnerSubject.Resolve(context.User) is { Length: > 0 } owner
+        => ServiceDataEditorAuthorization.ResolveOwnerSubject(context.User) is { Length: > 0 } owner
             ? owner
             : throw new InvalidOperationException("An authenticated identity is required to create a replica.");
 
     private static bool IsReplicaOwnerOrAdmin(HttpContext context, string? ownerId)
         => ReplicaSecurity.CanAccess(
             ownerId,
-            EditOwnerSubject.Resolve(context.User),
+            ServiceDataEditorAuthorization.ResolveOwnerSubject(context.User),
             ServiceDataEditorAuthorization.IsAdminPrincipal(context));
 
     // Per-operation authorization (BH3-001/BH3-014) does NOT cleanly apply to replica write
@@ -2638,20 +2509,6 @@ internal static partial class FeatureServerEndpoints
             cancellationToken);
     }
 
-    /// <summary>
-    /// Converts a domain Feature to a GeoServicesFeature for replication responses.
-    /// esriFieldTypeDate attributes are coerced to epoch-ms integers uniformly across rows
-    /// (JSONB stores dates as ISO strings from seeds or epoch-ms longs from applyEdits) via the
-    /// shared GeoServices date convention, matching the query/identify serialization.
-    /// </summary>
-    /// <remarks>
-    /// Z and M are always kept and the geometry carries the layer's spatial reference (#4027). A
-    /// replica download is not display output: the client stores these geometries offline and uploads
-    /// them back as updates, so flattening a 3D or measured feature here would write the 2D geometry
-    /// back to the server. This matches <see cref="CaptureStateEnvelope"/>. A replica created with
-    /// <c>replicaSR</c> passes that SRID as <paramref name="deliverySrid"/> so the label matches the
-    /// reprojected coordinates (#4018).
-    /// </remarks>
     private static GeoServicesFeature ConvertFeatureToGeoServices(Feature feature, MetadataV2Resource resource, int? deliverySrid = null)
     {
         var attributes = feature.Attributes
@@ -2673,12 +2530,7 @@ internal static partial class FeatureServerEndpoints
         };
     }
 
-    /// <summary>
-    /// Read query for replica feature payloads (#4027). Z and M are requested from storage because a
-    /// provider's plain WKB read strips them before the converter runs, and coordinates are reprojected
-    /// to the layer's advertised spatial reference so they match the label on the download: a
-    /// storage-mapped resource otherwise returns them in its storage CRS.
-    /// </summary>
+    // Z and M are requested because a plain WKB read strips them, and coordinates are reprojected to the advertised spatial reference so a storage-mapped resource is not returned in its storage CRS.
     internal static FeatureQuery ReplicaGeometryQuery(FeatureQuery query, MetadataV2Resource resource)
         => query with
         {
@@ -2687,10 +2539,6 @@ internal static partial class FeatureServerEndpoints
             OutputSrid = resource.HasGeometry() ? resource.ReadSrid() : null
         };
 
-    /// <summary>
-    /// The spatial reference replica features are delivered in: the layer's advertised SRID, falling back
-    /// to WGS 84 exactly as the query path does (#4027). An attribute-only table has none.
-    /// </summary>
     internal static int? ResolveReplicaLayerSrid(MetadataV2Resource resource)
         => resource.HasGeometry() ? resource.ReadSrid() ?? SpatialReference.WGS84.Wkid : null;
 

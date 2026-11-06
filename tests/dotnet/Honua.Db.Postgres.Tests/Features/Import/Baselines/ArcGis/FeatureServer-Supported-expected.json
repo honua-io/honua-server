@@ -1,7 +1,7 @@
 {
   "artifactKind": "honua.migration.source-inventory",
   "artifactVersion": "1.0",
-  "sourceKind": "arcgis-geoservices-rest",
+  "sourceKind": "geoservices-rest",
   "source": {
     "displayName": "Parcel Viewer",
     "baseUrl": "https://example.com/arcgis/rest/services/Parcels/FeatureServer",

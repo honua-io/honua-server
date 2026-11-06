@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+import urllib.request
 
 from quickstart import initialize
 
@@ -41,7 +42,8 @@ class QuickstartTests(unittest.TestCase):
 
     def render(self, env_file, **overrides):
         env = {key: value for key, value in os.environ.items()
-               if key not in ("POSTGRES_PASSWORD", "MINIO_ROOT_PASSWORD", "HONUA_BIND_ADDRESS")}
+               if key not in ("POSTGRES_PASSWORD", "MINIO_ROOT_PASSWORD", "HONUA_BIND_ADDRESS",
+                              "HONUA_CONSOLE_IMAGE", "HONUA_PUBLIC_BASE_URL")}
         env.update(overrides)
         result = subprocess.run(
             ["docker", "compose", "--env-file", str(env_file), "-f",
@@ -50,6 +52,80 @@ class QuickstartTests(unittest.TestCase):
             env=env, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, "Compose must render without disclosing credentials")
         return json.loads(result.stdout)["services"]
+
+    def test_console_healthcheck_reads_the_file_the_image_ships(self):
+        with tempfile.NamedTemporaryFile() as env_file:
+            services = self.render(env_file.name, POSTGRES_PASSWORD=os.urandom(32).hex(),
+                                   MINIO_ROOT_PASSWORD=os.urandom(32).hex())
+        check = ' '.join(services['console']['healthcheck']['test'])
+        # Current Console images ship /app/version.json (served at GET /version.json).
+        self.assertIn('test -s /app/version.json', check)
+
+    def test_workflow_view_default_is_forwarded_to_server(self):
+        with tempfile.NamedTemporaryFile() as env_file:
+            for selected, expected in (('', 'default'), ('configure', 'configure')):
+                with self.subTest(selected=selected):
+                    services = self.render(env_file.name, POSTGRES_PASSWORD=os.urandom(32).hex(),
+                                           MINIO_ROOT_PASSWORD=os.urandom(32).hex(),
+                                           HONUA_MCP_DEFAULT_VIEW=selected)
+                    self.assertEqual(expected, services['honua']['environment'].get('Mcp__WorkflowViews__DefaultView'))
+
+    def test_console_default_image_and_binding(self):
+        with tempfile.NamedTemporaryFile() as env_file:
+            services = self.render(env_file.name, POSTGRES_PASSWORD=os.urandom(32).hex(),
+                                   MINIO_ROOT_PASSWORD=os.urandom(32).hex())
+            image = services["console"]["image"]
+            self.assertEqual(image, "ghcr.io/honua-io/honua-console@sha256:ab453db9b2a468a05e58ebc445569fd2df84908df91967ae8d31417d6e971358")
+            self.assertEqual(services["console"]["environment"]["HONUA_SERVER_BASE_URL"], "http://honua:8080")
+            self.assertEqual(services["honua"]["environment"]["PUBLIC_BASE_URL"], "http://localhost:8080")
+
+    def test_console_custom_port_and_oidc_provider_are_wired(self):
+        with tempfile.NamedTemporaryFile() as env_file:
+            services = self.render(env_file.name, POSTGRES_PASSWORD=os.urandom(32).hex(),
+                                   MINIO_ROOT_PASSWORD=os.urandom(32).hex(), HONUA_CONSOLE_PORT="15174",
+                                   HONUA_PUBLIC_BASE_URL="http://localhost:15174",
+                                   OIDC_ENABLED="true", OIDC_GENERIC_ENABLED="true",
+                                   OIDC_GENERIC_AUTHORITY="https://idp.example.com",
+                                   OIDC_GENERIC_CLIENT_ID="console", OIDC_GENERIC_CLIENT_SECRET="test-secret")
+            env = services["honua"]["environment"]
+            self.assertEqual(env["PUBLIC_BASE_URL"], "http://localhost:15174")
+            self.assertEqual(env["Oidc__Enabled"], "true")
+            self.assertEqual(env["Oidc__Generic__Enabled"], "true")
+            self.assertEqual(env["Oidc__Generic__Authority"], "https://idp.example.com")
+            self.assertEqual(env["Oidc__Generic__ClientId"], "console")
+            self.assertEqual(env["Oidc__Generic__ClientSecret"], "test-secret")
+
+    def test_console_profile_enables_studio_without_ai_overlay(self):
+        with tempfile.NamedTemporaryFile() as env_file:
+            services = self.render(env_file.name, POSTGRES_PASSWORD=os.urandom(32).hex(),
+                                   MINIO_ROOT_PASSWORD=os.urandom(32).hex())
+        self.assertEqual(services["console"]["environment"]["Studio__EmbedJsStudio"], "true")
+        self.assertEqual(services["honua"]["environment"]["Studio__EndUserAuthorization__Enabled"], "true")
+        self.assertNotIn("StudioAiProxy__Enabled", services["honua"]["environment"])
+        self.assertNotIn("AiExecutionAdmission__DeploymentId", services["honua"]["environment"])
+
+    def test_studio_ai_overlay_only_adds_assistant_settings(self):
+        overlay = (ROOT / "docker-compose.studio-ai.yml").read_text()
+        self.assertNotIn("Studio__EmbedJsStudio", overlay)
+        self.assertNotIn("Studio__EndUserAuthorization__Enabled", overlay)
+        self.assertIn('StudioAiProxy__Enabled: "true"', overlay)
+
+    @unittest.skipUnless(os.environ.get("HONUA_VERIFY_CONSOLE_REGISTRY") == "1", "opt-in public registry check")
+    def test_console_default_image_is_publicly_pullable(self):
+        with tempfile.NamedTemporaryFile() as env_file:
+            services = self.render(env_file.name, POSTGRES_PASSWORD=os.urandom(32).hex(),
+                                   MINIO_ROOT_PASSWORD=os.urandom(32).hex())
+        digest = services["console"]["image"].split("@", 1)[1]
+        repo = "honua-io/honua-console"
+        with urllib.request.urlopen(f"https://ghcr.io/token?scope=repository:{repo}:pull", timeout=30) as response:
+            token = json.load(response)["token"]
+        request = urllib.request.Request(f"https://ghcr.io/v2/{repo}/manifests/{digest}", headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json",
+        })
+        with urllib.request.urlopen(request, timeout=30) as response:
+            self.assertEqual(response.status, 200)
+            self.assertEqual(response.headers["Docker-Content-Digest"], digest)
 
     def test_all_profile_ports_are_loopback_by_default(self):
         with tempfile.NamedTemporaryFile() as env_file:

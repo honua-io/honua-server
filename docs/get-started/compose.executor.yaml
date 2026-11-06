@@ -1,0 +1,215 @@
+# Included by the customer quickstart package; not an opt-in profile.
+# The server service stays read-only and does not receive the Docker socket.
+# Only the dedicated executor image mounts the Docker socket.
+# The separate manager and executor share the executor socket; the serving service does not.
+# Secrets are files under ./secrets, mounted at /run/secrets; none is a Compose variable.
+# The entrypoint matches compose.yaml: it loads each HONUA_SECRET_FILE__<setting> file into <setting>.
+x-load-secrets: &load-secrets
+  - bash
+  - +x
+  - -euc
+  - |
+    { set +x; } 2>/dev/null
+    # Tracing stays off through exec: inherited xtrace (SHELLOPTS, BASH_ENV) would echo every loaded value.
+    # BASH_XTRACEFD is left alone; unsetting it would close the descriptor it names.
+    for ref in $${!HONUA_SECRET_FILE__@}; do
+      value=$$(< "$${!ref}")
+      [ -n "$$value" ] || { echo "empty secret file for $${ref#HONUA_SECRET_FILE__}" >&2; exit 1; }
+      export "$${ref#HONUA_SECRET_FILE__}=$$value"
+      unset "$$ref"
+    done
+    if [ -n "$${HONUA_DATABASE_PASSWORD_FILE:-}" ]; then
+      value=$$(< "$$HONUA_DATABASE_PASSWORD_FILE")
+      [ -n "$$value" ] || { echo "empty database password file" >&2; exit 1; }
+      export ConnectionStrings__DefaultConnection="$$ConnectionStrings__DefaultConnection;Password=$$value"
+      unset HONUA_DATABASE_PASSWORD_FILE
+    fi
+    unset value ref
+    exec "$$@"
+  - load-secrets
+services:
+  keyring-init:
+    # CAP_CHOWN cannot traverse a private host directory on its own.
+    group_add:
+      - "${HONUA_PROJECT_GID:?Set the project directory group id}"
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN]
+    security_opt: ["no-new-privileges:true"]
+  honua:
+    environment:
+      AllowedHosts: "localhost;127.0.0.1;honua"
+  # This stable management process survives replacement of the serving container. It has
+  # its own database so installing the candidate cannot migrate the serving database early.
+  compose-manager:
+    image: ${HONUA_RELEASE_IMAGE:?Set the immutable release digest}
+    platform: linux/amd64
+    entrypoint: *load-secrets
+    command: ["/app/Honua.Server"]
+    ports:
+      - "127.0.0.1:${HONUA_MANAGER_PORT:-18082}:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Mcp__WorkflowViews__DefaultView: ${HONUA_MCP_DEFAULT_VIEW:-default}
+      Licensing__Mode: Disabled
+      AllowedHosts: "localhost;127.0.0.1;compose-manager"
+      PUBLIC_BASE_URL: "http://localhost:${HONUA_MANAGER_PORT:-18082}"
+      ConnectionStrings__DefaultConnection: "Host=compose-manager-postgres;Database=honua_manager;Username=honua"
+      HONUA_DATABASE_PASSWORD_FILE: /run/secrets/honua_manager_postgres_password
+      ConnectionStrings__Redis: compose-manager-redis:6379
+      HONUA_SECRET_FILE__HONUA_ADMIN_PASSWORD: /run/secrets/honua_manager_admin_password
+      HONUA_SECRET_FILE__AuditLog__ChainVerification__Key: /run/secrets/honua_manager_audit_chain_key
+      HONUA_SECRET_FILE__Security__ConnectionEncryption__MasterKey: /run/secrets/honua_manager_master_key
+      Operations__SecretChannel__KeyRingCertificatePath: /var/lib/honua/keyring.pfx
+      HONUA_SECRET_FILE__Operations__SecretChannel__KeyRingCertificatePassword: /run/secrets/honua_keyring_password
+      Database__MigrationSafety__ContractApplyPolicy: Gate
+      FileStorage__Provider: Local
+      FileStorage__LocalStorage__BasePath: /var/lib/honua/storage
+      ControlPlane__PlatformRelease__Version: ${HONUA_RELEASE_VERSION:?Set the release version}
+      ControlPlane__ComposeExecutor__SocketPath: /run/honua-compose/executor.sock
+      ControlPlane__ComposeExecutor__ReleaseImage: ${HONUA_RELEASE_IMAGE:?Set the immutable release digest}
+      ControlPlane__PlatformRelease__ServingArtifactReference: ${HONUA_RELEASE_IMAGE:?Set the immutable release digest}
+      # Both artifacts must come from the same signed release lock.
+      ControlPlane__PlatformRelease__Workers__0__ArtifactReference: ${HONUA_RELEASE_WORKER_IMAGE:?Set the co-versioned worker image digest}
+      ControlPlane__DeployTargets__0__TargetId: compose-local
+      ControlPlane__DeployTargets__0__TargetKind: LocalCompose
+      ControlPlane__DeployTargets__0__Backend: honua-compose
+      ControlPlane__DeployTargets__0__Environment: local
+      ControlPlane__DeployTargets__0__TargetName: honua
+      ControlPlane__DeployTargets__0__RequiresApproval: "true"
+      ControlPlane__DeployTargets__0__ArtifactReference: ${HONUA_RELEASE_IMAGE:?Set the immutable release digest}
+    depends_on:
+      keyring-init:
+        condition: service_completed_successfully
+      compose-manager-postgres:
+        condition: service_healthy
+      compose-manager-redis:
+        condition: service_healthy
+      compose-executor:
+        condition: service_healthy
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
+    volumes:
+      - compose-manager-storage:/var/lib/honua/storage
+      - ./secrets/keyring.pfx:/var/lib/honua/keyring.pfx:ro
+      - compose-executor-socket:/run/honua-compose
+    secrets: [honua_manager_postgres_password, honua_manager_admin_password, honua_manager_audit_chain_key,
+              honua_manager_master_key, honua_keyring_password]
+  compose-manager-redis:
+    image: redis:7.4-alpine
+    command: redis-server --appendonly yes --maxmemory 64mb --maxmemory-policy noeviction
+    volumes:
+      - compose-manager-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  compose-manager-postgres:
+    image: pgrouting/pgrouting:17-3.5-3.7.3
+    environment:
+      POSTGRES_DB: honua_manager
+      POSTGRES_USER: honua
+      POSTGRES_PASSWORD_FILE: /run/secrets/honua_manager_postgres_password
+    secrets: [honua_manager_postgres_password]
+    volumes:
+      - compose-manager-postgres:/var/lib/postgresql/data
+    configs:
+      - source: postgis_init
+        target: /docker-entrypoint-initdb.d/10-honua-postgis.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U honua -d honua_manager"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+  # A fresh named volume is root-owned. This one-shot command makes it writable by uid 1002
+  # before the executor binds the socket. The Debian runtime image provides chown.
+  compose-executor-init:
+    image: ${HONUA_EXECUTOR_IMAGE:?Set the immutable executor digest}
+    user: "0:0"
+    entrypoint: ["chown", "1002:1001", "/run/honua-compose"]
+    restart: "no"
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - compose-executor-socket:/run/honua-compose
+  compose-executor:
+    image: ${HONUA_EXECUTOR_IMAGE:?Set the immutable executor digest}
+    entrypoint: *load-secrets
+    command: ["/app/Honua.Server"]
+    user: "1002:1001"
+    # Supplementary groups grant the Docker socket and only this install directory.
+    group_add:
+      - "${DOCKER_GID:?Set the host docker group id}"
+      - "${HONUA_PROJECT_GID:?Set the project directory group id}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    # The sidecar does not serve HTTP, so replace the server image's HTTP healthcheck.
+    healthcheck:
+      test: ["CMD-SHELL", "test -S /run/honua-compose/executor.sock"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    depends_on:
+      compose-executor-init:
+        condition: service_completed_successfully
+      # Gives the secret files the group the executor reads them with.
+      keyring-init:
+        condition: service_completed_successfully
+    tmpfs:
+      - /tmp:nosuid,size=100m
+    environment:
+      HONUA_COMPOSE_EXECUTOR: "true"
+      HOME: /tmp
+      ControlPlane__ComposeExecutor__SocketPath: /run/honua-compose/executor.sock
+      ControlPlane__ComposeExecutor__ProjectDirectory: ${HONUA_COMPOSE_PROJECT_DIRECTORY:?Set the absolute host project directory}
+      # docker compose ls names the project. The quickstart project name is the directory name.
+      ControlPlane__ComposeExecutor__ProjectName: ${COMPOSE_PROJECT_NAME:?Set the Compose project name}
+      ControlPlane__ComposeExecutor__ComposeFile: compose.yaml
+      # Ordered files for later image changes. The override is appended after this list.
+      ControlPlane__ComposeExecutor__ComposeFiles__0: compose.yaml
+      ControlPlane__ComposeExecutor__ComposeFiles__1: compose.executor.yaml
+      # Published prior images without a schema label require an operator-owned exact-image catalog.
+      ControlPlane__ComposeExecutor__Revisions__0__Image: ${HONUA_PRIOR_IMAGE:?Set the immutable prior image}
+      ControlPlane__ComposeExecutor__Revisions__0__MaxSchema: ${HONUA_PRIOR_MAX_SCHEMA:?Set the prior image shipped schema number}
+      ControlPlane__ComposeExecutor__ServiceName: honua
+      ControlPlane__ComposeExecutor__PostgresService: postgres
+      ControlPlane__ComposeExecutor__DatabaseName: honua
+      ControlPlane__ComposeExecutor__DatabaseUser: honua
+      ControlPlane__ComposeExecutor__BackupDirectory: ${HONUA_COMPOSE_PROJECT_DIRECTORY:?Set the absolute host project directory}/backups
+      ControlPlane__ComposeExecutor__HealthProbeUrl: http://honua:8080/healthz/ready
+      HONUA_SECRET_FILE__ControlPlane__ComposeExecutor__VersionProbeApiKey: /run/secrets/honua_admin_password
+      # A route that returns a non-empty body proving the database is readable.
+      ControlPlane__ComposeExecutor__CustomerProbeUrl: ${HONUA_COMPOSE_CUSTOMER_PROBE:?Set a customer readback URL}
+      ControlPlane__ComposeExecutor__ReleaseImage: ${HONUA_RELEASE_IMAGE:?Set the immutable release digest}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Identical host/container paths keep relative Compose bind mounts on the host project.
+      - ${HONUA_COMPOSE_PROJECT_DIRECTORY:?Set the absolute host project directory}:${HONUA_COMPOSE_PROJECT_DIRECTORY:?Set the absolute host project directory}
+      - compose-executor-socket:/run/honua-compose
+    secrets: [honua_admin_password]
+volumes:
+  compose-manager-redis:
+  compose-manager-postgres:
+  compose-manager-storage:
+  compose-executor-socket:
+secrets:
+  honua_manager_postgres_password:
+    file: ./secrets/honua_manager_postgres_password
+  honua_manager_admin_password:
+    file: ./secrets/honua_manager_admin_password
+  honua_manager_audit_chain_key:
+    file: ./secrets/honua_manager_audit_chain_key
+  honua_manager_master_key:
+    file: ./secrets/honua_manager_master_key

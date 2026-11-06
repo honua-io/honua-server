@@ -4,29 +4,26 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Honua.Ai.Protocols.Mcp.Models;
+using Honua.Ai.Protocols.Mcp.MapTools;
 using Honua.Ai.Protocols.Mcp.Studio;
 using Honua.Ai.Protocols.Mcp.Tools;
 
 namespace Honua.Ai.Protocols.Mcp.Views;
 
-/// <summary>
-/// Adds server-owned workflow classification to canonical live descriptors.
-/// The classification is projected at the catalog boundary so full and narrowed
-/// discovery surfaces expose the same descriptor and clients never own a second
-/// tool-family allowlist.
-/// </summary>
 internal static class McpWorkflowViewDescriptorClassifier
 {
     internal const string StudioMetadataKey = "honua.studio";
     internal const string StudioCompositionFamily = "honua.studio.composition";
 
-    /// <summary>Describes a tool and attaches any server-authored classification.</summary>
     public static McpToolDescriptor Describe(IMcpTool tool)
     {
         ArgumentNullException.ThrowIfNull(tool);
 
         var descriptor = tool.Describe();
-        if (tool is not StudioDraftToolBase)
+        // Composition needs authorized source identities as well as draft mutations.
+        // Classify these existing read-only adapters by type, preserving their canonical
+        // descriptors and per-call authorization. Other query/admin tools stay separate.
+        if (tool is not (StudioDraftToolBase or ListLayersTool or DescribeLayerTool))
         {
             return descriptor;
         }

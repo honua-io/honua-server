@@ -4,17 +4,17 @@
 using System.Net;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
+using System.Text;
 using FluentAssertions;
-using Honua.Ai.StudioAiProxy;
 using Honua.Ai.StudioAiProxy.Adapters.Bedrock;
 using Honua.Ai.StudioAiProxy.Domain;
-using Honua.Core.Features.Security.Abstractions;
-using Honua.TestKit.Hosting;
-using Honua.Core.Features.AuditLog;
+using Honua.Ai.StudioAiProxy;
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Security.Admission;
 using Honua.Core.Features.Studio;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Middleware;
@@ -22,6 +22,8 @@ using Honua.Infrastructure.MultiTenancy;
 using Honua.Server.Features.Studio.Ai;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Hosting;
+using Honua.TestKit.Security;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
@@ -67,7 +69,12 @@ public sealed class StudioAiCertificationEndpointTests
     public Task Bedrock_Certification_SignsTheActualEndpointResponse()
         => AssertCertificationAsync("bedrock");
 
-    private static async Task AssertCertificationAsync(string kind)
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/ai/chat")]
+    public Task Chat_DisabledProxy_ReturnsActionable503BeforeProviderContact()
+        => AssertCertificationAsync("bedrock", enabled: false);
+
+    private static async Task AssertCertificationAsync(string kind, bool enabled = true)
     {
         var secrets = Substitute.For<ISecretProvider>();
         secrets.IsSecretReference("secret://fixture-signing-key").Returns(true);
@@ -87,7 +94,14 @@ public sealed class StudioAiCertificationEndpointTests
             builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["HONUA_ADMIN_PASSWORD"] = adminKey,
-                ["StudioAiProxy:Enabled"] = "true",
+                ["AiExecutionAdmission:DeploymentId"] = "test-deployment",
+                ["StudioAiProxy:Enabled"] = enabled ? "true" : "false",
+                ["StudioAiProxy:Disclosure:Approvals:0:Provider"] = "fixture",
+                ["StudioAiProxy:Disclosure:Approvals:0:Kind"] = kind,
+                ["StudioAiProxy:Disclosure:Approvals:0:Destination"] = kind == "bedrock" ? "aws-bedrock:" + StudioAiProxyConfiguration.DefaultBedrockRegion : "https://fixture.invalid/v1",
+                ["StudioAiProxy:Disclosure:Approvals:0:Model"] = "fixture-model",
+                ["StudioAiProxy:Disclosure:Approvals:0:UseCase"] = "studio-chat",
+                ["StudioAiProxy:Disclosure:Approvals:0:DataClassification"] = "unclassified",
                 ["StudioAiProxy:DefaultProvider"] = "fixture",
                 ["StudioAiProxy:Providers:fixture:Kind"] = kind,
                 ["StudioAiProxy:Providers:fixture:Endpoint"] = "https://fixture.invalid/v1",
@@ -97,6 +111,7 @@ public sealed class StudioAiCertificationEndpointTests
                 ["StudioAiProxy:TranscriptSigning:PrivateKeyReference"] = "secret://fixture-signing-key",
                 ["StudioAiProxy:TranscriptSigning:LifetimeSeconds"] = "900"
             });
+            builder.Services.AddSingleton<IAiExecutionAdmission, RecordingAiAdmission>();
             builder.Services.AddSingleton(secrets);
             builder.Services.AddSingleton(factory);
             builder.Services.AddStudioAiProxy(builder.Configuration);
@@ -136,6 +151,15 @@ public sealed class StudioAiCertificationEndpointTests
         using var response = await client.PostAsync("/api/v1/studio/ai/chat", request);
         var after = DateTimeOffset.UtcNow;
         var body = await response.Content.ReadAsStringAsync();
+        if (!enabled)
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+            body.Should().Contain("studio_ai_not_configured").And.Contain("StudioAiProxy:Enabled");
+            response.Headers.CacheControl!.NoStore.Should().BeTrue();
+            bedrock.Calls.Should().Be(0);
+            upstream.Calls.Should().Be(0);
+            return;
+        }
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType!.MediaType.Should().Be("text/event-stream");
         response.Headers.CacheControl!.NoStore.Should().BeTrue();

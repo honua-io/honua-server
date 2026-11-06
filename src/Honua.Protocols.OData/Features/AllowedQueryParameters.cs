@@ -5,10 +5,6 @@ using System.Collections.Frozen;
 
 namespace Honua.Protocols.OData;
 
-/// <summary>
-/// Defines allowed OData query parameters for different endpoint types.
-/// Provides validation sets for various OData operation contexts.
-/// </summary>
 internal static class AllowedQueryParameters
 {
     public static readonly FrozenSet<string> None =

@@ -11,23 +11,7 @@ using Microsoft.Extensions.Primitives;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Authenticates requests that carry an ArcGIS-style opaque portal token.
-/// </summary>
-/// <remarks>
-/// ArcGIS clients deliver the token in one of four places: the <c>token</c> query
-/// string parameter (legacy/embedded clients), the <c>Authorization: Bearer</c>
-/// header, the <c>X-Esri-Authorization: Bearer</c> header used by newer Esri
-/// SDKs, or the <c>token</c> field in an <c>application/x-www-form-urlencoded</c>
-/// request body. The handler accepts any of these and delegates to
-/// <see cref="IPortalTokenIssuer.ValidateAsync"/> for verification.
-/// <para>
-/// GeoServices clients present an API key exactly as they present an access token, so
-/// a value that is not a portal token is then checked as an API key (#5492). A key
-/// accepted this way yields the principal the <c>X-API-Key</c> header yields: the key's
-/// own roles and permission claims, under the API-key credential kind.
-/// </para>
-/// </remarks>
+// A query-string API key is accepted where a portal token is, but a key with any administrative authority is refused on that transport because the URL is retained by clients and proxies.
 internal sealed class PortalTokenAuthenticationHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> options,
     ILoggerFactory logger,
@@ -36,14 +20,15 @@ internal sealed class PortalTokenAuthenticationHandler(
 {
     internal const string TokenQueryParameter = "token";
     internal const string BearerPrefix = "Bearer ";
-    internal const string EsriAuthorizationHeader = "X-Esri-Authorization";
+    internal const string GeoServicesAuthorizationHeader = "X-Esri-Authorization";
+
+    private const string InvalidTokenMessage = "The supplied portal token is invalid, expired, or bound to a different client.";
 
     private readonly IPortalTokenIssuer _tokenIssuer = tokenIssuer ?? throw new ArgumentNullException(nameof(tokenIssuer));
 
-    /// <inheritdoc />
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
-        var (token, hasConflictingValues) = await ExtractTokenAsync().ConfigureAwait(false);
+        var (token, hasConflictingValues, fromQuery) = await ExtractTokenAsync().ConfigureAwait(false);
         if (hasConflictingValues)
         {
             return AuthenticateResult.Fail("Conflicting portal token values were supplied.");
@@ -61,17 +46,43 @@ internal sealed class PortalTokenAuthenticationHandler(
         var validation = await _tokenIssuer.ValidateAsync(token, binding, Context.RequestAborted).ConfigureAwait(false);
         if (validation is not null)
         {
+            MarkQueryCredential(fromQuery);
             return AuthenticateResult.Success(new AuthenticationTicket(validation.Principal, Scheme.Name));
         }
 
         var apiKeyPrincipal = await TryAuthenticateApiKeyAsync(token).ConfigureAwait(false);
         if (apiKeyPrincipal is not null)
         {
+            if (fromQuery && HasAdministrativeAuthority(apiKeyPrincipal))
+            {
+                // Admin keys must never travel in a URL; require a header transport.
+                PortalTokenLog.QueryStringAdminApiKeyRefused(Logger);
+                return AuthenticateResult.Fail(
+                    "API keys with administrative authority must not be sent in the token query parameter; use the X-API-Key header.");
+            }
+
+            MarkQueryCredential(fromQuery);
             return AuthenticateResult.Success(new AuthenticationTicket(apiKeyPrincipal, Scheme.Name));
         }
 
-        return AuthenticateResult.Fail("The supplied portal token is invalid, expired, or bound to a different client.");
+        return AuthenticateResult.Fail(InvalidTokenMessage);
     }
+
+    // A credential that arrived in the request URI is recorded so the response can be marked private.
+    private void MarkQueryCredential(bool fromQuery)
+    {
+        if (fromQuery)
+        {
+            Context.Items[PortalTokenAuthenticationExtensions.QueryCredentialKey] = true;
+        }
+    }
+
+    private static bool HasAdministrativeAuthority(ClaimsPrincipal principal)
+        => principal.IsInRole("admin") ||
+           principal.IsInRole(AdminApiKeyPermission.ScopedAdminRole) ||
+           principal.IsInRole(AdminApiKeyPermission.ApprovedOperationRole) ||
+           principal.FindAll(AdminApiKeyPermission.PermissionClaimType)
+               .Any(claim => AdminApiKeyPermission.IsAdministrativeGrant(claim.Value));
 
     private async Task<ClaimsPrincipal?> TryAuthenticateApiKeyAsync(string token)
     {
@@ -84,16 +95,19 @@ internal sealed class PortalTokenAuthenticationHandler(
 
         // Validate under the API-key scheme so the principal is indistinguishable from an
         // X-API-Key one: tenant binding, audit actor type and authorization all key off it.
+        // The request context carries Origin/Referer and the resolved client IP, so a key's
+        // referrer and IP restrictions apply on every token transport, the URL included.
         var apiKey = await ApiKeyAuthenticationHandler.ValidateApiKeyAsync(
             token,
             AuthenticationExtensions.ApiKeyScheme,
             dependencies,
+            ApiKeyRequestContext.From(Context),
             Logger,
             Context.RequestAborted).ConfigureAwait(false);
         return apiKey.Success?.Principal;
     }
 
-    private async ValueTask<(string? Token, bool HasConflictingValues)> ExtractTokenAsync()
+    private async ValueTask<(string? Token, bool HasConflictingValues, bool FromQuery)> ExtractTokenAsync()
     {
         if (Request.Query.TryGetValue(TokenQueryParameter, out var queryToken) &&
             !StringValues.IsNullOrEmpty(queryToken) &&
@@ -102,16 +116,16 @@ internal sealed class PortalTokenAuthenticationHandler(
             var extracted = ReadRepeatedToken(queryToken);
             if (extracted.HasConflictingValues || extracted.Token is not null)
             {
-                return extracted;
+                return (extracted.Token, extracted.HasConflictingValues, true);
             }
         }
 
-        if (Request.Headers.TryGetValue(EsriAuthorizationHeader, out var esriHeader))
+        if (Request.Headers.TryGetValue(GeoServicesAuthorizationHeader, out var esriHeader))
         {
             var fromEsri = TryReadBearerHeader(esriHeader);
             if (!string.IsNullOrEmpty(fromEsri))
             {
-                return (fromEsri, false);
+                return (fromEsri, false, false);
             }
         }
 
@@ -120,11 +134,12 @@ internal sealed class PortalTokenAuthenticationHandler(
             var fromAuthorization = TryReadBearerHeader(authHeader);
             if (!string.IsNullOrEmpty(fromAuthorization))
             {
-                return (fromAuthorization, false);
+                return (fromAuthorization, false, false);
             }
         }
 
-        return await TryReadFormTokenAsync().ConfigureAwait(false);
+        var fromForm = await TryReadFormTokenAsync().ConfigureAwait(false);
+        return (fromForm.Token, fromForm.HasConflictingValues, false);
     }
 
     private bool IsStacPaginationCursor(StringValues queryToken)

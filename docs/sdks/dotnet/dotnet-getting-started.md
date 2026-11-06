@@ -122,7 +122,7 @@ A wrong or missing API key surfaces as an unauthenticated error from the client.
 |---|---|---|
 | `IHonuaGrpcClient` | `AddHonua()` / `AddHonuaGrpc()` | Streaming feature queries over gRPC |
 | `IHonuaAdminClient` | `AddHonua()` / `AddHonuaAdmin()` | Control plane — connections, imports, layers, keys |
-| `IHonuaFeatureServerClient` | `AddHonuaFeatureServer()` / `AddHonua(o => o.UseGeoServices = true)` | ArcGIS-style FeatureServer queries |
+| `IHonuaFeatureServerClient` | `AddHonuaFeatureServer()` / `AddHonua(o => o.UseGeoServices = true)` | GeoServices REST-style FeatureServer queries |
 | `IHonuaStacClient` | `AddHonuaStac()` / `AddHonua(o => o.UseStac = true)` | STAC collections and item search |
 
 ## Troubleshoot

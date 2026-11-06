@@ -125,9 +125,29 @@ public sealed class LocalSubstrateMigrateOnlyTests : IClassFixture<LocalSubstrat
                 MigrationReaderCompatibility.ReaderSchemaOf(full.KnownMigrationNames!.Except(newest)), name);
         }
 
+        // A shipped script may opt out with honua:reader-incompatible (142 does). The older reader must
+        // refuse exactly those and verify every expand script in the window, so the refusal list is
+        // also the proof that the expand declarations were accepted.
+        var declared = await ReadDeclaredClassificationsAsync(connectionString, newest);
+        declared.Keys.Should().BeEquivalentTo(newest, "migrate-only records a declaration for every script it applied");
+        var optedOutShipped = newest
+            .Where(name => declared[name] != MigrationReaderCompatibilityClassification.Expand)
+            .ToArray();
+        newest.Except(optedOutShipped).Should().NotBeEmpty("the window must still prove an expand script verifies");
+
         var journalBefore = await ReadJournalAsync(connectionString);
-        await olderReader.Invoking(guard => guard.VerifyAsync(connectionString)).Should().NotThrowAsync(
-            "the newest shipped scripts are expand-only and their recorded declarations verify for the older reader");
+        if (optedOutShipped.Length == 0)
+        {
+            await olderReader.Invoking(guard => guard.VerifyAsync(connectionString)).Should().NotThrowAsync(
+                "the newest shipped scripts are expand-only and their recorded declarations verify for the older reader");
+        }
+        else
+        {
+            var shippedRefusal = (await olderReader.Invoking(guard => guard.VerifyAsync(connectionString))
+                .Should().ThrowAsync<Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaCompatibilityException>()).Which;
+            shippedRefusal.UnknownMigrations.Should().BeEquivalentTo(optedOutShipped,
+                "only scripts declared reader-incompatible are refused; the expand scripts verify");
+        }
         (await ReadJournalAsync(connectionString)).Should().BeEquivalentTo(journalBefore, "the skip path applies nothing");
 
         // Sibling: the newer image also applied a script its author opted out of forward compatibility.
@@ -147,7 +167,7 @@ public sealed class LocalSubstrateMigrateOnlyTests : IClassFixture<LocalSubstrat
 
         var refusal = (await olderReader.Invoking(guard => guard.VerifyAsync(connectionString))
             .Should().ThrowAsync<Honua.Core.Features.Infrastructure.Domain.DatabaseSchemaCompatibilityException>()).Which;
-        refusal.UnknownMigrations.Should().Equal(optedOut);
+        refusal.UnknownMigrations.Should().BeEquivalentTo(optedOutShipped.Append(optedOut));
         refusal.DeclarationRefusals.Should().ContainKey(optedOut)
             .WhoseValue.Should().Be("declared reader-incompatible, not expand");
     }
@@ -319,6 +339,25 @@ public sealed class LocalSubstrateMigrateOnlyTests : IClassFixture<LocalSubstrat
             key.StartsWith("Database__", StringComparison.OrdinalIgnoreCase) ||
             key.StartsWith("DataSource__", StringComparison.OrdinalIgnoreCase) ||
             key.StartsWith("AWS_LAMBDA_", StringComparison.OrdinalIgnoreCase);
+
+    private static async Task<Dictionary<string, string>> ReadDeclaredClassificationsAsync(
+        string connectionString, IReadOnlyCollection<string> scriptNames)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(
+            "SELECT script_name, classification FROM public.schema_version_reader_compatibility WHERE script_name = ANY(@names)",
+            connection);
+        command.Parameters.AddWithValue("names", scriptNames.ToArray());
+        await using var reader = await command.ExecuteReaderAsync();
+        var classifications = new Dictionary<string, string>(StringComparer.Ordinal);
+        while (await reader.ReadAsync())
+        {
+            classifications[reader.GetString(0)] = reader.GetString(1);
+        }
+
+        return classifications;
+    }
 
     private static async Task<string[]> ReadJournalAsync(string connectionString)
     {

@@ -12,9 +12,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Core.Features.Metadata.Services;
 
-/// <summary>
-/// Default implementation of semantic metadata inventory, binding, and release package workflows.
-/// </summary>
 public sealed class MetadataReleaseService(
     IMetadataV2EnvironmentSnapshotReader snapshotReader,
     IMetadataReleasePackageStore packageStore,
@@ -33,7 +30,6 @@ public sealed class MetadataReleaseService(
 
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
-    /// <inheritdoc />
     public async Task<MetadataSemanticInventoryResponse?> GetSemanticInventoryAsync(
         string environment,
         MetadataSemanticInventoryFilter filter,
@@ -64,7 +60,6 @@ public sealed class MetadataReleaseService(
         };
     }
 
-    /// <inheritdoc />
     public async Task<MetadataEnvironmentBindingsResponse> GetEnvironmentBindingsAsync(
         MetadataEnvironmentBindingsRequest request,
         CancellationToken cancellationToken = default)
@@ -110,7 +105,6 @@ public sealed class MetadataReleaseService(
         };
     }
 
-    /// <inheritdoc />
     public async Task<MetadataReleasePackage> CreateReleasePackageAsync(
         CreateMetadataReleasePackageRequest request,
         string createdBy,
@@ -249,7 +243,6 @@ public sealed class MetadataReleaseService(
         return stored;
     }
 
-    /// <inheritdoc />
     public async Task<MetadataReleasePackage> CreateWorkflowReleasePackageAsync(
         CreateWorkflowReleasePackageRequest request,
         string createdBy,
@@ -375,7 +368,6 @@ public sealed class MetadataReleaseService(
         return stored;
     }
 
-    /// <inheritdoc />
     public Task<MetadataReleasePackage?> GetReleasePackageAsync(
         Guid packageId,
         CancellationToken cancellationToken = default)
@@ -388,7 +380,6 @@ public sealed class MetadataReleaseService(
         return packageStore.GetAsync(packageId, cancellationToken);
     }
 
-    /// <inheritdoc />
     public async Task<MetadataReleasePackageListResponse> ListReleasePackagesAsync(
         MetadataReleasePackageListFilter filter,
         CancellationToken cancellationToken = default)
@@ -417,7 +408,6 @@ public sealed class MetadataReleaseService(
         };
     }
 
-    /// <inheritdoc />
     public async Task<GitOpsMetadataReleaseManifest?> GetGitOpsManifestAsync(
         Guid packageId,
         CancellationToken cancellationToken = default)

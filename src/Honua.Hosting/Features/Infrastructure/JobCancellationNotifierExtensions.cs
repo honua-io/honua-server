@@ -5,16 +5,8 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 
 namespace Honua.Infrastructure;
 
-/// <summary>
-/// Shared fan-out helpers for job-cancellation notifiers.
-/// </summary>
 internal static class JobCancellationNotifierExtensions
 {
-    /// <summary>
-    /// Signals every registered notifier for <paramref name="jobId"/> and
-    /// returns <c>true</c> when any worker confirms it owns the terminal-state
-    /// transition.
-    /// </summary>
     public static bool CancelAny(
         this IEnumerable<IJobCancellationNotifier> cancellationNotifiers,
         string jobId)

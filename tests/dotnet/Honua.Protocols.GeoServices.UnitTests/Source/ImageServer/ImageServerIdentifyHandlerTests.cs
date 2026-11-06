@@ -1005,6 +1005,86 @@ public class ImageServerIdentifyHandlerTests
         }
     }
 
+    // #6561: overlapping rasters stay in catalogItems, but only the raster that supplied the
+    // pixel is visible. The id comes from the mosaic union, not from catalog sort position.
+    [UnitTheory]
+    [InlineData(100L, new double[] { 1.0, 0.0 }, "test-raster")]
+    [InlineData(101L, new double[] { 0.0, 1.0 }, "later-raster")]
+    [Operation(Operations.Identify)]
+    public async Task IdentifyAsync_MosaicWinner_NamesThatRasterAndHidesTheOther(
+        long winnerId, double[] visibilities, string expectedName)
+    {
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs([
+                CreateTestRasterInfo(),
+                CreateTestRasterInfo() with { Id = 101, Name = "later-raster" }
+            ]);
+        _rasterStore.IdentifyMosaicAsync(default, default!, default, default, default, default, default, default, default, default)
+            .ReturnsForAnyArgs(new PixelValueResult
+            {
+                X = 10,
+                Y = 20,
+                Srid = 4326,
+                HasData = true,
+                BandValues = new Dictionary<int, object?> { [1] = 5.0 },
+                ContributingRasterIds = [winnerId]
+            });
+
+        using var json = await ExecuteIdentifyJsonAsync(new IdentifyRequest
+        {
+            Geometry = "10,20",
+            Sr = "4326",
+            ReturnCatalogItems = true,
+            F = "json"
+        });
+
+        var root = json.RootElement;
+        root.GetProperty("objectId").GetInt64().Should().Be(winnerId);
+        root.GetProperty("name").GetString().Should().Be(expectedName);
+        root.GetProperty("catalogItems").GetProperty("features").EnumerateArray()
+            .Select(item => item.GetProperty("attributes").GetProperty("OBJECTID").GetInt64())
+            .Should().Equal(100L, 101L);
+        root.GetProperty("catalogItemVisibilities").EnumerateArray()
+            .Select(item => item.GetDouble())
+            .Should().Equal(visibilities);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Identify)]
+    public async Task IdentifyAsync_MosaicWithNoContributor_ReportsZeroVisibility()
+    {
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs([
+                CreateTestRasterInfo(),
+                CreateTestRasterInfo() with { Id = 101, Name = "later-raster" }
+            ]);
+        _rasterStore.IdentifyMosaicAsync(default, default!, default, default, default, default, default, default, default, default)
+            .ReturnsForAnyArgs(new PixelValueResult
+            {
+                X = 10,
+                Y = 20,
+                Srid = 4326,
+                HasData = false,
+                BandValues = new Dictionary<int, object?> { [1] = null },
+                ContributingRasterIds = []
+            });
+
+        using var json = await ExecuteIdentifyJsonAsync(new IdentifyRequest
+        {
+            Geometry = "10,20",
+            Sr = "4326",
+            ReturnCatalogItems = true,
+            F = "json"
+        });
+
+        var root = json.RootElement;
+        root.TryGetProperty("objectId", out _).Should().BeFalse();
+        root.GetProperty("value").GetString().Should().Be("NoData");
+        root.GetProperty("catalogItemVisibilities").EnumerateArray()
+            .Select(item => item.GetDouble())
+            .Should().Equal(0.0, 0.0);
+    }
+
     [UnitTest]
     [Operation(Operations.Identify)]
     public async Task IdentifyAsync_NoDataWithoutSr_PropertiesCarryNoJsonNulls()

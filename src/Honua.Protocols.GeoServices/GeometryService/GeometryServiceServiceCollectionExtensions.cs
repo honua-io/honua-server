@@ -8,14 +8,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Protocols.GeoServices.GeometryService;
 
-/// <summary>
-/// Registers geometry service dependencies.
-/// </summary>
 internal static class GeometryServiceServiceCollectionExtensions
 {
-    /// <summary>
-    /// Adds geometry service handler to the service collection.
-    /// </summary>
     public static IServiceCollection AddGeometryService(this IServiceCollection services)
     {
         services.TryAddScoped<SpatialReferenceResolver>();
@@ -24,7 +18,7 @@ internal static class GeometryServiceServiceCollectionExtensions
         // Shared Esri datum-transformation catalog (WKID -> PROJ pipeline) used by the
         // project operation. TryAdd keeps a single instance shared with the FeatureServer
         // and ImageServer registrations regardless of registration order.
-        services.TryAddSingleton<IDatumTransformationCatalog>(static _ => EsriDatumTransformationCatalog.Create());
+        services.TryAddSingleton<IDatumTransformationCatalog>(static _ => GeoServicesDatumTransformationCatalog.Create());
         return services;
     }
 }

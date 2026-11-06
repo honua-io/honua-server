@@ -32,7 +32,10 @@ public enum OperationKind
     /// Coordinated platform-upgrade releases reconciled by
     /// <see cref="ICoordinatedReleaseReconciler"/>.
     /// </summary>
-    CoordinatedRelease
+    CoordinatedRelease,
+
+    /// <summary>A durable pre-migration restore awaiting execution or readback.</summary>
+    PreMigrationRestore
 }
 
 /// <summary>

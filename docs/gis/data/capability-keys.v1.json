@@ -2,7 +2,7 @@
   "schemaVersion": "1.1.0",
   "generator": "src/Honua.Core/Features/Licensing/Domain/CapabilityKeyCatalog.cs",
   "trackingIssue": "#2893",
-  "description": "Canonical customer-facing capability key vocabulary (Community + Pro + Enterprise) and its crosswalks to the evidence vocabularies that don't otherwise join: honua-esri-assess's verdict registry, client-interop certification envelopes (client_lane x protocol), the geoservices REST parity index, and geobench benchmark scenarios. Hard Esri lock-ins (Utility Network, Parcel Fabric, Linear Referencing) are intentionally absent from esriAssess below -- see capability-no-go-allowlist.v1.json.",
+  "description": "Canonical customer-facing capability key vocabulary (Community + Pro + Enterprise) and its crosswalks to the evidence vocabularies that don't otherwise join: honua-esri-assess's verdict registry, client-interop certification envelopes (client_lane x protocol), the geoservices REST parity index, and geobench benchmark scenarios. Hard Esri lock-ins (Utility Network, Parcel Fabric, Linear Referencing) are intentionally absent from geoservicesAssess below -- see capability-no-go-allowlist.v1.json.",
   "capabilities": [
     {
       "key": "admin.control-plane",
@@ -492,14 +492,16 @@
       "displayName": "Geoprocessing Task Execution",
       "category": "Process",
       "edition": "Community",
-      "description": "Submit and poll geoprocessing tasks through the Esri GeoServices GPServer surface. Print/export-specific tasks are gated by printing.* entitlement keys."
+      "description": "Submit and poll geoprocessing tasks through the Esri GeoServices GPServer surface. Print/export-specific tasks are gated by printing.* entitlement keys.",
+      "status": "preview"
     },
     {
       "key": "process.ogc-api-processes",
       "displayName": "OGC API Processes",
       "category": "Process",
       "edition": "Community",
-      "description": "Submit and poll jobs through OGC API - Processes."
+      "description": "Submit and poll jobs through OGC API - Processes.",
+      "status": "preview"
     },
     {
       "key": "provider.databricks",
@@ -772,7 +774,8 @@
       "displayName": "WPS 2.0",
       "category": "Serve",
       "edition": "Community",
-      "description": "Submit and poll processes through OGC WPS 2.0 (GetCapabilities, DescribeProcess, Execute, GetStatus, GetResult)."
+      "description": "Submit and poll processes through OGC WPS 2.0 (GetCapabilities, DescribeProcess, Execute, GetStatus, GetResult).",
+      "status": "preview"
     },
     {
       "key": "staticmap.high-dpi",
@@ -860,7 +863,7 @@
     }
   ],
   "crosswalks": {
-    "esriAssess": [
+    "geoservicesAssess": [
       {
         "assessKey": "web-map",
         "capability": "identity.portal-sharing",
@@ -1003,12 +1006,12 @@
         "capability": "serve.geoservices-mapserver"
       },
       {
-        "clientLane": "arcgis-stub",
+        "clientLane": "geoservices-rest-stub",
         "protocol": "featureserver",
         "capability": "serve.geoservices-featureserver"
       },
       {
-        "clientLane": "arcgis-stub",
+        "clientLane": "geoservices-rest-stub",
         "protocol": "mapserver",
         "capability": "serve.geoservices-mapserver"
       },
@@ -1068,7 +1071,7 @@
         "capability": "serve.odata"
       }
     ],
-    "esriCompatMatrix": [
+    "geoservicesCompatMatrix": [
       {
         "serviceId": "feature-server",
         "capability": "serve.geoservices-featureserver"

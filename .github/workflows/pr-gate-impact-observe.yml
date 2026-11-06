@@ -51,7 +51,7 @@ jobs:
     timeout-minutes: 8
     steps:
       - name: Checkout trusted observer policy
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
           path: policy
@@ -60,7 +60,7 @@ jobs:
 
       - id: collect
         name: Collect exact change metadata from trusted policy
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           SOURCE_RUN_ID: ${{ github.event.workflow_run.id || inputs.run_id }}
           SOURCE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt || inputs.run_attempt }}
@@ -204,7 +204,7 @@ jobs:
       # regression. Read from the artifact catalog; never downloaded.
       - name: Retain observation skip marker
         if: steps.collect.outputs.skip == 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: pr-gate-impact-skipped-${{ steps.collect.outputs.skip_code }}-attempt-${{ github.run_attempt }}
           path: ${{ runner.temp }}/observation-skipped.json
@@ -235,7 +235,7 @@ jobs:
 
       - name: Upload trusted PR Gate impact observation
         if: steps.collect.outputs.skip != 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: pr-gate-impact-${{ steps.classify.outputs.mode }}-v3-attempt-${{ github.run_attempt }}
           path: ${{ runner.temp }}/pr-gate-impact-observation.json

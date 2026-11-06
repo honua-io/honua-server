@@ -8,16 +8,9 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Applies the method-aware admin policy using an operation descriptor's semantic
-/// side-effect class instead of the transport method used by HTTP or MCP.
-/// </summary>
 public static class OperationAdminAuthorization
 {
-    /// <summary>
-    /// Canonical authorization result carried into the operation policy context.
-    /// Adapters must use this value instead of asserting their own outcome.
-    /// </summary>
+    // An adapter must use the canonical result already stored for the operation instead of asserting its own outcome.
     public readonly record struct Decision(bool IsAuthorized, string AuthorizationOutcome)
     {
         internal static Decision Allowed() => new(true, "authorized");
@@ -25,7 +18,6 @@ public static class OperationAdminAuthorization
         internal static Decision Denied() => new(false, "denied");
     }
 
-    /// <summary>Returns whether the caller may invoke the semantic operation.</summary>
     public static async Task<bool> IsAuthorizedAsync(
         HttpContext transportContext,
         ClaimsPrincipal principal,
@@ -37,10 +29,6 @@ public static class OperationAdminAuthorization
         return decision.IsAuthorized;
     }
 
-    /// <summary>
-    /// Evaluates semantic admin authorization and returns the trusted outcome that
-    /// may be propagated to the operation policy runtime.
-    /// </summary>
     public static async Task<Decision> EvaluateAsync(
         HttpContext transportContext,
         ClaimsPrincipal principal,

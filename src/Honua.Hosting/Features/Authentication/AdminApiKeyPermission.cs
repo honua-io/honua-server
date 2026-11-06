@@ -5,62 +5,19 @@ using System.Security.Claims;
 
 namespace Honua.Infrastructure.Authentication;
 
-/// <summary>
-/// Grammar and helpers for scoped <em>admin</em> API-key permission grants (#1985).
-/// </summary>
-/// <remarks>
-/// <para>
-/// An admin API key carries one or more permission grants (persisted on the key
-/// record and projected onto the principal as <c>permission</c> claims). Before
-/// #1985 these grants were stored but never enforced: every authenticated admin
-/// key was stamped with the <c>admin</c> role and therefore satisfied the
-/// <c>Admin</c> authorization policy regardless of how narrowly it was scoped, so
-/// a key minted as read-only (<c>admin:read</c>) could still mutate users, keys,
-/// deploys, and configuration.
-/// </para>
-/// <para>
-/// This helper interprets the admin grammar so the shared admin authorization
-/// policy can enforce it:
-/// <list type="bullet">
-///   <item><c>admin</c>, <c>*</c>, <c>admin:*</c> — full admin (read and write).</item>
-///   <item><c>admin:write</c>, <c>admin:manage</c> — admin write (implies read).</item>
-///   <item><c>admin:read</c> — admin read only (safe HTTP methods).</item>
-///   <item><c>admin:approve</c> — admin read plus proposal approve/reject only.</item>
-/// </list>
-/// A principal that carries the <c>admin</c> role but no <c>permission</c> claims
-/// at all (the bootstrap <c>HONUA_ADMIN_PASSWORD</c> key, a client certificate, or
-/// the Test dev-bypass) is treated as full admin so the legacy single-admin model
-/// is preserved and currently-working keys are never locked out. Layer-scoped
-/// write keys (#1637) never reach this policy because they authenticate with a
-/// non-admin role.
-/// </para>
-/// </remarks>
+// An admin-role principal with no permission claims stays full admin, so bootstrap and client-certificate callers are not locked out, and a layer-scoped write key never reaches this policy.
 internal static class AdminApiKeyPermission
 {
-    /// <summary>
-    /// Claim type used to project a key's permission grants onto the principal.
-    /// </summary>
     public const string PermissionClaimType = "permission";
 
     private const string AdminGrantPrefix = "admin:";
     private const string OpsGrantPrefix = "ops:";
 
-    /// <summary>
-    /// Ops-reader grants that confer read-only access to the operational observability surfaces
-    /// (aggregated operate status, ops-health, findings, alerts) but no mutating authority — a
-    /// credential distinct from the admin family so a status/monitoring copilot can read the ops
-    /// posture without holding a key that could <c>POST</c> a rollback, promotion, or suppression.
-    /// </summary>
+    // An ops-reader grant is outside the admin family and cannot mutate.
     private static readonly string[] OpsReadGrants = ["ops:read", "ops:reader", "ops:*"];
 
-    /// <summary>
-    /// Grants that confer full administration (read and write).
-    /// </summary>
     private static readonly string[] FullAdminGrants = ["admin", "*", "admin:*"];
 
-    /// <summary>
-    /// Admin sub-grants that authorize mutating operations (each implies read).
-    /// </summary>
     private static readonly string[] WriteSubGrants = ["write", "manage", "*"];
 
     internal const string ApproveGrant = "admin:approve";
@@ -69,34 +26,19 @@ internal static class AdminApiKeyPermission
     internal const string ApprovedOperationTenantGrantPrefix = "admin:operation:tenant:";
     internal const string ApprovedOperationTenantClaim = "honua:approved-operation-tenant";
 
-    /// <summary>Admits scoped admin keys to permission-checked policies without full-admin role bypasses.</summary>
     internal const string ScopedAdminRole = "scoped-admin-key";
 
-    /// <summary>The admin API path prefix approved-operation credentials are scoped to.</summary>
     private const string AdminApiPathPrefix = "/api/v1/admin/";
 
-    /// <summary>
-    /// Describes how much admin authority a principal's grants confer.
-    /// </summary>
     internal enum AdminAccessLevel
     {
-        /// <summary>No admin grant; the principal cannot reach admin surfaces.</summary>
         None = 0,
 
-        /// <summary>Read-only admin (safe HTTP methods only).</summary>
         Read = 1,
 
-        /// <summary>Full admin (read and write/mutate).</summary>
         Write = 2,
     }
 
-    /// <summary>
-    /// Computes the admin access level a principal's grants confer. A principal in
-    /// the <c>admin</c> role with no <c>permission</c> claims is treated as full
-    /// admin (bootstrap password, client certificate, or Test dev-bypass).
-    /// </summary>
-    /// <param name="principal">The authenticated principal.</param>
-    /// <returns>The effective <see cref="AdminAccessLevel"/>.</returns>
     public static AdminAccessLevel ResolveAccessLevel(ClaimsPrincipal principal)
     {
         ArgumentNullException.ThrowIfNull(principal);
@@ -125,31 +67,13 @@ internal static class AdminApiKeyPermission
         return level;
     }
 
-    /// <summary>
-    /// Whether this principal has unrestricted administrative write authority.
-    /// Approved-operation credentials intentionally return false: their admin role
-    /// is transport-scoped to one server-issued admin request and must not bypass
-    /// feature-level write authorization.
-    /// </summary>
+    // An approved-operation credential is not an unrestricted writer: its admin role is bound to one server-issued method and path.
     internal static bool IsFullAdminPrincipal(ClaimsPrincipal principal)
         => ResolveAccessLevel(principal) == AdminAccessLevel.Write;
 
-    /// <summary>
-    /// Determines whether a principal is authorized for an admin request whose
-    /// HTTP method is <paramref name="httpMethod"/>. Safe (read) methods require at
-    /// least <see cref="AdminAccessLevel.Read"/>; mutating methods require
-    /// <see cref="AdminAccessLevel.Write"/>.
-    /// </summary>
-    /// <param name="principal">The authenticated principal.</param>
-    /// <param name="httpMethod">The request HTTP method.</param>
-    /// <returns><see langword="true"/> when the grants authorize the request.</returns>
     public static bool IsAuthorized(ClaimsPrincipal principal, string? httpMethod)
         => IsAuthorized(principal, httpMethod, requestPath: null);
 
-    /// <summary>
-    /// Determines whether a principal is authorized for an admin request, including a
-    /// server-minted credential bound to one exact operation transport method and path.
-    /// </summary>
     public static bool IsAuthorized(ClaimsPrincipal principal, string? httpMethod, string? requestPath)
     {
         ArgumentNullException.ThrowIfNull(principal);
@@ -184,7 +108,31 @@ internal static class AdminApiKeyPermission
         return IsSafeMethod(httpMethod);
     }
 
-    /// <summary>Creates the internal grant carried by a short-lived approved-operation credential.</summary>
+    // Creating, rotating, or revoking credentials needs full admin; admin:write and admin:manage may read credentials but cannot mint them.
+    internal static bool HasCredentialManagementAuthority(ClaimsPrincipal principal, string? httpMethod, string? requestPath)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+
+        var permissions = principal.FindAll(PermissionClaimType).Select(claim => claim.Value?.Trim()).ToList();
+        if (permissions.Count == 0)
+        {
+            return principal.IsInRole("admin");
+        }
+
+        if (!string.IsNullOrWhiteSpace(httpMethod)
+            && requestPath?.StartsWith(AdminApiPathPrefix, StringComparison.Ordinal) == true)
+        {
+            var expectedGrant = CreateApprovedOperationGrant(httpMethod, requestPath);
+            if (permissions.Any(grant => string.Equals(grant, expectedGrant, StringComparison.Ordinal)))
+            {
+                return true;
+            }
+        }
+
+        return permissions.Any(grant =>
+            FullAdminGrants.Any(full => string.Equals(grant, full, StringComparison.OrdinalIgnoreCase)));
+    }
+
     internal static string CreateApprovedOperationGrant(string httpMethod, string requestPath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(httpMethod);
@@ -197,18 +145,15 @@ internal static class AdminApiKeyPermission
         return $"{ApprovedOperationGrantPrefix}{httpMethod.ToUpperInvariant()}:{requestPath}";
     }
 
-    /// <summary>Creates method/path authority and a persisted, server-only tenant binding.</summary>
     internal static string[] CreateApprovedOperationGrants(string httpMethod, string requestPath, string? tenantId)
     {
         // An explicit empty binding preserves accepted single-tenant invocations.
         return [CreateApprovedOperationGrant(httpMethod, requestPath), ApprovedOperationTenantGrantPrefix + tenantId];
     }
 
-    /// <summary>Determines whether a grant belongs to the server-only approved-operation vocabulary.</summary>
     internal static bool IsApprovedOperationGrant(string? grant)
         => grant?.Trim().StartsWith(ApprovedOperationGrantPrefix, StringComparison.Ordinal) == true;
 
-    /// <summary>Determines whether the principal carries the narrow proposal-decision grant.</summary>
     public static bool HasApproveGrant(ClaimsPrincipal principal)
     {
         ArgumentNullException.ThrowIfNull(principal);
@@ -216,26 +161,11 @@ internal static class AdminApiKeyPermission
             string.Equals(claim.Value?.Trim(), ApproveGrant, StringComparison.OrdinalIgnoreCase));
     }
 
-    /// <summary>
-    /// Returns <see langword="true"/> for HTTP methods that do not mutate state and
-    /// are therefore permitted for a read-only admin key.
-    /// </summary>
-    /// <param name="httpMethod">The request HTTP method.</param>
-    /// <returns><see langword="true"/> when the method is safe/read-only.</returns>
     public static bool IsSafeMethod(string? httpMethod)
         => string.Equals(httpMethod, "GET", StringComparison.OrdinalIgnoreCase)
            || string.Equals(httpMethod, "HEAD", StringComparison.OrdinalIgnoreCase)
            || string.Equals(httpMethod, "OPTIONS", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Determines whether a principal carries a read-only <c>ops:</c> grant (<c>ops:read</c>,
-    /// <c>ops:reader</c>, or <c>ops:*</c>). This is a strictly weaker, ops-scoped credential than the
-    /// admin family: it authorizes the read-only operational surfaces but never a mutating operation,
-    /// and it confers no access to the broader admin surfaces (users, keys, configuration) that
-    /// <c>admin:read</c> can observe.
-    /// </summary>
-    /// <param name="principal">The authenticated principal.</param>
-    /// <returns><see langword="true"/> when a read-only ops grant is present.</returns>
     public static bool HasOpsReadGrant(ClaimsPrincipal principal)
     {
         ArgumentNullException.ThrowIfNull(principal);
@@ -267,15 +197,6 @@ internal static class AdminApiKeyPermission
         return false;
     }
 
-    /// <summary>
-    /// Determines whether a principal is authorized for an ops-observability request whose HTTP method
-    /// is <paramref name="httpMethod"/>. Safe (read) methods are authorized by an admin key of any
-    /// level (full or <c>admin:read</c>) or by a read-only <c>ops:</c> grant; mutating methods require
-    /// full admin write. This is the enforcement primitive behind the ops-reader authorization policy.
-    /// </summary>
-    /// <param name="principal">The authenticated principal.</param>
-    /// <param name="httpMethod">The request HTTP method.</param>
-    /// <returns><see langword="true"/> when the grants authorize the request.</returns>
     public static bool IsOpsReadAuthorized(ClaimsPrincipal principal, string? httpMethod)
     {
         ArgumentNullException.ThrowIfNull(principal);
@@ -298,7 +219,6 @@ internal static class AdminApiKeyPermission
         return level == AdminAccessLevel.Read || HasOpsReadGrant(principal);
     }
 
-    /// <summary>Whether a persisted grant belongs to the shared administrative permission grammar.</summary>
     internal static bool IsAdministrativeGrant(string? grant)
         => ClassifyGrant(grant) != AdminAccessLevel.None;
 

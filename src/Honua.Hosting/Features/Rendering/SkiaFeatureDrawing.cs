@@ -8,11 +8,6 @@ using SkiaSharp;
 
 namespace Honua.Infrastructure.Rendering;
 
-/// <summary>
-/// Shared Skia drawing for styled and default feature renders. Map export and
-/// raster tile rendering both use these paths so point batching and style paints
-/// stay one implementation.
-/// </summary>
 internal static class SkiaFeatureDrawing
 {
     internal const float PointGeneralizationPixels = 0.8f;

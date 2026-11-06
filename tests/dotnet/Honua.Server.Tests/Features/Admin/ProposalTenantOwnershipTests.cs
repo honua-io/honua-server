@@ -7,6 +7,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Infrastructure.MultiTenancy;
 using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Http;
@@ -20,6 +21,55 @@ namespace Honua.Server.Tests.Features.Admin;
 [Trait("Tier", "Fast")]
 public sealed class ProposalTenantOwnershipTests
 {
+    [Fact]
+    public void ProposalExecutionView_OnlyTheBoundTerminalExecutionOverridesSubmitted()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var proposal = new OperationProposal
+        {
+            ProposalId = "proposal",
+            OperationId = "control-plane.deploy",
+            TenantId = "tenant-a",
+            Kind = OperationClass.Deploy,
+            Status = OperationProposalStatus.Submitted,
+            Audit = new OperationAuditInfo { OperationInstanceId = "instance" },
+            ExecutionOperationId = "restore",
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+        var execution = new OperationHandle
+        {
+            OperationInstanceId = "instance",
+            OperationId = "control-plane.deploy",
+            TenantId = "tenant-a",
+            ProposalId = "proposal",
+            JobId = "restore",
+            CorrelationId = "correlation",
+            Status = OperationHandleStatus.Failed,
+            Reason = "restore-provider-failed",
+            CreatedAt = now,
+            UpdatedAt = now.AddMinutes(1)
+        };
+        var terminal = OperationProposalExecutionView.From(proposal, execution);
+        Assert.Equal("Failed", terminal.Status);
+        Assert.Equal(execution.Reason, terminal.ResolutionReason);
+        Assert.Equal(execution.UpdatedAt, terminal.UpdatedAt);
+        foreach (var unrelated in new[]
+        {
+            execution with { OperationInstanceId = "other" }, execution with { OperationId = "other" },
+            execution with { TenantId = "other" }, execution with { ProposalId = "other" },
+            execution with { JobId = "other" }, execution with { Status = OperationHandleStatus.Running }
+        })
+        {
+            var view = OperationProposalExecutionView.From(proposal, unrelated);
+            Assert.Equal("Submitted", view.Status);
+            Assert.Null(view.ResolutionReason);
+        }
+        Assert.Equal("Submitted", OperationProposalExecutionView.From(proposal, null).Status);
+        Assert.Equal("Rejected", OperationProposalExecutionView.From(
+            proposal with { Status = OperationProposalStatus.Rejected }, execution).Status);
+    }
+
     [Theory]
     [InlineData("tenant-a", "admin", true)]
     [InlineData("tenant-b", "admin", false)]

@@ -6,9 +6,6 @@ using Microsoft.AspNetCore.OutputCaching;
 
 namespace Honua.Infrastructure.Caching;
 
-/// <summary>
-/// Output cache policy that adds tags derived from common route values.
-/// </summary>
 internal sealed class RouteTagOutputCachePolicy : IOutputCachePolicy
 {
     public ValueTask CacheRequestAsync(OutputCacheContext context, CancellationToken cancellationToken)

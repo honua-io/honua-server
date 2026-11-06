@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Diagnostics;
 using System.Text.Json.Nodes;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
@@ -103,6 +104,7 @@ public sealed class GpEnvironmentProbe
     private readonly Lazy<bool> _hostGdal;
     private readonly Lazy<bool> _python;
     private readonly Lazy<bool> _integrationStack;
+    private readonly Lazy<bool> _dotnetSdk;
 
     /// <summary>Creates a probe that inspects the real machine.</summary>
     /// <param name="workerImageAvailable">The container probe result when the caller ran it; null means unchecked.</param>
@@ -120,19 +122,30 @@ public sealed class GpEnvironmentProbe
         _integrationStack = new Lazy<bool>(static () =>
             !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection")) ||
             !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("HONUA_BASE_URL")));
+        _dotnetSdk = new Lazy<bool>(HasDotnet10Sdk);
     }
 
     /// <summary>Creates a probe with fixed answers (tests).</summary>
+    /// <param name="hostGdalAvailable">Whether the host GDAL CLIs are present.</param>
+    /// <param name="workerImageAvailable">The container probe result, or null when unchecked.</param>
+    /// <param name="pythonAvailable">Whether a Python interpreter is present.</param>
+    /// <param name="integrationStackConfigured">Whether the integration stack is configured.</param>
+    /// <param name="workerImage">The worker image reference.</param>
+    /// <param name="executableAvailable">Executable lookup. Null treats every name like <paramref name="hostGdalAvailable"/>.</param>
+    /// <param name="configurationAvailable">Configuration lookup. Null uses <paramref name="integrationStackConfigured"/>.</param>
+    /// <param name="dotnetSdkAvailable">Whether a .NET 10 SDK is installed. Null follows <paramref name="executableAvailable"/> for <c>dotnet</c>.</param>
     public GpEnvironmentProbe(bool hostGdalAvailable, bool? workerImageAvailable, bool pythonAvailable, bool integrationStackConfigured, string workerImage = "honua-worker-etl",
-        Func<string, bool>? executableAvailable = null, Func<string, bool>? configurationAvailable = null)
+        Func<string, bool>? executableAvailable = null, Func<string, bool>? configurationAvailable = null, bool? dotnetSdkAvailable = null)
     {
         WorkerImageAvailable = workerImageAvailable;
         WorkerImage = workerImage;
-        _executableAvailable = executableAvailable ?? (_ => hostGdalAvailable);
+        var executable = executableAvailable ?? (_ => hostGdalAvailable);
+        _executableAvailable = executable;
         _configurationAvailable = configurationAvailable ?? (_ => integrationStackConfigured);
         _hostGdal = new Lazy<bool>(() => hostGdalAvailable);
         _python = new Lazy<bool>(() => pythonAvailable);
         _integrationStack = new Lazy<bool>(() => integrationStackConfigured);
+        _dotnetSdk = new Lazy<bool>(() => dotnetSdkAvailable ?? executable("dotnet"));
     }
 
     /// <summary>Whether <c>ogr2ogr</c> and <c>gdal_translate</c> resolve on PATH.</summary>
@@ -146,6 +159,12 @@ public sealed class GpEnvironmentProbe
 
     /// <summary>Whether a Python interpreter resolves on PATH.</summary>
     public bool PythonAvailable => _python.Value;
+
+    /// <summary>
+    /// Whether a .NET 10 SDK is installed. The <c>dotnet</c> host that runs the devkit is not
+    /// enough to build a scaffolded project.
+    /// </summary>
+    public bool DotnetSdkAvailable => _dotnetSdk.Value;
 
     /// <summary>Whether a server connection or database connection string is configured in the environment.</summary>
     public bool IntegrationStackConfigured => _integrationStack.Value;
@@ -187,6 +206,73 @@ public sealed class GpEnvironmentProbe
         }
 
         return false;
+    }
+
+    /// <summary>Whether <paramref name="sdkList"/> from <c>dotnet --list-sdks</c> names a 10.x SDK.</summary>
+    /// <param name="sdkList">The command's stdout.</param>
+    internal static bool SdkListIncludesNet10(string sdkList)
+    {
+        foreach (var raw in sdkList.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var version = raw.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+            if (version is not null && version.Split('.')[0] == "10")
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool HasDotnet10Sdk()
+    {
+        if (!OnPath("dotnet"))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var process = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = "dotnet",
+                    Arguments = "--list-sdks",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                },
+            };
+            if (!process.Start())
+            {
+                return false;
+            }
+
+            // Drain both pipes before waiting so a chatty stderr cannot fill the buffer and stall.
+            var stdout = process.StandardOutput.ReadToEnd();
+            _ = process.StandardError.ReadToEnd();
+            if (!process.WaitForExit(10_000))
+            {
+                try
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+                catch (InvalidOperationException)
+                {
+                    // The process exited between the timeout and the kill.
+                }
+
+                return false;
+            }
+
+            return SdkListIncludesNet10(stdout);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or IOException)
+        {
+            return false;
+        }
     }
 }
 

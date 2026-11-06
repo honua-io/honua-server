@@ -5,41 +5,17 @@ using System.ComponentModel.DataAnnotations;
 
 namespace Honua.Protocols.OData;
 
-/// <summary>
-/// Configuration options for the OData v4 protocol adapter.
-/// </summary>
 public sealed class ODataOptions
 {
-    /// <summary>
-    /// The configuration section name that binds to these options.
-    /// </summary>
     public const string SectionName = "OData";
 
-    /// <summary>
-    /// Server-driven paging cap. The effective page size is clamped to
-    /// <c>min($top, MaxPageSize)</c> so a single OData request never tries to
-    /// materialize an unbounded result page. When a client requests a larger
-    /// <c>$top</c>, the server returns the first page (up to this size) and
-    /// emits an <c>@odata.nextLink</c> so the client can page through the
-    /// remaining rows. A very large <c>$top</c> on an ad hoc spatial query
-    /// (for example <c>geo.intersects</c> with <c>$select</c>) otherwise
-    /// forces a pathological database plan that can exceed the request budget.
-    /// </summary>
+    // The page cap exists because an unbounded $top on an ad hoc spatial query can force a database plan that exceeds the request budget.
     [Range(1, 10000)]
     public int MaxPageSize { get; set; } = 1000;
 
-    /// <summary>
-    /// Maximum input rows for in-process $apply transformations. Queries exceeding
-    /// this limit fail explicitly rather than returning an incomplete aggregate.
-    /// </summary>
     [Range(1, 100000)]
     public int MaxApplyInputRows { get; set; } = 10000;
 
-    /// <summary>
-    /// Maximum GET (and other non-mutation) operations accepted in one $batch.
-    /// The batch operation count stays at 1000; this caps the read amplification
-    /// an anonymous caller can trigger with one request.
-    /// </summary>
     [Range(1, 1000)]
     public int MaxBatchReadOperations { get; set; } = 32;
 }

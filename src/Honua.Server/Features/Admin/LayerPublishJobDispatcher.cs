@@ -12,7 +12,6 @@ using Honua.Core.Features.Infrastructure.Domain;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>Launches accepted publications and compensates failed durable submissions.</summary>
 internal sealed partial class LayerPublishJobDispatcher(
     LayerPublishRunnerDecision decision,
     IUniversalProgressStore progressStore,

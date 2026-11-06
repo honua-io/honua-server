@@ -4,21 +4,17 @@
 using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Text;
 using System.Text.Json;
+using System.Text;
 using Honua.Ai.StudioAiProxy.Abstractions;
 using Honua.Ai.StudioAiProxy.Adapters.Models;
 using Honua.Ai.StudioAiProxy.Domain;
+using Honua.Core.Features.Security.Admission;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Ai.StudioAiProxy.Adapters;
 
-/// <summary>
-/// Adapter for the Anthropic Messages API (<c>POST {endpoint}/v1/messages</c>, streaming). Maps
-/// Anthropic's SSE frame vocabulary (<c>message_start</c>/<c>content_block_*</c>/<c>message_delta</c>/
-/// <c>message_stop</c>) onto the provider-neutral <see cref="StudioAiChatEvent"/> sequence.
-/// </summary>
-internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
+internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, IStudioAiPreparedHttpAdapter
 {
     private const string AnthropicVersion = "2023-06-01";
     private const string ProviderLabel = "anthropic";
@@ -56,14 +52,30 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
     }
 
     public async IAsyncEnumerable<StudioAiChatEvent> StreamAsync(
-        StudioAiProxyProviderOptions options,
-        StudioAiChatRequest request,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
+        StudioAiProxyProviderOptions options, StudioAiChatRequest request,
+        IAiExecutionPermit permit, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(request);
+        // Preserve direct callers' lazy enumeration and initial cancellation gate.
+        await permit.EnsureCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var invocation = Prepare(options, request);
+        await foreach (var evt in StreamPreparedAsync(invocation, permit, cancellationToken).ConfigureAwait(false))
+            yield return evt;
+    }
 
-        var model = string.IsNullOrWhiteSpace(request.Model) ? options.Model : request.Model!;
+    public StudioAiHttpInvocation Prepare(StudioAiProxyProviderOptions options, StudioAiChatRequest request)
+        => new(options, request, "/v1/messages", (snapshot, original, model) =>
+            JsonSerializer.SerializeToUtf8Bytes(BuildRequest(snapshot, original, model),
+                StudioAiProxyJsonContext.Default.AnthropicProxyRequest));
+
+    public async IAsyncEnumerable<StudioAiChatEvent> StreamPreparedAsync(
+        StudioAiHttpInvocation invocation, IAiExecutionPermit permit,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        await permit.EnsureCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var options = invocation.CopyOptions();
+        var model = invocation.Model;
         string? apiKey = null;
         var credentialUnavailable = false;
         try
@@ -86,24 +98,22 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
             yield break;
         }
 
-        var proxyRequest = BuildRequest(options, request, model);
-
         var client = _httpClientFactory.CreateClient("studio-ai-proxy");
-        var endpoint = options.Endpoint.TrimEnd('/') + "/v1/messages";
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, endpoint);
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, invocation.Destination);
         httpRequest.Headers.TryAddWithoutValidation("x-api-key", apiKey);
         httpRequest.Headers.TryAddWithoutValidation("anthropic-version", AnthropicVersion);
-        httpRequest.Content = new StringContent(
-            JsonSerializer.Serialize(proxyRequest, StudioAiProxyJsonContext.Default.AnthropicProxyRequest),
-            Encoding.UTF8,
-            "application/json");
+        httpRequest.Content = new ByteArrayContent(invocation.CopyBody());
+        httpRequest.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json")
+        {
+            CharSet = "utf-8"
+        };
 
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutCts.CancelAfter(TimeSpan.FromSeconds(options.TimeoutSeconds));
         var stopwatch = Stopwatch.StartNew();
 
         var (response, sendTimedOut, requestError) = await StudioAiProxyHttpStreamHelpers
-            .SendSafeAsync(client, httpRequest, timeoutCts.Token, cancellationToken)
+            .SendSafeAsync(client, httpRequest, permit, timeoutCts.Token, cancellationToken)
             .ConfigureAwait(false);
 
         if (sendTimedOut)
@@ -115,7 +125,7 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
 
         if (requestError is not null)
         {
-            StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, requestError);
+            StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, "send", requestError.GetType().Name);
             yield return Error(model, "Provider request failed.");
             yield break;
         }
@@ -123,7 +133,7 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
         using var successResponse = response!;
         if (!successResponse.IsSuccessStatusCode)
         {
-            var (body, bodyTimedOut, bodyFailure, _) = await StudioAiProxyHttpStreamHelpers
+            var (_, bodyTimedOut, bodyFailure, _) = await StudioAiProxyHttpStreamHelpers
                 .ReadErrorBodySafeAsync(successResponse.Content, timeoutCts.Token, cancellationToken)
                 .ConfigureAwait(false);
             if (bodyTimedOut)
@@ -135,12 +145,12 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
 
             if (bodyFailure is not null)
             {
-                StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, bodyFailure);
+                StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, "error-body", bodyFailure.GetType().Name);
                 yield return Error(model, "Provider response failed.", stopwatch.ElapsedMilliseconds);
                 yield break;
             }
 
-            StudioAiProxyLog.ProviderHttpError(_logger, ProviderLabel, (int)successResponse.StatusCode, Truncate(body, 500));
+            StudioAiProxyLog.ProviderHttpError(_logger, ProviderLabel, (int)successResponse.StatusCode);
             yield return Error(model, $"Provider returned HTTP {(int)successResponse.StatusCode}.");
             yield break;
         }
@@ -157,7 +167,7 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
 
         if (openFailure is not null)
         {
-            StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, openFailure);
+            StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, "open-stream", openFailure.GetType().Name);
             yield return Error(model, "Provider response failed.", stopwatch.ElapsedMilliseconds);
             yield break;
         }
@@ -189,7 +199,7 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
 
             if (ioError is not null)
             {
-                StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, ioError);
+                StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, "read-stream", ioError.GetType().Name);
                 yield return Error(model, "Provider stream ended unexpectedly.", stopwatch.ElapsedMilliseconds);
                 yield break;
             }
@@ -219,7 +229,7 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
             catch (JsonException ex)
             {
                 parseFailed = true;
-                StudioAiProxyLog.ProviderResponseParseFailed(_logger, ProviderLabel, ex);
+                StudioAiProxyLog.ProviderResponseParseFailed(_logger, ProviderLabel, ex.GetType().Name);
             }
 
             if (parseFailed || frame is null)
@@ -444,19 +454,7 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
         return document.RootElement.Clone();
     }
 
-    /// <summary>
-    /// Builds the Anthropic top-level <c>system</c> string. Anthropic's Messages API has no
-    /// <c>system</c>-role message — system content is a single top-level field, not a
-    /// <c>messages[]</c> entry — so a <see cref="StudioAiRole.System"/> message would otherwise be
-    /// silently dropped by the <c>Where(m =&gt; m.Role != StudioAiRole.System)</c> filter above (they
-    /// cannot be sent to Anthropic as chat turns; the API rejects a <c>"system"</c> role in
-    /// <c>messages[]</c>). To keep behavior aligned with the OpenAI-compatible adapter — which
-    /// forwards <see cref="StudioAiChatRequest.System"/> and every <see cref="StudioAiRole.System"/>
-    /// message as OpenAI <c>system</c>-role chat messages, in request order, with no restriction on
-    /// position — this concatenates the same content (the top-level <c>System</c> field first, then
-    /// each <see cref="StudioAiRole.System"/> message's content in order) into Anthropic's single
-    /// <c>system</c> string, joined with a blank line between parts.
-    /// </summary>
+    // Anthropic rejects a system role inside messages, so system content is concatenated into the single top-level system field.
     private static string? BuildSystemPrompt(StudioAiChatRequest request)
     {
         var parts = new List<string>();
@@ -506,5 +504,4 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter
         LatencyMs = latencyMs
     };
 
-    private static string Truncate(string value, int max) => value.Length <= max ? value : value[..max];
 }

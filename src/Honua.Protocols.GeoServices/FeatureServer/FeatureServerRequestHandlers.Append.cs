@@ -106,10 +106,7 @@ internal static partial class FeatureServerEndpoints
             versionContext: null,
             cancellationToken);
 
-    /// <summary>
-    /// Loads existing object ids for upsert matching, reading within <paramref name="versionContext"/>
-    /// when it names a branch version (#6095) so matches are never taken from DEFAULT.
-    /// </summary>
+    // Upsert object-id matches are read inside the named branch version so they are never taken from DEFAULT.
     internal static async Task<(Dictionary<string, long>? Matches, string? Error)> LoadAppendUpsertMatchesAsync(
         IFeatureReader featureReader,
         IFilterExpressionService filterService,

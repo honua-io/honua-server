@@ -6,10 +6,6 @@ using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Console.Collaboration.Models;
 
-/// <summary>
-/// Source-generated JSON context for the durable Studio map collaboration API
-/// (honua-server#1278, slice 1): comment threads + activity feed.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

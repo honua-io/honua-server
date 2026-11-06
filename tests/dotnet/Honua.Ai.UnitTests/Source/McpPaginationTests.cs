@@ -209,7 +209,7 @@ public sealed class McpPaginationTests
 
         var first = await DispatchAsync(
             surface,
-            """{"jsonrpc":"2.0","id":"r1","method":"resources/read","params":{"uri":"honua://big/doc"}}""",
+            """{"jsonrpc":"2.0","id":"r1","method":"resources/read","params":{"uri":"honua://big/doc","maxChars":20}}""",
             context);
 
         var firstResult = first!.Result!.Value;
@@ -228,6 +228,48 @@ public sealed class McpPaginationTests
     }
 
     [UnitTest]
+    public async Task ResourcesRead_WithoutCursor_ReturnsWholeDocumentWithoutNextCursor()
+    {
+        // MCP resources/read has no cursor; a spec-only client (MCP Inspector) must receive the
+        // complete JSON document, not a 64,000-character fragment of it.
+        var text = "{\"processes\":[" + string.Join(",", Enumerable.Range(0, 8000).Select(i => $"{{\"id\":{i}}}")) + "]}";
+        text.Length.Should().BeGreaterThan(McpPagination.DefaultMaxResourceReadChars);
+        var surface = new McpDataAccessSurface(
+            tools: [],
+            resources: [new StubResource("honua://catalog/processes", text)],
+            logger: NullLogger<McpDataAccessSurface>.Instance);
+
+        var response = await DispatchAsync(
+            surface,
+            """{"jsonrpc":"2.0","id":"r1","method":"resources/read","params":{"uri":"honua://catalog/processes"}}""",
+            McpTestFactory.AuthenticatedHttpContext());
+
+        var result = response!.Result!.Value;
+        result.GetProperty("contents")[0].GetProperty("text").GetString().Should().Be(text);
+        result.TryGetProperty("nextCursor", out _).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task ResourcesRead_WithoutCursor_PagesOnlyAboveTheHardCeiling()
+    {
+        var text = new string('z', McpPagination.MaxResourceReadChars + 10);
+        var surface = new McpDataAccessSurface(
+            tools: [],
+            resources: [new StubResource("honua://big/doc", text)],
+            logger: NullLogger<McpDataAccessSurface>.Instance);
+
+        var response = await DispatchAsync(
+            surface,
+            """{"jsonrpc":"2.0","id":"r1","method":"resources/read","params":{"uri":"honua://big/doc"}}""",
+            McpTestFactory.AuthenticatedHttpContext());
+
+        var result = response!.Result!.Value;
+        result.GetProperty("contents")[0].GetProperty("text").GetString()!.Length
+            .Should().Be(McpPagination.MaxResourceReadChars);
+        result.GetProperty("nextCursor").GetString().Should().NotBeNullOrWhiteSpace();
+    }
+
+    [UnitTest]
     public async Task ResourcesRead_ExplicitMaxCharsOptsUpWithinHardCeiling()
     {
         var text = new string('z', 70_000);
@@ -239,7 +281,7 @@ public sealed class McpPaginationTests
 
         var bounded = await DispatchAsync(
             surface,
-            """{"jsonrpc":"2.0","id":"r1","method":"resources/read","params":{"uri":"honua://big/doc"}}""",
+            """{"jsonrpc":"2.0","id":"r1","method":"resources/read","params":{"uri":"honua://big/doc","maxChars":64000}}""",
             McpTestFactory.AuthenticatedHttpContext());
         var boundedResult = bounded!.Result!.Value;
         boundedResult.GetProperty("contents")[0].GetProperty("text").GetString()!

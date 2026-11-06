@@ -5,9 +5,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Server.Features.Styling;
 
-/// <summary>
-/// Source-generated logging for style operations.
-/// </summary>
 internal static partial class LayerStyleLog
 {
     [LoggerMessage(

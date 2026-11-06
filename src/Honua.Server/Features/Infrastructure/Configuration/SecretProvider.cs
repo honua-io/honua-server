@@ -9,10 +9,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Configuration;
 
-/// <summary>
-/// Centralized secret provider that integrates with multiple secret management systems.
-/// Provides caching, fallback, and audit logging for secret access.
-/// </summary>
 internal sealed class SecretProvider : ISecretProvider, IDisposable
 {
     private readonly IConnectionSecretResolver _secretResolver;
@@ -24,9 +20,6 @@ internal sealed class SecretProvider : ISecretProvider, IDisposable
     private readonly Timer? _cacheCleanupTimer;
     private bool _disposed;
 
-    /// <summary>
-    /// Initializes a new instance of the SecretProvider.
-    /// </summary>
     public SecretProvider(
         IConnectionSecretResolver secretResolver,
         IOptions<SecretProviderOptions> options,
@@ -45,15 +38,10 @@ internal sealed class SecretProvider : ISecretProvider, IDisposable
         }
     }
 
-    /// <inheritdoc />
     public string ProviderName => "CompositeSecretProvider";
 
-    /// <inheritdoc />
     public bool CanProvideSecret(string secretKey) => IsSecretReference(secretKey);
 
-    /// <summary>
-    /// Retrieves a secret value using the specified secret reference.
-    /// </summary>
     public async Task<string?> GetSecretAsync(string secretRef, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(secretRef);
@@ -97,9 +85,6 @@ internal sealed class SecretProvider : ISecretProvider, IDisposable
         }
     }
 
-    /// <summary>
-    /// Retrieves a secret value or returns the default value if not found.
-    /// </summary>
     public async Task<string?> GetSecretOrDefaultAsync(string secretRef, string? defaultValue = null, CancellationToken cancellationToken = default)
     {
         try
@@ -114,9 +99,6 @@ internal sealed class SecretProvider : ISecretProvider, IDisposable
         }
     }
 
-    /// <summary>
-    /// Tests whether a secret reference can be resolved.
-    /// </summary>
     public async Task<bool> CanResolveSecretAsync(string secretRef, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(secretRef))
@@ -140,14 +122,8 @@ internal sealed class SecretProvider : ISecretProvider, IDisposable
         }
     }
 
-    /// <summary>
-    /// Gets the supported secret provider types.
-    /// </summary>
     public string[] GetSupportedProviders() => _secretResolver.GetSupportedProviders();
 
-    /// <summary>
-    /// Determines if a value is a secret reference.
-    /// </summary>
     public bool IsSecretReference(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -165,9 +141,6 @@ internal sealed class SecretProvider : ISecretProvider, IDisposable
         return GetSupportedProviders().Contains(prefix, StringComparer.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Tries to get a value from the cache.
-    /// </summary>
     private bool TryGetFromCache(string secretRef, out string? value)
     {
         value = null;
@@ -188,9 +161,6 @@ internal sealed class SecretProvider : ISecretProvider, IDisposable
         return true;
     }
 
-    /// <summary>
-    /// Caches a secret value with expiration.
-    /// </summary>
     private async Task CacheSecretAsync(string secretRef, string value)
     {
         // Enforce cache size limit
@@ -225,9 +195,6 @@ internal sealed class SecretProvider : ISecretProvider, IDisposable
         _cache[secretRef] = entry;
     }
 
-    /// <summary>
-    /// Cleans up expired cache entries.
-    /// </summary>
     private void CleanupExpiredEntries(object? state)
     {
         if (_disposed)
@@ -252,9 +219,6 @@ internal sealed class SecretProvider : ISecretProvider, IDisposable
         }
     }
 
-    /// <summary>
-    /// Masks a secret reference for logging (removes sensitive parts).
-    /// </summary>
     private static string MaskSecretReference(string secretRef)
     {
         var colonIndex = secretRef.IndexOf(':', StringComparison.Ordinal);
@@ -267,9 +231,6 @@ internal sealed class SecretProvider : ISecretProvider, IDisposable
         return $"{prefix}:***";
     }
 
-    /// <summary>
-    /// Disposes resources.
-    /// </summary>
     public void Dispose()
     {
         if (_disposed)
@@ -282,8 +243,5 @@ internal sealed class SecretProvider : ISecretProvider, IDisposable
         _disposed = true;
     }
 
-    /// <summary>
-    /// Cache entry for secret values.
-    /// </summary>
     private sealed record CacheEntry(string Value, DateTimeOffset CreatedAt, DateTimeOffset ExpiresAt);
 }

@@ -17,9 +17,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// Outcome of an attempt to cancel a job on its remote batch compute backend.
-/// </summary>
 internal enum RemoteCancelOutcome
 {
     Delegated,
@@ -31,30 +28,10 @@ internal enum RemoteCancelOutcome
     NotRemote
 }
 
-/// <summary>
-/// Result of a remote cancel attempt: the <see cref="RemoteCancelOutcome"/> and, for a
-/// terminal-conflict outcome, the observed terminal status.
-/// </summary>
 internal readonly record struct RemoteCancelResult(
     RemoteCancelOutcome Outcome,
     ExecutionJobStatus? TerminalStatus = null);
 
-/// <summary>
-/// Compute-placement and execution-dispatch runtime for <see cref="GeoprocessingJobService"/>:
-/// execution admission, workload (job-definition) selection, the local in-process queue,
-/// remote batch-compute-backend submission and cancellation, and the approval-lane routing that
-/// parks a gated submission as an <see cref="IOperationGateway"/> proposal instead of dispatching
-/// it to compute. Owns the optional
-/// <see cref="IJobQueue"/>, <see cref="IExecutionJobDefinitionRegistry"/>,
-/// <see cref="IBatchComputeBackend"/> set, <see cref="IExecutionAdmissionEvaluator"/>, and
-/// <see cref="IOperationGateway"/>
-/// collaborators (each default-off when the supporting infrastructure is absent) plus the
-/// shared <see cref="IUniversalProgressStore"/> used to bridge backend progress. The durable
-/// <see cref="IExecutionJobStore"/> stays owned by the job service and is threaded in per call
-/// so this dispatcher carries no job-CRUD surface. Behavior, ordering, CAS semantics, logging,
-/// and the surfaced exceptions are identical to the inline logic the service previously
-/// performed.
-/// </summary>
 internal sealed class GeoprocessingJobDispatcher
 {
     // The initial serving↔worker job contract. A job at this version runs on any worker because
@@ -72,19 +49,8 @@ internal sealed class GeoprocessingJobDispatcher
     private readonly IOperationEnvelopeFactory? _operationEnvelopeFactory;
     private readonly ExecutionAdmissionCoordinator _admissionCoordinator;
 
-    /// <summary>
-    /// Whether this process freezes between requests. Not a constructor collaborator:
-    /// production reads the process environment, and tests replace the probe.
-    /// </summary>
     internal IGeoprocessingHostRuntime HostRuntime { get; init; } = ProcessEnvironmentHostRuntime.Instance;
 
-    /// <summary>
-    /// Creates the dispatcher over the admission evaluator, workload registry, queue,
-    /// batch compute backends, and approval-lane operation gateway, falling back to
-    /// null-object/empty semantics when any are absent. Without a composed
-    /// <see cref="ExecutionAdmissionCoordinator"/> the admission window is serialized
-    /// process-wide only.
-    /// </summary>
     public GeoprocessingJobDispatcher(
         ILogger<GeoprocessingJobService> logger,
         IOptionsMonitor<GeoprocessingExecutorOptions> executorOptions,
@@ -111,19 +77,10 @@ internal sealed class GeoprocessingJobDispatcher
 
     private TimeSpan ProgressRetention => _executorOptions.CurrentValue.ResultRetention;
 
-    /// <summary>
-    /// Enters the admission check-and-create window (#3853). Every read that feeds admission and
-    /// the durable record creation must happen while the returned lease is held; dispose it as soon
-    /// as the record exists so backend submission does not extend the serialized window.
-    /// </summary>
+    // Admission reads and record creation hold this lease, and it is released before backend submission so that work is not serialized.
     public Task<ExecutionAdmissionCoordinator.Lease> EnterAdmissionWindowAsync(CancellationToken cancellationToken)
         => _admissionCoordinator.AcquireAsync(cancellationToken);
 
-    /// <summary>
-    /// Evaluates execution admission for the submission. Returns the admitted decision, or
-    /// <c>null</c> when no admission evaluator is configured. Throws
-    /// <see cref="GeoprocessingAdmissionException"/> (after logging) when admission denies the request.
-    /// </summary>
     public async Task<ExecutionAdmissionDecision?> EnsureAdmittedAsync(
         string? ownerId,
         string? partitionKey,
@@ -168,17 +125,7 @@ internal sealed class GeoprocessingJobDispatcher
             decision.RetryAfterSeconds ?? 10);
     }
 
-    /// <summary>
-    /// Routes an approval-gated submission onto the approval lane instead of dispatching it to
-    /// compute. When a durable proposal surface (<see cref="IOperationGateway"/>) is available and
-    /// the submission is not custom code, persists an <c>AwaitingApproval</c> proposal reusing the
-    /// shared control-plane proposal/gateway surface so the gated plan is resumable via
-    /// <c>honua://proposals/{id}</c> instead of dead-ending (ADR-0064, #2814), then throws
-    /// <see cref="GeoprocessingApprovalRequiredException"/> carrying the proposal id. A custom-code
-    /// submission is never persisted as a proposal — the resume path cannot re-mint its scoped
-    /// callback token without the live principal — so it continues to hard-fail; likewise when the
-    /// gateway is unavailable (lightweight hosts / Redis-free configs). This method always throws.
-    /// </summary>
+    // Custom-code is not stored as an approval proposal because resume cannot re-mint the scoped callback token without the live principal.
     public async Task CreateApprovalProposalOrThrowAsync(
         string policyRef,
         AnalysisPlan plan,
@@ -254,23 +201,7 @@ internal sealed class GeoprocessingJobDispatcher
         throw new GeoprocessingApprovalRequiredException(policyRef, detail: null, proposalId: result.ProposalId);
     }
 
-    /// <summary>
-    /// Resolves the execution workload (job definition) a submission should run under.
-    /// Custom-code jobs select the custom-code profile. Managed jobs stay on the local
-    /// backend when one is registered, because the API process is the managed worker and a
-    /// native image will not claim them. Native jobs prefer a workload that declares the
-    /// native profile, then the unprofiled local queue. Returns <c>null</c> when no workload
-    /// registry is configured. When the current workloads cannot run
-    /// <paramref name="requiredRuntimeProfile"/>, <paramref name="confirmKeyedReplay"/> reports
-    /// whether an already-accepted keyed job exists; a confirmed replay returns <c>null</c>
-    /// instead of rejecting the submission (#6069).
-    /// On a serverless host, a managed job is not admitted to the local queue: that loop
-    /// stops when the invocation ends. A remote workload that declares the managed profile
-    /// can still be selected. Otherwise the submission is refused with
-    /// <see cref="GeoprocessingStoreUnavailableException"/> before a job id exists, unless
-    /// <paramref name="confirmKeyedReplay"/> reports an already-accepted job. An operation
-    /// that finishes inside the request never reaches this admission.
-    /// </summary>
+    // A managed job is not placed on the in-process queue of a serverless host, because that loop stops when the invocation ends.
     public async Task<ExecutionJobDefinition?> ResolveWorkloadAsync(
         bool isCustomCode,
         string? requiredRuntimeProfile,
@@ -378,13 +309,6 @@ internal sealed class GeoprocessingJobDispatcher
         return selected;
     }
 
-    /// <summary>
-    /// True when admitting <paramref name="selected"/> would leave a managed job on the
-    /// in-process queue of a host that freezes between invocations. A remote managed
-    /// workload is a real placement and is not refused. Native and custom-code routing
-    /// are unchanged. An operation that finishes on the request thread does not call
-    /// this path.
-    /// </summary>
     private bool RefusesServerlessManagedLoop(
         bool isCustomCode,
         string? requiredRuntimeProfile,
@@ -413,18 +337,10 @@ internal sealed class GeoprocessingJobDispatcher
             ? Task.FromResult(false)
             : confirmKeyedReplay(cancellationToken);
 
-    /// <summary>
-    /// Enqueues the job on the local in-process queue when a queue is configured and the job
-    /// targets the local backend. No-ops otherwise.
-    /// </summary>
     public Task<ExecutionJobRecord> MaybeEnqueueLocalAsync(
         ExecutionJobRecord job, IExecutionJobStore jobStore, CancellationToken cancellationToken)
         => RepairLocalDispatchAsync(job, jobStore, cancellationToken, newlyCreated: true);
 
-    /// <summary>
-    /// Repairs an interrupted local admission before acknowledging a keyed replay.
-    /// The queue keeps repair idempotent and fences deliveries already claimed by workers.
-    /// </summary>
     public async Task<ExecutionJobRecord> RepairLocalDispatchAsync(
         ExecutionJobRecord job, IExecutionJobStore jobStore, CancellationToken cancellationToken,
         bool admissionWindowHeld = false, bool newlyCreated = false)
@@ -494,10 +410,6 @@ internal sealed class GeoprocessingJobDispatcher
         return current;
     }
 
-    /// <summary>
-    /// Best-effort removal of a job from the local queue, logging and swallowing failures so the
-    /// stale-claim reconciler repairs any residue. No-ops when no queue is configured.
-    /// </summary>
     public async Task TryRemoveFromQueueAsync(string jobId, CancellationToken cancellationToken)
     {
         if (_jobQueue == null)
@@ -517,10 +429,6 @@ internal sealed class GeoprocessingJobDispatcher
         }
     }
 
-    /// <summary>
-    /// Submits a job to its remote batch compute backend (or returns it unchanged for the local
-    /// backend). Throws when the targeted backend is not registered.
-    /// </summary>
     public async Task<ExecutionJobRecord> TrySubmitToBackendAsync(
         ExecutionJobRecord job,
         IExecutionJobStore jobStore,
@@ -578,12 +486,6 @@ internal sealed class GeoprocessingJobDispatcher
             .ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Attempts to cancel a job on its remote batch compute backend, applying the durable CAS
-    /// guards (pre-submission cancel, cancellation-requested stamp, backend observation merge)
-    /// and bridging progress. Returns <see cref="RemoteCancelOutcome.NotRemote"/> for local jobs
-    /// so the caller falls through to the local cancellation path.
-    /// </summary>
     public async Task<RemoteCancelResult> TryCancelViaBackendAsync(
         ExecutionJobRecord job,
         IExecutionJobStore jobStore,

@@ -357,7 +357,7 @@ internal sealed partial class GeoservicesImportService
     private static double[][][][] ClassifyPolygonRings(double[][][] rings)
     {
         var classified = rings
-            .Select(ring => new EsriPolygonRing(ring, SignedRingArea(ring)))
+            .Select(ring => new GeoServicesPolygonRing(ring, SignedRingArea(ring)))
             .Where(ring => ring.AbsArea > 0)
             .ToArray();
 
@@ -435,7 +435,7 @@ internal sealed partial class GeoservicesImportService
         return polygons.ToArray();
     }
 
-    private static int FindNearestEvenDepthAncestor(EsriPolygonRing[] rings, int ringIndex)
+    private static int FindNearestEvenDepthAncestor(GeoServicesPolygonRing[] rings, int ringIndex)
     {
         var parentIndex = rings[ringIndex].ParentIndex;
         while (parentIndex >= 0)
@@ -499,9 +499,9 @@ internal sealed partial class GeoservicesImportService
         return EnsureClosedRing(reversed);
     }
 
-    private sealed class EsriPolygonRing
+    private sealed class GeoServicesPolygonRing
     {
-        public EsriPolygonRing(double[][] coordinates, double signedArea)
+        public GeoServicesPolygonRing(double[][] coordinates, double signedArea)
         {
             Coordinates = coordinates;
             SignedArea = signedArea;

@@ -39,8 +39,83 @@ def write_json(path, value):
     Path(path).write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
 
 
+def source_commit(environment):
+    """Commit the image, bundle, and nightly tag must name.
+
+    An empty ``CANDIDATE_SHA`` (or one equal to ``GITHUB_SHA``) keeps the triggering
+    commit. A dispatch from canonical trunk may name another full 40-hex commit when
+    that commit is reachable from trunk, so a release candidate and its worker share
+    one source SHA (honua-server#6752).
+    """
+    candidate = environment.get("CANDIDATE_SHA", "").strip()
+    github_sha = environment.get("GITHUB_SHA", "")
+    if not candidate or candidate == github_sha:
+        return github_sha
+    require(environment.get("GITHUB_REF") == "refs/heads/trunk",
+            "candidate builds require a dispatch from canonical trunk")
+    require(re.fullmatch(r"[0-9a-f]{40}", candidate), "candidate_sha must be a full 40-hex commit")
+    require(candidate_reachable(candidate, environment), "candidate commit is not reachable from trunk")
+    return candidate
+
+
+def candidate_reachable(candidate, environment):
+    """Whether ``candidate`` is an ancestor of ``origin/trunk`` or is that commit.
+
+    Local history decides when both objects are present; in a shallow clone only a
+    positive local answer counts. A depth-1 checkout cannot prove ancestry, so an
+    inconclusive local check asks the compare API (``GH_TOKEN`` authenticates it): ``ahead``
+    (trunk is ahead of the candidate) and ``identical`` are reachable; ``behind``
+    and ``diverged`` are not. Tests patch this function and must not call git or gh.
+    """
+    local = _local_ancestor(candidate)
+    if local is not None:
+        return local
+    repository = environment.get("GITHUB_REPOSITORY") or REPOSITORY
+    try:
+        document = json.loads(command("gh", "api", f"repos/{repository}/compare/{candidate}...trunk"))
+    except (OSError, subprocess.CalledProcessError, json.JSONDecodeError):
+        return False
+    return document.get("status") in {"ahead", "identical"}
+
+
+def _local_ancestor(candidate):
+    try:
+        present = subprocess.run(
+            ["git", "cat-file", "-e", f"{candidate}^{{commit}}"],
+            check=False, capture_output=True)
+        if present.returncode != 0:
+            return None
+        trunk = subprocess.run(
+            ["git", "rev-parse", "--verify", "--quiet", "origin/trunk"],
+            check=False, capture_output=True)
+        if trunk.returncode != 0:
+            return None
+        ancestor = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", candidate, "origin/trunk"],
+            check=False, capture_output=True)
+    except OSError:
+        return None
+    if ancestor.returncode == 0:
+        return True
+    if ancestor.returncode == 1:
+        # A shallow boundary hides the history between a fetched candidate and
+        # origin/trunk, so "not an ancestor" is only authoritative in a full clone.
+        return None if _is_shallow() else False
+    return None
+
+
+def _is_shallow():
+    try:
+        shallow = subprocess.run(
+            ["git", "rev-parse", "--is-shallow-repository"],
+            check=False, capture_output=True, text=True)
+    except OSError:
+        return True
+    return shallow.returncode != 0 or (shallow.stdout or "").strip() != "false"
+
+
 def identity(environment):
-    sha = environment.get("GITHUB_SHA", "")
+    sha = source_commit(environment)
     run = environment.get("GITHUB_RUN_ID", "")
     attempt = environment.get("GITHUB_RUN_ATTEMPT", "")
     require(re.fullmatch(r"[0-9a-f]{40}", sha), "missing exact source SHA")
@@ -49,6 +124,16 @@ def identity(environment):
     require(environment.get("GITHUB_REPOSITORY") == REPOSITORY, "unexpected repository")
     return {"source_sha": sha, "run_id": run, "run_attempt": attempt,
             "repository": REPOSITORY, "workflow": WORKFLOW}
+
+
+def resolve_source(environment):
+    """Record the gated source commit for the build job. Refuses before any image build."""
+    origin = identity(environment)
+    output = environment.get("GITHUB_OUTPUT", "")
+    require(output, "GITHUB_OUTPUT is required")
+    with Path(output).open("a", encoding="utf-8") as handle:
+        handle.write(f"source_sha={origin['source_sha']}\n")
+    return origin["source_sha"]
 
 
 def require_publication(environment):
@@ -159,7 +244,7 @@ def finish(root, environment):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("prepare", "publish", "finish"))
+    parser.add_argument("action", choices=("prepare", "publish", "finish", "resolve-source"))
     parser.add_argument("--bundle", type=Path, default=Path("artifacts/worker-publication"))
     parser.add_argument("--results", type=Path, default=Path("tests/TestResults"))
     parser.add_argument("--scan", type=Path, default=Path("trivy-worker-gdal.sarif"))
@@ -168,6 +253,8 @@ def main():
         prepare(args.bundle, args.results, args.scan, os.environ)
     elif args.action == "publish":
         publish(args.bundle, os.environ)
+    elif args.action == "resolve-source":
+        resolve_source(os.environ)
     else:
         finish(args.bundle, os.environ)
 

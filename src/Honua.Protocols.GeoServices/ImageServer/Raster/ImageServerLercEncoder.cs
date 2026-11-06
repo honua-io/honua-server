@@ -7,16 +7,6 @@ using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Raster;
 
-/// <summary>
-/// Encodes canonical planar samples as lossless LERC2 (version 3): one blob per band, concatenated
-/// in band order, which is how exportImage <c>format=lerc</c> delivers a multi-band block.
-/// </summary>
-/// <remarks>
-/// Each blob stores its band's validity mask (run-length coded) and every valid sample verbatim
-/// ("one sweep"), so decoding reproduces the stored samples bit for bit; there is no quantization
-/// and <c>maxZError</c> only records the lossless tolerance for the sample type. A band whose
-/// valid samples are all equal is stored as the constant <c>zMin</c>, as LERC2 specifies.
-/// </remarks>
 internal static class ImageServerLercEncoder
 {
     private const int Version = 3;

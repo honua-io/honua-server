@@ -5,10 +5,6 @@ using Microsoft.AspNetCore.OutputCaching;
 
 namespace Honua.Infrastructure.Caching;
 
-/// <summary>
-/// Output cache policy that only allows caching for anonymous requests.
-/// Prevents serving cached responses to authenticated users with differing access policies.
-/// </summary>
 internal sealed class AnonymousOnlyOutputCachePolicy : IOutputCachePolicy
 {
     public ValueTask CacheRequestAsync(OutputCacheContext context, CancellationToken cancellationToken)

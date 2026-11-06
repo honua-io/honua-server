@@ -50,16 +50,11 @@ internal sealed class PostgresAdvisoryLockLeaderElectionStrategy : ILeaderElecti
 
     public bool IsLeader { get; private set; }
 
-    /// <inheritdoc />
     public bool LastAcquireFaulted { get; private set; }
 
     public string InstanceId { get; }
 
-    /// <summary>
-    /// Builds a one-session data source for the advisory lock. Multiplexing is forced
-    /// off and TCP keepalive is enabled even when the application pool has both the
-    /// other way around.
-    /// </summary>
+    // The advisory-lock connection is unpooled with multiplexing off, because a pooled loser would pin a proxy backend on every frozen instance.
     internal static NpgsqlDataSource CreateDedicatedLockDataSource(NpgsqlDataSource dataSource)
         => CreateDedicatedLockDataSource(dataSource, TimeSpan.FromSeconds(30));
 
@@ -70,8 +65,8 @@ internal sealed class PostgresAdvisoryLockLeaderElectionStrategy : ILeaderElecti
         var builder = new NpgsqlConnectionStringBuilder(dataSource.ConnectionString)
         {
             Multiplexing = false,
+            Pooling = false,
             PersistSecurityInfo = true,
-            MaxPoolSize = 2,
             MinPoolSize = 0,
         };
         builder.KeepAlive = seconds;

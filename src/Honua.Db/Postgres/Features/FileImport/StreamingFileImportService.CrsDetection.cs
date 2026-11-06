@@ -31,7 +31,7 @@ internal sealed partial class StreamingFileImportService
             return format switch
             {
                 SupportedFileFormat.GeoJson => await DetectGeoJsonSridAsync(stream, cancellationToken),
-                SupportedFileFormat.EsriJson => await EsriJsonFormatReader.TryDetectSridAsync(stream, cancellationToken) ?? 4326,
+                SupportedFileFormat.GeoServicesJson => await GeoServicesJsonFormatReader.TryDetectSridAsync(stream, cancellationToken) ?? 4326,
                 SupportedFileFormat.Kml => 4326,
                 SupportedFileFormat.Gpx => 4326,
                 // A PostGIS CSV export carries the CRS on each geometry (EWKT/EWKB). Honour
@@ -157,7 +157,7 @@ internal sealed partial class StreamingFileImportService
         return format switch
         {
             SupportedFileFormat.GeoJson => await DetectGeoJsonSridAsync(headerStream, cancellationToken),
-            SupportedFileFormat.EsriJson => await EsriJsonFormatReader.TryDetectSridAsync(headerStream, cancellationToken) ?? 4326,
+            SupportedFileFormat.GeoServicesJson => await GeoServicesJsonFormatReader.TryDetectSridAsync(headerStream, cancellationToken) ?? 4326,
             SupportedFileFormat.Kml => 4326,
             SupportedFileFormat.Gpx => 4326,
             SupportedFileFormat.Csv => await CsvFormatReader.TryDetectGeometrySridAsync(headerStream, cancellationToken) ?? 4326,

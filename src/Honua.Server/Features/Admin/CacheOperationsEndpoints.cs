@@ -17,9 +17,6 @@ using StackExchange.Redis;
 
 namespace Honua.Server.Features.Admin;
 
-/// <summary>
-/// Admin endpoints for cache health monitoring and invalidation operations.
-/// </summary>
 internal static class CacheOperationsEndpoints
 {
     private const string CacheHealthCheckFailedMessage = "Cache health check failed.";
@@ -394,7 +391,4 @@ internal static class CacheOperationsEndpoints
         => denominator > 0 ? (double)numerator / denominator : 0.0;
 }
 
-/// <summary>
-/// Log category for cache operations endpoints.
-/// </summary>
 internal sealed class CacheOperationsEndpointsLog;

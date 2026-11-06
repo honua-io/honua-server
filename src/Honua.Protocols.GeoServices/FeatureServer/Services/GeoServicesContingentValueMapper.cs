@@ -7,18 +7,8 @@ using Honua.Protocols.GeoServices.FeatureServer.Models;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
-/// <summary>
-/// Maps the canonical <see cref="MetadataV2ContingentValueGroup"/> resource model onto the
-/// Esri-style FeatureServer <c>queryContingentValues</c> per-layer definition surface. Reuses the
-/// same JSON-typed code/range value shape the field-domain and subtype surfaces use so the served
-/// contingent values stay consistent with the layer-level domains they reference (#1878).
-/// </summary>
 internal static class GeoServicesContingentValueMapper
 {
-    /// <summary>
-    /// Maps a layer's contingent value groups to a per-layer definition, or <c>null</c> when the
-    /// layer declares no contingent values (so the caller can omit it from the response collection).
-    /// </summary>
     public static ContingentValuesDefinition? Map(
         int publicLayerId,
         IReadOnlyList<MetadataV2ContingentValueGroup> groups)

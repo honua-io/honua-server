@@ -18,12 +18,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Orchestration;
 
-/// <summary>
-/// Durable workflow orchestration engine. Composes canonical analysis-plan jobs into
-/// declarative DAG runs and reconciles each run's state against the underlying
-/// <see cref="IWorkflowJobExecutor"/> substrate. Mirrors the lease-based reconcile
-/// pattern established for deploy workflows.
-/// </summary>
 internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordinator
 {
     private static readonly TimeSpan LeaseDuration = TimeSpan.FromSeconds(30);
@@ -68,25 +62,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         _principalMembershipSource = principalMembershipSource;
     }
 
-    /// <summary>
-    /// Resolves the row/field security snapshot to pin on a run.
-    /// </summary>
-    /// <remarks>
-    /// A manual run HAS a requesting principal, so the snapshot is captured from it. A cron or
-    /// event-triggered run does not: the scheduler and event-trigger services call in under the
-    /// synthesized orchestrator identity carrying <c>role=admin</c>, so capturing from it would
-    /// hand every step job ADMIN row and field visibility — a restricted author's scheduled
-    /// workflow would read all rows and unmasked fields on every tick. Those runs inherit the
-    /// snapshot captured from the author when the workflow was published, then replace its role
-    /// claims from the current membership source when that source manages the author (#3081).
-    /// <para>
-    /// A triggered run whose definition predates that field is REFUSED rather than falling back
-    /// to the orchestrator capture, matching the submit path's treatment of an absent inherited
-    /// snapshot: the fallback is a privilege escalation, and the resulting non-null snapshot
-    /// would sail past the fail-closed guards at the read seam. Republishing the workflow
-    /// captures the author and clears the refusal (honua-server#3068 review).
-    /// </para>
-    /// </remarks>
+    // A triggered run inherits the author's snapshot and is refused when that snapshot is absent, because the orchestrator identity would grant admin visibility.
     private async Task<JobSecurityContextMembershipResult> ResolveRunSecurityContextAsync(
         WorkflowDefinition definition,
         WorkflowTriggerKind triggerKind,
@@ -160,27 +136,11 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         return result;
     }
 
-    /// <summary>
-    /// Input keys whose value names a catalog object the submit-time layer gate authorizes.
-    /// Deliberately a name match rather than a catalog lookup: the check must hold for any
-    /// process, including ones added later, and over-matching only ever refuses more.
-    /// </summary>
+    // The layer-gate match is by parameter name, and a wider match only refuses more.
     private static bool IsCatalogIdentifierInput(string key)
         => key.EndsWith("layerId", StringComparison.OrdinalIgnoreCase)
             || key.Equals("datasetId", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Refuses a background-triggered workflow whose catalog identifiers are supplied through a
-    /// ForEach placeholder.
-    /// </summary>
-    /// <remarks>
-    /// Permanent by construction — it is a property of the stored definition — so it throws the
-    /// exception both trigger loops treat as permanent rather than spinning the occurrence.
-    /// Manual runs are unaffected: they carry a real principal, so run-creation authorization of
-    /// the expanded plan IS the requester's decision. Lifting this needs publisher-derived
-    /// authority at expansion time, which the definition does not currently carry
-    /// (honua-server#3043 review).
-    /// </remarks>
     private static void RejectDynamicCatalogIdentifiers(WorkflowDefinition definition)
     {
         foreach (var step in definition.Steps.Where(step => step.ForEach is not null))
@@ -341,12 +301,6 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
         return run;
     }
 
-    /// <summary>
-    /// Attempts to mark a workflow run as cancelled and synchronise the progress projection.
-    /// The reconcile loop picks up the cancelled status on its next tick and cascades child
-    /// job cancellation. Returns <see cref="WorkflowCancellationOutcome"/> describing the
-    /// resulting state so callers (e.g., the admin endpoint) can shape their responses.
-    /// </summary>
     public async Task<WorkflowCancellationOutcome> CancelRunAsync(
         string runId,
         CancellationToken cancellationToken = default)

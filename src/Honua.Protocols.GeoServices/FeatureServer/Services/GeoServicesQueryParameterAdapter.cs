@@ -15,9 +15,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 
-/// <summary>
-/// Prepared GeoServices query inputs ready for protocol-adapter conversion.
-/// </summary>
 internal readonly record struct GeoServicesQueryRequest
 {
     public required QueryParameters Parameters { get; init; }
@@ -35,9 +32,6 @@ internal readonly record struct GeoServicesQueryRequest
     public bool UseObjectIdsFastPath { get; init; }
 }
 
-/// <summary>
-/// Converts validated GeoServices query inputs into the shared unified query model.
-/// </summary>
 internal sealed class GeoServicesQueryParameterAdapter(
     ILogger<GeoServicesQueryParameterAdapter> logger,
     IOptions<LimitsOptions>? limitsOptions = null,
@@ -51,10 +45,6 @@ internal sealed class GeoServicesQueryParameterAdapter(
 
     public ProtocolLimits DefaultLimits => ProtocolLimits.GeoServices;
 
-    /// <summary>
-    /// Converts query parameters against a Metadata v2 canonical resource. Spatial-filter and SQL-filter
-    /// translation paths are prepared by the caller.
-    /// </summary>
     public async Task<QueryAdapterResult> ConvertAsync(
         GeoServicesQueryRequest request,
         MetadataV2Resource resource,
@@ -99,7 +89,7 @@ internal sealed class GeoServicesQueryParameterAdapter(
             {
                 filter = QueryFilter.FromSql(
                     request.SqlFilter,
-                    new FilterSource(queryParams.Where ?? queryParams.Time ?? string.Empty, FilterLanguage.ArcGisSql, ProtocolName));
+                    new FilterSource(queryParams.Where ?? queryParams.Time ?? string.Empty, FilterLanguage.GeoServicesSql, ProtocolName));
             }
 
             QueryAggregation? aggregation = queryParams.ReturnDistinctValues
@@ -178,11 +168,6 @@ internal sealed class GeoServicesQueryParameterAdapter(
         }
     }
 
-    /// <summary>
-    /// True when the SQL fragment passed in with this request contains a time filter or
-    /// object-id predicate that the GeoServices handler folded into <see cref="SqlFragment"/>
-    /// and that <see cref="QueryParameters.Where"/> does not carry by itself.
-    /// </summary>
     private static bool SqlFilterSupplementsWhere(QueryParameters queryParams, bool useObjectIdsFastPath)
     {
         if (IsActiveTimeParameter(queryParams.Time))
@@ -193,10 +178,7 @@ internal sealed class GeoServicesQueryParameterAdapter(
         return !useObjectIdsFastPath && queryParams.ObjectIds is { Length: > 0 };
     }
 
-    /// <summary>
-    /// A blank time parameter and the <c>time=null,null</c> no-op are not filters.
-    /// Any other time value is a real temporal constraint.
-    /// </summary>
+    // A blank time parameter and time=null,null are not filters; any other time value is a real temporal constraint.
     private static bool IsActiveTimeParameter(string? time)
     {
         if (string.IsNullOrWhiteSpace(time))

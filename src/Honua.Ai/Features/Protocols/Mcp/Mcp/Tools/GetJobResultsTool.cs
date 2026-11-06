@@ -10,14 +10,6 @@ using Honua.Ai.Protocols.Mcp.Resources;
 
 namespace Honua.Ai.Protocols.Mcp.Tools;
 
-/// <summary>
-/// MCP tool that reads one geoprocessing job's result package. Thin adapter over
-/// <see cref="IGeoprocessingJobService.GetJobResultsAsync"/> — the same call OGC
-/// API Processes and <see cref="JobResultsResource"/> use — so a tool-only client
-/// can retrieve results without a resources/read implementation. The service keeps
-/// the operator job-read grant and per-job ownership. Status polling stays on
-/// <c>honua_list_jobs</c> and <c>honua://jobs/{jobId}</c>.
-/// </summary>
 internal sealed class GetJobResultsTool : IMcpTool
 {
     public const string ToolName = "honua_get_job_results";
@@ -125,17 +117,12 @@ internal sealed class GetJobResultsTool : IMcpTool
     }
 }
 
-/// <summary>Arguments for <c>honua_get_job_results</c>.</summary>
 internal sealed class McpGetJobResultsArgument
 {
     [JsonPropertyName("jobId")]
     public string? JobId { get; set; }
 }
 
-/// <summary>
-/// AOT-compatible source-generated JSON context for <c>honua_get_job_results</c>
-/// arguments. The result package reuses <see cref="McpJobResultsResource"/>.
-/// </summary>
 [JsonSerializable(typeof(McpGetJobResultsArgument))]
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,

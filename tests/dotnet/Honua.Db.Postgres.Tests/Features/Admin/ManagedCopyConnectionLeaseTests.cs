@@ -53,21 +53,33 @@ public sealed class ManagedCopyConnectionLeaseTests(PostgresFixture fixture)
                 NullLogger<PostgreSqlLayerPublishingService>.Instance,
                 metadataSchema: sameStore ? schema : "public",
                 featureStoreConnections: provider.Object);
-            var method = typeof(PostgreSqlLayerPublishingService).GetMethod(
-                "ValidateManagedCopyTargetAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            var readTarget = typeof(PostgreSqlLayerPublishingService).GetMethod(
+                "ReadManagedCopyTargetAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            var validateTarget = typeof(PostgreSqlLayerPublishingService).GetMethod(
+                "ValidateManagedCopyTargetAsync", BindingFlags.Static | BindingFlags.NonPublic)!;
             var fieldType = typeof(PostgreSqlLayerPublishingService).GetNestedType(
                 "LayerFieldInsert", BindingFlags.NonPublic)!;
             var fields = Array.CreateInstance(fieldType, 0);
-            var validate = () => (Task<string>)method.Invoke(
-                service, [sourceConnectionString, fields, CancellationToken.None])!;
+            // The managed lease is taken and released while the target identity is captured.
+            // Validation then compares that identity with the caller's already-open source.
+            async Task<string> ValidateAsync()
+            {
+                var pending = (Task)readTarget.Invoke(service, [CancellationToken.None])!;
+                await pending.ConfigureAwait(false);
+                var target = pending.GetType().GetProperty("Result")!.GetValue(pending);
+                await using var source = new NpgsqlConnection(sourceConnectionString);
+                await source.OpenAsync().ConfigureAwait(false);
+                return await ((Task<string>)validateTarget.Invoke(
+                    null, [source, fields, target, CancellationToken.None])!).ConfigureAwait(false);
+            }
 
             if (sameStore)
             {
-                (await validate()).Should().Be(schema);
+                (await ValidateAsync()).Should().Be(schema);
             }
             else
             {
-                await validate.Should().ThrowAsync<LayerPublishingException>();
+                await FluentActions.Awaiting(ValidateAsync).Should().ThrowAsync<LayerPublishingException>();
             }
 
             releaseCount.Should().Be(1, "the provider concurrency slot must be released on success and rejection");

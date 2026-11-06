@@ -2,26 +2,22 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Ai.StudioAiProxy.Abstractions;
-using Honua.Ai.StudioAiProxy.Adapters;
 using Honua.Ai.StudioAiProxy.Adapters.Bedrock;
+using Honua.Ai.StudioAiProxy.Adapters;
 using Honua.Core.Features.Infrastructure.Resilience;
+using Honua.Infrastructure.Security.Admission;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Ai.StudioAiProxy;
 
-/// <summary>
-/// DI registration for the Studio AI proxy (honua-server#3000). The orchestrating service and all
-/// three adapters are always registered so the feature composes cleanly regardless of which
-/// providers are configured; each adapter self-gates per provider via <c>IsConfigured</c>, and the
-/// service as a whole self-gates via <see cref="StudioAiProxyConfiguration.Enabled"/>.
-/// </summary>
 internal static class StudioAiProxyServiceCollectionExtensions
 {
     public static IServiceCollection AddStudioAiProxy(this IServiceCollection services, IConfiguration configuration)
     {
+        services.AddAiExecutionAdmission(configuration);
         var section = configuration.GetSection(StudioAiProxyConfiguration.SectionName);
 
         services.AddOptions<StudioAiProxyConfiguration>()
@@ -50,7 +46,8 @@ internal static class StudioAiProxyServiceCollectionExtensions
         services.AddResilientHttpClient(
             "studio-ai-proxy",
             "studio-ai-proxy",
-            HttpResiliencePolicies.FastApiDefaults);
+            HttpResiliencePolicies.FastApiDefaults with { MaxRetryAttempts = 0 },
+            configureHandler: () => new HttpClientHandler { AllowAutoRedirect = false });
         services.TryAddSingleton<StudioAiProxyApiKeyResolver>();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<StudioAiTranscriptSigner>();

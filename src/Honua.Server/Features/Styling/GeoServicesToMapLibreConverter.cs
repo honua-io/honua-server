@@ -1,9 +1,9 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Globalization;
 using System.Linq;
 using System.Text.Json;
+using Honua.Core.Features.Shared.Services;
 using Honua.Core.Features.Styling.Domain;
 using GeometryType = Honua.Core.Features.Metadata.Domain.V2.MetadataV2GeometryType;
 
@@ -11,19 +11,8 @@ namespace Honua.Server.Features.Styling;
 
 internal static class GeoServicesToMapLibreConverter
 {
-    /// <summary>
-    /// Tolerance for comparing picture-marker offset/rotation values (in pixels/degrees)
-    /// against zero or against each other. Matches the tolerance already used to detect
-    /// uniform per-stop layouts below; avoids exact double equality on style-authored values.
-    /// </summary>
     private const double OffsetEqualityEpsilon = 0.01d;
 
-    /// <summary>
-    /// Converts a GeoServices drawingInfo payload to canonical MapLibre Style Spec v8 JSON
-    /// and reports any symbolizer inputs that could not be losslessly translated.  When
-    /// inputs are unsupported, callers still receive a best-effort default MapLibre style
-    /// so downstream consumers continue to render.
-    /// </summary>
     public static StyleConversionResult Convert(JsonElement drawingInfo, StyleLayerDescriptor layer)
     {
         var unsupported = new List<UnsupportedSymbolizerInfo>();
@@ -78,14 +67,6 @@ internal static class GeoServicesToMapLibreConverter
     private static readonly string[] SupportedLineSymbolTypes = ["esriSLS"];
     private static readonly string[] SupportedFillSymbolTypes = ["esriSFS"];
 
-    /// <summary>
-    /// Records a <see cref="StyleErrorCodes.RendererPayloadIncomplete"/> entry
-    /// when a supported renderer (<c>simple</c>, <c>uniqueValue</c>, or
-    /// <c>classBreaks</c>) is missing required fields and falls back to the
-    /// default MapLibre style.  Centralized so the four call sites stay in
-    /// sync with the public contract documented in
-    /// <c>docs/gis/style-engine-protocol-consumption.md</c>.
-    /// </summary>
     private static void RecordPayloadIncomplete(
         List<UnsupportedSymbolizerInfo> unsupported,
         string rendererType,
@@ -99,13 +80,6 @@ internal static class GeoServicesToMapLibreConverter
         });
     }
 
-    /// <summary>
-    /// Inspects <paramref name="symbol"/> for a recognized GeoServices symbol type
-    /// and records a <see cref="StyleErrorCodes.SymbolTypeUnsupported"/> entry on
-    /// <paramref name="unsupported"/> when the type is outside the supported set
-    /// for <paramref name="layer"/>'s geometry.  Conversion still proceeds with a
-    /// best-effort default so callers always receive a renderable MapLibre style.
-    /// </summary>
     private static void ValidateSymbolType(
         JsonElement symbol,
         StyleLayerDescriptor layer,
@@ -142,12 +116,6 @@ internal static class GeoServicesToMapLibreConverter
         });
     }
 
-    /// <summary>
-    /// Records a <see cref="StyleErrorCodes.PictureMarkerPartial"/> entry when the
-    /// supplied picture marker stops carry per-stop offsets or rotation that the
-    /// canonical MapLibre style cannot losslessly express across data-driven stops.
-    /// The image payloads themselves are still preserved in the style metadata.
-    /// </summary>
     private static void RecordPictureMarkerPartialIfNeeded(
         IReadOnlyCollection<PictureMarkerPayload> payloads,
         List<UnsupportedSymbolizerInfo> unsupported)
@@ -947,7 +915,7 @@ internal static class GeoServicesToMapLibreConverter
         color = default;
 
         if (TryGetSymbolStyle(symbol, out var style)
-            && EsriStyleMappings.IsNullFillStyle(style))
+            && GeoServicesStyleMappings.IsNullFillStyle(style))
         {
             color = new StyleColor(0, 0, 0, 0);
             return true;
@@ -1244,7 +1212,7 @@ internal static class GeoServicesToMapLibreConverter
             return false;
         }
 
-        return EsriStyleMappings.TryGetLineDashArray(style, out dashArray);
+        return GeoServicesStyleMappings.TryGetLineDashArray(style, out dashArray);
     }
 
     private static bool TryGetFillOpacityOverride(JsonElement symbol, out double? fillOpacity)
@@ -1256,7 +1224,7 @@ internal static class GeoServicesToMapLibreConverter
             return false;
         }
 
-        if (EsriStyleMappings.IsNullFillStyle(style))
+        if (GeoServicesStyleMappings.IsNullFillStyle(style))
         {
             fillOpacity = 0d;
             return true;
@@ -1284,14 +1252,14 @@ internal static class GeoServicesToMapLibreConverter
                     continue;
                 }
 
-                baselineStyle = EsriStyleMappings.LineStyleSolid;
+                baselineStyle = GeoServicesStyleMappings.LineStyleSolid;
                 continue;
             }
 
             if (baselineStyle == null)
             {
                 baselineStyle = style;
-                _ = EsriStyleMappings.TryGetLineDashArray(style, out baselineDash);
+                _ = GeoServicesStyleMappings.TryGetLineDashArray(style, out baselineDash);
                 continue;
             }
 
@@ -1314,136 +1282,20 @@ internal static class GeoServicesToMapLibreConverter
         return StyleParsingHelpers.TryGetDouble(prop, out var value) ? value : null;
     }
 
-    /// <summary>
-    /// Converts a GeoServices value token to its string representation, matching
-    /// the output of MapLibre's <c>to-string</c> coercion so that <c>match</c>
-    /// stops agree with the coerced input type.
-    /// </summary>
     private static string ConvertValueTokenAsString(JsonElement element)
     {
         return element.ValueKind switch
         {
             JsonValueKind.String => element.GetString() ?? string.Empty,
             JsonValueKind.Number when element.TryGetDouble(out var numberValue) =>
-                FormatNumberAsEcmaScriptString(numberValue),
+                EcmaScriptNumberFormatter.Format(numberValue),
             JsonValueKind.True => "true",
             JsonValueKind.False => "false",
             _ => element.ToString() ?? string.Empty
         };
     }
-
-    /// <summary>
-    /// Formats a double exactly as ECMAScript's <c>Number::toString</c> (and therefore
-    /// MapLibre's <c>to-string</c> coercion) would, so a numeric GeoServices category
-    /// emits the same token the style runtime derives from a tile attribute.
-    /// </summary>
-    /// <remarks>
-    /// .NET's <c>"G"</c>/<c>"R"</c> formats disagree with ECMAScript on exponent casing
-    /// and padding (<c>1E-07</c> versus <c>1e-7</c>) and on the thresholds at which
-    /// exponential notation is used (<c>1e-6</c> is <c>0.000001</c> and <c>1e20</c> is
-    /// <c>100000000000000000000</c> in ECMAScript). A stop formatted the .NET way can
-    /// never be selected, so the feature silently falls through to the default color or
-    /// icon. This implements ECMAScript 2024 section 6.1.6.1.20 on top of .NET's
-    /// shortest round-trippable digits.
-    /// </remarks>
-    private static string FormatNumberAsEcmaScriptString(double value)
-    {
-        if (double.IsNaN(value))
-        {
-            return "NaN";
-        }
-
-        if (double.IsPositiveInfinity(value))
-        {
-            return "Infinity";
-        }
-
-        if (double.IsNegativeInfinity(value))
-        {
-            return "-Infinity";
-        }
-
-        // codeql[cs/equality-on-floats]: exact zero, including negative zero, is the ECMAScript "0" spelling; a tolerance would collapse tiny stops
-        if (value == 0d)
-        {
-            // Covers negative zero, which ECMAScript renders as "0".
-            return "0";
-        }
-
-        if (value < 0d)
-        {
-            return "-" + FormatNumberAsEcmaScriptString(-value);
-        }
-
-        // "R" yields the shortest round-trippable digits on .NET Core 3.0+, which is the
-        // same digit sequence ECMAScript's algorithm selects.
-        var roundTrip = value.ToString("R", CultureInfo.InvariantCulture);
-
-        var exponent = 0;
-        var exponentIndex = roundTrip.IndexOf('E');
-        if (exponentIndex >= 0)
-        {
-            exponent = int.Parse(
-                roundTrip.AsSpan(exponentIndex + 1),
-                NumberStyles.Integer,
-                CultureInfo.InvariantCulture);
-            roundTrip = roundTrip[..exponentIndex];
-        }
-
-        var pointIndex = roundTrip.IndexOf('.');
-        var digits = pointIndex >= 0 ? roundTrip.Remove(pointIndex, 1) : roundTrip;
-
-        // n is the position of the decimal point relative to the digit sequence, as in
-        // the spec: value == 0.<digits> * 10^n.
-        var n = (pointIndex >= 0 ? pointIndex : roundTrip.Length) + exponent;
-
-        var leadingZeros = 0;
-        while (leadingZeros < digits.Length - 1 && digits[leadingZeros] == '0')
-        {
-            leadingZeros++;
-            n--;
-        }
-
-        digits = digits[leadingZeros..].TrimEnd('0');
-        if (digits.Length == 0)
-        {
-            return "0";
-        }
-
-        var k = digits.Length;
-
-        if (k <= n && n <= 21)
-        {
-            return digits + new string('0', n - k);
-        }
-
-        if (n > 0 && n <= 21)
-        {
-            return string.Concat(digits[..n], ".", digits[n..]);
-        }
-
-        if (n > -6 && n <= 0)
-        {
-            return string.Concat("0.", new string('0', -n), digits);
-        }
-
-        var mantissa = k == 1 ? digits : string.Concat(digits[..1], ".", digits[1..]);
-        var scientificExponent = n - 1;
-        return string.Concat(
-            mantissa,
-            "e",
-            scientificExponent >= 0 ? "+" : "-",
-            Math.Abs(scientificExponent).ToString(CultureInfo.InvariantCulture));
-    }
 }
 
-/// <summary>
-/// Result of a GeoServices-to-MapLibre style conversion.  Contains the canonical
-/// MapLibre JSON plus any symbolizers that could not be losslessly translated.
-/// Callers that only need the JSON can rely on the implicit string conversion;
-/// callers that need to surface unsupported-symbolizer reporting access
-/// <see cref="Unsupported"/> directly.
-/// </summary>
 internal sealed record StyleConversionResult(
     string MapLibreStyleJson,
     IReadOnlyList<UnsupportedSymbolizerInfo> Unsupported)

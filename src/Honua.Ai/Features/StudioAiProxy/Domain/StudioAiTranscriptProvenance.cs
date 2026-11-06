@@ -5,7 +5,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Ai.StudioAiProxy.Domain;
 
-/// <summary>Replay-resistant identity supplied by a release-certifying Studio call.</summary>
 public sealed class StudioAiTranscriptCertification
 {
     [JsonPropertyName("candidateId")] public string CandidateId { get; init; } = string.Empty;
@@ -16,7 +15,6 @@ public sealed class StudioAiTranscriptCertification
     [JsonPropertyName("runNonce")] public string RunNonce { get; init; } = string.Empty;
 }
 
-/// <summary>Detached Ed25519 signature over <see cref="CanonicalTranscript"/>.</summary>
 public sealed class StudioAiSignedTranscript
 {
     [JsonPropertyName("schemaVersion")] public string SchemaVersion { get; init; } = "honua.studio-ai.transcript.v1";
@@ -29,14 +27,12 @@ public sealed class StudioAiSignedTranscript
     [JsonPropertyName("signature")] public required string Signature { get; init; }
 }
 
-/// <summary>Public verification material published with the proxy capability evidence.</summary>
 public sealed class StudioAiTranscriptSigningManifest
 {
     [JsonPropertyName("requiredForCertification")] public bool RequiredForCertification { get; init; } = true;
     [JsonPropertyName("keys")] public IReadOnlyList<StudioAiTranscriptVerificationKey> Keys { get; init; } = [];
 }
 
-/// <summary>One active or overlap-window Ed25519 verification key.</summary>
 public sealed class StudioAiTranscriptVerificationKey
 {
     [JsonPropertyName("keyId")] public required string KeyId { get; init; }

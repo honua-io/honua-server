@@ -6,10 +6,6 @@ using Honua.Core.Features.Licensing.Domain;
 
 namespace Honua.Infrastructure.Licensing;
 
-/// <summary>
-/// Inert capacity facade used when licensing is disabled. No registrations, samples or surge
-/// state are retained, and no Redis connection or background heartbeat is created.
-/// </summary>
 internal sealed class DisabledLicenseCapacityMeter : ILicenseCapacityMeter
 {
     private static readonly LicenseCapacityState _state = new()

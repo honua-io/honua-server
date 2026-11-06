@@ -1,0 +1,287 @@
+{
+  "qualification": false,
+  "producer_source_sha": "af0c17d2e61ebc620a7eb69e094f299bf736af19",
+  "serving_source_sha": "57d2c31132e52147d79ca702db34b70e7954abac",
+  "serving_image": "sha256:458cacbfb57e3bddde46472de71fa0d62f8163bf43608b6c75a580b7b9d2fecb",
+  "python": [
+    {
+      "surface": "pmtiles",
+      "operation": "archive-read",
+      "canonical_client": "pmtiles",
+      "client_version": "3.7.0",
+      "lane": "python-pmtiles",
+      "deployment_target": "local-docker",
+      "result": "pass",
+      "skip_reason": null,
+      "source_sha": "57d2c31132e52147d79ca702db34b70e7954abac",
+      "producer_source_sha": "af0c17d2e61ebc620a7eb69e094f299bf736af19",
+      "image_digest": "sha256:458cacbfb57e3bddde46472de71fa0d62f8163bf43608b6c75a580b7b9d2fecb",
+      "fixture_revision": "pmtiles-fixture@af0c17d2e6",
+      "evidence_uri": "local-private-scratch",
+      "started_at": "2026-10-28T06:14:49.276945Z",
+      "completed_at": "2026-10-28T06:14:50.791067Z",
+      "serving_source": {
+        "schema": "honua-cng-pmtiles-serving/v1",
+        "url": "http://127.0.0.1:18094/api/v1/tiles/pmtiles/pmtiles/cng/honua.pmtiles",
+        "artifact_sha256": "fdf309bda8f0c4ce3e4ac08c5c88ddbddea2b9dbc3736f0604d755cc4e702a54",
+        "artifact_size": 25216,
+        "provider": "AwsS3",
+        "provider_environment": "localstack",
+        "object_key": "pmtiles/cng/honua.pmtiles",
+        "bucket": "honua-cng-fixtures",
+        "publication_api_proven": false,
+        "source_binding": {
+          "layerId": "1000",
+          "serviceId": "svc-cng-feature",
+          "publicationId": "pub-cng-feature-1000",
+          "resourceId": "res-cng-1000",
+          "storageBindingId": "storage-cng-1000"
+        },
+        "scope": "candidate serving route with an S3-compatible emulator; not real AWS certification",
+        "producer_source_sha": "af0c17d2e61ebc620a7eb69e094f299bf736af19",
+        "serving_source_sha": "57d2c31132e52147d79ca702db34b70e7954abac",
+        "serving_image": "sha256:458cacbfb57e3bddde46472de71fa0d62f8163bf43608b6c75a580b7b9d2fecb",
+        "qualification": false,
+        "source_binding_scope": "trusted synthetic fixture authorization binding; not production layer materialization or publication API proof",
+        "emulator_restart_scope": "NoSuchBucket before setup; created fixture bucket and uploaded only PMTiles; original NC/HDF objects not restored and current old store URLs not claimed live"
+      },
+      "observed_transfer": {
+        "requests": 26,
+        "range_requests": 26,
+        "full_object_downloads": 0,
+        "transferred_bytes": 25470,
+        "distinct_objects": 1
+      },
+      "http_responses": [
+        {
+          "request_range": "bytes=0-126",
+          "status": 206,
+          "content_range": "bytes 0-126/25216",
+          "bytes": 127,
+          "sha256": "bac88b33afb89c5704c4c32f3fe4c4ec0e5a95b7e3962ffdabec16e751a07462",
+          "response_url": "http://127.0.0.1:18094/api/v1/tiles/pmtiles/pmtiles/cng/honua.pmtiles"
+        },
+        {
+          "request_range": "bytes=0-126",
+          "status": 206,
+          "content_range": "bytes 0-126/25216",
+          "bytes": 127,
+          "sha256": "bac88b33afb89c5704c4c32f3fe4c4ec0e5a95b7e3962ffdabec16e751a07462",
+          "response_url": "http://127.0.0.1:18094/api/v1/tiles/pmtiles/pmtiles/cng/honua.pmtiles"
+        },
+        {
+          "request_range": "bytes=185-348",
+          "status": 206,
+          "content_range": "bytes 185-348/25216",
+          "bytes": 164,
+          "sha256": "c418c49a99f1b6c71c71b9522990858d3adf751d75f7b4212fe118ae87cd6ffb",
+          "response_url": "http://127.0.0.1:18094/api/v1/tiles/pmtiles/pmtiles/cng/honua.pmtiles"
+        },
+        {
+          "request_range": "bytes=0-126",
+          "status": 206,
+          "content_range": "bytes 0-126/25216",
+          "bytes": 127,
+          "sha256": "bac88b33afb89c5704c4c32f3fe4c4ec0e5a95b7e3962ffdabec16e751a07462",
+          "response_url": "http://127.0.0.1:18094/api/v1/tiles/pmtiles/pmtiles/cng/honua.pmtiles"
+        },
+        {
+          "request_range": "bytes=127-184",
+          "status": 206,
+          "content_range": "bytes 127-184/25216",
+          "bytes": 58,
+          "sha256": "1d737deac9deb475f45f9f4b8d3f7348b555e276927da410aab121ed2b52cf86",
+          "response_url": "http://127.0.0.1:18094/api/v1/tiles/pmtiles/pmtiles/cng/honua.pmtiles"
+        },
+        {
+          "request_range": "bytes=349-1532",
+          "status": 206,
+          "content_range": "bytes 349-1532/25216",
+          "bytes": 1184,
+          "sha256": "e4cd864ebc2763548ea342087ee2b0bcf1fe27ab224818c6975e9725da937753",
+          "response_url": "http://127.0.0.1:18094/api/v1/tiles/pmtiles/pmtiles/cng/honua.pmtiles"
+        },
+        {
+          "request_range": "bytes=1533-2715",
+          "status": 206,
+          "content_range": "bytes 1533-2715/25216",
+          "bytes": 1183,
+          "sha256": "9ea144f9e3b730191f5e70d57f67dddd42b8c39b50843cfaed68c2e3f8b9f25f",
+          "response_url": "http://127.0.0.1:18094/api/v1/tiles/pmtiles/pmtiles/cng/honua.pmtiles"
+        },
+        {
+          "request_range": "bytes=2716-3902",
+          "status": 206,
+          "content_range": "bytes 2716-3902/25216",
+          "bytes": 1187,
+          "sha256": "d4d4429d9b6a16c4fc1aaf032ffa259d41612d63fba6c27ac10dfd651ff91183",
+          "response_url": "http://127.0.0.1:18094/api/v1/tiles/pmtiles/pmtiles/cng/honua.pmtiles"
+        },
+        {
+          "request_range": "bytes=3903-5084",
+          "status": 206,
+          "content_range": "bytes 3903-5084/25216",
+          "bytes": 1182,
+          "sha256": "0c7eddba30e3ffb315c7e60684d4f3d35888a86fdd44387398bb2bd00799b492",
+          "response_url": "http://127.0.0.1:18094/api/v1/tiles/pmtiles/pmtiles/cng/honua.pmtiles"
+        },
+        {
+          "request_range": "bytes=5085-6266",
+          "status": 206,
+          "content_range": "bytes 5085-6266/25216",
+          "bytes": 1182,
+          "sha256": "f94a950d55ae097c05efa2d666f0bb2f8b517bf5f85115f90e3d84e421bb8ecb",
+          "response_url": "http://127.0.0.1:18094/api/v1/tiles/pmtiles/pmtiles/cng/honua.pmtiles"
+        },
+        {
+          "request_range": "bytes=6267-7450",
+          "status": 206,
+          "content_range": "bytes 6267-7450/25216",
+          "bytes": 1184,
+          "sha256": "b5042be407fa717d4f9bd0ef3c0b9965a60054ccc1c9ae264af9619e24441bba",
+          "response_url": "http://127.0.0.1:18094/api/v1/tiles/pmtiles/pmtiles/cng/honua.pmtiles"
+        },
+        {
+          "request_range": "bytes=7451-8635",
+          "status": 206,
+          "content_range": "bytes 7451-8635/25216",
+          "bytes": 1185,
+          "sha256": "ae985c216d101665449269e5768de23fa053784bbe2c545236cc0782432d1bce",
+          "response_url": "http://127.0.0.1:18094/api/v1/tiles/pmtiles/pmtiles/cng/honua.pmtiles"
+        },
+        {
+          "request_range": "bytes=8636-9821",
+          "status": 206,
+          "content_range": "bytes 8636-9821/25216",
+          "bytes": 1186,
+          "sha256": "db615076f81b48db793d892c03fa7c6d356171b0a75efb6a9f1d76ca859b13af",
+          "response_url": "http://127.0.0.1:18094/api/v1/tiles/pmtiles/pmtiles/cng/honua.pmtiles"
+        },
+        {
+          "request_range": "bytes=9822-11005",
+          "status": 206,
+          "content_range": "bytes 9822-11005/25216",
+          "bytes": 1184,
+          "sha256": "ea8217d445cf1bcead8f4a462be8df66d71bf8416ef19f24181a15da9de0bb6e",
+          "response_url": "http://127.0.0.1:18094/api/v1/tiles/pmtiles/pmtiles/cng/honua.pmtiles"
+        },
+        {
+          "request_range": "bytes=11006-12188",
+          "status": 206,
+          "content_range": "bytes 11006-12188/25216",
+          "bytes": 1183,
+          "sha256": "dc1ba7d4a4d045463ba149420f00bbc3291907b3f2b2813894733b5f29646da8",
+          "response_url": "http://127.0.0.1:18094/api/v1/tiles/pmtiles/pmtiles/cng/honua.pmtiles"
+        },
+        {
+          "request_range": "bytes=12189-13370",
+          "status": 206,
+          "content_range": "bytes 12189-13370/25216",
+          "bytes": 1182,
+          "sha256": "4ab97fa225ae0cea3812adda6dfc04cc95aa3968682f4e8fab50b9d877326821",
+          "response_url": "http://127.0.0.1:18094/api/v1/tiles/pmtiles/pmtiles/cng/honua.pmtiles"
+        },
+        {
+          "request_range": "bytes=13371-14552",
+          "status": 206,
+          "content_range": "bytes 13371-14552/25216",
+          "bytes": 1182,
+          "sha256": "74e71c725a07d459cb37fffbdb5c2ea17a8ca8e1ea3be53c7a8f745d703bcabf",
+          "response_url": "http://127.0.0.1:18094/api/v1/tiles/pmtiles/pmtiles/cng/honua.pmtiles"
+        },
+        {
+          "request_range": "bytes=14553-15738",
+          "status": 206,
+          "content_range": "bytes 14553-15738/25216",
+          "bytes": 1186,
+          "sha256": "5a6205a0e789046da804a4706ef05512ff41fa4b36db9f090a70eeb3cca05577",
+          "response_url": "http://127.0.0.1:18094/api/v1/tiles/pmtiles/pmtiles/cng/honua.pmtiles"
+        },
+        {
+          "request_range": "bytes=15739-16920",
+          "status": 206,
+          "content_range": "bytes 15739-16920/25216",
+          "bytes": 1182,
+          "sha256": "99b776a35383040192ffc31cfe3362074c4ba38a11db600e89dbd4f88009fe6e",
+          "response_url": "http://127.0.0.1:18094/api/v1/tiles/pmtiles/pmtiles/cng/honua.pmtiles"
+        },
+        {
+          "request_range": "bytes=16921-18105",
+          "status": 206,
+          "content_range": "bytes 16921-18105/25216",
+          "bytes": 1185,
+          "sha256": "a4c2fd1f6a59c51e4961d36f469c0649078e90998fe9451045e85c2221c6ebce",
+          "response_url": "http://127.0.0.1:18094/api/v1/tiles/pmtiles/pmtiles/cng/honua.pmtiles"
+        },
+        {
+          "request_range": "bytes=18106-19290",
+          "status": 206,
+          "content_range": "bytes 18106-19290/25216",
+          "bytes": 1185,
+          "sha256": "c7bf93b242a4bb0de15cc0e7d80f151d796822e822f71e375ca66ef2314c7f83",
+          "response_url": "http://127.0.0.1:18094/api/v1/tiles/pmtiles/pmtiles/cng/honua.pmtiles"
+        },
+        {
+          "request_range": "bytes=19291-20475",
+          "status": 206,
+          "content_range": "bytes 19291-20475/25216",
+          "bytes": 1185,
+          "sha256": "b2922a1f1bee77c6da1501ad5a4e4c59b3162cb4e66d27371c4dcdaad9e3d485",
+          "response_url": "http://127.0.0.1:18094/api/v1/tiles/pmtiles/pmtiles/cng/honua.pmtiles"
+        },
+        {
+          "request_range": "bytes=20476-21661",
+          "status": 206,
+          "content_range": "bytes 20476-21661/25216",
+          "bytes": 1186,
+          "sha256": "96476d3f96165b68351e13a5e9ca54dfd959eaf80dec0a3044982afbf556e350",
+          "response_url": "http://127.0.0.1:18094/api/v1/tiles/pmtiles/pmtiles/cng/honua.pmtiles"
+        },
+        {
+          "request_range": "bytes=21662-22845",
+          "status": 206,
+          "content_range": "bytes 21662-22845/25216",
+          "bytes": 1184,
+          "sha256": "19d68843c0905423890d3756f3fa3656a95fb0c473c108898815483ddead8d9f",
+          "response_url": "http://127.0.0.1:18094/api/v1/tiles/pmtiles/pmtiles/cng/honua.pmtiles"
+        },
+        {
+          "request_range": "bytes=22846-24028",
+          "status": 206,
+          "content_range": "bytes 22846-24028/25216",
+          "bytes": 1183,
+          "sha256": "1b62a61e7b22bcc36a0bd2eb9d54ce5c3132f29578c787aa6081d5028d06ec39",
+          "response_url": "http://127.0.0.1:18094/api/v1/tiles/pmtiles/pmtiles/cng/honua.pmtiles"
+        },
+        {
+          "request_range": "bytes=24029-25215",
+          "status": 206,
+          "content_range": "bytes 24029-25215/25216",
+          "bytes": 1187,
+          "sha256": "397ff87f6cfdeaf19265a3e8e7f1c932fd3a51c7d3a51a115ef0d7ac76455d22",
+          "response_url": "http://127.0.0.1:18094/api/v1/tiles/pmtiles/pmtiles/cng/honua.pmtiles"
+        }
+      ],
+      "observed_metadata": {
+        "spec_version": "3",
+        "tile_type": "mvt",
+        "bounds": [
+          -180.0,
+          -90.0,
+          180.0,
+          90.0
+        ],
+        "zoom_range": [
+          0,
+          2
+        ],
+        "tile_count": 21
+      },
+      "qualification": false,
+      "scope": "real Honua route through S3 emulator, separate producer/server identities; no campaign credit",
+      "budget_failures": []
+    }
+  ],
+  "javascript_budget_failures": [],
+  "javascript_non_target": "FlatGeobuf file intentionally absent for this PMTiles-only replay; its recorded ENOENT is not a claimed FGB result"
+}

@@ -58,7 +58,7 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
     {
         var body = new
         {
-            sourceKind = "arcgis-geoservices-rest",
+            sourceKind = "geoservices-rest",
             sourceUrl = "https://example.com/arcgis/rest/services/Inspections/FeatureServer",
             layers = new[]
             {
@@ -83,7 +83,7 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/import/migrations")]
     public async Task StartBatch_WithEmptyFootprint_ReturnsBadRequest()
     {
-        var body = new { sourceKind = "arcgis-geoservices-rest", layers = Array.Empty<object>() };
+        var body = new { sourceKind = "geoservices-rest", layers = Array.Empty<object>() };
 
         using var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
         using var response = await _client.PostAsync("/api/v1/admin/import/migrations", content);
@@ -103,7 +103,7 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
         const string serviceUrl = "https://example.com/arcgis/rest/services/Inspections/FeatureServer";
         var body = new
         {
-            sourceKind = "arcgis-geoservices-rest",
+            sourceKind = "geoservices-rest",
             sourceUrl = serviceUrl,
             manifestBody = ManifestBody(serviceUrl, "resource:Inspections:layer:0", "resource:Inspections:layer:1"),
             requireFullFidelity = true,
@@ -178,7 +178,7 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
 
     private static object CreateValidBatchRequest(string tableName) => new
     {
-        sourceKind = "arcgis-geoservices-rest",
+        sourceKind = "geoservices-rest",
         sourceUrl = "https://example.com/arcgis/rest/services/Inspections/FeatureServer",
         layers = new[]
         {
@@ -198,7 +198,7 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
     {
         var body = new
         {
-            sourceKind = "arcgis-geoservices-rest",
+            sourceKind = "geoservices-rest",
             layers = new[]
             {
                 new { sourceResourceId = "resource:x:layer:0", serviceUrl = "https://example.com/arcgis/rest/services/X/FeatureServer", layerId = 0, tableName = "bad name;drop" }
@@ -228,7 +228,7 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
             new MigrationBatchRunRecord
             {
                 BatchId = "batch-001",
-                SourceKind = "arcgis-geoservices-rest",
+                SourceKind = "geoservices-rest",
                 Status = MigrationBatchRunStatus.Running,
                 StartedAt = now,
                 TotalChildren = 2,
@@ -320,7 +320,7 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
     private static string ManifestBody(string serviceUrl, params string[] layerIds) => JsonSerializer.Serialize(
         new MigrationManifestArtifact
         {
-            SourceKind = "arcgis-geoservices-rest",
+            SourceKind = "geoservices-rest",
             Source = new MigrationSourceIdentity { DisplayName = "Source", BaseUrl = serviceUrl, ServiceType = "FeatureServer" },
             Summary = new MigrationManifestSummary(),
             TargetResources = layerIds

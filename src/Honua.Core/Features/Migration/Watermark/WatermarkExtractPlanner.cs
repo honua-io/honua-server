@@ -24,12 +24,12 @@ public static class WatermarkExtractPlanner
     /// Edit-tracking field from the layer's <c>editFieldsInfo</c> (e.g. <c>last_edited_date</c>).
     /// Required when an incremental pull is wanted; if null/blank a full pull is planned.
     /// </param>
-    public static EsriIncrementalQuery PlanEsri(SourceWatermark? watermark, string? editField)
+    public static GeoServicesIncrementalQuery PlanEsri(SourceWatermark? watermark, string? editField)
     {
         var since = watermark?.Kind == WatermarkKind.EditTimestamp ? watermark.AsTimestamp() : null;
         if (since is null || string.IsNullOrWhiteSpace(editField))
         {
-            return new EsriIncrementalQuery
+            return new GeoServicesIncrementalQuery
             {
                 IsIncremental = false,
                 WhereClause = "1=1"
@@ -40,7 +40,7 @@ public static class WatermarkExtractPlanner
         var where = string.Create(
             System.Globalization.CultureInfo.InvariantCulture,
             $"{editField} > {epochMs}");
-        return new EsriIncrementalQuery
+        return new GeoServicesIncrementalQuery
         {
             IsIncremental = true,
             WhereClause = where,
@@ -119,7 +119,7 @@ public static class WatermarkExtractPlanner
 /// <summary>
 /// Esri FeatureServer incremental query instruction derived from a watermark.
 /// </summary>
-public readonly record struct EsriIncrementalQuery
+public readonly record struct GeoServicesIncrementalQuery
 {
     /// <summary>
     /// Whether the pull is incremental (changed-since) or a full scan.

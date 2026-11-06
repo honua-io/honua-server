@@ -10,12 +10,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.FileStorage;
 
-/// <summary>
-/// Registers the Azure Blob byte-range reader (<see cref="AzureBlobRangeReader"/>)
-/// used by the COG / PMTiles range-proxy pipelines. Carved out of Honua.Server's
-/// CogServiceCollectionExtensions so the Azure.Storage.Blobs surface stays
-/// confined to Honua.Azure per the cloud-SDK isolation contract.
-/// </summary>
 internal static class AzureCloudRangeReaderServiceCollectionExtensions
 {
     public static IServiceCollection AddAzureCloudRangeReader(

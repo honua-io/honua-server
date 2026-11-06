@@ -11,6 +11,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
+using Honua.Core.Features.FeatureExport;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -326,8 +327,13 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var resource = await GetMetadataResourceAsync(layerId, cancellationToken).ConfigureAwait(false);
-        var selectQuery = _queryBuilder.BuildSelectFlatGeobufQuery(resource, layerId, query, geometryStorageType);
-        return await _dataAccess.ExecuteSelectFlatGeobufQueryAsync(selectQuery, query, layerId, cancellationToken);
+        // The native encoder shifts properties after null values and does not encode all
+        // temporal types. Reuse the canonical feature SELECT and one shared format writer.
+        var selectQuery = _queryBuilder.BuildSelectQuery(layerId, query, geometryStorageType);
+        var features = await _dataAccess.ExecuteSelectQueryAsync(selectQuery, query, layerId, cancellationToken).ConfigureAwait(false);
+        return FlatGeobufFeatureWriter.Write(features, resource, query,
+            FeatureQueryBuilder.GetEncodedBinaryAttributeFields(resource, query),
+            query.OutputSrid ?? resource.Spatial?.StorageCrs?.ResolveSrid() ?? resource.ReadSrid(), cancellationToken);
     }
 
     public async Task<byte[]?> QueryGeobufAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
@@ -632,6 +638,16 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
             ? await ApplyPermanentFilterAsync(layerId, query.Value, cancellationToken).ConfigureAwait(false)
             : await ApplyPermanentFilterAsync(layerId, new FeatureQuery(), cancellationToken).ConfigureAwait(false);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+        if (_queryBuilder is FeatureQueryBuilder postgresBuilder)
+        {
+            return await MvtTileBudgetFitter.ReadAsync(
+                tileLimits.MaxTileSize,
+                step => postgresBuilder.BuildMvtTileQuery(
+                    layerId, x, y, z, query, tileOptions, tileLimits, geometryStorageType, gridGeometry, step),
+                (tileQuery, maxTileSize, token) => _dataAccess.GetMvtTileAsync(layerId, tileQuery, maxTileSize, token),
+                cancellationToken).ConfigureAwait(false);
+        }
+
         var tileQuery = _queryBuilder.BuildMvtTileQuery(layerId, x, y, z, query, tileOptions, tileLimits, geometryStorageType, gridGeometry);
         return await _dataAccess.GetMvtTileAsync(layerId, tileQuery, tileLimits.MaxTileSize, cancellationToken);
     }
@@ -651,6 +667,16 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
             ? await ApplyPermanentFilterAsync(layerId, query.Value, cancellationToken).ConfigureAwait(false)
             : await ApplyPermanentFilterAsync(layerId, new FeatureQuery(), cancellationToken).ConfigureAwait(false);
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+        if (_queryBuilder is FeatureQueryBuilder postgresBuilder)
+        {
+            return await MvtTileBudgetFitter.ReadAsync(
+                tileLimits.MaxTileSize,
+                step => postgresBuilder.BuildH3TileQuery(
+                    layerId, x, y, z, resolution, query, tileOptions, tileLimits, geometryStorageType, step),
+                (tileQuery, maxTileSize, token) => _dataAccess.GetMvtTileAsync(layerId, tileQuery, maxTileSize, token),
+                cancellationToken).ConfigureAwait(false);
+        }
+
         var tileQuery = _queryBuilder.BuildH3TileQuery(layerId, x, y, z, resolution, query, tileOptions, tileLimits, geometryStorageType);
         return await _dataAccess.GetMvtTileAsync(layerId, tileQuery, tileLimits.MaxTileSize, cancellationToken);
     }

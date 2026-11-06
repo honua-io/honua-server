@@ -39,9 +39,6 @@ internal static partial class MapServerEndpoints
     private const string InvalidTimeParameterMessage = "Invalid time parameter.";
     private const string InvalidSpatialReferenceMessage = "Invalid spatial reference.";
 
-    /// <summary>
-    /// Handle MapServer export (map image generation) requests.
-    /// </summary>
     private static async Task<IResult> HandleExport(HttpContext context)
     {
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
@@ -583,13 +580,13 @@ internal static partial class MapServerEndpoints
                 Href = imageUrl,
                 Width = imageWidth,
                 Height = imageHeight,
-                Extent = new EsriExtent
+                Extent = new GeoServicesExtent
                 {
                     Xmin = extent.MinX,
                     Ymin = extent.MinY,
                     Xmax = extent.MaxX,
                     Ymax = extent.MaxY,
-                    SpatialReference = new EsriSpatialReference
+                    SpatialReference = new SpatialReferenceJson
                     {
                         Wkid = imageSrid
                     }
@@ -789,26 +786,10 @@ internal static partial class MapServerEndpoints
                string.Equals(format, "pjson", StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Determines whether an export response format requests raw image bytes
-    /// (<c>f=image</c>) rather than a JSON descriptor (<c>f=json</c>/<c>f=pjson</c>).
-    /// </summary>
     private static bool IsBinaryImageExportResponse(string format)
         => string.Equals(format, "image", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Produces a client-error response for a rejected export request.
-    /// </summary>
-    /// <remarks>
-    /// For a binary image response (<c>f=image</c>) the rejection is emitted as a genuine
-    /// HTTP 400 (still carrying the GeoServices <c>{"error":{...}}</c> body) so that an image
-    /// client — which expects raster bytes, not JSON — observes a real failure instead of a
-    /// 200 "success" whose payload it cannot render. This is what the compat certification
-    /// exercises (CERT-ERRH-01): a malformed <c>bbox</c> on an <c>f=image</c> export must be
-    /// rejected with a 4xx. For JSON responses (<c>f=json</c>/<c>f=pjson</c>) the established
-    /// GeoServices convention is preserved: HTTP 200 with the error signalled through the body
-    /// (PA-070/PA-117), which every JSON-format caller already parses.
-    /// </remarks>
+    // An f=image rejection is a real HTTP 400, because an image client treats HTTP 200 as raster bytes; f=json and f=pjson keep the GeoServices HTTP 200 error envelope.
     private static IResult CreateExportBadRequest(HttpContext context, string responseFormat, string message)
         => IsBinaryImageExportResponse(responseFormat)
             ? ValidationErrorHelpers.CreateGeoServicesValidationError(message)
@@ -1789,29 +1770,17 @@ internal static partial class MapServerEndpoints
         return ids;
     }
 
-    /// <summary>
-    /// Visibility prefix carried by a GeoServices <c>layers</c> parameter
-    /// (<c>[show|hide|include|exclude]:id1,id2</c>). A bare id list is treated as <see cref="Show"/>.
-    /// </summary>
     private enum ExportLayerVisibility
     {
-        /// <summary>Render only the listed layers (also the meaning of a bare id list).</summary>
         Show,
 
-        /// <summary>Render every layer except the listed ones.</summary>
         Hide,
 
-        /// <summary>Render the default-visible layers plus the listed ones.</summary>
         Include,
 
-        /// <summary>Render the default-visible layers minus the listed ones.</summary>
         Exclude,
     }
 
-    /// <summary>
-    /// Parses the optional visibility prefix from a GeoServices <c>layers</c> parameter and the
-    /// associated layer ids. A bare id list (no prefix) is treated as <see cref="ExportLayerVisibility.Show"/>.
-    /// </summary>
     private static (ExportLayerVisibility Visibility, HashSet<int> Ids) ParseLayerVisibilitySpec(string spec)
     {
         if (spec.StartsWith("show:", StringComparison.OrdinalIgnoreCase))
@@ -1837,29 +1806,7 @@ internal static partial class MapServerEndpoints
         return (ExportLayerVisibility.Show, ParseLayerIds(spec));
     }
 
-    /// <summary>
-    /// Treat an empty <c>show:</c> selection as the default layer view.
-    /// </summary>
-    /// <remarks>
-    /// Stock QGIS sends exactly <c>layers=show:</c> when its ArcGIS REST Server
-    /// connection is pointed at a MapServer's "(All layers)" entry, meaning "no
-    /// restriction". Read literally that is a selection keyword with one empty id, and
-    /// the empty-token guard answered HTTP 400 - so the layer never drew in QGIS, on a
-    /// service whose layers all render individually. An empty <c>layers=</c> already
-    /// takes the no-filter path and produces the default-visible image, so this only
-    /// routes that one spelling to the same place.
-    ///
-    /// Empty <c>include:</c> and <c>exclude:</c> are not the same request. They must
-    /// keep their prefix so <c>ResolveRenderLayers</c> selects only the default-visible
-    /// layers. Collapsing them to null would draw every dynamic layer, including ones
-    /// whose source has <c>DefaultVisibility=false</c>. An empty <c>hide:</c> means
-    /// hide nothing, including layers hidden by default, so it keeps its prefix too.
-    ///
-    /// Deliberately narrow. An empty id *inside* a list ("show:1,,2") is still a
-    /// malformed request and still rejected; only a wholly empty <c>show:</c> list is
-    /// normalised. This follows #4043, where export likewise had to accept the layer
-    /// spelling a real client emits rather than the one the parameter grammar implies.
-    /// </remarks>
+    // An empty layers=show: is QGIS asking for no restriction and takes the default-visible path; empty include, exclude, and hide keep their prefixes, and an empty id inside a longer list stays a 400.
     private static string? NormalizeEmptyLayerSelection(string? layersParam)
     {
         if (string.IsNullOrWhiteSpace(layersParam))

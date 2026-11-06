@@ -10,27 +10,12 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Features.Admin.Routing;
 
-/// <summary>
-/// Admin submission and status surface for isolated shadow-topology rebuilds (#2718).
-/// Submission creates a durable <c>NetworkTopologyRebuild</c> execution job; equivalent
-/// generic status/cancel/retry operations are served by the shared
-/// <c>/api/v1/admin/jobs/{operationId}</c> surface (<c>ConsoleJobEndpoints</c>) rather than
-/// duplicated here. This surface additionally exposes rebuild-specific stage checkpoints
-/// the generic job surface does not know about.
-/// </summary>
 internal static partial class NetworkTopologyRebuildAdminEndpoints
 {
     private const string TagAdmin = "Admin";
     private const string TagNetworkDatasets = "Network Datasets";
     private const string IfMatchHeader = "If-Match";
 
-    /// <summary>
-    /// Maps the network-topology rebuild admin endpoints into the request pipeline.
-    /// </summary>
-    /// <remarks>
-    /// No-op when <see cref="INetworkTopologyRebuildStore"/> is not registered
-    /// (non-Postgres data providers), mirroring the other network-topology admin surfaces.
-    /// </remarks>
     public static IEndpointRouteBuilder MapNetworkTopologyRebuildAdminEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
@@ -236,15 +221,8 @@ internal static partial class NetworkTopologyRebuildAdminEndpoints
     private static string ResolveActor(HttpContext context)
         => context.User.Identity?.Name is { Length: > 0 } name ? name : "admin";
 
-    /// <summary>
-    /// Log category marker used by <see cref="ILogger{TCategoryName}"/> bindings.
-    /// </summary>
     internal sealed class NetworkTopologyRebuildAdminLogCategory;
 
-    /// <summary>
-    /// Source-generated logger messages for the network-topology rebuild admin endpoints.
-    /// Structured audit fields exclude geometry, attribute values, and profile costs.
-    /// </summary>
     internal static partial class NetworkTopologyRebuildAdminLog
     {
         [LoggerMessage(EventId = 4800, Level = LogLevel.Information,

@@ -6,49 +6,18 @@ using Honua.Core.Features.Authorization.Domain;
 
 namespace Honua.Geoprocessing;
 
-/// <summary>
-/// Captures the durable owner snapshot pinned on a custom-code geoprocessing job at
-/// submit time (Phase 0 auth spine, Deliverable 1). The snapshot records the
-/// submitter's identity, tenant, role snapshot, and the validated declared scope so
-/// a later scoped-job callback token can be attenuated to ≤ the submitter.
-/// </summary>
-/// <remarks>
-/// This is intentionally minimal and behavior-preserving: a job that declares no
-/// scope (every non-custom-code job today) yields a <see langword="null"/> snapshot
-/// and the submit path is unchanged. A job that <em>does</em> declare scope is
-/// validated against what the submitter could actually reach — anything the
-/// submitter could not reach causes a rejection, so the pinned scope is always
-/// ⊆ submitter.
-/// </remarks>
 internal static class CustomCodeOwnerScopeCapture
 {
-    /// <summary>
-    /// Protocol-metadata key carrying a custom-code job's declared resource scope.
-    /// The value is a list of <c>access:service[/layer]</c> entries separated by
-    /// <see cref="EntrySeparator"/>, where <c>access</c> is <c>read</c> or
-    /// <c>write</c> (e.g. <c>write:parcels/lots;read:zoning</c>).
-    /// </summary>
     public const string DeclaredScopeMetadataKey = "honua.customcode.declared_scope";
 
-    /// <summary>Permission claim type the shared RBAC pipeline reads for scoped grants.</summary>
     public const string PermissionClaimType = "permission";
 
-    /// <summary>Tenant claim type mirrored from the portal-token grammar.</summary>
     public const string TenantClaimType = "tenant_id";
 
     private const char EntrySeparator = ';';
     private const char AccessSeparator = ':';
     private const char LayerSeparator = '/';
 
-    /// <summary>
-    /// Builds the owner snapshot for a submission, or returns <see langword="null"/>
-    /// when the job declares no custom-code scope (the behavior-preserving default).
-    /// </summary>
-    /// <param name="principal">The live submitting principal.</param>
-    /// <param name="protocolMetadata">The submission's protocol metadata, which may carry a declared scope.</param>
-    /// <param name="globalDataEditorRoles">Configured roles that confer write to every service, when known.</param>
-    /// <param name="rejection">A human-readable rejection reason when the declared scope exceeds the submitter.</param>
-    /// <returns>The pinned snapshot, or <see langword="null"/> when no scope was declared.</returns>
     public static CustomCodeOwnerScope? TryCapture(
         ClaimsPrincipal principal,
         IReadOnlyDictionary<string, string>? protocolMetadata,

@@ -9,23 +9,6 @@ using Honua.ServiceDefaults;
 
 namespace Honua.ControlPlane;
 
-/// <summary>
-/// Closed-loop Kubernetes deploy backend that drives a weighted canary rollout and
-/// automatic rollback through an external <a href="https://argo-rollouts.readthedocs.io/">Argo
-/// Rollouts</a> controller. Honua mutates the Rollout custom resource (set the canary
-/// image to start, promote to advance a paused step, abort to roll back) and reflects the
-/// controller-reported rollout status back into the <see cref="WorkflowOperationRecord"/>
-/// lifecycle so <see cref="ObserveAsync"/>, <see cref="PromoteAsync"/>, and
-/// <see cref="RollbackAsync"/> drive real state transitions rather than
-/// <see cref="WorkflowOperationStatus.ManualInterventionRequired"/>.
-///
-/// The progressive canary stepping itself (5→25→50→100, pause/analysis) is owned by the
-/// Argo Rollouts <c>spec.strategy.canary.steps</c> on the cluster; Honua observes the
-/// step weight and gates promotion/rollback through the shared telemetry-gated
-/// reconciler. Coexists with the GitOps passthrough backend
-/// <c>honua-gitops-kubernetes</c> under <see cref="DeployTargetKind.Kubernetes"/>;
-/// targets pick by <see cref="DeployTargetDefinition.Backend"/> name.
-/// </summary>
 internal sealed partial class KubernetesArgoRolloutsDeployBackend(
     IArgoRolloutsClient rolloutsClient,
     ILogger<KubernetesArgoRolloutsDeployBackend> logger,
@@ -33,13 +16,10 @@ internal sealed partial class KubernetesArgoRolloutsDeployBackend(
 {
     internal const string AdapterBackendName = "honua-kubernetes-argo-rollouts";
 
-    /// <summary>Parameter key for the Rollout namespace.</summary>
     internal const string NamespaceParameter = "kubernetes.namespace";
 
-    /// <summary>Parameter key for the Argo Rollout resource name.</summary>
     internal const string RolloutNameParameter = "kubernetes.argo.rollout_name";
 
-    /// <summary>Parameter key for the container whose image the rollout shifts.</summary>
     internal const string ContainerNameParameter = "kubernetes.argo.container_name";
 
     public string BackendName => AdapterBackendName;

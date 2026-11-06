@@ -1,0 +1,37 @@
+{
+  "producerSource": "af0c17d2e61ebc620a7eb69e094f299bf736af19",
+  "archiveSize": 25216,
+  "archiveSha256": "fdf309bda8f0c4ce3e4ac08c5c88ddbddea2b9dbc3736f0604d755cc4e702a54",
+  "clients": {
+    "pmtiles": "4.5.0",
+    "mapboxVectorTile": "3.0.0",
+    "pbf": "5.1.0"
+  },
+  "scope": "new actual Honua generator output; canonical file-reader semantic proof, not HTTP",
+  "tiles": [
+    {
+      "z": 0,
+      "x": 0,
+      "y": 0,
+      "decodedBytes": 2120,
+      "decodedSha256": "57f8abc27aca383cfa2f884ac150fe297fd8ac5a2c5e000bc5237602565967cf",
+      "semanticAssertions": "pass"
+    },
+    {
+      "z": 2,
+      "x": 0,
+      "y": 3,
+      "decodedBytes": 2120,
+      "decodedSha256": "40e5dcca961a93241f1c65936a6060b880c66d30206e881467c741523eedc9cc",
+      "semanticAssertions": "pass"
+    },
+    {
+      "z": 2,
+      "x": 3,
+      "y": 3,
+      "decodedBytes": 2120,
+      "decodedSha256": "43986dd15ea0cb4fe06297519d2d9083d54330c20ed6c96cfaa15ce23b03dd9d",
+      "semanticAssertions": "pass"
+    }
+  ]
+}

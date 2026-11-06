@@ -8,15 +8,6 @@ using NetTopologySuite.Features;
 
 namespace Honua.Geoprocessing.Execution;
 
-/// <summary>
-/// <c>transform.attribute-filter</c> executor. Passes through only features whose
-/// attribute satisfies a simple comparison, dropping the rest. Supported <c>op</c>
-/// values: <c>eq</c>, <c>neq</c>, <c>gt</c>, <c>gte</c>, <c>lt</c>, <c>lte</c>,
-/// <c>contains</c>, <c>exists</c>. Numeric operators parse both operands as doubles;
-/// string operators compare ordinally. Ported from the GeoETL baseline
-/// AttributeFilterTransform onto the #1185 process/executor contract. Streams: a
-/// per-feature filter with no cross-feature state.
-/// </summary>
 internal sealed class AttributeFilterTransformExecutor(
     IOptionsMonitor<GeoprocessingExecutorOptions> options)
     : FeatureCollectionTransformExecutor(options)

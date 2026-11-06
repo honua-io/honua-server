@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using FluentAssertions;
 using Honua.Infrastructure.Authentication;
+using Honua.TestKit.Attributes;
 using Xunit;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
@@ -156,5 +157,70 @@ public sealed class AdminApiKeyPermissionTests
 
         act.Should().NotThrow();
         act().Should().BeTrue();
+    }
+
+    [UnitTheory]
+    [InlineData("admin")]
+    [InlineData("*")]
+    [InlineData("admin:*")]
+    public void HasCredentialManagementAuthority_FullAdminGrant_IsTrue(string grant)
+    {
+        AdminApiKeyPermission.HasCredentialManagementAuthority(AdminPrincipal(grant), "POST", "/api/v1/admin/api-keys")
+            .Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void HasCredentialManagementAuthority_AdminRoleWithoutGrants_IsTrue()
+    {
+        // Bootstrap password, client certificate and human admin sessions authenticate
+        // with the admin role and no permission claims; they keep credential authority.
+        AdminApiKeyPermission.HasCredentialManagementAuthority(AdminPrincipal(), "POST", "/api/v1/admin/api-keys")
+            .Should().BeTrue();
+    }
+
+    [UnitTheory]
+    [InlineData("admin:write")]
+    [InlineData("admin:manage")]
+    [InlineData("admin:read")]
+    [InlineData("admin:approve")]
+    public void HasCredentialManagementAuthority_ScopedAdminGrant_IsFalse(string grant)
+    {
+        // Scoped admin grants (including admin:write, which resolves to general admin write)
+        // do not carry credential-management authority.
+        AdminApiKeyPermission.HasCredentialManagementAuthority(AdminPrincipal(grant), "POST", "/api/v1/admin/api-keys")
+            .Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void HasCredentialManagementAuthority_InstallerOperationalKey_IsFalse()
+    {
+        var installerKey = AdminPrincipal("admin:read", "admin:write", "read:*");
+
+        AdminApiKeyPermission.IsFullAdminPrincipal(installerKey).Should().BeTrue("admin:write is general admin write");
+        AdminApiKeyPermission.HasCredentialManagementAuthority(installerKey, "POST", "/api/v1/admin/api-keys")
+            .Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void HasCredentialManagementAuthority_ExactApprovedOperationGrant_IsTrueOnlyForThatOperation()
+    {
+        var grants = AdminApiKeyPermission.CreateApprovedOperationGrants("POST", "/api/v1/admin/api-keys", "public");
+        var claims = grants.Select(grant => new Claim(AdminApiKeyPermission.PermissionClaimType, grant))
+            .Append(new Claim(ClaimTypes.Role, AdminApiKeyPermission.ApprovedOperationRole));
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, authenticationType: "Test"));
+
+        AdminApiKeyPermission.HasCredentialManagementAuthority(principal, "POST", "/api/v1/admin/api-keys")
+            .Should().BeTrue();
+        AdminApiKeyPermission.HasCredentialManagementAuthority(principal, "PUT", "/api/v1/admin/users/user-1/roles")
+            .Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void HasCredentialManagementAuthority_NonAdminPrincipalWithoutGrants_IsFalse()
+    {
+        var principal = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, "viewer")], authenticationType: "Test"));
+
+        AdminApiKeyPermission.HasCredentialManagementAuthority(principal, "POST", "/api/v1/admin/api-keys")
+            .Should().BeFalse();
     }
 }

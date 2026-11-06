@@ -35,6 +35,83 @@ dc() { docker compose --env-file .env -f compose.yaml "$@"; }
 Compose 2.23.1 or later is required. Nothing here needs a repository checkout, a
 compiler, or a registry credential.
 
+## Production install from the shipped Compose file
+
+The release also ships a production Compose file,
+[`docker-compose.production.yml`](../../../docker-compose.production.yml), and its
+environment template, [`.env.production.example`](../../../.env.production.example).
+Use them instead of the quickstart project when you want the hardened
+single-host shape from the start: Production environment, Gate migration policy,
+a trusted proxy and hostname, and PostgreSQL, Redis and file storage on volumes.
+Run these blocks on the Linux Docker host, in a directory that holds both files
+from the release source archive. `scripts/docker/smoke-production.py` runs the
+same blocks against a published image on fresh volumes.
+
+Set `HONUA_IMAGE` to the release's immutable server image (`server.image` in its
+`customer-install-manifest.json`), then generate the private env file. The block
+fills every secret the Compose file requires; edit `HONUA_HOST` and
+`HONUA_CORS_ORIGIN` in `.env.production` to your public hostname and browser origin.
+
+<!-- docs-validation:production.env mode=run -->
+```bash
+umask 077
+cp .env.production.example .env.production
+sed -i.orig \
+  -e "s|^HONUA_IMAGE=.*|HONUA_IMAGE=${HONUA_IMAGE:?Set HONUA_IMAGE to the release server image digest}|" \
+  -e "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$(openssl rand -hex 32)|" \
+  -e "s|^HONUA_ADMIN_PASSWORD=.*|HONUA_ADMIN_PASSWORD=Aa1-$(openssl rand -hex 32)|" \
+  -e "s|^HONUA_MASTER_KEY=.*|HONUA_MASTER_KEY=$(openssl rand -hex 32)|" \
+  -e "s|^HONUA_KEYRING_PASSWORD=.*|HONUA_KEYRING_PASSWORD=$(openssl rand -hex 16)|" \
+  .env.production
+rm -f .env.production.orig
+```
+
+Production with Redis refuses to start until a PKCS#12 certificate encrypts the
+operation key ring that Redis holds. Generate it beside the Compose file. A
+one-shot step in the Compose file sets it to owner root, group 1001 (the server's
+group), mode `0640` before the server starts; the block removes any earlier copy
+first because you cannot overwrite that root-owned file.
+
+<!-- docs-validation:production.keyring mode=run -->
+```bash
+mkdir -p secrets
+HONUA_KEYRING_PASSWORD="$(sed -n 's/^HONUA_KEYRING_PASSWORD=//p' .env.production)"
+openssl req -x509 -newkey rsa:2048 \
+  -keyout secrets/keyring.pem -out secrets/keyring.crt \
+  -days 3650 -nodes -subj "/CN=honua-production"
+rm -f secrets/keyring.pfx
+openssl pkcs12 -export \
+  -inkey secrets/keyring.pem -in secrets/keyring.crt \
+  -out secrets/keyring.pfx -passout "pass:${HONUA_KEYRING_PASSWORD}"
+rm -f secrets/keyring.pem secrets/keyring.crt
+chmod 600 secrets/keyring.pfx
+```
+
+Keep `.env.production` and `secrets/keyring.pfx` with the volumes. Losing the env
+file loses the database credentials and the connection encryption key.
+
+Start the stack. The first `create` makes the Compose network so the block can
+read its gateway: that is the source address Honua sees for a reverse proxy (such
+as Caddy) on the host reaching the loopback ports. If your proxy runs in a
+container or on another host, put its own address in `HONUA_PROXY_IP` instead.
+
+<!-- docs-validation:production.start mode=run -->
+```bash
+dc() { docker compose -f docker-compose.production.yml --env-file .env.production "$@"; }
+HONUA_PROXY_IP=127.0.0.1 dc create
+HONUA_NETWORK_NAME="$(sed -n 's/^HONUA_NETWORK_NAME=//p' .env.production)"
+HONUA_PROXY_IP="$(docker network inspect "$HONUA_NETWORK_NAME" --format '{{(index .IPAM.Config 0).Gateway}}')"
+sed -i.orig "s|^HONUA_PROXY_IP=.*|HONUA_PROXY_IP=${HONUA_PROXY_IP:?No Compose network gateway}|" .env.production
+rm -f .env.production.orig
+dc up -d --wait --wait-timeout 180
+```
+
+Open `http://127.0.0.1:8080/healthz/ready` on the host; expect `Ready`. Then
+put your TLS-terminating proxy in front of `127.0.0.1:8080` (HTTP/1 REST and
+gRPC-Web) and `127.0.0.1:8081` (native gRPC) as described under
+[Public TLS edge](#public-tls-edge). The rest of this page uses the quickstart
+project's `dc`; for this install, define `dc` as in the block above.
+
 ## Public TLS edge
 
 The installed server publishes loopback ports `127.0.0.1:18080` for HTTP/1 REST
@@ -313,6 +390,8 @@ dc up -d --wait --wait-timeout 180
 
 ## Upgrade & Rollback
 
+When the Compose executor from the [quickstart](../../get-started/quickstart.md#approved-operations-and-recovery) is enabled, convergence and rollback of the registered project are product-managed. The server asks a sidecar over a local socket. A rollback across a reader-incompatible or contract migration restores a verified database backup before the prior image starts. The file-storage archive in the backup recipe above stays an operator step. The executor does not run arbitrary Compose commands, and contract-migration nonces stay on the migrate-only path.
+
 Use the signed release lock's next server digest and compatible clients together.
 Retain the previous `.env`, installed-package list and backup. A single-node
 Compose upgrade has downtime. Review migration preflight through the published
@@ -393,3 +472,11 @@ unset HONUA_ADMIN_PASSWORD POSTGRES_PASSWORD
 ```
 
 The private installation folder remains for deliberate retention or deletion.
+
+### Local approved operations
+
+The [customer quickstart package](../../get-started/quickstart.md#install-the-customer-package)
+includes the stable manager and dedicated executor image by default.
+Only the executor has Docker access. It targets the configured local project and
+executes only proposals approved by a different principal. Preserve the image lock,
+private locally generated credentials, management volumes, and verified backups.

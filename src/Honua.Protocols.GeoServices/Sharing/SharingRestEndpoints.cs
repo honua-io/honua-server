@@ -30,30 +30,17 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.GeoServices.Sharing;
 
-/// <summary>
-/// ArcGIS-compatible <c>/sharing/rest</c> endpoints. Currently exposes
-/// <c>generateToken</c>; additional sharing surface is added in follow-up
-/// tickets.
-/// </summary>
 public static class SharingRestEndpoints
 {
     internal const string EntitlementKey = "identity.portal-token";
     internal const string EntitlementFeatureName = "ArcGIS Portal Token Issuance";
 
-    /// <summary>Entitlement key gating the read-only Portal/Sharing discovery surface.</summary>
     internal const string ReadEntitlementKey = "identity.portal-sharing";
     internal const string ReadEntitlementFeatureName = "ArcGIS Portal Sharing Read Surface";
 
     private const string JsonContentType = "application/json";
 
-    /// <summary>
-    /// Explicit no-cache decision shared by every Portal/Sharing GET (SEC-20).
-    /// This is an identity surface: <c>generateToken</c> returns a freshly issued
-    /// credential, and the discovery reads are scoped to the caller's portal token
-    /// (<c>?token=</c>, <c>Authorization</c>, or <c>X-Esri-Authorization</c>). None of
-    /// the responses is a pure function of the request URL, so none of them may be
-    /// stored in the shared output cache.
-    /// </summary>
+    // Portal and Sharing GET responses are not cached, because generateToken and the discovery reads depend on the caller's token rather than the URL alone.
     private static readonly Action<OutputCachePolicyBuilder> NoOutputCache =
         static policy => policy.NoCache();
 
@@ -63,11 +50,6 @@ public static class SharingRestEndpoints
     private const int MaxSearchPageSize = 100;
     private const string PortalId = "0123456789ABCDEF";
 
-    /// <summary>
-    /// Maps the <c>/sharing/rest/generateToken</c> POST and GET endpoints.
-    /// </summary>
-    /// <param name="endpoints">Endpoint route builder to extend.</param>
-    /// <returns>The original builder, to support fluent chaining.</returns>
     public static IEndpointRouteBuilder MapSharingRestEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
@@ -119,15 +101,6 @@ public static class SharingRestEndpoints
         return endpoints;
     }
 
-    /// <summary>
-    /// Maps the read-only Portal/Sharing REST discovery surface (#1243):
-    /// <c>info</c>, <c>portals/self</c>, <c>community/self</c>, <c>search</c>, and
-    /// <c>content/items/{id}</c> (+ <c>/data</c>). All routes are off-by-default
-    /// and entitlement-gated; the whole surface returns 404 when disabled so it is
-    /// never a silent discovery surface.
-    /// </summary>
-    /// <param name="endpoints">Endpoint route builder to extend.</param>
-    /// <returns>The original builder, to support fluent chaining.</returns>
     private static IEndpointRouteBuilder MapSharingRestReadEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/sharing/rest", HandleSharingRoot)
@@ -758,21 +731,9 @@ public static class SharingRestEndpoints
         return Results.Json(item, SharingRestJsonContext.Default.PortalItem, contentType: JsonContentType);
     }
 
-    /// <summary>
-    /// Configuration key that explicitly disables the read-only Portal/Sharing
-    /// discovery surface independent of licensing. Defaults to enabled; operators
-    /// opt out by setting it to <c>false</c>.
-    /// </summary>
     internal const string ReadSurfaceEnabledKey = "Sharing:ReadSurface:Enabled";
 
-    /// <summary>
-    /// Gates the read surface in priority order: (1) the operator enable flag,
-    /// (2) the read-surface entitlement, then (3) the response format. When the
-    /// surface is disabled or unlicensed the whole surface 404s — it is never a
-    /// silent discovery surface and never reveals itself via a 400. Returns an
-    /// error result to short-circuit the request, or <see langword="null"/> when
-    /// the request may proceed.
-    /// </summary>
+    // A disabled or unlicensed sharing surface returns 404, never a 400 that would reveal the surface.
     private static IResult? GateReadSurface(HttpContext context, string? format, ILogger<SharingRestLog> logger)
     {
         var configuration = context.RequestServices.GetRequiredService<IConfiguration>();
@@ -813,14 +774,7 @@ public static class SharingRestEndpoints
         => snapshot.Graph.Services.Where(service => string.IsNullOrWhiteSpace(service.Metadata.Publisher))
             .Select(service => service.Metadata.Id).ToHashSet(StringComparer.Ordinal);
 
-    /// <summary>
-    /// Applies a coarse, case-insensitive Portal <c>q</c> filter over the projected
-    /// items. Top-level <c>OR</c> is a disjunction and <c>AND</c> or whitespace is a
-    /// conjunction, respecting quotes and parentheses. Supports the common
-    /// <c>type:</c>, <c>owner:</c>, and <c>tags:</c> field qualifiers plus free-text
-    /// matching against title/snippet/tags; any other qualifier degrades to free-text
-    /// so unsupported syntax never errors.
-    /// </summary>
+    // An unsupported Portal q qualifier degrades to free text so unknown syntax does not error, while type, owner, and tags keep their field meaning.
     internal static List<PortalItem> ApplyQuery(IReadOnlyList<PortalItem> items, string query, HashSet<string> unmappedOwnerIds)
     {
         if (string.IsNullOrWhiteSpace(query) || query.Trim() == "*")
@@ -1034,11 +988,6 @@ public static class SharingRestEndpoints
         });
     }
 
-    /// <summary>
-    /// Splits a Portal <c>q</c> expression into terms on whitespace while keeping
-    /// double-quoted phrases (including the common <c>field:"two words"</c> form)
-    /// intact, so multi-word qualifier values survive tokenizing.
-    /// </summary>
     private static List<string> TokenizeQuery(string query)
     {
         var terms = new List<string>();
@@ -1110,12 +1059,6 @@ public static class SharingRestEndpoints
             item.Tags.Any(tag => tag.Contains(trimmed, StringComparison.OrdinalIgnoreCase));
     }
 
-    /// <summary>
-    /// Applies the Portal <c>sortField</c>/<c>sortOrder</c> options over the
-    /// projected items. The projector already returns items title-sorted; this
-    /// honours explicit overrides for <c>title</c>, <c>created</c>, and
-    /// <c>modified</c>.
-    /// </summary>
     private static List<PortalItem> ApplySort(List<PortalItem> items, IQueryCollection query)
     {
         var sortField = ReadFirst(query["sortField"]);

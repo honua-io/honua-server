@@ -9,46 +9,18 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Metadata.Caching;
 
-/// <summary>
-/// Process-wide, per-environment cache of the current Metadata v2 graph snapshot. Registered as a
-/// singleton so a resolved snapshot survives across request scopes; the backing store is scoped and
-/// otherwise re-reads the full catalog document (a whole-JSONB <c>SELECT</c> plus a full deserialize
-/// and index rebuild) on every call. The snapshot is immutable for its revision, so sharing the
-/// object reference across threads and requests is safe.
-/// </summary>
-/// <remarks>
-/// Same-node writes call <see cref="Invalidate(string)"/> for immediate freshness. In multi-node
-/// deployments with Redis composed, the host decorates this cache with a Redis pub/sub invalidator
-/// that broadcasts each write so every node drops its snapshot too. Staleness is still bounded by a
-/// short, configurable TTL (<see cref="CacheOptions.MetadataGraphTtl"/>) as the backstop for a lost
-/// broadcast or a Redis-off node. Concurrent misses are coalesced (single-flight) so a TTL expiry under load
-/// triggers a single reload rather than a stampede.
-/// </remarks>
 public sealed class MetadataV2GraphSnapshotCache : IMetadataV2GraphCacheInvalidator
 {
     private readonly ConcurrentDictionary<string, CacheSlot> _slots = new(StringComparer.Ordinal);
     private readonly IOptions<CacheOptions> _options;
     private readonly TimeProvider _timeProvider;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="MetadataV2GraphSnapshotCache"/> class.
-    /// </summary>
-    /// <param name="options">Cache options supplying the enablement flag and TTL.</param>
-    /// <param name="timeProvider">Time source used for TTL expiry (injected for testability).</param>
     public MetadataV2GraphSnapshotCache(IOptions<CacheOptions> options, TimeProvider? timeProvider = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
-    /// <summary>
-    /// Returns the cached snapshot for the environment when fresh, otherwise loads it through
-    /// <paramref name="load"/>, caches it for the configured TTL, and returns it. When caching is
-    /// disabled or the TTL is non-positive the loader is invoked directly with no caching.
-    /// </summary>
-    /// <param name="environment">The metadata environment key.</param>
-    /// <param name="load">Loader that reads the current snapshot from the backing store.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     public async ValueTask<MetadataV2GraphSnapshot> GetOrLoadAsync(
         string environment,
         Func<CancellationToken, ValueTask<MetadataV2GraphSnapshot>> load,
@@ -94,15 +66,41 @@ public sealed class MetadataV2GraphSnapshotCache : IMetadataV2GraphCacheInvalida
         return await snapshotTask.WaitAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public void Invalidate(string environment)
     {
         ArgumentNullException.ThrowIfNull(environment);
         _slots.TryRemove(environment, out _);
     }
 
-    /// <inheritdoc />
     public void InvalidateAll() => _slots.Clear();
+
+    public bool IsEnabled
+    {
+        get
+        {
+            var options = _options.Value;
+            return options.MetadataGraphCacheEnabled && options.MetadataGraphTtl > TimeSpan.Zero;
+        }
+    }
+
+    public void InvalidateIfCurrent(string environment, string staleEtag)
+    {
+        ArgumentNullException.ThrowIfNull(environment);
+        ArgumentNullException.ThrowIfNull(staleEtag);
+        if (!_slots.TryGetValue(environment, out var slot))
+        {
+            return;
+        }
+
+        lock (slot.Gate)
+        {
+            if (slot.State is { Snapshot: { IsCompletedSuccessfully: true } snapshot }
+                && string.Equals(snapshot.Result.Etag, staleEtag, StringComparison.Ordinal))
+            {
+                slot.State = null;
+            }
+        }
+    }
 
     private static bool IsExpired(SlotState state, long nowTicks)
     {

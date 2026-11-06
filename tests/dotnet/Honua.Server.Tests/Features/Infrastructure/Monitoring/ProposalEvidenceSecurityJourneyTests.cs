@@ -1,20 +1,20 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Net;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json;
+using System.Text;
 using FluentAssertions;
-using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Tools;
-using Honua.Ai.StudioAiProxy;
+using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.StudioAiProxy.Abstractions;
 using Honua.Ai.StudioAiProxy.Domain;
+using Honua.Ai.StudioAiProxy;
 using Honua.ControlPlane;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -25,15 +25,17 @@ using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Security.Admission;
 using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Operations;
-using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Security;
+using Honua.TestKit;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Org.BouncyCastle.Crypto.Parameters;
 using Org.BouncyCastle.Crypto.Signers;
@@ -170,21 +172,64 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
     [Endpoint("POST /mcp")]
     public async Task EvidenceBoundProposal_BootstrapAdminIsRejectedBeforePersistence()
     {
-        var client = CreateClient(WebAppFixture.SharedAdminPassword, TenantA);
-        var session = await InitializeMcpAsync(client);
-        var descriptor = await GetDescriptorAsync(ProposeDeployOperationTool.ToolName, client, session);
-        var selection = await SelectThroughProxyAsync(
-            client, descriptor, ValidDeployArguments(), Candidate);
+        var unrelated = new OperationProposal
+        {
+            ProposalId = "unrelated-" + Guid.NewGuid().ToString("N"),
+            Kind = OperationClass.Deploy,
+            Status = OperationProposalStatus.Submitted,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow
+        };
+        (await _proposals.TryCreateAsync(unrelated)).Should().BeTrue();
+        try
+        {
+            var activeBefore = (await _proposals.ListActiveAsync()).Select(proposal => proposal.ProposalId).ToArray();
+            var client = CreateClient(WebAppFixture.SharedAdminPassword, TenantA);
+            var session = await InitializeMcpAsync(client);
+            var descriptor = await GetDescriptorAsync(ProposeDeployOperationTool.ToolName, client, session);
+            var selection = await SelectThroughProxyAsync(
+                client, descriptor, ValidDeployArguments(), Candidate);
 
-        var response = await CallToolAsync(client, session, selection);
+            var response = await CallToolAsync(client, session, selection);
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        response.Document.Should().NotBeNull();
-        IsMcpError(response.Document!.RootElement).Should().BeTrue();
-        HasApprovalHandle(response.Document.RootElement).Should().BeFalse();
-        (await _proposals.ListActiveAsync()).Should().BeEmpty(
-            "a bootstrap principal cannot create a durable evidence-bound approval");
-        MutationCount.Should().Be(0);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.Document.Should().NotBeNull();
+            IsMcpError(response.Document!.RootElement).Should().BeTrue();
+            HasApprovalHandle(response.Document.RootElement).Should().BeFalse();
+            (await _proposals.ListActiveAsync()).Select(proposal => proposal.ProposalId).Should().BeEquivalentTo(activeBefore,
+                "a bootstrap principal cannot create a durable evidence-bound approval");
+            MutationCount.Should().Be(0);
+        }
+        finally
+        {
+            var persisted = await _proposals.GetAsync(unrelated.ProposalId);
+            if (persisted is not null)
+                await _proposals.TrySetAsync(persisted with { Status = OperationProposalStatus.Cancelled });
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    public async Task ApproveProposal_InvalidEvidenceAndUnavailableAudit_Returns503BeforeExecution()
+    {
+        var before = MutationCount;
+        var context = await CreateProposalAsync(ProposeDeployOperationTool.ToolName);
+        var changed = context.Proposal with
+        {
+            Evidence = context.Proposal.Evidence! with { DescriptorRevision = "invalid-for-audit-test" }
+        };
+        (await _proposals.TrySetAsync(changed)).Should().BeTrue();
+        var approver = await CreateKeyAsync($"audit-outage-approver-{Guid.NewGuid():N}", ["admin:*"]);
+        _auditFailure.FailWrites = true;
+        using var response = await CreateClient(approver.Key, TenantA).PostAsync(
+            $"/api/v1/admin/proposals/{changed.ProposalId}/approve", null);
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, await response.Content.ReadAsStringAsync());
+        MutationCount.Should().Be(before);
+        (await _proposals.GetAsync(changed.ProposalId))!.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
+        using var scope = _fixture.Services.CreateScope();
+        var audits = await scope.ServiceProvider.GetRequiredService<IAuditLogReader>().ListAsync(
+            new AuditLogFilter { ResourceId = changed.ProposalId, PageSize = 20 });
+        audits.Items.Should().NotContain(item => item.Action == "operation.approval_denied");
     }
 
     private async Task RunAllowedAsync(
@@ -200,7 +245,7 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
         var approverClient = CreateClient(approver.Key, TenantA);
         using var approval = await approverClient.PostAsync(
             $"/api/v1/admin/proposals/{proposal.Proposal.ProposalId}/approve", null);
-        approval.StatusCode.Should().Be(HttpStatusCode.OK);
+        approval.StatusCode.Should().Be(HttpStatusCode.OK, await approval.Content.ReadAsStringAsync());
 
         var persisted = await _proposals.GetAsync(proposal.Proposal.ProposalId);
         persisted.Should().NotBeNull();
@@ -344,6 +389,14 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
             $"/api/v1/admin/proposals/{changed.ProposalId}/approve", null);
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
         MutationCount.Should().Be(before);
+        using var auditScope = _fixture.Services.CreateScope();
+        var audits = await auditScope.ServiceProvider.GetRequiredService<IAuditLogReader>().ListAsync(
+            new AuditLogFilter { ResourceId = changed.ProposalId, PageSize = 20 });
+        var denial = audits.Items.Should().ContainSingle(item => item.Action == "operation.approval_denied").Subject;
+        denial.Outcome.Should().Be(AuditOutcome.Denied);
+        denial.CorrelationId.Should().Be(changed.Audit.CorrelationId ?? changed.ProposalId);
+        using var details = JsonDocument.Parse(denial.Details);
+        details.RootElement.GetProperty("reason").GetString().Should().Be("evidence_invalid");
         receipts.Add(ToReceipt(scenario, "rejected-at-approval", changed, 0));
     }
 
@@ -944,12 +997,20 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
         builder.UseEnvironment("Test");
         builder.UseSetting("HONUA_DEV_AUTH", "false");
         builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+        builder.ConfigureServices(services => services.AddSingleton<IAiExecutionAdmission, RecordingAiAdmission>());
         builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
             new Dictionary<string, string?>
             {
                 ["MultiTenancy:MultiTenantAdminRoles:0"] = "admin",
                 ["MultiTenancy:MultiTenantAdminRoles:1"] = "scoped-api-key",
+                ["AiExecutionAdmission:DeploymentId"] = "test-deployment",
                 ["StudioAiProxy:Enabled"] = "true",
+                ["StudioAiProxy:Disclosure:Approvals:0:Provider"] = Provider,
+                ["StudioAiProxy:Disclosure:Approvals:0:Kind"] = StudioAiProxyConfiguration.OpenAiKind,
+                ["StudioAiProxy:Disclosure:Approvals:0:Destination"] = "https://deterministic.invalid/v1",
+                ["StudioAiProxy:Disclosure:Approvals:0:Model"] = "deterministic-proposal-model",
+                ["StudioAiProxy:Disclosure:Approvals:0:UseCase"] = "studio-chat",
+                ["StudioAiProxy:Disclosure:Approvals:0:DataClassification"] = "unclassified",
                 ["StudioAiProxy:DefaultProvider"] = Provider,
                 [$"StudioAiProxy:Providers:{Provider}:Kind"] = StudioAiProxyConfiguration.OpenAiKind,
                 [$"StudioAiProxy:Providers:{Provider}:Endpoint"] = "https://deterministic.invalid/v1",
@@ -964,6 +1025,7 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
 
     private void ConfigureServices(IServiceCollection services)
     {
+        services.AddSingleton<IAiExecutionAdmission, RecordingAiAdmission>();
         var auditDescriptor = services.Last(descriptor => descriptor.ServiceType == typeof(IAuditLog));
         services.RemoveAll<IAuditLog>();
         services.AddScoped<IAuditLog>(provider => new FaultSwitchAuditLog(
@@ -995,6 +1057,9 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
         services.AddSingleton<IGuardrailLadder>(new JourneyGuardrailLadder());
         services.RemoveAll<IOperationProposalEvidenceValidator>();
         services.AddSingleton<IOperationProposalEvidenceValidator, OperationProposalEvidenceValidator>();
+        // This fixture composes Redis/control-plane services explicitly rather than
+        // entering Program's Redis configuration branch. Keep its real authority helper too.
+        services.TryAddSingleton<OperationProposerApiKeyAuthority>();
         services.RemoveAll<IOperationGateway>();
         services.AddSingleton<IOperationGateway, OperationGateway>();
     }
@@ -1014,6 +1079,7 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
         public async IAsyncEnumerable<StudioAiChatEvent> StreamAsync(
             StudioAiProxyProviderOptions options,
             StudioAiChatRequest request,
+            IAiExecutionPermit permit,
             [EnumeratorCancellation] CancellationToken cancellationToken)
         {
             var toolName = request.ToolChoice!.ToolName!;

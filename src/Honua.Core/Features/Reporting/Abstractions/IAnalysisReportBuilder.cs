@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Reporting.Domain;
+using Honua.Core.Features.Security.Admission;
 
 namespace Honua.Core.Features.Reporting.Abstractions;
 
@@ -22,4 +23,8 @@ public interface IAnalysisReportBuilder
         string jobId,
         AnalysisResultPackage package,
         CancellationToken cancellationToken);
+    /// <summary>Builds with server-validated invocation context; legacy builders retain their existing deterministic behavior.</summary>
+    Task<AnalysisReport> BuildAsync(string jobId, AnalysisResultPackage package,
+        AiExecutionContext? executionContext, CancellationToken cancellationToken)
+        => BuildAsync(jobId, package, cancellationToken);
 }
