@@ -31,5 +31,5 @@ Seeded sources (slice 1):
 
 \* `addresses` is a `geocoder` feedstock (future GP-Batch product).
 
-See `docs/guides/open-data-provisioner.md` for the extension pattern and the
+See [the provisioner guide](../../../docs/guides/open-data-provisioner.md) for the extension pattern and the
 geocoding/routing roadmap.

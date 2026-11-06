@@ -6,7 +6,7 @@
 Given an open-data SOURCE/PRODUCT from the curated catalog and an AREA
 (a bbox or a US Census GEOID), this tool:
 
-  1. resolves the fetch recipe + URL from data/open-data-catalog/catalog.json,
+  1. resolves the fetch recipe + URL from scripts/provisioner/catalog/catalog.json,
   2. fetches the source for that area,
   3. clips/filters it to the exact area (where the recipe requires it),
   4. imports it into a running Honua Server via the admin file-import API
@@ -45,9 +45,8 @@ import urllib.request
 from pathlib import Path
 
 CATALOG = (
-    Path(__file__).resolve().parents[2]
-    / "data"
-    / "open-data-catalog"
+    Path(__file__).resolve().parent
+    / "catalog"
     / "catalog.json"
 )
 
