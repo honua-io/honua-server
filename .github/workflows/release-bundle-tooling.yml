@@ -9,13 +9,13 @@ on:
   pull_request:
     paths:
       - 'scripts/release/**'
-      - 'release/bundle-suites.json'
+      - 'eng/release/bundle-suites.v1.json'
       - '.github/workflows/release-bundle*.yml'
   push:
     branches: [trunk]
     paths:
       - 'scripts/release/**'
-      - 'release/bundle-suites.json'
+      - 'eng/release/bundle-suites.v1.json'
       - '.github/workflows/release-bundle*.yml'
   workflow_dispatch:
 
@@ -33,7 +33,7 @@ jobs:
           for f in scripts/release/*.sh; do bash -n "$f"; done
 
       - name: Suite registry is valid JSON
-        run: jq -e '.integration and .sdk and .repositoryLanes' release/bundle-suites.json
+        run: jq -e '.integration and .sdk and .repositoryLanes' eng/release/bundle-suites.v1.json
 
       - name: Release-bundle ref-policy regression check
         run: python3 scripts/release/validate-release-bundle-ref-policy.py

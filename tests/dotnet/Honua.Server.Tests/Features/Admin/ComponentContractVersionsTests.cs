@@ -10,10 +10,6 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// The embedded release/component-versions.json declaration and the startup check that refuses a
-/// declaration differing from the contract versions the server serves (honua-server#5378).
-/// </summary>
 [Trait("Component", "Admin")]
 public sealed class ComponentContractVersionsTests
 {
@@ -106,8 +102,8 @@ public sealed class ComponentContractVersionsTests
     public void DeclaredInspectorPaginationObserverVersion_MatchesTheExportedObserverContract()
     {
         // The certification observer's proof contract is a cross-repository interface consumed by
-        // geospatial-mcp; a bump must be recorded in release/component-versions.json (AGENTS.md).
-        using var declaration = JsonDocument.Parse(File.ReadAllText(RepositoryPaths.Resolve("release", "component-versions.json")));
+        // geospatial-mcp; a bump must be recorded in eng/release/component-versions.v1.json.
+        using var declaration = JsonDocument.Parse(File.ReadAllText(RepositoryPaths.Resolve("eng", "release", "component-versions.v1.json")));
         var declared = declaration.RootElement.GetProperty("schemaVersions").GetProperty("inspector-pagination-observer").GetString();
 
         var observer = File.ReadAllText(RepositoryPaths.Resolve("tests", "mcp-certification", "inspector-pagination.mjs"));
@@ -148,7 +144,7 @@ public sealed class ComponentContractVersionsTests
             json.Should().NotBe(CurrentDeclaration);
             var act = () => ComponentVersionsDeclaration.Parse(json);
             act.Should().Throw<InvalidOperationException>(json)
-                .WithMessage("release/component-versions.json is invalid: *");
+                .WithMessage("eng/release/component-versions.v1.json is invalid: *");
         }
     }
 

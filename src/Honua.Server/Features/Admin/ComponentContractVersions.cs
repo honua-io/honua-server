@@ -138,7 +138,7 @@ internal sealed class ComponentVersionsDeclaration
     }
 
     private static InvalidOperationException Invalid(string reason)
-        => new($"release/component-versions.json is invalid: {reason}.");
+        => new($"eng/release/component-versions.v1.json is invalid: {reason}.");
 }
 
 internal static class ServedContractVersions
@@ -241,7 +241,7 @@ internal static class ContractVersionsStartupCheck
         if (mismatches.Count > 0)
         {
             throw new InvalidOperationException(
-                "release/component-versions.json contractVersions do not match the contract versions this server serves: " +
+                "eng/release/component-versions.v1.json contractVersions do not match the contract versions this server serves: " +
                 string.Join("; ", mismatches) +
                 ". Update the declaration in the same change that bumps a contract version (AGENTS.md, Release component versions).");
         }

@@ -10,7 +10,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-REGISTRY="$REPO_ROOT/release/bundle-suites.json"
+REGISTRY="$REPO_ROOT/eng/release/bundle-suites.v1.json"
 COLLECT="$SCRIPT_DIR/collect-evidence.sh"
 GEN="$SCRIPT_DIR/build-release-manifest.sh"
 

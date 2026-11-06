@@ -71,7 +71,7 @@ public sealed class AdminCapabilitiesEndpointTests : IAsyncLifetime
     {
         // honua-server#5378 / release ruling R27: the contract-live gate reads
         // data.compatibility.contractVersions as the whole advertised set and refuses a missing
-        // key, an extra key, or a different value against release/component-versions.json.
+        // key, an extra key, or a different value against eng/release/component-versions.v1.json.
         var declared = ReadDeclaredVersions("contractVersions");
         declared.Keys.Should().BeEquivalentTo(new[] { "admin", "metadata", "geoservices", "ogc", "stac", "grpc" });
 
@@ -98,7 +98,7 @@ public sealed class AdminCapabilitiesEndpointTests : IAsyncLifetime
     public async Task GetManifest_TransportContractVersionsMatchDeclaration()
     {
         // The per-transport contractVersion the manifest advertises is the same version
-        // release/component-versions.json declares for that surface (#5378).
+        // eng/release/component-versions.v1.json declares for that surface (#5378).
         var declared = ReadDeclaredVersions("contractVersions");
 
         var response = await _fixture.Client.GetAsync("/api/v1/capabilities/manifest");
@@ -118,7 +118,7 @@ public sealed class AdminCapabilitiesEndpointTests : IAsyncLifetime
     {
         // The checked-in file the release resolver reads, not the embedded copy, so the test also
         // proves the build embedded the current declaration.
-        using var declaration = JsonDocument.Parse(File.ReadAllText(RepositoryPaths.Resolve("release", "component-versions.json")));
+        using var declaration = JsonDocument.Parse(File.ReadAllText(RepositoryPaths.Resolve("eng", "release", "component-versions.v1.json")));
         var versions = ReadMap(declaration.RootElement.GetProperty(field));
         new Dictionary<string, string>(field == "contractVersions"
                 ? ComponentVersionsDeclaration.Embedded.ContractVersions

@@ -12,10 +12,7 @@ Use this checklist for every MVP release.
 ## Core Release Gates
 
 - [ ] CI green on `trunk`
-- [ ] Update the [2026-05 Preview release-train manifest](../../../release/honua-2026-05-preview.json)
-  with the release-candidate server ref, immutable image tag/digest, latest
-  workflow evidence, approved waivers, and bounded follow-up issues for every
-  remaining cross-repo release gap
+- [ ] Review the current release candidate, immutable image digest, workflow evidence and approved follow-ups in honua-release.
 - [ ] Full production audit run completed: `./scripts/conformance/run-production-audit.sh --mode full`
 - [ ] Audit artifacts reviewed and attached from `.audit/runs/<timestamp>/summary.md`
 - [ ] Conformance workflows pass (OGC Features, OGC Tiles, OGC Maps, WMS, WMTS)

@@ -10,7 +10,7 @@ name: Release Bundle (Compatibility Train)
 #
 # Evidence-first: with promote=false (default) nothing is published — the run
 # produces the manifest + evidence bundle and stops. Suites not yet wired to the
-# prebuilt image (release/bundle-suites.json -> refactorPending) are reported as
+# prebuilt image (eng/release/bundle-suites.v1.json -> refactorPending) are reported as
 # not-yet-gated rather than silently skipped; widen coverage by flipping those.
 
 on:
@@ -20,7 +20,7 @@ on:
       - '.github/workflows/cite-conformance.yml'
       - '.github/workflows/cite-conformance-common.yml'
       - 'scripts/release/dispatch-and-wait.sh'
-      - 'release/bundle-suites.json'
+      - 'eng/release/bundle-suites.v1.json'
       - 'tests/dotnet/Honua.ReleaseWorkflows.Tests/**'
   workflow_dispatch:
     inputs:
@@ -253,7 +253,7 @@ jobs:
           image="${ref}@${digest}"
           : > integration-evidence.ndjson
           # Each dispatchable integration suite from the registry, run against the RC image.
-          jq -c '.integration[]' release/bundle-suites.json | while read -r entry; do
+          jq -c '.integration[]' eng/release/bundle-suites.v1.json | while read -r entry; do
             id="$(jq -r '.id' <<<"$entry")"
             repo="$(jq -r '.owningRepo' <<<"$entry")"
             wf="$(jq -r '.workflow // ""' <<<"$entry")"
@@ -298,7 +298,7 @@ jobs:
           digest='${{ needs.rc-image.outputs.image_digest }}'
           image="${ref}@${digest}"
           : > sdk-evidence.ndjson
-          jq -c '.sdk[]' release/bundle-suites.json | while read -r entry; do
+          jq -c '.sdk[]' eng/release/bundle-suites.v1.json | while read -r entry; do
             id="$(jq -r '.id' <<<"$entry")"
             repo="$(jq -r '.owningRepo' <<<"$entry")"
             pub="$(jq -r '.publishWorkflow // ""' <<<"$entry")"
@@ -383,7 +383,7 @@ jobs:
           set -euo pipefail
           observed="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           ./scripts/release/collect-evidence.sh \
-            --registry release/bundle-suites.json \
+            --registry eng/release/bundle-suites.v1.json \
             --integration ev/integration-evidence.ndjson \
             --sdk ev/sdk-evidence.ndjson \
             --output evidence.json
@@ -449,7 +449,7 @@ jobs:
           set -euo pipefail
           echo "Promoting ${{ github.event.inputs.release_id }} (verdict=pass)."
           # Real SDK publishes (dry_run=false) — gated behind the protected environment.
-          jq -c '.sdk[]' release/bundle-suites.json | while read -r entry; do
+          jq -c '.sdk[]' eng/release/bundle-suites.v1.json | while read -r entry; do
             repo="$(jq -r '.owningRepo' <<<"$entry")"
             pub="$(jq -r '.publishWorkflow // ""' <<<"$entry")"
             case "${repo}:${pub}" in

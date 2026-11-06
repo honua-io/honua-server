@@ -56,7 +56,7 @@
 #                                        Honua.Ai/Honua.Server embedded resources
 #     docs/developer/api-specs/*.json    embedded by Honua.Server; OpenAPI drift,
 #                                        admin-operation parity tests
-#     docs/developer/sdk-*.json          ReleaseTrainManifestTests, SDK scripts
+#     docs/developer/sdk-*.json          SDK compatibility tests and scripts
 #     docs/internal/developer/metadata-catalog-endpoints.v1.json
 #                                        DocumentationMatrixDriftTests
 #     docs/guides/deploy/examples/prometheus-alerts.yml

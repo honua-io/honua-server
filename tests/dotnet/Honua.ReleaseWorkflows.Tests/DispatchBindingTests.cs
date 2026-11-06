@@ -162,7 +162,7 @@ public sealed class DispatchBindingTests
     [Fact]
     public void ReleaseRegistry_DispatchableWorkflows_HaveLiteralDispatchDestinations()
     {
-        using var registry = JsonDocument.Parse(File.ReadAllText(Path.Join(RepositoryRoot, "release/bundle-suites.json")));
+        using var registry = JsonDocument.Parse(File.ReadAllText(Path.Join(RepositoryRoot, "eng/release/bundle-suites.v1.json")));
         var helper = File.ReadAllText(Path.Join(RepositoryRoot, "scripts/release/dispatch-and-wait.sh"));
         var workflows = new HashSet<string>(StringComparer.Ordinal);
         var dispatchableIntegrationSuites = registry.RootElement.GetProperty("integration").EnumerateArray()

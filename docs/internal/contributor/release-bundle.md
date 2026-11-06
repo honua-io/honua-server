@@ -10,7 +10,7 @@ release-train scoreboard.
 Foundation-first: it composes the building blocks that already exist and is
 honest about coverage — suites not yet wired to the prebuilt image are reported
 as *not-yet-gated*, never silently skipped. Widen coverage by editing the
-registry (`release/bundle-suites.json`).
+registry (`eng/release/bundle-suites.v1.json`).
 
 ## Pieces
 
@@ -48,7 +48,7 @@ this fresh-install check does not claim upgrade qualification.
 | File | Role |
 | --- | --- |
 | `.github/workflows/release-bundle.yml` | Orchestrator: build RC image → integration evidence → SDK cut → aggregate → gated promote |
-| `release/bundle-suites.json` | Data-driven registry of integration suites, SDKs, and lanes (mode + how each pins to the RC image) |
+| `eng/release/bundle-suites.v1.json` | Data-driven registry of integration suites, SDKs, and lanes (mode + how each pins to the RC image) |
 | `scripts/release/dispatch-and-wait.sh` | Dispatch a workflow (cross-repo), wait, emit a one-line evidence JSON |
 | `scripts/release/collect-evidence.sh` | Merge per-suite results + registry → the generator's `evidence.json` |
 | `scripts/release/build-release-manifest.sh` | Assemble/refresh `release/<id>.json` from evidence (replaces hand-editing) |
