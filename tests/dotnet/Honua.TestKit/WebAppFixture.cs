@@ -593,13 +593,6 @@ public sealed class WebAppFixture : IAsyncLifetime
         return this;
     }
 
-    /// <summary>
-    /// Wraps the registered <typeparamref name="TService"/> in a decorator instead of replacing it,
-    /// so a test can observe or perturb one method while every other call still reaches the real
-    /// production implementation (for example a real PostGIS feature writer). The original
-    /// registration's lifetime is preserved.
-    /// </summary>
-    /// <param name="decorate">Builds the decorator from the resolved inner service.</param>
     public WebAppFixture DecorateService<TService>(Func<TService, TService> decorate, bool decorateAll = false)
         where TService : class
     {
