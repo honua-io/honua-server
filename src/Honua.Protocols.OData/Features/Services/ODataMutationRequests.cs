@@ -3,7 +3,6 @@
 
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Protocols.OData.Models;
 
 namespace Honua.Protocols.OData.Services;
 

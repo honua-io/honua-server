@@ -250,7 +250,7 @@ internal sealed partial class ODataBatchHandler
                             var isFirstMutation = !preparedFeatures.TryGetValue(target, out var existing);
                             if (isFirstMutation)
                             {
-                                existing = await _featureReader.GetAsync(layer.StorageLayerId, objectId.Value, cancellationToken);
+                                existing = await layer.Reader.GetAsync(layer.StorageLayerId, objectId.Value, cancellationToken);
                             }
                             if (!existing.HasValue)
                             {
@@ -365,7 +365,7 @@ internal sealed partial class ODataBatchHandler
                             var isFirstMutation = !preparedFeatures.TryGetValue(target, out var existing);
                             if (isFirstMutation)
                             {
-                                existing = await _featureReader.GetAsync(layer.StorageLayerId, objectId.Value, cancellationToken);
+                                existing = await layer.Reader.GetAsync(layer.StorageLayerId, objectId.Value, cancellationToken);
                             }
                             if (!existing.HasValue)
                             {
@@ -593,7 +593,7 @@ internal sealed partial class ODataBatchHandler
 
                 var principal = ServiceDataEditorAuthorization.ResolveEditPrincipal(context);
                 var prepared = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(
-                    _featureReader,
+                    layer.Reader,
                     layer.StorageLayerId,
                     layer.Resource.OwnerEditPolicy,
                     batch,
@@ -668,7 +668,7 @@ internal sealed partial class ODataBatchHandler
                             Feature? reloaded = null;
                             try
                             {
-                                reloaded = await _featureReader.GetAsync(layer.StorageLayerId, createResult.ObjectId.Value, cancellationToken).ConfigureAwait(false);
+                                reloaded = await layer.Reader.GetAsync(layer.StorageLayerId, createResult.ObjectId.Value, cancellationToken).ConfigureAwait(false);
                             }
                             catch (OperationCanceledException)
                             {
@@ -728,7 +728,7 @@ internal sealed partial class ODataBatchHandler
                                 responses.Add(CreateSuccessResponse(requestId, StatusCodes.Status204NoContent, null));
                                 continue;
                             }
-                            var persistedFeature = await _featureReader.GetAsync(layer.StorageLayerId, persistedObjectId, cancellationToken).ConfigureAwait(false);
+                            var persistedFeature = await layer.Reader.GetAsync(layer.StorageLayerId, persistedObjectId, cancellationToken).ConfigureAwait(false);
                             if (!persistedFeature.HasValue)
                             {
                                 responses.Add(CreateErrorResponse(
