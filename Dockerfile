@@ -123,6 +123,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
       -p:PublishAot=false \
       -p:DebugType=None \
       -p:DebugSymbols=false \
+      -p:HonuaNobleRuntimePublish=true \
       $EXTRA_MSBUILD_ARGS && \
     if [ "$HONUA_INCLUDE_STAC_OPS_DEMO" = "true" ]; then \
       dotnet publish samples/Honua.StacOpsDemo/Honua.StacOpsDemo.csproj \

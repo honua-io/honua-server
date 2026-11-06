@@ -23,13 +23,16 @@
   </Target>
 
   <!--
-    Confluent.Kafka tries librdkafka.so, then centos8-librdkafka.so. The glibc
-    GSSAPI build needs libsasl2.so.3; Ubuntu noble ships libsasl2.so.2, so that
-    build cannot load and the linux-x64 publish keeps the CentOS 8 build.
+    HonuaNobleRuntimePublish is set by the Ubuntu noble serving Dockerfiles.
+    That base ships libsasl2.so.2, and the GSSAPI librdkafka.so needs
+    libsasl2.so.3, so a linux-x64 noble publish keeps centos8-librdkafka.so.
     linux-arm64 has no CentOS 8 build, and its librdkafka.so does not need sasl.
-    alpine-librdkafka.so is musl.
+    alpine-librdkafka.so is musl. Other publishes keep every build: a host with
+    libsasl2.so.3 needs the GSSAPI library, and a musl RID needs the Alpine one.
   -->
-  <Target Name="RemoveUnloadedLibrdkafkaBuilds" AfterTargets="ComputeFilesToPublish">
+  <Target Name="RemoveUnloadedLibrdkafkaBuilds"
+          AfterTargets="ComputeFilesToPublish"
+          Condition="'$(HonuaNobleRuntimePublish)' == 'true'">
     <ItemGroup>
       <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
         Condition="'%(Extension)' == '.so' and '%(Filename)' == 'alpine-librdkafka'" />
