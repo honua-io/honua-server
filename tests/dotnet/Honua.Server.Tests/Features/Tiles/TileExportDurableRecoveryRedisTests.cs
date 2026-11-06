@@ -91,6 +91,58 @@ public sealed class TileExportDurableRecoveryRedisTests(RedisFixture redis)
     [IntegrationTest]
     [Operation(Operations.Export)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/exportTiles")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/jobs/{jobId}/results/out_service_url")]
+    public async Task Submit_SameKeyOnDifferentReplica_ReturnsCompletedResult()
+    {
+        await using var harness = await TileExportRedisHarness.CreateAsync(redis.ConnectionString);
+        var plan = CreatePlan("world-basemap-idempotent-retry");
+        var replicaA = harness.CreateService();
+        var replicaB = harness.CreateService();
+
+        await harness.RunWorkerAsync(async () =>
+        {
+            var submitted = await replicaA.SubmitAsync(plan, "same-plan-key", null, Principal(), default);
+            await harness.WaitForStatusAsync(submitted.OperationId, ExecutionJobStatus.Succeeded);
+
+            var retried = await replicaB.SubmitAsync(plan, "same-plan-key", null, Principal(), default);
+            retried.OperationId.Should().Be(submitted.OperationId);
+            retried.Status.Should().Be(ExecutionJobStatus.Succeeded);
+
+            var result = await replicaB.GetResultAsync(retried.OperationId, ScopeFor(plan), Principal(), default);
+            result.DownloadUrl.Should().NotBeNullOrWhiteSpace();
+        });
+
+        harness.ProducerInvocations.Should().Be(1);
+    }
+
+    [IntegrationTheory]
+    [InlineData("provider-revision-9")]
+    [InlineData("metadata-42")]
+    [InlineData("metadata-v2-publication-tenant-41")]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/jobs/{jobId}/results/out_service_url")]
+    public async Task GetResult_ObsoletePublicationWatermarkOnDifferentReplica_RequiresResubmission(string dataWatermark)
+    {
+        await using var harness = await TileExportRedisHarness.CreateAsync(redis.ConnectionString);
+        var plan = CreatePlan("world-basemap-obsolete-policy");
+        plan = plan with { Source = ((TileExportMapSourceDescriptor)plan.Source) with { DataWatermark = dataWatermark } };
+        var replicaA = harness.CreateService();
+        var replicaB = harness.CreateService();
+
+        await harness.RunWorkerAsync(async () =>
+        {
+            var submitted = await replicaA.SubmitAsync(plan, null, null, Principal(), default);
+            await harness.WaitForStatusAsync(submitted.OperationId, ExecutionJobStatus.Succeeded);
+
+            await FluentActions
+                .Awaiting(() => replicaB.GetResultAsync(submitted.OperationId, ScopeFor(plan), Principal(), default))
+                .Should().ThrowAsync<TileExportPreconditionFailedException>();
+        });
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/exportTiles")]
     [Endpoint("POST /rest/services/{serviceId}/MapServer/jobs/{jobId}/cancel")]
     public async Task Cancel_FromDifferentReplica_QueuedJob_IsCancelledAndDequeued()
     {
@@ -302,7 +354,7 @@ public sealed class TileExportDurableRecoveryRedisTests(RedisFixture redis)
             Source = new TileExportMapSourceDescriptor(
                 42,
                 [new("0", "default", 1)],
-                "provider-revision-9",
+                TileExportMapPublicationPolicy.Watermark(42),
                 null),
             ZoomLevels = [0, 2],
             West = -180,
