@@ -9,7 +9,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Infrastructure.Authentication;
-using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Models;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Protocols.Ogc.Api.Maps.Handlers;

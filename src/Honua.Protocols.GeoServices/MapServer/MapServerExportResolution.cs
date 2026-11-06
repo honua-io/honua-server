@@ -4,8 +4,9 @@
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Infrastructure.Authentication;
-using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Models;
 using Microsoft.Extensions.Primitives;
+using static Honua.Infrastructure.Rendering.RasterMapRenderingPipeline;
 
 namespace Honua.Protocols.GeoServices.MapServer;
 
