@@ -92,7 +92,7 @@ internal sealed class OgcMapsRenderingHandler
         try
         {
             var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            var (resource, service) = ResolveResourceAndService(snapshot, layerId);
+            var (resource, service) = ResolveResourceAndService(snapshot, layerId, context);
             if (resource is null)
             {
                 OgcMapsLog.CollectionNotFound(_logger, layerId);
@@ -227,7 +227,7 @@ internal sealed class OgcMapsRenderingHandler
             {
                 // Dataset discovery and dataset rendering enumerate through the same shared
                 // helper so /ogc/maps describes exactly what /ogc/maps/map renders (#5048).
-                var allEntries = OgcMapsResourceResolver.EnumerateDatasetEntries(snapshot, _logger);
+                var allEntries = OgcMapsResourceResolver.EnumerateDatasetEntries(snapshot, _logger, context is null ? null : TenantScopeHelpers.ResolveRequestTenantId(context));
                 if (allEntries.Count == 0)
                 {
                     return CreateNotFoundResult(context, "No collections available for dataset map rendering.");
@@ -323,7 +323,7 @@ internal sealed class OgcMapsRenderingHandler
             {
                 foreach (var layerId in layerIds)
                 {
-                    var (resource, service) = ResolveResourceAndService(snapshot, layerId);
+                    var (resource, service) = ResolveResourceAndService(snapshot, layerId, context);
                     if (resource is null)
                     {
                         OgcMapsLog.CollectionNotFound(_logger, layerId);
@@ -467,8 +467,9 @@ internal sealed class OgcMapsRenderingHandler
     // first-wins storage-layer lookup.
     private (MetadataV2Resource? Resource, MetadataV2Service? Service) ResolveResourceAndService(
         MetadataV2GraphSnapshot snapshot,
-        int storageLayerId)
-        => OgcMapsResourceResolver.ResolveMapsResource(snapshot, storageLayerId, _logger);
+        int storageLayerId, HttpContext? context)
+        => OgcMapsResourceResolver.ResolveMapsResource(snapshot, (storageLayerId, _logger),
+            context is null ? null : TenantScopeHelpers.ResolveRequestTenantId(context));
 
     private static MetadataV2Service? ResolveOgcApiMapsService(MetadataV2GraphSnapshot snapshot, MetadataV2Resource resource)
         => OgcMapsResourceResolver.ResolveOgcApiMapsService(snapshot, resource);
@@ -493,7 +494,7 @@ internal sealed class OgcMapsRenderingHandler
         try
         {
             var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            var (resource, service) = ResolveResourceAndService(snapshot, layerId);
+            var (resource, service) = ResolveResourceAndService(snapshot, layerId, context);
             if (resource is null)
             {
                 OgcMapsLog.CollectionNotFound(_logger, layerId);

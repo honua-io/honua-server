@@ -110,7 +110,7 @@ internal sealed partial class ODataSearchService
             throw new ArgumentException("$search parameter is required.");
         }
 
-        var resolvedLayer = await ResolveODataLayerAsync(layerId, cancellationToken, requireCount: count == true, requireTextSearch: true).ConfigureAwait(false);
+        var resolvedLayer = await ResolveODataLayerAsync(layerId, cancellationToken, context, requireCount: count == true, requireTextSearch: true).ConfigureAwait(false);
         var resource = resolvedLayer.Resource;
         var srid = resource.ReadSrid() ?? 4326;
 
@@ -269,14 +269,15 @@ internal sealed partial class ODataSearchService
         string applyExpression,
         string? filter,
         string baseUrl,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        HttpContext? context = null)
     {
         if (string.IsNullOrWhiteSpace(applyExpression))
         {
             throw new ArgumentException("$apply parameter is required.");
         }
 
-        var resolvedLayer = await ResolveODataLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var resolvedLayer = await ResolveODataLayerAsync(layerId, cancellationToken, context).ConfigureAwait(false);
         var resource = resolvedLayer.Resource;
         // Validate the terminal transform of the $apply pipeline (e.g. the groupby in
         // filter(...)/groupby(...)); leading filter segments are field-validated when their
@@ -512,12 +513,14 @@ internal sealed partial class ODataSearchService
     private async Task<ResolvedODataLayer> ResolveODataLayerAsync(
         int layerId,
         CancellationToken cancellationToken,
+        HttpContext? context,
         bool requireCount = false,
         bool requireTextSearch = false)
     {
         var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
-        foreach (var publication in snapshot.Graph.Publications
+        foreach (var publication in TenantScopeHelpers.FilterVisiblePublications(
+                     snapshot, snapshot.Graph.Publications, context is null ? null : TenantScopeHelpers.ResolveRequestTenantId(context))
                      .Where(p => p.LayerIndex == layerId)
                      .OrderByDescending(p => p.IsPrimary)
                      .ThenBy(p => ResolveServiceName(snapshot, p), StringComparer.OrdinalIgnoreCase))
@@ -571,7 +574,9 @@ internal sealed partial class ODataSearchService
             return null;
         }
 
-        foreach (var publication in snapshot.Index.PublicationsByResource[relationship.RelatedResourceId]
+        foreach (var publication in TenantScopeHelpers.FilterVisiblePublications(
+                     snapshot, snapshot.Index.PublicationsByResource[relationship.RelatedResourceId],
+                     context is null ? null : TenantScopeHelpers.ResolveRequestTenantId(context))
                      .OrderByDescending(p => p.IsPrimary)
                      .ThenBy(p => ResolveServiceName(snapshot, p), StringComparer.OrdinalIgnoreCase))
         {

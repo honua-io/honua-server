@@ -70,7 +70,7 @@ internal static partial class MapServerEndpoints
             var service = serviceResult.Service!;
             var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            var publishedLayers = ResolveMapServerMetadataLayers(snapshot, service);
+            var publishedLayers = ResolveMapServerMetadataLayers(snapshot, service, context);
             var queryValidator = context.RequestServices.GetRequiredService<ICommonQueryValidator>();
             var sourceResolver = CreateDynamicLayerSourceResolver(
                 context,

@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Infrastructure.Authentication;
 
 namespace Honua.Protocols.GeoServices.MapServer;
 
@@ -9,7 +10,8 @@ internal static class MapServerPublicationResolver
 {
     internal static MetadataV2Publication[] ResolveLayerPublications(
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Service service)
+        MetadataV2Service service,
+        string? tenantId = null)
     {
         var publications = new List<MetadataV2Publication>();
         var seenPublicLayerIds = new HashSet<int>();
@@ -26,7 +28,8 @@ internal static class MapServerPublicationResolver
         // actually renders — otherwise a service whose tiles draw returns an empty
         // legend (honua-server#3046 regression). Dedupe by numeric ID keeps the
         // handler/worker dictionary lookups collision-free.
-        var candidatePublications = snapshot.Index.PublicationsByService[service.Metadata.Id]
+        var candidatePublications = TenantScopeHelpers.FilterVisiblePublications(
+                snapshot, snapshot.Index.PublicationsByService[service.Metadata.Id], tenantId)
             .Where(snapshot.IsRoutable)
             .OrderBy(static publication => publication.PublicationType switch
             {

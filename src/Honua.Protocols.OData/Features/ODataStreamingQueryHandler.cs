@@ -276,7 +276,8 @@ internal sealed partial class ODataStreamingQueryHandler(
                     apply,
                     filter,
                     baseUrl,
-                    effectiveToken);
+                    effectiveToken,
+                    context);
                 if (!ODataUtilityService.ShouldIncludeContext(context.Request, format))
                 {
                     result = new ODataAggregationResult

@@ -80,7 +80,7 @@ internal static partial class MapServerEndpoints
             var service = serviceResult.Service!;
             var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            var publishedLayers = ResolveMapServerMetadataLayers(snapshot, service);
+            var publishedLayers = ResolveMapServerMetadataLayers(snapshot, service, context);
 
             var (visibleLayers, accessError) = await AccessPolicyHelpers.FilterAccessibleResourcesAsync(
                 context,
@@ -595,10 +595,11 @@ internal static partial class MapServerEndpoints
 
     private static MapServerMetadataLayerDescriptor[] ResolveMapServerMetadataLayers(
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Service service)
+        MetadataV2Service service,
+        HttpContext context)
     {
         var descriptors = new List<MapServerMetadataLayerDescriptor>();
-        foreach (var publication in MapServerPublicationResolver.ResolveLayerPublications(snapshot, service))
+        foreach (var publication in MapServerPublicationResolver.ResolveLayerPublications(snapshot, service, TenantScopeHelpers.ResolveRequestTenantId(context)))
         {
             var publicLayerId = publication.LayerIndex!.Value;
 
