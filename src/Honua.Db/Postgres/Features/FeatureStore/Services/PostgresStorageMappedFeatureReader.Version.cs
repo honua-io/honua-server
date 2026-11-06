@@ -10,7 +10,7 @@ namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
 internal sealed partial class PostgresStorageMappedFeatureReader : IBranchVersioningFeatureReader, IManagedFeatureWriteSupport
 {
-    private bool HasManagedVersionMapping =>
+    private bool HasManagedFeatureMapping =>
         // The managed writer stores deltas in this fixed column shape. An arbitrary
         // source table (or a column-per-field mapping) cannot consume those deltas.
         _mapping.SupportsManagedWrites
@@ -27,7 +27,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IBranchVersio
 
     private void RequireManagedVersionMapping()
     {
-        if (!HasManagedVersionMapping)
+        if (!HasManagedFeatureMapping)
         {
             throw new NotSupportedException(UnsupportedVersionMappingMessage);
         }
@@ -37,7 +37,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IBranchVersio
     {
         cancellationToken.ThrowIfCancellationRequested();
         return _mapping.LayerDiscriminatorValue == storageLayerId
-            && await GetUnsupportedBranchReadReasonAsync(cancellationToken).ConfigureAwait(false) is null;
+            && await GetUnsupportedManagedStorageReasonAsync(cancellationToken).ConfigureAwait(false) is null;
     }
 
     public async Task<bool> SupportsBranchVersioningAsync(CancellationToken cancellationToken = default)
@@ -45,7 +45,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IBranchVersio
         cancellationToken.ThrowIfCancellationRequested();
         try
         {
-            return await GetUnsupportedBranchReadReasonAsync(cancellationToken).ConfigureAwait(false) is null;
+            return await GetUnsupportedManagedStorageReasonAsync(cancellationToken).ConfigureAwait(false) is null;
         }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or CryptographicException or NpgsqlException)
         {
@@ -55,9 +55,9 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IBranchVersio
         }
     }
 
-    private async Task<string?> GetUnsupportedBranchReadReasonAsync(CancellationToken cancellationToken)
+    private async Task<string?> GetUnsupportedManagedStorageReasonAsync(CancellationToken cancellationToken)
     {
-        if (!HasManagedVersionMapping)
+        if (!HasManagedFeatureMapping)
         {
             return UnsupportedVersionMappingMessage;
         }
@@ -112,7 +112,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IBranchVersio
             return;
         }
 
-        var unsupportedReason = await GetUnsupportedBranchReadReasonAsync(cancellationToken).ConfigureAwait(false);
+        var unsupportedReason = await GetUnsupportedManagedStorageReasonAsync(cancellationToken).ConfigureAwait(false);
         if (unsupportedReason != null)
         {
             throw new NotSupportedException(unsupportedReason);
