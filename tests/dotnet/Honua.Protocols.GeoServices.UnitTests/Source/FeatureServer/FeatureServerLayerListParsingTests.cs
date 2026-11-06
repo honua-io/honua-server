@@ -129,6 +129,7 @@ public sealed class FeatureServerLayerListParsingTests
         var defaultResult = FeatureServerEndpoints.TryResolveRequestedServiceLayersV2(
             service,
             snapshot,
+            new DefaultHttpContext(),
             new Dictionary<string, StringValues>(),
             out var defaultLayers,
             out var selectorSpecified,
@@ -136,6 +137,7 @@ public sealed class FeatureServerLayerListParsingTests
         var retiredResult = FeatureServerEndpoints.TryResolveRequestedServiceLayersV2(
             service,
             snapshot,
+            new DefaultHttpContext(),
             new Dictionary<string, StringValues> { ["layerId"] = "1" },
             out var retiredLayers,
             out var retiredSelectorSpecified,
@@ -193,6 +195,7 @@ public sealed class FeatureServerLayerListParsingTests
         var result = FeatureServerEndpoints.TryResolveRequestedServiceLayersV2(
             service,
             snapshot,
+            new DefaultHttpContext(),
             new Dictionary<string, StringValues> { ["layers"] = "0" },
             out var layers,
             out var selectorSpecified,

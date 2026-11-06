@@ -363,7 +363,7 @@ internal static partial class MapServerEndpoints
         // FeatureServer itself remains available for external/non-versioned readers. The
         // companion VMS requires the exact bound publication capability and its own gate.
         var (publications, error) = await AccessPolicyHelpers.FilterAccessibleResourcesAsync(
-            context, FeatureServerEndpoints.GetRoutableFeaturePublicationsV2(service, snapshot),
+            context, FeatureServerEndpoints.GetRoutableFeaturePublicationsV2(service, snapshot, context),
             static pair => pair.Resource, service, AuthorizationOperation.Metadata, cancellationToken).ConfigureAwait(false);
         if (error != null || publications.Length == 0)
         {

@@ -7,6 +7,9 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Exceptions;
 using Honua.Protocols.GeoServices.FeatureServer;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.TestKit.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -29,6 +32,45 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTheory]
+    [InlineData(null, true)]
+    [InlineData("another-tenant", false)]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
+    public async Task CreateReplica_PublicationTenant_RestrictsLayerSelection(string? publicationTenant, bool visible)
+    {
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var service = snapshot.FindService(WebAppFixture.TestServiceId)!;
+        var provider = (TestMetadataV2GraphProvider)_fixture.GetService<IMetadataV2GraphProvider>();
+        provider.SetGraph(snapshot.Graph with
+        {
+            Revision = snapshot.Graph.Revision + 1,
+            Publications = snapshot.Graph.Publications.Select(publication =>
+                publication.ServiceId == service.Metadata.Id && publication.LayerIndex == WebAppFixture.TestLayerId
+                    ? publication with { Metadata = publication.Metadata with { Tenant = publicationTenant } }
+                    : publication).ToArray()
+        }, schema: _fixture.CurrentSchema);
+        using var payload = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["replicaName"] = "PublicationTenantReplica",
+            ["layers"] = "0",
+            ["syncModel"] = "perReplica",
+            ["f"] = "json"
+        });
+
+        using var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica", payload);
+        var body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        using var document = JsonDocument.Parse(body);
+        document.RootElement.TryGetProperty("replicaID", out _).Should().Be(visible, body);
+        if (!visible)
+        {
+            document.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().BeOneOf(400, 403, 404);
+        }
+    }
 
     [IntegrationTest]
     [Operation(Operations.CreateReplica)]

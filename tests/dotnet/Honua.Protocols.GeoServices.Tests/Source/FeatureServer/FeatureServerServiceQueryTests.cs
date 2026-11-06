@@ -4,6 +4,10 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.TestKit.Helpers;
+using Honua.TestKit.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -20,6 +24,43 @@ public sealed class FeatureServerServiceQueryTests : IClassFixture<WebAppFixture
     public FeatureServerServiceQueryTests(WebAppFixture fixture)
     {
         _fixture = fixture;
+    }
+
+    [IntegrationTheory]
+    [InlineData(null, true)]
+    [InlineData("another-tenant", false)]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/query")]
+    public async Task ServiceQuery_PublicationTenant_FiltersBeforeLayerSelection(string? publicationTenant, bool visible)
+    {
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var service = snapshot.FindService(WebAppFixture.TestServiceId)!;
+        var provider = (TestMetadataV2GraphProvider)_fixture.GetService<IMetadataV2GraphProvider>();
+        var publications = snapshot.Graph.Publications.Select(publication =>
+            publication.ServiceId == service.Metadata.Id && publication.LayerIndex == WebAppFixture.TestLayerId
+                ? publication with { Metadata = publication.Metadata with { Tenant = publicationTenant } }
+                : publication).ToArray();
+        provider.SetGraph(snapshot.Graph with { Revision = snapshot.Graph.Revision + 1, Publications = publications }, schema: _fixture.CurrentSchema);
+        try
+        {
+            using var response = await _fixture.Client.GetAsync(
+                $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/query?where=1=1&f=json");
+            var body = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+            using var document = JsonDocument.Parse(body);
+            if (!document.RootElement.TryGetProperty("layers", out var layers))
+            {
+                visible.Should().BeFalse(body);
+                document.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().BeOneOf(403, 404);
+                return;
+            }
+            var layerIds = layers.EnumerateArray().Select(layer => layer.GetProperty("id").GetInt32()).ToArray();
+            layerIds.Contains(WebAppFixture.TestLayerId).Should().Be(visible);
+        }
+        finally
+        {
+            provider.SetGraph(snapshot.Graph with { Revision = snapshot.Graph.Revision + 2 }, schema: _fixture.CurrentSchema);
+        }
     }
 
     [IntegrationTest]

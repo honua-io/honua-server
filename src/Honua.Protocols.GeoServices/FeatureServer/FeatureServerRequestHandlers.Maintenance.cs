@@ -948,7 +948,7 @@ internal static partial class FeatureServerEndpoints
         var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         var snapshot = await snapshotProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
-        if (!TryResolveRequestedServiceLayersV2(service, snapshot, values, out var selectedLayers, out _, out var selectionError))
+        if (!TryResolveRequestedServiceLayersV2(service, snapshot, context, values, out var selectedLayers, out _, out var selectionError))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid query parameters",
@@ -1064,11 +1064,7 @@ internal static partial class FeatureServerEndpoints
         var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         var snapshot = await snapshotProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
-        var allPairs = snapshot.Index.PublicationsByService[service.Metadata.Id]
-            .Select(pub => (Publication: pub, Resource: snapshot.ResolveResource(pub)))
-            .Where(pair => snapshot.IsRoutable(pair.Publication))
-            .Select(pair => (pair.Publication, Resource: pair.Resource!))
-            .ToArray();
+        var allPairs = GetRoutableServicePublicationsV2(service, snapshot, context);
 
         var access = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
             context,
@@ -1771,7 +1767,7 @@ internal static partial class FeatureServerEndpoints
         var snapshot = await snapshotProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
         var queryValues = ToCaseInsensitiveDictionary(context.Request.Query);
-        if (!TryResolveRequestedServiceLayersV2(service, snapshot, queryValues, out var selectedLayers, out _, out var selectionError))
+        if (!TryResolveRequestedServiceLayersV2(service, snapshot, context, queryValues, out var selectedLayers, out _, out var selectionError))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid query parameters",
