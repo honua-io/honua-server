@@ -112,7 +112,8 @@ public sealed class PublicationTenantVisibilityTests
         var resources = ResourceNames.Select(name => new MetadataV2Resource
         {
             Metadata = new MetadataV2ObjectMetadata { Id = name, Name = name, Title = name },
-            Type = MetadataV2ResourceType.FeatureDataset, Status = active,
+            Type = MetadataV2ResourceType.FeatureDataset,
+            Status = active,
             AccessPolicy = new AccessPolicy { AllowAnonymous = true },
             SchemaFields = [new MetadataV2Field { Name = "shape", Type = MetadataV2FieldType.Geometry }],
             Spatial = new MetadataV2ResourceSpatial { GeometryType = MetadataV2GeometryType.Point },
@@ -130,15 +131,20 @@ public sealed class PublicationTenantVisibilityTests
             StorageBindings = resources.Select((r, i) => new MetadataV2StorageBinding
             {
                 Metadata = new MetadataV2ObjectMetadata { Id = r.Metadata.Id + "-binding" },
-                ResourceId = r.Metadata.Id, Status = active,
-                StorageType = MetadataV2StorageType.RelationalTable, StorageLayerId = i + 1,
+                ResourceId = r.Metadata.Id,
+                Status = active,
+                StorageType = MetadataV2StorageType.RelationalTable,
+                StorageLayerId = i + 1,
                 Locator = r.Metadata.Id
             }).ToArray(),
             Publications = resources.Select((r, i) => new MetadataV2Publication
             {
                 Metadata = new MetadataV2ObjectMetadata { Id = r.Metadata.Id + "-pub", Tenant = i == 0 ? "tenant-b" : null },
-                ServiceId = "maps", ResourceId = r.Metadata.Id, StorageBindingId = r.Metadata.Id + "-binding",
-                Status = active, LayerIndex = (i + 1) * 11,
+                ServiceId = "maps",
+                ResourceId = r.Metadata.Id,
+                StorageBindingId = r.Metadata.Id + "-binding",
+                Status = active,
+                LayerIndex = (i + 1) * 11,
                 PublicationType = MetadataV2PublicationType.EsriMapLayer
             }).ToArray()
         };
