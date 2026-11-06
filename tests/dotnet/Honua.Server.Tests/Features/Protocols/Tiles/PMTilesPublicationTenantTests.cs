@@ -35,10 +35,12 @@ public sealed class PMTilesPublicationTenantTests
         var storage = Substitute.For<ICloudFileStorage>();
         var metadata = CreateMetadata();
         storage.GetMetadataAsync("artifact", Arg.Any<CancellationToken>()).Returns(metadata);
+        using var conditionalDownload = new MemoryStream([1, 2, 3, 4]);
+        using var fallbackDownload = new MemoryStream([1, 2, 3, 4]);
         storage.DownloadIfMatchAsync("artifact", "v1", Arg.Any<CancellationToken>())
-            .Returns(_ => Task.FromResult<Stream?>(new MemoryStream([1, 2, 3, 4])));
+            .Returns(Task.FromResult<Stream?>(conditionalDownload));
         storage.DownloadAsync("artifact", Arg.Any<CancellationToken>())
-            .Returns(_ => Task.FromResult<Stream?>(new MemoryStream([1, 2, 3, 4])));
+            .Returns(Task.FromResult<Stream?>(fallbackDownload));
         var proxy = new PMTilesProxyService(storage, [], [], Options.Create(new CloudStorageOptions()));
         var tenant = Substitute.For<ITenantContext>();
         tenant.TenantId.Returns(tenantId);

@@ -46,7 +46,8 @@ public sealed class GeoServicesPublicationTenantTests
         await result.ExecuteAsync(context);
         context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
         context.Response.Body.Position = 0;
-        var body = await new StreamReader(context.Response.Body).ReadToEndAsync();
+        using var reader = new StreamReader(context.Response.Body);
+        var body = await reader.ReadToEndAsync();
 
         body.Should().Contain("public-dataset");
         if (allowed)
