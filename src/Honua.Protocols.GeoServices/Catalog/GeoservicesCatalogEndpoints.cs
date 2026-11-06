@@ -1024,6 +1024,12 @@ internal static class GeoservicesCatalogEndpoints
             context, graphProvider, rasterStore, licenseStatusProvider, logger, snapshot).ConfigureAwait(false);
         var entries = serviceLeaf is null
             ? GeoServicesCatalogDirectory.InFolder(projection.Entries, folderName) : [];
+        if (entries.Length == 0 && serviceLeaf is null)
+        {
+            entries = projection.Entries.Where(entry => entry.LogicalName is null && entry.FolderName is null &&
+                (string.Equals(entry.StandaloneServiceId, folderName, StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(entry.Name, folderName, StringComparison.OrdinalIgnoreCase))).ToArray();
+        }
         if (entries.Length == 0)
         {
             var targets = MetadataV2ServicePaths.Resolve(snapshot.Graph, new()
@@ -1193,6 +1199,7 @@ internal static class GeoservicesCatalogEndpoints
             entries.Add(new ServiceDirectoryEntry
             {
                 Name = scene.Name,
+                StandaloneServiceId = scene.Id,
                 Type = SceneServerProtocolName,
                 Url = $"{baseUrl}/rest/services/{escapedSceneId}/SceneServer"
             });

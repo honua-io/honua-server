@@ -79,7 +79,8 @@ internal sealed record GeoServicesServicePath(
         => route.ServiceType is "GPServer" or "NAServer" &&
             !graph.ServicePathAliases.Any(alias => MetadataV2ServicePaths.SamePath(alias, path) &&
                 MetadataV2TenantVisibility.IsVisibleToTenant(alias.Tenant, path.Tenant)) &&
-            !graph.Services.Any(service =>
-                string.Equals(service.Metadata.Name, path.PublicName, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(service.Metadata.Id, path.PublicName, StringComparison.Ordinal));
+            ((route.ServiceType == "GPServer" && string.Equals(path.PublicName, "Routing", StringComparison.OrdinalIgnoreCase)) ||
+             !graph.Services.Any(service =>
+                 string.Equals(service.Metadata.Name, path.PublicName, StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(service.Metadata.Id, path.PublicName, StringComparison.Ordinal)));
 }

@@ -33,6 +33,9 @@ internal sealed record ServiceDirectoryEntry
     public string? LogicalName { get; init; }
 
     [JsonIgnore]
+    public string? StandaloneServiceId { get; init; }
+
+    [JsonIgnore]
     public string? FolderName { get; init; }
 
     [JsonIgnore]
