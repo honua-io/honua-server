@@ -22,7 +22,6 @@ namespace Honua.Protocols.Ogc.Api.Maps.Handlers;
 /// </summary>
 internal sealed class OgcMapsTileSetHandler
 {
-    private const string OgcApiMapsProtocol = "OGC-API-Maps";
     private const string OgcApiTilesProtocol = "OGC-API-Tiles";
 
     private readonly IMetadataV2GraphProvider _graphProvider;
@@ -52,31 +51,14 @@ internal sealed class OgcMapsTileSetHandler
 
         try
         {
-            var (resource, service) = await ResolveResourceAndServiceAsync(layerId, cancellationToken, context).ConfigureAwait(false);
-            if (resource is null)
+            var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var (collection, accessError) = await OgcMapsResourceResolver.ResolveAuthorizedCollectionAsync(
+                snapshot, (layerId, context, _logger), cancellationToken).ConfigureAwait(false);
+            if (accessError is not null)
             {
-                OgcMapsLog.CollectionNotFound(_logger, layerId);
-                return CreateNotFoundResult(context, $"Collection {layerId} not found");
+                return accessError;
             }
-
-            if (!IsOgcApiMapsEnabled(service))
-            {
-                return CreateNotFoundResult(context, $"Collection {layerId} not found");
-            }
-
-            if (context is not null)
-            {
-                var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
-                    context,
-                    resource,
-                    AuthorizationOperation.Query,
-                    service,
-                    cancellationToken).ConfigureAwait(false);
-                if (accessError != null)
-                {
-                    return accessError;
-                }
-            }
+            var (resource, service) = collection!;
 
             var basePathPrefix = ResolveBasePathPrefix(context);
             var relativeTilesListPath = $"/ogc/maps/collections/{layerId}/map/tiles";
@@ -144,31 +126,14 @@ internal sealed class OgcMapsTileSetHandler
 
         try
         {
-            var (resource, service) = await ResolveResourceAndServiceAsync(layerId, cancellationToken, context).ConfigureAwait(false);
-            if (resource is null)
+            var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var (collection, accessError) = await OgcMapsResourceResolver.ResolveAuthorizedCollectionAsync(
+                snapshot, (layerId, context, _logger), cancellationToken).ConfigureAwait(false);
+            if (accessError is not null)
             {
-                OgcMapsLog.CollectionNotFound(_logger, layerId);
-                return CreateNotFoundResult(context, $"Collection {layerId} not found");
+                return accessError;
             }
-
-            if (!IsOgcApiMapsEnabled(service))
-            {
-                return CreateNotFoundResult(context, $"Collection {layerId} not found");
-            }
-
-            if (context is not null)
-            {
-                var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
-                    context,
-                    resource,
-                    AuthorizationOperation.Query,
-                    service,
-                    cancellationToken).ConfigureAwait(false);
-                if (accessError != null)
-                {
-                    return accessError;
-                }
-            }
+            var (resource, service) = collection!;
 
             var basePathPrefix = ResolveBasePathPrefix(context);
             var tileMatrixSetBasePath = BuildPath(basePathPrefix, "/ogc/tiles/tileMatrixSets");
@@ -298,25 +263,10 @@ internal sealed class OgcMapsTileSetHandler
             ? relativePath
             : $"{basePathPrefix}{relativePath}";
 
-    private static bool IsOgcApiMapsEnabled(MetadataV2Service? service)
-        => IsProtocolEnabled(service, OgcApiMapsProtocol);
-
     private static bool IsOgcApiTilesEnabled(MetadataV2Service? service)
         => IsProtocolEnabled(service, OgcApiTilesProtocol);
 
     private static bool IsProtocolEnabled(MetadataV2Service? service, string protocol)
         => service?.Protocols.Any(enabled => string.Equals(enabled, protocol, StringComparison.OrdinalIgnoreCase)) == true;
 
-    private async Task<(MetadataV2Resource? Resource, MetadataV2Service? Service)> ResolveResourceAndServiceAsync(
-        int storageLayerId,
-        CancellationToken cancellationToken, HttpContext? context)
-    {
-        var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-
-        // Collision-aware resolution shared with OgcMapsRenderingHandler so the map/tiles
-        // sibling endpoints resolve the same Maps-enabled resource as the map endpoint when
-        // a numeric layer id is published through multiple storage bindings (#2799).
-        return OgcMapsResourceResolver.ResolveMapsResource(snapshot, (storageLayerId, _logger),
-            context is null ? null : TenantScopeHelpers.ResolveRequestTenantId(context));
-    }
 }

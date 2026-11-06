@@ -272,12 +272,8 @@ internal sealed partial class ODataStreamingQueryHandler(
 
                 var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
                 var result = await _querySearchService.HandleApplyAsync(
-                    resolvedLayerId.Value,
-                    apply,
-                    filter,
-                    baseUrl,
-                    effectiveToken,
-                    context);
+                    new(resolvedLayerId.Value, apply, filter, baseUrl, context),
+                    effectiveToken);
                 if (!ODataUtilityService.ShouldIncludeContext(context.Request, format))
                 {
                     result = new ODataAggregationResult

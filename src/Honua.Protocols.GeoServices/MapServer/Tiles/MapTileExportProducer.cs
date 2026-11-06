@@ -4,7 +4,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Runtime.CompilerServices;
-using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Tiles;

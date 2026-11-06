@@ -21,6 +21,12 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.OData.Services;
 
+internal sealed record ODataApplyRequest(
+    int LayerId, string Expression, string? Filter, string BaseUrl, HttpContext? Context);
+
+internal readonly record struct ODataLayerReadRequest(
+    int LayerId, HttpContext? Context, bool RequireCount = false, bool RequireTextSearch = false);
+
 internal sealed record ODataSearchDependencies(
     IFeatureReader FeatureReader,
     IRelationshipStore RelationshipStore,
@@ -110,7 +116,7 @@ internal sealed partial class ODataSearchService
             throw new ArgumentException("$search parameter is required.");
         }
 
-        var resolvedLayer = await ResolveODataLayerAsync(layerId, cancellationToken, context, requireCount: count == true, requireTextSearch: true).ConfigureAwait(false);
+        var resolvedLayer = await ResolveODataLayerAsync(new(layerId, context, count == true, true), cancellationToken).ConfigureAwait(false);
         var resource = resolvedLayer.Resource;
         var srid = resource.ReadSrid() ?? 4326;
 
@@ -265,19 +271,16 @@ internal sealed partial class ODataSearchService
     }
 
     public async Task<ODataAggregationResult> HandleApplyAsync(
-        int layerId,
-        string applyExpression,
-        string? filter,
-        string baseUrl,
-        CancellationToken cancellationToken = default,
-        HttpContext? context = null)
+        ODataApplyRequest request,
+        CancellationToken cancellationToken = default)
     {
+        var (layerId, applyExpression, filter, baseUrl, context) = request;
         if (string.IsNullOrWhiteSpace(applyExpression))
         {
             throw new ArgumentException("$apply parameter is required.");
         }
 
-        var resolvedLayer = await ResolveODataLayerAsync(layerId, cancellationToken, context).ConfigureAwait(false);
+        var resolvedLayer = await ResolveODataLayerAsync(new(layerId, context), cancellationToken).ConfigureAwait(false);
         var resource = resolvedLayer.Resource;
         // Validate the terminal transform of the $apply pipeline (e.g. the groupby in
         // filter(...)/groupby(...)); leading filter segments are field-validated when their
@@ -511,12 +514,10 @@ internal sealed partial class ODataSearchService
     }
 
     private async Task<ResolvedODataLayer> ResolveODataLayerAsync(
-        int layerId,
-        CancellationToken cancellationToken,
-        HttpContext? context,
-        bool requireCount = false,
-        bool requireTextSearch = false)
+        ODataLayerReadRequest request,
+        CancellationToken cancellationToken)
     {
+        var (layerId, context, requireCount, requireTextSearch) = request;
         var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
         foreach (var publication in TenantScopeHelpers.FilterVisiblePublications(

@@ -405,30 +405,16 @@ internal static partial class MapServerEndpoints
         // Run service validation and the access-policy gate BEFORE materializing the tile
         // grid so an unauthenticated request against a non-existent or unauthorized service
         // is rejected without allocating anything (#2065).
-        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-        var serviceResult = await ServiceResourceValidationHelpers.ValidateServiceV2Async(
-            resourceValidator,
-            serviceId,
-            ServiceProtocols.MapServer,
-            context,
-            cancellationToken: cancellationToken);
-        if (!serviceResult.IsValid)
+        var (selection, publicationSelectionError) = await ResolveMapServerPublicationSelectionAsync(
+            context, serviceId, cancellationToken).ConfigureAwait(false);
+        if (publicationSelectionError is not null)
         {
-            return (null, serviceResult.ErrorResult!);
+            return (null, publicationSelectionError);
         }
+        var (service, _, publishedLayers) = selection!;
 
-        var service = serviceResult.Service!;
-        var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
-        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var publishedLayers = ResolveMapServerMetadataLayers(snapshot, service, context);
-
-        var access = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
-            context,
-            publishedLayers.Select(static layer => layer.Resource),
-            service,
-            AuthorizationOperation.Export,
-            cancellationToken).ConfigureAwait(false);
-        var accessError = access.RequireAny(publishedLayers.Select(static layer => layer.Resource));
+        var (access, accessError) = await AuthorizeMapServerExportAsync(
+            context, selection!, cancellationToken).ConfigureAwait(false);
         if (accessError != null)
         {
             return (null, accessError);
