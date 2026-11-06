@@ -1,19 +1,19 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using Honua.Core.Features.MultiTenancy.Abstractions;
-using NSubstitute;
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.TestKit.Helpers;
-using Honua.TestKit.Infrastructure;
-using Honua.TestKit;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Honua.TestKit.Helpers;
+using Honua.TestKit.Infrastructure;
+using Honua.TestKit;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
