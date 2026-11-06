@@ -8,6 +8,7 @@ using System.Text.Json;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Server.Features.Infrastructure.Authentication;
 
 namespace Honua.Server.Features.Operations;
 
@@ -47,7 +48,7 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
             {
                 "connectionId" => !string.IsNullOrWhiteSpace(request.ConnectionId),
                 "serviceName" when RouteNames().Contains("serviceName") => !string.IsNullOrWhiteSpace(request.ServiceName),
-                "body" => request.Parameters.ContainsKey(parameter.Name),
+                "body" or "folderId" => request.Parameters.ContainsKey(parameter.Name),
                 _ => request.Parameters.TryGetValue(parameter.Name, out var value) && !string.IsNullOrWhiteSpace(value)
             };
             if (!present) missing.Add($"Required parameter '{parameter.Name}' is missing.");
@@ -81,13 +82,15 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
         }.Uri;
         using var message = new HttpRequestMessage(_definition.Method, uri);
         message.Headers.Host = current.Request.Host.Value;
+        if (request.Parameters.TryGetValue("If-Match", out var expectedEtag))
+            message.Headers.TryAddWithoutValidation("If-Match", expectedEtag);
         OperationLineageHeaders.Apply(message, context, _lineageAttestationStore);
         AdminApiKeyRecord? executionCredential = null;
         if (!string.IsNullOrWhiteSpace(context.ApprovedProposalId))
         {
             var issued = await _adminApiKeyStore.CreateAsync(
                 $"approved-operation:{context.ApprovedProposalId}",
-                AdminApiKeyPermission.CreateApprovedOperationGrants(_definition.Method.Method, uri.AbsolutePath, context.TenantId),
+                CreateExecutionGrants(uri, context),
                 _clock.GetUtcNow().AddMinutes(5),
                 context.PrincipalId,
                 cancellationToken).ConfigureAwait(false);
@@ -162,7 +165,7 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
             Status = OperationHandleStatus.Completed,
             CreatedAt = now,
             UpdatedAt = now,
-            Result = new OperationResultSummary { Summary = $"{_definition.Title} completed.", Details = new Dictionary<string, string>(StringComparer.Ordinal) { ["response"] = payload } }
+            Result = BuildSuccessResult(response, payload)
         };
     }
 
@@ -191,9 +194,30 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
         });
     }
 
+    private OperationResultSummary BuildSuccessResult(HttpResponseMessage response, string payload)
+    {
+        var details = new Dictionary<string, string>(StringComparer.Ordinal) { ["response"] = payload };
+        if (response.Headers.ETag is { } etag) details["etag"] = etag.ToString();
+        if (response.Headers.Location is { } location) details["location"] = location.ToString();
+        return new OperationResultSummary { Summary = $"{_definition.Title} completed.", Details = details };
+    }
+
+    private string[] CreateExecutionGrants(Uri uri, OperationPolicyContext context)
+    {
+        var grants = AdminApiKeyPermission.CreateApprovedOperationGrants(_definition.Method.Method, uri.AbsolutePath, context.TenantId);
+        return FolderOperationCredential.IsFolderMutation(OperationId)
+            ? [.. grants, FolderOperationCredential.ProposalGrant(context.ApprovedProposalId!)]
+            : grants;
+    }
+
     private string BindPath(OperationRequest request, string? pathOverride)
     {
-        var path = pathOverride ?? _definition.Path;
+        return BindPath(_definition with { Path = pathOverride ?? _definition.Path }, request);
+    }
+
+    internal static string BindPath(AdminApiOperationCatalog.Definition definition, OperationRequest request)
+    {
+        var path = definition.Path;
         foreach (var name in RouteNames(path))
         {
             var value = name switch { "connectionId" => request.ConnectionId, "serviceName" => request.ServiceName, _ => request.Parameters.GetValueOrDefault(name) };
@@ -219,7 +243,7 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
         {
             writer.WriteStartObject();
             foreach (var parameter in descriptor.InputSchema
-                         .Where(parameter => !routeNames.Contains(parameter.Name) && !excluded.Contains(parameter.Name))
+                         .Where(parameter => parameter.Name != "If-Match" && !routeNames.Contains(parameter.Name) && !excluded.Contains(parameter.Name))
                          .Where(parameter => request.Parameters.ContainsKey(parameter.Name)))
             {
                 var value = request.Parameters[parameter.Name];

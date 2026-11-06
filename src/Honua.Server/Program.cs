@@ -1960,6 +1960,7 @@ app.MapLayerPublishingEndpoints();
 
 // Configure service settings endpoints (protocol toggles + MapServer config)
 app.MapServiceSettingsEndpoints();
+app.MapFolderEndpoints();
 
 // Configure admin metadata version/manifest endpoints
 // v1 admin endpoint mappings removed in #1035 cutover; V2 admin UX (#1046) lives elsewhere.

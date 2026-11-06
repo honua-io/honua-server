@@ -11,6 +11,11 @@ public sealed class OperationScopeMappingTests
 {
     [Trait("Tier", "Fast")]
     [Theory]
+    [InlineData("folder.list", OperatorOperation.Read)]
+    [InlineData("folder.create", OperatorOperation.Publish)]
+    [InlineData("folder.update", OperatorOperation.Publish)]
+    [InlineData("folder.delete", OperatorOperation.Publish)]
+    [InlineData("service.move", OperatorOperation.Publish)]
     [InlineData("admin.layer.publish", OperatorOperation.Publish)]
     [InlineData("style.apply-preset", OperatorOperation.Publish)]
     [InlineData("admin.connections.create", OperatorOperation.Create)]
