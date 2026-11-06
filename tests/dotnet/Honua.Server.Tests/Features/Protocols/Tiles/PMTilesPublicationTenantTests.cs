@@ -6,7 +6,6 @@ using System.Reflection;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
-using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Validation;
@@ -63,7 +62,7 @@ public sealed class PMTilesPublicationTenantTests
         }
     }
 
-    private static IMetadataV2GraphProvider CreateGraph()
+    private static TestMetadataV2GraphProvider CreateGraph()
     {
         var graph = new TestMetadataV2GraphBuilder()
             .AddResource("resource", "resource", accessPolicy: new() { AllowAnonymous = true })
@@ -82,9 +81,14 @@ public sealed class PMTilesPublicationTenantTests
 
     private static CloudFile CreateMetadata() => new()
     {
-        FileId = "artifact", FileName = "artifact.pmtiles", StoragePath = "pmtiles/artifact",
-        ContentType = "application/vnd.pmtiles", SizeBytes = 4, UploadedAt = DateTimeOffset.UnixEpoch,
-        Provider = CloudStorageProvider.Local, ETag = "v1",
+        FileId = "artifact",
+        FileName = "artifact.pmtiles",
+        StoragePath = "pmtiles/artifact",
+        ContentType = "application/vnd.pmtiles",
+        SizeBytes = 4,
+        UploadedAt = DateTimeOffset.UnixEpoch,
+        Provider = CloudStorageProvider.Local,
+        ETag = "v1",
         Metadata = ImmutableDictionary<string, string>.Empty.Add("operation", "publish")
             .Add("layerId", "0").Add("serviceId", "maps").Add("publicationId", "publication")
             .Add("resourceId", "resource").Add("storageBindingId", "binding")
