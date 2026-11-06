@@ -48,16 +48,9 @@ public sealed class ODataCrudServiceStorageLayerTests
         var reader = Substitute.For<IFeatureReader>();
         var service = CreateService(reader);
 
-        var result = await service.UpdateFeatureAsync(
-            RouteLayerId,
-            ObjectId,
-            new ParsedFeaturePayload(),
-            "https://example.test",
-            ifMatch: null,
-            ifNoneMatch: null,
-            StorageLayerId,
-            replace: false,
-            CancellationToken.None);
+        var result = await service.UpdateFeatureAsync(new ODataUpdateRequest(
+            RouteLayerId, ObjectId, new ParsedFeaturePayload(), "https://example.test",
+            null, null, StorageLayerId, false, null, reader), CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
         await reader.Received(1).GetAsync(StorageLayerId, ObjectId, Arg.Any<CancellationToken>());
@@ -71,13 +64,8 @@ public sealed class ODataCrudServiceStorageLayerTests
         var reader = Substitute.For<IFeatureReader>();
         var service = CreateService(reader);
 
-        var result = await service.DeleteFeatureAsync(
-            RouteLayerId,
-            ObjectId,
-            ifMatch: null,
-            ifNoneMatch: null,
-            StorageLayerId,
-            CancellationToken.None);
+        var result = await service.DeleteFeatureAsync(new ODataDeleteRequest(
+            RouteLayerId, ObjectId, null, null, StorageLayerId, null, reader), CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
         await reader.Received(1).GetAsync(StorageLayerId, ObjectId, Arg.Any<CancellationToken>());
@@ -101,16 +89,15 @@ public sealed class ODataCrudServiceStorageLayerTests
         var adapter = Substitute.For<IEditParameterAdapter<ODataEditRequest>>();
         adapter.ConvertAsync(Arg.Any<ODataEditRequest>(), featureResource, Arg.Any<CancellationToken>())
             .Returns(EditAdapterResult.Failure("Conversion reached the authorized feature resource."));
+        var reader = Substitute.For<IFeatureReader>();
         var dependencies = new ODataCrudDependencies(
-            validator, Substitute.For<IFeatureReader>(), Substitute.For<IFeatureWriter>(),
+            validator, reader, Substitute.For<IFeatureWriter>(),
             Substitute.For<IGeometryService>(), Substitute.For<ICrsRegistry>(), Substitute.For<IETagService>(),
             new FeatureMutationValidator(Substitute.For<IGeometryValidator>()), adapter,
             Substitute.For<IEditProcessor>());
         var service = new ODataCrudService(dependencies, NullLogger<ODataCrudLog>.Instance);
 
-        var result = await service.CreateFeatureAsync(RouteLayerId,
-            new ParsedFeaturePayload { Attributes = new Dictionary<string, object?> { ["name"] = "Canonical City" } },
-            "https://example.test", StorageLayerId, featureResource, CancellationToken.None);
+        var result = await service.CreateFeatureAsync(new ODataCreateRequest(RouteLayerId, new ParsedFeaturePayload { Attributes = new Dictionary<string, object?> { ["name"] = "Canonical City" } }, "https://example.test", StorageLayerId, featureResource, reader), CancellationToken.None);
 
         result.ErrorMessage.Should().Be("Conversion reached the authorized feature resource.");
         await adapter.Received(1).ConvertAsync(Arg.Any<ODataEditRequest>(), featureResource, Arg.Any<CancellationToken>());
@@ -162,13 +149,7 @@ public sealed class ODataCrudServiceStorageLayerTests
             deletedCount: 0,
             createResults: ImmutableArray.Create(EditOperationResult.Failure("constraint"))));
 
-        var result = await service.CreateFeatureAsync(
-            RouteLayerId,
-            new ParsedFeaturePayload { Attributes = new Dictionary<string, object?> { ["name"] = "Canonical City" } },
-            "https://example.test",
-            StorageLayerId,
-            CreateNamedResource(),
-            CancellationToken.None);
+        var result = await service.CreateFeatureAsync(new ODataCreateRequest(RouteLayerId, new ParsedFeaturePayload { Attributes = new Dictionary<string, object?> { ["name"] = "Canonical City" } }, "https://example.test", StorageLayerId, CreateNamedResource(), reader), CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
         result.StatusCode.Should().Be(500);
@@ -186,13 +167,7 @@ public sealed class ODataCrudServiceStorageLayerTests
             updatedCount: 0,
             deletedCount: 0,
             createResults: ImmutableArray.Create(EditOperationResult.Success(77))));
-        return await service.CreateFeatureAsync(
-            RouteLayerId,
-            new ParsedFeaturePayload { Attributes = new Dictionary<string, object?> { ["name"] = "Canonical City" } },
-            "https://example.test",
-            StorageLayerId,
-            CreateNamedResource(),
-            CancellationToken.None);
+        return await service.CreateFeatureAsync(new ODataCreateRequest(RouteLayerId, new ParsedFeaturePayload { Attributes = new Dictionary<string, object?> { ["name"] = "Canonical City" } }, "https://example.test", StorageLayerId, CreateNamedResource(), reader), CancellationToken.None);
     }
 
     private static ODataCrudService CreateCommittedService(IFeatureReader reader, FeatureEditResult editResult)

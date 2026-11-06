@@ -8,9 +8,9 @@ using Npgsql;
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 
-internal sealed partial class PostgresStorageMappedFeatureReader : IBranchVersioningFeatureReader
+internal sealed partial class PostgresStorageMappedFeatureReader : IBranchVersioningFeatureReader, IManagedFeatureWriteSupport
 {
-    private bool HasManagedVersionMapping =>
+    private bool HasManagedFeatureMapping =>
         // The managed writer stores deltas in this fixed column shape. An arbitrary
         // source table (or a column-per-field mapping) cannot consume those deltas.
         _mapping.SupportsManagedWrites
@@ -27,18 +27,28 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IBranchVersio
 
     private void RequireManagedVersionMapping()
     {
-        if (!HasManagedVersionMapping)
+        if (!HasManagedFeatureMapping)
         {
             throw new NotSupportedException(UnsupportedVersionMappingMessage);
         }
     }
 
-    public async Task<bool> SupportsBranchVersioningAsync(CancellationToken cancellationToken = default)
+    public async Task<bool> SupportsManagedWritesAsync(int storageLayerId, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return _mapping.LayerDiscriminatorValue == storageLayerId
+            && await SupportsManagedStorageAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public Task<bool> SupportsBranchVersioningAsync(CancellationToken cancellationToken = default)
+        => SupportsManagedStorageAsync(cancellationToken);
+
+    private async Task<bool> SupportsManagedStorageAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         try
         {
-            return await GetUnsupportedBranchReadReasonAsync(cancellationToken).ConfigureAwait(false) is null;
+            return await GetUnsupportedManagedStorageReasonAsync(cancellationToken).ConfigureAwait(false) is null;
         }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or CryptographicException or NpgsqlException)
         {
@@ -48,9 +58,18 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IBranchVersio
         }
     }
 
-    private async Task<string?> GetUnsupportedBranchReadReasonAsync(CancellationToken cancellationToken)
+    private async Task<string?> GetUnsupportedManagedStorageReasonAsync(CancellationToken cancellationToken)
     {
-        if (!HasManagedVersionMapping)
+        if (!HasManagedFeatureMapping)
+        {
+            return UnsupportedVersionMappingMessage;
+        }
+        return await GetUnsupportedManagedRelationReasonAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<string?> GetUnsupportedManagedRelationReasonAsync(CancellationToken cancellationToken)
+    {
+        if (_mapping.TableName != FeatureStorageMapping.ManagedFeaturesTableName)
         {
             return UnsupportedVersionMappingMessage;
         }
@@ -67,6 +86,19 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IBranchVersio
             return UnsupportedVersionMappingMessage;
         }
         return null;
+    }
+
+    private async Task ValidateManagedPartitionAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (_mapping.LayerDiscriminatorColumn == "layer_id" && _mapping.LayerDiscriminatorValue.HasValue)
+        {
+            return;
+        }
+        if (await GetUnsupportedManagedRelationReasonAsync(cancellationToken).ConfigureAwait(false) is null)
+        {
+            throw new NotSupportedException("Managed feature reads require the canonical layer partition mapping.");
+        }
     }
 
     private async Task<bool> IsManagedFeatureTableAsync(CancellationToken cancellationToken)
@@ -105,7 +137,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IBranchVersio
             return;
         }
 
-        var unsupportedReason = await GetUnsupportedBranchReadReasonAsync(cancellationToken).ConfigureAwait(false);
+        var unsupportedReason = await GetUnsupportedManagedStorageReasonAsync(cancellationToken).ConfigureAwait(false);
         if (unsupportedReason != null)
         {
             throw new NotSupportedException(unsupportedReason);

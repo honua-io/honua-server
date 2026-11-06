@@ -125,6 +125,12 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             Limit = 1
         };
 
+        if (await SupportsManagedWritesAsync(layerId, cancellationToken).ConfigureAwait(false))
+        {
+            query = await ApplyReadSecurityAsync(query, cancellationToken).ConfigureAwait(false);
+            return await ReadManagedSnapshotAsync(query, cancellationToken).ConfigureAwait(false);
+        }
+
         var result = await QueryPageAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         return result.Items.Length == 0 ? null : result.Items[0];
     }
@@ -510,7 +516,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         => BuildFeatureSelectCore(query, probeLimit, TryGetSmallintComparison(query));
 
     private SqlBuilder BuildFeatureSelectCore(FeatureQuery query, bool probeLimit, SmallintComparison? comparison,
-        bool useNativeAttributes = true)
+        FeatureSelectProjection projection = FeatureSelectProjection.Default)
     {
         var sql = new SqlBuilder { SmallintComparison = comparison };
         // Preserve Z/M ordinates through extended WKB when the canonical query requests it (returnZ/
@@ -520,7 +526,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         var geometrySelect = _geometryColumn == null
             ? "NULL"
             : $"{geometryEncoder}({BuildGeometryExpression(query)})";
-        var nativeAttributes = useNativeAttributes ? BuildNativeAttributesProjection(query, sql) : null;
+        var nativeAttributes = projection != FeatureSelectProjection.Json ? BuildNativeAttributesProjection(query, sql) : null;
         var attributesSelect = nativeAttributes ?? BuildAttributesJsonbExpression(query, sql);
         // DISTINCT compares and orders the text representation. Preserve that
         // contract; ordinary reads decode JSONB directly without a UTF-16 string.
@@ -545,7 +551,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             sql.Append(CultureInfo.InvariantCulture, $"""
                 SELECT {_primaryKeyColumn}::bigint AS objectid,
                        {geometrySelect} AS geometry,
-                       {attributesSelect} AS attributes{distanceSelect}{nativeSelect}
+                       {attributesSelect} AS attributes{distanceSelect}{nativeSelect}{BuildReadStateProjection(projection)}
                 """);
             if (query.Limit.HasValue || query.Offset.HasValue || IsNearestNeighborQuery(query))
             {
@@ -806,6 +812,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         FeatureQuery query,
         CancellationToken cancellationToken)
     {
+        await ValidateManagedPartitionAsync(cancellationToken).ConfigureAwait(false);
         await ValidateVersionedReadAsync(query, cancellationToken).ConfigureAwait(false);
 
         if (query.EnforcedSqlFilter is null &&

@@ -15,7 +15,7 @@ using NSubstitute;
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
 [global::Xunit.Trait("Tier", "Fast")]
-public sealed class ODataFeatureProviderResolverTests
+public sealed partial class ODataFeatureProviderResolverTests
 {
     [Fact]
     public async Task ResolveQueryReaderAsync_UnsupportedTextSearch_RejectsBeforeProviderRead()
@@ -121,7 +121,7 @@ public sealed class ODataFeatureProviderResolverTests
     }
 
     [Fact]
-    public async Task CheckWriteSupportAsync_PrimaryWriter_AllowsExistingCrudPipeline()
+    public async Task CheckWriteSupportAsync_UnboundPrimaryWriter_AllowsExistingCrudPipeline()
     {
         var connectionId = Guid.NewGuid();
         var primaryWriter = Substitute.For<IFeatureWriter>();
@@ -134,8 +134,10 @@ public sealed class ODataFeatureProviderResolverTests
             Substitute.For<IFeatureReader>(), primaryWriter, ODataProviderTestData.CreateRouter(connectionId, provider));
         var (snapshot, service, resource, publication) = ODataProviderTestData.CreateSnapshot(connectionId: null);
 
+        snapshot = WithoutStorageBindings(snapshot);
+
         var support = await resolver.CheckWriteSupportAsync(
-            snapshot, service, resource, publication, 41, CancellationToken.None);
+            snapshot, service, resource, publication with { StorageBindingId = null }, 41, CancellationToken.None);
 
         support.Supported.Should().BeTrue();
     }
@@ -198,6 +200,8 @@ public sealed class ODataFeatureProviderResolverTests
             ODataProviderTestData.CreateRouter(connectionId, provider));
         var (snapshot, service, resource, publication) = ODataProviderTestData.CreateSnapshot(connectionId.ToString());
 
+        snapshot = WithoutStorageBindings(snapshot);
+
         var resolved = await resolver.ResolveReaderAsync(
             snapshot,
             service,
@@ -211,33 +215,19 @@ public sealed class ODataFeatureProviderResolverTests
     }
 
     [Fact]
-    public async Task ResolveQueryReaderAsync_LocalBindingWithoutConnection_UsesPrimaryPipeline()
+    public async Task ResolveQueryReaderAsync_LocalBindingWithoutRouter_FailsClosed()
     {
-        var fallbackReader = Substitute.For<IFeatureReader>();
         var resolver = new ODataFeatureProviderResolver(
-            fallbackReader,
-            Substitute.For<IFeatureWriter>(),
-            providerQueryRouter: null);
+            Substitute.For<IFeatureReader>(), Substitute.For<IFeatureWriter>(), providerQueryRouter: null);
         var (snapshot, service, resource, publication) = ODataProviderTestData.CreateSnapshot(connectionId: null);
 
-        var resolved = await resolver.ResolveQueryReaderAsync(
-            snapshot,
-            service,
-            resource,
-            publication,
-            41,
-            requireCount: true,
-            CancellationToken.None);
-        var writeSupport = await resolver.CheckWriteSupportAsync(
-            snapshot,
-            service,
-            resource,
-            publication,
-            41,
-            CancellationToken.None);
+        var read = () => resolver.ResolveQueryReaderAsync(
+            snapshot, service, resource, publication, 41, requireCount: true, CancellationToken.None);
+        var write = () => resolver.CheckWriteSupportAsync(
+            snapshot, service, resource, publication, 41, CancellationToken.None);
 
-        resolved.Should().BeSameAs(fallbackReader);
-        writeSupport.Supported.Should().BeTrue();
+        await read.Should().ThrowAsync<InvalidOperationException>().WithMessage("*routing is not configured*");
+        await write.Should().ThrowAsync<InvalidOperationException>().WithMessage("*routing is not configured*");
     }
 
     [Fact]

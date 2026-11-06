@@ -366,8 +366,11 @@ internal sealed class ODataCrudHandler(
         ODataCrudResult<Dictionary<string, object?>> result;
         using (Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(createOutboxScopeData))
         {
-            result = await _crudService.CreateFeatureAsync(
-                resolvedLayerId.Value, payload, baseUrl, createStorageLayerId!.Value, layerValidation.Resource, effectiveToken);
+            var reader = await ResolveMutationReaderAsync(
+                new AuthorizedReadBinding(context, layerValidation, createStorageLayerId), effectiveToken).ConfigureAwait(false);
+            result = await _crudService.CreateFeatureAsync(new ODataCreateRequest(
+                resolvedLayerId.Value, payload, baseUrl, createStorageLayerId,
+                layerValidation.Resource, reader), effectiveToken);
         }
         if (result.IsSuccess)
         {
@@ -569,7 +572,7 @@ internal sealed class ODataCrudHandler(
         // holds a lease on cannot be replaced or merged out from under them, on this surface as
         // much as on GeoServices applyEdits and OGC API Features.
         var lockConflict = await EvaluateVisibleFeatureLockAsync(
-            context, layerValidation, layerId, updateStorageLayerId!.Value, objectId, "update", effectiveToken).ConfigureAwait(false);
+            context, layerValidation, layerId, updateStorageLayerId, objectId, "update", effectiveToken).ConfigureAwait(false);
         if (lockConflict is not null)
         {
             return ODataUtilityService.CreateODataError(
@@ -612,17 +615,11 @@ internal sealed class ODataCrudHandler(
         ODataCrudResult<Dictionary<string, object?>> result;
         using (Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(updateOutboxScopeData))
         {
-            result = await _crudService.UpdateFeatureAsync(
-                layerId,
-                objectId,
-                payload,
-                baseUrl,
-                ifMatch,
-                ifNoneMatch,
-                updateStorageLayerId!.Value,
-                replace,
-                layerValidation.Resource,
-                effectiveToken);
+            var reader = await ResolveMutationReaderAsync(
+                new AuthorizedReadBinding(context, layerValidation, updateStorageLayerId), effectiveToken).ConfigureAwait(false);
+            result = await _crudService.UpdateFeatureAsync(new ODataUpdateRequest(
+                layerId, objectId, payload, baseUrl, ifMatch, ifNoneMatch, updateStorageLayerId,
+                replace, layerValidation.Resource, reader), effectiveToken);
         }
         if (result.IsSuccess)
         {
@@ -719,7 +716,7 @@ internal sealed class ODataCrudHandler(
         // holds a lease on cannot be deleted out from under them, on this surface as
         // much as on GeoServices applyEdits and OGC API Features.
         var lockConflict = await EvaluateVisibleFeatureLockAsync(
-            context, layerValidation, layerId, deleteStorageLayerId!.Value, objectId, "delete", effectiveToken).ConfigureAwait(false);
+            context, layerValidation, layerId, deleteStorageLayerId, objectId, "delete", effectiveToken).ConfigureAwait(false);
         if (lockConflict is not null)
         {
             return ODataUtilityService.CreateODataError(
@@ -751,8 +748,11 @@ internal sealed class ODataCrudHandler(
         ODataCrudResult<object> result;
         using (Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(deleteOutboxScopeData))
         {
-            result = await _crudService.DeleteFeatureAsync(
-                layerId, objectId, ifMatch, ifNoneMatch, deleteStorageLayerId!.Value, layerValidation.Resource, effectiveToken);
+            var reader = await ResolveMutationReaderAsync(
+                new AuthorizedReadBinding(context, layerValidation, deleteStorageLayerId), effectiveToken).ConfigureAwait(false);
+            result = await _crudService.DeleteFeatureAsync(new ODataDeleteRequest(
+                layerId, objectId, ifMatch, ifNoneMatch, deleteStorageLayerId,
+                layerValidation.Resource, reader), effectiveToken);
         }
         if (result.IsSuccess)
         {
@@ -934,6 +934,16 @@ internal sealed class ODataCrudHandler(
             operation,
             cancellationToken);
 
+    private sealed record AuthorizedReadBinding(HttpContext Context,
+        LayerValidationHelpers.MetadataV2ValidationResult Validation, int StorageLayerId);
+
+    private static Task<IFeatureReader> ResolveMutationReaderAsync(
+        AuthorizedReadBinding binding, CancellationToken cancellationToken)
+        => binding.Context.RequestServices.GetRequiredService<ODataFeatureProviderResolver>().ResolveReaderAsync(
+            binding.Validation.Snapshot!, binding.Validation.Service, binding.Validation.Resource!,
+            binding.Validation.Publication, binding.StorageLayerId, FeatureProviderReadOperation.Query,
+            cancellationToken);
+
     // A lease on a row the caller cannot see falls through to the normal 404, because a 423 would reveal that the hidden row exists and who holds it.
     private static async Task<string?> EvaluateVisibleFeatureLockAsync(
         HttpContext context,
@@ -970,7 +980,7 @@ internal sealed class ODataCrudHandler(
     private static int ResolveLayerSrid(LayerValidationHelpers.MetadataV2ValidationResult layerValidation)
         => layerValidation.Resource!.ReadSrid() ?? SpatialReference.WGS84.ToSrid();
 
-    private static (int? StorageLayerId, IResult? Error) ResolveWriteStorageLayerId(
+    private static (int StorageLayerId, IResult? Error) ResolveWriteStorageLayerId(
         HttpContext context,
         int layerId,
         LayerValidationHelpers.MetadataV2ValidationResult layerValidation)
@@ -980,8 +990,8 @@ internal sealed class ODataCrudHandler(
             layerValidation.Publication,
             layerValidation.Resource!);
         return storageLayerId.HasValue
-            ? (storageLayerId, null)
-            : (null, ODataUtilityService.CreateODataError(
+            ? (storageLayerId.Value, null)
+            : (default, ODataUtilityService.CreateODataError(
                 context,
                 "InternalServerError",
                 $"Layer {layerId} storage binding is not configured.",

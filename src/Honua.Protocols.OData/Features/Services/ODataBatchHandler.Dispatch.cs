@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
@@ -453,6 +454,9 @@ internal sealed partial class ODataBatchHandler
             }
         }
 
+        var reader = await context.RequestServices.GetRequiredService<ODataFeatureProviderResolver>().ResolveReaderAsync(
+            validation.Snapshot!, validation.Service, validation.Resource, validation.Publication,
+            storageLayerId.Value, FeatureProviderReadOperation.Query, cancellationToken).ConfigureAwait(false);
         var srid = validation.Resource.ReadSrid() ?? 4326;
         return (new ODataBatchLayerContext(
             layerId,
@@ -460,7 +464,8 @@ internal sealed partial class ODataBatchHandler
             srid,
             validation.Publication,
             validation.Resource,
-            validation.Service), null);
+            validation.Service,
+            reader), null);
     }
 
     private static ODataBatchResponseItem CreateErrorResponseFromResult(

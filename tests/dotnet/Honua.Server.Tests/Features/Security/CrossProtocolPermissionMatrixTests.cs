@@ -44,7 +44,7 @@ namespace Honua.Server.Tests.Features.Security;
 /// that allows <c>query</c> but not <c>update</c> still denies writes.
 /// </para>
 /// </summary>
-public sealed class CrossProtocolPermissionMatrixTests
+public sealed partial class CrossProtocolPermissionMatrixTests
 {
     private const string GrantedRole = "matrix-grant-role";
     private const string UngrantedRole = "matrix-ungranted-role";
@@ -59,7 +59,8 @@ public sealed class CrossProtocolPermissionMatrixTests
     /// </summary>
     private static WebApplicationFactory<Program> CreateFactory(params PermissionGrant[] grants)
         => CreateFactory(
-            ServiceRbacTestFixture.CreateServiceMetadata(readRoles: [CoarseOnlyRole]),
+            new RbacTestLayerCatalog(alphaServiceMetadata:
+                ServiceRbacTestFixture.CreateServiceMetadata(readRoles: [CoarseOnlyRole])),
             grants);
 
     /// <summary>
@@ -71,13 +72,16 @@ public sealed class CrossProtocolPermissionMatrixTests
     /// intentionally absent here.
     /// </summary>
     private static WebApplicationFactory<Program> CreateWriteFactory(params PermissionGrant[] grants)
-        => CreateFactory(alphaServiceMetadata: null, grants);
+        => CreateFactory(new RbacTestLayerCatalog(), grants);
+
+    private static WebApplicationFactory<Program> CreateGrpcWriteFactory(PermissionGrant[] grants)
+        => CreateFactory(new GrpcWriteLayerCatalog(), grants);
 
     private static WebApplicationFactory<Program> CreateFactory(
-        AccessPolicy? alphaServiceMetadata,
+        ITestMetadataV2GraphSource catalog,
         PermissionGrant[] grants)
         => ServiceRbacTestFixture.CreateFactory(
-            layerCatalogFactory: () => new RbacTestLayerCatalog(alphaServiceMetadata: alphaServiceMetadata),
+            layerCatalogFactory: () => catalog,
             configureServices: services =>
             {
                 services.RemoveAll<ICrsDetectionService>();
@@ -118,7 +122,10 @@ public sealed class CrossProtocolPermissionMatrixTests
             operationNames.Remove(GetGrantToOmit(editKinds));
         }
 
-        using var factory = CreateWriteFactory(operationNames.Select(operation => Grant(operation)).ToArray());
+        var grants = operationNames.Select(operation => Grant(operation)).ToArray();
+        using var factory = string.Equals(surface, TestProtocols.Grpc, StringComparison.Ordinal)
+            ? CreateGrpcWriteFactory(grants)
+            : CreateWriteFactory(grants);
 
         if (string.Equals(surface, TestProtocols.FeatureServer, StringComparison.Ordinal))
         {
@@ -417,21 +424,6 @@ public sealed class CrossProtocolPermissionMatrixTests
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/query?where=1=1&f=json");
 
         await response.AssertGeoServicesErrorAsync(403);
-    }
-
-    [IntegrationTest]
-    [Protocol(TestProtocols.FeatureServer)]
-    [Operation(Operations.Query)]
-    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
-    public async Task FeatureServerQuery_GrantScopedToTargetLayer_AllowsThatLayer()
-    {
-        using var factory = CreateFactory(Grant("query", layer: "Alpha Layer"));
-        using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
-
-        var response = await client.GetAsync(
-            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/query?where=1=1&f=json");
-
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
     }
 
     // ---- OData query ----
