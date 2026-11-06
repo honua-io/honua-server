@@ -27,7 +27,7 @@ delegated to machinery that already gates trunk.
 1. **Skip when nothing can move a shard.** A diff touching no product-code path
    selects nothing and costs no runners (`no_product_code`). Product code is
    `src/` and `tests/dotnet/` **unioned with every root the shard map itself
-   routes on** — `.github/ci-shards.json` also claims `observability/`,
+   routes on** — `.github/ci-shards.json` also claims `eng/telemetry/`,
    `samples/gp/` and `tests/fixtures/toolbox-translation/`, which are shard
    inputs (`SloMetricContractTests` reads `eng/telemetry/slo-metric-contract.v1.json`)
    that would otherwise be skipped while the trailing matrix went red on them.

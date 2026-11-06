@@ -15,32 +15,6 @@ using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Repo-wide sibling of <see cref="SloMetricContractTests"/> (honua-server#3323).
-/// <para>
-/// #3322 fixed the three SLO instruments. This guard covers EVERY instrument the repository
-/// declares, because the mechanism that broke those three is not specific to them: the OTel
-/// Prometheus exporter derives the exported series name from the instrument name AND its
-/// <c>unit</c>, mapping the unit through the UCUM table and appending it when the name does not
-/// already end in the mapped form. A declared unit therefore renames the series out from under
-/// every dashboard, alert rule and runbook <b>without breaking a single build</b>. In PromQL an
-/// absent series is not an error: <c>rate()</c> over it is an empty vector, a ratio against it is
-/// empty, the panel renders blank and the alert never fires. The failure mode is SILENCE.
-/// </para>
-/// <para>
-/// Three assertions close the loop, and all three have to pass for the loop to be closed:
-/// <list type="number">
-/// <item><description>the checked-in inventory <c>eng/telemetry/metric-name-contract.v1.json</c>
-/// still describes the instruments the source tree actually declares (a new instrument, or a
-/// changed unit, reddens here);</description></item>
-/// <item><description>every series name in that inventory is the name a reader would derive from
-/// the instrument name, i.e. no entry launders a mangled name into the contract;</description></item>
-/// <item><description>the REAL Prometheus exposition of a REAL running server agrees, for every
-/// instrument, that the declared unit produces that series name — reasoning about the UCUM table
-/// is exactly the step that failed before.</description></item>
-/// </list>
-/// </para>
-/// </summary>
 [Protocol(TestProtocols.TestQuality)]
 [Collection("Performance")]
 public sealed class MetricNameContractTests : IClassFixture<TestWebApplicationFactory>

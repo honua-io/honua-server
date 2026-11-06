@@ -488,7 +488,7 @@ def product_code_prefixes(config: dict[str, Any]) -> tuple[str, ...]:
     """`PRODUCT_CODE_PREFIXES` plus every root the shard map itself routes on.
 
     `src/` and `tests/dotnet/` hold nearly all of the routable tree, but not
-    all of it: `.github/ci-shards.json` also routes `observability/`,
+    all of it: `.github/ci-shards.json` also routes `eng/telemetry/`,
     `samples/gp/` and `tests/fixtures/toolbox-translation/` -- shard INPUTS
     that live outside both. `SloMetricContractTests` reads
     `eng/telemetry/slo-metric-contract.v1.json` and `ToolboxTranslationEndpointTests`
