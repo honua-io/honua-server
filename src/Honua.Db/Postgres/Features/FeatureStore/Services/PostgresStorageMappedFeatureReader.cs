@@ -660,7 +660,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             // Use the jsonb-preserving accessor (->) for numeric/boolean/json fields so the
             // value round-trips with its declared type (an integer field returns a JSON
             // number, not a string). Text-like types keep the text accessor (->>) so existing
-            // string/date formatting is unchanged.
+            // string formatting is unchanged. DateTime values may also be epoch numbers.
             if (distinctObjectIdExpression is not null &&
                 (IsObjectIdField(field.Name) || field.SemanticRoles.Contains("id.primary")))
             {
@@ -695,6 +695,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             or MetadataV2FieldType.Double
             or MetadataV2FieldType.Float
             or MetadataV2FieldType.Boolean
+            or MetadataV2FieldType.DateTime
             or MetadataV2FieldType.Json;
 
     private MetadataV2Field[] ResolveAttributeFields(FeatureQuery query)
@@ -1455,6 +1456,12 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
     private string ResolveColumnExpression(string fieldName, SqlBuilder sql)
     {
+        if (fieldName.Equals("layer_id", StringComparison.OrdinalIgnoreCase) &&
+            _layerDiscriminatorColumn is not null)
+        {
+            return _layerDiscriminatorColumn;
+        }
+
         if (fieldName.Equals("objectid", StringComparison.OrdinalIgnoreCase) ||
             fieldName.Equals("object_id", StringComparison.OrdinalIgnoreCase))
         {
