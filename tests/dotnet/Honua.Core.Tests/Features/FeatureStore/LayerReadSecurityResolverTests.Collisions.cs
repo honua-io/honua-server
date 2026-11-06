@@ -14,6 +14,7 @@ namespace Honua.Core.Tests.Features.FeatureStore;
 public sealed partial class LayerReadSecurityResolverTests
 {
     [Theory]
+    [Trait("Tier", "Fast")]
     [InlineData("row")]
     [InlineData("mask")]
     [InlineData("permanent")]
@@ -29,6 +30,7 @@ public sealed partial class LayerReadSecurityResolverTests
     }
 
     [Theory]
+    [Trait("Tier", "Fast")]
     [InlineData("row")]
     [InlineData("mask")]
     [InlineData("permanent")]
@@ -44,6 +46,7 @@ public sealed partial class LayerReadSecurityResolverTests
     }
 
     [Fact]
+    [Trait("Tier", "Fast")]
     public async Task NumericCollision_WithoutApplicablePolicy_PreservesReadAndWriteCompatibility()
     {
         var (resolver, _) = CreateCollisionResolver("none");
@@ -57,6 +60,7 @@ public sealed partial class LayerReadSecurityResolverTests
     }
 
     [Fact]
+    [Trait("Tier", "Fast")]
     public async Task ApplyAsync_ExactResourceWithStorageCollision_EnforcesItsOwnRowAndFieldPolicy()
     {
         var (resolver, resource) = CreateCollisionResolver("row-mask");

@@ -12,9 +12,8 @@ using Honua.Server.Features.Admin.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Honua.TestKit.Infrastructure;
 using Honua.TestKit.Helpers;
-using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
+using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
@@ -128,7 +127,7 @@ public sealed class RowLevelSecurityEndpointsTests : IAsyncLifetime
         var odataService = original.Index.ServicesById[publication.ServiceId] with
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "collision-odata-service", Name = "collision-odata" },
-            Protocols = [MetadataV2ServiceProtocols.OData]
+            Protocols = [ServiceProtocols.OData]
         };
         var odataPublication = publication with
         {
