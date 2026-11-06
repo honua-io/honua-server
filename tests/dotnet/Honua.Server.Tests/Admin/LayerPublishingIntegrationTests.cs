@@ -373,13 +373,13 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
         listResponse.Be200Ok();
 
         var listPayload = await listResponse.Content.ReadAsStringAsync();
-        var listApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary[]>>(listPayload, _jsonOptions);
+        var listApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerPage>>(listPayload, _jsonOptions);
 
         listApi.Should().NotBeNull();
         listApi!.Success.Should().BeTrue();
         listApi.Data.Should().NotBeNull();
 
-        var listedLayer = listApi.Data!.Single(layer => layer.LayerId == _layerId);
+        var listedLayer = listApi.Data!.Items.Single(layer => layer.LayerId == _layerId);
         listedLayer.Enabled.Should().BeTrue();
 
         var toggleRequest = new LayerEnabledRequest { Enabled = false };
@@ -428,10 +428,10 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
         var listResponse = await _client.GetAsync(
             $"/api/v1/admin/connections/{_connectionId}/layers?serviceName={_serviceName}");
         listResponse.Be200Ok();
-        var listApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary[]>>(
+        var listApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerPage>>(
             await listResponse.Content.ReadAsStringAsync(),
             _jsonOptions);
-        listApi!.Data!.Single(layer => layer.LayerId == published.LayerId).LicenseUrl
+        listApi!.Data!.Items.Single(layer => layer.LayerId == published.LayerId).LicenseUrl
             .Should().Be(expectedLicenseUrl);
     }
 
@@ -543,11 +543,11 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
         var listResponse = await _client.GetAsync(
             $"/api/v1/admin/connections/{_connectionId}/layers?serviceName={_serviceName}");
         listResponse.Be200Ok();
-        var listApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary[]>>(
+        var listApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerPage>>(
             await listResponse.Content.ReadAsStringAsync(),
             _jsonOptions);
         AssertSummaryGovernance(
-            listApi!.Data!.Single(layer => layer.LayerId == published.LayerId),
+            listApi!.Data!.Items.Single(layer => layer.LayerId == published.LayerId),
             license,
             attribution,
             publisher,
