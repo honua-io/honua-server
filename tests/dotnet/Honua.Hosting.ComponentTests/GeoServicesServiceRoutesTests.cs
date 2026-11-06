@@ -192,6 +192,73 @@ public sealed class GeoServicesServiceRoutesTests
         document.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(404);
     }
 
+    [Theory]
+    [InlineData("/rest/services/unknown/ImageServer")]
+    [InlineData("/services/unknown/ImageServer")]
+    [InlineData("/rest/services/%20/MapServer/WMS")]
+    [InlineData("/rest/services/%20/ImageServer/WMTS")]
+    public async Task FlatRoute_UnresolvedService_PreservesHandlerValidation(string path)
+    {
+        await using var app = CreateApp();
+        app.MapGet("/rest/services/{serviceId}/ImageServer", (string serviceId) => Results.Text(serviceId));
+        app.MapGet("/services/{serviceId}/ImageServer", (string serviceId) => Results.Text(serviceId));
+        app.MapGet("/rest/services/{serviceId}/MapServer/WMS", (string serviceId) => Results.Text(serviceId));
+        app.MapGet("/rest/services/{serviceId}/ImageServer/WMTS", (string serviceId) => Results.Text(serviceId));
+        await app.StartAsync();
+        using var client = app.GetTestClient();
+        var expectedServiceId = path.Contains("%20", StringComparison.Ordinal) ? " " : "unknown";
+        (await client.GetStringAsync(path)).Should().Be(expectedServiceId);
+    }
+
+    [Theory]
+    [InlineData("/rest/services")]
+    [InlineData("/services")]
+    public async Task FlatRoute_CatalogFailure_ReachesProtocolHandler(string root)
+    {
+        await using var app = CreateApp();
+        var provider = app.Services.GetRequiredService<IMetadataV2GraphProvider>();
+        provider.GetCurrentAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => throw new InvalidOperationException("Catalog unavailable"));
+        app.MapGet($"{root}/{{serviceId}}/MapServer/WMS", (string serviceId) => Results.Text(serviceId));
+        await app.StartAsync();
+        using var client = app.GetTestClient();
+        (await client.GetStringAsync($"{root}/unknown/MapServer/WMS")).Should().Be("unknown");
+    }
+
+    [Theory]
+    [InlineData("/rest/services")]
+    [InlineData("/services")]
+    public async Task FlatRoute_LegacyStableId_PreservesHandlerIdentity(string root)
+    {
+        await using var app = CreateApp();
+        var provider = app.Services.GetRequiredService<IMetadataV2GraphProvider>();
+        var snapshot = await provider.GetCurrentAsync();
+        var graph = snapshot.Graph with
+        {
+            Services = snapshot.Graph.Services.Select(service => service with { FolderId = null, PublicName = null }).ToArray()
+        };
+        provider.GetCurrentAsync(Arg.Any<CancellationToken>())
+            .Returns(new MetadataV2GraphSnapshot(graph, "legacy-flat", DateTimeOffset.UnixEpoch));
+        app.MapGet($"{root}/{{serviceId}}/FeatureServer", (string serviceId) => Results.Text(serviceId));
+        await app.StartAsync();
+        using var client = app.GetTestClient();
+        (await client.GetStringAsync($"{root}/facet/FeatureServer")).Should().Be("facet");
+    }
+
+    [Theory]
+    [InlineData("/rest/services")]
+    [InlineData("/services")]
+    public async Task FlatRoute_OrganizedStableId_DoesNotInvokeHandler(string root)
+    {
+        await using var app = CreateApp();
+        app.MapGet($"{root}/{{serviceId}}/FeatureServer", () => Results.Text("must not run"));
+        await app.StartAsync();
+        using var client = app.GetTestClient();
+        using var response = await client.GetAsync($"{root}/facet/FeatureServer");
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(404);
+    }
+
     private static WebApplication CreateApp(string? serviceTenant = null, string? requestTenant = null)
     {
         var builder = WebApplication.CreateBuilder();

@@ -39,8 +39,7 @@ internal sealed record GeoServicesServicePath(
         var folder = incoming?.FolderName;
         if (string.IsNullOrWhiteSpace(publicName))
         {
-            await StandardErrorHelpers.CreateBadRequest(context, "Service ID is required.")
-                .ExecuteAsync(context).ConfigureAwait(false);
+            await next(context).ConfigureAwait(false);
             return;
         }
         var provider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
@@ -48,6 +47,12 @@ internal sealed record GeoServicesServicePath(
         try
         {
             snapshot = await provider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (Exception) when (folder is null && !context.RequestAborted.IsCancellationRequested)
+        {
+            // Flat handlers own their protocol-specific catalog failure responses.
+            await next(context).ConfigureAwait(false);
+            return;
         }
         catch (Exception exception) when (ServiceResourceValidationHelpers.IsCatalogStorageUnavailable(exception))
         {
@@ -72,7 +77,7 @@ internal sealed record GeoServicesServicePath(
                     .ExecuteAsync(context).ConfigureAwait(false);
                 return;
             }
-            if (names.Length == 0 && folder is null && IsStandaloneRoute(route, publicPath, snapshot.Graph))
+            if (names.Length == 0 && folder is null && CanUseFlatPath(route, publicPath, snapshot.Graph))
             {
                 await next(context).ConfigureAwait(false);
                 return;
@@ -93,17 +98,17 @@ internal sealed record GeoServicesServicePath(
             MetadataV2ServicePaths.SamePath(candidate with { Tenant = path.Tenant }, path) &&
             candidate.TargetFacetIds.Any(id => snapshot.Index.ServicesById.TryGetValue(id, out var service) && service.IsRoutable()));
 
-    private static bool IsStandaloneRoute(GeoServicesServiceRoutes.ServiceRoute route, MetadataV2ServicePathAlias path, MetadataV2Graph graph)
+    private static bool CanUseFlatPath(GeoServicesServiceRoutes.ServiceRoute route, MetadataV2ServicePathAlias path, MetadataV2Graph graph)
     {
         // The provider Routing namespace defers stable-ID collisions to the GPServer validator.
         var isRoutingUtilityNamespace = route.ServiceType == "GPServer" &&
             string.Equals(path.PublicName, "Routing", StringComparison.OrdinalIgnoreCase);
-        return route.ServiceType is "GPServer" or "NAServer" &&
-            !graph.ServicePathAliases.Any(alias => MetadataV2ServicePaths.SamePath(alias, path) &&
+        return !graph.ServicePathAliases.Any(alias => MetadataV2ServicePaths.SamePath(alias, path) &&
                 MetadataV2TenantVisibility.IsVisibleToTenant(alias.Tenant, path.Tenant)) &&
             !graph.Services.Any(service =>
                 string.Equals(service.Metadata.Name, path.PublicName, StringComparison.OrdinalIgnoreCase)) &&
             (isRoutingUtilityNamespace || !graph.Services.Any(service =>
-                string.Equals(service.Metadata.Id, path.PublicName, StringComparison.Ordinal)));
+                string.Equals(service.Metadata.Id, path.PublicName, StringComparison.Ordinal) &&
+                (service.FolderId is not null || service.PublicName is not null)));
     }
 }

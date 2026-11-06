@@ -321,7 +321,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         errorElement.GetProperty("message").GetString().Should().Be("Not Found");
         errorElement.GetProperty("details").EnumerateArray()
             .Select(detail => detail.GetString() ?? string.Empty)
-            .Should().Contain("Service was not found.");
+            .Should().Contain(detail => detail.Contains("Service 'nonexistent' not found"));
     }
 
     [IntegrationTest]
@@ -632,7 +632,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         errorElement.GetProperty("message").GetString().Should().Be("Not Found");
         errorElement.GetProperty("details").EnumerateArray()
             .Select(detail => detail.GetString() ?? string.Empty)
-            .Should().Contain("Service was not found.");
+            .Should().Contain(detail => detail.Contains("Service 'nonexistent' not found"));
     }
 
     [IntegrationTest]
@@ -1653,7 +1653,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         errorElement.GetProperty("message").GetString().Should().Be("Not Found");
         errorElement.GetProperty("details").EnumerateArray()
             .Select(detail => detail.GetString() ?? string.Empty)
-            .Should().Contain("Service was not found.");
+            .Should().Contain(detail => detail.Contains("Service 'nonexistent' not found"));
     }
 
     [IntegrationTest]
