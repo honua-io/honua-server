@@ -593,7 +593,17 @@ public sealed class WebAppFixture : IAsyncLifetime
         return this;
     }
 
-    public WebAppFixture DecorateService<TService>(Func<TService, TService> decorate, bool decorateAll = false)
+    public WebAppFixture DecorateService<TService>(Func<TService, TService> decorate)
+        where TService : class
+        => DecorateRegistrations(decorate, static registrations => registrations.TakeLast(1));
+
+    public WebAppFixture DecorateEachService<TService>(Func<TService, TService> decorate)
+        where TService : class
+        => DecorateRegistrations(decorate, static registrations => registrations);
+
+    private WebAppFixture DecorateRegistrations<TService>(
+        Func<TService, TService> decorate,
+        Func<ServiceDescriptor[], IEnumerable<ServiceDescriptor>> selectRegistrations)
         where TService : class
     {
         ArgumentNullException.ThrowIfNull(decorate);
@@ -604,7 +614,7 @@ public sealed class WebAppFixture : IAsyncLifetime
             {
                 throw new InvalidOperationException($"No registration for {typeof(TService).Name} to decorate.");
             }
-            foreach (var original in decorateAll ? registrations : registrations.TakeLast(1))
+            foreach (var original in selectRegistrations(registrations))
             {
                 var index = services.IndexOf(original);
                 services[index] = ServiceDescriptor.Describe(

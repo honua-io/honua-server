@@ -13,7 +13,7 @@ public static class FeatureProviderTestFixtureExtensions
     public static WebAppFixture DecorateFeatureReaders(
         this WebAppFixture fixture, Func<IFeatureReader, IFeatureReader> decorate)
         => fixture.DecorateService(decorate)
-            .DecorateService<IFeatureDataProvider>(inner => new ReaderDecoratingProvider(inner, decorate), decorateAll: true);
+            .DecorateEachService<IFeatureDataProvider>(inner => new ReaderDecoratingProvider(inner, decorate));
 
     public static WebAppFixture UseInMemoryFeatureProvider(this WebAppFixture fixture, TestFeatureStore store)
         => fixture.ReplaceService<IFeatureDataProvider>(new InMemoryPostgisProvider(store));
