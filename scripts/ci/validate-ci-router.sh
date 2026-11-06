@@ -455,6 +455,12 @@ assert_descriptor \
   "false" \
   "Server Features Studio AI"
 assert_descriptor \
+  "headroom-split-packages-temporal" \
+  "tests/dotnet/Honua.Server.Tests/Features/Forms/FormPackageEndpointsTests.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Packages and Temporal"
+assert_descriptor \
   "headroom-split-ogc-tiles-endpoints-crs" \
   "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Tiles/OgcTilesEndpointTests.cs" \
   "targeted" \
