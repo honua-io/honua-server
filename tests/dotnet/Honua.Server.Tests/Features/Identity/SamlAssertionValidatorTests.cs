@@ -61,16 +61,18 @@ public sealed class SamlAssertionValidatorTests
         Assert.Contains("viewer", result.Subject.Roles);
     }
 
+    public static TheoryData<string[][]> ExcludingAudienceGroups => new()
+    {
+        new string[][] { [SamlTestAssertions.Audience, "https://other.example.com/sp"], ["https://other.example.com/sp"] },
+        new string[][] { ["https://other.example.com/sp"], [SamlTestAssertions.Audience, "https://other.example.com/sp"] }
+    };
+
     [UnitTheory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Validate_AudienceRestrictionExcludesServiceProvider_IsRejected(bool excludingGroupFirst)
+    [MemberData(nameof(ExcludingAudienceGroups))]
+    public void Validate_AudienceRestrictionExcludesServiceProvider_IsRejected(string[][] groups)
     {
         using var cert = SamlTestAssertions.CreateSigningCertificate();
         var validator = CreateValidator(SamlTestAssertions.ToBase64Der(cert));
-        string[] permitted = [SamlTestAssertions.Audience, "https://other.example.com/sp"];
-        string[] excluded = ["https://other.example.com/sp"];
-        var groups = excludingGroupFirst ? new[] { excluded, permitted } : new[] { permitted, excluded };
 
         var result = validator.Validate(SamlTestAssertions.CreateSignedResponseWithAudienceGroups(cert, groups));
 
