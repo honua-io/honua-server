@@ -76,7 +76,7 @@
     },
     {
       "path": "docs/internal/README.md",
-      "why": "The doorway into docs/internal. The tree stays out of the bundle; its entry point is listed in SUMMARY.md and so must be a concept \u2014 OKF's `index` is exactly this role."
+      "why": "The doorway into docs/internal. The tree stays out of the bundle; its entry point is listed in SUMMARY.md and so must be a concept — OKF's `index` is exactly this role."
     },
     {
       "path": "docs/internal/demo/README.md",

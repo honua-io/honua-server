@@ -227,5 +227,3 @@ Each link resolves to the page's source on `trunk`. These pages are also rendere
 
 - [Internal engineering docs](https://github.com/honua-io/honua-server/blob/trunk/docs/internal/README.md): Contributor notes, ADRs, spikes and evidence; not part of the published product documentation.
 - [Demo runbooks](https://github.com/honua-io/honua-server/blob/trunk/docs/internal/demo/README.md): Entry point for the demo runbooks, which now live in honua-demo.
-
-## Archive

@@ -21,7 +21,7 @@ topology.
 
 `honua-io/honua-server#361` is the GeoETL epic — repeatable, scheduled,
 multi-source spatial extract-transform-load pipelines for Honua. The
-strategy spike `#682` (`docs/archive/contributor/geoetl-spike.md`) settled the
+strategy spike `#682` ([GeoETL strategy spike](https://github.com/honua-io/honua-server/blob/213e7ef3bf243fddf30c06a4cdb4cac737b9bfc8/docs/archive/contributor/geoetl-spike.md)) settled the
 positioning question: pipeline-as-code for the API-first audience, not a
 desktop workbench, and not a Spark-scale lakehouse engine. The completed epic
 was decomposed into reviewable child tickets; this ADR retains the binding
@@ -554,4 +554,4 @@ in place, so the decision history stays auditable.
 - ADR-0029 — Geoprocess canonical model mappings.
 - ADR-0031 — Durable job orchestration substrate.
 - ADR-0034 — GDAL/OGR honua driver delivery strategy.
-- `docs/archive/contributor/geoetl-spike.md` — strategy spike from `#682` (archived).
+- [GeoETL strategy spike](https://github.com/honua-io/honua-server/blob/213e7ef3bf243fddf30c06a4cdb4cac737b9bfc8/docs/archive/contributor/geoetl-spike.md) — strategy spike from `#682` (archived).

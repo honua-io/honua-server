@@ -107,7 +107,7 @@ Each conformance workflow must publish:
 - GML 3.2: `./scripts/conformance/cite/run-cite-gml32-tests.sh`
 - GeoPackage 1.2: `./scripts/conformance/cite/run-cite-gpkg12-tests.sh`
 
-Detailed setup, profiles, troubleshooting, and per-suite specifics: [`docs/contributor/cite-runbook.md`](cite-runbook.md). Legacy WMS 1.1.1 / WFS 1.x manual procedures: [`eng/protocol-coverage/cite-legacy-ogc-conformance-testing.md`](../../../eng/protocol-coverage/cite-legacy-ogc-conformance-testing.md).
+Detailed setup, profiles, troubleshooting, and per-suite specifics: [`docs/contributor/cite-runbook.md`](cite-runbook.md). Legacy WMS 1.1.1 / WFS 1.x manual procedures: [`docs/internal/protocol-coverage/cite-legacy-ogc-conformance-testing.md`](../protocol-coverage/cite-legacy-ogc-conformance-testing.md).
 
 ## Contract Governance vs Standards Compatibility
 

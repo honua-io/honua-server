@@ -15,7 +15,7 @@ redirects:
   user/CONTROL_PLANE_API: reference/admin-api/overview.md
   devops/DEPLOYMENT_SCENARIOS: guides/deploy/cloud-deployments.md
   # Operator guide
-  operator/README: archive/README.md
+  operator/README: README.md
   operator/infrastructure: guides/deploy/kubernetes.md
   operator/docker-compose: guides/deploy/docker-compose.md
   operator/DEPLOYMENT_SCENARIOS: guides/deploy/cloud-deployments.md
@@ -40,7 +40,7 @@ redirects:
   operator/troubleshooting: guides/deploy/troubleshooting.md
   operator/runbooks/UPGRADE_AND_ROLLBACK: guides/deploy/upgrade-and-rollback.md
   # GIS user guide
-  gis/README: archive/README.md
+  gis/README: README.md
   gis/STANDARDS_APIS: concepts/protocols.md
   gis/DATA_MODELING_GUIDE: concepts/data-model.md
   gis/FILEGDB_IMPORT_WORKFLOW: guides/publish/import-files.md
@@ -71,7 +71,7 @@ redirects:
   gis/geoprocess-framework-analysis: guides/query-analyze/run-geoprocessing.md
   compatibility/cross-server-consume-gap-report: internal/README.md
   # Developer guide
-  developer/README: archive/README.md
+  developer/README: README.md
   developer/API_EXAMPLES: guides/query-analyze/query-features.md
   developer/INTEGRATION_PATTERNS: reference/integration-patterns.md
   developer/capability-manifest: reference/admin-api/overview.md
