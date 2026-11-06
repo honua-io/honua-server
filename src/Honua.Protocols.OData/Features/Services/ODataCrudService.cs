@@ -287,7 +287,7 @@ internal sealed partial class ODataCrudService
         CancellationToken cancellationToken = default)
         => UpdateFeatureAsync(layerId, objectId, payload, baseUrl, ifMatch, ifNoneMatch, storageLayerId, replace, null, cancellationToken);
 
-    public Task<ODataCrudResult<Dictionary<string, object?>>> UpdateFeatureAsync(
+    public async Task<ODataCrudResult<Dictionary<string, object?>>> UpdateFeatureAsync(
         int layerId,
         long objectId,
         ParsedFeaturePayload payload,
@@ -298,8 +298,10 @@ internal sealed partial class ODataCrudService
         bool replace,
         MetadataV2Resource? resolvedResource,
         CancellationToken cancellationToken = default)
-        => UpdateFeatureAsync(new ODataUpdateRequest(layerId, objectId, payload, baseUrl, ifMatch,
-            ifNoneMatch, storageLayerId, replace, resolvedResource, _featureReader), cancellationToken);
+    {
+        return await UpdateFeatureAsync(new ODataUpdateRequest(layerId, objectId, payload, baseUrl, ifMatch,
+            ifNoneMatch, storageLayerId, replace, resolvedResource, _featureReader), cancellationToken).ConfigureAwait(false);
+    }
 
     public async Task<ODataCrudResult<Dictionary<string, object?>>> UpdateFeatureAsync(
         ODataUpdateRequest request, CancellationToken cancellationToken = default)
@@ -504,7 +506,7 @@ internal sealed partial class ODataCrudService
         CancellationToken cancellationToken = default)
         => DeleteFeatureAsync(layerId, objectId, ifMatch, ifNoneMatch, storageLayerId, null, cancellationToken);
 
-    public Task<ODataCrudResult<object>> DeleteFeatureAsync(
+    public async Task<ODataCrudResult<object>> DeleteFeatureAsync(
         int layerId,
         long objectId,
         string? ifMatch,
@@ -512,8 +514,10 @@ internal sealed partial class ODataCrudService
         int storageLayerId,
         MetadataV2Resource? resolvedResource,
         CancellationToken cancellationToken = default)
-        => DeleteFeatureAsync(new ODataDeleteRequest(layerId, objectId, ifMatch, ifNoneMatch,
-            storageLayerId, resolvedResource, _featureReader), cancellationToken);
+    {
+        return await DeleteFeatureAsync(new ODataDeleteRequest(layerId, objectId, ifMatch, ifNoneMatch,
+            storageLayerId, resolvedResource, _featureReader), cancellationToken).ConfigureAwait(false);
+    }
 
     public async Task<ODataCrudResult<object>> DeleteFeatureAsync(
         ODataDeleteRequest request, CancellationToken cancellationToken = default)
