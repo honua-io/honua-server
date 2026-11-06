@@ -3,6 +3,7 @@
 
 using System.Security.Claims;
 using FluentAssertions;
+using FluentAssertions.Execution;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Migration.Abstractions;
@@ -27,6 +28,33 @@ namespace Honua.Core.Tests.Features.Portal;
 public sealed class PortalItemProjectorTests
 {
     private const string ProxyBaseUrl = "https://maps.example.gov/honua";
+
+    [UnitTheory]
+    [InlineData(ServiceProtocols.FeatureServer)]
+    [InlineData(ServiceProtocols.MapServer)]
+    [InlineData(ServiceProtocols.ImageServer)]
+    [Operation(Operations.Metadata)]
+    public void ProjectVisibleItems_FolderPublicName_PreservesItemIdentityAndProjectsPublicAddress(string protocol)
+    {
+        var service = BuildService("service.internal", "allocated_service", protocol, publicAccess: true);
+        service = service with
+        {
+            Metadata = service.Metadata with { Title = null },
+            FolderId = "folder",
+            PublicName = "Parcels"
+        };
+        var original = BuildSnapshot(service, AnonymousPolicy());
+        var graph = original.Graph with
+        {
+            Folders = [new() { Metadata = new() { Id = "folder", Name = "Survey" } }]
+        };
+        var snapshot = new MetadataV2GraphSnapshot(graph, "folder-item", DateTimeOffset.UnixEpoch);
+        var item = CreateProjector().ProjectVisibleItems(snapshot, Anonymous(), ProxyBaseUrl + "/").Single();
+        using var assertions = new AssertionScope();
+        item.Id.Should().Be("service.internal");
+        item.Title.Should().Be("Parcels");
+        item.Url.Should().Be($"{ProxyBaseUrl}/rest/services/Survey/Parcels/{protocol}");
+    }
 
     [UnitTest]
     [Operation(Operations.Metadata)]

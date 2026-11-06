@@ -8,7 +8,7 @@ namespace Honua.Infrastructure.Helpers;
 internal static class GeoServicesServiceUrls
 {
     public static string CanonicalPath(MetadataV2Graph graph, MetadataV2Service service)
-        => $"/rest/services/{EscapeName(MetadataV2ServicePaths.QualifiedName(graph, service))}";
+        => MetadataV2ServicePaths.GeoServicesPath(graph, service);
 
     public static string CanonicalLocation(HttpContext context, MetadataV2Graph graph, MetadataV2Service service, string serviceType)
         => $"{LocationBase(context)}{CanonicalPath(graph, service)}/{serviceType}";
@@ -54,5 +54,5 @@ internal static class GeoServicesServiceUrls
     }
 
     public static string EscapeName(string qualifiedName)
-        => string.Join('/', qualifiedName.Split('/').Select(Uri.EscapeDataString));
+        => MetadataV2ServicePaths.EscapePath(qualifiedName);
 }

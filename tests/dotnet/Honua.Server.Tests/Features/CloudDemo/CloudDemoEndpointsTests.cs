@@ -189,7 +189,8 @@ public sealed class CloudDemoEndpointsTests : IAsyncLifetime
                 ? service with
                 {
                     Metadata = service.Metadata with { Name = WritableServiceName },
-                    FolderId = folderId, PublicName = publicName
+                    FolderId = folderId,
+                    PublicName = publicName
                 } : service).ToArray()
         };
         ((TestMetadataV2GraphProvider)_fixture.GetService<IMetadataV2GraphProvider>())

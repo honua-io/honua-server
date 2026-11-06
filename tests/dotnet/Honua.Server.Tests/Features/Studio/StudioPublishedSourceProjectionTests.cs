@@ -82,7 +82,8 @@ public sealed class StudioPublishedSourceProjectionTests : IAsyncLifetime
             Folders = [new() { Metadata = new() { Id = "folder", Name = "Public" } }],
             Services = _graph.Services.Select(service => service with
             {
-                FolderId = "folder", PublicName = "Parcels"
+                FolderId = "folder",
+                PublicName = "Parcels"
             }).ToArray()
         });
         using var projected = await ReadAsync(_anonymous, url + "?includeSources=true");

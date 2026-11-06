@@ -317,7 +317,9 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
     {
         using var form = new FormUrlEncodedContent(new Dictionary<string, string>
         {
-            ["where"] = "1=1", ["returnIdsOnly"] = "true", ["f"] = "json"
+            ["where"] = "1=1",
+            ["returnIdsOnly"] = "true",
+            ["f"] = "json"
         });
         using var response = await _fixture.Client.PostAsync(path, form);
         var body = await response.Content.ReadAsStringAsync();

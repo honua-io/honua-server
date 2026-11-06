@@ -36,7 +36,8 @@ public sealed class ProjectedCatalogDiscoveryRegistryStoreTests
             Folders = [new() { Metadata = new() { Id = "folder", Name = "Public", Tenant = "public" } }],
             Services = original.Services.Select(service => service with
             {
-                FolderId = "folder", PublicName = "Parcels",
+                FolderId = "folder",
+                PublicName = "Parcels",
                 Metadata = service.Metadata with { Title = "Parcel inventory" }
             }).ToArray()
         };
