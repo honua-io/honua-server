@@ -135,7 +135,7 @@ internal sealed partial class ODataCrudService
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.GetFeatureFailed(_logger, layerId, objectId, ex);
-            return ODataCrudResult<Dictionary<string, object?>>.Error("An error occurred processing the OData request");
+            return MapRequestFailure<Dictionary<string, object?>>(ex, "An error occurred processing the OData request");
         }
     }
 
@@ -214,23 +214,23 @@ internal sealed partial class ODataCrudService
             }
 
             Feature? reloaded = null;
-            var readbackCancelled = false;
+            var readbackUnavailable = false;
             try
             {
                 reloaded = await _featureReader.GetAsync(storageLayerId, createdId.Value, cancellationToken);
             }
-            catch (OperationCanceledException)
+            catch (Exception ex) when (ex is OperationCanceledException or ResourceAccessDeniedException)
             {
-                readbackCancelled = true;
+                readbackUnavailable = true;
             }
 
-            // The insert already committed. A missing row or a cancelled readback still
+            // The insert already committed. A missing, cancelled or denied readback still
             // acknowledges the writer result instead of turning the create into a 500.
             // Defaults, triggers, and canonicalization can change the stored row, so
             // that acknowledgement is the new identity only: no representation and no
-            // ETag built from the submitted create (#6079).
+            // ETag built from the submitted create.
             var locationHeader = $"{baseUrl}/odata/Features(LayerId={layerId},ObjectId={createdId.Value})";
-            var observedReadback = reloaded.HasValue && !readbackCancelled;
+            var observedReadback = reloaded.HasValue && !readbackUnavailable;
             if (!observedReadback)
             {
                 var acknowledgement = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
@@ -271,7 +271,7 @@ internal sealed partial class ODataCrudService
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.CreateFeatureFailed(_logger, layerId, ex);
-            return ODataCrudResult<Dictionary<string, object?>>.Error("An error occurred creating the feature");
+            return MapRequestFailure<Dictionary<string, object?>>(ex, "An error occurred creating the feature");
         }
     }
 
@@ -484,7 +484,7 @@ internal sealed partial class ODataCrudService
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.UpdateFeatureFailed(_logger, layerId, objectId, ex);
-            return ODataCrudResult<Dictionary<string, object?>>.Error("An error occurred updating the feature");
+            return MapRequestFailure<Dictionary<string, object?>>(ex, "An error occurred updating the feature");
         }
     }
 
@@ -594,9 +594,14 @@ internal sealed partial class ODataCrudService
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             Log.DeleteFeatureFailed(_logger, layerId, objectId, ex);
-            return ODataCrudResult<object>.Error("An error occurred deleting the feature");
+            return MapRequestFailure<object>(ex, "An error occurred deleting the feature");
         }
     }
+
+    private static ODataCrudResult<T> MapRequestFailure<T>(Exception exception, string fallback)
+        => exception is ResourceAccessDeniedException
+            ? ODataCrudResult<T>.Forbidden("The operation is not permitted for this resource.")
+            : ODataCrudResult<T>.Error(fallback);
 
     private static ODataCrudResult<T> CreateLayerErrorResult<T>(
         ResourceValidationResult<MetadataV2Resource> result,

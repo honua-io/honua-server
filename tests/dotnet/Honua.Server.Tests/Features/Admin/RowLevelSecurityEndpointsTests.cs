@@ -6,10 +6,14 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Security.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Helpers;
+using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
@@ -66,6 +70,163 @@ public sealed class RowLevelSecurityEndpointsTests : IAsyncLifetime
     public Task InitializeAsync() => _fixture.InitializeAsync();
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
+
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    [Endpoint("POST /api/v1/admin/rls-policies")]
+    [Endpoint("POST /api/v1/admin/field-mask-policies")]
+    [Endpoint("GET /odata/Features({layerId})")]
+    public async Task RoutedPolicyCollision_AdminOnlyFirstResource_DoesNotOverrideAuthorizedResourcePolicy(bool fieldMask)
+    {
+        var original = _fixture.GetCurrentV2GraphSnapshot();
+        var (baseline, graph, resourceName) = CreateCollisionGraph(original);
+        MetadataV2GraphValidator.Validate(baseline).IsValid.Should().BeTrue();
+        MetadataV2GraphValidator.Validate(graph).IsValid.Should().BeTrue();
+        var provider = _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>();
+        provider.SetGraph(graph, schema: _fixture.MetadataGraphSchema);
+        using var adminClient = CreateAdminClient();
+        Guid? policyId = null;
+        var policyPath = fieldMask ? "/api/v1/admin/field-mask-policies" : "/api/v1/admin/rls-policies";
+        try
+        {
+            using var client = _fixture.CreateClient();
+            client.DefaultRequestHeaders.Add(RlsClaimsTestAuthHandler.UserHeader, "restricted-user");
+            client.DefaultRequestHeaders.Add(RlsClaimsTestAuthHandler.CategoryHeader, "test");
+            var denied = await client.GetAsync($"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/77/query?where=1%3D1&outFields=*&returnGeometry=false&f=json");
+            denied.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            policyId = fieldMask
+                ? await CreateCollisionMaskPolicyAsync(adminClient, resourceName)
+                : await CreatePolicyAsync(adminClient, resourceName);
+            provider.SetGraph(baseline, schema: _fixture.MetadataGraphSchema);
+            await AssertCollisionPolicyResponseAsync(client, fieldMask);
+            await AssertODataCollisionPolicyResponseAsync(client, fieldMask);
+            provider.SetGraph(graph, schema: _fixture.MetadataGraphSchema);
+            await AssertCollisionPolicyResponseAsync(client, fieldMask);
+            await AssertODataCollisionPolicyResponseAsync(client, fieldMask);
+        }
+        finally
+        {
+            if (policyId.HasValue)
+            {
+                await adminClient.DeleteAsync($"{policyPath}/{policyId.Value}");
+            }
+            provider.SetGraph(original.Graph, schema: _fixture.MetadataGraphSchema);
+        }
+    }
+
+    private static (MetadataV2Graph Baseline, MetadataV2Graph Graph, string ResourceName) CreateCollisionGraph(MetadataV2GraphSnapshot original)
+    {
+        var publication = original.Graph.Publications.First(candidate =>
+            candidate.PublicationType == MetadataV2PublicationType.EsriFeatureLayer && candidate.LayerIndex == WebAppFixture.TestLayerId);
+        var resource = original.ResolveResource(publication)!;
+        var binding = original.Graph.StorageBindings.First(candidate =>
+            candidate.ResourceId == resource.Metadata.Id && candidate.StorageLayerId == WebAppFixture.TestLayerId);
+        var odataService = original.Index.ServicesById[publication.ServiceId] with
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "collision-odata-service", Name = "collision-odata" },
+            Protocols = [ServiceProtocols.OData]
+        };
+        var odataPublication = publication with
+        {
+            Metadata = publication.Metadata with { Id = "collision-odata-publication", Name = "collision-odata-publication" },
+            ServiceId = odataService.Metadata.Id,
+            StorageBindingId = binding.Metadata.Id,
+            PublicationType = MetadataV2PublicationType.ODataEntitySet
+        };
+        var baseline = original.Graph with
+        {
+            Revision = original.Graph.Revision + 1,
+            Services = [.. original.Graph.Services, odataService],
+            Publications = [odataPublication, .. original.Graph.Publications]
+        };
+        var adminBinding = binding with
+        {
+            Metadata = binding.Metadata with { Id = "collision-admin-binding", Name = "collision-admin-binding" },
+            ResourceId = "collision-admin-resource"
+        };
+        var adminResource = resource with
+        {
+            Metadata = resource.Metadata with { Id = "collision-admin-resource", Name = "admin-only-collision" },
+            StorageBindingIds = [adminBinding.Metadata.Id],
+            AccessPolicy = new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["admin"] }
+        };
+        var adminPublication = publication with
+        {
+            Metadata = publication.Metadata with { Id = "collision-admin-publication", Name = "collision-admin-publication" },
+            ResourceId = adminResource.Metadata.Id,
+            StorageBindingId = adminBinding.Metadata.Id,
+            LayerIndex = 77
+        };
+        var adminODataPublication = adminPublication with
+        {
+            Metadata = adminPublication.Metadata with { Id = "collision-admin-odata-publication", Name = "collision-admin-odata-publication" },
+            ServiceId = odataService.Metadata.Id,
+            PublicationType = MetadataV2PublicationType.ODataEntitySet
+        };
+        var graph = baseline with
+        {
+            Revision = baseline.Revision + 1,
+            Resources = [adminResource, .. baseline.Resources],
+            StorageBindings = [adminBinding, .. baseline.StorageBindings],
+            Publications = [adminPublication, adminODataPublication, .. baseline.Publications]
+        };
+        return (baseline, graph, resource.Metadata.Name);
+    }
+
+    private static async Task<Guid> CreateCollisionMaskPolicyAsync(HttpClient adminClient, string resourceName)
+    {
+        using var content = JsonContent.Create(new CreateFieldMaskPolicyRequest
+        {
+            Role = "*",
+            Service = "*",
+            Layer = resourceName,
+            Attribute = "description"
+        }, FieldMaskPolicyJsonContext.Default.CreateFieldMaskPolicyRequest);
+        var response = await adminClient.PostAsync("/api/v1/admin/field-mask-policies", content);
+        var payload = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.Created, payload);
+        using var body = JsonDocument.Parse(payload);
+        return body.RootElement.GetProperty("data").GetProperty("policyId").GetGuid();
+    }
+
+    private static async Task AssertCollisionPolicyResponseAsync(HttpClient client, bool fieldMask)
+    {
+        var response = await client.GetAsync($"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?where=1%3D1&outFields=*&returnGeometry=false&f=json");
+        var payload = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, payload);
+        using var document = JsonDocument.Parse(payload);
+        var attributes = document.RootElement.GetProperty("features").EnumerateArray()
+            .Select(feature => feature.GetProperty("attributes")).ToArray();
+        AssertCollisionPolicyAttributes(attributes, fieldMask);
+    }
+
+    private static async Task AssertODataCollisionPolicyResponseAsync(HttpClient client, bool fieldMask)
+    {
+        var response = await client.GetAsync($"/odata/Features({WebAppFixture.TestLayerId})?$top=10");
+        var payload = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, payload);
+        using var document = JsonDocument.Parse(payload);
+        var attributes = document.RootElement.GetProperty("value").EnumerateArray()
+            .Select(ODataTestHelpers.ParseAttributes).ToArray();
+        AssertCollisionPolicyAttributes(attributes, fieldMask);
+    }
+
+    private static void AssertCollisionPolicyAttributes(JsonElement[] attributes, bool fieldMask)
+    {
+        if (fieldMask)
+        {
+            attributes.Should().HaveCount(TestFeatureCount);
+            attributes.Should().OnlyContain(value => !value.EnumerateObject().Any(property => property.Name == "description"));
+        }
+        else
+        {
+            attributes.Should().HaveCount(CategoryTestCount);
+            attributes.Should().OnlyContain(value => value.GetProperty("category").GetString() == "test");
+        }
+    }
 
     [IntegrationTest]
     [Operation(Operations.Query)]
@@ -240,13 +401,13 @@ public sealed class RowLevelSecurityEndpointsTests : IAsyncLifetime
         rows.Should().HaveCount(TestFeatureCount);
     }
 
-    private async Task<Guid> CreatePolicyAsync(HttpClient adminClient)
+    private async Task<Guid> CreatePolicyAsync(HttpClient adminClient, string layer = "*")
     {
         var request = new CreateRlsPolicyRequest
         {
             Role = "*",
             Service = "*",
-            Layer = "*",
+            Layer = layer,
             Attribute = "category",
             ClaimType = "category",
             Comparison = "in",

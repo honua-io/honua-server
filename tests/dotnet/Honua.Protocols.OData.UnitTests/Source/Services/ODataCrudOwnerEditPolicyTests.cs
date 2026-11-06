@@ -28,7 +28,7 @@ namespace Honua.Protocols.OData.UnitTests.Services;
 /// <summary>
 /// OData create, update, and delete go through the same owner-edit gate as FeatureServer.
 /// </summary>
-public sealed class ODataCrudOwnerEditPolicyTests
+public sealed partial class ODataCrudOwnerEditPolicyTests
 {
     private const int RouteLayerId = 1;
     private const int StorageLayerId = 7;
@@ -187,7 +187,7 @@ public sealed class ODataCrudOwnerEditPolicyTests
         return context;
     }
 
-    private static ODataCrudService CreateService(OwnerReader reader, CapturingWriter writer, HttpContext? httpContext)
+    private static ODataCrudService CreateService(IFeatureReader reader, IFeatureWriter writer, HttpContext? httpContext)
     {
         var dependencies = new ODataCrudDependencies(
             Substitute.For<IResourceValidator>(),
