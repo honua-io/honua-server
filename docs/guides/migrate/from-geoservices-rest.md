@@ -128,6 +128,9 @@ when it finishes, so the evidence is still there when you come back to it.
   staging table and swaps it in only after the last page, so the existing table stays readable
   during the transfer. If records fail to load, or the job is cancelled or its worker stops, the
   existing table is left unchanged and the staging table is discarded.
+- **Dependent database objects are retained.** Replacement is refused when views, materialized views,
+  foreign keys, or other external objects depend on the existing target. Remove or migrate those
+  dependencies explicitly before retrying; the import does not delete them.
 - **One writer per table.** A second job aimed at a table that another import is writing fails
   immediately and changes nothing. Retry it after the first job finishes.
 - **No silent overwrite.** A job without `overwriteExisting` fails when the table already exists.

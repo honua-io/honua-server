@@ -198,7 +198,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         await using (var swap = connection.CreateCommand())
         {
             swap.CommandText =
-                (targetExists ? $"DROP TABLE {schema}.{target} CASCADE; " : string.Empty)
+                (targetExists ? $"DROP TABLE {schema}.{target} RESTRICT; " : string.Empty)
                 + $"ALTER TABLE {schema}.{QuoteIdentifier(stagingTable)} RENAME TO {target};";
             await swap.ExecuteNonQueryAsync(cancellationToken);
         }
