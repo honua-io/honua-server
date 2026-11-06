@@ -29,6 +29,8 @@ public sealed partial class RowLevelSecurityEndpointsTests
     [InlineData("put-omitted", true)]
     [Operation(Operations.Update)]
     [Endpoint("PATCH /odata/Features(LayerId={layerId},ObjectId={objectId})")]
+    [Endpoint("PUT /odata/Features(LayerId={layerId},ObjectId={objectId})")]
+    [Endpoint("POST /odata/$batch")]
     public async Task ODataGeometryIntent_UnprojectedStoredGeometryRespectsMutationIntent(string mode, bool batch)
     {
         await PrepareGeometryIntentAsync();
@@ -43,7 +45,9 @@ public sealed partial class RowLevelSecurityEndpointsTests
 
         await SendGeometryIntentAsync(client, new GeometryMutation(method, body, batch));
 
-        (await ReadGeometryIntentAsync()).Should().Be(mode == "patch-omitted" ? "POINT(1 1)" : null);
+        var stored = await ReadGeometryIntentAsync();
+        stored.Geometry.Should().Be(mode == "patch-omitted" ? "POINT(1 1)" : null);
+        stored.Name.Should().Be("after");
     }
 
     [IntegrationTheory]
@@ -65,9 +69,11 @@ public sealed partial class RowLevelSecurityEndpointsTests
         {
             requests = new[] { GeometryBatchItem("first", "PATCH", first), GeometryBatchItem("second", "PATCH", second) }
         });
-        await AssertGeometryBatchSuccessAsync(response);
+        await AssertGeometryBatchSuccessAsync(response, 2);
 
-        (await ReadGeometryIntentAsync()).Should().Be(clear ? null : "POINT(9 9)");
+        var stored = await ReadGeometryIntentAsync();
+        stored.Geometry.Should().Be(clear ? null : "POINT(9 9)");
+        stored.Name.Should().Be("second");
     }
 
     private sealed record GeometryMutation(string Method, Dictionary<string, object?> Body, bool Batch);
@@ -80,7 +86,7 @@ public sealed partial class RowLevelSecurityEndpointsTests
             {
                 requests = new[] { GeometryBatchItem("edit", mutation.Method, mutation.Body) }
             });
-            await AssertGeometryBatchSuccessAsync(response);
+            await AssertGeometryBatchSuccessAsync(response, 1);
             return;
         }
         using var request = new HttpRequestMessage(new HttpMethod(mutation.Method), GeometryIntentPath)
@@ -95,12 +101,14 @@ public sealed partial class RowLevelSecurityEndpointsTests
         => new { id, method, url = GeometryIntentPath, atomicityGroup = "geometry", body,
             headers = new Dictionary<string, string> { ["Content-Type"] = "application/json" } };
 
-    private static async Task AssertGeometryBatchSuccessAsync(HttpResponseMessage response)
+    private static async Task AssertGeometryBatchSuccessAsync(HttpResponseMessage response, int expectedCount)
     {
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);
         using var document = JsonDocument.Parse(body);
-        document.RootElement.GetProperty("responses").EnumerateArray().Select(item => item.GetProperty("status").GetInt32())
+        var responses = document.RootElement.GetProperty("responses").EnumerateArray().ToArray();
+        responses.Should().HaveCount(expectedCount);
+        responses.Select(item => item.GetProperty("status").GetInt32())
             .Should().OnlyContain(status => status >= 200 && status < 300, body);
     }
 
@@ -149,11 +157,16 @@ public sealed partial class RowLevelSecurityEndpointsTests
             """);
     }
 
-    private async Task<string?> ReadGeometryIntentAsync()
+    private sealed record StoredGeometryIntent(string? Geometry, string? Name);
+
+    private async Task<StoredGeometryIntent> ReadGeometryIntentAsync()
     {
         await using var connection = new NpgsqlConnection(_fixture.Postgres.ConnectionString);
         await connection.OpenAsync();
-        await using var command = new NpgsqlCommand($"SELECT ST_AsText(geometry) FROM \"{_fixture.CurrentSchema}\".features WHERE layer_id = 0 AND objectid = {GeometryIntentObjectId}", connection);
-        return await command.ExecuteScalarAsync() as string;
+        await using var command = new NpgsqlCommand($"SELECT ST_AsText(geometry), attributes->>'name' FROM \"{_fixture.CurrentSchema}\".features WHERE layer_id = 0 AND objectid = {GeometryIntentObjectId}", connection);
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+        return new StoredGeometryIntent(reader.IsDBNull(0) ? null : reader.GetString(0),
+            reader.IsDBNull(1) ? null : reader.GetString(1));
     }
 }
