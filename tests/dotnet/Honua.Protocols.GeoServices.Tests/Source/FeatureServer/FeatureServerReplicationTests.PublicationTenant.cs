@@ -33,19 +33,21 @@ public sealed partial class FeatureServerReplicationTests
         await fixture.InitializeAsync();
         fixture.UpdateV2ServiceMetadata(WebAppFixture.TestServiceId, capabilities: ["Query", "Sync"]);
         var snapshot = fixture.GetCurrentV2GraphSnapshot();
-        var service = snapshot.FindService(WebAppFixture.TestServiceId)!;
+        var serviceIds = snapshot.Graph.Services.Where(service => service.Metadata.Name == WebAppFixture.TestServiceId)
+            .Select(service => service.Metadata.Id).ToHashSet(StringComparer.Ordinal);
+        serviceIds.Should().NotBeEmpty();
         var provider = (TestMetadataV2GraphProvider)fixture.GetService<IMetadataV2GraphProvider>();
         provider.SetGraph(snapshot.Graph with
         {
             Revision = snapshot.Graph.Revision + 1,
             Publications = snapshot.Graph.Publications.Select(publication =>
-                publication.ServiceId == service.Metadata.Id && publication.LayerIndex == WebAppFixture.TestLayerId
+                serviceIds.Contains(publication.ServiceId) && publication.LayerIndex == WebAppFixture.TestLayerId
                     ? publication with { Metadata = publication.Metadata with { Tenant = publicationTenant } }
                     : publication).ToArray()
         }, schema: fixture.CurrentSchema);
         fixture.GetService<IMetadataV2GraphProvider>().Should().BeSameAs(provider);
         fixture.GetCurrentV2GraphSnapshot().Graph.Publications
-            .Where(publication => publication.ServiceId == service.Metadata.Id && publication.LayerIndex == WebAppFixture.TestLayerId)
+            .Where(publication => serviceIds.Contains(publication.ServiceId) && publication.LayerIndex == WebAppFixture.TestLayerId)
             .Should().NotBeEmpty().And.OnlyContain(publication => publication.Metadata.Tenant == publicationTenant);
         tenant.ClearReceivedCalls();
         using var payload = new FormUrlEncodedContent(new Dictionary<string, string>
