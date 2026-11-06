@@ -996,7 +996,7 @@ public sealed class OgcServiceAccessPolicyTests
     }
 }
 
-public sealed class ODataServiceRbacTests
+public sealed partial class ODataServiceRbacTests
 {
     [IntegrationTest]
     [Protocol(TestProtocols.ODataV4)]
