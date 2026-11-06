@@ -153,6 +153,28 @@ public sealed class GeoServicesServiceRoutesTests
         (await client.GetStringAsync("/rest/services")).Should().Be("read-2");
     }
 
+    [Fact]
+    public async Task ImageServer_NumericFolderPublicName_DoesNotChangeFlatRasterRoute()
+    {
+        await using var app = CreateApp();
+        var provider = app.Services.GetRequiredService<IMetadataV2GraphProvider>();
+        var snapshot = await provider.GetCurrentAsync();
+        var graph = snapshot.Graph with
+        {
+            Services = snapshot.Graph.Services.Select(service => service with { PublicName = "123" }).ToArray()
+        };
+        provider.GetCurrentAsync(Arg.Any<CancellationToken>())
+            .Returns(new MetadataV2GraphSnapshot(graph, "numeric-leaf", DateTimeOffset.UnixEpoch));
+        app.MapGet("/rest/services/{id:int}/ImageServer", (int id) => Results.Text($"raster:{id}"));
+        app.MapGet("/rest/services/{serviceId:regex(^(?!\\d+$).+$)}/ImageServer",
+            (string serviceId) => Results.Text($"service:{serviceId}"));
+        app.MapGeoServicesServicePaths();
+        await app.StartAsync();
+        using var client = app.GetTestClient();
+        (await client.GetStringAsync("/rest/services/123/ImageServer")).Should().Be("raster:123");
+        (await client.GetStringAsync("/rest/services/Public/123/ImageServer")).Should().Be("service:internal-parcels");
+    }
+
     private static WebApplication CreateApp(string? serviceTenant = null, string? requestTenant = null)
     {
         var builder = WebApplication.CreateBuilder();

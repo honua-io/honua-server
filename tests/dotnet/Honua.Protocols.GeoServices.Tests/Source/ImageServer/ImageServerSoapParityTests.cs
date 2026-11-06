@@ -55,12 +55,14 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
         await _fixture.DisposeAsync();
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData("Raster")]
+    [InlineData("123")]
     [Operation(Operations.Metadata)]
     [InterfaceOperation(TestProtocols.ImageServer, "GetServiceInfo")]
     [Endpoint("GET /rest/services/{folderName}/{serviceId}/ImageServer")]
     [Endpoint("POST /services/{folderName}/{serviceId}/ImageServer")]
-    public async Task ServiceInfo_FolderPublicName_ResolvesRestAndSoapToTheSameRaster()
+    public async Task ServiceInfo_FolderPublicName_ResolvesRestAndSoapToTheSameRaster(string publicName)
     {
         var original = _fixture.GetCurrentV2GraphSnapshot().Graph;
         var provider = (TestMetadataV2GraphProvider)_fixture.GetService<IMetadataV2GraphProvider>();
@@ -68,18 +70,18 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
         {
             Folders = [new() { Metadata = new() { Id = "image-folder", Name = "Public" } }],
             Services = original.Services.Select(service => service.Metadata.Name == WebAppFixture.TestServiceId
-                ? service with { FolderId = "image-folder", PublicName = "Raster" } : service).ToArray()
+                ? service with { FolderId = "image-folder", PublicName = publicName } : service).ToArray()
         }, schema: _fixture.CurrentSchema);
         try
         {
-            using var rest = await _fixture.Client.GetAsync("/rest/services/Public/Raster/ImageServer?f=json");
+            using var rest = await _fixture.Client.GetAsync($"/rest/services/Public/{publicName}/ImageServer?f=json");
             var body = await rest.Content.ReadAsStringAsync();
             rest.StatusCode.Should().Be(HttpStatusCode.OK, body);
             using var metadata = JsonDocument.Parse(body);
             metadata.RootElement.GetProperty("bandCount").GetInt32().Should().BeGreaterThan(0);
-            var soap = await PostSoapAsync(_fixture, $"""<GetServiceInfo xmlns="{GeoServicesNamespace}" />""", "Public/Raster");
+            var soap = await PostSoapAsync(_fixture, $"""<GetServiceInfo xmlns="{GeoServicesNamespace}" />""", $"Public/{publicName}");
             soap.Status.Should().Be(HttpStatusCode.OK, soap.Body);
-            Child(Element(soap.Document, "Result"), "Name").Value.Should().Be("Raster");
+            Child(Element(soap.Document, "Result"), "Name").Value.Should().Be(publicName);
         }
         finally
         {

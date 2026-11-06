@@ -771,7 +771,6 @@ internal static class GeoservicesCatalogEndpoints
                 directoryTypes = [GPServerProtocolName];
             }
 
-            var escapedName = GeoServicesServiceUrls.EscapeName(MetadataV2ServicePaths.QualifiedName(snapshot.Graph, service));
             foreach (var directoryType in directoryTypes)
             {
                 if (string.Equals(directoryType, ImageServerProtocolName, StringComparison.Ordinal))
@@ -780,14 +779,8 @@ internal static class GeoservicesCatalogEndpoints
                     continue;
                 }
 
-                entries.Add(new ServiceDirectoryEntry
+                entries.Add(GeoServicesCatalogDirectory.CreateEntry(snapshot.Graph, service, directoryType, baseUrl) with
                 {
-                    Name = MetadataV2ServicePaths.QualifiedName(snapshot.Graph, service),
-                    LogicalName = service.Metadata.Name,
-                    FolderName = MetadataV2ServicePaths.FolderName(snapshot.Graph, service),
-                    DisplayName = service.Metadata.Title ?? service.EffectivePublicName,
-                    Type = directoryType,
-                    Url = $"{baseUrl}/rest/services/{escapedName}/{directoryType}",
                     SoapCapabilities = string.Equals(directoryType, FeatureServerProtocolName, StringComparison.Ordinal)
                         ? FeatureServer.FeatureServerEndpoints.BuildServiceCapabilitiesV2(service, offlineSyncEnabled)
                         : null
@@ -819,16 +812,8 @@ internal static class GeoservicesCatalogEndpoints
                         }
                         if (probe.LayerId is not null)
                         {
-                            var escapedName = GeoServicesServiceUrls.EscapeName(MetadataV2ServicePaths.QualifiedName(snapshot.Graph, service));
-                            imageServerEntries[index] = new ServiceDirectoryEntry
-                            {
-                                Name = MetadataV2ServicePaths.QualifiedName(snapshot.Graph, service),
-                                LogicalName = service.Metadata.Name,
-                                FolderName = MetadataV2ServicePaths.FolderName(snapshot.Graph, service),
-                                DisplayName = service.Metadata.Title ?? service.EffectivePublicName,
-                                Type = ImageServerProtocolName,
-                                Url = $"{baseUrl}/rest/services/{escapedName}/{ImageServerProtocolName}"
-                            };
+                            imageServerEntries[index] = GeoServicesCatalogDirectory.CreateEntry(
+                                snapshot.Graph, service, ImageServerProtocolName, baseUrl);
                         }
                     }
                     catch (Exception exception) when (exception is not OutOfMemoryException and not OperationCanceledException)

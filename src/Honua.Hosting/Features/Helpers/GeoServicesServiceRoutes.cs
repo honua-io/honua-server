@@ -8,6 +8,7 @@ namespace Honua.Infrastructure.Helpers;
 
 internal static class GeoServicesServiceRoutes
 {
+    private const string NonNumericServiceConstraint = @"regex(^(?!\d+$).+$)";
     internal sealed record ServiceRoute(string Root, string ServiceType, string ServiceParameter);
     internal sealed record CatalogRoute;
 
@@ -77,6 +78,10 @@ internal static class GeoServicesServiceRoutes
             var template = route.RoutePattern.RawText!;
             var serviceParameterOffset = template.IndexOf("{serviceId", StringComparison.Ordinal);
             var qualified = template.Insert(serviceParameterOffset, "{folderName}/");
+            if (serviceRoute.ServiceType == "ImageServer")
+            {
+                qualified = qualified.Replace($"{{serviceId:{NonNumericServiceConstraint}}}", "{serviceId}", StringComparison.Ordinal);
+            }
             yield return Copy(route, RoutePatternFactory.Parse(qualified), serviceRoute);
         }
 
