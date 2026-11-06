@@ -30,9 +30,9 @@ internal static class OidcTokenValidationParametersFactory
             RoleClaimType = options.ClaimsMapping.RoleClaimType,
         };
 
-        var issuers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var audiences = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var audiencesByIssuer = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        var issuers = new HashSet<string>(StringComparer.Ordinal);
+        var audiences = new HashSet<string>(StringComparer.Ordinal);
+        var audiencesByIssuer = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
         var authorities = new List<string>();
 
         foreach (var provider in OidcProviderCatalog.GetProviders(options, runtimeProviders))
@@ -77,7 +77,7 @@ internal static class OidcTokenValidationParametersFactory
                 var fallback = validationParameters.ValidAudiences;
                 return tokenAudiences is not null && fallback is not null &&
                     tokenAudiences.Any(audience =>
-                        fallback.Any(valid => string.Equals(valid, audience, StringComparison.OrdinalIgnoreCase)));
+                        fallback.Any(valid => string.Equals(valid, audience, StringComparison.Ordinal)));
             };
         }
 
@@ -100,9 +100,9 @@ internal static class OidcTokenValidationParametersFactory
         ArgumentNullException.ThrowIfNull(provider);
         ArgumentNullException.ThrowIfNull(options);
 
-        var issuers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var audiences = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var pairing = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        var issuers = new HashSet<string>(StringComparer.Ordinal);
+        var audiences = new HashSet<string>(StringComparer.Ordinal);
+        var pairing = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
         AddProviderBinding(provider, options, issuers, audiences, pairing, authorities: []);
 
         var narrowed = parameters.Clone();
@@ -156,7 +156,7 @@ internal static class OidcTokenValidationParametersFactory
             issuers.Add(issuer);
             if (!audiencesByIssuer.TryGetValue(issuer, out var set))
             {
-                set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                set = new HashSet<string>(StringComparer.Ordinal);
                 audiencesByIssuer[issuer] = set;
             }
 

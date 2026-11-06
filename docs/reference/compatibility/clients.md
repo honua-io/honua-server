@@ -70,6 +70,15 @@ Retry after metadata availability is restored. A successfully resolved resource
 without publications continues to use wildcard policies. Request cancellation
 remains cancellation.
 
+## OIDC audience identity
+
+OIDC audience values must match the configured client ID or additional audience
+exactly, including letter case. Tokens for a case-distinct audience are rejected
+by bearer authentication, Portal token exchange, and provider-specific validation.
+Issuer-to-audience bindings also retain exact issuer identity. Deployments that
+previously relied on case-insensitive audience matching must align their issuer's
+token audience with the configured value before upgrading.
+
 ## Realtime credentials and reconnects
 
 Protected FeatureServer and SensorThings SSE/WebSocket subscriptions revalidate
