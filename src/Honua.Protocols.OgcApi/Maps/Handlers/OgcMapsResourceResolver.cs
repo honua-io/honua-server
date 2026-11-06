@@ -1,13 +1,15 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using Honua.Infrastructure.Authentication;
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Helpers;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Protocols.Ogc.Api.Maps.Handlers;
@@ -33,6 +35,39 @@ internal static class OgcMapsResourceResolver
     // an authorization-dependent dataset extent or landing response.
     private static readonly ConditionalWeakTable<MetadataV2GraphSnapshot, ConcurrentDictionary<(string ResourceId, int TargetSrid), CachedTransform>>
         TransformCache = new();
+
+    internal sealed record AuthorizedCollection(MetadataV2Resource Resource, MetadataV2Service Service);
+
+    internal static async Task<(AuthorizedCollection? Collection, IResult? Error)> ResolveAuthorizedCollectionAsync(
+        MetadataV2GraphSnapshot snapshot,
+        (int LayerId, HttpContext? Context, ILogger Logger) request,
+        CancellationToken cancellationToken)
+    {
+        var (layerId, context, logger) = request;
+        var tenantId = context is null ? null : TenantScopeHelpers.ResolveRequestTenantId(context);
+        var (resource, service) = ResolveMapsResource(snapshot, (layerId, logger), tenantId);
+        if (resource is null)
+        {
+            OgcMapsLog.CollectionNotFound(logger, layerId);
+        }
+        if (resource is null || !IsProtocolEnabled(service, OgcApiMapsProtocol))
+        {
+            var error = context is null
+                ? Results.NotFound()
+                : StandardErrorHelpers.CreateNotFound(context, $"Collection {layerId} not found");
+            return (null, error);
+        }
+        if (context is not null)
+        {
+            var error = await AccessPolicyHelpers.RequireResourceAccessAsync(
+                context, resource, AuthorizationOperation.Query, service, cancellationToken).ConfigureAwait(false);
+            if (error is not null)
+            {
+                return (null, error);
+            }
+        }
+        return (new(resource, service!), null);
+    }
 
     /// <summary>
     /// Enumerates the dataset's collision-aware storage-layer entries once, so dataset

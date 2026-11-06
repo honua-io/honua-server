@@ -92,31 +92,13 @@ internal sealed class OgcMapsRenderingHandler
         try
         {
             var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            var (resource, service) = ResolveResourceAndService(snapshot, layerId, context);
-            if (resource is null)
+            var (collection, accessError) = await OgcMapsResourceResolver.ResolveAuthorizedCollectionAsync(
+                snapshot, (layerId, context, _logger), cancellationToken).ConfigureAwait(false);
+            if (accessError is not null)
             {
-                OgcMapsLog.CollectionNotFound(_logger, layerId);
-                return CreateNotFoundResult(context, $"Collection {layerId} not found");
+                return accessError;
             }
-
-            if (!IsOgcApiMapsEnabled(service))
-            {
-                return CreateNotFoundResult(context, $"Collection {layerId} not found");
-            }
-
-            if (context is not null)
-            {
-                var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
-                    context,
-                    resource,
-                    AuthorizationOperation.Query,
-                    service,
-                    cancellationToken).ConfigureAwait(false);
-                if (accessError != null)
-                {
-                    return accessError;
-                }
-            }
+            var (resource, service) = collection!;
 
             // Create map render request
             var (renderRequest, validationError) = CreateMapRenderRequest(request, resource, layerId, context);
@@ -323,31 +305,13 @@ internal sealed class OgcMapsRenderingHandler
             {
                 foreach (var layerId in layerIds)
                 {
-                    var (resource, service) = ResolveResourceAndService(snapshot, layerId, context);
-                    if (resource is null)
+                    var (collection, accessError) = await OgcMapsResourceResolver.ResolveAuthorizedCollectionAsync(
+                        snapshot, (layerId, context, _logger), cancellationToken).ConfigureAwait(false);
+                    if (accessError is not null)
                     {
-                        OgcMapsLog.CollectionNotFound(_logger, layerId);
-                        return CreateNotFoundResult(context, $"Collection {layerId} not found");
+                        return accessError;
                     }
-
-                    if (!IsOgcApiMapsEnabled(service))
-                    {
-                        return CreateNotFoundResult(context, $"Collection {layerId} not found");
-                    }
-
-                    if (context is not null)
-                    {
-                        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
-                            context,
-                            resource,
-                            AuthorizationOperation.Query,
-                            service,
-                            cancellationToken).ConfigureAwait(false);
-                        if (accessError != null)
-                        {
-                            return accessError;
-                        }
-                    }
+                    var (resource, service) = collection!;
 
                     entries.Add((layerId, resource, service));
                 }
@@ -460,20 +424,6 @@ internal sealed class OgcMapsRenderingHandler
     private static bool IsOgcApiMapsEnabled(MetadataV2Service? service)
         => OgcMapsResourceResolver.IsProtocolEnabled(service, OgcApiMapsProtocol);
 
-    // Collision-aware resolution is shared with OgcMapsTileSetHandler so the map,
-    // map/tiles, and dataset-map surfaces agree on the same resource for a colliding
-    // storage layer id (honua-server#2799). The resolved identity is also flowed into
-    // the renderer via MapRenderRequest.ResolvedLayers so the renderer never re-runs the
-    // first-wins storage-layer lookup.
-    private (MetadataV2Resource? Resource, MetadataV2Service? Service) ResolveResourceAndService(
-        MetadataV2GraphSnapshot snapshot,
-        int storageLayerId, HttpContext? context)
-        => OgcMapsResourceResolver.ResolveMapsResource(snapshot, (storageLayerId, _logger),
-            context is null ? null : TenantScopeHelpers.ResolveRequestTenantId(context));
-
-    private static MetadataV2Service? ResolveOgcApiMapsService(MetadataV2GraphSnapshot snapshot, MetadataV2Resource resource)
-        => OgcMapsResourceResolver.ResolveOgcApiMapsService(snapshot, resource);
-
     /// <summary>
     /// Renders a map with a specific style applied.
     /// </summary>
@@ -494,31 +444,13 @@ internal sealed class OgcMapsRenderingHandler
         try
         {
             var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            var (resource, service) = ResolveResourceAndService(snapshot, layerId, context);
-            if (resource is null)
+            var (collection, accessError) = await OgcMapsResourceResolver.ResolveAuthorizedCollectionAsync(
+                snapshot, (layerId, context, _logger), cancellationToken).ConfigureAwait(false);
+            if (accessError is not null)
             {
-                OgcMapsLog.CollectionNotFound(_logger, layerId);
-                return CreateNotFoundResult(context, $"Collection {layerId} not found");
+                return accessError;
             }
-
-            if (!IsOgcApiMapsEnabled(service))
-            {
-                return CreateNotFoundResult(context, $"Collection {layerId} not found");
-            }
-
-            if (context is not null)
-            {
-                var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
-                    context,
-                    resource,
-                    AuthorizationOperation.Query,
-                    service,
-                    cancellationToken).ConfigureAwait(false);
-                if (accessError != null)
-                {
-                    return accessError;
-                }
-            }
+            var (resource, service) = collection!;
 
             var styleMayBeAssociated =
                 string.Equals(resource.Metadata.Name, styleId, StringComparison.Ordinal) ||
