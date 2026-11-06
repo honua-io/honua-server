@@ -45,13 +45,9 @@ env:
   # Keep synchronized with review-gate.yml; the admission validator fails on
   # drift. Rollback is the inverse one-line change back to `observe`.
   REVIEW_FIRST_MODE: observe
-  # Promotion switch for the report-only affected-shard detector below. `report`
-  # publishes the verdict and concludes success; `enforce` fails the
-  # `PR Gate / Affected shards` context on a red shard. See the block comment on
-  # the `affected-shards-select` job for the measurement that gates the flip.
-  AFFECTED_SHARDS_MODE: report
-  # Hard fan-out bound for that lane. A `run_all` router answer is 71 shard
-  # jobs; this is what keeps the lane a detector instead of a second matrix.
+  # Selected shards fail the required gate on red or missing execution receipts.
+  AFFECTED_SHARDS_MODE: enforce
+  # Bound per-PR fan-out; the trailing matrix retains complete coverage.
   AFFECTED_SHARDS_CAP: '6'
 
 jobs:
@@ -986,74 +982,9 @@ jobs:
               core.setFailed(`Exact-head Review Gate is ${reviewGate?.state || 'missing'}.`);
             }
 
-  # ---------------------------------------------------------------------------
-  # AFFECTED SHARD FAMILIES (#3204 / #3213). REPORT-ONLY.
-  #
-  # THE PROBLEM. `PR Gate` above is a lean subset: build + fast unit +
-  # architecture. The 71 server-test shard families in `.github/ci-shards.json`
-  # run per trunk tip in the trailing matrix (p50 44 / p90 65 min, plus a rerun
-  # to classify), so a shard regression is found AFTER the merge that caused it.
-  # On 2026-09-07 trunk was red ~15 of the previous 24 hours, and every real
-  # regression in that window -- Console/Alerts (#4489), Tiles/Replica
-  # (#4463/#4465), Caching/Styling (#4466) -- was in a shard whose own `paths`
-  # the offending PR had touched. The routing information needed to catch them
-  # pre-merge already existed; nothing on the pull request consumed it.
-  #
-  # WHAT THIS LANE DOES. `affected-shards-select` asks the SAME ADR-0037 router
-  # the trailing matrix uses (scripts/ci/honua-server-targeted-tests.sh) which
-  # shard families claim the diff, narrows a `run_all` answer by the ADR-0043
-  # reverse-dependency closure (scripts/ci/compute-affected-projects.sh, which
-  # is what maps a changed SOURCE project to the TEST projects that consume it),
-  # ranks largest-impact first, and truncates to AFFECTED_SHARDS_CAP families.
-  # `affected-shard` then runs each one through scripts/ci/run-server-test-shard.sh
-  # -- the same runner, the same `.github/ci-shards.json` filter, and the same
-  # inner/outer budgets as ci.yml::server-tests -- so a red here is a red there.
-  #
-  # WHY THE CAP IS NOT NEGOTIABLE. A `run_all` answer is 71 shard jobs. Fanning
-  # that out per pull request is the 2026-06-18 runner-starvation spiral that
-  # #2865 removed and that ./.github/actions/lean-gate is written to avoid. This
-  # lane is a DETECTOR with a fixed budget, not a second full matrix: it buys a
-  # bounded probability of catching the regression pre-merge, and the trailing
-  # matrix stays the complete backstop. Do not raise the cap to "cover more".
-  #
-  # WHY IT IS REPORT-ONLY, AND HOW IT GETS PROMOTED. `AFFECTED_SHARDS_MODE`
-  # starts at `report`: the per-shard test failure is swallowed at the step (the
-  # ci.yml advisory-shard pattern -- a red check-run on a non-required job still
-  # forces the pull request to UNSTABLE and stalls the clean-only merge train),
-  # and the aggregate context `PR Gate / Affected shards` publishes the verdict
-  # in its step summary and as HONUA_AFFECTED_SHARD_* annotations while
-  # concluding success. That success is not a test pass. The publisher
-  # (scripts/ci/affected-shard-verdict.py) sets test_pass=false on every
-  # report-mode result, including a green shard table and a skipped selection.
-  # Trunk branch protection already requires this context (read back
-  # 2026-10-27; docs/ci/affected-shards-disposition-20261027.json). That
-  # requirement is not the promotion below and is not removed here: the
-  # lander requires the check to exist, and deleting it is a protection edit.
-  # Do not flip this mode to enforce to paper over the requirement.
-  #
-  #   PROMOTION RULE: make this context required when its FALSE-RED rate over 7
-  #   days of runs is < 2%. A false red is a run that emits
-  #   HONUA_AFFECTED_SHARD_RED for a head whose change did not in fact break
-  #   that shard -- flake, cross-shard interference, or an environment
-  #   difference from ci.yml::server-tests. Measure it by collecting the
-  #   annotations from this context across the window and reconciling each red
-  #   against the same shard's result in the trailing matrix for the merge
-  #   commit. Collect the COMPLETE window with scripts/ci/audit-affected-shards.py
-  #   (60 executed samples minimum); skipped/successful report-only shells do
-  #   not prove a shard passed, and unreconciled reds block promotion. See
-  #   docs/ci/affected-shards-promotion.md for collection and reconciliation.
-  #   The impact-routing ledger's docs-only/native-image cohorts do not measure
-  #   this lane's false-red rate. Promotion is then TWO audited changes: flip
-  #   AFFECTED_SHARDS_MODE
-  #   to `enforce` here, and add `PR Gate / Affected shards` to branch
-  #   protection. Rollback is the inverse one-line flip. Below 2% is the bar
-  #   because this lane costs a bounded fan-out on every product-code PR;
-  #   a noisier detector spends that budget re-running green shards by hand.
-  #
-  # If the measurement says the false-red rate is too high, leaving
-  # AFFECTED_SHARDS_MODE at `report` is a successful measurement, not a failed
-  # change.
-  # ---------------------------------------------------------------------------
+  # Select at most six families with the trailing matrix's router and runner.
+  # Keep per-shard failures available for receipt upload; the aggregate enforces
+  # their measured results and is a dependency of the stable required context.
   affected-shards-select:
     name: PR Gate / Affected shards (select)
     # pull_request only: the selection diffs against HEAD^1, and only the
@@ -1170,7 +1101,7 @@ jobs:
     # The shard's OWN outer budget from .github/ci-shards.json, exactly as
     # ci.yml::server-tests applies it. Substituting a flat cap here would make
     # this lane time out on shards the trailing matrix runs comfortably, which
-    # is precisely the false red the promotion rule measures.
+    # is precisely the false red measured in docs/ci/affected-shards-promotion.md.
     timeout-minutes: ${{ matrix.timeout_minutes }}
     strategy:
       fail-fast: false
@@ -1236,13 +1167,7 @@ jobs:
       - name: Create Test Results Directory
         run: mkdir -p ./tests/TestResults
 
-      # continue-on-error, always: the test failure is the SIGNAL this lane
-      # exists to publish, and it is published by the aggregate context below.
-      # Letting it fail the matrix job would put a red check-run on the pull
-      # request for a non-required lane, which forces mergeStateStatus to
-      # UNSTABLE and stalls the clean-only merge train -- the exact regression
-      # ci.yml::server-tests documents for advisory shards. Promotion changes
-      # AFFECTED_SHARDS_MODE below, never this.
+      # Preserve receipts after failures; the required aggregate owns the verdict.
       - name: Run affected shard
         id: shard
         continue-on-error: true
@@ -1270,8 +1195,7 @@ jobs:
           retention-days: 7
 
   affected-shards:
-    # The single stable context for this lane. Report-only until the promotion
-    # rule at the top of this block is satisfied; NOT in `required.needs`.
+    # Enforce measured execution receipts before the required gate can succeed.
     name: PR Gate / Affected shards
     if: always() && github.event_name == 'pull_request'
     needs: [affected-shards-select, affected-shard]
@@ -1301,6 +1225,7 @@ jobs:
           SELECT_SKIP: ${{ needs.affected-shards-select.outputs.skip }}
           SELECT_REASON: ${{ needs.affected-shards-select.outputs.reason }}
           SELECT_COUNT: ${{ needs.affected-shards-select.outputs.selected_count }}
+          SELECT_MATRIX: ${{ needs.affected-shards-select.outputs.matrix_include }}
           SHARDS_RESULT: ${{ needs.affected-shard.result }}
         run: python3 scripts/ci/affected-shard-verdict.py --timings shard-results --receipt affected-shard-verdict.json
 
@@ -1511,17 +1436,22 @@ jobs:
     # verification paths fail closed into it.
     name: PR Gate
     if: always()
-    needs: [pr-gate, pr-gate-tests, format, ci-router-validation]
+    needs: [pr-gate, pr-gate-tests, format, ci-router-validation, affected-shards]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Require build, tests, format, and CI router validation
+      - name: Require build, tests, format, CI router validation, and affected shards
         env:
           BUILD_AND_TEST_RESULT: ${{ needs.pr-gate.result }}
           TEST_RESULT: ${{ needs.pr-gate-tests.result }}
           FORMAT_RESULT: ${{ needs.format.result }}
           CI_ROUTER_RESULT: ${{ needs.ci-router-validation.result }}
+          AFFECTED_SHARDS_RESULT: ${{ needs.affected-shards.result }}
         run: |
+          if [[ "${GITHUB_EVENT_NAME}" == pull_request && "${AFFECTED_SHARDS_RESULT}" != success ]]; then
+            echo "::error::PR Gate failed: affected-shards=${AFFECTED_SHARDS_RESULT}"
+            exit 1
+          fi
           if [[ "${BUILD_AND_TEST_RESULT}" != "success" || "${TEST_RESULT}" != "success" || "${FORMAT_RESULT}" != "success" || "${CI_ROUTER_RESULT}" != "success" ]]; then
             echo "::error::PR Gate failed: build=${BUILD_AND_TEST_RESULT}, tests=${TEST_RESULT}, format=${FORMAT_RESULT}, ci-router-validation=${CI_ROUTER_RESULT}"
             exit 1
