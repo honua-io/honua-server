@@ -159,6 +159,24 @@ public sealed class DatabaseMigrationSafetyTests
         }
     }
 
+    [Theory]
+    [InlineData(143)]
+    [InlineData(144)]
+    public void ImportDependencyGuard_DeclaresCoordinatedUpgradeAndRefusesOlderReaders(int readerSchema)
+    {
+        var root = FindProjectRoot(Directory.GetCurrentDirectory());
+        const string name = "145_ProtectImportDependencies.sql";
+        const string identity = "Honua.Server.Migrations." + name;
+        var sql = File.ReadAllText(Path.Join(root, "src", "Honua.Server", "Migrations", name));
+        var declaration = MigrationReaderCompatibility.Declare(identity, sql);
+
+        MigrationSafetyClassifier.Classify(name, sql).Classification.Should().Be(MigrationSafetyClassification.Expand);
+        declaration.Classification.Should().Be(MigrationReaderCompatibilityClassification.ReaderIncompatible);
+        var verdict = MigrationReaderCompatibility.Verify(declaration, identity, readerSchema);
+        verdict.Accepted.Should().BeFalse();
+        verdict.RefusalReason.Should().Be("declared reader-incompatible, not expand");
+    }
+
     private static IEnumerable<string> RollingUpgradeViolations(
         Dictionary<string, string> scripts, Dictionary<string, string> baseline,
         Dictionary<string, string>? hashes = null)
