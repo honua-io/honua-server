@@ -112,6 +112,49 @@ public sealed class Wfs20DeclaredEditCapabilityTests
         await readOnly.Should().ThrowAsync<ArgumentException>().WithMessage("*code*not editable*");
     }
 
+    [UnitTheory]
+    [InlineData("code")]
+    [InlineData("globalid")]
+    public async Task HandleTransactionAsync_ReplaceChangingProtectedField_IsRejectedBeforeWriting(string field)
+    {
+        var (status, writer) = await ExecuteAsync(
+            ReplaceAction($"<honua:name>after</honua:name><honua:{field}>B</honua:{field}>"),
+            ["Query", "Update"]);
+
+        status.Should().Be(StatusCodes.Status400BadRequest);
+        writer.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [UnitTest]
+    public async Task HandleTransactionAsync_ReplaceOmittingNonEditableField_PreservesStoredValue()
+    {
+        var (status, writer) = await ExecuteAsync(
+            ReplaceAction("<honua:name>after</honua:name>"), ["Query", "Update"]);
+
+        status.Should().Be(StatusCodes.Status200OK);
+        var call = writer.ReceivedCalls().Should().ContainSingle().Which;
+        var batch = (FeatureEditBatch)call.GetArguments()[1]!;
+        var replacement = batch.Operations[0].Feature!.Value;
+        replacement.PreserveOmittedMaskedAttributes.Should().BeFalse();
+        replacement.PreservedAttributeNames.Should().Contain(["code", "globalid"]);
+        replacement.PreservedAttributeNames.Should().NotContain("description");
+    }
+
+    [UnitTest]
+    public async Task HandleTransactionAsync_InsertInitializingNonEditableField_KeepsCreateBehavior()
+    {
+        var (status, writer) = await ExecuteAsync(
+            "<wfs:Insert><honua:cities><honua:name>created</honua:name><honua:code>A</honua:code></honua:cities></wfs:Insert>",
+            ["Query", "Create"]);
+
+        status.Should().Be(StatusCodes.Status200OK);
+        await writer.ReceivedWithAnyArgs(1).ApplyEditsAsync(default, default!, default);
+    }
+
+    private static string ReplaceAction(string properties)
+        => "<wfs:Replace><honua:cities>" + properties +
+           "</honua:cities><fes:Filter><fes:ResourceId rid=\"cities.1\"/></fes:Filter></wfs:Replace>";
+
     private static Wfs20Handler.TransactionFeatureChanges Changes(string field, string value)
         => new(
             GeometrySpecified: false,
@@ -164,7 +207,8 @@ public sealed class Wfs20DeclaredEditCapabilityTests
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-layer-1", Name = "cities" },
             Type = MetadataV2ResourceType.FeatureDataset,
-            SchemaFields = Fields()
+            SchemaFields = Fields(),
+            Editing = new MetadataV2ResourceEditing { GlobalIdField = "globalid" }
         };
 
     private static MetadataV2Field[] Fields()
@@ -178,7 +222,9 @@ public sealed class Wfs20DeclaredEditCapabilityTests
                 SemanticRoles = ["id.primary"]
             },
             new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Nullable = true, Editable = true },
-            new MetadataV2Field { Name = "code", Type = MetadataV2FieldType.String, Nullable = true, Editable = false }
+            new MetadataV2Field { Name = "code", Type = MetadataV2FieldType.String, Nullable = true, Editable = false },
+            new MetadataV2Field { Name = "globalid", Type = MetadataV2FieldType.String, Nullable = true, Editable = true },
+            new MetadataV2Field { Name = "description", Type = MetadataV2FieldType.String, Nullable = true, Editable = true }
         ];
 
     private static TestMetadataV2GraphProvider CreateProvider(string[]? capabilities)
@@ -199,19 +245,38 @@ public sealed class Wfs20DeclaredEditCapabilityTests
             builder = builder.WithPublicationCapabilities(PublicationId, capabilities);
         }
 
-        return builder.BuildProvider();
+        var graph = builder.Build();
+        return new TestMetadataV2GraphProvider(graph with
+        {
+            Resources = graph.Resources.Select(resource => resource with
+            {
+                Editing = new MetadataV2ResourceEditing { GlobalIdField = "globalid" }
+            }).ToArray()
+        });
+    }
+
+    private static IFeatureReader CreateReader()
+    {
+        var reader = Substitute.For<IFeatureReader>();
+        var feature = Feature.Create(1, null,
+            ImmutableDictionary<string, object?>.Empty.Add("name", "before").Add("code", "A").Add("globalid", "G"));
+        reader.QueryObjectIdsAsync(default, default, default).ReturnsForAnyArgs(ImmutableArray.Create(1L));
+        reader.QueryAsync(default, default, default).ReturnsForAnyArgs(
+            QueryResult<Feature>.Create(1, [feature]));
+        return reader;
     }
 
     private static Wfs20Handler CreateHandler(IMetadataV2GraphProvider provider, IFeatureWriter writer)
     {
         var coordinateTransform = Substitute.For<ICoordinateTransformService>();
+        var reader = CreateReader();
         var queryServices = new Wfs20QueryServices(
-            Substitute.For<IFeatureReader>(),
+            reader,
             Substitute.For<IGmlFeatureStore>(),
             provider,
             Substitute.For<IFilterExpressionService>(),
             new Wfs20QueryParameterAdapter(NullLogger<Wfs20QueryParameterAdapter>.Instance),
-            Substitute.For<IQueryProcessor>(),
+            new QueryProcessor(Substitute.For<IFilterExpressionTranslator>(), reader, NullLogger<QueryProcessor>.Instance, provider),
             Options.Create(new Wfs20Options()),
             Substitute.For<IConfiguration>());
         var editServices = new Wfs20EditServices(
