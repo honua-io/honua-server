@@ -22,9 +22,9 @@ public sealed partial class ODataCrudOwnerEditPolicyTests
         var resource = Resource(null);
 
         var get = await service.GetFeatureAsync(RouteLayerId, 42, "https://example.test", reader, StorageLayerId, resource);
-        var update = await service.UpdateFeatureAsync(RouteLayerId, 42, Payload("after"), "https://example.test",
-            null, null, StorageLayerId, false, resource);
-        var delete = await service.DeleteFeatureAsync(RouteLayerId, 42, null, null, StorageLayerId, resource);
+        var update = await service.UpdateFeatureAsync(new ODataUpdateRequest(RouteLayerId, 42, Payload("after"), "https://example.test",
+            null, null, StorageLayerId, false, resource, reader));
+        var delete = await service.DeleteFeatureAsync(new ODataDeleteRequest(RouteLayerId, 42, null, null, StorageLayerId, resource, reader));
 
         new[] { get.StatusCode, update.StatusCode, delete.StatusCode }.Should().OnlyContain(status => status == StatusCodes.Status403Forbidden);
         new[] { get.ErrorMessage, update.ErrorMessage, delete.ErrorMessage }.Should()
