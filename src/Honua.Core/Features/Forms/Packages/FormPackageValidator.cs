@@ -661,6 +661,7 @@ public sealed class FormPackageValidator
             .Where(static field => !string.IsNullOrWhiteSpace(field.FieldId))
             .ToDictionary(static field => field.FieldId!, StringComparer.OrdinalIgnoreCase);
         var targetFields = resource.SchemaFields.ToDictionary(static field => field.Name, StringComparer.OrdinalIgnoreCase);
+        var targetContext = new SubmissionFieldContext(resource, request, targetFields);
 
         foreach (var submittedField in request.Values.Keys.Where(submittedField => !fields.ContainsKey(submittedField)))
         {
@@ -685,14 +686,8 @@ public sealed class FormPackageValidator
                 continue;
             }
 
-            if (request.Values.ContainsKey(field.FieldId!) &&
-                !string.IsNullOrWhiteSpace(field.TargetField) &&
-                targetFields.TryGetValue(field.TargetField, out var currentField) &&
-                (currentField.Hidden || !currentField.Editable ||
-                 (OperationEquals(request.Operation, FormSubmissionOperations.Update) &&
-                  AttributeMutationPolicy.IsReadOnlyOnUpdate(resource, currentField))))
+            if (!ValidateTargetFieldSubmission(field, targetContext, issues))
             {
-                AddError(issues, "targetFieldNotWritable", $"Target field '{currentField.Name}' is not writable.", field.FieldId);
                 continue;
             }
 
@@ -715,6 +710,28 @@ public sealed class FormPackageValidator
                 ValidateSubmittedDomain(field, value, issues);
             }
         }
+    }
+
+    private sealed record SubmissionFieldContext(
+        MetadataV2Resource Resource, FormSubmissionRequest Request, IReadOnlyDictionary<string, MetadataV2Field> Fields);
+
+    private static bool ValidateTargetFieldSubmission(
+        FormFieldDefinition field, SubmissionFieldContext context, List<FormValidationIssue> issues)
+    {
+        var (resource, request, fields) = context;
+        if (!request.Values.ContainsKey(field.FieldId!) || string.IsNullOrWhiteSpace(field.TargetField) ||
+            !fields.TryGetValue(field.TargetField, out var target))
+        {
+            return true;
+        }
+        if (!target.Hidden && target.Editable &&
+            (!OperationEquals(request.Operation, FormSubmissionOperations.Update) ||
+             !AttributeMutationPolicy.IsReadOnlyOnUpdate(resource, target)))
+        {
+            return true;
+        }
+        AddError(issues, "targetFieldNotWritable", $"Target field '{target.Name}' is not writable.", field.FieldId);
+        return false;
     }
 
     private static void ValidateSubmittedValueType(
