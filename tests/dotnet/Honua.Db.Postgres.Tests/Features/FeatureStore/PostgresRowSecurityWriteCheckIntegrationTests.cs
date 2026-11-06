@@ -34,7 +34,7 @@ namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 /// <c>PostgresFeatureStoreRefactored.ApplyEditsAsync</c> or its writer transaction.
 /// </summary>
 [Collection("Database")]
-public sealed class PostgresRowSecurityWriteCheckIntegrationTests(PostgresFixture fixture) : IAsyncLifetime
+public sealed partial class PostgresRowSecurityWriteCheckIntegrationTests(PostgresFixture fixture) : IAsyncLifetime
 {
     private const int LayerId = 61030;
     private const long NorthRowId = 1;
