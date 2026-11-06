@@ -15,6 +15,7 @@ using NSubstitute;
 namespace Honua.Server.Tests.Features.Security;
 
 [Collection("Database")]
+[Protocol(TestProtocols.TestQuality)]
 public sealed class FeatureReadSecurityIntegrationTests
 {
     [IntegrationTest]
