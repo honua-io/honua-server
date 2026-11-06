@@ -18,7 +18,7 @@ Render maps through OGC API - Maps.
 | Edition | Community |
 | Surface maturity | 12 implemented |
 | Registry entries | 12 |
-| Proving tests | 150 |
+| Proving tests | 151 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 
