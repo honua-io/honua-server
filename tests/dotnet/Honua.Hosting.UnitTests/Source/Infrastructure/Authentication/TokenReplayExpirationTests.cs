@@ -61,6 +61,20 @@ public sealed class TokenReplayExpirationTests
         Assert.Null(GetReplayCacheExpiration(token, options, Now));
     }
 
+    [UnitTheory]
+    [InlineData(0)]
+    [InlineData(24)]
+    public void Expiration_DefaultOrZeroMaximum_AdmitsTokenAtRetentionBoundary(int configuredHours)
+    {
+        var token = new JwtSecurityToken(expires: Now.AddHours(23).AddMinutes(55));
+        var options = new TokenValidationOptions
+        {
+            ClockSkew = TimeSpan.FromMinutes(5),
+            TokenReplayCacheDuration = TimeSpan.FromHours(configuredHours)
+        };
+        Assert.Equal(token.ValidTo.Add(options.ClockSkew), GetReplayCacheExpiration(token, options, Now));
+    }
+
     [UnitTest]
     public void Expiration_TokenWithoutExpiry_IsRefused()
     {

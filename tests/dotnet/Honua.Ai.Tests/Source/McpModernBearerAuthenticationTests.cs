@@ -196,7 +196,7 @@ public sealed class McpModernBearerAuthenticationTests : IAsyncLifetime
     [InlineData("issuer")]
     [InlineData("signature")]
     [Endpoint("POST /mcp")]
-    public async Task Post_InvalidOrOverLimitToken_IsRefused(string invalidity)
+    public async Task Post_InvalidToken_IsRefused(string invalidity)
     {
         var token = invalidity switch
         {
