@@ -134,6 +134,17 @@ carry `-- honua:compatibility-review` and be named, by its file name, in a
 rollback-boundary note in this guide that tells operators to restore instead of
 rolling back.
 
+### Import replacement dependency rollback boundary
+
+`145_ProtectImportDependencies.sql` changes the import swap helper to refuse
+replacement when other database objects depend on the target. Deploy it with the
+matching application so dependency failures receive the stable import error.
+An older reader that does not qualify this contract migration refuses startup.
+If this upgrade must be reversed, restore the pre-upgrade database backup and its
+matching application image instead of rolling the application back over the
+migrated database. Do not remove the migration journal entry or reintroduce
+cascading replacement to bypass that boundary.
+
 ### Configuration binding correction
 
 Recent releases correct source-generated binding for options that previously used
