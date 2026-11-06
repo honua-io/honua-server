@@ -296,18 +296,9 @@ internal sealed partial class FeatureDataAccess
             var layerSrid = await _cacheManager.GetLayerSridAsync(layerId, cancellationToken).ConfigureAwait(false);
             ValidateGeometrySrid(feature.Geometry, layerSrid);
 
-            var current = await ReadEffectiveVersionRowForUpdateAsync(new RowSecurityContext(connection, transaction,
-                new(VersionEditsTableName, layerId, (versionId, feature.Id))), cancellationToken).ConfigureAwait(false);
-            await EnsureExistingRowVisibleAsync(writeCheck, new RowSecurityContext(connection, transaction,
-                new(current.TableName, layerId, (current.VersionId, feature.Id))), cancellationToken).ConfigureAwait(false);
-            if (!current.Feature.HasValue)
-            {
-                throw new ResourceNotFoundException($"Feature {feature.Id} not found");
-            }
-            var update = PreserveOmittedAttributes(feature, current.Feature.Value);
+            var update = await PrepareVersionedUpdateAsync(feature, new(
+                new(connection, transaction, new(VersionEditsTableName, layerId, (versionId, feature.Id))), writeCheck), cancellationToken).ConfigureAwait(false);
 
-            // A no-op upsert (no DEFAULT row and no overlay row) means the feature does not exist
-            // for the version; it surfaces as not-found before any row-level security re-select.
             await RunRowSecurityCheckedWriteAsync(
                 writeCheck,
                 connection,
@@ -349,6 +340,22 @@ internal sealed partial class FeatureDataAccess
             updateResults.Add(EditOperationResult.Failure(GetSafeEditOperationError(ex, "Update"), objectId: feature.Id));
             return false;
         }
+    }
+
+    private sealed record VersionUpdatePreparation(RowSecurityContext Row, SqlFragment? WriteCheck);
+
+    private async Task<Feature> PrepareVersionedUpdateAsync(
+        Feature feature, VersionUpdatePreparation preparation, CancellationToken cancellationToken)
+    {
+        var (row, writeCheck) = preparation;
+        var current = await ReadEffectiveVersionRowForUpdateAsync(row, cancellationToken).ConfigureAwait(false);
+        await EnsureExistingRowVisibleAsync(writeCheck, new(row.Connection, row.Transaction,
+            new(current.TableName, row.Target.LayerId, (current.VersionId, feature.Id))), cancellationToken).ConfigureAwait(false);
+        if (!current.Feature.HasValue)
+        {
+            throw new ResourceNotFoundException($"Feature {feature.Id} not found");
+        }
+        return PreserveOmittedAttributes(feature, current.Feature.Value);
     }
 
     private sealed record VersionDeleteOperation(RowSecurityContext Context, SqlFragment? WriteCheck, OwnerEditGuard? OwnerGuard);

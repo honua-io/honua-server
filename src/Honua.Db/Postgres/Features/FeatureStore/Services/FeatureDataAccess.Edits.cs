@@ -701,6 +701,27 @@ internal sealed partial class FeatureDataAccess
         }
     }
 
+    private sealed record UpdatePreparation(RowSecurityContext Row, FeatureEditPrecondition? Precondition, SqlFragment? RowPolicy);
+
+    private async Task<Feature> PrepareCheckedUpdateAsync(
+        Feature update, UpdatePreparation preparation, CancellationToken cancellationToken)
+    {
+        var (row, precondition, rowPolicy) = preparation;
+        await EnsureExistingRowVisibleAsync(rowPolicy, row, cancellationToken).ConfigureAwait(false);
+        Feature? current = null;
+        if (precondition.HasValue)
+        {
+            current = await EnsurePreconditionSatisfiedAsync(row.Target.LayerId, update.Id, precondition.Value,
+                row.Connection, row.Transaction!, cancellationToken).ConfigureAwait(false);
+        }
+        else if (update.PreserveOmittedMaskedAttributes || !update.PreservedAttributeNames.IsDefaultOrEmpty || update.PreserveOmittedGeometry)
+        {
+            current = await ReadFeatureForUpdateAsync(row.Target.LayerId, update.Id,
+                row.Connection, row.Transaction!, cancellationToken).ConfigureAwait(false);
+        }
+        return current.HasValue ? PreserveOmittedAttributes(update, current.Value) : update;
+    }
+
     internal static Feature PreserveOmittedAttributes(Feature update, Feature current)
     {
         // A partial update that omitted geometry takes it from the row locked in this
@@ -1159,23 +1180,8 @@ internal sealed partial class FeatureDataAccess
                             transaction,
                             async (conn, tx, ct) =>
                             {
-                                var update = feature;
-                                Feature? current = null;
-                                await EnsureExistingRowVisibleAsync(writeCheck, new RowSecurityContext(conn, tx, new(_tableName, layerId, (null, feature.Id))), ct).ConfigureAwait(false);
-                                if (hasPrecondition)
-                                {
-                                    // requireTransaction guarantees tx is non-null here.
-                                    current = await EnsurePreconditionSatisfiedAsync(layerId, feature.Id, precondition, conn, tx!, ct).ConfigureAwait(false);
-                                }
-                                else if (feature.PreserveOmittedMaskedAttributes || !feature.PreservedAttributeNames.IsDefaultOrEmpty || feature.PreserveOmittedGeometry)
-                                {
-                                    current = await ReadFeatureForUpdateAsync(layerId, feature.Id, conn, tx!, ct).ConfigureAwait(false);
-                                }
-
-                                if (current.HasValue)
-                                {
-                                    update = PreserveOmittedAttributes(feature, current.Value);
-                                }
+                                var update = await PrepareCheckedUpdateAsync(feature,
+                                    new(new(conn, tx, new(_tableName, layerId, (null, feature.Id))), hasPrecondition ? precondition : null, writeCheck), ct).ConfigureAwait(false);
 
                                 var u = await UpdateCheckedAsync(
                                     layerId, update, writeCheck, conn, tx, OwnerEditGuard.Find(ownerGuards, feature.Id), ct).ConfigureAwait(false);
@@ -2202,23 +2208,8 @@ internal sealed partial class FeatureDataAccess
                     transaction,
                     async (conn, tx, ct) =>
                     {
-                        var update = feature;
-                        Feature? current = null;
-                        await EnsureExistingRowVisibleAsync(writeCheck, new RowSecurityContext(conn, tx, new(_tableName, layerId, (null, feature.Id))), ct).ConfigureAwait(false);
-                        if (hasPrecondition)
-                        {
-                            // requireTransaction guarantees tx is non-null here.
-                            current = await EnsurePreconditionSatisfiedAsync(layerId, feature.Id, precondition, conn, tx!, ct).ConfigureAwait(false);
-                        }
-                        else if (feature.PreserveOmittedMaskedAttributes || !feature.PreservedAttributeNames.IsDefaultOrEmpty || feature.PreserveOmittedGeometry)
-                        {
-                            current = await ReadFeatureForUpdateAsync(layerId, feature.Id, conn, tx!, ct).ConfigureAwait(false);
-                        }
-
-                        if (current.HasValue)
-                        {
-                            update = PreserveOmittedAttributes(feature, current.Value);
-                        }
+                        var update = await PrepareCheckedUpdateAsync(feature,
+                            new(new(conn, tx, new(_tableName, layerId, (null, feature.Id))), hasPrecondition ? precondition : null, writeCheck), ct).ConfigureAwait(false);
 
                         var u = await UpdateCheckedAsync(
                             layerId, update, writeCheck, conn, tx, OwnerEditGuard.Find(ownerGuards, feature.Id), ct).ConfigureAwait(false);
