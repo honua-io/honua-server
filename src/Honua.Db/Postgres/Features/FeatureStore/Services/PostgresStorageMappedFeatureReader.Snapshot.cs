@@ -23,7 +23,9 @@ internal sealed partial class PostgresStorageMappedFeatureReader
 
     private async Task<Feature?> ReadManagedSnapshotAsync(FeatureQuery query, CancellationToken cancellationToken)
     {
-        var sql = BuildFeatureSelectCore(query, probeLimit: false, comparison: null,
+        // Managed partition + objectid is unique. Avoid the page's display-column
+        // pruning so the internal snapshot still includes hidden raw columns.
+        var sql = BuildFeatureSelectCore(query with { Limit = null }, probeLimit: false, comparison: null,
             projection: FeatureSelectProjection.ManagedSnapshot);
         await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = CreateReadCommand(connection, sql);
