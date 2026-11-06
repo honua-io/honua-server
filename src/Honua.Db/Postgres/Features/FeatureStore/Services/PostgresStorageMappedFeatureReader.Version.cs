@@ -64,6 +64,15 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IBranchVersio
         {
             return UnsupportedVersionMappingMessage;
         }
+        return await GetUnsupportedManagedRelationReasonAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<string?> GetUnsupportedManagedRelationReasonAsync(CancellationToken cancellationToken)
+    {
+        if (_mapping.TableName != FeatureStorageMapping.ManagedFeaturesTableName)
+        {
+            return UnsupportedVersionMappingMessage;
+        }
         var boundConnection = await ResolveBoundConnectionStringAsync(cancellationToken).ConfigureAwait(false);
         if (boundConnection is not null
             && !new NpgsqlConnectionStringBuilder(boundConnection).EquivalentTo(
@@ -77,6 +86,19 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IBranchVersio
             return UnsupportedVersionMappingMessage;
         }
         return null;
+    }
+
+    private async Task ValidateManagedPartitionAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (_mapping.LayerDiscriminatorColumn == "layer_id" && _mapping.LayerDiscriminatorValue.HasValue)
+        {
+            return;
+        }
+        if (await GetUnsupportedManagedRelationReasonAsync(cancellationToken).ConfigureAwait(false) is null)
+        {
+            throw new NotSupportedException("Managed feature reads require the canonical layer partition mapping.");
+        }
     }
 
     private async Task<bool> IsManagedFeatureTableAsync(CancellationToken cancellationToken)

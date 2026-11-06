@@ -36,6 +36,11 @@ Reads through explicit or resource-primary bindings apply the selected resource'
 row and field policies, including FeatureServer and OData publications backed by
 the managed shared feature table.
 
+Bindings to the primary managed `features` relation must declare its `layer_id`
+partition selector and a storage-layer value. Reads reject missing or incompatible
+partition mappings before querying feature rows. Custom or external same-named
+tables retain their declared source mapping.
+
 OData writes through an explicit binding require the bound reader to verify the
 managed writer's connection, physical table, column mapping and layer partition.
 Custom tables on the default connection remain readable but reject OData writes
