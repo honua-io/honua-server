@@ -62,9 +62,9 @@ public sealed partial class ODataCrudOwnerEditPolicyTests
             ]
         };
 
-        var result = await service.UpdateFeatureAsync(
+        var result = await service.UpdateFeatureAsync(new ODataUpdateRequest(
             RouteLayerId, 42, Payload("After"), "https://example.test", null, null,
-            StorageLayerId, true, resource, CancellationToken.None);
+            StorageLayerId, true, resource, reader), CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
         var update = writer.LastBatch.Updates.Should().ContainSingle().Which;
