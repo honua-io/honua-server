@@ -377,58 +377,14 @@ internal static partial class MapServerEndpoints
             return (null, StandardErrorHelpers.CreateBadRequest(context, maxTilesError ?? "Invalid maxTiles parameter."));
         }
 
-        if (!TryParseExportTilesExtent(
-                GetValue(values, "exportExtent") ?? GetValue(values, "bbox"),
-                GetValue(values, "exportExtentSR") ?? GetValue(values, "bboxSR"),
-                out var sourceExtent,
-                out var sourceSrid,
-                out var extentError))
+        var (mapExport, exportError) = await ResolveAuthorizedMapServerExportAsync(
+            context, new(serviceId, values), cancellationToken).ConfigureAwait(false);
+        if (exportError is not null)
         {
-            return (null, StandardErrorHelpers.CreateBadRequest(context, extentError ?? "Invalid exportExtent parameter."));
+            return (null, exportError);
         }
-
-        var extentTransform = await TryTransformExtentAsync(
-            context,
-            sourceExtent,
-            sourceSrid,
-            SpatialReference.WGS84.Wkid,
-            cancellationToken).ConfigureAwait(false);
-        if (!extentTransform.IsSuccess)
-        {
-            return (null, StandardErrorHelpers.CreateBadRequest(
-                context,
-                extentTransform.Error ?? "Invalid exportExtent spatial reference."));
-        }
-
-        var bounds = NormalizeExportTilesBounds(extentTransform.Extent);
-
-        // Run service validation and the access-policy gate BEFORE materializing the tile
-        // grid so an unauthenticated request against a non-existent or unauthorized service
-        // is rejected without allocating anything (#2065).
-        var (selection, publicationSelectionError) = await ResolveMapServerPublicationSelectionAsync(
-            context, serviceId, cancellationToken).ConfigureAwait(false);
-        if (publicationSelectionError is not null)
-        {
-            return (null, publicationSelectionError);
-        }
-        var (service, _, publishedLayers) = selection!;
-
-        var (access, accessError) = await AuthorizeMapServerExportAsync(
-            context, selection!, cancellationToken).ConfigureAwait(false);
-        if (accessError != null)
-        {
-            return (null, accessError);
-        }
-
-        // Compute the total tile count Σ(xMax-xMin+1)*(yMax-yMin+1) per zoom level FIRST and
-        // reject when it exceeds maxTiles, BEFORE building the full grid. The previous code
-        // materialized every coordinate then .Take(maxTiles)'d, so a whole-world request at a
-        // high zoom (e.g. z18 → ~6.9e10 entries) allocated hundreds of GB before any cap was
-        // applied — an unauthenticated OOM DoS (#2065).
-        if (!MetadataV2MapServerDrawing.UsesCachedDrawing(service))
-        {
-            return (null, StandardErrorHelpers.CreateBadRequest(context, "Dynamic MapServer drawing does not provide tile exports."));
-        }
+        var (selection, access, bounds) = mapExport!;
+        var (service, _, publishedLayers) = selection;
 
         var totalTileCount = CountExportTileCoordinates(bounds, requestedZooms);
         var exceededTransferLimit = totalTileCount > maxTiles;

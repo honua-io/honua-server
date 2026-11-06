@@ -223,55 +223,14 @@ internal static partial class MapServerEndpoints
             return (null, StandardErrorHelpers.CreateBadRequest(context, maxTilesError ?? "Invalid maxTiles parameter."));
         }
 
-        if (!TryParseExportTilesExtent(
-                GetValue(values, "exportExtent") ?? GetValue(values, "bbox"),
-                GetValue(values, "exportExtentSR") ?? GetValue(values, "bboxSR"),
-                out var sourceExtent,
-                out var sourceSrid,
-                out var extentError))
+        var (mapExport, exportError) = await ResolveAuthorizedMapServerExportAsync(
+            context, new(serviceId, values), cancellationToken).ConfigureAwait(false);
+        if (exportError is not null)
         {
-            return (null, StandardErrorHelpers.CreateBadRequest(context, extentError ?? "Invalid exportExtent parameter."));
+            return (null, exportError);
         }
-
-        var extentTransform = await TryTransformExtentAsync(
-            context,
-            sourceExtent,
-            sourceSrid,
-            SpatialReference.WGS84.Wkid,
-            cancellationToken).ConfigureAwait(false);
-        if (!extentTransform.IsSuccess)
-        {
-            return (null, StandardErrorHelpers.CreateBadRequest(
-                context,
-                extentTransform.Error ?? "Invalid exportExtent spatial reference."));
-        }
-
-        var bounds = NormalizeExportTilesBounds(extentTransform.Extent);
-
-        var (selection, publicationSelectionError) = await ResolveMapServerPublicationSelectionAsync(
-            context, serviceId, cancellationToken).ConfigureAwait(false);
-        if (publicationSelectionError is not null)
-        {
-            return (null, publicationSelectionError);
-        }
-        var (service, snapshot, publishedLayers) = selection!;
-
-        var (access, accessError) = await AuthorizeMapServerExportAsync(
-            context, selection!, cancellationToken).ConfigureAwait(false);
-        if (accessError is not null)
-        {
-            return (null, accessError);
-        }
-
-        // Pin exactly the accessible, requested layers the synchronous render path would draw: resolve
-        // through ResolveRenderLayers so the `layers` filter and per-layer IsResourceAccessible gate
-        // apply. Pinning every published layer here would let a caller who can read one layer receive
-        // inaccessible or default-hidden layers in the queued TPKX (the worker renders without an
-        // HttpContext and cannot re-check access).
-        if (!MetadataV2MapServerDrawing.UsesCachedDrawing(service))
-        {
-            return (null, StandardErrorHelpers.CreateBadRequest(context, "Dynamic MapServer drawing does not provide tile exports."));
-        }
+        var (selection, access, bounds) = mapExport!;
+        var (service, snapshot, publishedLayers) = selection;
 
         var renderSelection = ResolveRenderLayers(
             publishedLayers,
