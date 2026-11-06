@@ -300,7 +300,7 @@ public static partial class OgcMapsEndpoints
         var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()
             .CreateLogger(typeof(OgcMapsEndpoints));
 
-        var resources = OgcMapsResourceResolver.EnumerateDatasetEntries(snapshot, logger)
+        var resources = OgcMapsResourceResolver.EnumerateDatasetEntries(snapshot, logger, TenantScopeHelpers.ResolveRequestTenantId(context))
             .Where(entry => OgcMapsResourceResolver.IsProtocolEnabled(entry.Service, OgcApiMapsProtocol)
                 && AccessPolicyHelpers.RequireResourceAccess(context, entry.Resource, entry.Service) is null)
             .OrderBy(entry => entry.LayerId)

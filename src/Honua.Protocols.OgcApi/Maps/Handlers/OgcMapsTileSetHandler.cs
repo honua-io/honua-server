@@ -52,7 +52,7 @@ internal sealed class OgcMapsTileSetHandler
 
         try
         {
-            var (resource, service) = await ResolveResourceAndServiceAsync(layerId, cancellationToken).ConfigureAwait(false);
+            var (resource, service) = await ResolveResourceAndServiceAsync(layerId, cancellationToken, context).ConfigureAwait(false);
             if (resource is null)
             {
                 OgcMapsLog.CollectionNotFound(_logger, layerId);
@@ -144,7 +144,7 @@ internal sealed class OgcMapsTileSetHandler
 
         try
         {
-            var (resource, service) = await ResolveResourceAndServiceAsync(layerId, cancellationToken).ConfigureAwait(false);
+            var (resource, service) = await ResolveResourceAndServiceAsync(layerId, cancellationToken, context).ConfigureAwait(false);
             if (resource is null)
             {
                 OgcMapsLog.CollectionNotFound(_logger, layerId);
@@ -309,13 +309,14 @@ internal sealed class OgcMapsTileSetHandler
 
     private async Task<(MetadataV2Resource? Resource, MetadataV2Service? Service)> ResolveResourceAndServiceAsync(
         int storageLayerId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, HttpContext? context)
     {
         var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
         // Collision-aware resolution shared with OgcMapsRenderingHandler so the map/tiles
         // sibling endpoints resolve the same Maps-enabled resource as the map endpoint when
         // a numeric layer id is published through multiple storage bindings (#2799).
-        return OgcMapsResourceResolver.ResolveMapsResource(snapshot, storageLayerId, _logger);
+        return OgcMapsResourceResolver.ResolveMapsResource(snapshot, (storageLayerId, _logger),
+            context is null ? null : TenantScopeHelpers.ResolveRequestTenantId(context));
     }
 }

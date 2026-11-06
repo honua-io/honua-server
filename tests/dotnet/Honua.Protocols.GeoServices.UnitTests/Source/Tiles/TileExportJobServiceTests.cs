@@ -307,6 +307,27 @@ public sealed class TileExportJobServiceTests
 
     [UnitTest]
     [Operation(Operations.Export)]
+    public async Task GetResult_LegacyMapArtifact_RequiresResubmissionBeforeSigning()
+    {
+        var store = new InMemoryExecutionJobStore();
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.GetMetadataAsync("artifact-key", Arg.Any<CancellationToken>())
+            .Returns(StoredArtifact("artifact-key", DateTimeOffset.UtcNow.AddHours(1), 4096));
+        storage.GetPresignedUrlAsync("artifact-key", Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns("https://signed.example/artifact-key");
+        var service = CreateService(store, new InMemoryJobQueue(), storage: storage);
+        var plan = CreatePlan();
+        plan = plan with { Source = ((TileExportMapSourceDescriptor)plan.Source) with { DataWatermark = "metadata-42" } };
+        var job = await service.SubmitAsync(plan, null, null, Principal(Owner), default);
+        await MarkSucceededAsync(store, job.OperationId, "artifact-key");
+
+        await FluentActions.Awaiting(() => service.GetResultAsync(job.OperationId, ScopeFor(plan), Principal(Owner), default))
+            .Should().ThrowAsync<TileExportPreconditionFailedException>();
+        await storage.DidNotReceive().GetPresignedUrlAsync(Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
     public async Task GetResult_ExpiredArtifact_ReturnsNotFound()
     {
         var store = new InMemoryExecutionJobStore();
@@ -755,7 +776,7 @@ public sealed class TileExportJobServiceTests
             Source = new TileExportMapSourceDescriptor(
                 42,
                 [new("0", "default", 1)],
-                "provider-revision-9",
+                "metadata-v2-publication-tenant-42",
                 null),
             ZoomLevels = [0, 2],
             West = -180,

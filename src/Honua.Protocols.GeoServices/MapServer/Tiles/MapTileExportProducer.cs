@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Tiles;
@@ -93,7 +94,8 @@ internal sealed class MapTileExportSourceFence(IServiceScopeFactory scopeFactory
     public async ValueTask<bool> IsAvailableAsync(TileExportJobPlan plan, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(plan);
-        if (plan.Source is not TileExportMapSourceDescriptor descriptor)
+        if (plan.Source is not TileExportMapSourceDescriptor descriptor ||
+            !TileExportMapPublicationPolicy.IsCurrent(descriptor))
         {
             return false;
         }
@@ -183,7 +185,8 @@ internal static class MapTileExportLayerResolver
     private static Dictionary<int, MetadataV2Publication> ResolvePublicationsByLayerId(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service)
-        => MapServerPublicationResolver.ResolveLayerPublications(snapshot, service)
+        => MapServerPublicationResolver.ResolveLayerPublications(
+                snapshot, service, JobSecurityScope.Current?.Submitter?.TenantId)
             .ToDictionary(static publication => publication.LayerIndex!.Value);
 
     private static bool HasMapServerGeometry(MetadataV2Resource resource)

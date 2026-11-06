@@ -140,8 +140,9 @@ internal sealed class ODataQuerySearchService
         string applyExpression,
         string? filter,
         string baseUrl,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        HttpContext? context = null)
     {
-        return await _searchService.HandleApplyAsync(layerId, applyExpression, filter, baseUrl, cancellationToken);
+        return await _searchService.HandleApplyAsync(layerId, applyExpression, filter, baseUrl, cancellationToken, context);
     }
 }
