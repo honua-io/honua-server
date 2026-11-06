@@ -206,6 +206,59 @@ public sealed class RoutingUtilityServiceTests : IClassFixture<NAServerEndpointT
         }
     }
 
+    [IntegrationTheory]
+    [InlineData("Network", "Routing", "")]
+    [InlineData("Network", "Routing", "/arcgis")]
+    [InlineData(null, "Directions", "")]
+    [InlineData(null, "Directions", "/arcgis")]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer")]
+    public async Task AnonymousRoutingService_NoncanonicalLogicalRootIsRejectedAndCanonicalPathWorks(
+        string? folderName, string publicName, string mount)
+    {
+        var fixture = await CreateCatalogCollisionFixtureAsync(gpServerEnabled: true);
+        try
+        {
+            var graph = fixture.GetCurrentV2GraphSnapshot().Graph;
+            var service = graph.Services.Single() with
+            {
+                PublicName = publicName,
+                FolderId = folderName is null ? null : "routing-folder",
+                AccessPolicy = new AccessPolicy { AllowAnonymous = true }
+            };
+            var provider = (TestMetadataV2GraphProvider)fixture.GetService<IMetadataV2GraphProvider>();
+            provider.SetGraph(graph with
+            {
+                Folders = folderName is null ? [] : [new() { Metadata = new() { Id = "routing-folder", Name = folderName } }],
+                Services = [service]
+            }, schema: fixture.CurrentSchema);
+
+            foreach (var logicalName in new[] { "Routing", "routing" })
+            {
+                foreach (var suffix in new[] { "", "/GetTravelModes", "/FindRoutes/execute" })
+                {
+                    await AssertErrorAsync(fixture.Client, $"{mount}/rest/services/{logicalName}/GPServer{suffix}?f=json", 404);
+                }
+            }
+
+            var canonicalPath = folderName is null ? publicName : $"{folderName}/{publicName}";
+            using var root = await fixture.Client.GetAsync($"{mount}/rest/services/{canonicalPath}/GPServer?f=json");
+            root.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var rootDocument = JsonDocument.Parse(await root.Content.ReadAsStringAsync());
+            rootDocument.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+            rootDocument.RootElement.GetProperty("serviceDescription").GetString().Should()
+                .Be($"Geoprocessing service for {publicName}");
+            using var task = await fixture.Client.GetAsync($"{mount}/rest/services/{canonicalPath}/GPServer/GetTravelModes?f=json");
+            task.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var taskDocument = JsonDocument.Parse(await task.Content.ReadAsStringAsync());
+            taskDocument.RootElement.GetProperty("name").GetString().Should().Be("GetTravelModes");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     private static async Task<WebAppFixture> CreateCatalogCollisionFixtureAsync(bool gpServerEnabled, bool stableIdCollision = false)
     {
         var graph = new MetadataV2Graph
