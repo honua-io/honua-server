@@ -77,7 +77,7 @@ def inside_repo(candidate, repo_root):
     return candidate == root or root in candidate.parents
 
 
-def check_skill_tree(skill_root, repo_root, fetch, home_url=HOME_URL):
+def check_skill_tree(skill_root, repo_root, fetch):
     """Errors for missing relative files and for pages that are absent or the home page."""
     errors = []
     pages = {}
@@ -88,7 +88,7 @@ def check_skill_tree(skill_root, repo_root, fetch, home_url=HOME_URL):
             location = f"{path.relative_to(root)} -> {target}"
             if target.startswith(("http://", "https://")):
                 if home_title is None:
-                    status, home_title = fetch(home_url)
+                    status, home_title = fetch(HOME_URL)
                     if status != 200 or not home_title:
                         errors.append(f"GitBook home page title was not readable ({status})")
                         home_title = home_title or ""

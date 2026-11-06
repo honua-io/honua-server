@@ -5,7 +5,7 @@ description: Use when checking a Honua Compose release, proposing an upgrade or 
 
 # Check and change a running install
 
-Read the install `AGENTS.md`. Day-2 calls go to that install's MCP. Release status, upgrade, and rollback use the management endpoint (`HONUA_MANAGER_PORT`, 18082 unless `.env` changed it) and `secrets/honua_manager_admin_password`. Findings use the serving endpoint. A script may read either secret file. Do not print it. If `tools/list` lacks `honua_platform_release_status` or `honua_ops_findings`, reconnect that endpoint with `?view=operate`. Use the live `tools/list` schemas. Read [release readback](references/releases.md) before calling a release done.
+Read the install `AGENTS.md`. Day-2 calls go to that install's MCP. Release status, upgrade, and rollback use the management endpoint (`HONUA_MANAGER_PORT`, 18082 unless `.env` changed it). Findings use the serving endpoint. The install rules allow a script to read one named key file and not print it. Use `secrets/honua_manager_admin_password` for the management endpoint and `secrets/honua_admin_password` for findings. If `tools/list` lacks `honua_platform_release_status` or `honua_ops_findings`, reconnect that endpoint with `?view=operate`. Use the live `tools/list` schemas. Read [release readback](references/releases.md) before calling a release done.
 
 Findings: `honua_ops_findings` lists active findings, or one finding when `findingId` is set. `honua_propose_finding` requires `findingId` and `candidateId`. Set `candidateId` to that finding's `subject.targetId`. Do not pass the finding id as `candidateId`. If `subject.targetId` is absent, stop and report that. Do not invent a target.
 
