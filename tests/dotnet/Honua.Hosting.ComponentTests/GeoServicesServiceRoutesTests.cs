@@ -135,7 +135,15 @@ public sealed class GeoServicesServiceRoutesTests
         using var client = app.GetTestClient();
         using var response = await client.GetAsync($"{root}/{servicePath}/FeatureServer");
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        document.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(403);
+        if (root == "/rest/services")
+        {
+            document.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(403);
+        }
+        else
+        {
+            response.StatusCode.Should().Be(System.Net.HttpStatusCode.Forbidden);
+            document.RootElement.GetProperty("status").GetInt32().Should().Be(403);
+        }
     }
 
     [Theory]
@@ -283,7 +291,15 @@ public sealed class GeoServicesServiceRoutesTests
         using var client = app.GetTestClient();
         using var response = await client.GetAsync($"{root}/facet/FeatureServer");
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        document.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(404);
+        if (root == "/rest/services")
+        {
+            document.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(404);
+        }
+        else
+        {
+            response.StatusCode.Should().Be(System.Net.HttpStatusCode.NotFound);
+            document.RootElement.GetProperty("status").GetInt32().Should().Be(404);
+        }
     }
 
     private static WebApplication CreateApp(string? serviceTenant = null, string? requestTenant = null)
