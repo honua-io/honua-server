@@ -83,8 +83,7 @@ public sealed class ODataContractTests(ODataComponentFixture fixture) : IClassFi
         }
         finally
         {
-            using var deleted = await fixture.Client.DeleteAsync(path);
-            deleted.StatusCode.Should().Be(HttpStatusCode.NoContent);
+            await DeleteWithCurrentEtagAsync(path);
         }
         using var missing = await fixture.Client.GetAsync(path);
         missing.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -135,6 +134,18 @@ public sealed class ODataContractTests(ODataComponentFixture fixture) : IClassFi
         error.RootElement.TryGetProperty("error", out _).Should().BeTrue();
         using var negative = await fixture.Client.GetAsync(Features + "?$top=-1");
         negative.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    private async Task DeleteWithCurrentEtagAsync(string path)
+    {
+        using var current = await fixture.Client.GetAsync(path);
+        current.StatusCode.Should().Be(HttpStatusCode.OK);
+        var currentEtag = current.Headers.ETag?.ToString();
+        currentEtag.Should().NotBeNullOrEmpty();
+        using var delete = new HttpRequestMessage(HttpMethod.Delete, path);
+        delete.Headers.TryAddWithoutValidation("If-Match", currentEtag);
+        using var deleted = await fixture.Client.SendAsync(delete);
+        deleted.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
 
     private static StringContent ODataContent<T>(T value)
