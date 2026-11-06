@@ -1,14 +1,7 @@
 #!/usr/bin/env bash
 
-# Build (or refresh) a Honua release-train manifest from release-bundle evidence.
-#
-# This replaces the hand-editing of artifacts/release/honua-<id>.json documented in
-# docs/contributor/RELEASE_CHECKLIST.md. The release-bundle orchestrator
-# (.github/workflows/release-bundle.yml) builds ONE Native AOT release-candidate
-# image, runs the integration/conformance/SDK evidence against that exact image
-# digest, then calls this script to assemble the manifest. The manifest is the
-# producer side of the contract consumed by honua-devops'
-# compat-train-release-validation.sh (which emits the release-train scoreboard).
+# Assemble evidence for an immutable candidate image into the manifest consumed
+# by honua-devops' release-train validator.
 #
 # Inputs are an evidence JSON (the per-gate/lane run results collected by the
 # orchestrator) plus scalar args for the candidate identity. An optional --base
