@@ -23,6 +23,7 @@ public interface ITileCacheKeyIndex
 {
     bool IsEnabled { get; }
 
+    // Access records are best-effort bookkeeping and must not fail the tile request. A write-record failure must fail the cache write because it advances lifecycle fencing.
     Task RecordAccessAsync(
         string key,
         long sizeBytes,
@@ -80,6 +81,7 @@ public interface ITileCacheKeyIndex
 
     Task RemoveAsync(string key, CancellationToken cancellationToken = default);
 
+    // Remove the snapshotted entry only when no later successful write replaced it, so a lifecycle delete cannot erase bookkeeping for an object regenerated before the index mutation.
     async Task<bool> TryRemoveAsync(
         TileCacheEntry entry,
         CancellationToken cancellationToken = default)

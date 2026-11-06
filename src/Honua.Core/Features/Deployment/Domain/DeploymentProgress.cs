@@ -47,7 +47,7 @@ public sealed record DeploymentProgress : IOperationProgress, ICancellableOperat
 
     OperationType IOperationProgress.Type => OperationType.Deployment;
 
-    // A cancelled progress record clears the stale step so eval and dashboards do not project it.
+    // A cancelled progress record marks the rollout cancelled so eval and dashboards stop projecting the in-progress state.
     public IOperationProgress WithCancellation(DateTimeOffset completedAt, string? currentPhase)
         => this with
         {

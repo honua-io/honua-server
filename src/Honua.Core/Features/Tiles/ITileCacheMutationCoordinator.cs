@@ -18,7 +18,7 @@ public readonly record struct TileCacheWriteRegistration(
     string? TenantScope,
     string WriteVersion);
 
-// Compensating storage mutations use the lease-loss token so caller cancellation cannot interrupt cleanup, while a lost lease cannot race the next owner.
+// Compensation and write registration must use the lease-owned callbacks. An uncancelled token does not prove this mutation still owns the distributed lease.
 public readonly record struct TileCacheMutationContext(
     CancellationToken CancellationToken,
     CancellationToken LeaseLostToken,

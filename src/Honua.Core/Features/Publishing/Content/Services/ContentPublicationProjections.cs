@@ -7,6 +7,7 @@ namespace Honua.Core.Features.Publishing.Content.Services;
 
 public static class ContentPublicationProjections
 {
+    // The view omits role lists and public-link hashes so a client cannot see them.
     public static PublishedArtifactView ToPublishedView(
         ContentPublicationRouteState route,
         ContentPublicationVersion version,

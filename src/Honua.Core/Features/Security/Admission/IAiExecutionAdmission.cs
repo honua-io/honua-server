@@ -12,6 +12,7 @@ public interface IAiExecutionAdmission
     Task<IAiExecutionPermit> AcquireAsync(AiExecutionContext context, AiFinancialRequest request, CancellationToken cancellationToken);
 }
 
+// The permit stays owned until the response body is disposed. Releasing it earlier ends concurrency accounting too soon.
 public interface IAiExecutionPermit : IAsyncDisposable
 {
     CancellationToken Token { get; }

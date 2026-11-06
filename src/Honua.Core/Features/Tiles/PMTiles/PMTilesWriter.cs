@@ -33,6 +33,7 @@ public sealed class PMTilesWriter
         _tiles.Add(new TileEntry(tileId, data));
     }
 
+    // WriteAsync consumes each tile buffer, so a writer can be written only once.
     public async Task<long> WriteAsync(Stream output, PMTilesArchiveMetadata metadata, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(output);

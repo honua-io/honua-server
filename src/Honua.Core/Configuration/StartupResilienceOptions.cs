@@ -3,7 +3,7 @@
 
 namespace Honua.Core.Configuration;
 
-// The default fails startup when the database is down; degraded start is opt-in and keeps serving non-database routes.
+// The default fails startup when the database is down. Lambda and a Development container enable degraded start unless it is set explicitly, and only for transient connectivity failures.
 public sealed record StartupResilienceOptions
 {
     public const string SectionName = "Database:StartupResilience";

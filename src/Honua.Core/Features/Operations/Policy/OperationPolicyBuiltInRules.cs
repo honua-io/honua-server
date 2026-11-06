@@ -5,7 +5,7 @@ using Honua.Core.Features.Operations.Domain;
 
 namespace Honua.Core.Features.Operations.Policy;
 
-// In Production, full administrators and administrative API keys execute directly and every other caller still falls through to fail-closed.
+// Operator rules are evaluated first and can deny an administrator or require approval. These Production allows live in code so a configuration replacement cannot drop them.
 public static class OperationPolicyBuiltInRules
 {
     public const string FullAdministratorRole = "admin";

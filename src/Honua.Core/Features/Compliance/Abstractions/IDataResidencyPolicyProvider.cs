@@ -8,7 +8,6 @@ namespace Honua.Core.Features.Compliance.Abstractions;
 // Egress paths consult this policy on every potential transfer, so a snapshot read must stay cheap.
 public interface IDataResidencyPolicyProvider
 {
-    // The active policy is never null; a deployment with no operator policy gets the default.
     DataResidencyPolicy GetPolicy();
 
     DataResidencyDecision Evaluate(string region);

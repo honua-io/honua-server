@@ -72,6 +72,7 @@ public sealed record OperationPolicyContext
     // Protocol adapters must never set the proposal identity; only the canonical proposal runtime does.
     public string? ApprovedProposalId { get; init; }
 
+    // ApprovedPlanHash is only a lookup claim. Actuation re-reads the proposal and recomputes the sealed-plan hash.
     public string? ApprovedPlanHash { get; init; }
 
     // Protocol adapters must not derive the invocation identity from the descriptor id or a resource id.
@@ -87,9 +88,10 @@ public sealed record OperationPolicyContext
 
     public string? SchemaName { get; init; }
 
+    // The stored key is scoped to the tenant and the authenticated actor.
     public string? IdempotencyKey { get; init; }
 
-    // The idempotency digest is scoped to the authenticated principal and tenant and must not contain credentials or unredacted request data.
+    // The digest is a hash of the canonical request bytes, stored instead of the unredacted request.
     public string? IdempotencyRequestHash { get; init; }
 
     public string? AuthorizationOutcome { get; init; }

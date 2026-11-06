@@ -32,7 +32,6 @@ public static class CapabilityUnavailableCodes
     public const string RedisRemediationRef =
         "https://honua.io/docs/guides/deploy/docker-compose/#redis-is-optional-postgis-is-not";
 
-    // When Redis is already configured, the remediation is the missing entitlement, not another Redis setting.
     public const string EntitlementRemediation =
         "Redis is configured but the Pro 'caching.redis' entitlement is not active, so the " +
         "durable job substrate was not composed. Install a licence that includes " +
@@ -78,7 +77,6 @@ public static class CapabilityUnavailableCodes
 
     public const string Title = "Capability unavailable";
 
-    // The attestation detail is logged at startup and is never published on the anonymous capability manifest, because the message can name internal endpoints.
     public const string DurableJobStoreDetail =
         "Durable geoprocessing jobs and workflows require a Redis-backed job store. This server " +
         "was started without a Redis connection, so the request is refused up front instead of " +

@@ -13,7 +13,6 @@ public sealed record FieldValidationResult
     [JsonPropertyName("errors")]
     public IReadOnlyList<FieldValidationError> Errors { get; init; } = Array.Empty<FieldValidationError>();
 
-    // Info and warning entries do not make the result invalid.
     [JsonIgnore]
     public bool IsValid
         => !Errors.Any(error => error.Severity is ValidationSeverity.Error or ValidationSeverity.Blocker);

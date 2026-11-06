@@ -9,7 +9,6 @@ public static class ContentPublicationSlug
 {
     public const int MaxLength = 200;
 
-    // Slug normalization falls back to the title and then to a generated id, and it never throws.
     public static string Normalize(string? requested, string? fallback = null)
     {
         if (TryNormalize(requested, out var slug))

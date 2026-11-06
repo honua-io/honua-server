@@ -85,15 +85,19 @@ public sealed record AiAdmissionDecision(string Code, AiAdmissionReservation? Re
     public bool Granted => Reservation is not null;
 }
 
+// No control action resets live accounting.
 public enum AiAdmissionControlAction
 {
     // A missing stopped ledger may be created, and an existing ledger is never replaced.
     Initialize,
+    // Policy changes only while the ledger is stopped and drained, and attempt history stays.
     UpdatePolicy,
     Stop,
+    // Resume continues the existing counters after bootstrap or recovery.
     Resume
 }
 
+// The command is assembled from authenticated operation context, not from caller-supplied actor metadata.
 public sealed record AiAdmissionControlCommand(string DeploymentId, AiAdmissionControlAction Action,
     Guid ExpectedGeneration, long ExpectedRevision, long ExpectedEpoch, string ActorId, string InvocationId, string CorrelationId,
     AiAdmissionPolicy? Policy = null)

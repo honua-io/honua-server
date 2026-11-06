@@ -11,6 +11,6 @@ public sealed record AuditActionDescriptor
 
     public required string ResourceType { get; init; }
 
-    // A read path audited only on security-relevant failure does not write a record for every successful request.
+    // Auditing every successful read would flood the sink, so a read path records only a security-relevant failure.
     public bool AuditOnSuccess { get; init; } = true;
 }

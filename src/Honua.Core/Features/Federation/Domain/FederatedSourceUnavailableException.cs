@@ -14,7 +14,6 @@ public enum FederatedSourceUnavailableReason
     NoConnector,
 }
 
-// The reason distinguishes a hard fault from a timeout or an open circuit.
 public sealed class FederatedSourceUnavailableException : Exception
 {
     public FederatedSourceUnavailableException(

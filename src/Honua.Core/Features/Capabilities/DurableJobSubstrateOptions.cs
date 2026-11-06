@@ -67,6 +67,7 @@ public sealed class DurableJobSubstrateOptions
 
     public DurableJobSubstrateCause? RedisDurabilityFailure { get; set; }
 
+    // The attestation detail is logged at startup and is never published on the anonymous capability manifest, because the message can name internal endpoints.
     public string? RedisDurabilityDetail { get; set; }
 
     public string? RedisDurabilityStatus

@@ -48,6 +48,7 @@ public sealed class PackageReviewRequest
         };
 }
 
+// Source-generated JSON writes default for an omitted init-only list, which would replace the empty initializer, so each list normalizes null to empty.
 public sealed class PackageReviewRequirements
 {
     public IReadOnlyList<PackageDataBindingRequirement> DataBindings { get; init => field = value ?? []; } = [];

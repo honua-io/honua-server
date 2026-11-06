@@ -7,13 +7,11 @@ public enum FeatureEditConcurrencyPolicy
 {
     None,
 
-    // An edit is rejected unless the caller holds the active lease.
     RequireLock,
 
     // A lease is binding when one exists, but taking a lease stays optional so clients that never claim one can still edit.
     HonorActiveLock,
 
-    // A stale expected-version token is rejected.
     RequireVersionToken,
 
     LockOrVersionToken

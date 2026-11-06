@@ -124,7 +124,7 @@ public sealed record OperateEventPage
 
     public bool PartialResult { get; init; }
 
-    // A truncated page is not a complete view of the requested window.
+    // Consumers cannot derive complete-window totals from a truncated page.
     public bool Truncated { get; init; }
 
     public IReadOnlyDictionary<OperateEventKind, string>? SourceErrors { get; init; }

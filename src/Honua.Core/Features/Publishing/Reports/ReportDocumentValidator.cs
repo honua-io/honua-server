@@ -6,7 +6,7 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.Publishing.Reports;
 
-// This structural check is the only validation gate, because the publication registry hashes the payload and does not parse it.
+// This checks document structure only and does not require live metadata.
 public static class ReportDocumentValidator
 {
     public static ReportValidationResult Validate(ReportDocument? document)

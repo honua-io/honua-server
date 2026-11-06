@@ -13,7 +13,6 @@ public interface ISavedMapOperationLogRepository
 
     bool SupportsRestartDurableCheckpointCursors { get; }
 
-    // A checkpoint consumer must require both the operation replay and the starting cursor to survive restart.
     bool SupportsRestartDurableCheckpointing =>
         SupportsRestartDurableReplay && SupportsRestartDurableCheckpointCursors;
 

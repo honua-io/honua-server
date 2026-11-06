@@ -3,6 +3,7 @@
 
 namespace Honua.Core.Features.Operations.Abstractions;
 
+// The supplied hash is only a lookup claim. Verification re-reads the durable proposal and recomputes the sealed-plan hash before actuation.
 public interface IOperationApprovalReplayVerifier
 {
     Task<bool> VerifyAsync(

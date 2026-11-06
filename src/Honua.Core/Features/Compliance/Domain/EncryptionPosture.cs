@@ -6,7 +6,7 @@ namespace Honua.Core.Features.Compliance.Domain;
 // Key-version fields are an auditor timeline and are not cipher key material.
 public sealed record EncryptionPosture
 {
-    // FIPS mode comes from the runtime FIPS flag and the OS FIPS indicator, not from configuration.
+    // FipsMode is the operator attestation or the DOTNET_SYSTEM_SECURITY_CRYPTOGRAPHY_USEFIPS hint recorded in FipsSource, not an OS probe.
     public required bool FipsMode { get; init; }
 
     public required string FipsSource { get; init; }

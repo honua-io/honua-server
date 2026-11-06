@@ -135,7 +135,6 @@ internal sealed class AnalysisReportBuilder : IAnalysisReportBuilder
         return merged;
     }
 
-    // The report-level assistance flag is set only when a slot's text actually differs from its deterministic baseline.
     private static bool HasLlmReplacement(
         IReadOnlyList<NarrativeSlot> slots,
         Dictionary<string, string> mergedFill)

@@ -36,7 +36,7 @@ public sealed class ReportingNarrativeConfiguration
 
     public string Provider { get; set; } = ProviderOpenAi;
 
-    // The endpoint must follow the OpenAI chat-completions path and may be an OpenAI-compatible proxy.
+    // Endpoint is a base URL, such as https://api.openai.com/v1. The provider appends /chat/completions, including for an OpenAI-compatible proxy.
     public string Endpoint { get; set; } = "https://api.openai.com/v1";
 
     public string Model { get; set; } = "gpt-4o-mini";

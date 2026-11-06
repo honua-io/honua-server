@@ -30,6 +30,7 @@ public sealed record AiFinancialPolicy
     public AiFinancialLimits Actor { get; init; } = new();
     public AiFinancialLimits Cohort { get; init; } = new();
     public AiFinancialLimits Workflow { get; init; } = new();
+    // JournalCapacity is a lifetime cap. Exhaustion denies admission and does not evict liability history.
     public int JournalCapacity { get; init; }
     public AiFinancialPriceBasis Basis { get; init; } = new();
     [JsonIgnore]
@@ -45,6 +46,7 @@ public sealed record AiFinancialPolicy
 }
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+// The basis is an operator assertion of route, rates, and input-token liability. IsValid checks shape only and does not approve prices or provider terms.
 public sealed record AiFinancialPriceBasis
 {
     public string Id { get; init; } = string.Empty;
@@ -59,6 +61,7 @@ public sealed record AiFinancialPriceBasis
     public DateTimeOffset EffectiveUtc { get; init; }
     public DateTimeOffset ExpiresUtc { get; init; }
     public int MaximumRequestBytes { get; init; }
+    // MaximumInputTokens is an owner-asserted bound covering framing and messages. The store reserves that amount; it is not a byte estimate.
     public long MaximumInputTokens { get; init; }
     public int MaximumOutputTokens { get; init; }
     public long InputRatePerMillion { get; init; }
@@ -128,6 +131,7 @@ public sealed class AiFinancialRequest
         && BodyLength > 0 && BodyLength <= basis.MaximumRequestBytes;
 }
 
+// Usage comes from trusted internal transport for one frozen request and must not be accepted as caller-supplied reconciliation data.
 public sealed record AiFinancialUsage(string RequestDigest, string Model, string ProviderResponseId, long InputTokens, long OutputTokens,
     string? UnrepresentableUsageDigest = null, string? ContractBreachDigest = null, string? UnsupportedUsageDigest = null,
     bool InputTokensKnown = true, bool OutputTokensKnown = true)

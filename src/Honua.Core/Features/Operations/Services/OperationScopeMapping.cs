@@ -69,7 +69,7 @@ public static class OperationScopeMapping
         return operation != default;
     }
 
-    // An operation with no scope mapping is refused rather than allowed.
+    // For a scope-governed caller, a missing catalog mapping is refused, because a missing entry cannot grant OAuth authority.
     public static bool ExceedsScopeAuthority(OperationRequest request, OperationPolicyContext context)
     {
         ArgumentNullException.ThrowIfNull(request);

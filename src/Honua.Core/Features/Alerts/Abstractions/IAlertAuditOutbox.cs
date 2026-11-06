@@ -14,14 +14,14 @@ public interface IAlertAuditOutbox
 
     Task<AlertAuditOutboxEntry?> GetAsync(long outboxId, CancellationToken cancellationToken = default);
 
-    // A completer must hold the lease before writing the audit record, so two completers cannot both write it.
+    // A completer must hold the lease before writing the audit record. A crash or expiry between that write and completion can still leave two truthful records.
     Task<bool> TryClaimAsync(
         long outboxId,
         Guid claimToken,
         DateTimeOffset claimedUntil,
         CancellationToken cancellationToken = default);
 
-    // Completing an already completed intent keeps the first audit identity, so a racing reconciler cannot write a second action.
+    // Completing an already completed intent keeps the first audit identity. A false return means the lease was reclaimed and this caller's record may be a duplicate.
     Task<bool> CompleteAsync(
         long outboxId,
         Guid claimToken,

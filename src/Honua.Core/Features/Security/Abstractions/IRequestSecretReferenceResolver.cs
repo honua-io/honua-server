@@ -10,7 +10,7 @@ public readonly record struct RequestSecretReferenceDecision(bool IsPermitted, s
     public static RequestSecretReferenceDecision Refused(string reason) => new(false, reason);
 }
 
-// A request-supplied reference must be a whole-string provider:identifier and must be allowed by policy; an empty policy permits nothing.
+// A request-supplied reference must be a whole-string provider:identifier and must be allowed by policy; an empty policy permits nothing. Request paths must use this resolver, because a configuration secret resolver accepts a reference with no request policy.
 public interface IRequestSecretReferenceResolver
 {
     // The decision does not depend on whether the named secret exists.

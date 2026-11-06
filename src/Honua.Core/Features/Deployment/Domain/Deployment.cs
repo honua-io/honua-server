@@ -127,7 +127,6 @@ public sealed record Deployment
             audit: audit);
     }
 
-    // Canary steps must strictly advance; a repeat or a regression is rejected.
     public Deployment WithRolloutStep(int step, OperationAuditInfo? audit = null)
     {
         if (Rollout.Strategy != RolloutStrategy.Canary)
@@ -174,7 +173,6 @@ public sealed record Deployment
         };
     }
 
-    // Activation is confined to the publication window, a scheduled rollout requires its schedule, and a canary cannot activate before its final step.
     public Deployment WithActive(
         string? publicUrl = null,
         string? reason = null,

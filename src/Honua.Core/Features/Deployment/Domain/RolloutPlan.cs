@@ -16,7 +16,6 @@ public sealed record RolloutPlan
     public static RolloutPlan BlueGreen(bool autoPromote = true)
         => new() { Strategy = RolloutStrategy.BlueGreen, AutoPromote = autoPromote };
 
-    // Canary weights must be strictly increasing, each in 1 to 100, and end at 100.
     public static RolloutPlan Canary(IReadOnlyList<int> steps, bool autoPromote = true)
     {
         ArgumentNullException.ThrowIfNull(steps);
