@@ -390,8 +390,6 @@ jobs:
             --integration artifacts/release/downloads/integration-evidence.ndjson \
             --sdk artifacts/release/downloads/sdk-evidence.ndjson \
             --output artifacts/release/evidence.json
-          base_arg=()
-          [ -f "artifacts/release/${{ github.event.inputs.release_id }}.json" ] && base_arg=(--base "artifacts/release/${{ github.event.inputs.release_id }}.json")
           ./scripts/release/build-release-manifest.sh \
             --evidence artifacts/release/evidence.json \
             --release-id '${{ github.event.inputs.release_id }}' \
@@ -402,7 +400,6 @@ jobs:
             --image-tag '${{ needs.rc-image.outputs.image_tag }}' \
             --image-digest '${{ needs.rc-image.outputs.image_digest }}' \
             --observed-at "$observed" \
-            "${base_arg[@]}" \
             --output "artifacts/release/${{ github.event.inputs.release_id }}.json"
           chmod +x .honua-devops/scripts/compat-train-release-validation.sh
           COMPAT_TRAIN_MODE=advisory \
@@ -418,13 +415,11 @@ jobs:
             jq -r '.followUps[] | "- " + (.url // "(no issue yet)") + " — " + .reason' artifacts/release/release-validation-bundle.json
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-      - name: Upload manifest + scoreboard bundle
+      - name: Upload release evidence bundle
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-train-evidence
-          path: |
-            artifacts/release/${{ github.event.inputs.release_id }}.json
-            artifacts/release/release-validation-bundle.json
+          path: artifacts/release/
       - name: Fail if promoting on a non-green train
         if: ${{ github.event.inputs.promote == 'true' && steps.validate.outputs.verdict != 'pass' }}
         run: |
