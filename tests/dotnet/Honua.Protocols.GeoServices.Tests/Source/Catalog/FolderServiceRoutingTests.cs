@@ -6,11 +6,9 @@ using System.Text.Json;
 using System.Text;
 using System.Xml.Linq;
 using FluentAssertions;
-using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
 using Honua.TestKit;
-using Honua.TestKit.Infrastructure;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Extensions;
 
@@ -209,8 +207,7 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
                     ? service with { AccessPolicy = new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["folder-reader"] } }
                     : service).ToArray()
             };
-            ((TestMetadataV2GraphProvider)fixture.GetService<IMetadataV2GraphProvider>())
-                .FolderServiceTestCatalog.ReplaceGraph(_fixture, graph, schema: fixture.CurrentSchema);
+            FolderServiceTestCatalog.ReplaceGraph(fixture, graph);
             using var client = fixture.CreateClient();
             using var folder = await client.GetAsync("/rest/services/Public?f=json");
             await folder.AssertGeoServicesErrorAsync(404);
