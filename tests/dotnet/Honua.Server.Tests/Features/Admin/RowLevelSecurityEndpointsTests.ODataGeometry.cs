@@ -151,9 +151,9 @@ public sealed partial class RowLevelSecurityEndpointsTests
         };
         MetadataV2GraphValidator.Validate(graph).IsValid.Should().BeTrue();
         _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>().SetGraph(graph, schema: _fixture.MetadataGraphSchema);
-        await _fixture.Postgres.ExecuteAsync($"""
-            INSERT INTO "{_fixture.CurrentSchema}".features (layer_id, objectid, geometry, attributes)
-            VALUES (0, {GeometryIntentObjectId}, ST_SetSRID(ST_MakePoint(1,1),4326), '{{"name":"before"}}');
+        await _fixture.Postgres.ExecuteAsync($$"""
+            INSERT INTO "{{_fixture.CurrentSchema}}".features (layer_id, objectid, geometry, attributes)
+            VALUES (0, {{GeometryIntentObjectId}}, ST_SetSRID(ST_MakePoint(1,1),4326), '{"name":"before"}');
             """);
     }
 
