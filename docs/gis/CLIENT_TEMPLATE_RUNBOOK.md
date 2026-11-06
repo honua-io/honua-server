@@ -131,7 +131,7 @@ FeatureServer evidence uses the common-core CERT-\* IDs. MapServer evidence
 records CERT-QFLT, CERT-PAGE, CERT-GEOM, and CERT-ERRH-02 as `not-applicable`
 unless that evidence identifier says the layer query was exercised. Visual /
 style slice IDs are defined in
-[`visual-style-certification-slice.md`](../internal/evidence/visual-style-certification-slice.md).
+[`visual-style-certification-slice.md`](https://github.com/honua-io/honua-server/blob/213e7ef3bf243fddf30c06a4cdb4cac737b9bfc8/docs/internal/evidence/visual-style-certification-slice.md).
 
 ## QGIS Smoke Checklist
 

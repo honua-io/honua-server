@@ -164,10 +164,6 @@ cat > "$RESULTS_DIR/candidate.json" <<EOF
 }
 EOF
 
-# Keep the declaration boundary executable. These are the implemented discovery
-# classes required by GDAL/QGIS (#4995), proven by live building-block behavior,
-# seeded integration assertions and the pinned-client receipts under
-# docs/internal/evidence/client-certification-2cc2213/fixes-4994-4995/.
 # This lane is not a complete ETS-equivalent class certification. Part 2 CRS
 # also has the complete ETS class in cite-evidence-report.yml. Exact equality
 # continues to reject unevidenced optional classes. Features Part 4 discovery

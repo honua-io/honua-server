@@ -11,17 +11,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Db.Postgres.Tests.Features.Infrastructure.Transforms;
 
-/// <summary>
-/// Datum-transformation parity integration tests (issue #1274). Uses the embedded
-/// Esri-default catalog to select a PROJ pipeline, applies it through PostGIS' 3-argument
-/// ST_Transform, and asserts the result lands within the documented tolerance of the
-/// published EPSG/PROJ oracle.
-/// </summary>
-/// <remarks>
-/// The oracle is currently the EPSG/PROJ reference pipeline executed by PostGIS itself.
-/// The tests are structured so an ArcGIS-generated golden coordinate set can be dropped
-/// in later (see docs/internal/evidence/datum-transformation-parity.md) without restructuring.
-/// </remarks>
 [Collection("Database")]
 public sealed class DatumTransformationParityTests : IAsyncLifetime
 {
@@ -52,7 +41,6 @@ public sealed class DatumTransformationParityTests : IAsyncLifetime
         var result = await _service!.TransformPointAsync(-104.9903, 39.7392, 4269, 4326, selection);
 
         result.Should().NotBeNull();
-        // Tolerance per docs/internal/evidence/datum-transformation-parity.md (NAD83->WGS84_1: null transform, exact identity).
         var point = result is { } r ? r : throw new InvalidOperationException("Expected a transform result.");
         point.X.Should().BeApproximately(-104.9903, 1e-5);
         point.Y.Should().BeApproximately(39.7392, 1e-5);

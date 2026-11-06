@@ -96,7 +96,7 @@ The catalog copy took migrations 118 and 119 on start-up (`dbSchema` 119).
 The image advertises all 119 GPServer tasks, and
 `POST /services/desktop_ui_features/GPServer` answers 401 to an unauthenticated
 caller rather than the 404 this issue was filed on. Receipt identities are in
-[`docs/internal/evidence/gp-desktop-fixture-8862065/`](../../../../../../../docs/internal/evidence/gp-desktop-fixture-8862065/README.md).
+[`docs/internal/evidence/gp-desktop-fixture-8862065/`](https://github.com/honua-io/honua-server/blob/213e7ef3bf243fddf30c06a4cdb4cac737b9bfc8/docs/internal/evidence/gp-desktop-fixture-8862065/README.md).
 Runner and licence configuration stay with evidence id `desktop-arcgis`.
 
 | Receipt | What it establishes |
@@ -114,7 +114,7 @@ On 2026-09-19 the existing fixture was restarted on NativeAOT source
 `d1fc139a64ce33c817bd927bacb2103714221515`, image
 `sha256:4bac230b40b0b07e396af54e2fc801420d2957bb31a6b6dafb3d402a8444d350`.
 This nightly contains the local-name SOAP argument binding and site-root fixes.
-The [fixture evidence](../../../../../../../docs/internal/evidence/gp-desktop-fixture-d1fc139/README.md#replay-evidence)
+The [fixture evidence](https://github.com/honua-io/honua-server/blob/213e7ef3bf243fddf30c06a4cdb4cac737b9bfc8/docs/internal/evidence/gp-desktop-fixture-d1fc139/README.md#replay-evidence)
 records readiness, the earlier failed client run, and the fresh passing replays.
 
 | Receipt | Proof |
