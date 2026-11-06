@@ -14,6 +14,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Capabilities;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Helpers;
 using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Protocols.GeoServices.VersionManagementServer.Models;
 using Microsoft.AspNetCore.Http;
