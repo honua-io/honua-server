@@ -436,12 +436,8 @@ internal sealed partial class FeatureDataAccess
             cancellationToken.ThrowIfCancellationRequested();
 
             var (deletedCount, deleteResults) = await ProcessDeletesWithResultsAsync(
-                layerId,
-                editBatch.Deletes,
-                connection,
-                transaction,
-                preconditions,
-                editBatch.OwnerGuards,
+                new(editBatch.Deletes, (layerId, editBatch.RowSecurityWriteCheck), editBatch.OwnerGuards),
+                new(connection, transaction, preconditions),
                 cancellationToken);
             partialDeleteResults = deleteResults;
             cancellationToken.ThrowIfCancellationRequested();
@@ -964,13 +960,9 @@ internal sealed partial class FeatureDataAccess
         cancellationToken.ThrowIfCancellationRequested();
 
         var (deletedCount, deleteResults) = await ProcessDeletesWithResultsAsync(
-            layerId,
-            editBatch.Deletes,
-            connection,
-            transaction,
-            preconditions,
-            editBatch.OwnerGuards,
-            cancellationToken).ConfigureAwait(false);
+                new(editBatch.Deletes, (layerId, editBatch.RowSecurityWriteCheck), editBatch.OwnerGuards),
+                new(connection, transaction, preconditions),
+                cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
 
         var hasErrors = System.Linq.Enumerable.Any(createResults, static result => !result.IsSuccess) ||
@@ -2270,15 +2262,17 @@ internal sealed partial class FeatureDataAccess
         return (updatedCount, results.ToImmutableArray());
     }
 
+    private sealed record DeleteBatch(
+        ImmutableArray<long> FeatureIds, (int LayerId, SqlFragment? WriteCheck) Policy, ImmutableArray<OwnerEditGuard> OwnerGuards);
+    private sealed record DeleteExecution(
+        NpgsqlConnection Connection, NpgsqlTransaction? Transaction, Dictionary<long, FeatureEditPrecondition>? Preconditions);
+
     private async Task<(int deletedCount, ImmutableArray<EditOperationResult> results)> ProcessDeletesWithResultsAsync(
-        int layerId,
-        ImmutableArray<long> featureIds,
-        NpgsqlConnection connection,
-        NpgsqlTransaction? transaction,
-        Dictionary<long, FeatureEditPrecondition>? preconditions,
-        ImmutableArray<OwnerEditGuard> ownerGuards,
-        CancellationToken cancellationToken)
+        DeleteBatch batch, DeleteExecution execution, CancellationToken cancellationToken)
     {
+        var (featureIds, policy, ownerGuards) = batch;
+        var (layerId, writeCheck) = policy;
+        var (connection, transaction, preconditions) = execution;
         if (featureIds.Length == 0)
         {
             return (0, ImmutableArray<EditOperationResult>.Empty);
