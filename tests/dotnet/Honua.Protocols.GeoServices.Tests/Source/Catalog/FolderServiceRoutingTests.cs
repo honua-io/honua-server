@@ -313,26 +313,6 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
         }
     }
 
-    [IntegrationTest]
-    [Protocol(TestProtocols.NAServer)]
-    [Operation(Operations.GetMetadata)]
-    [Endpoint("GET /rest/services/{folderName}/{serviceId}/NAServer")]
-    public async Task NetworkMetadata_FolderPublicName_UsesPublicDescription()
-    {
-        var original = _fixture.GetCurrentV2GraphSnapshot().Graph;
-        SetGraph(OrganizeService(original));
-        try
-        {
-            using var metadata = await ReadJsonAsync("/rest/services/Public/Parcels/NAServer?f=json");
-            metadata.RootElement.GetProperty("serviceDescription").GetString()
-                .Should().Be("Network analysis service for Parcels");
-        }
-        finally
-        {
-            SetGraph(original);
-        }
-    }
-
     [IntegrationTheory]
     [InlineData("MapServer/WMS", "WMS", "1.3.0")]
     [InlineData("MapServer/WMTS", "WMTS", "1.0.0")]
@@ -384,10 +364,13 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
         var graph = OrganizeService(original);
         var serviceIds = graph.Services.Where(service => service.Metadata.Name == WebAppFixture.TestServiceId)
             .Select(service => service.Metadata.Id).ToHashSet(StringComparer.Ordinal);
+        var featureFacetId = graph.Services.First(service => serviceIds.Contains(service.Metadata.Id) &&
+            service.Protocols.Contains(ServiceProtocols.FeatureServer)).Metadata.Id;
         SetGraph(graph with
         {
             Services = graph.Services.Select(service => serviceIds.Contains(service.Metadata.Id)
-                ? service with { PublicationIds = [] } : service).ToArray(),
+                ? service with { PublicationIds = [], Protocols = service.Metadata.Id == featureFacetId ? [ServiceProtocols.FeatureServer] : [] }
+                : service).ToArray(),
             Publications = graph.Publications.Where(publication => !serviceIds.Contains(publication.ServiceId)).ToArray()
         });
         try

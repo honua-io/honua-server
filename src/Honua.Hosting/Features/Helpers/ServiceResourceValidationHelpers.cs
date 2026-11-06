@@ -27,6 +27,13 @@ internal static class ServiceResourceValidationHelpers
         MetadataV2Resource? Resource,
         IResult? ErrorResult);
 
+    public static ResourceValidationResult<MetadataV2Service> ValidateResolvedServicePath(
+        HttpContext context, ResourceValidationResult<MetadataV2Service> result)
+        => GeoServicesServicePath.FromRequest(context) is null ||
+           (result.IsValid && GeoServicesServicePath.TargetsService(context, result.Resource!))
+            ? result
+            : ResourceValidationResult.NotFound<MetadataV2Service>("Service was not found.");
+
     public static async Task<ServiceValidationV2Result> ValidateServiceV2Async(
         IResourceValidator resourceValidator,
         string serviceId,
@@ -47,6 +54,7 @@ internal static class ServiceResourceValidationHelpers
             serviceResult = await resourceValidator
                 .ValidateServiceV2Async(serviceId, protocol, cancellationToken)
                 .ConfigureAwait(false);
+            serviceResult = ValidateResolvedServicePath(context, serviceResult);
         }
         catch (Exception ex) when (IsCatalogStorageUnavailable(ex))
         {
@@ -57,13 +65,6 @@ internal static class ServiceResourceValidationHelpers
                     context,
                     ServiceCatalogUnavailableMessage,
                     retryable: true));
-        }
-
-        if (GeoServicesServicePath.FromRequest(context) is not null &&
-            (!serviceResult.IsValid || !GeoServicesServicePath.TargetsService(context, serviceResult.Resource!)))
-        {
-            return new ServiceValidationV2Result(false, null,
-                StandardErrorHelpers.CreateNotFound(context, "Service was not found."));
         }
 
         if (!serviceResult.IsValid)

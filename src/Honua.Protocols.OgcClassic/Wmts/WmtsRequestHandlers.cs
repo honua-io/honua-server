@@ -142,6 +142,7 @@ internal static class WmtsRequestHandlers
 
             var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
             var serviceResult = await resourceValidator.ValidateServiceV2Async(serviceId, cancellationToken);
+            serviceResult = ServiceResourceValidationHelpers.ValidateResolvedServicePath(context, serviceResult);
             if (!serviceResult.IsValid)
             {
                 var errorMessage = serviceResult.ErrorMessage ?? "Service not found.";

@@ -4,6 +4,8 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.TestKit.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -25,6 +27,35 @@ public sealed class NAServerMetadataEndpointTests : IClassFixture<NAServerEndpoi
     public NAServerMetadataEndpointTests(NAServerEndpointTestsFixture wrapper)
     {
         _fixture = wrapper.App;
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{folderName}/{serviceId}/NAServer")]
+    public async Task NetworkMetadata_FolderPublicName_UsesPublicDescription()
+    {
+        var original = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        var provider = (TestMetadataV2GraphProvider)_fixture.GetService<IMetadataV2GraphProvider>();
+        provider.SetGraph(original with
+        {
+            Folders = [new() { Metadata = new() { Id = "folder-routing", Name = "Public" } }],
+            Services = original.Services.Select(service => service.Metadata.Name == WebAppFixture.TestServiceId
+                ? service with { FolderId = "folder-routing", PublicName = "Parcels" } : service).ToArray()
+        }, schema: _fixture.CurrentSchema);
+        try
+        {
+            using var response = await _fixture.Client.GetAsync("/rest/services/Public/Parcels/NAServer?f=json");
+            var body = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+            using var metadata = JsonDocument.Parse(body);
+            metadata.RootElement.TryGetProperty("serviceDescription", out var description).Should().BeTrue(body);
+            description.GetString()
+                .Should().Be("Network analysis service for Parcels");
+        }
+        finally
+        {
+            provider.SetGraph(original, schema: _fixture.CurrentSchema);
+        }
     }
 
     [IntegrationTest]

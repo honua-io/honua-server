@@ -137,7 +137,7 @@ internal sealed class FeatureServerRelatedRecordsHandler(
             {
                 FeatureServerLog.LayerNotFound(_logger, serviceId, relatedLayerId);
                 return StandardErrorHelpers.CreateNotFound(httpContext,
-                    $"Related layer {relatedLayerId} not found in service '{serviceId}'");
+                    $"Related layer {relatedLayerId} not found in service '{service.EffectivePublicName}'");
             }
 
             var resolvedRelatedResource = relatedResource!;

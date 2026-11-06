@@ -14,6 +14,7 @@ using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Raster.ZarrParser;
 using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
@@ -911,15 +912,20 @@ internal sealed partial class Wcs20Handler
                 ?? snapshot.FindService(serviceId);
         }
 
-        if (service is null || !service.IsRoutable())
+        var serviceResult = ServiceResourceValidationHelpers.ValidateResolvedServicePath(context,
+            service is not null && service.IsRoutable()
+                ? ResourceValidationResult.Success(service)
+                : ResourceValidationResult.NotFound<MetadataV2Service>($"Service '{serviceId}' was not found."));
+        if (!serviceResult.IsValid)
         {
             return new ServiceResolutionResult(
                 null,
                 Wcs20ErrorResults.CreateNotFound(
                     Wcs20Utilities.ExceptionCodes.NoApplicableCode,
-                    $"Service '{serviceId}' was not found."));
+                    serviceResult.ErrorMessage!));
         }
 
+        service = serviceResult.Resource!;
         if (!IsProtocolEnabled(service, WcsProtocolName))
         {
             return new ServiceResolutionResult(
