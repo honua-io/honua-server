@@ -36,6 +36,36 @@ public sealed class BranchVersioningPublicationMetadataTests(BranchVersioningPub
         .ResolveStorageBinding(ManagedPublication)!;
 
     [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    [Endpoint("GET /admin/services/{serviceName}.{serviceType}")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer")]
+    [Endpoint("GET /rest/services/{serviceId}/VersionManagementServer")]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer")]
+    public async Task InaccessibleManagedPublication_DoesNotLeakVersioningThroughServiceOrAdmin()
+    {
+        var (publication, binding) = ExternalPublication();
+        var externalResource = ManagedResource with
+        {
+            Metadata = ManagedResource.Metadata with { Id = "versioning-visible-external-resource", Name = "external", Tenant = null },
+            PrimaryStorageBindingId = binding.Metadata.Id,
+            StorageBindingIds = [binding.Metadata.Id]
+        };
+        publication = publication with { ResourceId = externalResource.Metadata.Id };
+        binding = binding with { ResourceId = externalResource.Metadata.Id };
+        var hidden = ManagedPublication with { Metadata = ManagedPublication.Metadata with { Tenant = "another-tenant" } };
+        var graph = WithPublications(hidden, publication);
+        SetGraph(graph with
+        {
+            Resources = [.. graph.Resources, externalResource],
+            StorageBindings = [.. graph.StorageBindings, binding]
+        });
+
+        await AssertLayerAsync(17, false);
+        await AssertServiceAndAdminAsync(false);
+    }
+
+    [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
     [Endpoint("GET /admin/services/{serviceName}.{serviceType}")]

@@ -110,6 +110,21 @@ internal interface IFeatureDataAccess
     /// </summary>
     Task<bool> DeleteFeatureAsync(int layerId, long featureId, CancellationToken cancellationToken);
 
+    Task<Feature> CreateFeatureAsync(FeatureWritePolicy policy, Feature feature, CancellationToken cancellationToken)
+        => policy.RowFilter is null
+            ? CreateFeatureAsync(policy.LayerId, feature, cancellationToken)
+            : throw new NotSupportedException("The provider does not support row-policy checked writes.");
+
+    Task<Feature> UpdateFeatureAsync(FeatureWritePolicy policy, Feature feature, CancellationToken cancellationToken)
+        => policy.RowFilter is null
+            ? UpdateFeatureAsync(policy.LayerId, feature, cancellationToken)
+            : throw new NotSupportedException("The provider does not support row-policy checked writes.");
+
+    Task<bool> DeleteFeatureAsync(FeatureWritePolicy policy, long featureId, CancellationToken cancellationToken)
+        => policy.RowFilter is null
+            ? DeleteFeatureAsync(policy.LayerId, featureId, cancellationToken)
+            : throw new NotSupportedException("The provider does not support row-policy checked writes.");
+
     /// <summary>
     /// Gets a single feature by ID
     /// </summary>

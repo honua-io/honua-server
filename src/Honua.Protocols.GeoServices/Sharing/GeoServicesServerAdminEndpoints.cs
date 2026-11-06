@@ -88,7 +88,7 @@ public static class GeoServicesServerAdminEndpoints
 
         var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
         var requestedType = serviceType.Trim();
-        var service = ResolveService(snapshot, serviceName, requestedType);
+        var service = ResolveService(snapshot, serviceName, requestedType, context);
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context).TrimEnd('/');
         if (service is null || projector.ProjectItem(snapshot, context.User, service.Metadata.Id, baseUrl) is null)
@@ -120,7 +120,7 @@ public static class GeoServicesServerAdminEndpoints
         {
             var (visiblePairs, accessError) = await AccessPolicyHelpers.FilterAccessibleResourcesAsync(
                 context,
-                FeatureServerEndpoints.GetRoutableFeaturePublicationsV2(service, snapshot),
+                FeatureServerEndpoints.GetRoutableFeaturePublicationsV2(service, snapshot, context),
                 static pair => pair.Resource,
                 service,
                 AuthorizationOperation.Metadata,
@@ -231,7 +231,7 @@ public static class GeoServicesServerAdminEndpoints
 
     // A name that matches neither a service name nor a service id is the storage-layer id arcpy copies from an ImageServer or WCS URL when it asks for that id as MapServer.
     private static MetadataV2Service? ResolveService(
-        MetadataV2GraphSnapshot snapshot, string serviceName, string requestedType)
+        MetadataV2GraphSnapshot snapshot, string serviceName, string requestedType, HttpContext context)
     {
         if (snapshot.Index.ServicesByName.TryGetValue(serviceName, out var byName))
         {
@@ -248,6 +248,15 @@ public static class GeoServicesServerAdminEndpoints
             return null;
         }
 
+        return ResolveNumericService(new(snapshot, context), layerId, requestedType);
+    }
+
+    private readonly record struct ServiceResolutionScope(MetadataV2GraphSnapshot Snapshot, HttpContext Context);
+
+    private static MetadataV2Service? ResolveNumericService(
+        ServiceResolutionScope scope, int layerId, string requestedType)
+    {
+        var (snapshot, context) = scope;
         MetadataV2Service? exact = null;
         MetadataV2Service? feature = null;
         MetadataV2Service? coverage = null;
@@ -260,6 +269,11 @@ public static class GeoServicesServerAdminEndpoints
             }
 
             if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service))
+            {
+                continue;
+            }
+
+            if (!TenantScopeHelpers.IsPublicationVisible(context, publication, snapshot.ResolveResource(publication), service))
             {
                 continue;
             }

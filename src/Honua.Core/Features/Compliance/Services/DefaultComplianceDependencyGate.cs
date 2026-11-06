@@ -11,19 +11,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Compliance.Services;
 
-/// <summary>
-/// Inspects the live DI container to decide whether each compliance dependency is
-/// operational. Detection is intentionally conservative — when in doubt, the gate
-/// reports "not satisfied" so the snapshot under-claims rather than over-claims.
-/// </summary>
-/// <remarks>
-/// Several capabilities do not yet have first-class capability probes (RBAC roles
-/// actually enforced on endpoints, residency egress guards wired into boundary
-/// call-sites). For those we require an explicit operator attestation through
-/// <see cref="ComplianceDependencyOverrides"/> rather than rely on the presence of
-/// an in-memory placeholder service. This keeps the dashboard honest until a real
-/// signal exists; see <c>docs/operator/compliance-framework.md</c>.
-/// </remarks>
+// When a capability cannot be proved, the gate reports it as not satisfied.
 internal sealed partial class DefaultComplianceDependencyGate : IComplianceDependencyGate
 {
     // Known OIDC provider section names under "Oidc". Mirrors OidcAuthenticationOptions

@@ -3,16 +3,8 @@
 
 namespace Honua.Core.Features.Alerts.Domain;
 
-/// <summary>
-/// Converts alert channel types to and from their canonical external names.
-/// </summary>
 public static class AlertChannelNames
 {
-    /// <summary>
-    /// Returns the canonical snake_case name for a channel type.
-    /// </summary>
-    /// <param name="channelType">Channel type to convert.</param>
-    /// <returns>Canonical external channel name.</returns>
     public static string ToExternalName(this AlertChannelType channelType)
     {
         return channelType switch
@@ -31,11 +23,6 @@ public static class AlertChannelNames
         };
     }
 
-    /// <summary>
-    /// Parses a channel name from admin or persisted payloads.
-    /// </summary>
-    /// <param name="value">Channel name to parse.</param>
-    /// <returns>The parsed channel type.</returns>
     public static AlertChannelType Parse(string value)
     {
         if (TryParse(value, out var channelType))
@@ -46,12 +33,6 @@ public static class AlertChannelNames
         throw new InvalidOperationException($"Unsupported alert channel '{value}'.");
     }
 
-    /// <summary>
-    /// Tries to parse a channel name from admin or persisted payloads.
-    /// </summary>
-    /// <param name="value">Channel name to parse.</param>
-    /// <param name="channelType">Parsed channel type when successful.</param>
-    /// <returns>True when parsing succeeded; otherwise false.</returns>
     public static bool TryParse(string? value, out AlertChannelType channelType)
     {
         channelType = default;

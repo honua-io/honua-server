@@ -66,6 +66,14 @@ internal sealed class McpJsonRpcError
 /// </summary>
 internal sealed class McpErrorData
 {
+    [JsonPropertyName("supported")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string>? Supported { get; set; }
+
+    [JsonPropertyName("requested")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Requested { get; set; }
+
     [JsonPropertyName("code")]
     public string Code { get; set; } = string.Empty;
 

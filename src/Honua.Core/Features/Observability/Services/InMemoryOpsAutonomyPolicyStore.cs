@@ -7,9 +7,6 @@ using Honua.Core.Features.Observability.Domain;
 
 namespace Honua.Core.Features.Observability.Services;
 
-/// <summary>
-/// In-memory <see cref="IOpsAutonomyPolicyStore"/> for tests and non-durable hosts.
-/// </summary>
 public sealed class InMemoryOpsAutonomyPolicyStore : IOpsAutonomyPolicyStore
 {
     private readonly ConcurrentDictionary<string, OpsAutonomyPolicy> _policies = new(StringComparer.Ordinal);
@@ -19,7 +16,6 @@ public sealed class InMemoryOpsAutonomyPolicyStore : IOpsAutonomyPolicyStore
     private readonly Lock _lock = new();
     private OpsAutonomySettings _settings = new();
 
-    /// <inheritdoc />
     public Task<OpsAutonomyPolicy?> GetPolicyAsync(string rule, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(rule);
@@ -27,7 +23,6 @@ public sealed class InMemoryOpsAutonomyPolicyStore : IOpsAutonomyPolicyStore
         return Task.FromResult(policy);
     }
 
-    /// <inheritdoc />
     public Task<IReadOnlyList<OpsAutonomyPolicySnapshot>> ListPoliciesAsync(CancellationToken cancellationToken = default)
     {
         var snapshots = _policies.Keys
@@ -48,7 +43,6 @@ public sealed class InMemoryOpsAutonomyPolicyStore : IOpsAutonomyPolicyStore
         return Task.FromResult<IReadOnlyList<OpsAutonomyPolicySnapshot>>(snapshots);
     }
 
-    /// <inheritdoc />
     public Task<OpsAutonomyPolicySnapshot> SetPolicyAsync(
         OpsAutonomyPolicy policy,
         string changedBy,
@@ -74,11 +68,9 @@ public sealed class InMemoryOpsAutonomyPolicyStore : IOpsAutonomyPolicyStore
         });
     }
 
-    /// <inheritdoc />
     public Task<OpsAutonomySettings> GetSettingsAsync(CancellationToken cancellationToken = default)
         => Task.FromResult(_settings);
 
-    /// <inheritdoc />
     public Task<OpsAutonomySettings> SetSettingsAsync(
         OpsAutonomySettings settings,
         string changedBy,
@@ -93,7 +85,6 @@ public sealed class InMemoryOpsAutonomyPolicyStore : IOpsAutonomyPolicyStore
         return Task.FromResult(_settings);
     }
 
-    /// <inheritdoc />
     public Task<OpsAutonomyReservationResult> TryReserveAutoActionAsync(
         OpsAutonomyReservationRequest request,
         CancellationToken cancellationToken = default)
@@ -139,7 +130,6 @@ public sealed class InMemoryOpsAutonomyPolicyStore : IOpsAutonomyPolicyStore
         }
     }
 
-    /// <inheritdoc />
     public Task RecordAutoActionOutcomeAsync(
         string reservationId,
         OpsAutonomyActionOutcome outcome,
@@ -180,7 +170,6 @@ public sealed class InMemoryOpsAutonomyPolicyStore : IOpsAutonomyPolicyStore
         return Task.CompletedTask;
     }
 
-    /// <inheritdoc />
     public Task IncrementProposalRaisedAsync(string rule, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(rule);
@@ -192,7 +181,6 @@ public sealed class InMemoryOpsAutonomyPolicyStore : IOpsAutonomyPolicyStore
         return Task.CompletedTask;
     }
 
-    /// <inheritdoc />
     public Task RecordProposalResolutionAsync(
         string rule,
         string proposalId,

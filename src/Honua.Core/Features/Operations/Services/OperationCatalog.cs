@@ -8,12 +8,6 @@ using Honua.Core.Features.Operations.Domain;
 
 namespace Honua.Core.Features.Operations.Services;
 
-/// <summary>
-/// Default <see cref="IOperationCatalog"/>: aggregates every registered
-/// <see cref="IOperationDescriptorProvider"/> into a versioned grounding snapshot. Mirrors
-/// the workflow node registry's aggregation: providers are queried, descriptors are sorted
-/// for stable output, and a fingerprint version is computed over the descriptor ids.
-/// </summary>
 public sealed class OperationCatalog : IOperationCatalog, IDisposable
 {
     // Every operation dispatch calls GetDescriptorAsync, which previously rebuilt the
@@ -31,11 +25,6 @@ public sealed class OperationCatalog : IOperationCatalog, IDisposable
     private OperationCatalogSnapshot? _cachedSnapshot;
     private DateTimeOffset _cachedAt;
 
-    /// <summary>
-    /// Initializes a new instance of <see cref="OperationCatalog"/>.
-    /// </summary>
-    /// <param name="providers">Registered descriptor providers.</param>
-    /// <param name="clock">Time provider for snapshot timestamps.</param>
     public OperationCatalog(IEnumerable<IOperationDescriptorProvider> providers, TimeProvider clock)
     {
         ArgumentNullException.ThrowIfNull(providers);
@@ -44,7 +33,6 @@ public sealed class OperationCatalog : IOperationCatalog, IDisposable
         _clock = clock;
     }
 
-    /// <inheritdoc />
     public async Task<OperationCatalogSnapshot> GetSnapshotAsync(CancellationToken cancellationToken = default)
     {
         var cached = _cachedSnapshot;
@@ -104,7 +92,6 @@ public sealed class OperationCatalog : IOperationCatalog, IDisposable
         };
     }
 
-    /// <inheritdoc />
     public async Task<OperationDescriptor?> GetDescriptorAsync(
         string operationId,
         CancellationToken cancellationToken = default)
@@ -150,9 +137,5 @@ public sealed class OperationCatalog : IOperationCatalog, IDisposable
         return "operation-catalog:" + Convert.ToHexString(hash)[..16].ToLowerInvariant();
     }
 
-    /// <summary>
-    /// Disposes the snapshot-cache lock. The catalog is registered as a singleton and owns the
-    /// <see cref="SemaphoreSlim"/> guarding its cached snapshot, so it must dispose it (CA1001).
-    /// </summary>
     public void Dispose() => _snapshotLock.Dispose();
 }

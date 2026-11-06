@@ -6,10 +6,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.Publishing.Reports;
 
-/// <summary>
-/// Source-generated JSON context for the report document contracts. Mirrors
-/// <c>FormPackageJsonContext</c> (reflection-based serialization is disabled app-wide).
-/// </summary>
 [JsonSourceGenerationOptions(
     JsonSerializerDefaults.General,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]

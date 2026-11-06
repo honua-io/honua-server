@@ -8,15 +8,8 @@ using System.Text;
 
 namespace Honua.Core.Features.Shared.Models;
 
-/// <summary>
-/// Centralized error message constants to eliminate duplication and ensure consistent messaging
-/// across all protocols (GeoServices REST, OGC API Features, OData, MVT).
-/// </summary>
 public static class ErrorMessages
 {
-    /// <summary>
-    /// Resource not found error messages
-    /// </summary>
     public static class NotFound
     {
         public const string         /// <inheritdoc/>
@@ -46,46 +39,25 @@ ResourceGeneric = "{0} not found";
         private static readonly CompositeFormat _fieldFormat = CompositeFormat.Parse(Field);
         private static readonly CompositeFormat _resourceGenericFormat = CompositeFormat.Parse(ResourceGeneric);
 
-        /// <summary>
-        /// Formats service not found message
-        /// </summary>
         public static string FormatService(string serviceId) =>
             string.Format(CultureInfo.InvariantCulture, _serviceFormat, serviceId);
 
-        /// <summary>
-        /// Formats layer not found message
-        /// </summary>
         public static string FormatLayer(int layerId) =>
             string.Format(CultureInfo.InvariantCulture, _layerFormat, layerId);
 
-        /// <summary>
-        /// Formats layer not found in service message
-        /// </summary>
         public static string FormatLayerInService(int layerId, string serviceId) =>
             string.Format(CultureInfo.InvariantCulture, _layerInServiceFormat, layerId, serviceId);
 
-        /// <summary>
-        /// Formats collection not found message
-        /// </summary>
         public static string FormatCollection(string collectionId) =>
             string.Format(CultureInfo.InvariantCulture, _collectionFormat, collectionId);
 
-        /// <summary>
-        /// Formats field not found message
-        /// </summary>
         public static string FormatField(string fieldName, string layerName) =>
             string.Format(CultureInfo.InvariantCulture, _fieldFormat, fieldName, layerName);
 
-        /// <summary>
-        /// Formats generic resource not found message
-        /// </summary>
         public static string FormatResource(string resource) =>
             string.Format(CultureInfo.InvariantCulture, _resourceGenericFormat, resource);
     }
 
-    /// <summary>
-    /// Validation error messages
-    /// </summary>
     public static class Validation
     {
         public const string         /// <inheritdoc/>
@@ -122,34 +94,19 @@ ServiceIdRequired = "Service ID is required.";
 CollectionIdInvalid = "Collection '{0}' is invalid.";
         private static readonly CompositeFormat _collectionIdInvalidFormat = CompositeFormat.Parse(CollectionIdInvalid);
 
-        /// <summary>
-        /// Formats range validation message
-        /// </summary>
         public static string FormatRange(string field, object min, object max) =>
             $"{field} must be between {min} and {max}";
 
-        /// <summary>
-        /// Formats range validation message with units
-        /// </summary>
         public static string FormatRangeWithUnits(string field, object min, object max, string units) =>
             $"{field} must be between {min} and {max} {units}";
 
-        /// <summary>
-        /// Formats minimum value validation message
-        /// </summary>
         public static string FormatMinimum(string field, object min) =>
             $"{field} must be at least {min}";
 
-        /// <summary>
-        /// Formats collection ID invalid message
-        /// </summary>
         public static string FormatCollectionIdInvalid(string collectionId) =>
             string.Format(CultureInfo.InvariantCulture, _collectionIdInvalidFormat, collectionId);
     }
 
-    /// <summary>
-    /// Range validation error messages for common ranges
-    /// </summary>
     public static class RangeValidation
     {
         public const string         /// <inheritdoc/>
@@ -310,9 +267,6 @@ AdaptiveSamplingLoadMemoryThreshold = "AdaptiveSampling:Load:MemoryThreshold mus
 AdaptiveSamplingBaseSamplingRate = "AdaptiveSampling:BaseSamplingRate must be between 0.0 and 1.0";
     }
 
-    /// <summary>
-    /// Authorization and security error messages
-    /// </summary>
     public static class Security
     {
         public const string         /// <inheritdoc/>
@@ -328,133 +282,64 @@ TokenRequired = "Authentication token is required.";
         private static readonly CompositeFormat _forbiddenFormat = CompositeFormat.Parse(Forbidden);
         private static readonly CompositeFormat _unauthorizedOperationFormat = CompositeFormat.Parse(UnauthorizedOperation);
 
-        /// <summary>
-        /// Formats forbidden operation message
-        /// </summary>
         public static string FormatForbidden(string operation) =>
             string.Format(CultureInfo.InvariantCulture, _forbiddenFormat, operation);
 
-        /// <summary>
-        /// Formats unauthorized operation message
-        /// </summary>
         public static string FormatUnauthorized(string operation) =>
             string.Format(CultureInfo.InvariantCulture, _unauthorizedOperationFormat, operation);
     }
 
-    /// <summary>
-    /// Service and system error messages
-    /// </summary>
     public static class System
     {
-        /// <summary>
-        /// Service temporarily unavailable error message
-        /// </summary>
         public const string ServiceUnavailable = "The service is temporarily unavailable. Please try again later.";
 
-        /// <summary>
-        /// Request timeout error message
-        /// </summary>
         public const string RequestTimeout = "The request timed out.";
 
-        /// <summary>
-        /// Request cancelled error message
-        /// </summary>
         public const string RequestCancelled = "The request was cancelled or timed out.";
 
-        /// <summary>
-        /// Conflict state error message
-        /// </summary>
         public const string ConflictState = "The request could not be completed due to a conflict with the current state.";
 
-        /// <summary>
-        /// Invalid operation error message
-        /// </summary>
         public const string InvalidOperation = "The requested operation is not valid in the current state.";
 
-        /// <summary>
-        /// Not supported error message
-        /// </summary>
         public const string NotSupported = "The requested operation is not supported.";
 
-        /// <summary>
-        /// Unexpected error message
-        /// </summary>
         public const string UnexpectedError = "An unexpected error occurred.";
 
-        /// <summary>
-        /// Payload too large error message
-        /// </summary>
         public const string PayloadTooLarge = "Request payload is too large.";
 
-        /// <summary>
-        /// Too many requests error message
-        /// </summary>
         public const string TooManyRequests = "Too many requests. Please try again later.";
 
         // Protocol-specific operation error messages
 
-        /// <summary>
-        /// Invalid object ID value error message
-        /// </summary>
         public const string InvalidObjectIdValue = "Invalid objectId value. objectIds parameter must contain only numeric values.";
 
-        /// <summary>
-        /// Invalid spatial parameters error message
-        /// </summary>
         public const string InvalidSpatialParameters = "Invalid spatial parameters: {0}";
 
-        /// <summary>
-        /// Invalid temporal parameters error message
-        /// </summary>
         public const string InvalidTemporalParameters = "Invalid temporal parameters: {0}";
 
-        /// <summary>
-        /// Invalid time parameter error message
-        /// </summary>
         public const string InvalidTimeParameter = "Invalid time parameter: {0}";
 
-        /// <summary>
-        /// Invalid time parameter format error message
-        /// </summary>
         public const string InvalidTimeParameterFormat = "Invalid time parameter format: {0}";
 
-        /// <summary>
-        /// Required parameter missing error message
-        /// </summary>
         public const string RequiredParameterMissing = Validation.RequiredParameterMissing;
         private static readonly CompositeFormat _invalidSpatialParametersFormat = CompositeFormat.Parse(InvalidSpatialParameters);
         private static readonly CompositeFormat _invalidTemporalParametersFormat = CompositeFormat.Parse(InvalidTemporalParameters);
         private static readonly CompositeFormat _invalidTimeParameterFormatValue = CompositeFormat.Parse(InvalidTimeParameter);
         private static readonly CompositeFormat _invalidTimeParameterFormatFormat = CompositeFormat.Parse(InvalidTimeParameterFormat);
 
-        /// <summary>
-        /// Formats invalid spatial parameters message
-        /// </summary>
         public static string FormatInvalidSpatialParameters(string details) =>
             string.Format(CultureInfo.InvariantCulture, _invalidSpatialParametersFormat, details);
 
-        /// <summary>
-        /// Formats invalid temporal parameters message
-        /// </summary>
         public static string FormatInvalidTemporalParameters(string details) =>
             string.Format(CultureInfo.InvariantCulture, _invalidTemporalParametersFormat, details);
 
-        /// <summary>
-        /// Formats invalid time parameter message
-        /// </summary>
         public static string FormatInvalidTimeParameter(string details) =>
             string.Format(CultureInfo.InvariantCulture, _invalidTimeParameterFormatValue, details);
 
-        /// <summary>
-        /// Formats invalid time parameter format message
-        /// </summary>
         public static string FormatInvalidTimeParameterFormat(string timeValue) =>
             string.Format(CultureInfo.InvariantCulture, _invalidTimeParameterFormatFormat, timeValue);
     }
 
-    /// <summary>
-    /// OData-specific error messages
-    /// </summary>
     public static class OData
     {
         public const string         /// <inheritdoc/>
@@ -463,9 +348,6 @@ ApplyParameterRequired = "$apply parameter is required.";
 SearchParameterRequired = "$search parameter is required.";
     }
 
-    /// <summary>
-    /// Import and file processing error messages
-    /// </summary>
     public static class Import
     {
         public const string         /// <inheritdoc/>

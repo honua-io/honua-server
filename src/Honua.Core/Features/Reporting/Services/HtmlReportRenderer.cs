@@ -10,20 +10,14 @@ using Honua.Core.Features.Reporting.Domain;
 
 namespace Honua.Core.Features.Reporting.Services;
 
-/// <summary>
-/// Self-contained HTML renderer. Inlines an embedded CSS sheet, generates
-/// charts as inline SVG, and never references external hosts so reports work
-/// offline for on-prem operators.
-/// </summary>
+// The HTML inlines its CSS and SVG and never references an external host, so a report still opens offline.
 internal sealed class HtmlReportRenderer : IAnalysisReportRenderer
 {
     private const string CssResourceName = "Honua.Core.Features.Reporting.Templates.Resources.report.css";
     private static readonly string _embeddedCss = LoadEmbeddedCss();
 
-    /// <inheritdoc />
     public AnalysisReportFormat Format => AnalysisReportFormat.Html;
 
-    /// <inheritdoc />
     public string Render(AnalysisReport report)
     {
         ArgumentNullException.ThrowIfNull(report);

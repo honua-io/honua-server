@@ -77,6 +77,8 @@ internal sealed class MetadataV2ImageServerLayerResolver(
         var snapshot = await metadataGraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var publishedResources = snapshot.PublicationsForService(service.Metadata.Id)
             .Where(snapshot.IsRoutable)
+            .Where(publication => TenantScopeHelpers.IsPublicationVisible(
+                context, publication, snapshot.ResolveResource(publication), service))
             .Select(publication => new ImageServerPublicationLayer(
                 publication.Metadata.Id,
                 publication.LayerIndex,
@@ -165,7 +167,8 @@ internal sealed class MetadataV2ImageServerLayerResolver(
             // the access policy (#6452).
             .Where(candidate =>
                 candidate.StorageLayerId == layerId
-                && candidate.Resource is { Type: MetadataV2ResourceType.RasterDataset })
+                && candidate.Resource is { Type: MetadataV2ResourceType.RasterDataset }
+                && TenantScopeHelpers.IsPublicationVisible(context, candidate.Publication, candidate.Resource, candidate.Service))
             .ToArray();
 
         if (candidates.Length == 0)
@@ -238,7 +241,8 @@ internal sealed class MetadataV2ImageServerLayerResolver(
             || !string.Equals(publication.ServiceId, service.Metadata.Id, StringComparison.Ordinal)
             || publication.LayerIndex != expectedPublicationLayerIndex
             || snapshot.ResolveStorageLayerId(publication) != expectedStorageLayerId
-            || snapshot.ResolveResource(publication) is not { } resource)
+            || snapshot.ResolveResource(publication) is not { } resource
+            || !TenantScopeHelpers.IsPublicationVisible(context, publication, resource, service))
         {
             return new ImageServerLayerResolution(
                 0,

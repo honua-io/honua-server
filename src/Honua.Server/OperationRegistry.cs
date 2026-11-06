@@ -107,6 +107,7 @@ public static class OperationRegistry
 
         // MCP JSON-RPC methods dispatched through POST /mcp
         new(Mcp, "initialize"),
+        new(Mcp, "server/discover"),
         new(Mcp, "tools/list"),
         new(Mcp, "tools/call"),
         new(Mcp, "resources/list"),

@@ -30,6 +30,30 @@ Desktop GeoServices REST client, QGIS (manual lane), Power BI, and Excel evidenc
 certification snapshot; the PyQGIS, MapLibre, Esri Leaflet, and Cesium lanes are
 re-certified automatically on every run.
 
+## Protected feature fields
+
+Updates reject changes or removals of fields declared non-editable and the
+resource's bound GlobalID, including null-valued merge-patch removals. Initial
+create values follow each protocol's create contract.
+
+Attribute replacement preserves omitted protected fields from the stored row,
+including fields hidden by read policies. Other omitted attributes retain their
+replacement deletion semantics. The same protection applies to DEFAULT and
+named branch versions. An OGC Features merge patch with a null properties object
+clears editable attributes while retaining protected fields.
+
+Published form packages use the target layer's current field policy on each
+submission. Marking a target field read-only or hidden prevents later form
+submissions from writing it, including explicit null values.
+
+## Row security on edits
+
+Row policies apply to both the existing row and the resulting row. A caller cannot
+update a hidden feature into a visible partition or delete a hidden feature by
+its identifier. Create operations must produce a visible row. Checks use the
+same transaction as the mutation, including named branch versions and published
+form submissions.
+
 ## Public URL and host validation
 
 Set `Public:BaseUrl` (or its `Public__BaseUrl` environment form) or
@@ -39,6 +63,15 @@ precedence. Request host validation, strict startup validation
 (`HostValidation:RequireExplicitHosts=true`) and generated links use the same URL resolution.
 An explicit host allowlist still takes precedence over the public URL, and
 unrelated request hosts remain rejected when host validation is enabled.
+
+## Publication tenant scope for imagery
+
+WMS and WMTS discovery and layer selection exclude publications owned by another
+tenant, even when the underlying resource is public. ImageServer numeric, default
+and publication-specific routes apply the same publication scope before selecting
+a source. A hidden primary publication does not shadow a visible alias. If a
+previously selected publication is no longer visible, raster and tile requests
+return not found without rebinding the request to another publication.
 
 ## Managed API keys and Portal token exchange
 
@@ -60,6 +93,24 @@ issuance uses its existing identity projection.
 
 Scoped Portal-token authentication is therefore not available to desktop clients. See
 [authentication setup and token revocation during upgrades](../../guides/secure/authentication.md#4-issue-geoservices-rest-compatible-tokens).
+
+## Read-policy metadata availability
+
+Service-scoped row-level security and field masks require metadata identifying the
+resource's publishing services. If resolving that metadata fails, the operation
+fails instead of returning a result constrained only by wildcard-service policies.
+Retry after metadata availability is restored. A successfully resolved resource
+without publications continues to use wildcard policies. Request cancellation
+remains cancellation.
+
+## OIDC audience identity
+
+OIDC audience values must match the configured client ID or additional audience
+exactly, including letter case. Tokens for a case-distinct audience are rejected
+by bearer authentication, Portal token exchange, and provider-specific validation.
+Issuer-to-audience bindings also retain exact issuer identity. Deployments that
+previously relied on case-insensitive audience matching must align their issuer's
+token audience with the configured value before upgrading.
 
 ## Realtime credentials and reconnects
 

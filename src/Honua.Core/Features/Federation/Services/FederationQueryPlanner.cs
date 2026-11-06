@@ -8,13 +8,6 @@ using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Core.Features.Federation.Services;
 
-/// <summary>
-/// Pure, deterministic federation query planner. Given a canonical <see cref="FeatureQuery"/>
-/// and a federated source, it decides which predicates push down to the remote source and
-/// which are refined locally, following the "push filters to remote, join locally" strategy
-/// in issue #341. The planner performs no I/O, so it is safe to run offline and is exercised
-/// by unit tests with no live remote source.
-/// </summary>
 internal sealed class FederationQueryPlanner : IFederationQueryPlanner
 {
     public FederatedSourceCapabilities ResolveCapabilities(FederatedSourceKind kind) => kind switch

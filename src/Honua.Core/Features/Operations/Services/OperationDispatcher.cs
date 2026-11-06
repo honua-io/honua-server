@@ -11,13 +11,6 @@ using Honua.Core.Features.Operations.Domain;
 
 namespace Honua.Core.Features.Operations.Services;
 
-/// <summary>
-/// Default <see cref="IOperationInvoker"/>. Resolves the descriptor + executor for an
-/// operation id and runs the policy decision point. Ordinary submissions call the executor
-/// only on <see cref="PolicyDecisionKind.Allow"/>; explicit proposal submissions add a separate approval floor. For Deny / RequireApproval /
-/// DryRunFirst it returns a handle that reflects the decision WITHOUT touching the executor —
-/// proving the guardrail seam holds for every registered policy implementation.
-/// </summary>
 public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalSubmitter
 {
     private static readonly TimeSpan PostActuationPersistenceTimeout = TimeSpan.FromSeconds(10);
@@ -32,17 +25,6 @@ public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalS
     private readonly IOperationApprovalReplayVerifier? _approvalReplayVerifier;
     private readonly TimeProvider _clock;
 
-    /// <summary>
-    /// Initializes a new instance of <see cref="OperationDispatcher"/>.
-    /// </summary>
-    /// <param name="catalog">Operation grounding catalog.</param>
-    /// <param name="executors">Registered operation executors.</param>
-    /// <param name="policy">Policy decision point consulted before execution.</param>
-    /// <param name="clock">Time provider used for envelope timestamps.</param>
-    /// <param name="approvalBridge">Optional durable approval persistence seam.</param>
-    /// <param name="instanceStore">Operation-instance store. Omit only in explicit tests.</param>
-    /// <param name="auditLog">Audit sink. Omit only in explicit tests.</param>
-    /// <param name="approvalReplayVerifier">Durable approved-replay authority verifier.</param>
     public OperationDispatcher(
         IOperationCatalog catalog,
         IEnumerable<IOperationExecutor> executors,
@@ -68,7 +50,6 @@ public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalS
         _executors = executors.ToDictionary(executor => executor.OperationId, StringComparer.Ordinal);
     }
 
-    /// <inheritdoc />
     public async Task<OperationValidation> ValidateAsync(
         OperationRequest request,
         CancellationToken cancellationToken = default)
@@ -78,14 +59,12 @@ public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalS
         return await executor.ValidateAsync(request, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public Task<OperationHandle> SubmitAsync(
         OperationRequest request,
         OperationPolicyContext context,
         CancellationToken cancellationToken = default)
         => SubmitCoreAsync(request, context, proposalOnly: false, cancellationToken);
 
-    /// <inheritdoc />
     public Task<OperationHandle> ProposeAsync(
         OperationRequest request,
         OperationPolicyContext context,
@@ -739,19 +718,10 @@ public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalS
             "The approval transition was refused because the operation instance version changed.");
     }
 
-    /// <summary>
-    /// Whether the instance record was accepted by the invocation-scoped non-durable store a
-    /// Redis-off host composes for direct configuration operations (owner decision 20).
-    /// </summary>
     private bool IsNonDurableInstance(string? operationInstanceId)
         => _instanceStore is NonDurableDirectOperationInstanceStore direct
             && direct.IsNonDurable(operationInstanceId);
 
-    /// <summary>
-    /// Stamps <see cref="NonDurableDirectOperationInstanceStore.NonDurableEvidenceRef"/> on a
-    /// handle whose instance record lives only in process memory, so every adapter can tell the
-    /// caller the handle cannot be read back through the operation status surfaces.
-    /// </summary>
     private OperationHandle MarkInstanceDurability(OperationHandle envelope)
         => !IsNonDurableInstance(envelope.OperationInstanceId)
             || envelope.EvidenceRefs.Contains(NonDurableDirectOperationInstanceStore.NonDurableEvidenceRef, StringComparer.Ordinal)

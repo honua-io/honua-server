@@ -8,56 +8,33 @@ using System.Text.Json;
 
 namespace Honua.Core.Features.AuditLog.Abstractions;
 
-/// <summary>
-/// A declaration, stored as an ordinary audit row, that one contiguous run of unhashed
-/// rows was appended by a writer that predates the hash chain (a binary downgrade).
-/// The verifier accepts the declared rows as an attested gap only when the declaration
-/// matches the stored rows exactly and the declaration row itself verifies as a keyed MAC.
-/// Existing rows are never rewritten.
-/// </summary>
+// The verifier accepts an unhashed run only when this declaration matches the stored rows exactly, and existing rows are never rewritten.
 public sealed record AuditChainGapAttestation
 {
-    /// <summary>The <c>action</c> of an attestation row.</summary>
     public const string Action = "audit.chain.gap_attested";
 
-    /// <summary>The <c>resource_type</c> of an attestation row.</summary>
     public const string ResourceType = "audit-chain";
 
-    /// <summary>The <c>schema</c> member of the attestation details document.</summary>
     public const string Schema = "honua.audit-chain-gap/v1";
 
-    /// <summary>The <c>audit_id</c> of the attestation row itself.</summary>
     public long AttestationAuditId { get; init; }
 
-    /// <summary>The last hashed row before the gap.</summary>
     public required long AnchorAuditId { get; init; }
 
-    /// <summary>The stored <c>entry_hash</c> of <see cref="AnchorAuditId"/>.</summary>
     public required string AnchorEntryHash { get; init; }
 
-    /// <summary>The first unhashed row of the gap.</summary>
     public required long GapFirstAuditId { get; init; }
 
-    /// <summary>The last unhashed row of the gap.</summary>
     public required long GapLastAuditId { get; init; }
 
-    /// <summary>The number of rows in the gap.</summary>
     public required long GapRowCount { get; init; }
 
-    /// <summary>The first hashed row after the gap.</summary>
     public required long ResumeAuditId { get; init; }
 
-    /// <summary>
-    /// The stored <c>prev_hash</c> of <see cref="ResumeAuditId"/>: <c>null</c> when the
-    /// resuming writer started a new chain, or <see cref="AnchorEntryHash"/> when it
-    /// linked over the gap.
-    /// </summary>
     public string? ResumePreviousHash { get; init; }
 
-    /// <summary>The operator's stated reason.</summary>
     public required string Reason { get; init; }
 
-    /// <summary>Serializes the declaration as the attestation row's <c>details</c>.</summary>
     public string ToDetails()
     {
         var buffer = new ArrayBufferWriter<byte>();
@@ -87,12 +64,6 @@ public sealed record AuditChainGapAttestation
         return Encoding.UTF8.GetString(buffer.WrittenSpan);
     }
 
-    /// <summary>
-    /// Parses an attestation row. Returns <c>null</c> for a row that is not a
-    /// well-formed, internally consistent declaration; such a row excuses nothing.
-    /// </summary>
-    /// <param name="attestationAuditId">The <c>audit_id</c> of the row.</param>
-    /// <param name="details">The row's <c>details</c>.</param>
     public static AuditChainGapAttestation? TryParse(long attestationAuditId, string? details)
     {
         if (string.IsNullOrWhiteSpace(details))
@@ -178,7 +149,6 @@ public sealed record AuditChainGapAttestation
                && element.TryGetInt64(out value);
     }
 
-    /// <summary>The attestation row's <c>resource_id</c>.</summary>
     public string ResourceId
         => string.Create(CultureInfo.InvariantCulture, $"gap:{GapFirstAuditId}-{GapLastAuditId}");
 }

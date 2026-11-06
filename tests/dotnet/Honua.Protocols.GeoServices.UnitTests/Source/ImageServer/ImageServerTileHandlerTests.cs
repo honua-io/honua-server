@@ -48,6 +48,34 @@ public class ImageServerTileHandlerTests
 
     [UnitTest]
     [Operation(Operations.GetTile)]
+    public async Task GetImageTileAsync_PublicationBecameTenantScoped_RejectsBeforeRasterAccess()
+    {
+        var snapshot = await _graphProvider.GetCurrentAsync();
+        _graphProvider.SetGraph(snapshot.Graph with
+        {
+            StorageBindings = [new MetadataV2StorageBinding
+            {
+                Metadata = new MetadataV2ObjectMetadata { Id = "tenant-raster-binding" },
+                ResourceId = "resource-1", StorageLayerId = 1,
+                StorageType = MetadataV2StorageType.RelationalTable, Locator = "rasters"
+            }],
+            Publications = snapshot.Graph.Publications.Select(p => p with
+            {
+                Metadata = p.Metadata with { Tenant = "tenant-b" },
+                StorageBindingId = "tenant-raster-binding"
+            }).ToArray()
+        });
+        var context = CreateImageServerContext(services => services.AddValidationServices());
+        context.User = new ClaimsPrincipal(new ClaimsIdentity("test"));
+        var result = await _handler.GetImageTileAsync(context, 1, 0, 0, 0, "png",
+            publicationId: "publication-1", cacheLayerId: 1);
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status404NotFound);
+        await _rasterStore.DidNotReceive().QueryRastersAsync(
+            Arg.Any<int>(), Arg.Any<RasterSelectionQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetTile)]
     public async Task GetImageTileAsync_LayerNotFound_ReturnsNotFound()
     {
 

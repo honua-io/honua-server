@@ -11,18 +11,8 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Reporting;
 
-/// <summary>
-/// Service registration helpers for the analysis-reporting feature. Registers
-/// the deterministic narrative provider, builders, renderers, in-memory store,
-/// and the four built-in family templates plus the generic fallback.
-/// </summary>
 public static class ServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers the deterministic reporting pipeline. Server-side wiring (LLM
-    /// narrative provider, MCP resource, endpoints) is layered on top via
-    /// <c>Honua.Server.Features.Reporting</c>.
-    /// </summary>
     public static IServiceCollection AddAnalysisReportingCore(
         this IServiceCollection services,
         IConfiguration configuration)

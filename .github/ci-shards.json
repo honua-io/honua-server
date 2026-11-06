@@ -297,7 +297,7 @@
     },
     {
       "name": "File and Raster Import capacity split (#3204)",
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Import.ExternalFormatCorpusImport|FullyQualifiedName~Honua.Server.Tests.Import.CloudStorage|FullyQualifiedName~Honua.Server.Tests.Import.FileGdb|FullyQualifiedName~Honua.Server.Tests.Import.GeoParquet|FullyQualifiedName~Honua.Server.Tests.Import.StreamingImport|FullyQualifiedName~Honua.Server.Tests.Import.ImportAuthorizationParity|FullyQualifiedName~Honua.Server.Tests.Import.ImportReadWriteContractTests|FullyQualifiedName~Honua.Server.Tests.Import.ImportBackgroundService|FullyQualifiedName~Honua.Server.Tests.Import.ImportDistributedState|FullyQualifiedName~Honua.Server.Tests.Import.ImportEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.ImportHttpClientHelper|FullyQualifiedName~Honua.Server.Tests.Import.ImportSourceUrlValidation|FullyQualifiedName~Honua.Server.Tests.Import.ImportUrlEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.Emulator|FullyQualifiedName~Honua.Server.Tests.Import.TileCachePackage|FullyQualifiedName~Honua.Server.Tests.Import.ImportedTileCacheAccessTests|FullyQualifiedName~Honua.Server.Tests.Import.AwsS3|FullyQualifiedName~Honua.Server.Tests.Import.AzureBlob|FullyQualifiedName~Honua.Server.Tests.Import.ImportValidationErrorMessage|FullyQualifiedName~Honua.Server.Tests.Import.RedisJobQueueFallback|FullyQualifiedName~Honua.Server.Tests.Import.ImportCoordinatorRecovery|FullyQualifiedName~Honua.Server.Tests.Import.CogImport|FullyQualifiedName~Honua.Server.Tests.Import.RasterImport|FullyQualifiedName~Honua.Server.Tests.Import.UniversalImportJobService|FullyQualifiedName~Honua.Server.Tests.Import.ReplaceCompletenessParserSkipTests|FullyQualifiedName~Honua.Server.Tests.Import.IdempotentUrlImportEndpointTests",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Import.ExternalFormatCorpusImport|FullyQualifiedName~Honua.Server.Tests.Import.CloudStorage|FullyQualifiedName~Honua.Server.Tests.Import.FileGdb|FullyQualifiedName~Honua.Server.Tests.Import.GeoParquet|FullyQualifiedName~Honua.Server.Tests.Import.StreamingImport|FullyQualifiedName~Honua.Server.Tests.Import.ImportAuthorizationParity|FullyQualifiedName~Honua.Server.Tests.Import.ImportReadWriteContractTests|FullyQualifiedName~Honua.Server.Tests.Import.ImportBackgroundService|FullyQualifiedName~Honua.Server.Tests.Import.ImportCancellationMonitorTests|FullyQualifiedName~Honua.Server.Tests.Import.ImportDistributedState|FullyQualifiedName~Honua.Server.Tests.Import.ImportEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.ImportHttpClientHelper|FullyQualifiedName~Honua.Server.Tests.Import.ImportSourceUrlValidation|FullyQualifiedName~Honua.Server.Tests.Import.ImportUrlEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.Emulator|FullyQualifiedName~Honua.Server.Tests.Import.TileCachePackage|FullyQualifiedName~Honua.Server.Tests.Import.ImportedTileCacheAccessTests|FullyQualifiedName~Honua.Server.Tests.Import.AwsS3|FullyQualifiedName~Honua.Server.Tests.Import.AzureBlob|FullyQualifiedName~Honua.Server.Tests.Import.ImportValidationErrorMessage|FullyQualifiedName~Honua.Server.Tests.Import.RedisJobQueueFallback|FullyQualifiedName~Honua.Server.Tests.Import.ImportCoordinatorRecovery|FullyQualifiedName~Honua.Server.Tests.Import.CogImport|FullyQualifiedName~Honua.Server.Tests.Import.RasterImport|FullyQualifiedName~Honua.Server.Tests.Import.UniversalImportJobService|FullyQualifiedName~Honua.Server.Tests.Import.ReplaceCompletenessParserSkipTests|FullyQualifiedName~Honua.Server.Tests.Import.IdempotentUrlImportEndpointTests",
       "children": [
         "File and Raster Import",
         "Cloud and Streaming Import"
@@ -315,7 +315,7 @@
     },
     {
       "name": "MCP and Sessions capacity split (#3204)",
-      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Mcp|FullyQualifiedName~Honua.Server.Tests.Features.AiBuilder|FullyQualifiedName~Honua.Server.Tests.Features.Reporting|FullyQualifiedName~Honua.Ai.Tests.Capabilities|FullyQualifiedName~Honua.Server.Tests.Features.Infrastructure.Rendering|FullyQualifiedName~Honua.Server.Tests.Features.StudioAiProxy)",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Mcp|FullyQualifiedName~Honua.Server.Tests.Features.AiBuilder|FullyQualifiedName~Honua.Server.Tests.Features.Reporting|FullyQualifiedName~Honua.Ai.Tests.Capabilities|FullyQualifiedName~Honua.Ai.Tests.DatabaseCollectionContractTests|FullyQualifiedName~Honua.Server.Tests.Features.Infrastructure.Rendering|FullyQualifiedName~Honua.Server.Tests.Features.StudioAiProxy)",
       "children": [
         "MCP and Sessions",
         "MCP Authentication and Governance"
@@ -809,7 +809,7 @@
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "_comment": "Offline TRX rebalance (#3711): combines the 2.1m-p90 RasterImport micro-shard with the 11.5m-p90 FileImport owner. October 2026 fleet re-base (#5884): the run-shard step peaked at 19.2m across full-matrix runs 38158644558 / 38164919834 / 38182837651 / 38193561888 against a 20m cap; 28m keeps that peak at the 0.7 target_utilization.",
-      "filter": "(FullyQualifiedName~Honua.Server.Tests.Import.ExternalFormatCorpusImport|FullyQualifiedName~Honua.Server.Tests.Import.FileGdb|FullyQualifiedName~Honua.Server.Tests.Import.ImportAuthorizationParity|FullyQualifiedName~Honua.Server.Tests.Import.ImportReadWriteContractTests|FullyQualifiedName~Honua.Server.Tests.Import.ImportBackgroundService|FullyQualifiedName~Honua.Server.Tests.Import.ImportDistributedState|FullyQualifiedName~Honua.Server.Tests.Import.ImportEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.TileCachePackage|FullyQualifiedName~Honua.Server.Tests.Import.ImportedTileCacheAccessTests|FullyQualifiedName~Honua.Server.Tests.Import.CogImport|FullyQualifiedName~Honua.Server.Tests.Import.RasterImport|FullyQualifiedName~Honua.Server.Tests.Import.ReplaceCompletenessParserSkipTests|FullyQualifiedName~Honua.Server.Tests.Import.UniversalImportJobService)",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Import.ExternalFormatCorpusImport|FullyQualifiedName~Honua.Server.Tests.Import.FileGdb|FullyQualifiedName~Honua.Server.Tests.Import.ImportAuthorizationParity|FullyQualifiedName~Honua.Server.Tests.Import.ImportReadWriteContractTests|FullyQualifiedName~Honua.Server.Tests.Import.ImportBackgroundService|FullyQualifiedName~Honua.Server.Tests.Import.ImportCancellationMonitorTests|FullyQualifiedName~Honua.Server.Tests.Import.ImportDistributedState|FullyQualifiedName~Honua.Server.Tests.Import.ImportEndpoint|FullyQualifiedName~Honua.Server.Tests.Import.TileCachePackage|FullyQualifiedName~Honua.Server.Tests.Import.ImportedTileCacheAccessTests|FullyQualifiedName~Honua.Server.Tests.Import.CogImport|FullyQualifiedName~Honua.Server.Tests.Import.RasterImport|FullyQualifiedName~Honua.Server.Tests.Import.ReplaceCompletenessParserSkipTests|FullyQualifiedName~Honua.Server.Tests.Import.UniversalImportJobService)",
       "paths": [
         "src/Honua.Core/Features/FileImport/",
         "src/Honua.Core/Features/Import/",
@@ -833,6 +833,7 @@
         "tests/dotnet/Honua.Server.Tests/Import/GeoParquetUrlPreviewTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ImportAuthorizationParityTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ImportBackgroundServiceTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/ImportCancellationMonitorTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ImportDistributedStateFailureTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ImportEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/ImportHttpClientHelperTests.cs",
@@ -2096,12 +2097,13 @@
       "upload_odata_evidence": false,
       "csproj": "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj",
       "_comment": "Round-2 offline TRX rebalance (#3770): folds the 2.1m-p90 MCP micro-shard into MCP Sessions; same Honua.Ai.Tests assembly, placement only.",
-      "filter": "((FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Mcp|FullyQualifiedName~Honua.Server.Tests.Features.AiBuilder|FullyQualifiedName~Honua.Server.Tests.Features.Reporting|FullyQualifiedName~Honua.Ai.Tests.Capabilities|FullyQualifiedName~Honua.Server.Tests.Features.StudioAiProxy)&FullyQualifiedName!~McpBearerAuthenticationTests&FullyQualifiedName!~McpProtectedResourceMetadataTests&FullyQualifiedName!~McpScopeAuthorizationTests&FullyQualifiedName!~McpAuthorizationHelperTests&FullyQualifiedName!~McpStyle&FullyQualifiedName!~ServicePublish&FullyQualifiedName!~StudioMcpOwnership)",
+      "filter": "((FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Mcp|FullyQualifiedName~Honua.Server.Tests.Features.AiBuilder|FullyQualifiedName~Honua.Server.Tests.Features.Reporting|FullyQualifiedName~Honua.Ai.Tests.Capabilities|FullyQualifiedName~Honua.Ai.Tests.DatabaseCollectionContractTests|FullyQualifiedName~Honua.Server.Tests.Features.StudioAiProxy)&FullyQualifiedName!~McpBearerAuthenticationTests&FullyQualifiedName!~McpProtectedResourceMetadataTests&FullyQualifiedName!~McpScopeAuthorizationTests&FullyQualifiedName!~McpAuthorizationHelperTests&FullyQualifiedName!~McpStyle&FullyQualifiedName!~ServicePublish&FullyQualifiedName!~StudioMcpOwnership)",
       "paths": [
         "src/Honua.Ai/",
         "src/Honua.Core/Features/Publishing/",
         "src/Honua.Core/Features/Validation/",
         "src/Honua.Db/Postgres/Features/Publishing/",
+        "tests/dotnet/Honua.Ai.Tests/DatabaseCollectionContractTests.cs",
         "tests/dotnet/Honua.Ai.Tests/ConformanceSchemas/",
         "tests/dotnet/Honua.Ai.Tests/Source/",
         "tests/dotnet/Honua.Ai.Tests/Source/McpBearerAuthenticationTests.cs",

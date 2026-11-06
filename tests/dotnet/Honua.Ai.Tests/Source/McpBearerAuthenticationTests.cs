@@ -735,7 +735,7 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
         }
     }
 
-    private static HttpRequestMessage BuildPackageFamiliesRequest(string bearer)
+    internal static HttpRequestMessage BuildPackageFamiliesRequest(string bearer)
     {
         var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/studio/package-families");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearer);
@@ -1206,7 +1206,7 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
     /// Fixture that keeps the production default token replay protection on, so every
     /// validated bearer is single-use outside the MCP session it is bound to (#4909).
     /// </summary>
-    private static WebAppFixture CreateReplayProtectedFixture()
+    internal static WebAppFixture CreateReplayProtectedFixture()
         => new WebAppFixture()
             .UseSeed("tests/seed/server.yaml")
             .ConfigureWebHost(builder =>
@@ -1225,7 +1225,7 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
                 builder.UseSetting("Oidc:Generic:DisplayName", "Test IdP");
             });
 
-    private static string CreateToken(
+    internal static string CreateToken(
         string? subject,
         string issuer = Issuer,
         string audience = Audience,
@@ -1317,7 +1317,7 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
         return fixture;
     }
 
-    private static HttpRequestMessage BuildInitialize(string? bearer, string? apiKey = null) => BuildRpc(
+    internal static HttpRequestMessage BuildInitialize(string? bearer, string? apiKey = null) => BuildRpc(
         """
         {"jsonrpc":"2.0","id":1,"method":"initialize","params":{
             "protocolVersion":"2025-06-18",
@@ -1329,7 +1329,7 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
         bearer: bearer,
         apiKey: apiKey);
 
-    private static HttpRequestMessage BuildRpc(
+    internal static HttpRequestMessage BuildRpc(
         string body,
         string? sessionId,
         string? bearer,

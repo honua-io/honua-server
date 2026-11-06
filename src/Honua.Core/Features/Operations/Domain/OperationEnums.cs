@@ -3,206 +3,83 @@
 
 namespace Honua.Core.Features.Operations.Domain;
 
-/// <summary>
-/// How an operation is executed. The descriptor declares the kind so that callers
-/// (the deterministic console UI today, the AI orchestrator later) know whether a
-/// <see cref="Abstractions.IOperationExecutor.SubmitAsync"/> returns an inline result,
-/// queues a durable job, or hands off a proposal for out-of-band execution.
-/// </summary>
 public enum OperationExecutionKind
 {
-    /// <summary>
-    /// The operation completes inline within the request and returns its result directly.
-    /// </summary>
     Synchronous,
 
-    /// <summary>
-    /// The operation is submitted to the durable job substrate and tracked via a job id.
-    /// </summary>
     Job,
 
-    /// <summary>
-    /// The operation produces a proposal that is executed out-of-band (for example the
-    /// DevOps agent's gitops/delegated-session flow). Submit returns a handle describing
-    /// the handoff rather than executing the side effect.
-    /// </summary>
     ProposalHandoff
 }
 
-/// <summary>
-/// Human-gate model an operation flows through. Approval models are plural: publish
-/// uses an operator gate at the HTTP layer, Studio publish-requests use a request lane,
-/// and DevOps uses delegated sessions. The descriptor declares which one applies.
-/// </summary>
 public enum OperationApprovalModel
 {
-    /// <summary>
-    /// No human gate; the operation runs subject only to the policy decision point.
-    /// </summary>
     None,
 
-    /// <summary>
-    /// Guarded by the operator approval gate enforced at the HTTP layer
-    /// (for example <c>LayerPublishingEndpoints</c>).
-    /// </summary>
     OperatorGate,
 
-    /// <summary>
-    /// Routed through the Studio publish-request approval lane.
-    /// </summary>
     StudioPublishRequest,
 
-    /// <summary>
-    /// Routed through the DevOps delegated-session approval flow.
-    /// </summary>
     DevOpsDelegatedSession
 }
 
-/// <summary>
-/// Blast-radius classification for an operation, used by the policy seam to reason about
-/// how much state an invocation can affect.
-/// </summary>
 public enum OperationBlastRadiusClass
 {
-    /// <summary>
-    /// Affects no durable state (read-only / diagnostic).
-    /// </summary>
     None,
 
-    /// <summary>
-    /// Affects a single resource (one layer, one style, one item).
-    /// </summary>
     ResourceScope,
 
-    /// <summary>
-    /// Affects a single service and its contained resources.
-    /// </summary>
     ServiceScope,
 
-    /// <summary>
-    /// Affects tenant-wide or deployment-wide state.
-    /// </summary>
     DeploymentScope
 }
 
-/// <summary>
-/// Side-effect classification for an operation, used by the policy seam.
-/// </summary>
 public enum OperationSideEffectClass
 {
-    /// <summary>
-    /// No side effects; read-only.
-    /// </summary>
     ReadOnly,
 
-    /// <summary>
-    /// Creates new metadata/catalog state.
-    /// </summary>
     CreatesMetadata,
 
-    /// <summary>
-    /// Mutates existing metadata/catalog state.
-    /// </summary>
     MutatesMetadata,
 
-    /// <summary>
-    /// Mutates underlying data (features/rows), not just metadata.
-    /// </summary>
     MutatesData,
 
-    /// <summary>
-    /// Deletes durable state.
-    /// </summary>
     DestroysState
 }
 
-/// <summary>
-/// Whether an operation's behavior is deterministic, runtime-dynamic, or AI-assisted.
-/// Deterministic mode is "the same operations with AI off"; this flag lets the policy
-/// seam and audit distinguish reproducible results from live state and AI output.
-/// </summary>
 public enum OperationDeterminism
 {
-    /// <summary>
-    /// Fully deterministic given its inputs.
-    /// </summary>
     Deterministic,
 
-    /// <summary>
-    /// Reads live runtime state, so identical inputs may produce different results
-    /// without involving AI.
-    /// </summary>
     RuntimeDynamic,
 
-    /// <summary>
-    /// Uses AI assistance and may produce non-deterministic output.
-    /// </summary>
     AiAssisted
 }
 
-/// <summary>
-/// Lifecycle status of a submitted operation, carried by <see cref="OperationHandle"/>.
-/// </summary>
 public enum OperationHandleStatus
 {
-    /// <summary>
-    /// The durable envelope exists, but policy evaluation or actuation has not completed.
-    /// </summary>
     Accepted,
 
-    /// <summary>
-    /// The operation completed synchronously and its result is available on the handle.
-    /// </summary>
     Completed,
 
-    /// <summary>
-    /// The operation was queued as a durable job; track progress via the job id.
-    /// </summary>
     Queued,
 
-    /// <summary>
-    /// The operation is currently running.
-    /// </summary>
     Running,
 
-    /// <summary>
-    /// The operation requires human approval before it can proceed; an approval lane is attached.
-    /// </summary>
     RequiresApproval,
 
-    /// <summary>
-    /// The operation must be dry-run/previewed before a committed execution is permitted; the
-    /// policy decision point returned <see cref="PolicyDecisionKind.DryRunFirst"/>. No side
-    /// effect occurred — the caller should re-submit with a dry run, then commit.
-    /// </summary>
+    // No side effect occurred; the caller must dry-run and then commit.
     DryRunRequired,
 
-    /// <summary>
-    /// The operation was denied by the policy decision point and never reached the executor.
-    /// This is a terminal, structured guardrail outcome distinct from
-    /// <see cref="Failed"/> (an execution-time failure) — a Deny means no side effect occurred.
-    /// </summary>
+    // A policy denial never reached the executor, so no side effect occurred.
     Denied,
 
-    /// <summary>
-    /// A human reviewer rejected the durable proposal. No actuator call occurred.
-    /// </summary>
     Rejected,
 
-    /// <summary>
-    /// The invocation was canceled before actuation began. No side effect occurred and a
-    /// retry creates a new operation instance unless a domain idempotency key says otherwise.
-    /// </summary>
+    // Cancellation before actuation has no side effect, and a retry is a new operation unless a domain idempotency key says otherwise.
     Cancelled,
 
-    /// <summary>
-    /// The operation failed.
-    /// </summary>
     Failed,
 
-    /// <summary>
-    /// The operation may have changed state, but durable verification or evidence could not
-    /// establish a safe terminal outcome.
-    /// </summary>
     Indeterminate
 }

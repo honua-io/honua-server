@@ -5,9 +5,6 @@ using Honua.Core.Features.AuditLog.Abstractions;
 
 namespace Honua.Core.Features.AuditLog;
 
-/// <summary>
-/// One stored audit-chain row, already parsed, ready to replay.
-/// </summary>
 internal readonly struct AuditChainLink
 {
     public AuditChainLink()
@@ -45,15 +42,6 @@ internal readonly struct AuditChainLink
     public string? EntryHash { get; init; }
 }
 
-/// <summary>
-/// Replays an audit hash chain one row at a time. Leading rows with no hash are the
-/// pre-chain prefix. Once a hashed row has been seen, a later row with no hash does
-/// not verify, unless an <see cref="AuditChainGapAttestation"/> declares exactly that
-/// run of rows (see <see cref="AuditChainVerificationCursor(IReadOnlyList{AuditChainGapAttestation})"/>).
-/// When a chain key is configured, a row matches as a keyed MAC or, only before the
-/// first keyed row, as a legacy unkeyed digest. A hashed chain does not verify unless
-/// a key is configured and at least one row matches that key.
-/// </summary>
 internal sealed class AuditChainVerificationCursor
 {
     private readonly IReadOnlyList<AuditChainGapAttestation> _attestations;
@@ -68,30 +56,17 @@ internal sealed class AuditChainVerificationCursor
     private AuditChainGapAttestation? _openGap;
     private long _openGapRows;
 
-    /// <summary>Creates a cursor that accepts no unhashed gap after the chain starts.</summary>
     public AuditChainVerificationCursor()
         : this([])
     {
     }
 
-    /// <summary>
-    /// Creates a cursor that accepts a run of unhashed rows after the chain started only
-    /// when one of <paramref name="attestations"/> declares it exactly: the gap starts
-    /// right after the anchor row whose stored <c>entry_hash</c> it names, contains only
-    /// unhashed rows and exactly the declared count, and is followed by the declared
-    /// resume row with the declared <c>prev_hash</c>. The attestation row itself must
-    /// then verify as a keyed MAC, so only a holder of the chain key can excuse a gap.
-    /// </summary>
-    /// <param name="attestations">Parsed attestation rows, in <c>audit_id</c> order.</param>
+    // An unhashed gap is accepted only when a declaration names the exact anchor, count, and resume row, and that declaration verifies as a keyed MAC.
     public AuditChainVerificationCursor(IReadOnlyList<AuditChainGapAttestation> attestations)
     {
         _attestations = attestations ?? [];
     }
 
-    /// <summary>
-    /// Accepts the next row. Returns a failed report when the row breaks the chain;
-    /// otherwise <c>null</c> and the caller continues.
-    /// </summary>
     public AuditIntegrityReport? Observe(in AuditChainLink link, ReadOnlyMemory<byte> chainKey)
     {
         var key = chainKey.Span;
@@ -159,7 +134,6 @@ internal sealed class AuditChainVerificationCursor
         return null;
     }
 
-    /// <summary>Finishes a walk that <see cref="Observe"/> did not already fail.</summary>
     public AuditIntegrityReport Complete(ReadOnlyMemory<byte> chainKey)
     {
         if (_openGap is { } openGap)

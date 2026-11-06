@@ -3,21 +3,11 @@
 
 namespace Honua.Core.Features.Collaboration.FeatureLocks;
 
-/// <summary>
-/// Default <see cref="IFeatureEditGuard"/> implementation. Combines lock-lease
-/// state from an <see cref="IFeatureLockService"/> with optimistic-concurrency
-/// version comparison to produce a typed verdict for a feature edit.
-/// </summary>
 public sealed class FeatureEditGuard : IFeatureEditGuard
 {
     private readonly IFeatureLockService _locks;
     private readonly TimeProvider _timeProvider;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="FeatureEditGuard"/> class.
-    /// </summary>
-    /// <param name="locks">The lock service consulted for lock-based policies.</param>
-    /// <param name="timeProvider">The time provider used to stamp conflicts, or <see langword="null"/> for the system clock.</param>
     public FeatureEditGuard(IFeatureLockService locks, TimeProvider? timeProvider = null)
     {
         ArgumentNullException.ThrowIfNull(locks);
@@ -25,7 +15,6 @@ public sealed class FeatureEditGuard : IFeatureEditGuard
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
-    /// <inheritdoc />
     public async ValueTask<FeatureEditDecision> EvaluateAsync(
         FeatureEditIntent intent,
         FeatureEditConcurrencyPolicy policy,

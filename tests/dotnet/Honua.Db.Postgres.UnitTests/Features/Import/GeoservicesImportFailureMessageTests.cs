@@ -17,6 +17,30 @@ public sealed class GeoservicesImportFailureMessageTests
 {
     private const string Secret = "s3cr3t-value";
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BuildImportFailureMessage_DependencyFailure_ReportsActualCommitOutcome(bool afterCommit)
+    {
+        var exception = new PostgresException($"dependency {Secret}", "ERROR", "ERROR", PostgresErrorCodes.DependentObjectsStillExist);
+        var stage = afterCommit ? GeoservicesImportService.ImportFailureStage.AfterCommit
+            : GeoservicesImportService.ImportFailureStage.Finalizing;
+
+        var message = GeoservicesImportService.BuildImportFailureMessage(exception, stage);
+
+        if (afterCommit)
+        {
+            message.Should().Contain("Imported rows were already committed");
+            message.Should().NotContain("IMPORT_TARGET_HAS_DEPENDENCIES").And.NotContain("Existing data and dependencies were retained");
+        }
+        else
+        {
+            message.Should().StartWith("IMPORT_TARGET_HAS_DEPENDENCIES:");
+            message.Should().Contain("Existing data and dependencies were retained");
+        }
+        message.Should().NotContain(Secret);
+    }
+
     [Fact]
     public void BuildImportFailureMessage_GeometryRejectedByDatabase_NamesGeometryAndSqlStateOnly()
     {

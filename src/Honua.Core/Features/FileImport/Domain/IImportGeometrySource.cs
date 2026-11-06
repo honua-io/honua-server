@@ -3,15 +3,12 @@
 
 namespace Honua.Core.Features.FileImport.Domain;
 
-/// <summary>Reader-supplied geometry facts retained separately from user attributes during import.</summary>
 public interface IImportGeometrySource
 {
-    /// <summary>Gets whether the source encoding declares Z, including empty or all-NaN coordinates.</summary>
     bool HasDeclaredZ { get; }
 
-    /// <summary>Gets whether the source encoding declares measured ordinates.</summary>
     bool HasDeclaredM { get; }
 
-    /// <summary>Gets whether edges follow straight Cartesian segments and must retain their planar coverage.</summary>
+    // Edges are straight Cartesian segments and must keep their planar coverage.
     bool HasPlanarEdges { get; }
 }

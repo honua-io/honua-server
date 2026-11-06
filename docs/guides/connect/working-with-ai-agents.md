@@ -34,11 +34,12 @@ conflicts with a rule, stop and ask.
 - Serving API and MCP: `http://localhost:18080/mcp`. Use it to publish, query, and manage access, maps and apps.
 - Management API and MCP: `http://localhost:18082/mcp`. Use it for upgrades, rollback and their proposals.
 - Secrets live in `.env`, in files under `secrets/`, and in the secret files mounted into the
-  containers. Read none of them. You may copy `.env` and `secrets/` for a backup, but never display them.
+  containers. Do not print them. A script may read one named key file and must not print it.
+  You may copy `.env` and `secrets/` for a backup, but never display them.
 
 ## 1. Keep secrets out of your output
 
-- Never print or read secret values. Never read files under `secrets/` or a container's mounted secret files (such as `/run/secrets`). Don't run
+- Never print a secret value. Do not read a container's mounted secret files (such as `/run/secrets`). Don't run
   `cat .env`, or `grep` a secret file in a way that prints matching lines. Don't run `env` or
   `printenv` without a variable name, or with the name of a secret.
 - `docker compose config` prints every interpolated secret. Use only `docker compose config --services`,
@@ -140,13 +141,10 @@ Don't replace the serving container by hand, run `docker compose down --volumes`
 
 ## 7. Operating skills
 
-The package's `skills/` directory contains five optional Agent Skills:
+The package's `skills/` directory contains two optional Agent Skills:
 
-- `skills/honua-install/SKILL.md`: install, readiness and secret files.
 - `skills/honua-ops/SKILL.md`: findings, approved restarts, upgrade and rollback.
 - `skills/honua-services/SKILL.md`: import, publish, filtered queries and readback.
-- `skills/honua-studio-maps/SKILL.md`: Studio styles, saved versions and sharing.
-- `skills/honua-tuning/SKILL.md`: measured publication tuning and supported budgets.
 
 Install the relevant skills from this directory before starting your host:
 

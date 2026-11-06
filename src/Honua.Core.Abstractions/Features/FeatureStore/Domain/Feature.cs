@@ -32,6 +32,10 @@ public readonly record struct Feature
     [JsonIgnore]
     public ImmutableArray<string> ExplicitAttributeRemovals { get; init; }
 
+    // Replacement edits retain only these omitted server-owned attributes.
+    [JsonIgnore]
+    public ImmutableArray<string> PreservedAttributeNames { get; init; }
+
     [JsonIgnore]
     public bool PreserveOmittedGeometry { get; init; }
 

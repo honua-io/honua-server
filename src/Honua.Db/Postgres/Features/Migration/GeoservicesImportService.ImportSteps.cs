@@ -642,7 +642,8 @@ internal sealed partial class GeoservicesImportService
                 BuildImportFailureMessage(ex, stage),
                 stopwatch.Elapsed) with
             {
-                ErrorCode = ex is ImportTableOwnershipException ? ImportTableOwnershipException.Code : null,
+                ErrorCode = stage != ImportFailureStage.AfterCommit && ImportTargetDependencies.IsFailure(ex) ? ImportTargetDependencies.Code
+                    : ex is ImportTableOwnershipException ? ImportTableOwnershipException.Code : null,
                 DataCommitted = stage == ImportFailureStage.AfterCommit,
                 FeatureCount = featuresProcessed,
                 FailedFeatures = failedFeatures,
@@ -722,6 +723,11 @@ internal sealed partial class GeoservicesImportService
     /// </summary>
     internal static string BuildImportFailureMessage(Exception exception, ImportFailureStage stage)
     {
+        if (stage != ImportFailureStage.AfterCommit && ImportTargetDependencies.IsFailure(exception))
+        {
+            return ImportTargetDependencies.Message;
+        }
+
         if (exception is ImportTableOwnershipException ownership)
         {
             return ownership.Message;

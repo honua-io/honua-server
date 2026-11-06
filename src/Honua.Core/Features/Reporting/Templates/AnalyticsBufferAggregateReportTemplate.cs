@@ -8,25 +8,16 @@ using Honua.Core.Features.Reporting.Domain;
 
 namespace Honua.Core.Features.Reporting.Templates;
 
-/// <summary>
-/// Template for <c>analytics.buffer-aggregate</c> result packages. Surfaces
-/// the buffer distance and unit when the artifact metadata exposes them and
-/// composes a narrative slot keyed off the buffered feature counts.
-/// </summary>
 internal sealed class AnalyticsBufferAggregateReportTemplate : IAnalysisReportTemplate
 {
     private const string ProcessIdentifier = "analytics.buffer-aggregate";
 
-    /// <inheritdoc />
     public string ProcessId => ProcessIdentifier;
 
-    /// <inheritdoc />
     public string TemplateId => "analysis-report.analytics-buffer-aggregate";
 
-    /// <inheritdoc />
     public string TemplateVersion => "1.0.0";
 
-    /// <inheritdoc />
     public AnalysisReportDraft Build(AnalysisResultPackage package)
     {
         ArgumentNullException.ThrowIfNull(package);

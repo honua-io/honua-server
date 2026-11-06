@@ -7,18 +7,8 @@ using Honua.Core.Features.Reporting.Domain;
 
 namespace Honua.Core.Features.Reporting.Templates;
 
-/// <summary>
-/// Shared section builders used by every analysis report template. Keeps the
-/// per-template files focused on the family-specific parts (key metrics, charts,
-/// narrative slot wording) and avoids duplicating the boilerplate
-/// summary/artifacts/provenance shape.
-/// </summary>
 internal static class TemplateBuildHelpers
 {
-    /// <summary>
-    /// Builds the title heading + summary description paragraph that every
-    /// report leads with.
-    /// </summary>
     public static IEnumerable<AnalysisReportSection> BuildHeader(AnalysisResultPackage package)
     {
         yield return new HeadingSection { Text = package.Summary.Title, Level = 1 };
@@ -28,11 +18,6 @@ internal static class TemplateBuildHelpers
         }
     }
 
-    /// <summary>
-    /// Builds the artifacts table that lists every <see cref="ArtifactRef"/>
-    /// from the source package. Returns an empty enumerable when no artifacts
-    /// are present so renderers do not emit an empty table.
-    /// </summary>
     public static IEnumerable<AnalysisReportSection> BuildArtifactsSection(
         AnalysisResultPackage package,
         int maxRows)
@@ -73,10 +58,6 @@ internal static class TemplateBuildHelpers
         };
     }
 
-    /// <summary>
-    /// Builds the assumptions section. Each assumption renders as a row in a
-    /// single-column table so renderers stay consistent across formats.
-    /// </summary>
     public static IEnumerable<AnalysisReportSection> BuildAssumptionsSection(
         AnalysisResultPackage package,
         int maxRows)
@@ -119,9 +100,6 @@ internal static class TemplateBuildHelpers
         };
     }
 
-    /// <summary>
-    /// Builds the provenance footer that closes every report.
-    /// </summary>
     public static AnalysisReportSection BuildProvenanceFooter(
         string jobId,
         AnalysisResultPackage package,
@@ -136,10 +114,6 @@ internal static class TemplateBuildHelpers
             GeneratedAt = generatedAt
         };
 
-    /// <summary>
-    /// Returns the process family slice (segment before the first <c>.</c>).
-    /// Falls back to <c>generic</c> for unparseable identifiers.
-    /// </summary>
     public static string ResolveProcessFamily(string processId)
     {
         if (string.IsNullOrEmpty(processId))
@@ -151,10 +125,6 @@ internal static class TemplateBuildHelpers
         return dotIndex <= 0 ? processId : processId[..dotIndex];
     }
 
-    /// <summary>
-    /// Picks the first artifact metadata value for the supplied key, in
-    /// declaration order. Returns <c>null</c> when no artifact carries the key.
-    /// </summary>
     public static string? FirstArtifactMetadata(AnalysisResultPackage package, string key)
     {
         var artifactIndex = 0;
@@ -172,10 +142,6 @@ internal static class TemplateBuildHelpers
         return null;
     }
 
-    /// <summary>
-    /// Formats a numeric metadata value invariantly, returning <c>null</c> when
-    /// the key is missing or unparseable.
-    /// </summary>
     public static double? TryGetMetadataDouble(AnalysisResultPackage package, string key)
     {
         var raw = FirstArtifactMetadata(package, key);
@@ -187,11 +153,6 @@ internal static class TemplateBuildHelpers
         return double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) ? parsed : null;
     }
 
-    /// <summary>
-    /// Formats <paramref name="value"/> with invariant culture and at most
-    /// <paramref name="maxFractionDigits"/> fraction digits. Trailing zeros are
-    /// trimmed for readability.
-    /// </summary>
     public static string FormatNumber(double value, int maxFractionDigits = 3)
     {
         if (double.IsNaN(value) || double.IsInfinity(value))

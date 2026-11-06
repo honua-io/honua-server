@@ -258,6 +258,12 @@ internal sealed partial class TileExportJobService : ITileExportJobService
                 $"Tile-export job '{jobId}' has not completed successfully (current status: {job.Status}).");
         }
 
+        if (!TileExportExecutionSpecBuilder.TryParse(job.Spec.Parameters, out var plan, out _) ||
+            (plan!.Source is TileExportMapSourceDescriptor map && !TileExportMapPublicationPolicy.IsCurrent(map)))
+        {
+            throw new TileExportPreconditionFailedException("This tile-export job requires resubmission after the publication policy update.");
+        }
+
         if (_storage is null)
         {
             throw new TileExportStoreUnavailableException(

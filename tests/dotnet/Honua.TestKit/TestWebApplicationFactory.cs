@@ -425,6 +425,18 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
             return Task.FromResult<IReadOnlyList<PublishedLayerSummary>>(Array.Empty<PublishedLayerSummary>());
         }
 
+        public Task<PublishedLayerPage> ListPublishedLayersPageAsync(
+            string connectionString,
+            PublishedLayerPageQuery query,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new PublishedLayerPage
+            {
+                Items = [],
+                Page = query.Page,
+                PageSize = query.PageSize,
+                Total = 0,
+            });
+
         public Task<PublishedLayerSummary> PublishLayerAsync(
             string connectionString,
             LayerPublishRequest request,

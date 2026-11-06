@@ -3,14 +3,8 @@
 
 namespace Honua.Core.Features.Styling.Domain;
 
-/// <summary>
-/// Built-in colorblind-safe palettes for style suggestions and theme transforms.
-/// </summary>
 public static class ColorPalettes
 {
-    /// <summary>
-    /// Viridis sequential palette (2-9 classes). Default for numeric/choropleth.
-    /// </summary>
     public static ColorPalette Viridis { get; } = new()
     {
         Name = "Viridis",
@@ -29,9 +23,6 @@ public static class ColorPalettes
         }
     };
 
-    /// <summary>
-    /// CARTO Bold qualitative palette (2-12 classes). Default for categorical.
-    /// </summary>
     public static ColorPalette CartoBold { get; } = new()
     {
         Name = "CartoBold",
@@ -53,9 +44,6 @@ public static class ColorPalettes
         }
     };
 
-    /// <summary>
-    /// RdBu diverging palette (2-9 classes). For data with meaningful midpoint.
-    /// </summary>
     public static ColorPalette RdBu { get; } = new()
     {
         Name = "RdBu",
@@ -74,9 +62,6 @@ public static class ColorPalettes
         }
     };
 
-    /// <summary>
-    /// Gets a palette by name (case-insensitive), or null if not found.
-    /// </summary>
     public static ColorPalette? GetByName(string name)
     {
         if (string.Equals(name, Viridis.Name, StringComparison.OrdinalIgnoreCase))
@@ -88,9 +73,6 @@ public static class ColorPalettes
         return null;
     }
 
-    /// <summary>
-    /// Selects the best palette for the given field profile and classification method.
-    /// </summary>
     public static ColorPalette SelectPalette(FieldProfile profile, ClassificationMethod method)
     {
         if (method == ClassificationMethod.UniqueValue)

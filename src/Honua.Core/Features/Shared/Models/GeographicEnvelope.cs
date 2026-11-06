@@ -3,22 +3,9 @@
 
 namespace Honua.Core.Features.Shared.Models;
 
-/// <summary>
-/// Normalizes a geographic longitude/latitude envelope, including spans that cross
-/// the antimeridian and longitudes written outside -180..180.
-/// </summary>
 public static class GeographicEnvelope
 {
-    /// <summary>
-    /// A normalized envelope. When <see cref="CrossesAntimeridian"/> is true,
-    /// <see cref="West"/> is the eastern piece's west edge and <see cref="East"/> is
-    /// the western piece's east edge, so west is greater than east.
-    /// </summary>
-    /// <param name="West">Western longitude of a single envelope, or the eastern piece's west edge when the span crosses the antimeridian.</param>
-    /// <param name="South">Southern latitude.</param>
-    /// <param name="East">Eastern longitude of a single envelope, or the western piece's east edge when the span crosses the antimeridian.</param>
-    /// <param name="North">Northern latitude.</param>
-    /// <param name="CrossesAntimeridian">True when the span must be tested as two envelopes, one on each side of ±180.</param>
+    // When the span crosses the antimeridian, west is the eastern piece's west edge and is greater than east.
     public readonly record struct Normalized(
         double West,
         double South,
@@ -26,19 +13,6 @@ public static class GeographicEnvelope
         double North,
         bool CrossesAntimeridian);
 
-    /// <summary>
-    /// Normalizes an envelope into the -180..180 longitude domain.
-    /// A reversed span (west greater than east) inside that domain crosses the antimeridian.
-    /// An unwrapped span such as 170..190 is folded back across ±180.
-    /// A span wider than 360 degrees is rejected.
-    /// </summary>
-    /// <param name="minX">Minimum longitude, which may be greater than <paramref name="maxX"/> or outside -180..180.</param>
-    /// <param name="minY">Minimum latitude.</param>
-    /// <param name="maxX">Maximum longitude.</param>
-    /// <param name="maxY">Maximum latitude.</param>
-    /// <param name="normalized">The normalized envelope when the method returns true.</param>
-    /// <param name="error">Why the envelope was rejected, when the method returns false.</param>
-    /// <returns>True when the envelope is a usable geographic window.</returns>
     public static bool TryNormalize(
         double minX,
         double minY,
@@ -106,11 +80,6 @@ public static class GeographicEnvelope
         return true;
     }
 
-    /// <summary>
-    /// Folds a longitude into the half-open range [-180, 180).
-    /// </summary>
-    /// <param name="longitude">Longitude in degrees, possibly outside -180..180.</param>
-    /// <returns>The equivalent longitude in [-180, 180).</returns>
     public static double WrapLongitude(double longitude)
         => longitude - (360d * Math.Floor((longitude + 180d) / 360d));
 }

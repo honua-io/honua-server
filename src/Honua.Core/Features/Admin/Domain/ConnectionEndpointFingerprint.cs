@@ -7,21 +7,11 @@ using System.Text;
 
 namespace Honua.Core.Features.Admin.Domain;
 
-/// <summary>
-/// Immutable fingerprint of the database endpoint a sink actually wrote.
-/// Host, port, and database only — never the user, password, or raw connection string.
-/// </summary>
+// The fingerprint is host, port, and database only, never the user, password, or raw connection string.
 public static class ConnectionEndpointFingerprint
 {
-    /// <summary>Artifact and operation parameter that carries <see cref="TryCompute"/>.</summary>
     public const string MetadataKey = "connectionEndpointFingerprint";
 
-    /// <summary>
-    /// Returns the lowercase SHA-256 hex of <c>host|port|database</c>, or null when the
-    /// connection string does not name those endpoint parts.
-    /// </summary>
-    /// <param name="connectionString">Connection string used for the committed write.</param>
-    /// <returns>A 64-character hex fingerprint, or null.</returns>
     public static string? TryCompute(string? connectionString)
     {
         if (!TryCanonical(connectionString, out var canonical))
@@ -32,11 +22,6 @@ public static class ConnectionEndpointFingerprint
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
     }
 
-    /// <summary>
-    /// Returns whether <paramref name="fingerprint"/> is 64 hexadecimal characters.
-    /// </summary>
-    /// <param name="fingerprint">Candidate fingerprint.</param>
-    /// <returns><see langword="true"/> when the value is a 64-character hex string.</returns>
     public static bool IsWellFormed(string? fingerprint)
     {
         if (fingerprint is not { Length: 64 })
@@ -55,13 +40,6 @@ public static class ConnectionEndpointFingerprint
         return true;
     }
 
-    /// <summary>
-    /// Returns whether <paramref name="connectionString"/> still names the endpoint that
-    /// produced <paramref name="fingerprint"/>. A malformed string or fingerprint returns false.
-    /// </summary>
-    /// <param name="connectionString">Connection string resolved at publication time.</param>
-    /// <param name="fingerprint">Fingerprint recorded when the sink committed.</param>
-    /// <returns><see langword="true"/> when both describe the same host, port, and database.</returns>
     public static bool Matches(string? connectionString, string? fingerprint)
     {
         if (!IsWellFormed(fingerprint))

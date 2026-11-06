@@ -1724,6 +1724,8 @@ app.UseGrpcWeb(new GrpcWebOptions { DefaultEnabled = true });
 app.UseGrpcServingStatusCapture();
 #endif
 
+Honua.Ai.Protocols.Mcp.McpModernHttp.UseOriginValidation(app);
+
 // Add CORS middleware before the exception handler so error responses (4xx/5xx) carry
 // Access-Control-Allow-Origin headers; otherwise browsers report every server error as
 // a CORS failure, masking the real status/body from web clients (#1627). It also stays
@@ -1958,6 +1960,7 @@ app.MapLayerPublishingEndpoints();
 
 // Configure service settings endpoints (protocol toggles + MapServer config)
 app.MapServiceSettingsEndpoints();
+app.MapFolderEndpoints();
 
 // Configure admin metadata version/manifest endpoints
 // v1 admin endpoint mappings removed in #1035 cutover; V2 admin UX (#1046) lives elsewhere.

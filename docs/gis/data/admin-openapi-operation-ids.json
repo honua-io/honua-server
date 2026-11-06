@@ -249,6 +249,12 @@
       "path": "/field-workflows/exports"
     },
     {
+      "operationId": "createFolder",
+      "catalogOperationId": "folder.create",
+      "method": "POST",
+      "path": "/folders"
+    },
+    {
       "operationId": "createFormPackageDraft",
       "catalogOperationId": null,
       "method": "POST",
@@ -349,6 +355,12 @@
       "catalogOperationId": "admin.field-mask-policy.delete",
       "method": "DELETE",
       "path": "/field-mask-policies/{id}"
+    },
+    {
+      "operationId": "deleteFolder",
+      "catalogOperationId": "folder.delete",
+      "method": "DELETE",
+      "path": "/folders/{id}"
     },
     {
       "operationId": "deleteImportedRaster",
@@ -1509,6 +1521,12 @@
       "path": "/field-workflows/submissions"
     },
     {
+      "operationId": "listFolders",
+      "catalogOperationId": "folder.list",
+      "method": "GET",
+      "path": "/folders"
+    },
+    {
       "operationId": "listFormPackageVersions",
       "catalogOperationId": null,
       "method": "GET",
@@ -1747,6 +1765,12 @@
       "catalogOperationId": null,
       "method": "POST",
       "path": "/auth/logout"
+    },
+    {
+      "operationId": "moveService",
+      "catalogOperationId": "service.move",
+      "method": "PUT",
+      "path": "/services/{serviceName}/folder"
     },
     {
       "operationId": "pauseAlertChannel",
@@ -2353,6 +2377,12 @@
       "catalogOperationId": null,
       "method": "PUT",
       "path": "/connections/{id}"
+    },
+    {
+      "operationId": "updateFolder",
+      "catalogOperationId": "folder.update",
+      "method": "PATCH",
+      "path": "/folders/{id}"
     },
     {
       "operationId": "updateFormPackageDraft",

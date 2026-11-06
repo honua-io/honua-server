@@ -3,14 +3,6 @@
 
 namespace Honua.Core.Features.Collaboration.Operations;
 
-/// <summary>
-/// In-memory saved-map operation log for development seams and unit tests.
-/// </summary>
-/// <remarks>
-/// The store is scoped to one process. It preserves monotonic per-map cursors, operation-id and
-/// idempotency-key dedupe, bounded replay, and conflict-policy dispatch without providing durable
-/// multi-node coordination.
-/// </remarks>
 public sealed class InMemorySavedMapOperationLogRepository : ISavedMapOperationLogRepository
 {
     private readonly object _gate = new();
@@ -19,9 +11,6 @@ public sealed class InMemorySavedMapOperationLogRepository : ISavedMapOperationL
     private readonly TimeProvider _timeProvider;
     private readonly int _retainedOperationCount;
 
-    /// <summary>
-    /// Creates an in-memory saved-map operation log repository.
-    /// </summary>
     public InMemorySavedMapOperationLogRepository(
         ISavedMapOperationConflictPolicy? conflictPolicy = null,
         TimeProvider? timeProvider = null,
@@ -40,30 +29,15 @@ public sealed class InMemorySavedMapOperationLogRepository : ISavedMapOperationL
         _retainedOperationCount = retainedOperationCount;
     }
 
-    /// <inheritdoc />
-    /// <remarks>
-    /// Always <see langword="false"/>: this log lives in one process, so replays only observe
-    /// operations accepted by this node since it started. Checkpoint-style consumers guard on
-    /// this in multi-node deployments (honua-server#2999).
-    /// </remarks>
     public bool SupportsReplicaSharedReplay => false;
 
-    /// <inheritdoc />
-    /// <remarks>
-    /// Always <see langword="false"/>: the log lives in process memory, so every accepted
-    /// operation that has not yet been persisted elsewhere is lost when the process restarts.
-    /// Consumers that mint durable state from a replay must refuse to proceed rather than treat
-    /// an empty post-restart replay as "no edits" (honua-server#2999).
-    /// </remarks>
+    // This log is process memory, so a consumer that mints durable state from a replay must refuse an empty post-restart replay.
     public bool SupportsRestartDurableReplay => false;
 
-    /// <inheritdoc />
     public bool SupportsRestartDurableCheckpointCursors => false;
 
-    /// <inheritdoc />
     public bool SupportsRestartDurableCheckpointing => false;
 
-    /// <inheritdoc />
     public Task<SavedMapOperationAppendResult> AppendAsync(
         SavedMapOperationAppendRequest request,
         CancellationToken cancellationToken = default)
@@ -152,7 +126,6 @@ public sealed class InMemorySavedMapOperationLogRepository : ISavedMapOperationL
         }
     }
 
-    /// <inheritdoc />
     public Task<SavedMapOperationReplayResult> ReplayAsync(
         SavedMapId mapId,
         SavedMapOperationCursor sinceCursor,
@@ -211,7 +184,6 @@ public sealed class InMemorySavedMapOperationLogRepository : ISavedMapOperationL
         }
     }
 
-    /// <inheritdoc />
     public Task<SavedMapOperationReplayResult> ReplayPendingCheckpointAsync(
         SavedMapId mapId,
         CancellationToken cancellationToken = default)
@@ -227,7 +199,6 @@ public sealed class InMemorySavedMapOperationLogRepository : ISavedMapOperationL
         }
     }
 
-    /// <inheritdoc />
     public Task RecordCheckpointAsync(
         SavedMapId mapId,
         SavedMapOperationCursor checkpointCursor,

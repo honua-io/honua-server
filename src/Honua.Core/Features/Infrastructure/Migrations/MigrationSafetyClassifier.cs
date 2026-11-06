@@ -176,18 +176,25 @@ public static class MigrationSafetyClassifier
 
     private static bool IsReviewedImportGuardDefinition(string scriptName, string sql)
     {
-        // #5394 installs function definitions; it does not execute their replacement/cleanup
-        // DDL during migration. The existing helper signatures and reader schema remain intact.
-        // Its DROP/RENAME operations already existed in 108/111/115 and are now ownership guarded.
-        // Keep routine/DO/dynamic-SQL detection unchanged for every other script. This review
-        // covers only these exact bytes: a marker, another name, or any later edit cannot inherit it.
-        const string name = "129_ProtectImportTableOwnership.sql";
-        const string reviewedHash = "81D2BE992221BE7A5267BAF1DFD6A4CFE5FEB94E926B1E4E770A72EAE7BB7427";
-        return (string.Equals(scriptName, name, StringComparison.Ordinal)
-                || string.Equals(scriptName, "Honua.Server.Migrations." + name, StringComparison.Ordinal)
-                || string.Equals(scriptName, "src/Honua.Server/Migrations/" + name, StringComparison.Ordinal))
-            && Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
-                sql.Replace("\r\n", "\n", StringComparison.Ordinal)))) == reviewedHash;
+        // These exact installations only define import helpers; they do not invoke their
+        // DROP/RENAME operations during migration or alter the reader's schema/signatures.
+        // Ownership checks and RESTRICT protect importer-owned targets and dependencies.
+        // Routine/DO/dynamic-SQL detection remains enabled for every other name or byte
+        // change, including appended statements.
+        var reviewedHash = scriptName switch
+        {
+            "129_ProtectImportTableOwnership.sql"
+                or "Honua.Server.Migrations.129_ProtectImportTableOwnership.sql"
+                or "src/Honua.Server/Migrations/129_ProtectImportTableOwnership.sql"
+                => "A62328A559BC22113185838F0EEC3CAC22FA50352F9CD6C9D98BD0E42B9DD77B",
+            "145_ProtectImportDependencies.sql"
+                or "Honua.Server.Migrations.145_ProtectImportDependencies.sql"
+                or "src/Honua.Server/Migrations/145_ProtectImportDependencies.sql"
+                => "5137ECDF8A2C23C7503B048BA79EA21CF504B89DED7E0E5A64417724D7DEAEB1",
+            _ => null
+        };
+        return reviewedHash is not null && Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+            sql.Replace("\r\n", "\n", StringComparison.Ordinal)))) == reviewedHash;
     }
 
     private static Dictionary<string, string> LoadFrozenReaderMigrationHashes()

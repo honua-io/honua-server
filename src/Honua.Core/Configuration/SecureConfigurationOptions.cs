@@ -5,49 +5,22 @@ using System.ComponentModel.DataAnnotations;
 
 namespace Honua.Core.Configuration;
 
-/// <summary>
-/// Configuration options for secure configuration handling.
-/// </summary>
 public sealed class SecureConfigurationOptions
 {
-    /// <summary>
-    /// Configuration section name.
-    /// </summary>
     public const string SectionName = "SecureConfiguration";
 
-    /// <summary>
-    /// Whether to encrypt sensitive configuration values.
-    /// </summary>
     public bool EncryptSensitiveValues { get; set; } = true;
 
-    /// <summary>
-    /// Key derivation iterations for encryption.
-    /// </summary>
     [Range(1000, 100000)]
     public int KeyDerivationIterations { get; set; } = 10000;
 
-    /// <summary>
-    /// Salt for key derivation.
-    /// </summary>
     public string? EncryptionSalt { get; set; }
 
-    /// <summary>
-    /// Whether to validate configuration signatures.
-    /// </summary>
     public bool ValidateSignatures { get; set; }
 
-    /// <summary>
-    /// Whether startup should fail when secret validation fails outside development.
-    /// </summary>
     public bool FailOnSecretValidationError { get; set; } = true;
 
-    /// <summary>
-    /// Whether secret references should be resolved automatically after binding.
-    /// </summary>
     public bool AutoResolveSecrets { get; set; } = true;
 
-    /// <summary>
-    /// Allowed configuration sources.
-    /// </summary>
     public HashSet<string> AllowedSources { get; set; } = new() { "appsettings.json", "environment", "commandline" };
 }

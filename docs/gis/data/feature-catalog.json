@@ -132,6 +132,20 @@
       "capability": "admin.control-plane"
     },
     {
+      "id": "delete-api-v1-admin-folders-id",
+      "route": "/api/v1/admin/folders/{id}",
+      "method": "DELETE",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.FolderEndpointsTests.FolderLifecycle_WithCurrentEtag_MovesAllFacetsAndPreservesAliases"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
       "id": "delete-api-v1-admin-import-formats",
       "route": "/api/v1/admin/import/formats",
       "method": "DELETE",
@@ -806,6 +820,7 @@
         "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.Session_SameActorWithDifferentAuthorizationCeiling_CannotPostStreamOrDelete",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Delete_TerminatesSession_AndSubsequentPostReturns404",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Delete_UnknownSession_Returns404",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpModernEndpointIntegrationTests.Request_ModernSessionVerbs_ReturnsMethodNotAllowed",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpSessionAcrossInstancesTests.SessionDeletedOnB_Returns404OnA",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpStatelessSessionAcrossInstancesTests.Delete_OnB_Answers405_BecauseAStatelessSessionCannotBeRevoked",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpStatelessSessionFallbackEnabledTests.Delete_TerminatesSession_WhenFallbackEnabled_SubsequentPostIsServedSessionless"
@@ -2127,6 +2142,22 @@
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
       "capability": "fieldops.forms"
+    },
+    {
+      "id": "get-api-v1-admin-folders",
+      "route": "/api/v1/admin/folders",
+      "method": "GET",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.FolderEndpointsTests.FolderLifecycle_WithCurrentEtag_MovesAllFacetsAndPreservesAliases",
+        "Honua.Server.Tests.Features.Admin.FolderEndpointsTests.FolderScope_OmittedOrSuppliedNamespace_UsesPublicationOwnership",
+        "Honua.Server.Tests.Features.Admin.ProviderOnlyServiceSettingsTests.Folders_WithoutGraphStore_ListReadsAndMutationReturnsUnavailable"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
     },
     {
       "id": "get-api-v1-admin-forms-packages",
@@ -6203,6 +6234,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.ReplayProtectionEnabled_BearerReusedOnHttpApi_IsAdmittedWithinLifetimeAndReplaysAcrossSurfaces",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpModernBearerAuthenticationTests.ReplayProtectionEnabled_ModernBearerReuse_PreservesExistingRefusals",
         "Honua.Server.Tests.Features.Studio.StudioBridgedFamilyEndpointsTests.PackageFamilies_AdvertiseBridgedNativeFormats",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.AdminReadOnlyKey_CanReadButNotMutateStudio",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.AnonymousPolicyChallenge_IsAuditedExactlyOnceWithoutChangingTheResponse",
@@ -6657,6 +6689,7 @@
         "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.Session_ExpiredSession_CannotBeStreamedOrDeletedByItsOwner",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.Session_SameActorWithDifferentAuthorizationCeiling_CannotPostStreamOrDelete",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.Get_ByDefault_Returns405WithAllowHeader",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpModernEndpointIntegrationTests.Request_ModernSessionVerbs_ReturnsMethodNotAllowed",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpServerInitiatedStreamTests.GetStreamTeardown_LeavesSessionUsable_ToolsListStill200",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpServerInitiatedStreamTests.Get_WhenEnabledWithValidSession_OpensEventStream",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpServerInitiatedStreamTests.Get_WhenEnabledWithoutEventStreamAccept_Returns405",
@@ -15372,6 +15405,20 @@
       "capability": "admin.control-plane"
     },
     {
+      "id": "patch-api-v1-admin-folders-id",
+      "route": "/api/v1/admin/folders/{id}",
+      "method": "PATCH",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.FolderEndpointsTests.FolderLifecycle_WithCurrentEtag_MovesAllFacetsAndPreservesAliases"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
       "id": "patch-api-v1-admin-import-formats",
       "route": "/api/v1/admin/import/formats",
       "method": "PATCH",
@@ -16879,6 +16926,25 @@
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
       "capability": "fieldops.forms"
+    },
+    {
+      "id": "post-api-v1-admin-folders",
+      "route": "/api/v1/admin/folders",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.FolderEndpointsTests.CreateFolder_WithConcurrentSnapshotEtag_OnlyOneWriteCommits",
+        "Honua.Server.Tests.Features.Admin.FolderEndpointsTests.CreateFolder_WithoutPrecondition_Returns428",
+        "Honua.Server.Tests.Features.Admin.FolderEndpointsTests.FolderLifecycle_WithCurrentEtag_MovesAllFacetsAndPreservesAliases",
+        "Honua.Server.Tests.Features.Admin.FolderEndpointsTests.FolderScope_OmittedOrSuppliedNamespace_UsesPublicationOwnership",
+        "Honua.Server.Tests.Features.Admin.FolderPersistenceTests.FolderMove_AfterRestart_PreservesMembershipAndFlatReads",
+        "Honua.Server.Tests.Features.Admin.ProviderOnlyServiceSettingsTests.Folders_WithoutGraphStore_ListReadsAndMutationReturnsUnavailable"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
     },
     {
       "id": "post-api-v1-admin-forms-packages",
@@ -18484,6 +18550,12 @@
         "Honua.Server.Tests.Features.Admin.ProposalEndpointsTests.ReadOnlyScopedKey_ApproveNamesMissingGrant",
         "Honua.Server.Tests.Features.Infrastructure.Monitoring.ProposalEvidenceSecurityJourneyTests.ApproveProposal_InvalidEvidenceAndUnavailableAudit_Returns503BeforeExecution",
         "Honua.Server.Tests.Features.Infrastructure.Monitoring.ProposalEvidenceSecurityJourneyTests.FullProposalEvidenceJourney_EmitsExactDenominator_WithZeroSkippedScenarios",
+        "Honua.Server.Tests.Features.OperationsToolset.FolderOperationIntegrationTests.FolderCreate_ApprovalReplay_PreservesResolvedOwnership",
+        "Honua.Server.Tests.Features.OperationsToolset.FolderOperationIntegrationTests.FolderCreate_InvalidPrecondition_DoesNotMutateSnapshot",
+        "Honua.Server.Tests.Features.OperationsToolset.FolderOperationIntegrationTests.FolderCreate_ProposalBecomesStale_ApprovalCannotOverwriteNewRevision",
+        "Honua.Server.Tests.Features.OperationsToolset.FolderOperationIntegrationTests.FolderCreate_ReadOnlyKey_CannotSubmitMutation",
+        "Honua.Server.Tests.Features.OperationsToolset.FolderOperationIntegrationTests.FolderOperations_ApprovedLifecycle_PersistsMembershipAliasesAndDeletion",
+        "Honua.Server.Tests.Features.OperationsToolset.FolderOperationIntegrationTests.ServiceMove_AccessDeniedAfterSubmission_ApprovalCannotMutateMembership",
         "Honua.Server.Tests.Features.OperationsToolset.TypedProposalCurrentApiKeyTests.AfterClaimAuthorityLoss_FailsDurablyBeforeEffectWithoutRawErrors",
         "Honua.Server.Tests.Features.OperationsToolset.TypedProposalCurrentApiKeyTests.CurrentAuthorityRefused_AuditUnavailable_ReturnsSafe503BeforeClaim",
         "Honua.Server.Tests.Features.OperationsToolset.TypedProposalCurrentApiKeyTests.CurrentKeyLookupDenies_ApprovalCannotUseSealedOldAuthority",
@@ -19511,6 +19583,12 @@
         "Honua.Server.Tests.Features.OperationsToolset.AiAdmissionControlHostTests.AnonymousAndReadOnlyAdminKey_CannotMutateAdmission",
         "Honua.Server.Tests.Features.OperationsToolset.AiAdmissionControlHostTests.RequireApprovalWithoutRedis_DoesNotFallBackToDirectMutation",
         "Honua.Server.Tests.Features.OperationsToolset.AiAdmissionControlHostTests.WrongDeploymentAndStaleExpectedTuple_LeaveLedgerUnchanged",
+        "Honua.Server.Tests.Features.OperationsToolset.FolderOperationIntegrationTests.FolderCreate_ApprovalReplay_PreservesResolvedOwnership",
+        "Honua.Server.Tests.Features.OperationsToolset.FolderOperationIntegrationTests.FolderCreate_InvalidPrecondition_DoesNotMutateSnapshot",
+        "Honua.Server.Tests.Features.OperationsToolset.FolderOperationIntegrationTests.FolderCreate_ProposalBecomesStale_ApprovalCannotOverwriteNewRevision",
+        "Honua.Server.Tests.Features.OperationsToolset.FolderOperationIntegrationTests.FolderCreate_ReadOnlyKey_CannotSubmitMutation",
+        "Honua.Server.Tests.Features.OperationsToolset.FolderOperationIntegrationTests.FolderOperations_ApprovedLifecycle_PersistsMembershipAliasesAndDeletion",
+        "Honua.Server.Tests.Features.OperationsToolset.FolderOperationIntegrationTests.ServiceMove_AccessDeniedAfterSubmission_ApprovalCannotMutateMembership",
         "Honua.Server.Tests.Features.OperationsToolset.OperationsEndpointsTests.SubmitOperation_Prevalidate_RequiresWriteCredentialBeforeExecution",
         "Honua.Server.Tests.Features.OperationsToolset.OperationsEndpointsTests.SubmitOperation_ServicePublish_ReturnsCompletedHandle_WithMetadataRevision",
         "Honua.Server.Tests.Features.OperationsToolset.ProductionOperationPolicyHostTests.ProductionHost_AdminWriteKeyIsAllowed_WriteKeyIsDenied",
@@ -20227,6 +20305,9 @@
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.UnknownMethod_ReturnsMethodNotFoundJsonRpcError",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.UnknownNotification_AcceptedSilentlyWithoutBody",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests.UnknownNotification_WithId_IsRejectedAsInvalidRequest",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpModernBearerAuthenticationTests.Post_InvalidModernOriginWithInvalidBearer_Returns403BeforeAuthentication",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpModernBearerAuthenticationTests.ReplayProtectionEnabled_ModernBearerReuse_PreservesExistingRefusals",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpModernEndpointIntegrationTests.Post_ModernDiscoveryWithoutInitialize_ReturnsCapabilitiesAndNoSession",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpPackageDraftIntegrationTests.ResourcesRead_AppPackageDraftUri_ResolvesWithoutADeployment",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpPackageDraftIntegrationTests.ResourcesRead_MapPackageDraftUri_ResolvesWithoutADeployment",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpPackageDraftIntegrationTests.ResourcesRead_UnknownPackageUri_StillReportsNotFound",
@@ -25624,6 +25705,22 @@
         "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.UpdateDiscovery_NullTextAndEmptyKeywords_ClearsOnlyDiscovery",
         "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.UpdateDiscovery_WithStaleEtag_RejectsOverwrite",
         "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.UpdateService_UnrelatedProtocolEditPreservesDiscovery"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
+      "id": "put-api-v1-admin-services-servicename-folder",
+      "route": "/api/v1/admin/services/{serviceName}/folder",
+      "method": "PUT",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.FolderEndpointsTests.FolderLifecycle_WithCurrentEtag_MovesAllFacetsAndPreservesAliases",
+        "Honua.Server.Tests.Features.Admin.FolderEndpointsTests.MoveService_WhenLogicalServiceDenied_DoesNotSaveEvenForCurrentMembership",
+        "Honua.Server.Tests.Features.Admin.FolderPersistenceTests.FolderMove_AfterRestart_PreservesMembershipAndFlatReads"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",

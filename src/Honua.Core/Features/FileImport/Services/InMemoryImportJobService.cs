@@ -12,27 +12,8 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Core.Features.FileImport.Services;
 
-/// <summary>
-/// Guards the import reader dispatch behind the unified capability registry (T6 /
-/// #2342). The import job services detect a file's format and then dispatch to the
-/// matching reader; this guard is consulted at that seam <b>before</b> dispatch so an
-/// unrecognised file — which previously silently fell back to
-/// <see cref="SupportedFileFormat.GeoJson"/> and was mis-read — is rejected, as is a
-/// format the registry reports as gated off (an experimental format with its flag
-/// unset, or one the active edition is not entitled to). The thrown
-/// <see cref="NotSupportedException"/> is mapped to an HTTP 400 by the import endpoints.
-/// </summary>
 internal static class ImportFormatDispatchGuard
 {
-    /// <summary>
-    /// Requires a supported, enabled import format: returns the detected format when it
-    /// is recognised and not gated off, otherwise throws <see cref="NotSupportedException"/>.
-    /// </summary>
-    /// <param name="detectedFormat">
-    /// The format detected from the filename, or <c>null</c> when the extension matched no
-    /// supported import format (previously silently coerced to GeoJSON).
-    /// </param>
-    /// <param name="fileName">The source filename, for the error message.</param>
     public static SupportedFileFormat RequireGatedFormat(SupportedFileFormat? detectedFormat, string fileName)
     {
         if (detectedFormat is not { } format)
@@ -53,11 +34,6 @@ internal static class ImportFormatDispatchGuard
     }
 }
 
-/// <summary>
-/// In-memory implementation of import job service for background processing.
-/// Uses Channel-based queue and background tasks for processing large files.
-/// For production use with persistent storage, consider using a distributed job queue.
-/// </summary>
 internal sealed partial class InMemoryImportJobService : IImportJobService, IDisposable
 {
     // PA-016: background import processing is fire-and-forget from the request handler
@@ -87,7 +63,6 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <inheritdoc/>
     public async Task<string> QueueImportAsync(
         ImportRequest request,
         long fileSize,
@@ -373,7 +348,6 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
         }
     }
 
-    /// <inheritdoc/>
     public Task<ImportProgress?> GetProgressAsync(string jobId, CancellationToken cancellationToken = default)
     {
         CleanupCompletedJobsIfNeeded();
@@ -386,7 +360,6 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
         return Task.FromResult<ImportProgress?>(null);
     }
 
-    /// <inheritdoc/>
     public Task<bool> CancelJobAsync(string jobId, CancellationToken cancellationToken = default)
     {
         if (_cancellationTokens.TryGetValue(jobId, out var cts) && !cts.IsCancellationRequested)
@@ -406,7 +379,6 @@ internal sealed partial class InMemoryImportJobService : IImportJobService, IDis
         return Task.FromResult(false);
     }
 
-    /// <inheritdoc/>
     public Task<IReadOnlyList<ImportProgress>> GetActiveJobsAsync(CancellationToken cancellationToken = default)
     {
         CleanupCompletedJobsIfNeeded();
