@@ -14,7 +14,8 @@ Baseline: `800c0ec9277733433f90cd56e6e53f35bda1b11b` (`origin/trunk`, fetched 20
 | Publication tenant visibility omitted by protocol paths | P1 | Records/OData discovery and WMS/WMTS layer resolution omit publication tenant checks while checking resource/service access. Hidden-primary selection also requires correction. Issue #6989. |
 | SAML audience restrictions incorrectly flattened | P2 | Validator accepts any audience across groups instead of requiring each restriction to match. Requires an otherwise valid signed assertion. Issue #6987. |
 | SAML local replay claim not atomic | P2 | Memory-cache factory can execute concurrently for the same assertion; Redis NX path is unaffected. Issue #6987. |
-| Import progress read failure skips leadership check | P2 | Monitor catches failed progress reads before reaching heartbeat. Target advisory lock mitigates duplicate writes but does not stop stale execution. Fix tracked by #6985. |
+| Import progress read failure skips leadership check | P2 | Monitor catches failed progress reads before reaching heartbeat. Target advisory lock mitigates duplicate writes but does not stop stale execution. Fixed in draft PR #6995 (`3d3c8813f3`); regression failed on baseline, 13 focused tests pass after correction; primary independent review complete. Required gates pending. |
+| Import replacement cascades into independent dependencies | P1 | Target ownership check does not authorize deleting dependent views/materialized views or foreign keys. Issue #6993 adds fail-closed replacement and database regressions. |
 | Version-job fallback loses newer state after Redis recovers | P2 | A stale existing Redis record wins over newer node-local fallback state. Remediation pending. |
 | Reconciler renewal exception leaves reconciliation running | P2 | Renewal task faults without cancelling its linked token; awaiting the fault also skips release. Submission CAS mitigates duplicate submission. Remediation pending. |
 
