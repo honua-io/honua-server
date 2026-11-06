@@ -13,6 +13,7 @@ public interface IGroundingEngine
     // Classification must respect GroundingRequest.WorkflowFamilyHint when the caller set one.
     WorkflowFamilyClassification Classify(GroundingRequest request);
 
+    // Callers pass the catalog snapshot so the engine stays pure.
     IReadOnlyList<GroundingCandidate> ScoreProcesses(
         GroundingRequest request,
         IReadOnlyList<ProcessDefinition> processes);
@@ -26,6 +27,7 @@ public interface IGroundingEngine
         IReadOnlyList<ServiceCandidate> services);
 }
 
+// This record stays free of the catalog assembly so the engine does not take that dependency.
 public sealed record LayerCandidate(int Id, string Name, string? Description);
 
 public sealed record ServiceCandidate(string Name, string? Description);
