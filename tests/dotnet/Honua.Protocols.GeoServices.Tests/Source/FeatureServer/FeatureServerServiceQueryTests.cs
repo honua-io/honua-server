@@ -4,10 +4,16 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.TestKit;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Honua.TestKit.Helpers;
+using Honua.TestKit.Infrastructure;
+using Honua.TestKit;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
@@ -20,6 +26,57 @@ public sealed class FeatureServerServiceQueryTests : IClassFixture<WebAppFixture
     public FeatureServerServiceQueryTests(WebAppFixture fixture)
     {
         _fixture = fixture;
+    }
+
+    [IntegrationTheory]
+    [InlineData(null, true)]
+    [InlineData("tenant-a", true)]
+    [InlineData("another-tenant", false)]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/query")]
+    public async Task ServiceQuery_PublicationTenant_FiltersBeforeLayerSelection(string? publicationTenant, bool visible)
+    {
+        await using var fixture = new WebAppFixture().WithTestLicense(Honua.Core.Features.Licensing.Domain.HonuaEdition.Pro);
+        var tenant = Substitute.For<ITenantContext>();
+        tenant.TenantId.Returns("tenant-a");
+        fixture.ReplaceService(tenant);
+        await fixture.InitializeAsync();
+        var snapshot = fixture.GetCurrentV2GraphSnapshot();
+        var serviceIds = snapshot.Graph.Services.Where(service => service.Metadata.Name == WebAppFixture.TestServiceId)
+            .Select(service => service.Metadata.Id).ToHashSet(StringComparer.Ordinal);
+        serviceIds.Should().NotBeEmpty();
+        var provider = (TestMetadataV2GraphProvider)fixture.GetService<IMetadataV2GraphProvider>();
+        var publications = snapshot.Graph.Publications.Select(publication =>
+            serviceIds.Contains(publication.ServiceId) && publication.LayerIndex == WebAppFixture.TestLayerId
+                ? publication with { Metadata = publication.Metadata with { Tenant = publicationTenant } }
+                : publication).ToArray();
+        provider.SetGraph(snapshot.Graph with { Revision = snapshot.Graph.Revision + 1, Publications = publications }, schema: fixture.CurrentSchema);
+        fixture.GetService<IMetadataV2GraphProvider>().Should().BeSameAs(provider);
+        fixture.GetCurrentV2GraphSnapshot().Graph.Publications
+            .Where(publication => serviceIds.Contains(publication.ServiceId) && publication.LayerIndex == WebAppFixture.TestLayerId)
+            .Should().NotBeEmpty().And.OnlyContain(publication => publication.Metadata.Tenant == publicationTenant);
+        tenant.ClearReceivedCalls();
+        try
+        {
+            using var response = await fixture.Client.GetAsync(
+                $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/query?where=1=1&f=json");
+            var body = await response.Content.ReadAsStringAsync();
+            _ = tenant.Received().TenantId;
+            response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+            using var document = JsonDocument.Parse(body);
+            if (!document.RootElement.TryGetProperty("layers", out var layers))
+            {
+                visible.Should().BeFalse(body);
+                document.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().BeOneOf(403, 404);
+                return;
+            }
+            var layerIds = layers.EnumerateArray().Select(layer => layer.GetProperty("id").GetInt32()).ToArray();
+            layerIds.Contains(WebAppFixture.TestLayerId).Should().Be(visible);
+        }
+        finally
+        {
+            provider.SetGraph(snapshot.Graph with { Revision = snapshot.Graph.Revision + 2 }, schema: fixture.CurrentSchema);
+        }
     }
 
     [IntegrationTest]
