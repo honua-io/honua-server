@@ -646,7 +646,9 @@ internal sealed partial class MetadataReleaseReconciler(
                 UpdatedAt = failedAt,
                 CompletedAt = failedAt,
                 CurrentPhase = "Metadata release reconciliation failed and requires manual intervention.",
-                ErrorMessage = $"Metadata release reconciliation failed due to {ex.GetType().Name}.",
+                ErrorMessage = ex is MetadataV2PathReservationException
+                    ? MetadataV2PathReservationException.RecoveryMessage
+                    : $"Metadata release reconciliation failed due to {ex.GetType().Name}.",
                 MetadataRelease = operation.MetadataRelease with { CurrentStage = MetadataReleaseStage.Failed }
             };
 
