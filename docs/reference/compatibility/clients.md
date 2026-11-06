@@ -59,6 +59,11 @@ form submissions.
 Explicitly bound reads apply the selected resource's row and field policies,
 including OData publications backed by the managed shared feature table.
 
+OData writes through an explicit binding require the bound reader to verify the
+managed writer's connection, physical table, column mapping and layer partition.
+Custom tables on the default connection remain readable but reject OData writes
+before mutation pre-reads. Connection-bound writes remain unsupported.
+
 A numeric-only primary-provider operation cannot select a resource policy when
 several resources bind the same actual storage layer identifier. Such operations
 fail closed when any applicable permanent filter, row policy or field mask
