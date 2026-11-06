@@ -23,6 +23,7 @@ using Honua.Protocols.Ogc.Common;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -237,7 +238,8 @@ public sealed partial class OgcFeaturesOwnerEditPolicyTests
 
     private static (OgcFeaturesCrudHandler Crud, OgcFeaturesTransactionHandler Transaction) CreateHandlers(
         IFeatureReader reader,
-        IFeatureWriter writer)
+        IFeatureWriter writer,
+        ILogger<OgcFeaturesTransactionHandler>? transactionLogger = null)
     {
         var geometry = new OgcFeaturesGeometryServices(
             Substitute.For<IGeometryService>(),
@@ -273,7 +275,7 @@ public sealed partial class OgcFeaturesOwnerEditPolicyTests
                 new ETagService(),
                 validator,
                 events),
-            NullLogger<OgcFeaturesTransactionHandler>.Instance);
+            transactionLogger ?? NullLogger<OgcFeaturesTransactionHandler>.Instance);
         return (crud, transaction);
     }
 

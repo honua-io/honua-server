@@ -12,10 +12,13 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.Protocols.Ogc.Api.Features;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 
@@ -96,12 +99,16 @@ public sealed partial class OgcFeaturesOwnerEditPolicyTests
         var writer = Substitute.For<IFeatureWriter>();
         writer.ApplyEditsAsync(default, default, default).ReturnsForAnyArgs(
             FeatureEditResult.Success(0, 1, 0, updateResults: [EditOperationResult.Success(42)]));
-        var (_, handler) = CreateHandlers(reader, writer);
+        var logger = Substitute.For<ILogger<OgcFeaturesTransactionHandler>>();
+        logger.IsEnabled(default).ReturnsForAnyArgs(true);
+        var (_, handler) = CreateHandlers(reader, writer, logger);
         var context = ProtectedPatchContext(payload);
 
         var result = await handler.HandlePatchFeatureAsync("pub-cities", "42", null, context, CancellationToken.None);
         await result.ExecuteAsync(context);
 
+        logger.ReceivedCalls().SelectMany(call => call.GetArguments()).OfType<Exception>()
+            .Should().BeEmpty("the PATCH fixture must reach the expected response without a caught exception");
         var calls = writer.ReceivedCalls().ToArray();
         return (context.Response.StatusCode, calls.Length == 0 ? null : (FeatureEditBatch)calls[0].GetArguments()[1]!);
     }
@@ -110,6 +117,7 @@ public sealed partial class OgcFeaturesOwnerEditPolicyTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
         services.AddSingleton<IMetadataV2GraphProvider>(ProtectedPatchProvider());
         services.AddSingleton<IAccessPolicyEvaluator, AccessPolicyEvaluator>();
         services.AddSingleton<IOptions<RbacOptions>>(Options.Create(new RbacOptions { DataEditorRoles = ["editor"] }));
