@@ -141,8 +141,11 @@ public class OgcMapsRenderingHandlerTests
             Arg.Any<CancellationToken>());
     }
 
-    [UnitTest]
-    public async Task DatasetMap_ForeignTenantLayer_IsNotRendered()
+    [UnitTheory]
+    [InlineData("resource", "tenant-a")]
+    [InlineData("publication", "tenant-a")]
+    [InlineData("publication", "tenant-b")]
+    public async Task DatasetMap_TenantScopedEntity_RendersOnlyVisibleLayers(string boundary, string tenantId)
     {
         var graph = new TestMetadataV2GraphBuilder()
             .AddResource("own", "own-layer", MetadataV2ResourceType.FeatureDataset)
@@ -154,7 +157,14 @@ public class OgcMapsRenderingHandlerTests
             .AddService("foreign-service", "foreign-service", protocols: ["OGC-API-Maps"])
             .AddPublication("foreign-publication", "foreign-service", "foreign", layerIndex: 2)
             .Build();
-        graph = StampResourceTenant(graph, "foreign", "tenant-b");
+        graph = boundary == "resource"
+            ? StampResourceTenant(graph, "foreign", "tenant-b")
+            : graph with
+            {
+                Publications = graph.Publications.Select(publication => publication.Metadata.Id == "foreign-publication"
+                    ? publication with { Metadata = publication.Metadata with { Tenant = "tenant-b" } }
+                    : publication).ToArray()
+            };
         var renderer = Substitute.For<IRasterMapRenderer>();
         renderer.RenderDatasetMapAsync(Arg.Any<int[]>(), Arg.Any<MapRenderRequest>(), Arg.Any<CancellationToken>())
             .Returns(new RasterResult { Data = [1], ContentType = "image/png", Width = 1, Height = 1 });
@@ -167,10 +177,11 @@ public class OgcMapsRenderingHandlerTests
         await handler.RenderDatasetMapAsync(
             [],
             new OgcMapRequest { Bbox = "-158,20,-156,22", Width = 1, Height = 1 },
-            CreateTenantContext("tenant-a"));
+            CreateTenantContext(tenantId));
 
+        int[] expected = tenantId == "tenant-b" ? [1, 2] : [1];
         await renderer.Received(1).RenderDatasetMapAsync(
-            Arg.Is<int[]>(layers => layers.SequenceEqual(new[] { 1 })),
+            Arg.Is<int[]>(layers => layers.SequenceEqual(expected)),
             Arg.Any<MapRenderRequest>(),
             Arg.Any<CancellationToken>());
     }

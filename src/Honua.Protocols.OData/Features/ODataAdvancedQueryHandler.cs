@@ -72,7 +72,7 @@ internal sealed partial class ODataAdvancedQueryHandler(
             }
             var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
 
-            var result = await _querySearchService.HandleApplyAsync(layerId, apply, filter, baseUrl, effectiveToken);
+            var result = await _querySearchService.HandleApplyAsync(new(layerId, apply, filter, baseUrl, context), effectiveToken);
             if (!ODataUtilityService.ShouldIncludeContext(context.Request, format))
             {
                 result = new ODataAggregationResult

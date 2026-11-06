@@ -385,7 +385,8 @@ internal static class OgcRecordsEndpoints
                      .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase)).Select(serviceGroup => serviceGroup.ToArray()))
         {
             var visiblePublications = services
-                .SelectMany(service => snapshot.Index.PublicationsByService[service.Metadata.Id]
+                .SelectMany(service => TenantScopeHelpers.FilterVisiblePublications(
+                        context, snapshot, snapshot.Index.PublicationsByService[service.Metadata.Id])
                     .Select(p => (Service: service, Publication: p, Resource: snapshot.ResolveResource(p))))
                 .Where(t => snapshot.IsRoutable(t.Publication))
                 .Where(t => AccessPolicyHelpers.IsResourceAccessible(context, t.Resource!, t.Service))
@@ -432,7 +433,8 @@ internal static class OgcRecordsEndpoints
         var resourceRecords = snapshot.Graph.Resources
             .Select(resource =>
             {
-                var publications = snapshot.Index.PublicationsByResource[resource.Metadata.Id]
+                var publications = TenantScopeHelpers.FilterVisiblePublications(
+                        context, snapshot, snapshot.Index.PublicationsByResource[resource.Metadata.Id])
                     .Where(snapshot.IsRoutable)
                     .ToArray();
                 var primary = publications.FirstOrDefault(p => p.IsPrimary) ?? publications.FirstOrDefault();

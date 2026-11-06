@@ -80,6 +80,10 @@ internal static partial class PMTilesProxyEndpoints
 
         if (binding.Source is { } source)
         {
+            if (!TenantScopeHelpers.IsPublicationVisible(context, source.Publication, source.Resource, source.Service))
+            {
+                return TypedResults.NotFound();
+            }
             var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
                 context,
                 source.Resource,
