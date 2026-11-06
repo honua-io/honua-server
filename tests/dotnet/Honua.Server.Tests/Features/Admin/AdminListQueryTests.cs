@@ -20,6 +20,7 @@ public sealed class AdminListQueryTests
         parsed.Page.Should().Be(CatalogListLimits.DefaultPage);
         parsed.PageSize.Should().Be(CatalogListLimits.DefaultPageSize);
         parsed.NameQuery.Should().BeNull();
+        parsed.FolderId.Should().BeEmpty();
     }
 
     [UnitTest]
@@ -28,6 +29,15 @@ public sealed class AdminListQueryTests
         var parsed = Parse(Query(("q", "   ")));
 
         parsed.NameQuery.Should().BeNull();
+    }
+
+    [UnitTest]
+    public void FolderId_IsPreserved()
+    {
+        var parsed = Parse(Query(("folderId", "folder-1"), ("page", "2")));
+
+        parsed.FolderId.Should().Be("folder-1");
+        parsed.Page.Should().Be(2);
     }
 
     [UnitTest]

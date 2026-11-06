@@ -5,7 +5,7 @@ using Honua.Core.Features.Admin.Domain;
 
 namespace Honua.Server.Features.Admin;
 
-internal readonly record struct AdminListQuery(int Page, int PageSize, string? NameQuery);
+internal readonly record struct AdminListQuery(int Page, int PageSize, string? NameQuery, string FolderId = "");
 
 internal static class AdminListQueryParser
 {
@@ -33,7 +33,7 @@ internal static class AdminListQueryParser
             return false;
         }
 
-        listQuery = new AdminListQuery(resolvedPage, resolvedPageSize, nameQuery);
+        listQuery = new AdminListQuery(resolvedPage, resolvedPageSize, nameQuery, query["folderId"].ToString());
         error = string.Empty;
         return true;
     }

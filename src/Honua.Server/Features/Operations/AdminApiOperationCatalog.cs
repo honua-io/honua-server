@@ -48,8 +48,13 @@ internal static class AdminApiOperationCatalog
         new("admin.layer.style.set", "Set layer style", HttpMethod.Put, "/metadata/layers/{layerId}/style", "updateAdminLayerStyle", true),
         new("admin.layer.style.import-sld", "Import layer SLD", HttpMethod.Post, "/metadata/layers/{layerId}/style/import-sld", "importLayerSldStyle", true),
         new("admin.layer.style.export-sld", "Export layer SLD", HttpMethod.Get, "/metadata/layers/{layerId}/style/export-sld", "exportLayerSldStyle", false),
+        new("folder.list", "List folders", HttpMethod.Get, "/folders", "listFolders", false, QueryParameters: new HashSet<string>(["namespace"], StringComparer.Ordinal)),
+        new("folder.create", "Create folder", HttpMethod.Post, "/folders", "createFolder", true, QueryParameters: new HashSet<string>(["namespace"], StringComparer.Ordinal)),
+        new("folder.update", "Update folder", HttpMethod.Patch, "/folders/{id}", "updateFolder", true, QueryParameters: new HashSet<string>(["namespace"], StringComparer.Ordinal)),
+        new("folder.delete", "Delete folder", HttpMethod.Delete, "/folders/{id}", "deleteFolder", true, QueryParameters: new HashSet<string>(["namespace"], StringComparer.Ordinal)),
+        new("service.move", "Move service", HttpMethod.Put, "/services/{serviceName}/folder", "moveService", true, QueryParameters: new HashSet<string>(["namespace"], StringComparer.Ordinal)),
         new("admin.services.list", "List services", HttpMethod.Get, "/services", "listServices", false,
-            QueryParameters: new HashSet<string>(["page", "pageSize", "q"], StringComparer.Ordinal)),
+            QueryParameters: new HashSet<string>(["folderId", "page", "pageSize", "q"], StringComparer.Ordinal)),
         new("admin.services.settings.get", "Get service settings", HttpMethod.Get, "/services/{serviceName}/settings", "getServiceSettings", false),
         new("admin.services.protocols.set", "Set service protocols", HttpMethod.Put, "/services/{serviceName}/protocols", "updateServiceProtocols", true),
         new("admin.services.access-policy.set", "Set service access policy", HttpMethod.Put, "/services/{serviceName}/access-policy", "updateServiceAccessPolicy", true),
@@ -148,14 +153,19 @@ internal static class AdminApiOperationCatalog
         throw new InvalidOperationException($"Admin OpenAPI operation '{operationId}' was not found.");
     }
 
-    private static IReadOnlyList<OperationParameterDescriptor> BuildOutputSchema(JsonElement root, JsonElement operation)
+    private static List<OperationParameterDescriptor> BuildOutputSchema(JsonElement root, JsonElement operation)
     {
         foreach (var response in operation.GetProperty("responses").EnumerateObject()
                      .OrderBy(static item => item.Name, StringComparer.Ordinal)
-                     .Where(static response => response.Name[0] == '2')
-                     .Select(static response => TryGetContentSchema(response.Value, "content", out var schema) ? schema : (JsonElement?)null)
-                     .Where(static schema => schema.HasValue))
-            return [new OperationParameterDescriptor { Name = "response", Title = "Admin API response", Required = true, Schema = ConvertSchema(root, response.GetValueOrDefault()) }];
+                     .Where(static response => response.Name[0] == '2'))
+        {
+            var outputs = new List<OperationParameterDescriptor>();
+            if (TryGetContentSchema(response.Value, "content", out var schema))
+                outputs.Add(new OperationParameterDescriptor { Name = "response", Title = "Admin API response", Required = true, Schema = ConvertSchema(root, schema) });
+            if (response.Value.TryGetProperty("headers", out var headers) && headers.TryGetProperty("ETag", out _))
+                outputs.Add(new OperationParameterDescriptor { Name = "etag", Title = "Current graph snapshot ETag", Schema = new WorkflowSchemaDefinition { Type = WorkflowSchemaValueType.Text } });
+            if (outputs.Count > 0) return outputs;
+        }
         return [];
     }
 

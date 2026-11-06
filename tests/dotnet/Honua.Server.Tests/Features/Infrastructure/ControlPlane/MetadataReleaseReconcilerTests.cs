@@ -15,6 +15,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.TestKit.Attributes;
 using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -36,6 +37,20 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 public sealed class MetadataReleaseReconcilerTests
 {
     private const string NewField = "owner_email";
+
+    [UnitTest]
+    public async Task Activation_WhenPathReservationRefused_ReportsRevertRecoveryPath()
+    {
+        var harness = new ReleaseHarness();
+        harness.Graph.BeforeActivate = () => throw new MetadataV2PathReservationException();
+        var id = await harness.SubmitAsync();
+        var run = () => harness.DriveToTerminalAsync(id);
+        await run.Should().ThrowAsync<MetadataV2PathReservationException>();
+        var failed = await harness.Workflow.GetAsync(id);
+        failed!.Status.Should().Be(WorkflowOperationStatus.ManualInterventionRequired);
+        failed.ErrorMessage.Should().Be(MetadataV2PathReservationException.RecoveryMessage);
+    }
+
 
     [Fact]
     public async Task Forward_StagesCandidateInvisibleToReaders_ThenActivatesAtomicallyAndCompletes()

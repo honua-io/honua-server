@@ -131,8 +131,9 @@ Regenerate admin clients from `docs/developer/api-specs/admin-api.json` after up
 | `page` | One-based page. Defaults to 1. Values below 1 return 400. |
 | `pageSize` | Defaults to 100. Values outside 1 to 100 return 400. |
 | `q` | Case-insensitive name contains. Longer than 200 characters returns 400. |
+| `folderId` | Service list only. Omit for every folder. `root` selects services without a folder. An unknown folder returns 404. |
 
-The service page is `items`, `page`, `pageSize`, `total`, and `layerTotal`. `total` counts services matching `q`. `layerTotal` is the sum of those services' layer counts, including services on other pages. The layer page is `items`, `page`, `pageSize`, and `total`. `total` counts layers matching `q` for that connection and `serviceName`. `serviceName` is unchanged.
+The service page is `items`, `page`, `pageSize`, `total`, and `layerTotal`. `total` counts services matching `q` and `folderId`. `layerTotal` is the sum of those services' layer counts, including services on other pages. The layer page is `items`, `page`, `pageSize`, and `total`. `total` counts layers matching `q` for that connection and `serviceName`. `serviceName` is unchanged.
 
 ## Removed Contract Paths
 

@@ -60,6 +60,29 @@ public sealed class ServiceCatalogPageTests
     }
 
     [UnitTest]
+    public void FolderId_KeepsTotalsAndFolderFieldsForThatFolder()
+    {
+        var page = ServiceCatalogPage.Create(FolderCatalog(), new AdminListQuery(1, CatalogListLimits.DefaultPageSize, null, "folder-1"));
+
+        page.Total.Should().Be(1);
+        page.LayerTotal.Should().Be(1);
+        var service = page.Items.Should().ContainSingle().Subject;
+        service.ServiceName.Should().Be("inside");
+        service.FolderId.Should().Be("folder-1");
+        service.FolderName.Should().Be("Survey");
+    }
+
+    [UnitTest]
+    public void UnknownFolder_IsMissing_AndRootIsNot()
+    {
+        var snapshot = FolderCatalog();
+
+        ServiceCatalogPage.FolderIsMissing(snapshot, "missing", null).Should().BeTrue();
+        ServiceCatalogPage.FolderIsMissing(snapshot, "root", null).Should().BeFalse();
+        ServiceCatalogPage.FolderIsMissing(snapshot, "folder-1", null).Should().BeFalse();
+    }
+
+    [UnitTest]
     public void SameDisplayName_UnionsProtocolsAndDistinctResources()
     {
         var graph = new TestMetadataV2GraphBuilder()
@@ -92,6 +115,31 @@ public sealed class ServiceCatalogPageTests
         }
 
         return Snapshot(builder.Build());
+    }
+
+    private static MetadataV2GraphSnapshot FolderCatalog()
+    {
+        var built = new TestMetadataV2GraphBuilder()
+            .AddResource("res-1", "resource")
+            .AddService("in-folder", "inside", protocols: ["FeatureServer"])
+            .AddService("at-root", "outside", protocols: ["FeatureServer"])
+            .AddPublication("pub-in", "in-folder", "res-1")
+            .AddPublication("pub-out", "at-root", "res-1")
+            .Build();
+        var graph = built with
+        {
+            Folders =
+            [
+                new MetadataV2Folder
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "folder-1", Name = "Survey" },
+                },
+            ],
+            Services = built.Services.Select(service => service.Metadata.Id == "in-folder"
+                ? service with { FolderId = "folder-1" }
+                : service).ToArray(),
+        };
+        return Snapshot(graph);
     }
 
     private static MetadataV2GraphSnapshot Snapshot(MetadataV2Graph graph)

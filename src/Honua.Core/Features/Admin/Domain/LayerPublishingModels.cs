@@ -11,6 +11,11 @@ namespace Honua.Core.Features.Admin.Domain;
 /// </summary>
 public sealed class LayerPublishRequest
 {
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public Honua.Core.Features.Metadata.Domain.V2.MetadataV2FolderSelection FolderId { get; init; }
+
+    public string? PublicName { get; init; }
+
     /// <summary>
     /// Publish an independent editable copy in the server's managed feature store.
     /// The source remains unchanged. Source object IDs are retained in

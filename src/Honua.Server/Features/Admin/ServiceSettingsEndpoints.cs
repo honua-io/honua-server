@@ -4,6 +4,7 @@
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
@@ -84,8 +85,15 @@ internal static class ServiceSettingsEndpoints
         try
         {
             var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
+            var tenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId;
+            if (ServiceCatalogPage.FolderIsMissing(snapshot, listQuery.FolderId, tenantId))
+            {
+                return TypedResults.Problem(statusCode: StatusCodes.Status404NotFound, detail: "Folder not found.");
+            }
+
+            context.Response.Headers.ETag = snapshot.Etag;
             return TypedResults.Ok(ApiResponse<ServiceListPage>.CreateSuccess(
-                ServiceCatalogPage.Create(snapshot, listQuery)));
+                ServiceCatalogPage.Create(snapshot, listQuery, tenantId)));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

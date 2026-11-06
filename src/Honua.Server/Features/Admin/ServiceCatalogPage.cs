@@ -8,9 +8,22 @@ namespace Honua.Server.Features.Admin;
 
 internal static class ServiceCatalogPage
 {
-    internal static ServiceListPage Create(MetadataV2GraphSnapshot snapshot, AdminListQuery query)
+    internal static bool FolderIsMissing(MetadataV2GraphSnapshot snapshot, string folderId, string? tenantId)
     {
-        var matches = MatchingServices(snapshot.Graph.Services, query.NameQuery)
+        if (folderId.Length == 0 || folderId == "root")
+        {
+            return false;
+        }
+
+        return !snapshot.Graph.Folders.Any(folder =>
+            !folder.Deleted
+            && folder.Metadata.Id == folderId
+            && MetadataV2TenantVisibility.IsVisibleToTenant(folder.Metadata.Tenant, tenantId));
+    }
+
+    internal static ServiceListPage Create(MetadataV2GraphSnapshot snapshot, AdminListQuery query, string? tenantId = null)
+    {
+        var matches = MatchingServices(snapshot, query, tenantId)
             .GroupBy(service => service.Metadata.Name, StringComparer.OrdinalIgnoreCase)
             .Select(group => ToSummary(snapshot, group))
             .ToList();
@@ -28,16 +41,26 @@ internal static class ServiceCatalogPage
     }
 
     private static IEnumerable<MetadataV2Service> MatchingServices(
-        IReadOnlyList<MetadataV2Service> services,
-        string? nameQuery)
+        MetadataV2GraphSnapshot snapshot,
+        AdminListQuery query,
+        string? tenantId)
     {
-        if (string.IsNullOrEmpty(nameQuery))
+        var services = snapshot.Graph.Services.Where(service =>
+            MetadataV2TenantVisibility.IsVisibleToTenant(service.Metadata.Tenant, tenantId));
+        if (query.FolderId.Length > 0)
+        {
+            services = query.FolderId == "root"
+                ? services.Where(service => service.FolderId is null)
+                : services.Where(service => service.FolderId == query.FolderId);
+        }
+
+        if (string.IsNullOrEmpty(query.NameQuery))
         {
             return services;
         }
 
         return services.Where(service =>
-            service.Metadata.Name.Contains(nameQuery, StringComparison.OrdinalIgnoreCase));
+            service.Metadata.Name.Contains(query.NameQuery, StringComparison.OrdinalIgnoreCase));
     }
 
     // Protocol entries for one logical service share Metadata.Name.
@@ -58,6 +81,11 @@ internal static class ServiceCatalogPage
         return new ServiceSummary
         {
             ServiceName = representative.Metadata.Name,
+            FolderMutationIssues = MetadataV2FolderPreflight.Inspect(snapshot.Graph, representative),
+            FolderId = representative.FolderId,
+            FolderName = MetadataV2ServicePaths.FolderName(snapshot.Graph, representative),
+            PublicName = representative.EffectivePublicName,
+            Title = representative.Metadata.Title,
             Description = representative.Metadata.Description ?? string.Empty,
             LayerCount = layerCount,
             EnabledProtocols = enabled.Length == 0 ? ServiceProtocols.All : enabled,
