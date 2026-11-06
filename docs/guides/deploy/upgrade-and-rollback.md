@@ -42,9 +42,9 @@ and cancellation retain the last durable status for the replacement controller.
 It does not prove that the Batch job failed or stopped. Keep the durable Redis
 store and worker definitions available across both directions of a switch.
 
-The frozen reader baseline is `certification/schema-reader-baseline.json`.
+The frozen reader baseline is `eng/schema/schema-reader-baseline.v1.json`.
 Every migration, including each newly added script, must also be hash-pinned in
-`certification/schema-migration-hashes.json`; extend that ledger when adding an
+`eng/schema/schema-migration-hashes.v1.json`; extend that ledger when adding an
 expand migration. Keep existing hashes and script names immutable. A new ledger
 entry does not extend the frozen reader baseline or exempt a script from contract
 checks. Hashes are uppercase SHA-256 over UTF-8 SQL with LF line endings.
