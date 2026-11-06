@@ -105,7 +105,13 @@ if ! grep -Fq "PostgreSQL init process complete; ready for start up." "${DB_INIT
     echo "::error::PostGIS sidecar initialization did not complete within ${POSTGIS_INIT_WAIT_SECONDS}s." >&2
     exit 1
 fi
-if ! timeout 10s docker exec "${DB_CONTAINER}" pg_isready -p 5432 -U test -d honua_test >/dev/null 2>&1; then
+# The init marker precedes the final postmaster accepting connections. Retry
+# within the existing probe budget instead of treating that startup race as failure.
+if ! timeout 10s bash -c '
+    until docker exec "$1" pg_isready -p 5432 -U test -d honua_test >/dev/null 2>&1; do
+        sleep 0.2
+    done
+' _ "${DB_CONTAINER}"; then
     echo "::error::PostGIS sidecar did not expose the initialized database." >&2
     exit 1
 fi
