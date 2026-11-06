@@ -366,8 +366,11 @@ internal sealed class ODataCrudHandler(
         ODataCrudResult<Dictionary<string, object?>> result;
         using (Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(createOutboxScopeData))
         {
-            result = await _crudService.CreateFeatureAsync(
-                resolvedLayerId.Value, payload, baseUrl, createStorageLayerId!.Value, layerValidation.Resource, effectiveToken);
+            var reader = await ResolveMutationReaderAsync(
+                new AuthorizedReadBinding(context, layerValidation, createStorageLayerId!.Value), effectiveToken).ConfigureAwait(false);
+            result = await _crudService.CreateFeatureAsync(new ODataCreateRequest(
+                resolvedLayerId.Value, payload, baseUrl, createStorageLayerId.Value,
+                layerValidation.Resource, reader), effectiveToken);
         }
         if (result.IsSuccess)
         {

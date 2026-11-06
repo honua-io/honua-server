@@ -15,6 +15,28 @@ namespace Honua.Protocols.OData.UnitTests.Services;
 public sealed partial class ODataCrudOwnerEditPolicyTests
 {
     [UnitTest]
+    public async Task UpdateAndDelete_UseAuthorizedReaderForOwnerAdmission()
+    {
+        var fallback = Substitute.For<IFeatureReader>();
+        fallback.QueryAsync(default, default!, default).ReturnsForAnyArgs(
+            Task.FromException<QueryResult<Feature>>(new ResourceAccessDeniedException()));
+        var reader = new OwnerReader();
+        var writer = new CapturingWriter();
+        var service = CreateService(fallback, writer, Principal("alice", admin: false));
+
+        var update = await service.UpdateFeatureAsync(new ODataUpdateRequest(RouteLayerId, 42,
+            Payload("after"), "https://example.test", null, null, StorageLayerId, false, Resource(Policy), reader));
+        var delete = await service.DeleteFeatureAsync(new ODataDeleteRequest(RouteLayerId, 42,
+            null, null, StorageLayerId, Resource(Policy), reader));
+
+        update.IsSuccess.Should().BeTrue();
+        delete.IsSuccess.Should().BeTrue();
+        writer.ApplyCount.Should().Be(2);
+        reader.QueryCount.Should().Be(2);
+        await fallback.DidNotReceiveWithAnyArgs().QueryAsync(default, default!, default);
+    }
+
+    [UnitTest]
     public async Task GetUpdateDelete_NumericPolicyReadDenied_ReturnGenericForbidden()
     {
         var reader = DeniedReader();
@@ -39,9 +61,10 @@ public sealed partial class ODataCrudOwnerEditPolicyTests
         var writer = Substitute.For<IFeatureWriter>();
         writer.ApplyEditsAsync(default, default, default).ReturnsForAnyArgs(
             Task.FromException<FeatureEditResult>(new ResourceAccessDeniedException()));
-        var service = CreateService(new OwnerReader(), writer, Principal("alice", admin: false));
+        var reader = new OwnerReader();
+        var service = CreateService(reader, writer, Principal("alice", admin: false));
 
-        var result = await service.CreateFeatureAsync(RouteLayerId, Payload("after"), "https://example.test", StorageLayerId, Resource(null));
+        var result = await service.CreateFeatureAsync(new ODataCreateRequest(RouteLayerId, Payload("after"), "https://example.test", StorageLayerId, Resource(null), reader));
 
         result.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
         result.ErrorMessage.Should().Be("The operation is not permitted for this resource.");
@@ -51,9 +74,10 @@ public sealed partial class ODataCrudOwnerEditPolicyTests
     public async Task Create_CommittedWriteWithDeniedReadback_ReturnsIdentityAcknowledgement()
     {
         var writer = new CapturingWriter();
-        var service = CreateService(DeniedReader(), writer, Principal("alice", admin: false));
+        var reader = DeniedReader();
+        var service = CreateService(reader, writer, Principal("alice", admin: false));
 
-        var result = await service.CreateFeatureAsync(RouteLayerId, Payload("after"), "https://example.test", StorageLayerId, Resource(null));
+        var result = await service.CreateFeatureAsync(new ODataCreateRequest(RouteLayerId, Payload("after"), "https://example.test", StorageLayerId, Resource(null), reader));
 
         result.StatusCode.Should().Be(StatusCodes.Status201Created);
         result.IsSuccess.Should().BeTrue();

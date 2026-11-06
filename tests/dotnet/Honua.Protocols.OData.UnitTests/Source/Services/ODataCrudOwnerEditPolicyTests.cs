@@ -139,8 +139,7 @@ public sealed partial class ODataCrudOwnerEditPolicyTests
         var writer = new CapturingWriter();
         var service = CreateService(reader, writer, httpContext: null);
 
-        var created = await service.CreateFeatureAsync(
-            RouteLayerId, Payload("Created"), "https://example.test", StorageLayerId, Resource(Policy), CancellationToken.None);
+        var created = await service.CreateFeatureAsync(new ODataCreateRequest(RouteLayerId, Payload("Created"), "https://example.test", StorageLayerId, Resource(Policy), reader), CancellationToken.None);
 
         created.IsSuccess.Should().BeFalse();
         created.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
@@ -155,8 +154,7 @@ public sealed partial class ODataCrudOwnerEditPolicyTests
         var stampedReader = new OwnerReader();
         var stampedWriter = new CapturingWriter();
         var stamped = CreateService(stampedReader, stampedWriter, Principal("alice", admin: false));
-        var created = await stamped.CreateFeatureAsync(
-            RouteLayerId, Payload("Created"), "https://example.test", StorageLayerId, Resource(Policy), CancellationToken.None);
+        var created = await stamped.CreateFeatureAsync(new ODataCreateRequest(RouteLayerId, Payload("Created"), "https://example.test", StorageLayerId, Resource(Policy), stampedReader), CancellationToken.None);
 
         created.IsSuccess.Should().BeTrue();
         created.StatusCode.Should().Be(StatusCodes.Status201Created);
@@ -167,13 +165,7 @@ public sealed partial class ODataCrudOwnerEditPolicyTests
         var openReader = new OwnerReader();
         var openWriter = new CapturingWriter();
         var open = CreateService(openReader, openWriter, httpContext: null);
-        var unstamped = await open.CreateFeatureAsync(
-            RouteLayerId,
-            Payload("Created"),
-            "https://example.test",
-            StorageLayerId,
-            Resource(Policy with { Enabled = false }),
-            CancellationToken.None);
+        var unstamped = await open.CreateFeatureAsync(new ODataCreateRequest(RouteLayerId, Payload("Created"), "https://example.test", StorageLayerId, Resource(Policy with { Enabled = false }), openReader), CancellationToken.None);
 
         unstamped.IsSuccess.Should().BeTrue();
         openWriter.ApplyCount.Should().Be(1);

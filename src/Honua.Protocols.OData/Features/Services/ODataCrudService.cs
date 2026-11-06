@@ -139,22 +139,10 @@ internal sealed partial class ODataCrudService
         }
     }
 
-    public Task<ODataCrudResult<Dictionary<string, object?>>> CreateFeatureAsync(
-        int layerId,
-        ParsedFeaturePayload payload,
-        string baseUrl,
-        int storageLayerId,
-        CancellationToken cancellationToken = default)
-        => CreateFeatureAsync(layerId, payload, baseUrl, storageLayerId, null, cancellationToken);
-
     public async Task<ODataCrudResult<Dictionary<string, object?>>> CreateFeatureAsync(
-        int layerId,
-        ParsedFeaturePayload payload,
-        string baseUrl,
-        int storageLayerId,
-        MetadataV2Resource? resolvedResource,
-        CancellationToken cancellationToken = default)
+        ODataCreateRequest request, CancellationToken cancellationToken = default)
     {
+        var (layerId, payload, baseUrl, storageLayerId, resolvedResource, reader) = request;
         try
         {
             // HTTP callers already resolved and authorized the OData publication. Keep
@@ -189,8 +177,7 @@ internal sealed partial class ODataCrudService
             var validatedAttributes = attributesResult.Value!;
 
             var editResult = await ExecuteEditAsync(
-                storageLayerId,
-                resource,
+                new ODataMutationTarget(storageLayerId, resource, reader),
                 new ODataEditRequest
                 {
                     Operation = ODataOperation.Create,
@@ -217,7 +204,7 @@ internal sealed partial class ODataCrudService
             var readbackUnavailable = false;
             try
             {
-                reloaded = await _featureReader.GetAsync(storageLayerId, createdId.Value, cancellationToken);
+                reloaded = await reader.GetAsync(storageLayerId, createdId.Value, cancellationToken);
             }
             catch (Exception ex) when (ex is OperationCanceledException or ResourceAccessDeniedException)
             {
@@ -379,8 +366,7 @@ internal sealed partial class ODataCrudService
 
             var operation = replace ? ODataOperation.Update : ODataOperation.Patch;
             var editResult = await ExecuteEditAsync(
-                storageLayerId,
-                resource,
+                new ODataMutationTarget(storageLayerId, resource, reader),
                 new ODataEditRequest
                 {
                     Operation = operation,
@@ -526,8 +512,7 @@ internal sealed partial class ODataCrudService
                 : FeatureStateToken.FromReadSnapshot(existingFeature.Value);
 
             var editResult = await ExecuteEditAsync(
-                storageLayerId,
-                resource,
+                new ODataMutationTarget(storageLayerId, resource, reader),
                 new ODataEditRequest
                 {
                     Operation = ODataOperation.Delete,
@@ -621,11 +606,9 @@ internal sealed partial class ODataCrudService
     }
 
     private async Task<UnifiedEditResult> ExecuteEditAsync(
-        int storageLayerId,
-        MetadataV2Resource resource,
-        ODataEditRequest request,
-        CancellationToken cancellationToken)
+        ODataMutationTarget target, ODataEditRequest request, CancellationToken cancellationToken)
     {
+        var (storageLayerId, resource, reader) = target;
         ArgumentNullException.ThrowIfNull(resource);
 
         var conversion = await _editParameterAdapter.ConvertAsync(request, resource, cancellationToken)
@@ -651,7 +634,7 @@ internal sealed partial class ODataCrudService
         var editBatch = _editProcessor.ToFeatureEditBatch(optimizedRequest, resource);
         var principal = ServiceDataEditorAuthorization.ResolveEditPrincipal(_httpContextAccessor?.HttpContext);
         var prepared = await OwnerEditPolicyFieldAccess.PrepareBatchAsync(
-            _featureReader,
+            reader,
             storageLayerId,
             resource.OwnerEditPolicy,
             editBatch,
