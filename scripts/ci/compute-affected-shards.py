@@ -491,7 +491,7 @@ def product_code_prefixes(config: dict[str, Any]) -> tuple[str, ...]:
     all of it: `.github/ci-shards.json` also routes `observability/`,
     `samples/gp/` and `tests/fixtures/toolbox-translation/` -- shard INPUTS
     that live outside both. `SloMetricContractTests` reads
-    `observability/slo-metric-contract.json` and `ToolboxTranslationEndpointTests`
+    `eng/telemetry/slo-metric-contract.v1.json` and `ToolboxTranslationEndpointTests`
     consumes the toolbox fixtures, so a diff that edits only one of those can
     turn the owning shard red on trunk while this admission test answers
     `no_product_code` and the lane runs nothing. Deriving the set from the same

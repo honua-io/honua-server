@@ -29,7 +29,7 @@ delegated to machinery that already gates trunk.
    `src/` and `tests/dotnet/` **unioned with every root the shard map itself
    routes on** — `.github/ci-shards.json` also claims `observability/`,
    `samples/gp/` and `tests/fixtures/toolbox-translation/`, which are shard
-   inputs (`SloMetricContractTests` reads `observability/slo-metric-contract.json`)
+   inputs (`SloMetricContractTests` reads `eng/telemetry/slo-metric-contract.v1.json`)
    that would otherwise be skipped while the trailing matrix went red on them.
    `infrastructure_paths` is deliberately excluded, so a workflow-only diff
    still costs nothing. `tests/dotnet/` is included deliberately: shard filters

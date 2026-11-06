@@ -101,7 +101,7 @@ cd docs/guides/deploy/examples
 promtool test rules prometheus-alerts.test.yml
 ```
 
-For availability budgets, the [SLO metric contract](https://github.com/honua-io/honua-server/blob/trunk/observability/slo-metric-contract.json) counts in-band errors plus out-of-band logical 5xx errors. Logical error codes are independent of HTTP transport status: a GeoServices logical 500 returned over HTTP 200 must count once. Union the two selectors before aggregation so either error class remains visible when the other is absent.
+For availability budgets, the [SLO metric contract](https://github.com/honua-io/honua-server/blob/trunk/eng/telemetry/slo-metric-contract.v1.json) counts in-band errors plus out-of-band logical 5xx errors. Logical error codes are independent of HTTP transport status: a GeoServices logical 500 returned over HTTP 200 must count once. Union the two selectors before aggregation so either error class remains visible when the other is absent.
 
 5. (Optional one-command Docker depth) For local or single-node deployments that also need Grafana and Prometheus, bring up the curated bundle - provisioned datasource plus the Serving, GP/Jobs, and Ops/Alerts dashboards - against a running server.
 

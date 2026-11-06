@@ -677,7 +677,7 @@
       "filter": "FullyQualifiedName~Honua.Server.Tests.Infrastructure.",
       "_comment": "The legacy root Admin/Infrastructure shard completed 816 tests and was still making steady progress when its old 20-minute inner cap terminated it (run 29106223369). Its root Admin.* and AdminEndpointTests slice later moved to the existing Server Features Admin Operations runner after this shard exhausted the raised 32-minute cap while Admin Operations used only 38% of its 35-minute cap. This runner now owns only root Infrastructure.* tests, retaining the same budget without adding another job.",
       "paths": [
-        "observability/",
+        "eng/telemetry/",
         "src/Honua.Core/Features/Validation/",
         "tests/dotnet/Honua.Server.Tests/Features/Infrastructure/",
         "tests/dotnet/Honua.Server.Tests/Infrastructure/",
@@ -1880,7 +1880,7 @@
       "filter": "((FullyQualifiedName~Honua.Server.Tests.Features.Caching|FullyQualifiedName~Honua.Server.Tests.Features.FileStorage|FullyQualifiedName~Honua.Server.Tests.Features.Styling)|(FullyQualifiedName~Honua.Server.Tests.Features.Infrastructure)|(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Mcp.RedisMcpSessionStoreTests))&FullyQualifiedName!~Honua.Server.Tests.Features.Styling",
       "_paths_comment": "All three whole-class children retain the original affected source-path set, including shared authentication/security overrides, so targeted changes cannot omit a formerly covered test family.",
       "paths": [
-        "observability/",
+        "eng/telemetry/",
         "src/Honua.Ai/Features/Protocols/Mcp/Mcp/McpSessionStore.cs",
         "src/Honua.Core/Features/Caching/",
         "src/Honua.Core/Features/ControlPlane/",
@@ -1928,7 +1928,7 @@
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests",
       "_paths_comment": "All three whole-class children retain the original affected source-path set, including shared authentication/security overrides, so targeted changes cannot omit a formerly covered test family.",
       "paths": [
-        "observability/",
+        "eng/telemetry/",
         "src/Honua.Ai/Features/Protocols/Mcp/Mcp/McpSessionStore.cs",
         "src/Honua.Core/Features/Caching/",
         "src/Honua.Core/Features/ControlPlane/",
@@ -1967,7 +1967,7 @@
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Styling&FullyQualifiedName!~Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests",
       "_paths_comment": "All three whole-class children retain the original affected source-path set, including shared authentication/security overrides, so targeted changes cannot omit a formerly covered test family.",
       "paths": [
-        "observability/",
+        "eng/telemetry/",
         "src/Honua.Ai/Features/Protocols/Mcp/Mcp/McpSessionStore.cs",
         "src/Honua.Core/Features/Caching/",
         "src/Honua.Core/Features/ControlPlane/",
