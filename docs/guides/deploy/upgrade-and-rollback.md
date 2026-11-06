@@ -139,9 +139,11 @@ rolling back.
 `145_ProtectImportDependencies.sql` changes the import swap helper to refuse
 replacement when other database objects depend on the target. Deploy it with the
 matching application so dependency failures receive the stable import error.
-An older reader that does not qualify this contract migration refuses startup.
-If this upgrade must be reversed, restore the pre-upgrade database backup and its
-matching application image instead of rolling the application back over the
+The migration only installs the existing helper signature; it does not execute
+replacement or change the reader schema. Its exact reviewed bytes are additive.
+A previous reader must still qualify the recorded forward-compatibility declaration
+before rollback. If it refuses startup, restore the pre-upgrade database backup and
+its matching application image instead of rolling the application back over the
 migrated database. Do not remove the migration journal entry or reintroduce
 cascading replacement to bypass that boundary.
 
