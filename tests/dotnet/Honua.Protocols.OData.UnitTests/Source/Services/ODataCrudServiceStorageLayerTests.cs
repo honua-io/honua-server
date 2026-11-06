@@ -48,16 +48,9 @@ public sealed class ODataCrudServiceStorageLayerTests
         var reader = Substitute.For<IFeatureReader>();
         var service = CreateService(reader);
 
-        var result = await service.UpdateFeatureAsync(
-            RouteLayerId,
-            ObjectId,
-            new ParsedFeaturePayload(),
-            "https://example.test",
-            ifMatch: null,
-            ifNoneMatch: null,
-            StorageLayerId,
-            replace: false,
-            CancellationToken.None);
+        var result = await service.UpdateFeatureAsync(new ODataUpdateRequest(
+            RouteLayerId, ObjectId, new ParsedFeaturePayload(), "https://example.test",
+            null, null, StorageLayerId, false, null, reader), CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
         await reader.Received(1).GetAsync(StorageLayerId, ObjectId, Arg.Any<CancellationToken>());
@@ -71,13 +64,8 @@ public sealed class ODataCrudServiceStorageLayerTests
         var reader = Substitute.For<IFeatureReader>();
         var service = CreateService(reader);
 
-        var result = await service.DeleteFeatureAsync(
-            RouteLayerId,
-            ObjectId,
-            ifMatch: null,
-            ifNoneMatch: null,
-            StorageLayerId,
-            CancellationToken.None);
+        var result = await service.DeleteFeatureAsync(new ODataDeleteRequest(
+            RouteLayerId, ObjectId, null, null, StorageLayerId, null, reader), CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
         await reader.Received(1).GetAsync(StorageLayerId, ObjectId, Arg.Any<CancellationToken>());

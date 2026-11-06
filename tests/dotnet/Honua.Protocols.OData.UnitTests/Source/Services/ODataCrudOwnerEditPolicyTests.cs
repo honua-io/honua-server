@@ -82,10 +82,10 @@ public sealed partial class ODataCrudOwnerEditPolicyTests
         var writer = new CapturingWriter();
         var service = CreateService(reader, writer, Principal("bob", admin: false));
 
-        var updated = await service.UpdateFeatureAsync(
-            RouteLayerId, 42, Payload("After"), "https://example.test", null, null, StorageLayerId, false, Resource(Policy), CancellationToken.None);
-        var deleted = await service.DeleteFeatureAsync(
-            RouteLayerId, 42, null, null, StorageLayerId, Resource(Policy), CancellationToken.None);
+        var updated = await service.UpdateFeatureAsync(new ODataUpdateRequest(
+            RouteLayerId, 42, Payload("After"), "https://example.test", null, null, StorageLayerId, false, Resource(Policy), reader), CancellationToken.None);
+        var deleted = await service.DeleteFeatureAsync(new ODataDeleteRequest(
+            RouteLayerId, 42, null, null, StorageLayerId, Resource(Policy), reader), CancellationToken.None);
 
         updated.IsSuccess.Should().BeFalse();
         deleted.IsSuccess.Should().BeFalse();
@@ -105,8 +105,8 @@ public sealed partial class ODataCrudOwnerEditPolicyTests
         var writer = new CapturingWriter();
         var service = CreateService(reader, writer, Principal("alice", admin: false));
 
-        var updated = await service.UpdateFeatureAsync(
-            RouteLayerId, 42, Payload("After"), "https://example.test", null, null, StorageLayerId, false, Resource(Policy), CancellationToken.None);
+        var updated = await service.UpdateFeatureAsync(new ODataUpdateRequest(
+            RouteLayerId, 42, Payload("After"), "https://example.test", null, null, StorageLayerId, false, Resource(Policy), reader), CancellationToken.None);
 
         updated.IsSuccess.Should().BeTrue();
         updated.StatusCode.Should().Be(StatusCodes.Status200OK);
@@ -123,8 +123,8 @@ public sealed partial class ODataCrudOwnerEditPolicyTests
         var writer = new CapturingWriter();
         var service = CreateService(reader, writer, Principal("carol", admin: true));
 
-        var updated = await service.UpdateFeatureAsync(
-            RouteLayerId, 42, Payload("After"), "https://example.test", null, null, StorageLayerId, false, Resource(Policy), CancellationToken.None);
+        var updated = await service.UpdateFeatureAsync(new ODataUpdateRequest(
+            RouteLayerId, 42, Payload("After"), "https://example.test", null, null, StorageLayerId, false, Resource(Policy), reader), CancellationToken.None);
 
         updated.IsSuccess.Should().BeTrue();
         writer.ApplyCount.Should().Be(1);
