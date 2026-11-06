@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Queries.Filters;
 using Npgsql;
@@ -13,10 +14,9 @@ namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 /// security predicate (the <c>WITH CHECK</c> half of RLS, honua-server#6103). The write was
 /// undone before this was thrown; edit paths translate it into a not-permitted operation result.
 /// </summary>
-internal sealed class RowSecurityWriteCheckFailedException : Exception
+internal sealed class RowSecurityWriteCheckFailedException : ResourceAccessDeniedException
 {
     public RowSecurityWriteCheckFailedException(long objectId)
-        : base($"Feature {objectId} would fall outside the caller's row-level security scope.")
     {
         ObjectId = objectId;
     }
@@ -31,6 +31,10 @@ internal sealed partial class FeatureDataAccess
         "Edit not permitted: the feature would fall outside the row-level security scope of the caller.";
 
     private const string RowSecurityWriteCheckSavepoint = "honua_rls_write_check";
+
+    private sealed record RowSecurityTarget(string TableName, int LayerId, (Guid? VersionId, long ObjectId) Row);
+    private sealed record RowSecurityContext(NpgsqlConnection Connection, NpgsqlTransaction? Transaction, RowSecurityTarget Target);
+
 
     /// <summary>
     /// Runs one row write under the caller's row-level security <c>WITH CHECK</c> predicate
@@ -78,8 +82,8 @@ internal sealed partial class FeatureDataAccess
         {
             var (objectId, result) = await write().ConfigureAwait(false);
 
-            if (!await IsRowVisibleUnderWriteCheckAsync(
-                    writeCheck, connection, transaction, tableName, layerId, versionId, objectId, cancellationToken)
+            if (!await IsRowVisibleAndLockedAsync(writeCheck,
+                    new RowSecurityContext(connection, transaction, new(tableName, layerId, (versionId, objectId))), cancellationToken)
                 .ConfigureAwait(false))
             {
                 await transaction.RollbackAsync(RowSecurityWriteCheckSavepoint, CancellationToken.None).ConfigureAwait(false);
@@ -143,16 +147,29 @@ internal sealed partial class FeatureDataAccess
             },
             cancellationToken);
 
-    private async Task<bool> IsRowVisibleUnderWriteCheckAsync(
-        SqlFragment writeCheck,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        string tableName,
-        int layerId,
-        Guid? versionId,
-        long objectId,
-        CancellationToken cancellationToken)
+    private async Task EnsureExistingRowVisibleAsync(
+        SqlFragment? writeCheck, RowSecurityContext context, CancellationToken cancellationToken)
     {
+        if (writeCheck is null)
+        {
+            return;
+        }
+        if (context.Transaction is null)
+        {
+            throw new InvalidOperationException("Row-level security write checks require an active transaction.");
+        }
+        if (!await IsRowVisibleAndLockedAsync(writeCheck, context, cancellationToken).ConfigureAwait(false))
+        {
+            throw new RowSecurityWriteCheckFailedException(context.Target.Row.ObjectId);
+        }
+    }
+
+    private async Task<bool> IsRowVisibleAndLockedAsync(
+        SqlFragment writeCheck, RowSecurityContext context, CancellationToken cancellationToken)
+    {
+        var (connection, transaction, target) = context;
+        var (tableName, layerId, row) = target;
+        var (versionId, objectId) = row;
         var parameters = new List<object> { layerId, objectId };
         var versionPredicate = string.Empty;
         if (versionId.HasValue)
@@ -172,7 +189,7 @@ internal sealed partial class FeatureDataAccess
             SELECT EXISTS (
                 SELECT 1 FROM {tableName}
                 WHERE layer_id = $1 AND objectid = $2{versionPredicate}
-                  AND ({predicate}))");
+                  AND ({predicate}) FOR UPDATE)");
 
         await using var command = new NpgsqlCommand(sql, connection) { Transaction = transaction };
         ApplyCommandTimeout(command, _queryTimeoutSeconds);

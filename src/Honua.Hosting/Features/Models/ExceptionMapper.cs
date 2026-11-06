@@ -171,6 +171,13 @@ internal static class ExceptionMapper
                 null
             ),
 
+            ResourceAccessDeniedException => (
+                StatusCodes.Status403Forbidden,
+                "Forbidden",
+                "The operation is not permitted for this resource.",
+                null
+            ),
+
             UnauthorizedAccessException => (
                 StatusCodes.Status401Unauthorized,
                 "Unauthorized",
