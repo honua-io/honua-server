@@ -406,17 +406,18 @@ jobs:
           BASE_REF: ${{ github.event.pull_request.base.sha || 'origin/trunk' }}
           HEAD_REF: ${{ github.event.pull_request.head.sha || 'HEAD' }}
         run: |
-          python3 scripts/ci/compute-affected-shards.py --cap "${CAP}" --annotate-resources --json "${RUNNER_TEMP}/producer-shards.json"
-          python3 scripts/ci/managed-test-build.py projects --lane pr --matrix-file "${RUNNER_TEMP}/producer-shards.json" --output "${RUNNER_TEMP}/managed-projects.json"
-          python3 scripts/ci/protocol-profile-selection.py --dry-run --changed-from-git > "${RUNNER_TEMP}/protocol-profiles.json"
-          cat "${RUNNER_TEMP}/protocol-profiles.json"
+          mkdir -p artifacts/pr-gate
+          python3 scripts/ci/compute-affected-shards.py --cap "${CAP}" --annotate-resources --json "artifacts/pr-gate/producer-shards.json"
+          python3 scripts/ci/managed-test-build.py projects --lane pr --matrix-file "artifacts/pr-gate/producer-shards.json" --output "artifacts/pr-gate/managed-projects.json"
+          python3 scripts/ci/protocol-profile-selection.py --dry-run --changed-from-git > "artifacts/pr-gate/protocol-profiles.json"
+          cat "artifacts/pr-gate/protocol-profiles.json"
 
       - name: Lean gate (managed build producer)
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         uses: ./.github/actions/lean-gate
         with:
           phase: build
-          projects-file: ${{ runner.temp }}/managed-projects.json
+          projects-file: artifacts/pr-gate/managed-projects.json
           trx-prefix: pr-gate
           prepull-postgis: 'true'
           # Per-PR only. The gate compiles the diff's reverse-dependency closure
@@ -432,7 +433,7 @@ jobs:
 
       - name: Build selected protocol profiles
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
-        run: python3 scripts/ci/build-selected-protocol-profiles.py --selection "${RUNNER_TEMP}/protocol-profiles.json"
+        run: python3 scripts/ci/build-selected-protocol-profiles.py --selection "artifacts/pr-gate/protocol-profiles.json"
 
       - name: Publish pristine managed test outputs
         id: managed-producer
@@ -440,7 +441,7 @@ jobs:
         uses: ./.github/actions/managed-test-artifacts
         with:
           mode: publish
-          projects-file: ${{ runner.temp }}/managed-projects.json
+          projects-file: artifacts/pr-gate/managed-projects.json
           enabled: ${{ vars.HONUA_MANAGED_TEST_ARTIFACTS != 'false' && 'true' || 'false' }}
 
       # The standalone host needs its canonical bin directory. Verify it here
@@ -522,7 +523,9 @@ jobs:
 
       - name: Plan managed test consumer
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && needs.pr-gate.outputs.skip != 'true'
-        run: python3 scripts/ci/managed-test-build.py projects --lane pr --output "${RUNNER_TEMP}/managed-projects.json"
+        run: |
+          mkdir -p artifacts/pr-gate
+          python3 scripts/ci/managed-test-build.py projects --lane pr --output "artifacts/pr-gate/managed-projects.json"
 
       - name: Restore verified managed test outputs
         id: managed-consumer
@@ -530,7 +533,7 @@ jobs:
         uses: ./.github/actions/managed-test-artifacts
         with:
           mode: consume
-          projects-file: ${{ runner.temp }}/managed-projects.json
+          projects-file: artifacts/pr-gate/managed-projects.json
           producer-attempt: ${{ needs.pr-gate.outputs.producer-attempt }}
           enabled: ${{ vars.HONUA_MANAGED_TEST_ARTIFACTS != 'false' && 'true' || 'false' }}
 
@@ -539,7 +542,7 @@ jobs:
         timeout-minutes: 30
         env:
           RESTORED_PROJECTS: ${{ steps.managed-consumer.outputs.restored-projects-file }}
-        run: python3 scripts/ci/managed-test-build.py fallback --projects-file "${RUNNER_TEMP}/managed-projects.json" --restored-file "${RESTORED_PROJECTS}"
+        run: python3 scripts/ci/managed-test-build.py fallback --projects-file "artifacts/pr-gate/managed-projects.json" --restored-file "${RESTORED_PROJECTS}"
 
       # Warm the Testcontainers-backed Governance/Drift coverage independently
       # on this consumer runner.
@@ -576,14 +579,14 @@ jobs:
         run: |
           dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
             --no-build --no-restore --configuration Release --filter 'Category=RemoteSourceExecutionProof' \
-            --logger 'trx;LogFileName=remote-source-execution-proof.trx' --results-directory tests/TestResults
+            --logger 'trx;LogFileName=remote-source-execution-proof.trx' --results-directory artifacts/test-results
 
       - name: Upload remote source execution proof
         if: always() && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: remote-source-execution-proof
-          path: tests/TestResults/remote-source-execution-proof.trx
+          path: artifacts/test-results/remote-source-execution-proof.trx
 
       - name: Prove raster catalog execution with production GDAL
         id: raster-execution-proof
@@ -597,19 +600,19 @@ jobs:
             --no-build --no-restore --configuration Release -maxcpucount:4 \
             --filter 'Category=RasterExecutionProof' \
             --logger 'trx;LogFileName=raster-execution-proof.trx' \
-            --results-directory tests/TestResults
+            --results-directory artifacts/test-results
 
           dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
             --no-build --no-restore --configuration Release -maxcpucount:4 \
             --filter 'Category=CopyFeaturesExecutionProof' \
             --logger 'trx;LogFileName=copy-features-execution-proof.trx' \
-            --results-directory tests/TestResults
+            --results-directory artifacts/test-results
 
           dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
             --no-build --no-restore --configuration Release -maxcpucount:4 \
             --filter 'Category=LayerExecutionProof' \
             --logger 'trx;LogFileName=layer-execution-proof.trx' \
-            --results-directory tests/TestResults
+            --results-directory artifacts/test-results
 
           # imagery.classify (#3935) delegates inference to a model server. The
           # proof stands one up on loopback and runs the committed classifier in
@@ -618,7 +621,7 @@ jobs:
             --no-build --no-restore --configuration Release -maxcpucount:4 \
             --filter 'Category=ImageryClassifyExecutionProof' \
             --logger 'trx;LogFileName=imagery-classify-execution-proof.trx' \
-            --results-directory tests/TestResults
+            --results-directory artifacts/test-results
 
           # Protocol-tier proofs from #3936/#3937. Keep these in the same
           # evidence-bearing raster block so both geometry-format and
@@ -627,7 +630,7 @@ jobs:
             --no-build --no-restore --configuration Release -maxcpucount:4 \
             --filter 'Category=GeometryFormatExecutionProof|Category=CalculateFieldExecutionProof' \
             --logger 'trx;LogFileName=protocol-tier-execution-proof.trx' \
-            --results-directory tests/TestResults
+            --results-directory artifacts/test-results
 
       - name: Prove the raster execution cases ran, not skipped
         # honua-server#4401. The step above is on the REQUIRED gate, but
@@ -642,7 +645,7 @@ jobs:
         if: ${{ !cancelled() && steps.raster-execution-proof.conclusion != 'skipped' }}
         run: |
           set -euo pipefail
-          trx=tests/TestResults/raster-execution-proof.trx
+          trx=artifacts/test-results/raster-execution-proof.trx
           if [[ ! -f "${trx}" ]]; then
             echo "::error::no TRX produced for the Category=RasterExecutionProof subset — the required raster receipts did not run"
             exit 1
@@ -679,7 +682,7 @@ jobs:
         # when every matched case skips, and the Honua source/sink proofs need a
         # real Docker PostGIS — so a renamed trait or a cleanly-skipping database
         # fixture would leave this required gate green with zero layer receipts
-        # while certification/gp-operation-matrix.v1.json still calls those rows
+        # while eng/gp-operation-matrix.v1.json still calls those rows
         # proven. Assert on the TRX outcomes, not the exit code.
         #
         # Counts alone are too weak here: the Esri cases are in-process HTTP
@@ -694,7 +697,7 @@ jobs:
         if: ${{ !cancelled() && steps.raster-execution-proof.conclusion != 'skipped' }}
         run: |
           set -euo pipefail
-          trx=tests/TestResults/layer-execution-proof.trx
+          trx=artifacts/test-results/layer-execution-proof.trx
           if [[ ! -f "${trx}" ]]; then
             echo "::error::no TRX produced for the Category=LayerExecutionProof subset — the required layer receipts did not run"
             exit 1
@@ -738,7 +741,7 @@ jobs:
             | select(.status == "proven")
             | .evidence[]
             | select(.path | test("/Execution/(LayerSource|EsriSource|LayerSink)ExecutionProofTests[.]cs$"))
-            | .test' certification/gp-operation-matrix.v1.json | sort -u)
+            | .test' eng/gp-operation-matrix.v1.json | sort -u)
           echo "matrix cites ${#required[@]} layer execution receipt(s)"
           # A broken selection must not pass vacuously: process substitution hides
           # a jq failure from mapfile, and an empty list would skip the loop
@@ -748,7 +751,7 @@ jobs:
               | select(.processId == "source.honua-layer"
                   or .processId == "source.esri-featureserver"
                   or .processId == "sink.honua-layer")
-              | select(.status == "proven")] | length' certification/gp-operation-matrix.v1.json)
+              | select(.status == "proven")] | length' eng/gp-operation-matrix.v1.json)
             if [[ "${proven}" -ne 0 ]]; then
               echo "::error::the matrix still calls ${proven} layer row(s) proven but no LayerExecutionProof evidence test was read out of it — the receipt selection is broken"
               exit 1
@@ -814,12 +817,12 @@ jobs:
             command -v "${tool}" >/dev/null \
               || { echo "::error::${tool} is missing after installing the GDAL CLI packages"; exit 1; }
           done
-          trx=tests/TestResults/worker-gdal-cli.trx
+          trx=artifacts/test-results/worker-gdal-cli.trx
           dotnet test tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj \
             --no-build --no-restore --configuration Release -maxcpucount:4 \
             --filter 'Category=GDAL' \
             --logger 'trx;LogFileName=worker-gdal-cli.trx' \
-            --results-directory tests/TestResults
+            --results-directory artifacts/test-results
           if [[ ! -f "${trx}" ]]; then
             echo "::error::no TRX produced for the Category=GDAL subset"
             exit 1
@@ -849,7 +852,7 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: imagery-classify-execution-proof
-          path: tests/TestResults/imagery-classify-execution-proof.trx
+          path: artifacts/test-results/imagery-classify-execution-proof.trx
           if-no-files-found: warn
 
       # Read-only registry cache for the native-tools stage (apt from
@@ -875,7 +878,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           HONUA_NATIVE_TOOLS_REUSE: ${{ vars.HONUA_NATIVE_TOOLS_REUSE != 'false' && 'true' || 'false' }}
-        run: python3 scripts/ci/native-tools-image.py resolve --output tests/TestResults/native-tools-proof.json
+        run: python3 scripts/ci/native-tools-image.py resolve --output artifacts/test-results/native-tools-proof.json
 
       - name: Prove point-cloud execution with production PDAL
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'
@@ -883,7 +886,7 @@ jobs:
         run: |
           dotnet test tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj \
             --no-build --no-restore --configuration Release --filter 'Category=PdalExecutionProof' \
-            --logger 'trx;LogFileName=pdal-execution-proof.trx' --results-directory tests/TestResults
+            --logger 'trx;LogFileName=pdal-execution-proof.trx' --results-directory artifacts/test-results
 
       - name: Execute import and independent vector export fidelity proofs
         id: fidelity-proof
@@ -899,7 +902,7 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: import-export-fidelity-proof
-          path: tests/TestResults/import-export-fidelity/
+          path: artifacts/import-export-fidelity/
           # Missing evidence is an error only when the proof itself ran. When an
           # earlier step failed (or timed out) the proof never runs, and an error
           # here would bury that step's real failure under a second one.
@@ -911,8 +914,8 @@ jobs:
         with:
           name: pdal-execution-proof
           path: |
-            tests/TestResults/pdal-execution-proof.trx
-            tests/TestResults/native-tools-proof.json
+            artifacts/test-results/pdal-execution-proof.trx
+            artifacts/test-results/native-tools-proof.json
 
       - name: Upload raster execution proof
         if: always() && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'
@@ -920,8 +923,8 @@ jobs:
         with:
           name: raster-execution-proof
           path: |
-            tests/TestResults/raster-execution-proof.trx
-            tests/TestResults/worker-gdal-cli.trx
+            artifacts/test-results/raster-execution-proof.trx
+            artifacts/test-results/worker-gdal-cli.trx
           if-no-files-found: warn
 
       - name: Upload layer execution proof
@@ -929,7 +932,7 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: layer-execution-proof
-          path: tests/TestResults/layer-execution-proof.trx
+          path: artifacts/test-results/layer-execution-proof.trx
           if-no-files-found: warn
 
       - name: Upload protocol-tier execution proof
@@ -937,7 +940,7 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: protocol-tier-execution-proof
-          path: tests/TestResults/protocol-tier-execution-proof.trx
+          path: artifacts/test-results/protocol-tier-execution-proof.trx
           if-no-files-found: warn
 
       - name: Await Testcontainers PostGIS pre-pull
@@ -951,7 +954,7 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: copy-features-execution-proof
-          path: tests/TestResults/copy-features-execution-proof.trx
+          path: artifacts/test-results/copy-features-execution-proof.trx
           if-no-files-found: warn
 
       # Exercise all clean and injected-rootfs fixtures here without building a
@@ -1070,20 +1073,21 @@ jobs:
         env:
           CAP: ${{ env.AFFECTED_SHARDS_CAP }}
         run: |
+          mkdir -p artifacts/pr-gate
           python3 scripts/ci/compute-affected-shards.py \
             --cap "${CAP}" \
             --annotate-resources \
             --github-output \
-            --json "${RUNNER_TEMP}/affected-shards.json" \
-            --summary "${RUNNER_TEMP}/affected-shards.md"
-          cat "${RUNNER_TEMP}/affected-shards.md" >> "${GITHUB_STEP_SUMMARY}"
+            --json "artifacts/pr-gate/affected-shards.json" \
+            --summary "artifacts/pr-gate/affected-shards.md"
+          cat "artifacts/pr-gate/affected-shards.md" >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Upload selection receipt
         if: always() && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: pr-gate-affected-shards-selection
-          path: ${{ runner.temp }}/affected-shards.json
+          path: artifacts/pr-gate/affected-shards.json
           if-no-files-found: warn
 
   affected-shard:
@@ -1147,14 +1151,16 @@ jobs:
       - name: Plan affected shard binary consumer
         env:
           SHARD_CSPROJ: ${{ matrix.csproj }}
-        run: python3 scripts/ci/managed-test-build.py projects --lane shard --project "${SHARD_CSPROJ}" --output "${RUNNER_TEMP}/managed-projects.json"
+        run: |
+          mkdir -p artifacts/pr-gate
+          python3 scripts/ci/managed-test-build.py projects --lane shard --project "${SHARD_CSPROJ}" --output "artifacts/pr-gate/managed-projects.json"
 
       - name: Restore verified managed test outputs
         id: managed-consumer
         uses: ./.github/actions/managed-test-artifacts
         with:
           mode: consume
-          projects-file: ${{ runner.temp }}/managed-projects.json
+          projects-file: artifacts/pr-gate/managed-projects.json
           producer-attempt: ${{ needs.pr-gate.outputs.producer-attempt }}
           enabled: ${{ vars.HONUA_MANAGED_TEST_ARTIFACTS != 'false' && 'true' || 'false' }}
 
@@ -1162,10 +1168,10 @@ jobs:
         timeout-minutes: 20
         env:
           RESTORED_PROJECTS: ${{ steps.managed-consumer.outputs.restored-projects-file }}
-        run: python3 scripts/ci/managed-test-build.py fallback --projects-file "${RUNNER_TEMP}/managed-projects.json" --restored-file "${RESTORED_PROJECTS}"
+        run: python3 scripts/ci/managed-test-build.py fallback --projects-file "artifacts/pr-gate/managed-projects.json" --restored-file "${RESTORED_PROJECTS}"
 
       - name: Create Test Results Directory
-        run: mkdir -p ./tests/TestResults
+        run: mkdir -p ./artifacts/test-results
 
       # Preserve receipts after failures; the required aggregate owns the verdict.
       - name: Run affected shard
@@ -1177,7 +1183,7 @@ jobs:
           HONUA_SERVER_TEST_LOG_NAME: ${{ matrix.log_name }}
           HONUA_SERVER_TEST_TIMEOUT_MINUTES: ${{ matrix.test_timeout_minutes }}
           HONUA_SERVER_TEST_MAX_CPU_COUNT: ${{ matrix.max_cpu_count }}
-          HONUA_SERVER_TEST_RESULTS_DIR: ./tests/TestResults
+          HONUA_SERVER_TEST_RESULTS_DIR: ./artifacts/test-results
           HONUA_SERVER_TEST_CONFIGURATION: Release
           HONUA_SERVER_TEST_CSPROJ: ${{ matrix.csproj }}
         run: scripts/ci/run-server-test-shard.sh
@@ -1191,7 +1197,7 @@ jobs:
         timeout-minutes: 3
         with:
           name: pr-gate-affected-shard-${{ matrix.artifact_suffix }}
-          path: tests/TestResults/
+          path: artifacts/test-results/
           retention-days: 7
 
   affected-shards:
@@ -1214,7 +1220,7 @@ jobs:
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: pr-gate-affected-shard-*
-          path: shard-results
+          path: artifacts/pr-gate/shard-results
           merge-multiple: true
 
       - name: Report affected-shard verdict
@@ -1227,14 +1233,16 @@ jobs:
           SELECT_COUNT: ${{ needs.affected-shards-select.outputs.selected_count }}
           SELECT_MATRIX: ${{ needs.affected-shards-select.outputs.matrix_include }}
           SHARDS_RESULT: ${{ needs.affected-shard.result }}
-        run: python3 scripts/ci/affected-shard-verdict.py --timings shard-results --receipt affected-shard-verdict.json
+        run: |
+          mkdir -p artifacts/pr-gate
+          python3 scripts/ci/affected-shard-verdict.py --timings artifacts/pr-gate/shard-results --receipt artifacts/pr-gate/affected-shard-verdict.json
 
       - name: Retain affected-shard verdict
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: pr-gate-affected-shards-verdict-${{ github.run_id }}-${{ github.run_attempt }}
-          path: affected-shard-verdict.json
+          path: artifacts/pr-gate/affected-shard-verdict.json
           if-no-files-found: warn
           retention-days: 7
 
@@ -1367,7 +1375,7 @@ jobs:
           # The verdict step below interprets the exit code; this step must reach it.
           set +e -uo pipefail
           python3 scripts/ci/n1-reader-compat.py \
-            --output "${RUNNER_TEMP}/n1-reader-compat" \
+            --output "artifacts/pr-gate/n1-reader-compat" \
             --candidate-dll src/Honua.Server/bin/Release/net10.0/Honua.Server.dll \
             --candidate-sha "${GITHUB_SHA}" \
             --candidate-head-sha "${HEAD_SHA}" \
@@ -1378,8 +1386,8 @@ jobs:
       - name: Publish N-1 receipt summary
         if: ${{ !cancelled() && steps.n1.conclusion != 'skipped' }}
         run: |
-          if [[ -f "${RUNNER_TEMP}/n1-reader-compat/summary.md" ]]; then
-            cat "${RUNNER_TEMP}/n1-reader-compat/summary.md" >> "${GITHUB_STEP_SUMMARY}"
+          if [[ -f "artifacts/pr-gate/n1-reader-compat/summary.md" ]]; then
+            cat "artifacts/pr-gate/n1-reader-compat/summary.md" >> "${GITHUB_STEP_SUMMARY}"
           else
             echo '### N-1 reader compatibility: no receipt was written' >> "${GITHUB_STEP_SUMMARY}"
           fi
@@ -1389,7 +1397,7 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: n1-reader-compat-receipt
-          path: ${{ runner.temp }}/n1-reader-compat/
+          path: artifacts/pr-gate/n1-reader-compat/
           if-no-files-found: error
           retention-days: 30
 
@@ -1403,7 +1411,7 @@ jobs:
           SCRIPT_EXIT: ${{ steps.n1.outputs.exit_code }}
         run: |
           set -euo pipefail
-          receipt="${RUNNER_TEMP}/n1-reader-compat/receipt.json"
+          receipt="artifacts/pr-gate/n1-reader-compat/receipt.json"
           if [[ ! -f "${receipt}" ]]; then
             echo "::error::HONUA_N1_READER_COMPAT_NO_RECEIPT the N-1 check wrote no receipt (exit '${SCRIPT_EXIT:-none}')."
             exit 1
