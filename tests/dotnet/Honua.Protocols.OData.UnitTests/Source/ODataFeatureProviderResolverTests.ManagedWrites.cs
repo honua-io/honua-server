@@ -73,7 +73,10 @@ public sealed partial class ODataFeatureProviderResolverTests
     {
         var reader = Substitute.For<IFeatureReader>();
         var writer = Substitute.For<IFeatureWriter>();
-        var resolver = new ODataFeatureProviderResolver(reader, writer, providerQueryRouter: null);
+        var provider = Substitute.For<IFeatureDataProvider>();
+        provider.ProviderName.Returns(DataProviderNames.Postgis);
+        provider.Capabilities.Returns(FeatureProviderCapabilities.ReadWritePostgis);
+        var resolver = new ODataFeatureProviderResolver(reader, writer, ODataProviderTestData.CreateRouter(Guid.NewGuid(), provider));
         var (snapshot, service, resource, publication) = ODataProviderTestData.CreateSnapshot(null);
         if (scenario != "missing")
         {

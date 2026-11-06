@@ -13,7 +13,7 @@ using Moq;
 
 namespace Honua.Core.Tests.Features.FeatureStore;
 
-public sealed class FeatureProviderQueryRouterTests
+public sealed partial class FeatureProviderQueryRouterTests
 {
     [Trait("Tier", "Fast")]
     [Fact]
