@@ -285,9 +285,17 @@ def validate(workflow: str, script: str, action: str, worker_ci: str) -> None:
             raise ContractError(f"{WORKER_JOB} must not keep a second copy of the GDAL CLI install")
 
 
-def _reject(workflow: str, script: str, action: str, worker_ci: str, label: str) -> None:
+Source = tuple[str, str, str, str]
+Change = tuple[str, str, str, int]
+WORKFLOW_SOURCE = 0
+SCRIPT_SOURCE = 1
+ACTION_SOURCE = 2
+WORKER_SOURCE = 3
+
+
+def _reject(sources: Source, label: str) -> None:
     try:
-        validate(workflow, script, action, worker_ci)
+        validate(*sources)
     except ContractError:
         return
     raise SystemExit(f"apt provisioning failure-injection {label} was accepted")
@@ -297,6 +305,92 @@ def _changed(original: str, mutated: str, label: str) -> str:
     if mutated == original:
         raise SystemExit(f"apt provisioning failure-injection {label} no longer applies")
     return mutated
+
+
+def _patch(sources: Source, index: int, change: Change) -> tuple[Source, str]:
+    old, new, label, count = change
+    parts = list(sources)
+    parts[index] = _changed(parts[index], parts[index].replace(old, new, count), label)
+    return (parts[0], parts[1], parts[2], parts[3]), label
+
+
+def _workflow_breaks() -> tuple[Change, ...]:
+    proof_anchor = '          export PATH="/usr/bin:${PATH}"\n'
+    job_header = (
+        "    name: PR Gate / Tests and runtime proofs\n"
+        "    needs: pr-gate\n"
+        "    runs-on: ubuntu-latest\n"
+        "    timeout-minutes: "
+    )
+    return (
+        (proof_anchor, "          sudo apt-get update -qq\n" + proof_anchor, "proof-installs", 1),
+        (
+            f"      - name: {PROOF}\n",
+            f"      - name: {PROOF}\n        continue-on-error: true\n",
+            "proof-continues",
+            1,
+        ),
+        ('HONUA_REQUIRE_GDAL_CLI: "true"', 'HONUA_REQUIRE_GDAL_CLI: "false"', "proof-allows-skip", 1),
+        (job_header + "75\n", job_header + "60\n", "job-timeout", 1),
+        (
+            "if-no-files-found: ${{ steps.fidelity-proof.outcome != 'skipped' && 'error' || 'warn' }}",
+            "if-no-files-found: error",
+            "upload-masks-failure",
+            1,
+        ),
+        (
+            "        uses: ./.github/actions/provision-gdal-cli\n",
+            "        run: sudo apt-get install -yqq gdal-bin\n",
+            "provision-inline",
+            1,
+        ),
+    )
+
+
+def _script_breaks() -> tuple[Change, ...]:
+    return (
+        ("sudo timeout --kill-after=15s 240s sh -c", "sudo sh -c", "unbounded-download", 1),
+        (
+            "sudo timeout --kill-after=15s 60s apt-get install --print-uris",
+            "sudo apt-get install --print-uris",
+            "unbounded-resolve",
+            1,
+        ),
+        ("for attempt in 1 2 3; do", "for attempt in 1 2 3 4 5 6; do", "too-many-attempts", -1),
+        ("'Acquire::http::Timeout \"30\";'", "'Acquire::Queue-Mode \"host\";'", "no-http-timeout", 1),
+        ("apt-get install -yqq --no-download", "apt-get install -yqq", "install-reaches-network", 1),
+        (
+            '    echo "GDAL CLI package cache hit; installing the saved .deb set with --no-download"\n',
+            '    echo "GDAL CLI package cache hit"\n    download_packages\n',
+            "hit-downloads",
+            1,
+        ),
+    )
+
+
+def _action_breaks() -> tuple[Change, ...]:
+    return (("${{ steps.resolve.outputs.versions }}", "${{ runner.os }}", "cache-key-ignores-versions", 1),)
+
+
+def _worker_breaks() -> tuple[Change, ...]:
+    return (
+        (
+            "        uses: ./.github/actions/provision-gdal-cli\n",
+            "        run: sudo apt-get install -yqq gdal-bin python3-gdal python3-numpy python3-scipy\n",
+            "worker-copies-install",
+            1,
+        ),
+    )
+
+
+def _injections(sources: Source) -> tuple[tuple[Source, str], ...]:
+    groups = (
+        (WORKFLOW_SOURCE, _workflow_breaks()),
+        (SCRIPT_SOURCE, _script_breaks()),
+        (ACTION_SOURCE, _action_breaks()),
+        (WORKER_SOURCE, _worker_breaks()),
+    )
+    return tuple(_patch(sources, index, change) for index, changes in groups for change in changes)
 
 
 def shell_self_test() -> None:
@@ -313,199 +407,16 @@ def shell_self_test() -> None:
 
 
 def self_test() -> None:
-    workflow = read_text(ROOT / ".github/workflows/pr-gate.yml")
-    script = read_text(ROOT / "scripts/ci/provision-gdal-cli.sh")
-    action = read_text(ROOT / ".github/actions/provision-gdal-cli/action.yml")
-    worker_ci = read_text(ROOT / ".github/workflows/ci.yml")
-    validate(workflow, script, action, worker_ci)
-    shell_self_test()
-    proof_anchor = '          export PATH="/usr/bin:${PATH}"\n'
-    cases = (
-        (
-            "proof-installs",
-            _changed(
-                workflow,
-                workflow.replace(proof_anchor, "          sudo apt-get update -qq\n" + proof_anchor, 1),
-                "proof-installs",
-            ),
-            script,
-            action,
-            worker_ci,
-        ),
-        (
-            "proof-continues",
-            _changed(
-                workflow,
-                workflow.replace(
-                    f"      - name: {PROOF}\n",
-                    f"      - name: {PROOF}\n        continue-on-error: true\n",
-                    1,
-                ),
-                "proof-continues",
-            ),
-            script,
-            action,
-            worker_ci,
-        ),
-        (
-            "proof-allows-skip",
-            _changed(
-                workflow,
-                workflow.replace('HONUA_REQUIRE_GDAL_CLI: "true"', 'HONUA_REQUIRE_GDAL_CLI: "false"', 1),
-                "proof-allows-skip",
-            ),
-            script,
-            action,
-            worker_ci,
-        ),
-        (
-            "unbounded-download",
-            workflow,
-            _changed(
-                script,
-                script.replace("sudo timeout --kill-after=15s 240s sh -c", "sudo sh -c", 1),
-                "unbounded-download",
-            ),
-            action,
-            worker_ci,
-        ),
-        (
-            "unbounded-resolve",
-            workflow,
-            _changed(
-                script,
-                script.replace(
-                    "sudo timeout --kill-after=15s 60s apt-get install --print-uris",
-                    "sudo apt-get install --print-uris",
-                    1,
-                ),
-                "unbounded-resolve",
-            ),
-            action,
-            worker_ci,
-        ),
-        (
-            "too-many-attempts",
-            workflow,
-            _changed(
-                script,
-                script.replace("for attempt in 1 2 3; do", "for attempt in 1 2 3 4 5 6; do"),
-                "too-many-attempts",
-            ),
-            action,
-            worker_ci,
-        ),
-        (
-            "no-http-timeout",
-            workflow,
-            _changed(
-                script,
-                script.replace("'Acquire::http::Timeout \"30\";'", "'Acquire::Queue-Mode \"host\";'", 1),
-                "no-http-timeout",
-            ),
-            action,
-            worker_ci,
-        ),
-        (
-            "install-reaches-network",
-            workflow,
-            _changed(
-                script,
-                script.replace("apt-get install -yqq --no-download", "apt-get install -yqq", 1),
-                "install-reaches-network",
-            ),
-            action,
-            worker_ci,
-        ),
-        (
-            "hit-downloads",
-            workflow,
-            _changed(
-                script,
-                script.replace(
-                    '    echo "GDAL CLI package cache hit; installing the saved .deb set with --no-download"\n',
-                    '    echo "GDAL CLI package cache hit"\n    download_packages\n',
-                    1,
-                ),
-                "hit-downloads",
-            ),
-            action,
-            worker_ci,
-        ),
-        (
-            "job-timeout",
-            _changed(
-                workflow,
-                workflow.replace(
-                    "    name: PR Gate / Tests and runtime proofs\n    needs: pr-gate\n    runs-on: ubuntu-latest\n    timeout-minutes: 75\n",
-                    "    name: PR Gate / Tests and runtime proofs\n    needs: pr-gate\n    runs-on: ubuntu-latest\n    timeout-minutes: 60\n",
-                    1,
-                ),
-                "job-timeout",
-            ),
-            script,
-            action,
-            worker_ci,
-        ),
-        (
-            "upload-masks-failure",
-            _changed(
-                workflow,
-                workflow.replace(
-                    "if-no-files-found: ${{ steps.fidelity-proof.outcome != 'skipped' && 'error' || 'warn' }}",
-                    "if-no-files-found: error",
-                    1,
-                ),
-                "upload-masks-failure",
-            ),
-            script,
-            action,
-            worker_ci,
-        ),
-        (
-            "provision-inline",
-            _changed(
-                workflow,
-                workflow.replace(
-                    "        uses: ./.github/actions/provision-gdal-cli\n",
-                    "        run: sudo apt-get install -yqq gdal-bin\n",
-                    1,
-                ),
-                "provision-inline",
-            ),
-            script,
-            action,
-            worker_ci,
-        ),
-        (
-            "cache-key-ignores-versions",
-            workflow,
-            script,
-            _changed(
-                action,
-                action.replace("${{ steps.resolve.outputs.versions }}", "${{ runner.os }}", 1),
-                "cache-key-ignores-versions",
-            ),
-            worker_ci,
-        ),
-        (
-            "worker-copies-install",
-            workflow,
-            script,
-            action,
-            _changed(
-                worker_ci,
-                worker_ci.replace(
-                    "        uses: ./.github/actions/provision-gdal-cli\n",
-                    "        run: sudo apt-get install -yqq gdal-bin python3-gdal python3-numpy python3-scipy\n",
-                    1,
-                ),
-                "worker-copies-install",
-            ),
-        ),
+    sources = (
+        read_text(ROOT / ".github/workflows/pr-gate.yml"),
+        read_text(ROOT / "scripts/ci/provision-gdal-cli.sh"),
+        read_text(ROOT / ".github/actions/provision-gdal-cli/action.yml"),
+        read_text(ROOT / ".github/workflows/ci.yml"),
     )
-    for label, mutated_workflow, mutated_script, mutated_action, mutated_worker in cases:
-        _reject(mutated_workflow, mutated_script, mutated_action, mutated_worker, label)
+    validate(*sources)
+    shell_self_test()
+    for mutated, label in _injections(sources):
+        _reject(mutated, label)
     print("pr-gate-apt-provisioning-self-test=ok")
 
 
