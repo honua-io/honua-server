@@ -50,16 +50,17 @@ internal sealed record GeoServicesServicePath(
                 .ExecuteAsync(context).ConfigureAwait(false);
             return;
         }
-        var services = MetadataV2ServicePaths.Resolve(snapshot.Graph, new()
+        var publicPath = new MetadataV2ServicePathAlias
         {
             Tenant = TenantScopeHelpers.ResolveRequestTenantId(context),
             FolderName = folder,
             PublicName = publicName
-        });
+        };
+        var services = MetadataV2ServicePaths.Resolve(snapshot.Graph, publicPath);
         var names = services.Select(service => service.Metadata.Name).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         if (names.Length != 1)
         {
-            if (names.Length == 0 && folder is null && IsStandaloneRoute(route, publicName, snapshot.Graph))
+            if (names.Length == 0 && folder is null && IsStandaloneRoute(route, publicPath, snapshot.Graph))
             {
                 await next(context).ConfigureAwait(false);
                 return;
@@ -74,8 +75,11 @@ internal sealed record GeoServicesServicePath(
         await next(context).ConfigureAwait(false);
     }
 
-    private static bool IsStandaloneRoute(GeoServicesServiceRoutes.ServiceRoute route, string name, MetadataV2Graph graph)
-        => route.ServiceType is "GPServer" or "NAServer" && !graph.Services.Any(service =>
-            string.Equals(service.Metadata.Name, name, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(service.Metadata.Id, name, StringComparison.Ordinal));
+    private static bool IsStandaloneRoute(GeoServicesServiceRoutes.ServiceRoute route, MetadataV2ServicePathAlias path, MetadataV2Graph graph)
+        => route.ServiceType is "GPServer" or "NAServer" &&
+            !graph.ServicePathAliases.Any(alias => MetadataV2ServicePaths.SamePath(alias, path) &&
+                MetadataV2TenantVisibility.IsVisibleToTenant(alias.Tenant, path.Tenant)) &&
+            !graph.Services.Any(service =>
+                string.Equals(service.Metadata.Name, path.PublicName, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(service.Metadata.Id, path.PublicName, StringComparison.Ordinal));
 }

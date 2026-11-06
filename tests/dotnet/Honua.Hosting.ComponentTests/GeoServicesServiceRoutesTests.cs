@@ -169,6 +169,28 @@ public sealed class GeoServicesServiceRoutesTests
         (await client.GetStringAsync("/rest/services/Public/123/ImageServer")).Should().Be("service:internal-parcels");
     }
 
+    [Fact]
+    public async Task StandaloneRoute_RetiredRootReservation_DoesNotRebindToConfiguredService()
+    {
+        await using var app = CreateApp();
+        var provider = app.Services.GetRequiredService<IMetadataV2GraphProvider>();
+        var snapshot = await provider.GetCurrentAsync();
+        var graph = snapshot.Graph with
+        {
+            ServicePathAliases = [.. snapshot.Graph.ServicePathAliases,
+                new() { PublicName = "RetiredTasks", TargetFacetIds = ["removed-facet"], Retired = true }]
+        };
+        provider.GetCurrentAsync(Arg.Any<CancellationToken>())
+            .Returns(new MetadataV2GraphSnapshot(graph, "retired-root", DateTimeOffset.UnixEpoch));
+        app.MapGet("/rest/services/{serviceId}/GPServer", () => Results.Text("configured service"));
+        await app.StartAsync();
+        using var client = app.GetTestClient();
+        (await client.GetStringAsync("/rest/services/ConfiguredTasks/GPServer")).Should().Be("configured service");
+        using var response = await client.GetAsync("/rest/services/RetiredTasks/GPServer");
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(404);
+    }
+
     private static WebApplication CreateApp(string? serviceTenant = null, string? requestTenant = null)
     {
         var builder = WebApplication.CreateBuilder();
