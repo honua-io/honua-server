@@ -209,6 +209,29 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
         }
     }
 
+    [IntegrationTest]
+    [Protocol(TestProtocols.OgcApiFeatures)]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
+    public async Task NativeFeatures_FolderMove_PreservesCollectionIdsAndData()
+    {
+        var original = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        var path = $"/ogc/features/collections/{WebAppFixture.TestLayerId}/items?limit=1";
+        using var before = await ReadJsonAsync(path);
+        before.RootElement.GetProperty("features").GetArrayLength().Should().BeGreaterThan(0);
+        SetGraph(OrganizeService(original));
+        try
+        {
+            using var after = await ReadJsonAsync(path);
+            JsonElement.DeepEquals(before.RootElement.GetProperty("features"), after.RootElement.GetProperty("features"))
+                .Should().BeTrue();
+        }
+        finally
+        {
+            SetGraph(original);
+        }
+    }
+
     private async Task<string> QueryIdsAsync(string path)
     {
         using var form = new FormUrlEncodedContent(new Dictionary<string, string>

@@ -55,6 +55,38 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
         await _fixture.DisposeAsync();
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [InterfaceOperation(TestProtocols.ImageServer, "GetServiceInfo")]
+    [Endpoint("GET /rest/services/{folderName}/{serviceId}/ImageServer")]
+    [Endpoint("POST /services/{folderName}/{serviceId}/ImageServer")]
+    public async Task ServiceInfo_FolderPublicName_ResolvesRestAndSoapToTheSameRaster()
+    {
+        var original = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        var provider = (TestMetadataV2GraphProvider)_fixture.GetService<IMetadataV2GraphProvider>();
+        provider.SetGraph(original with
+        {
+            Folders = [new() { Metadata = new() { Id = "image-folder", Name = "Public" } }],
+            Services = original.Services.Select(service => service.Metadata.Name == WebAppFixture.TestServiceId
+                ? service with { FolderId = "image-folder", PublicName = "Raster" } : service).ToArray()
+        }, schema: _fixture.CurrentSchema);
+        try
+        {
+            using var rest = await _fixture.Client.GetAsync("/rest/services/Public/Raster/ImageServer?f=json");
+            var body = await rest.Content.ReadAsStringAsync();
+            rest.StatusCode.Should().Be(HttpStatusCode.OK, body);
+            using var metadata = JsonDocument.Parse(body);
+            metadata.RootElement.GetProperty("bandCount").GetInt32().Should().BeGreaterThan(0);
+            var soap = await PostSoapAsync(_fixture, $"""<GetServiceInfo xmlns="{GeoServicesNamespace}" />""", "Public/Raster");
+            soap.Status.Should().Be(HttpStatusCode.OK, soap.Body);
+            Child(Element(soap.Document, "Result"), "Name").Value.Should().Be("Raster");
+        }
+        finally
+        {
+            provider.SetGraph(original, schema: _fixture.CurrentSchema);
+        }
+    }
+
     [IntegrationTheory]
     [InlineData("<VID />")]
     [InlineData("")]
@@ -961,7 +993,7 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
     private Task<SoapExchange> PostSoapAsync(string operation)
         => PostSoapAsync(_fixture, operation);
 
-    private static async Task<SoapExchange> PostSoapAsync(WebAppFixture fixture, string operation)
+    private static async Task<SoapExchange> PostSoapAsync(WebAppFixture fixture, string operation, string? publicServicePath = null)
     {
         var request = $"""
             <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsi="{XsiNamespace}">
@@ -970,7 +1002,7 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
             """;
         using var content = new StringContent(request, Encoding.UTF8, "text/xml");
         using var response = await fixture.Client.PostAsync(
-            $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+            $"/services/{publicServicePath ?? WebAppFixture.TestServiceId}/ImageServer",
             content);
         var body = await response.Content.ReadAsStringAsync();
         var document = response.StatusCode == HttpStatusCode.OK ? XDocument.Parse(body) : new XDocument();
