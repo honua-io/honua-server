@@ -7,254 +7,107 @@ using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Core.Features.Alerts.Abstractions;
 
-/// <summary>
-/// Reads durable feature changes used for alert evaluation.
-/// </summary>
 public interface IAlertChangeReader
 {
-    /// <summary>
-    /// Reads feature changes after a generation cursor.
-    /// </summary>
-    /// <param name="lastGeneration">Last processed generation (exclusive)</param>
-    /// <param name="maxCount">Maximum number of changes to return</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Ordered changes after the provided generation</returns>
     Task<IReadOnlyList<AlertChange>> GetChangesAfterAsync(
         long lastGeneration,
         int maxCount,
         CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// Loads one committed feature image for a change the metadata read already selected.
-/// The list read does not buffer geometry or attributes. Implementations apply the same
-/// row-visibility filter and field masks as a live feature read before returning the image.
-/// A null result means the image is hidden or was not stored, and callers must not
-/// substitute the live row.
-/// </summary>
+// A missing image means it is hidden or was not stored, and callers must not substitute the live row.
 public interface IAlertCommittedSnapshotSource
 {
-    /// <summary>
-    /// Loads and projects the committed image for one generation.
-    /// </summary>
-    /// <param name="generation">Change generation whose image to load.</param>
-    /// <param name="layerId">Layer that owns the change.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The projected feature, or null when the image is hidden or absent.</returns>
     Task<Feature?> LoadProjectedSnapshotAsync(
         long generation,
         int layerId,
         CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// Persists and queries alert rules and zone definitions.
-/// </summary>
 public interface IAlertRuleRepository
 {
-    /// <summary>
-    /// Gets active rules for a service/layer combination.
-    /// </summary>
-    /// <param name="serviceId">Optional service identifier. When null, service filtering is skipped.</param>
-    /// <param name="layerId">Layer identifier</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Matching active rules</returns>
     Task<IReadOnlyList<AlertRuleDefinition>> GetActiveRulesAsync(
         string? serviceId,
         int layerId,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Gets active rules for multiple service/layer combinations in one batch.
-    /// </summary>
-    /// <param name="lookupKeys">Distinct service/layer combinations to resolve.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Matching active rules indexed by lookup key.</returns>
     Task<IReadOnlyDictionary<AlertRuleLookupKey, IReadOnlyList<AlertRuleDefinition>>> GetActiveRulesAsync(
         IReadOnlyCollection<AlertRuleLookupKey> lookupKeys,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Gets a rule by identifier.
-    /// </summary>
-    /// <param name="ruleId">Rule identifier</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Rule when found; otherwise null</returns>
     Task<AlertRuleDefinition?> GetRuleAsync(
         long ruleId,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Gets rules for multiple identifiers in one batch.
-    /// </summary>
-    /// <param name="ruleIds">Rule identifiers.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Rules indexed by identifier.</returns>
     Task<IReadOnlyDictionary<long, AlertRuleDefinition>> GetRulesAsync(
         IReadOnlyCollection<long> ruleIds,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Gets zone definitions for the provided identifiers.
-    /// </summary>
-    /// <param name="zoneIds">Zone identifiers</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Zone definitions indexed by zone id</returns>
     Task<IReadOnlyDictionary<long, AlertZoneDefinition>> GetZonesAsync(
         IReadOnlyCollection<long> zoneIds,
         CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// Persists evaluator state for rule-feature transitions.
-/// </summary>
 public interface IAlertStateStore
 {
-    /// <summary>
-    /// Gets state for a single rule-feature pair.
-    /// </summary>
-    /// <param name="ruleId">Rule identifier</param>
-    /// <param name="layerId">Layer identifier</param>
-    /// <param name="objectId">Feature object identifier</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>State snapshot when present; otherwise null</returns>
     Task<AlertStateSnapshot?> GetAsync(
         long ruleId,
         int layerId,
         long objectId,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Gets state for multiple rule-feature pairs in one batch.
-    /// </summary>
-    /// <param name="lookupKeys">Rule-feature lookup keys.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>States indexed by lookup key.</returns>
     Task<IReadOnlyDictionary<AlertStateLookupKey, AlertStateSnapshot>> GetManyAsync(
         IReadOnlyCollection<AlertStateLookupKey> lookupKeys,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Inserts or updates evaluator state for a rule-feature pair.
-    /// </summary>
-    /// <param name="state">State snapshot to persist</param>
-    /// <param name="cancellationToken">Cancellation token</param>
     Task UpsertAsync(
         AlertStateSnapshot state,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Inserts or updates evaluator state for multiple rule-feature pairs in one batch.
-    /// </summary>
-    /// <param name="states">State snapshots to persist.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     Task UpsertManyAsync(
         IReadOnlyCollection<AlertStateSnapshot> states,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Returns state rows due for dwell evaluation or a cooldown-suppressed edge whose
-    /// persisted due time has arrived. Pending edges are reevaluated without a new edit.
-    /// </summary>
-    /// <param name="dueBefore">Upper bound timestamp for due candidates</param>
-    /// <param name="maxCount">Maximum number of rows to return</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>State rows due for dwell processing</returns>
     Task<IReadOnlyList<AlertStateSnapshot>> GetDwellCandidatesAsync(
         DateTimeOffset dueBefore,
         int maxCount,
         CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// Stores immutable alert events.
-/// </summary>
 public interface IAlertEventStore
 {
-    /// <summary>
-    /// Appends an event if its dedupe key has not been stored.
-    /// </summary>
-    /// <param name="alertEvent">Event envelope</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Persisted event id, or null when deduplicated</returns>
     Task<long?> TryAppendAsync(
         AlertEventEnvelope alertEvent,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Gets an event by identifier.
-    /// </summary>
-    /// <param name="eventId">Event identifier</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Event when found; otherwise null</returns>
     Task<AlertEventEnvelope?> GetAsync(
         long eventId,
         CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// Stores and claims outbox jobs for alert delivery.
-/// </summary>
 public interface IAlertDispatchStore
 {
-    /// <summary>
-    /// Enqueues dispatch rows for each channel on an event.
-    /// </summary>
-    /// <param name="eventId">Persisted event identifier</param>
-    /// <param name="channels">Channels to enqueue</param>
-    /// <param name="cancellationToken">Cancellation token</param>
     Task EnqueueAsync(
         long eventId,
         ImmutableArray<AlertChannelType> channels,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Claims eligible outbox jobs for processing.
-    /// </summary>
-    /// <param name="maxCount">Maximum jobs to claim</param>
-    /// <param name="now">Current timestamp</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Claimed dispatch jobs</returns>
     Task<IReadOnlyList<AlertDispatchItem>> ClaimPendingAsync(
         int maxCount,
         DateTimeOffset now,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Claims eligible digest outbox jobs for batched processing.
-    /// </summary>
-    /// <param name="maxCount">Maximum jobs to claim</param>
-    /// <param name="now">Current timestamp</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Claimed digest dispatch jobs</returns>
     Task<IReadOnlyList<AlertDispatchItem>> ClaimPendingDigestAsync(
         int maxCount,
         DateTimeOffset now,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Marks a dispatch job as delivered.
-    /// </summary>
-    /// <param name="dispatchId">Dispatch identifier</param>
-    /// <param name="claimToken">Ownership token returned by the successful claim</param>
-    /// <param name="deliveredAt">Delivery timestamp</param>
-    /// <param name="cancellationToken">Cancellation token</param>
     Task<bool> MarkDeliveredAsync(
         long dispatchId,
         Guid claimToken,
         DateTimeOffset deliveredAt,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Marks a dispatch job as failed or dead-letter and schedules the next attempt.
-    /// </summary>
-    /// <param name="dispatchId">Dispatch identifier</param>
-    /// <param name="claimToken">Ownership token returned by the successful claim</param>
-    /// <param name="attemptedAt">Attempt timestamp</param>
-    /// <param name="nextAttemptAt">Next retry timestamp</param>
-    /// <param name="deadLetter">True when retries are exhausted</param>
-    /// <param name="errorMessage">Optional failure message</param>
-    /// <param name="cancellationToken">Cancellation token</param>
     Task<bool> MarkFailedAsync(
         long dispatchId,
         Guid claimToken,
@@ -264,154 +117,60 @@ public interface IAlertDispatchStore
         string? errorMessage,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Reschedules a claimed dispatch job for a later attempt WITHOUT counting the
-    /// deferral against the retry budget. Used when a delivery is deferred by the
-    /// per-channel notification rate cap: the row returns to pending with a future
-    /// <c>next_attempt_at</c>, its attempt count is unchanged, and it is never
-    /// dead-lettered by the deferral.
-    /// </summary>
-    /// <param name="dispatchId">Dispatch identifier</param>
-    /// <param name="claimToken">Ownership token returned by the successful claim</param>
-    /// <param name="nextAttemptAt">Time at which the row becomes eligible again</param>
-    /// <param name="cancellationToken">Cancellation token</param>
+    // A rate-cap deferral returns the dispatch to pending without counting against the retry budget and never dead-letters it.
     Task<bool> RescheduleAsync(
         long dispatchId,
         Guid claimToken,
         DateTimeOffset nextAttemptAt,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Returns the current delivery-outbox backlog snapshot (rows awaiting delivery
-    /// versus rows in the dead-letter state) for metrics and health reporting.
-    /// </summary>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Backlog snapshot.</returns>
     Task<AlertDispatchBacklog> GetBacklogAsync(
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Purges delivered dispatch rows whose delivery timestamp is older than
-    /// <paramref name="deliveredBefore"/>, up to <paramref name="batchLimit"/> rows.
-    /// Retention keeps the outbox bounded (delivered rows are otherwise never removed)
-    /// so backlog counts stay cheap.
-    /// </summary>
-    /// <param name="deliveredBefore">Delete delivered rows with <c>delivered_at</c> before this cutoff.</param>
-    /// <param name="batchLimit">Maximum rows to delete in this pass.</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Number of rows deleted.</returns>
     Task<int> PurgeDeliveredAsync(
         DateTimeOffset deliveredBefore,
         int batchLimit,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Re-enqueues dead-lettered dispatch rows for redelivery: transitions rows in
-    /// the dead-letter state back to pending, resets the attempt counter to zero,
-    /// clears the last error, and schedules the next attempt at <paramref name="now"/>.
-    /// Idempotent — a call when no rows are dead-lettered redrives nothing and returns 0.
-    /// </summary>
-    /// <param name="now">Timestamp used for the re-enqueued rows' next attempt.</param>
-    /// <param name="batchLimit">Maximum rows to redrive in this pass.</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Number of dead-lettered rows re-enqueued.</returns>
     Task<int> RedriveDeadLettersAsync(
         DateTimeOffset now,
         int batchLimit,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Sets the persisted pause flag for a delivery channel. When a channel is
-    /// paused the dispatcher stops claiming its pending rows (they remain enqueued
-    /// and resume delivery once the channel is unpaused). Idempotent.
-    /// </summary>
-    /// <param name="channel">Delivery channel to pause or resume.</param>
-    /// <param name="paused">True to pause the channel; false to resume it.</param>
-    /// <param name="now">Timestamp recorded for the state change.</param>
-    /// <param name="cancellationToken">Cancellation token</param>
     Task SetChannelPausedAsync(
         AlertChannelType channel,
         bool paused,
         DateTimeOffset now,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Returns the persisted pause state for every channel that has an explicit
-    /// state row. Channels without a row are implicitly not paused.
-    /// </summary>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Pause state keyed by channel; only channels with an explicit row appear.</returns>
     Task<IReadOnlyDictionary<AlertChannelType, bool>> GetChannelPauseStatesAsync(
         CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// Atomically appends an alert event and enqueues its per-channel dispatch rows in a single
-/// transaction, so a crash can never persist the event without its dispatch (or vice versa).
-/// </summary>
-/// <remarks>
-/// Replaces the previous two-step write (append on one connection, enqueue on another), which
-/// left an alert-loss window: a process crash between the two committed the event but never
-/// enqueued its delivery, silently dropping the alert. This is the upstream complement to the
-/// dispatch outbox (FOR UPDATE SKIP LOCKED claim + dead-letter), which is already crash-safe.
-/// </remarks>
+// The event and its dispatch rows commit in one transaction, so a crash cannot persist the event without its delivery.
 public interface IAlertOutboxWriter
 {
-    /// <summary>
-    /// Atomically persists evaluator state, alert events, and their dispatch rows for one
-    /// source change. A replay may observe all of this commit or none of it.
-    /// </summary>
-    /// <param name="states">Evaluator state produced by the source change.</param>
-    /// <param name="dispatches">Events and deliverable channels produced by the same change.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     Task<ImmutableArray<bool>> CommitEvaluationAsync(
         IReadOnlyCollection<AlertStateSnapshot> states,
         IReadOnlyList<AlertOutboxEntry> dispatches,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Appends the event (deduplicating on its dedupe key) and, when a new event row was written,
-    /// enqueues one dispatch row per deliverable channel — both in the same transaction.
-    /// </summary>
-    /// <param name="alertEvent">Event envelope to append.</param>
-    /// <param name="channels">Deliverable channels to enqueue for the appended event.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The persisted event id, or null when the event was deduplicated (no dispatch enqueued).</returns>
     Task<long?> AppendAndEnqueueAsync(
         AlertEventEnvelope alertEvent,
         ImmutableArray<AlertChannelType> channels,
         CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// Describes one immutable alert event and the channels to enqueue with it.
-/// </summary>
-/// <param name="AlertEvent">Event to append.</param>
-/// <param name="Channels">Deliverable channels to enqueue.</param>
 public readonly record struct AlertOutboxEntry(
     AlertEventEnvelope AlertEvent,
     ImmutableArray<AlertChannelType> Channels);
 
-/// <summary>
-/// Stores and retrieves durable worker checkpoints.
-/// </summary>
 public interface IAlertCheckpointStore
 {
-    /// <summary>
-    /// Gets checkpoint data for a worker.
-    /// </summary>
-    /// <param name="workerName">Worker identifier</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Persisted worker checkpoint</returns>
     Task<AlertWorkerCheckpoint> GetAsync(
         string workerName,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Persists a worker checkpoint.
-    /// </summary>
-    /// <param name="checkpoint">Checkpoint model</param>
-    /// <param name="cancellationToken">Cancellation token</param>
     Task SetAsync(
         AlertWorkerCheckpoint checkpoint,
         CancellationToken cancellationToken = default);

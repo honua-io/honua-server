@@ -14,13 +14,8 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.FileImport.Services;
 
-/// <summary>
-/// Computes advisory schema suggestions from file preview data.
-/// All suggestions are deterministic and heuristic-based.
-/// </summary>
 internal sealed partial class ImportSchemaSuggestionService : IImportSchemaSuggestionService
 {
-    /// <inheritdoc />
     public Task<SchemaSuggestion> SuggestAsync(
         FilePreview preview, string fileName,
         CancellationToken cancellationToken = default)

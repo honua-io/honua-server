@@ -3,16 +3,8 @@
 
 namespace Honua.Core.Features.Security.Abstractions;
 
-/// <summary>
-/// Compares a registered provider connection with the catalog database used by
-/// imports. Implementations own provider-specific parsing; protocol adapters
-/// never interpret connection-string syntax or expose credentials.
-/// </summary>
+// Protocol adapters never parse connection-string syntax or expose credentials; the provider implementation owns that comparison.
 public interface ICatalogConnectionIdentityMatcher
 {
-    /// <summary>
-    /// Returns whether the registered connection targets the same database and
-    /// database principal as the configured catalog connection.
-    /// </summary>
     bool IsMatch(string provider, string catalogConnectionString, string registeredConnectionString);
 }

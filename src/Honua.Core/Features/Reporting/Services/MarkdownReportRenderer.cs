@@ -8,17 +8,10 @@ using Honua.Core.Features.Reporting.Domain;
 
 namespace Honua.Core.Features.Reporting.Services;
 
-/// <summary>
-/// CommonMark Markdown renderer. Walks <see cref="AnalysisReport.Sections"/>
-/// in declared order and emits a deterministic body using
-/// <see cref="StringBuilder"/> with invariant culture formatting.
-/// </summary>
 internal sealed class MarkdownReportRenderer : IAnalysisReportRenderer
 {
-    /// <inheritdoc />
     public AnalysisReportFormat Format => AnalysisReportFormat.Markdown;
 
-    /// <inheritdoc />
     public string Render(AnalysisReport report)
     {
         ArgumentNullException.ThrowIfNull(report);

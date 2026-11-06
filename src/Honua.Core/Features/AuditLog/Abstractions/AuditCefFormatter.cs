@@ -6,30 +6,13 @@ using System.Text;
 
 namespace Honua.Core.Features.AuditLog.Abstractions;
 
-/// <summary>
-/// Formats an audit record as a single ArcSight Common Event Format (CEF) line
-/// for SIEM ingestion (#509).
-/// </summary>
-/// <remarks>
-/// <para>
-/// CEF is the line-oriented format consumed natively by ArcSight, Splunk,
-/// QRadar, and most enterprise SIEMs. The header is
-/// <c>CEF:0|Vendor|Product|Version|SignatureId|Name|Severity|Extension</c>;
-/// pipes in the header and <c>=</c>/<c>\</c> in the extension are escaped per the
-/// CEF spec so the line round-trips through a SIEM parser unambiguously.
-/// </para>
-/// </remarks>
+// Header pipes and extension equals signs and backslashes are escaped so a CEF line round-trips through a SIEM parser.
 public static class AuditCefFormatter
 {
     private const string Vendor = "Honua";
     private const string Product = "Honua Server";
     private const string Version = "1";
 
-    /// <summary>
-    /// Formats a single audit record as a CEF line (no trailing newline).
-    /// </summary>
-    /// <param name="record">The audit record.</param>
-    /// <returns>A CEF-formatted line.</returns>
     public static string Format(AuditEventRecord record)
     {
         ArgumentNullException.ThrowIfNull(record);

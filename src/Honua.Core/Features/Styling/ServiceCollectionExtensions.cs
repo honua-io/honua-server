@@ -8,16 +8,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Core.Features.Styling;
 
-/// <summary>
-/// Service registration helpers for style suggestion services.
-/// </summary>
 public static class ServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers the style suggestion service from Core.
-    /// </summary>
-    /// <param name="services">The service collection.</param>
-    /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddStyleSuggestionCore(this IServiceCollection services)
     {
         services.TryAddScoped<IStyleSuggestionService, StyleSuggestionService>();

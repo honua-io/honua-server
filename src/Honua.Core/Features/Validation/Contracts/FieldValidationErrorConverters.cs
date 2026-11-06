@@ -8,24 +8,8 @@ using Honua.Core.Features.WorkflowPackages.Domain;
 
 namespace Honua.Core.Features.Validation.Contracts;
 
-/// <summary>
-/// Normalizes the existing field-addressable validation shapes onto the shared
-/// <see cref="FieldValidationError"/> contract without changing what is
-/// validated. Covers the three already-structured shapes:
-/// Studio package diagnostics (<see cref="StudioValidationDiagnostic"/>),
-/// Form package issues (<see cref="FormValidationIssue"/>), and Workflow
-/// package failures (<see cref="WorkflowPackageValidationFailure"/>). The flat
-/// throwers (Analysis content, Content publication) are intentionally not
-/// handled here.
-/// </summary>
 public static class FieldValidationErrorConverters
 {
-    /// <summary>
-    /// Converts a Studio package diagnostic to the shared contract. The Studio
-    /// shape is the canonical template, so this is a structural rename only.
-    /// </summary>
-    /// <param name="diagnostic">Studio diagnostic.</param>
-    /// <returns>The normalized <see cref="FieldValidationError"/>.</returns>
     public static FieldValidationError ToFieldValidationError(this StudioValidationDiagnostic diagnostic)
     {
         ArgumentNullException.ThrowIfNull(diagnostic);
@@ -39,12 +23,6 @@ public static class FieldValidationErrorConverters
         };
     }
 
-    /// <summary>
-    /// Converts a Form package validation issue to the shared contract,
-    /// preserving the field id alias alongside the path.
-    /// </summary>
-    /// <param name="issue">Form validation issue.</param>
-    /// <returns>The normalized <see cref="FieldValidationError"/>.</returns>
     public static FieldValidationError ToFieldValidationError(this FormValidationIssue issue)
     {
         ArgumentNullException.ThrowIfNull(issue);
@@ -59,13 +37,6 @@ public static class FieldValidationErrorConverters
         };
     }
 
-    /// <summary>
-    /// Converts a Workflow package validation failure to the shared contract.
-    /// Failures are always blocking, and the workflow-specific <c>fieldPath</c>
-    /// is normalized onto <see cref="FieldValidationError.Path"/>.
-    /// </summary>
-    /// <param name="failure">Workflow validation failure.</param>
-    /// <returns>The normalized <see cref="FieldValidationError"/>.</returns>
     public static FieldValidationError ToFieldValidationError(this WorkflowPackageValidationFailure failure)
     {
         ArgumentNullException.ThrowIfNull(failure);
@@ -79,12 +50,6 @@ public static class FieldValidationErrorConverters
         };
     }
 
-    /// <summary>
-    /// Normalizes a Studio validation summary's diagnostics onto the shared
-    /// contract. Non-error diagnostics are preserved with their severity.
-    /// </summary>
-    /// <param name="summary">Studio validation summary.</param>
-    /// <returns>A <see cref="FieldValidationResult"/> mirroring the diagnostics.</returns>
     public static FieldValidationResult ToFieldValidationResult(this StudioValidationSummary summary)
     {
         ArgumentNullException.ThrowIfNull(summary);
@@ -98,11 +63,6 @@ public static class FieldValidationErrorConverters
         return new FieldValidationResult { Errors = errors };
     }
 
-    /// <summary>
-    /// Normalizes a Form package validation result onto the shared contract.
-    /// </summary>
-    /// <param name="result">Form validation result.</param>
-    /// <returns>A <see cref="FieldValidationResult"/> mirroring the issues.</returns>
     public static FieldValidationResult ToFieldValidationResult(this FormPackageValidationResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
@@ -116,13 +76,6 @@ public static class FieldValidationErrorConverters
         return new FieldValidationResult { Errors = errors };
     }
 
-    /// <summary>
-    /// Normalizes a Workflow package validation result onto the shared
-    /// contract. Both blocking failures and non-fatal warnings are surfaced;
-    /// warnings carry the <c>workflow.validation.warning</c> code.
-    /// </summary>
-    /// <param name="result">Workflow validation result.</param>
-    /// <returns>A <see cref="FieldValidationResult"/> mirroring failures and warnings.</returns>
     public static FieldValidationResult ToFieldValidationResult(this WorkflowPackageValidationResult result)
     {
         ArgumentNullException.ThrowIfNull(result);

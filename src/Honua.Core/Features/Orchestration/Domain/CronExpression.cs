@@ -5,11 +5,6 @@ using System.Globalization;
 
 namespace Honua.Core.Features.Orchestration.Domain;
 
-/// <summary>
-/// Minimal 5-field cron expression evaluator. Supports the POSIX subset used by the
-/// orchestration scheduler: <c>*</c>, literal values, comma-separated lists,
-/// ranges (<c>a-b</c>) and steps (<c>*/n</c>, <c>a-b/n</c>). Day-of-week 0 or 7 means Sunday.
-/// </summary>
 public sealed class CronExpression
 {
     private readonly bool[] _minutes;
@@ -40,14 +35,8 @@ public sealed class CronExpression
         Expression = expression;
     }
 
-    /// <summary>
-    /// Original cron expression string.
-    /// </summary>
     public string Expression { get; }
 
-    /// <summary>
-    /// Parses a cron expression. Throws <see cref="FormatException"/> on invalid input.
-    /// </summary>
     public static CronExpression Parse(string expression)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(expression);
@@ -93,10 +82,6 @@ public sealed class CronExpression
     private static bool IsUnrestrictedField(string field)
         => field.Trim() == "*";
 
-    /// <summary>
-    /// Returns the next fire time strictly greater than <paramref name="after"/> in the
-    /// supplied time zone, or null if no matching occurrence exists within four years.
-    /// </summary>
     public DateTimeOffset? GetNextOccurrence(DateTimeOffset after, TimeZoneInfo timeZone)
     {
         ArgumentNullException.ThrowIfNull(timeZone);

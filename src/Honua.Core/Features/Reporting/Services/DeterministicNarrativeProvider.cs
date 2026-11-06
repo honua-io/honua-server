@@ -6,17 +6,10 @@ using Honua.Core.Features.Reporting.Domain;
 
 namespace Honua.Core.Features.Reporting.Services;
 
-/// <summary>
-/// Always-available narrative provider that returns the deterministic baseline
-/// text from each <see cref="NarrativeSlot"/>. Acts as the safety net the
-/// builder runs first so every slot has factual text before any LLM call.
-/// </summary>
 internal sealed class DeterministicNarrativeProvider : INarrativeProvider
 {
-    /// <inheritdoc />
     public bool IsDeterministic => true;
 
-    /// <inheritdoc />
     public Task<NarrativeFill> GenerateAsync(AnalysisReportDraft draft, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(draft);

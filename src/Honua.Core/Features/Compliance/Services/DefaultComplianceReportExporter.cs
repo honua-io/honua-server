@@ -6,11 +6,6 @@ using Honua.Core.Features.Compliance.Domain;
 
 namespace Honua.Core.Features.Compliance.Services;
 
-/// <summary>
-/// Orchestrator that collects a fresh snapshot and routes it to the renderer for
-/// the requested format. Throws <see cref="NotSupportedException"/> for unknown
-/// formats so endpoint adapters can return a deterministic <c>406</c>.
-/// </summary>
 internal sealed class DefaultComplianceReportExporter : IComplianceReportExporter
 {
     private readonly IComplianceEvidenceCollector _collector;

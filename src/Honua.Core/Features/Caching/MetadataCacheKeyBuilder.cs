@@ -6,98 +6,47 @@ using System.Text;
 
 namespace Honua.Core.Features.Caching;
 
-/// <summary>
-/// Input used to build a stable metadata cache key.
-/// </summary>
 public sealed record MetadataCacheKeyRequest
 {
-    /// <summary>
-    /// Redis key prefix for metadata cache entries.
-    /// </summary>
     public string KeyPrefix { get; init; } = MetadataCacheKeyBuilder.DefaultKeyPrefix;
 
-    /// <summary>
-    /// Tenant identifier that owns the metadata entry.
-    /// </summary>
     public string? TenantId { get; init; }
 
-    /// <summary>
-    /// Project identifier that owns the metadata entry.
-    /// </summary>
     public string? ProjectId { get; init; }
 
-    /// <summary>
-    /// Authorization scope, role set, or permission fingerprint input for the caller.
-    /// </summary>
     public string? AuthScope { get; init; }
 
-    /// <summary>
-    /// Source endpoint address. The raw value is fingerprinted and never emitted in the key.
-    /// </summary>
+    // The source endpoint is fingerprinted into the cache key and the raw value is never emitted.
     public string? SourceUrl { get; init; }
 
-    /// <summary>
-    /// Adapter implementation name, such as <c>geoservices</c>, <c>ogc-api</c>, or <c>stac</c>.
-    /// </summary>
     public string? Adapter { get; init; }
 
-    /// <summary>
-    /// Protocol surface used by the adapter, such as <c>featureserver</c>, <c>wfs</c>, or <c>stac</c>.
-    /// </summary>
     public string? Protocol { get; init; }
 
-    /// <summary>
-    /// Logical metadata resource kind, such as <c>service</c>, <c>layer</c>, or <c>collection</c>.
-    /// </summary>
     public string? ResourceKind { get; init; }
 
-    /// <summary>
-    /// Resource identifier within the source system.
-    /// </summary>
     public string? ResourceId { get; init; }
 
-    /// <summary>
-    /// Coordinate reference system that changes the metadata response.
-    /// </summary>
     public string? Crs { get; init; }
 
-    /// <summary>
-    /// Representation format or negotiated media type.
-    /// </summary>
     public string? Format { get; init; }
 
-    /// <summary>
-    /// Adapter contract or implementation version, when it changes serialized metadata.
-    /// </summary>
     public string? AdapterVersion { get; init; }
 
-    /// <summary>
-    /// Projection database or CRS transformation version, when it changes serialized metadata.
-    /// </summary>
     public string? ProjectionVersion { get; init; }
 }
 
-/// <summary>
-/// Built metadata cache key and safe fingerprints for observability and invalidation.
-/// </summary>
 public sealed record MetadataCacheKey(
     string Value,
     string KeyFingerprint,
     string SourceFingerprint,
     string AuthScopeFingerprint)
 {
-    /// <inheritdoc />
     public override string ToString() => Value;
 }
 
-/// <summary>
-/// Builds deterministic Redis-safe metadata cache keys without exposing source addresses or credentials.
-/// </summary>
 public static class MetadataCacheKeyBuilder
 {
-    /// <summary>
-    /// Default namespace for metadata cache entries.
-    /// </summary>
     public const string DefaultKeyPrefix = "honua:metadata";
 
     private const string KeyVersion = "v1";
@@ -133,9 +82,6 @@ public static class MetadataCacheKeyBuilder
         "x-api-key"
     ];
 
-    /// <summary>
-    /// Builds the full key and safe fingerprints for the supplied metadata cache request.
-    /// </summary>
     public static MetadataCacheKey Build(MetadataCacheKeyRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -181,23 +127,14 @@ public static class MetadataCacheKeyBuilder
             authScopeFingerprint);
     }
 
-    /// <summary>
-    /// Builds the full Redis-safe metadata cache key value.
-    /// </summary>
     public static string BuildKey(MetadataCacheKeyRequest request) => Build(request).Value;
 
-    /// <summary>
-    /// Builds the source endpoint fingerprint used by keys and invalidation events.
-    /// </summary>
     public static string FingerprintSource(string? sourceUrl)
     {
         var canonicalSource = NormalizeSourceForFingerprint(sourceUrl);
         return Fingerprint(canonicalSource);
     }
 
-    /// <summary>
-    /// Builds the authorization-scope fingerprint used by metadata cache keys.
-    /// </summary>
     public static string FingerprintAuthScope(string? authScope)
     {
         var canonicalScope = NormalizeText(authScope, "public");

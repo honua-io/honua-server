@@ -7,12 +7,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Compliance.Services;
 
-/// <summary>
-/// Configuration-bound data residency provider. The active policy is read from
-/// <see cref="ComplianceOptions.DataResidency"/>; the primary region is always
-/// considered allowed even if not explicitly listed (this matches operator
-/// expectation — "I live in <c>us-gov-west-1</c>" never gets blocked).
-/// </summary>
+// The primary region is allowed even when it is absent from the explicit allow list.
 internal sealed class DefaultDataResidencyPolicyProvider : IDataResidencyPolicyProvider
 {
     private readonly IOptionsMonitor<ComplianceOptions> _options;

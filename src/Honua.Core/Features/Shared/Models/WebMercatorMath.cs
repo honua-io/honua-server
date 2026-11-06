@@ -3,17 +3,11 @@
 
 namespace Honua.Core.Features.Shared.Models;
 
-/// <summary>
-/// Shared Web Mercator projection math used by server and provider transform paths.
-/// </summary>
 public static class WebMercatorMath
 {
     private const double EarthRadius = SpatialConstants.EarthRadius;
     private const double MaxLatitude = SpatialConstants.WebMercatorMaxLatitude;
 
-    /// <summary>
-    /// Converts longitude/latitude coordinates to Web Mercator meters.
-    /// </summary>
     public static (double X, double Y) LonLatToWebMercator(double longitude, double latitude)
     {
         var clampedLatitude = Math.Clamp(latitude, -MaxLatitude, MaxLatitude);
@@ -22,9 +16,6 @@ public static class WebMercatorMath
         return (x, y);
     }
 
-    /// <summary>
-    /// Converts Web Mercator meters to longitude/latitude coordinates.
-    /// </summary>
     public static (double Lon, double Lat) WebMercatorToLonLat(double x, double y)
     {
         var lon = x / EarthRadius * 180.0 / Math.PI;
@@ -32,14 +23,6 @@ public static class WebMercatorMath
         return (lon, lat);
     }
 
-    /// <summary>
-    /// Transforms an extent by sampling its edges and midpoint through the supplied transform.
-    /// A dateline-crossing geographic input (<c>minX &gt; maxX</c>) is preserved as a wrapped
-    /// output extent (<c>MinX &gt; MaxX</c>) by transforming its two longitude edges directly,
-    /// rather than collapsing the sampled X values into a single global min/max (which both
-    /// inflates the bbox and drops the sliver on the far side of the antimeridian). Mirrors
-    /// <c>CoordinateTransformer.TransformSampledExtent</c> (#2739).
-    /// </summary>
     public static (double MinX, double MinY, double MaxX, double MaxY) TransformSampledExtent(
         double minX,
         double minY,
@@ -80,9 +63,6 @@ public static class WebMercatorMath
         return (transformedMinX, transformedMinY, transformedMaxX, transformedMaxY);
     }
 
-    /// <summary>
-    /// Enumerates sampled extent edge points with antimeridian-aware longitude interpolation.
-    /// </summary>
     public static IEnumerable<(double X, double Y)> EnumerateSampledExtentPoints(
         double minX,
         double minY,
@@ -105,9 +85,6 @@ public static class WebMercatorMath
         yield return (InterpolateLongitude(minX, maxX, 0.5), (minY + maxY) / 2.0);
     }
 
-    /// <summary>
-    /// Interpolates longitude values while preserving dateline-crossing extents.
-    /// </summary>
     public static double InterpolateLongitude(double minX, double maxX, double t)
     {
         if (!IsAntimeridianCrossing(minX, maxX))
@@ -120,9 +97,6 @@ public static class WebMercatorMath
         return value > 180.0 ? value - 360.0 : value;
     }
 
-    /// <summary>
-    /// Returns whether the longitude interval represents an antimeridian crossing.
-    /// </summary>
     public static bool IsAntimeridianCrossing(double minX, double maxX)
         => minX > maxX && minX >= -180.0 && minX <= 180.0 && maxX >= -180.0 && maxX <= 180.0;
 }

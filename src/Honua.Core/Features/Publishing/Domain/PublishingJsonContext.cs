@@ -6,9 +6,6 @@ using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Core.Features.Publishing.Domain;
 
-/// <summary>
-/// AOT-compatible JSON serialization metadata for durable publishing records.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

@@ -3,10 +3,6 @@
 
 namespace Honua.Core.Features.Tiles.PMTiles;
 
-/// <summary>
-/// PMTiles v3 archive header (127 bytes).
-/// See: https://github.com/protomaps/PMTiles/blob/main/spec/v3/spec.md
-/// </summary>
 internal struct PMTilesHeader
 {
     public const int HeaderSize = 127;
@@ -160,38 +156,21 @@ internal struct PMTilesHeader
     }
 }
 
-/// <summary>
-/// PMTiles v3 compression types.
-/// </summary>
 public enum PMTilesCompression : byte
 {
-    /// <summary>Unknown compression.</summary>
     Unknown = 0,
-    /// <summary>No compression.</summary>
     None = 1,
-    /// <summary>Gzip compression.</summary>
     Gzip = 2,
-    /// <summary>Brotli compression.</summary>
     Brotli = 3,
-    /// <summary>Zstd compression.</summary>
     Zstd = 4
 }
 
-/// <summary>
-/// PMTiles v3 tile content types.
-/// </summary>
 public enum PMTilesTileType : byte
 {
-    /// <summary>Unknown tile type.</summary>
     Unknown = 0,
-    /// <summary>Mapbox Vector Tile (MVT).</summary>
     Mvt = 1,
-    /// <summary>PNG image.</summary>
     Png = 2,
-    /// <summary>JPEG image.</summary>
     Jpeg = 3,
-    /// <summary>WebP image.</summary>
     Webp = 4,
-    /// <summary>AVIF image.</summary>
     Avif = 5
 }

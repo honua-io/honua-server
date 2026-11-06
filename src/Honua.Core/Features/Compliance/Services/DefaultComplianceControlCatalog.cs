@@ -7,17 +7,7 @@ using Honua.Core.Features.Compliance.Domain;
 
 namespace Honua.Core.Features.Compliance.Services;
 
-/// <summary>
-/// In-memory compliance control catalog. Seeds the SOC 2 / FedRAMP controls the server's
-/// automated evidence collector understands today — adding controls here is intentionally
-/// the only step needed to surface them on the dashboard (no schema migration).
-/// </summary>
-/// <remarks>
-/// Controls are kept deliberately minimal — only the subset that has automated evidence
-/// is published. Auditor-required controls without server-side automation belong in the
-/// system security plan, not in the dashboard, to avoid implying "Implemented" for
-/// process controls the server cannot substantiate.
-/// </remarks>
+// Publishing a control here is enough to show it; controls without automated evidence are omitted on purpose.
 internal sealed class DefaultComplianceControlCatalog : IComplianceControlCatalog
 {
     private readonly FrozenDictionary<string, ComplianceControl> _byId;

@@ -8,64 +8,30 @@ using Honua.Core.Features.Infrastructure.Validation;
 
 namespace Honua.Core.Features.Security;
 
-/// <summary>
-/// Outcome of a <see cref="IConnectionHostAllowlist"/> check.
-/// </summary>
-/// <param name="IsAllowed">Whether the host satisfies the configured connection policy.</param>
-/// <param name="Reason">A short, client-safe explanation when <paramref name="IsAllowed"/> is <see langword="false"/>; otherwise <see langword="null"/>.</param>
 public readonly record struct ConnectionHostDecision(bool IsAllowed, string? Reason)
 {
-    /// <summary>A decision that permits the host.</summary>
     public static ConnectionHostDecision Allowed() => new(true, null);
 
-    /// <summary>A decision that rejects the host with the supplied client-safe reason.</summary>
     public static ConnectionHostDecision Denied(string reason) => new(false, reason);
 }
 
-/// <summary>
-/// Validates that an outbound data-source connection host is permitted by the
-/// configured connection policy (host allowlist and/or private-address blocking).
-/// </summary>
 public interface IConnectionHostAllowlist
 {
-    /// <summary>Whether any restriction is currently enforced.</summary>
     bool IsEnforced { get; }
 
-    /// <summary>
-    /// Evaluates whether <paramref name="host"/> may be used as a connection destination.
-    /// </summary>
-    /// <param name="host">The connection host (hostname or IP literal).</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     Task<ConnectionHostDecision> EvaluateAsync(string? host, CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// Default <see cref="IConnectionHostAllowlist"/> implementation. Generalizes the
-/// outbound-HTTP SSRF guard (#2004) to the data-source connection layer (#354) by
-/// reusing <see cref="OutboundHttpUrlValidator.IsPrivateOrReservedAddress(IPAddress)"/>
-/// for reserved-range coverage and adding an explicit, operator-configured host allowlist.
-/// </summary>
 public sealed class ConnectionHostAllowlist : IConnectionHostAllowlist
 {
     private readonly ConnectionHostAllowlistOptions _options;
     private readonly Func<string, CancellationToken, Task<IPAddress[]>> _hostResolver;
 
-    /// <summary>
-    /// Creates a new allowlist policy bound to the supplied options, using DNS for
-    /// host resolution.
-    /// </summary>
-    /// <param name="options">The configured connection host policy.</param>
     public ConnectionHostAllowlist(ConnectionHostAllowlistOptions options)
         : this(options, static (host, ct) => Dns.GetHostAddressesAsync(host, ct))
     {
     }
 
-    /// <summary>
-    /// Creates a new allowlist policy with an explicit host resolver. Intended for tests
-    /// that need to drive resolution deterministically without real DNS.
-    /// </summary>
-    /// <param name="options">The configured connection host policy.</param>
-    /// <param name="hostResolver">Resolves a hostname to its candidate addresses.</param>
     public ConnectionHostAllowlist(
         ConnectionHostAllowlistOptions options,
         Func<string, CancellationToken, Task<IPAddress[]>> hostResolver)
@@ -74,10 +40,8 @@ public sealed class ConnectionHostAllowlist : IConnectionHostAllowlist
         _hostResolver = hostResolver ?? throw new ArgumentNullException(nameof(hostResolver));
     }
 
-    /// <inheritdoc />
     public bool IsEnforced => _options.IsEnforced;
 
-    /// <inheritdoc />
     public async Task<ConnectionHostDecision> EvaluateAsync(
         string? host,
         CancellationToken cancellationToken = default)

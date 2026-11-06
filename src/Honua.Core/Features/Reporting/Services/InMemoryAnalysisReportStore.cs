@@ -8,21 +8,9 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Reporting.Services;
 
-/// <summary>
-/// In-memory <see cref="IAnalysisReportStore"/> backed by a bounded
-/// <see cref="MemoryCache"/>. Entries are keyed by
-/// <c>(jobId, contractVersion)</c> for O(1) lookup and are evicted under
-/// configurable size and TTL caps so a long-lived server cannot grow
-/// unbounded as new job ids accumulate.
-/// </summary>
 internal sealed class InMemoryAnalysisReportStore : IAnalysisReportStore, IDisposable
 {
-    /// <summary>
-    /// Contract versions <see cref="RemoveAsync"/> must scan when invalidating
-    /// a job. Extend when a new <c>ReportingConstants.ContractVersionVN</c> is
-    /// introduced so RemoveAsync stays semantically "remove all reports for
-    /// this jobId".
-    /// </summary>
+    // Invalidating a job must scan every contract version, or a new version would leave that job's reports in place.
     private static readonly string[] _knownContractVersions =
     [
         ReportingConstants.ContractVersionV1,
@@ -43,7 +31,6 @@ internal sealed class InMemoryAnalysisReportStore : IAnalysisReportStore, IDispo
         _entryTtl = TimeSpan.FromMinutes(Math.Max(1, cacheOptions.TtlMinutes));
     }
 
-    /// <inheritdoc />
     public Task<AnalysisReport?> TryGetAsync(
         string jobId,
         string contractVersion,
@@ -56,7 +43,6 @@ internal sealed class InMemoryAnalysisReportStore : IAnalysisReportStore, IDispo
         return Task.FromResult(report);
     }
 
-    /// <inheritdoc />
     public Task StoreAsync(AnalysisReport report, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(report);
@@ -70,7 +56,6 @@ internal sealed class InMemoryAnalysisReportStore : IAnalysisReportStore, IDispo
         return Task.CompletedTask;
     }
 
-    /// <inheritdoc />
     public Task RemoveAsync(string jobId, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrEmpty(jobId);

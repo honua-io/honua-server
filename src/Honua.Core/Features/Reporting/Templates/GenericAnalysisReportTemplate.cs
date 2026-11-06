@@ -7,26 +7,16 @@ using Honua.Core.Features.Reporting.Domain;
 
 namespace Honua.Core.Features.Reporting.Templates;
 
-/// <summary>
-/// Fallback template used when no process-specific template is registered.
-/// Renders the canonical summary, artifacts, assumptions, and provenance
-/// blocks plus a single deterministic narrative slot derived from the result
-/// summary.
-/// </summary>
 internal sealed class GenericAnalysisReportTemplate : IAnalysisReportTemplate
 {
     private static readonly string[] _errorTableColumns = ["Kind", "Message"];
 
-    /// <inheritdoc />
     public string ProcessId => "*";
 
-    /// <inheritdoc />
     public string TemplateId => ReportingConstants.GenericTemplateId;
 
-    /// <inheritdoc />
     public string TemplateVersion => "1.0.0";
 
-    /// <inheritdoc />
     public AnalysisReportDraft Build(AnalysisResultPackage package)
     {
         ArgumentNullException.ThrowIfNull(package);

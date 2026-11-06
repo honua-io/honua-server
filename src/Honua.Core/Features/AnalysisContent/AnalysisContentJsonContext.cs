@@ -12,9 +12,6 @@ using Honua.Core.Features.NlQuery.Domain;
 
 namespace Honua.Core.Features.AnalysisContent;
 
-/// <summary>
-/// Source-generated JSON metadata for analysis content domain contracts.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

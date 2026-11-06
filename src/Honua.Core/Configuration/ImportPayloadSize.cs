@@ -3,10 +3,7 @@
 
 namespace Honua.Core.Configuration;
 
-/// <summary>
-/// Resolves the request-body ceiling for an admin route from <see cref="LimitsOptions"/>.
-/// Limits enforcement and the tile-package handler both call this so the two cannot drift.
-/// </summary>
+// Limits enforcement and the tile-package handler share this ceiling so the two cannot drift.
 public static class ImportPayloadSize
 {
     public static long Resolve(string? path, LimitsOptions limits)

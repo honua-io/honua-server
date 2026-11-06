@@ -5,94 +5,51 @@ using Honua.Core.Features.Publishing.Content.Domain;
 
 namespace Honua.Core.Features.Publishing.Content.Abstractions;
 
-/// <summary>
-/// Durable storage for the content publication registry. Version rows are
-/// append-only; the route-state row is the only mutable pointer. Implementations
-/// must enforce route-slug uniqueness and atomic route-state plus event writes.
-/// </summary>
+// Version rows are append-only, and route-slug uniqueness plus the route-state and event writes are atomic.
 public interface IContentPublicationStore
 {
-    /// <summary>Returns the route state for a publication, or null when not found.</summary>
     Task<ContentPublicationRouteState?> GetRouteByPublicationIdAsync(
         string publicationId,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Returns the route state for a slug, or null when not found.</summary>
     Task<ContentPublicationRouteState?> GetRouteBySlugAsync(
         string routeSlug,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Returns a specific immutable version by id, or null when not found.</summary>
     Task<ContentPublicationVersion?> GetVersionByIdAsync(
         string publicationId,
         string versionId,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Returns a specific immutable version by revision, or null when not found.</summary>
     Task<ContentPublicationVersion?> GetVersionByRevisionAsync(
         string publicationId,
         long revision,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Lists immutable versions for a publication, newest first, bounded by <paramref name="limit"/>.</summary>
     Task<IReadOnlyList<ContentPublicationVersion>> ListVersionsAsync(
         string publicationId,
         int limit,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Lists immutable versions for many publications in one round-trip, newest first,
-    /// at most <paramref name="limit"/> versions per publication. Publications with no
-    /// versions, and ids that are not publication ids, are omitted.
-    /// </summary>
     Task<IReadOnlyDictionary<string, IReadOnlyList<ContentPublicationVersion>>> ListVersionsByPublicationIdsAsync(
         IReadOnlyCollection<string> publicationIds,
         int limit,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Lists route-state rows, oldest first, optionally restricted to one lifecycle.
-    /// <paramref name="offset"/> and <paramref name="limit"/> select the page; the total
-    /// counts every matching route, not just the page.
-    /// </summary>
     Task<(IReadOnlyList<ContentPublicationRouteState> Routes, int Total)> ListRoutesAsync(
         ContentPublicationLifecycle? lifecycle,
         int offset,
         int limit,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Returns the highest revision for a publication, or 0 when none exist.</summary>
     Task<long> GetMaxRevisionAsync(
         string publicationId,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Batch-resolves, for each of the supplied source content ids, the route state of the
-    /// publication whose most recently created version referenced that source content id
-    /// (<see cref="ContentPublicationVersion.SourceContentId"/>). Ids with no matching version
-    /// are omitted from the result. Used to join publication-registry lifecycle badges onto a
-    /// content-browser list (for example Studio content items) without one round-trip per row.
-    /// </summary>
     Task<IReadOnlyDictionary<string, ContentPublicationRouteState>> GetLatestRouteStatesBySourceContentIdsAsync(
         IReadOnlyCollection<string> sourceContentIds,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Atomically appends a new immutable version, upserts the route-state pointer,
-    /// and appends an event. Used by publish (new route) and republish (existing route).
-    /// </summary>
-    /// <param name="version">The new immutable version row.</param>
-    /// <param name="routeState">The route-state pointer to upsert.</param>
-    /// <param name="auditEvent">The event to append.</param>
-    /// <param name="expectedEtag">
-    /// Expected current route etag for an existing route (republish); null when the
-    /// route is being created for the first time (publish).
-    /// </param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <exception cref="ContentPublicationConflictException">
-    /// Thrown when the slug is already claimed by another publication, when the
-    /// expected etag does not match, or when the revision/version id already exists.
-    /// </exception>
     Task AppendVersionAndSetRouteAsync(
         ContentPublicationVersion version,
         ContentPublicationRouteState routeState,
@@ -100,22 +57,12 @@ public interface IContentPublicationStore
         string? expectedEtag,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Atomically updates the route-state pointer (without creating a version) and
-    /// appends an event. Used by rollback and policy updates.
-    /// </summary>
-    /// <param name="routeState">The updated route-state pointer.</param>
-    /// <param name="auditEvent">The event to append.</param>
-    /// <param name="expectedEtag">Expected current route etag for optimistic concurrency.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <exception cref="ContentPublicationConflictException">Thrown on etag mismatch or missing route.</exception>
     Task SetRouteAsync(
         ContentPublicationRouteState routeState,
         ContentPublicationEvent auditEvent,
         string? expectedEtag,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Lists events for a publication, newest first, bounded by <paramref name="limit"/>.</summary>
     Task<IReadOnlyList<ContentPublicationEvent>> ListEventsAsync(
         string publicationId,
         int limit,

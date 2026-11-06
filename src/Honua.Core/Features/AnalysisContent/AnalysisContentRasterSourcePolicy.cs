@@ -6,17 +6,9 @@ using Honua.Core.Features.Geoprocessing.Raster;
 
 namespace Honua.Core.Features.AnalysisContent;
 
-/// <summary>
-/// Enforces the raster contract at every durable analysis-package boundary.
-/// </summary>
-/// <remarks>
-/// Reference descriptors may be stored for forward-compatible authoring and round trips.
-/// Inline raster bytes are deliberately excluded: analysis content is metadata, not a raster
-/// data plane, and its stores do not have a configurable inline-payload admission boundary.
-/// </remarks>
+// Inline raster bytes are excluded because analysis content is metadata and its stores have no inline-payload admission boundary.
 public static class AnalysisContentRasterSourcePolicy
 {
-    /// <summary>Validates a package before hashing or durable persistence.</summary>
     public static RasterSourceValidationResult ValidateForPersistence(
         AnalysisPackageContent package,
         RasterSourceValidationOptions? options = null,

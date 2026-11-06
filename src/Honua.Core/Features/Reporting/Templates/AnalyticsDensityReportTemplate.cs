@@ -8,26 +8,17 @@ using Honua.Core.Features.Reporting.Domain;
 
 namespace Honua.Core.Features.Reporting.Templates;
 
-/// <summary>
-/// Template for <c>analytics.density</c> result packages. Highlights cell size,
-/// bin mode, and produces a small bar chart of the top-N density bins when the
-/// artifact metadata exposes <c>topBin*Count</c> entries.
-/// </summary>
 internal sealed class AnalyticsDensityReportTemplate : IAnalysisReportTemplate
 {
     private const int TopBinChartLimit = 10;
     private const string ProcessIdentifier = "analytics.density";
 
-    /// <inheritdoc />
     public string ProcessId => ProcessIdentifier;
 
-    /// <inheritdoc />
     public string TemplateId => "analysis-report.analytics-density";
 
-    /// <inheritdoc />
     public string TemplateVersion => "1.0.0";
 
-    /// <inheritdoc />
     public AnalysisReportDraft Build(AnalysisResultPackage package)
     {
         ArgumentNullException.ThrowIfNull(package);

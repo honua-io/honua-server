@@ -5,190 +5,87 @@ using Honua.Core.Features.AnalysisContent.Domain;
 
 namespace Honua.Core.Features.AnalysisContent.Abstractions;
 
-/// <summary>
-/// Raised when a durable analysis content write conflicts with an existing item,
-/// version, or artifact record.
-/// </summary>
 public sealed class AnalysisContentStoreConflictException : Exception
 {
-    /// <summary>
-    /// Initializes a new instance of the <see cref="AnalysisContentStoreConflictException"/> class.
-    /// </summary>
-    /// <param name="message">Safe conflict message.</param>
     public AnalysisContentStoreConflictException(string message)
         : base(message)
     {
     }
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="AnalysisContentStoreConflictException"/> class.
-    /// </summary>
-    /// <param name="message">Safe conflict message.</param>
-    /// <param name="innerException">Underlying provider exception.</param>
     public AnalysisContentStoreConflictException(string message, Exception innerException)
         : base(message, innerException)
     {
     }
 }
 
-/// <summary>
-/// Raised when the durable analysis content store cannot be reached or used because of an
-/// infrastructure outage (connection failure, timeout, resource exhaustion, or backend
-/// authorization failure) rather than a request-level problem. Callers map this to a
-/// retryable 503 so a transient store outage is not reported as a generic 500.
-/// </summary>
+// Callers map an infrastructure outage to a retryable 503 so a transient store failure is not reported as a generic 500.
 public sealed class AnalysisContentStoreUnavailableException : Exception
 {
-    /// <summary>
-    /// Initializes a new instance of the <see cref="AnalysisContentStoreUnavailableException"/> class.
-    /// </summary>
-    /// <param name="message">Safe, store-neutral unavailability message.</param>
     public AnalysisContentStoreUnavailableException(string message)
         : base(message)
     {
     }
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="AnalysisContentStoreUnavailableException"/> class.
-    /// </summary>
-    /// <param name="message">Safe, store-neutral unavailability message.</param>
-    /// <param name="innerException">Underlying provider exception.</param>
     public AnalysisContentStoreUnavailableException(string message, Exception innerException)
         : base(message, innerException)
     {
     }
 }
 
-/// <summary>
-/// Raised when a caller attempts to bypass the analysis-content service and persist a
-/// package that violates the durable raster-source policy.
-/// </summary>
 public sealed class AnalysisContentStoreValidationException : Exception
 {
-    /// <summary>Creates a store-boundary validation failure.</summary>
     public AnalysisContentStoreValidationException(string message, string code)
         : base(message)
     {
         Code = code;
     }
 
-    /// <summary>Stable raster-source validation code.</summary>
     public string Code { get; }
 }
 
-/// <summary>
-/// Durable store for saved-query and analysis-package content items, immutable versions,
-/// and job result artifact metadata.
-/// </summary>
 public interface IAnalysisContentStore
 {
-    /// <summary>
-    /// Creates a content item and its initial immutable version.
-    /// </summary>
-    /// <param name="item">Content item root.</param>
-    /// <param name="version">Initial immutable version.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The stored item root.</returns>
     Task<AnalysisContentItem> CreateItemAsync(
         AnalysisContentItem item,
         AnalysisContentVersion version,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Retrieves a content item root.
-    /// </summary>
-    /// <param name="itemId">Content item identifier.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The item, or null when not found.</returns>
     Task<AnalysisContentItem?> GetItemAsync(
         string itemId,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Adds an immutable version and advances the item current-version pointer.
-    /// </summary>
-    /// <param name="itemId">Content item identifier.</param>
-    /// <param name="version">Version to store.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The stored version.</returns>
     Task<AnalysisContentVersion> AddVersionAsync(
         string itemId,
         AnalysisContentVersion version,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Retrieves the latest or explicit version for a content item.
-    /// </summary>
-    /// <param name="itemId">Content item identifier.</param>
-    /// <param name="version">Explicit version, or null for the latest version.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The version, or null when not found.</returns>
     Task<AnalysisContentVersion?> GetVersionAsync(
         string itemId,
         int? version = null,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Lists all immutable versions for a content item in ascending version order.
-    /// </summary>
-    /// <param name="itemId">Content item identifier.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Stored versions.</returns>
     Task<IReadOnlyList<AnalysisContentVersion>> ListVersionsAsync(
         string itemId,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Deletes one immutable version. When that version is the item's current pointer,
-    /// the pointer rewinds to the highest remaining version. Returns false when the
-    /// item or version is absent. Callers never abandon the only remaining version.
-    /// </summary>
-    /// <param name="itemId">Content item identifier.</param>
-    /// <param name="version">Version number to delete.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>True when the version was deleted; otherwise false.</returns>
+    // Deleting the current version rewinds the pointer to the highest remaining version, and callers never abandon the only remaining version.
     Task<bool> TryAbandonVersionAsync(
         string itemId,
         int version,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Lists content item roots in a stable, paged order (most recently updated first,
-    /// then by item identifier). Supports optional filtering by kind and lifecycle.
-    /// </summary>
-    /// <param name="query">Paging and filter query.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The requested page of items and the total count matching the filter.</returns>
     Task<AnalysisContentItemPage> ListItemsAsync(
         AnalysisContentItemQuery query,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Inserts or updates durable result artifact metadata.
-    /// </summary>
-    /// <param name="artifact">Artifact metadata record.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The stored artifact record.</returns>
     Task<ResultArtifactRecord> UpsertArtifactAsync(
         ResultArtifactRecord artifact,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Retrieves durable result artifact metadata.
-    /// </summary>
-    /// <param name="artifactId">Artifact identifier.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The artifact, or null when not found.</returns>
     Task<ResultArtifactRecord?> GetArtifactAsync(
         string artifactId,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Lists artifacts created by a job.
-    /// </summary>
-    /// <param name="jobId">Job identifier.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Artifact records in creation order.</returns>
     Task<IReadOnlyList<ResultArtifactRecord>> ListArtifactsForJobAsync(
         string jobId,
         CancellationToken cancellationToken = default);

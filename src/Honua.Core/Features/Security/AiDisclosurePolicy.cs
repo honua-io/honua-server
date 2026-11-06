@@ -5,41 +5,28 @@ using System.Net;
 
 namespace Honua.Core.Features.Security;
 
-/// <summary>Operator approval policy for a workload's model disclosure. This is not content classification or sanitization.</summary>
 public sealed class AiDisclosurePolicyOptions
 {
-    /// <summary>Operator-asserted classification of every payload this workload may submit. Never populated from caller claims.</summary>
+    // The payload classification is operator-asserted and is never taken from caller claims.
     public string WorkloadDataClassification { get; set; } = "unclassified";
 
-    /// <summary>Explicit approvals. An empty list denies external transfers.</summary>
     public List<AiDisclosureApproval> Approvals { get; set; } = [];
 }
 
-/// <summary>An exact approval of one model disclosure boundary. Wildcards are not supported.</summary>
 public sealed class AiDisclosureApproval
 {
-    /// <summary>Configured provider identity (Studio provider key, reporting provider or imagery provider).</summary>
     public string Provider { get; set; } = string.Empty;
-    /// <summary>Adapter kind (openai, anthropic, bedrock or http).</summary>
     public string Kind { get; set; } = string.Empty;
-    /// <summary>Exact normalized HTTP base/invocation URI, or aws-bedrock:region for the AWS SDK.</summary>
     public string Destination { get; set; } = string.Empty;
-    /// <summary>Exact effective model identifier, including any request override.</summary>
     public string Model { get; set; } = string.Empty;
-    /// <summary>Server-selected use case: studio-chat, reporting-narrative or imagery-inference.</summary>
     public string UseCase { get; set; } = string.Empty;
-    /// <summary>Operator-approved workload classification; unclassified requires explicit approval too.</summary>
     public string DataClassification { get; set; } = string.Empty;
 }
 
-/// <summary>Effective server-resolved transfer boundary, without prompt text, credentials, imagery or caller classification.</summary>
 public sealed record AiDisclosureRequest(string Provider, string Kind, string Destination, string Model, string UseCase);
 
-/// <summary>Pure, fail-closed approval evaluator shared by model transfer surfaces.</summary>
 public static class AiDisclosurePolicy
 {
-    /// <summary>Whether a workload can send a payload to this exact provider/model/use-case destination.</summary>
-    /// <remarks>The loopback exception requires callers to prohibit redirects. Private-network destinations are external.</remarks>
     public static bool IsAllowed(AiDisclosurePolicyOptions? options, AiDisclosureRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
