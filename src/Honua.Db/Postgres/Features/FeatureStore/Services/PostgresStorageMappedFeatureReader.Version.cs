@@ -37,10 +37,13 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IBranchVersio
     {
         cancellationToken.ThrowIfCancellationRequested();
         return _mapping.LayerDiscriminatorValue == storageLayerId
-            && await GetUnsupportedManagedStorageReasonAsync(cancellationToken).ConfigureAwait(false) is null;
+            && await SupportsManagedStorageAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<bool> SupportsBranchVersioningAsync(CancellationToken cancellationToken = default)
+    public Task<bool> SupportsBranchVersioningAsync(CancellationToken cancellationToken = default)
+        => SupportsManagedStorageAsync(cancellationToken);
+
+    private async Task<bool> SupportsManagedStorageAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         try
