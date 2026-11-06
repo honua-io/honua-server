@@ -357,22 +357,30 @@ public sealed class LayerReadSecurityResolver
         }
 
         var snapshot = await _v2Provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var resource))
-        {
-            return null;
-        }
-        var candidates = snapshot.Graph.StorageBindings
-            .Where(binding => binding.StorageLayerId == layerId)
-            .Select(binding => snapshot.Index.ResourcesById.GetValueOrDefault(binding.ResourceId))
-            .OfType<MetadataV2Resource>()
-            .DistinctBy(candidate => candidate.Metadata.Id, StringComparer.Ordinal)
-            .ToArray();
+        var candidates = FindResourceCandidates(snapshot, layerId);
         if (candidates.Length > 1)
         {
             await RejectAmbiguousPolicyAsync(candidates, cancellationToken).ConfigureAwait(false);
         }
-        return resource;
+        return candidates.FirstOrDefault();
     }
+
+    private static MetadataV2Resource[] FindResourceCandidates(MetadataV2GraphSnapshot snapshot, int layerId)
+    {
+        var boundResources = snapshot.Graph.StorageBindings
+            .Where(binding => binding.StorageLayerId == layerId)
+            .Select(binding => snapshot.Index.ResourcesById.GetValueOrDefault(binding.ResourceId))
+            .OfType<MetadataV2Resource>();
+        var publishedResources = snapshot.Graph.Publications
+            .Select(publication => (Publication: publication, Resource: snapshot.ResolveResource(publication)))
+            .Where(candidate => candidate.Resource is not null &&
+                snapshot.ResolveStorageLayerId(candidate.Publication, candidate.Resource) == layerId)
+            .Select(candidate => candidate.Resource!);
+        return boundResources.Concat(publishedResources)
+            .DistinctBy(candidate => candidate.Metadata.Id, StringComparer.Ordinal)
+            .ToArray();
+    }
+
     private async Task RejectAmbiguousPolicyAsync(
         IReadOnlyList<MetadataV2Resource> resources, CancellationToken cancellationToken)
     {
