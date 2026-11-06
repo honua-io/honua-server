@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Honua.Infrastructure.Redis;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.IdentityModel.Tokens;
 using StackExchange.Redis;
 
 namespace Honua.Infrastructure.Authentication;
@@ -56,6 +57,11 @@ public static partial class OidcAuthenticationExtensions
         ILogger logger,
         CancellationToken cancellationToken)
     {
+        if (!admission.Scope.CanBindContinuation)
+        {
+            return false;
+        }
+
         var marker = BuildTokenReplayContinuationMarker(continuationId);
         if (admission.Store == TokenReplayStore.Redis)
         {
@@ -109,18 +115,16 @@ public static partial class OidcAuthenticationExtensions
         TokenReplayContinuationPrefix
         + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(continuationId)));
 
-    private static TokenReplayScope ResolveTokenReplayScope(HttpContext context)
+    private static TokenReplayScope ResolveTokenReplayScope(HttpContext context, SecurityToken token)
     {
-        foreach (var resolver in context.RequestServices.GetServices<ITokenReplayContinuationResolver>())
+        foreach (var resolver in context.RequestServices.GetServices<ITokenReplayScopeResolver>())
         {
             if (!resolver.OwnsRequest(context))
             {
                 continue;
             }
 
-            var continuationId = resolver.ResolveContinuationId(context);
-            return TokenReplayScope.ContinuationSurface(
-                string.IsNullOrWhiteSpace(continuationId) ? null : BuildTokenReplayContinuationMarker(continuationId));
+            return resolver.ResolveScope(context, EncodedTokenFingerprint(token));
         }
 
         return TokenReplayScope.HttpApi;
@@ -135,7 +139,7 @@ public static partial class OidcAuthenticationExtensions
             return TokenReplayRegistrationResult.Continued;
         }
 
-        return !scope.OwnsContinuations && string.Equals(value, HttpApiTokenReplayValue, StringComparison.Ordinal)
+        return !scope.CanBindContinuation && string.Equals(value, scope.RegistrationValue, StringComparison.Ordinal)
             ? TokenReplayRegistrationResult.Reused
             : TokenReplayRegistrationResult.ReplayDetected;
     }
@@ -179,14 +183,17 @@ public static partial class OidcAuthenticationExtensions
         TokenReplayRegistrationResult Result,
         TokenReplayStore? Store);
 
-    internal readonly record struct TokenReplayScope(bool OwnsContinuations, string? ContinuationMarker)
+    internal readonly record struct TokenReplayScope(string RegistrationValue, string? ContinuationMarker)
     {
-        public static TokenReplayScope HttpApi => new(false, null);
+        public static TokenReplayScope HttpApi => new(HttpApiTokenReplayValue, null);
 
         public static TokenReplayScope ContinuationSurface(string? continuationMarker) =>
-            new(true, continuationMarker);
+            new(RegisteredTokenReplayValue, continuationMarker);
 
-        public string RegistrationValue => OwnsContinuations ? RegisteredTokenReplayValue : HttpApiTokenReplayValue;
+        public static TokenReplayScope ReusableSurface(string surface, string validatedTokenFingerprint) =>
+            new($"surface:{surface}:{validatedTokenFingerprint}", null);
+
+        public bool CanBindContinuation => RegistrationValue == RegisteredTokenReplayValue;
     }
 
     internal enum TokenReplayStore
@@ -197,15 +204,19 @@ public static partial class OidcAuthenticationExtensions
 }
 
 // An implementation may claim only its own routes, because admission there makes the token a replay on the ordinary API and an API admission is a replay on that surface.
-internal interface ITokenReplayContinuationResolver
+internal interface ITokenReplayScopeResolver
 {
     bool OwnsRequest(HttpContext context);
 
-    string? ResolveContinuationId(HttpContext context);
+    OidcAuthenticationExtensions.TokenReplayScope ResolveScope(HttpContext context, string? validatedTokenFingerprint);
 }
 
 // The continuation binding is created by the server and a client cannot supply it.
 internal sealed record TokenReplayAdmissionFeature(
     string TokenKey,
     DateTime ExpiresOn,
-    OidcAuthenticationExtensions.TokenReplayStore Store);
+    OidcAuthenticationExtensions.TokenReplayStore Store)
+{
+    public OidcAuthenticationExtensions.TokenReplayScope Scope { get; init; } =
+        OidcAuthenticationExtensions.TokenReplayScope.ContinuationSurface(null);
+}

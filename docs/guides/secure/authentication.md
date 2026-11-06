@@ -252,6 +252,14 @@ key value in the secret store, outside Terraform configuration and release
 evidence. Deployments without a static key continue using provider metadata and
 JWKS discovery.
 
+#### Bearer replay retention
+
+When `Oidc:TokenValidation:EnableTokenReplayProtection` is enabled, replay registrations expire at the token's expiry plus `ClockSkew`. Reuse and legacy MCP session binding preserve that original expiration. A token admitted on ordinary HTTP stays reusable there; a legacy MCP token continues its bound session; a modern MCP token is reusable on the modern `/mcp` transport with the same validated token. Cross-surface reuse is refused.
+
+`Oidc:TokenValidation:TokenReplayCacheDuration` is the maximum accepted remaining validity, including clock skew. The default is 24 hours; zero selects that same bounded default. A token without an expiry or whose remaining validity plus skew exceeds the maximum is refused with 401. For example, a one-hour access token with five minutes of skew needs a maximum of at least 65 minutes. Deployments retaining an explicit earlier ten-minute setting must adjust it to cover their access-token lifetime plus skew. The maximum supported configuration is 24 hours.
+
+Redis shares replay registrations across nodes. With Redis unavailable, the default fallback is per-node memory; set `Oidc:TokenValidation:ReplayProtectionFailClosed=true` to refuse admission during a shared-store outage. Per-node memory provides isolation only on that node. Independent replicas need the same shared replay store for cross-node isolation.
+
 ### 4. Issue GeoServices REST-compatible tokens
 
 GeoServices REST clients, including desktop GIS applications and native client SDKs, authenticate against the portal token endpoint, which is always available:

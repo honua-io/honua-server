@@ -1231,14 +1231,15 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
         string audience = Audience,
         string signingKey = SigningKey,
         int expiresInMinutes = 60,
-        IReadOnlyList<Claim>? additionalClaims = null)
+        IReadOnlyList<Claim>? additionalClaims = null,
+        string? tokenId = null)
     {
         var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey));
         var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
 
         var claims = new List<Claim>
         {
-            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+            new(JwtRegisteredClaimNames.Jti, tokenId ?? Guid.NewGuid().ToString())
         };
         if (!string.IsNullOrWhiteSpace(subject))
         {
