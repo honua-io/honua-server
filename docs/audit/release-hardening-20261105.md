@@ -10,7 +10,8 @@ Baseline: `800c0ec9277733433f90cd56e6e53f35bda1b11b` (`origin/trunk`, fetched 20
 
 | Finding | Severity | Evidence and disposition |
 | --- | --- | --- |
-| WFS Replace bypasses protected attribute update validation | P1 | Replace enters create-style validation while Update uses `isUpdate: true`; downstream writer does not enforce field editability. Explicit protected writes and omitted protected values require regression coverage. Issue #6988. |
+| Replacement edits overwrite or clear protected attributes | P1 | WFS explicit protected writes use create-style validation; WFS/OData/OGC API omission can clear protected fields. Shared replacement preservation and WFS update validation are under remediation in #6988. gRPC has a downstream partial-merge mitigation. |
+| Publication tenant visibility omitted by protocol paths | P1 | Records/OData discovery and WMS/WMTS layer resolution omit publication tenant checks while checking resource/service access. Hidden-primary selection also requires correction. Issue #6989. |
 | SAML audience restrictions incorrectly flattened | P2 | Validator accepts any audience across groups instead of requiring each restriction to match. Requires an otherwise valid signed assertion. Issue #6987. |
 | SAML local replay claim not atomic | P2 | Memory-cache factory can execute concurrently for the same assertion; Redis NX path is unaffected. Issue #6987. |
 | Import progress read failure skips leadership check | P2 | Monitor catches failed progress reads before reaching heartbeat. Target advisory lock mitigates duplicate writes but does not stop stale execution. Fix tracked by #6985. |
@@ -41,9 +42,15 @@ No supported P0 finding so far. Finding counts are not evidence of complete cove
 
 - Baseline `Honua.Architecture.SourceTests`: **121 passed, 0 failed, 0 skipped**, Release configuration, through required dotnet build-slot shim.
 - Existing Security Nightly run [41996766600](https://github.com/honua-io/honua-server/actions/runs/41996766600) passed NuGet, filesystem, notices, and AOT Alpine/JIT Debian container jobs on ancestor `f0b09c4cf765149810b0851d31b31c09f1327843`. This is not final-candidate verification.
+- Vulnerability-gate parser: **7 passed**; immutable-image receipt controls: **6 passed**. These validate gate logic, not the application dependency inventory.
+- GitHub open Dependabot inventory: two moderate action-tooling advisories, `GHSA-g3hv-75wg-m249` (minimatch) and `GHSA-3g3m-2fjr-6pw4` (glob), both in `.github/actions/managed-test-artifacts/package-lock.json`; applicability review outstanding.
 - Graph search timed out; findings were checked against source directly.
 - CSO helper failed snapshot capture with `SNAPSHOT_RACE`; CSO assessment/scanner assurance is **not assessed**. Conventional static security review is separately identified above.
 - Full matrix, deployment checks, cloud-provider integration, current dependency advisory inventory, and final integrated candidate review are outstanding.
+
+## Additional investigation
+
+Published forms may use package-time field editability after current resource metadata changes; current submission validation checks package ReadOnly but not target field editability. A separate runtime-policy regression is being investigated. This is not dismissed by the replacement fix.
 
 ## Exit criteria
 
