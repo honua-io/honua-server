@@ -38,7 +38,6 @@ public sealed class CloudDemoEndpointsTests : IAsyncLifetime
             {
                 configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    ["Database:Schema"] = _fixture.CurrentSchema,
                     ["CloudDemoServices:Enabled"] = "true",
                     ["CloudDemoServices:AllowWrites"] = "true",
                     ["CloudDemoServices:ResetToken"] = ResetToken,
@@ -51,6 +50,7 @@ public sealed class CloudDemoEndpointsTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
+        await ServerTestData.EnsureFixtureAttachmentsAsync(_fixture.Postgres, "honua");
         _client = _fixture.Client;
     }
 
