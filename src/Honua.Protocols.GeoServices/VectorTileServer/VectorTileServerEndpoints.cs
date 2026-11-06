@@ -107,7 +107,7 @@ internal static partial class VectorTileServerEndpoints
             var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
-            var publications = ResolveVectorTilePublications(snapshot, service);
+            var publications = ResolveVectorTilePublications(snapshot, service, context);
 
             var (visiblePublications, accessError) = await AccessPolicyHelpers.FilterAccessibleResourcesAsync(
                 context,
@@ -154,10 +154,12 @@ internal static partial class VectorTileServerEndpoints
 
     private static VectorTilePublicationDescriptor[] ResolveVectorTilePublications(
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Service service)
+        MetadataV2Service service,
+        HttpContext context)
     {
         var descriptors = new List<VectorTilePublicationDescriptor>();
-        foreach (var publication in snapshot.Index.PublicationsByService[service.Metadata.Id])
+        foreach (var publication in TenantScopeHelpers.FilterVisiblePublications(
+                     context, snapshot, snapshot.Index.PublicationsByService[service.Metadata.Id]))
         {
             var resource = snapshot.ResolveResource(publication);
             if (!snapshot.IsRoutable(publication))

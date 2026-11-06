@@ -8,11 +8,7 @@ using Honua.Core.Features.Compliance.Domain;
 
 namespace Honua.Core.Features.Compliance.Services;
 
-/// <summary>
-/// CSV evidence-matrix renderer. Output is RFC 4180 compliant — quote-wrapped
-/// fields, embedded quotes doubled, and a UTF-8 BOM so Excel opens it without
-/// asking the user about encoding.
-/// </summary>
+// The CSV is RFC 4180, with a UTF-8 BOM so Excel opens it without an encoding prompt.
 internal sealed class CsvComplianceReportRenderer : IComplianceReportRenderer
 {
     private static readonly UTF8Encoding Utf8WithBom = new(encoderShouldEmitUTF8Identifier: true);

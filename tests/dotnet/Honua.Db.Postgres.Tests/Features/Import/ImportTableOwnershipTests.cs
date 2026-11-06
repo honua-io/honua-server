@@ -14,6 +14,38 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 public sealed class ImportTableOwnershipTests(PostgresFixture fixture)
 {
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SwapImportTable_DependentViewOrForeignKey_RefusesAndPreservesOriginal(bool foreignKey)
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync("swap_dependencies");
+        try
+        {
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await InstallHelpersAsync(connection, schema);
+            await ExecuteAsync(connection, $"SELECT \"{schema}\".create_import_table('{schema}', 'target'); INSERT INTO \"{schema}\".target (properties) VALUES ('{{}}'); SELECT \"{schema}\".create_import_staging_table('{schema}', 'target')");
+            await ExecuteAsync(connection, foreignKey
+                ? $"CREATE TABLE \"{schema}\".dependent (target_id integer REFERENCES \"{schema}\".target(id)); INSERT INTO \"{schema}\".dependent VALUES (1)"
+                : $"CREATE MATERIALIZED VIEW \"{schema}\".dependent AS SELECT properties FROM \"{schema}\".target");
+
+            var error = await Assert.ThrowsAsync<PostgresException>(() => ExecuteAsync(connection,
+                $"SELECT \"{schema}\".swap_import_table('{schema}', 'target')"));
+
+            Assert.Equal(PostgresErrorCodes.DependentObjectsStillExist, error.SqlState);
+            await using var verify = new NpgsqlCommand(foreignKey
+                ? $"SELECT count(*) FROM pg_constraint WHERE conrelid = '\"{schema}\".dependent'::regclass AND contype = 'f'"
+                : $"SELECT count(*) FROM \"{schema}\".dependent", connection);
+            Assert.Equal(1L, await verify.ExecuteScalarAsync());
+            await using var original = new NpgsqlCommand($"SELECT count(*) FROM \"{schema}\".target", connection);
+            Assert.Equal(1L, await original.ExecuteScalarAsync());
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [Theory]
     [InlineData("create_import_table", "target")]
     [InlineData("create_import_staging_table", "target")]
     [InlineData("create_import_staging_table", "target__staging")]
@@ -224,7 +256,7 @@ public sealed class ImportTableOwnershipTests(PostgresFixture fixture)
             root = root.Parent;
         }
         Assert.NotNull(root);
-        foreach (var file in new[] { "070_AddImportLoadModes.sql", "071_FixImportStagingTableNameLength.sql", "108_FixLongImportIndexNames.sql", "129_ProtectImportTableOwnership.sql" })
+        foreach (var file in new[] { "070_AddImportLoadModes.sql", "071_FixImportStagingTableNameLength.sql", "108_FixLongImportIndexNames.sql", "129_ProtectImportTableOwnership.sql", "145_ProtectImportDependencies.sql" })
         {
             var sql = (await File.ReadAllTextAsync(Path.Join(root.FullName, "src", "Honua.Server", "Migrations", file)))
                 .Replace("honua.", $"\"{schema}\".", StringComparison.Ordinal)

@@ -26,7 +26,7 @@ namespace Honua.Server.Tests.Features.FeatureStore;
 /// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.TestQuality)]
-public sealed class BranchVersioningIntegrationTests : IAsyncLifetime
+public sealed partial class BranchVersioningIntegrationTests : IAsyncLifetime
 {
     private const int PointsLayerId = 91001;
     private static readonly GeometryFactory _geometryFactory = new(new PrecisionModel(), 4326);
@@ -781,7 +781,9 @@ public sealed class BranchVersioningIntegrationTests : IAsyncLifetime
         return new Feature { Id = id, Geometry = _wkbWriter.Write(point), Attributes = attributes };
     }
 
-    private PostgresFeatureStoreRefactored CreateFeatureStore()
+    private PostgresFeatureStoreRefactored CreateFeatureStore() => CreateFeatureStoreWithDataAccess().Store;
+
+    private (PostgresFeatureStoreRefactored Store, FeatureDataAccess DataAccess) CreateFeatureStoreWithDataAccess()
     {
         var connectionProvider = new TestDatabaseConnectionProvider(_fixture.DataSource, () => _schema);
         var poolProvider = new DefaultObjectPoolProvider();
@@ -802,14 +804,14 @@ public sealed class BranchVersioningIntegrationTests : IAsyncLifetime
             PerformanceMonitor: null,
             SchemaName: _schema));
 
-        return new PostgresFeatureStoreRefactored(
+        return (new PostgresFeatureStoreRefactored(
             queryBuilder,
             dataAccess,
             cacheManager,
             connectionProvider,
             dictionaryPool,
             connectionEncryptionService: null,
-            filterExpressionService: null);
+            filterExpressionService: null), dataAccess);
     }
 
     private PostgresVersionManager CreateVersionManager()

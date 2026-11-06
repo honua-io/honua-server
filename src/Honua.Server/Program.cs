@@ -1723,6 +1723,8 @@ app.UseGrpcWeb(new GrpcWebOptions { DefaultEnabled = true });
 app.UseGrpcServingStatusCapture();
 #endif
 
+Honua.Ai.Protocols.Mcp.McpModernHttp.UseOriginValidation(app);
+
 // Add CORS middleware before the exception handler so error responses (4xx/5xx) carry
 // Access-Control-Allow-Origin headers; otherwise browsers report every server error as
 // a CORS failure, masking the real status/body from web clients (#1627). It also stays

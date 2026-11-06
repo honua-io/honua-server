@@ -8,16 +8,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Core.Features.PackageReview;
 
-/// <summary>
-/// Service registration helpers for package validation and read-only preview planning.
-/// </summary>
 public static class ServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers the canonical package-review service and shared requirement adapter.
-    /// </summary>
-    /// <param name="services">Service collection.</param>
-    /// <returns>The same service collection for chaining.</returns>
     public static IServiceCollection AddPackageReviewCore(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);

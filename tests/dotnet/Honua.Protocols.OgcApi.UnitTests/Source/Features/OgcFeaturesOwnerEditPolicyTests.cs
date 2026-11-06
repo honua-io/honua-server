@@ -8,6 +8,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.ReadOnlyProviders;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -22,6 +23,7 @@ using Honua.Protocols.Ogc.Common;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -31,7 +33,7 @@ namespace Honua.Protocols.OgcApi.UnitTests.Features;
 /// <summary>
 /// OGC API Features item and transaction edits share the owner-edit policy.
 /// </summary>
-public sealed class OgcFeaturesOwnerEditPolicyTests
+public sealed partial class OgcFeaturesOwnerEditPolicyTests
 {
     private const string NonOwnerDenial =
         "Feature is owned by another principal and cannot be modified under the owner-based edit policy.";
@@ -44,6 +46,47 @@ public sealed class OgcFeaturesOwnerEditPolicyTests
         OwnerField = "owner",
         StampOwnerOnInsert = true
     };
+
+    [UnitTest]
+    public async Task ExecuteEditAsync_ReplacementWithMaskedProtectedFields_UsesPreservingWriterContract()
+    {
+        var resource = Resource(null) with
+        {
+            Editing = new MetadataV2ResourceEditing { GlobalIdField = "globalid" },
+            SchemaFields =
+            [
+                new() { Name = "name", Type = MetadataV2FieldType.String, Editable = true },
+                new() { Name = "description", Type = MetadataV2FieldType.String, Editable = true },
+                new() { Name = "code", Type = MetadataV2FieldType.String, Editable = false },
+                new() { Name = "globalid", Type = MetadataV2FieldType.String, Editable = true }
+            ]
+        };
+        var request = new OgcFeaturesEditRequest
+        {
+            Operation = OgcFeaturesEditOperation.Replace,
+            ObjectId = 42,
+            Feature = Feature.Create(42, null, ImmutableDictionary<string, object?>.Empty.Add("name", "After"))
+        };
+        var reader = new OwnerReader();
+        var writer = new CapturingWriter();
+        var (crud, transaction) = CreateHandlers(reader, writer);
+
+        foreach (var handler in new Func<Task<FeatureEditResult>>[]
+        {
+            () => crud.ExecuteEditAsync(Context(), 7, resource, request, CancellationToken.None),
+            () => transaction.ExecuteEditAsync(Context(), 7, resource, request, CancellationToken.None)
+        })
+        {
+            var result = await handler();
+            result.IsSuccess.Should().BeTrue();
+            var update = writer.LastBatch.Updates.Should().ContainSingle().Which;
+            update.PreserveOmittedMaskedAttributes.Should().BeFalse();
+            update.PreservedAttributeNames.Should().BeEquivalentTo(["code", "globalid"]);
+            update.ExplicitAttributeRemovals.IsDefaultOrEmpty.Should().BeTrue();
+            update.Attributes.Should().NotContainKey("code").And.NotContainKey("globalid");
+            update.PreserveOmittedGeometry.Should().BeFalse();
+        }
+    }
 
     [UnitTest]
     public async Task ExecuteEditAsync_NonOwnerUpdateAndDelete_AreDeniedBeforeTheWrite()
@@ -195,7 +238,8 @@ public sealed class OgcFeaturesOwnerEditPolicyTests
 
     private static (OgcFeaturesCrudHandler Crud, OgcFeaturesTransactionHandler Transaction) CreateHandlers(
         IFeatureReader reader,
-        IFeatureWriter writer)
+        IFeatureWriter writer,
+        ILogger<OgcFeaturesTransactionHandler>? transactionLogger = null)
     {
         var geometry = new OgcFeaturesGeometryServices(
             Substitute.For<IGeometryService>(),
@@ -210,12 +254,12 @@ public sealed class OgcFeaturesOwnerEditPolicyTests
             new OgcFeaturesCrudDependencies(
                 reader,
                 writer,
-                Substitute.For<ICrsRegistry>(),
+                new WellKnownCrsRegistry(),
                 geometry,
                 adapter,
                 processor,
                 Substitute.For<IQueryProcessor>(),
-                Substitute.For<IETagService>(),
+                new ETagService(),
                 validator,
                 events),
             NullLogger<OgcFeaturesCrudHandler>.Instance);
@@ -223,15 +267,15 @@ public sealed class OgcFeaturesOwnerEditPolicyTests
             new OgcFeaturesTransactionDependencies(
                 reader,
                 writer,
-                Substitute.For<ICrsRegistry>(),
+                new WellKnownCrsRegistry(),
                 geometry,
                 adapter,
                 processor,
                 Substitute.For<IQueryProcessor>(),
-                Substitute.For<IETagService>(),
+                new ETagService(),
                 validator,
                 events),
-            NullLogger<OgcFeaturesTransactionHandler>.Instance);
+            transactionLogger ?? NullLogger<OgcFeaturesTransactionHandler>.Instance);
         return (crud, transaction);
     }
 

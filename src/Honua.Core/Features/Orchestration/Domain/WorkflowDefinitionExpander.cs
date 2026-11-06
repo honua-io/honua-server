@@ -5,41 +5,11 @@ using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Core.Features.Orchestration.Domain;
 
-/// <summary>
-/// Deterministically unrolls a <see cref="WorkflowDefinition"/> containing
-/// <see cref="WorkflowForEachSpec"/> steps into a flat definition of concrete steps —
-/// one per iteration item — so the durable orchestration engine reconciles a plain DAG.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The transform is pure and deterministic: the same input always yields the same
-/// expanded step-set in the same order. The engine therefore applies it both when a run
-/// is created (to materialise the run's step states) and on every reconcile tick (after
-/// reloading the stored definition); because both sides expand identically, the step-set
-/// consistency guard holds and no extra durable state is needed.
-/// </para>
-/// <para>
-/// A ForEach step <c>F</c> over items <c>[a, b]</c> unrolls into sub-steps
-/// <c>F::0</c> and <c>F::1</c>, each carrying a copy of the template's plan with the
-/// item value substituted for <see cref="WorkflowForEachSpec.ItemPlaceholder"/>. A step
-/// that depends on <c>F</c> fans in to depend on every sub-step, so its execution waits
-/// for all iterations and the run aggregates the per-item outputs. Acyclicity is
-/// preserved: the unroll only duplicates nodes along existing edges, so an acyclic
-/// source graph stays acyclic.
-/// </para>
-/// </remarks>
+// Expansion is a pure function of the definition, so run creation and later reconciliation see the same step set in the same order.
 public static class WorkflowDefinitionExpander
 {
-    /// <summary>The reserved separator joining a ForEach step id with its iteration index.</summary>
     public const string IterationSeparator = "::";
 
-    /// <summary>
-    /// Returns an expanded copy of <paramref name="definition"/> with every ForEach step
-    /// unrolled into concrete per-item steps. A definition with no ForEach steps is
-    /// returned unchanged.
-    /// </summary>
-    /// <param name="definition">The (already validated) definition to expand.</param>
-    /// <returns>The flat, fully-unrolled definition.</returns>
     public static WorkflowDefinition Expand(WorkflowDefinition definition)
     {
         ArgumentNullException.ThrowIfNull(definition);

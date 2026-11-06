@@ -6,61 +6,24 @@ using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Core.Features.Edit;
 
-/// <summary>
-/// Result of unified edit execution.
-/// </summary>
 public sealed record UnifiedEditResult
 {
-    /// <summary>
-    /// Whether the edit execution succeeded.
-    /// </summary>
     public required bool IsSuccess { get; init; }
 
-    /// <summary>
-    /// Edit result if execution succeeded.
-    /// </summary>
     public FeatureEditResult? Result { get; init; }
 
-    /// <summary>
-    /// The unified edit request that was executed.
-    /// </summary>
     public UnifiedEditRequest? EditRequest { get; init; }
 
-    /// <summary>
-    /// The transaction that was executed.
-    /// </summary>
     public EditTransaction? Transaction { get; init; }
 
-    /// <summary>
-    /// Protocol that initiated the edit.
-    /// </summary>
     public string? Protocol { get; init; }
 
-    /// <summary>
-    /// Protocol-specific metadata for response formatting.
-    /// </summary>
     public IDictionary<string, object>? Metadata { get; init; }
 
-    /// <summary>
-    /// Error message if execution failed.
-    /// </summary>
     public string? ErrorMessage { get; init; }
 
-    /// <summary>
-    /// HTTP status the protocol should surface for <see cref="ErrorMessage"/> when the failure
-    /// is not a generic client error. Null keeps the caller's existing status.
-    /// </summary>
     public int? ErrorStatusCode { get; init; }
 
-    /// <summary>
-    /// Creates a successful edit result.
-    /// </summary>
-    /// <param name="result">Edit result.</param>
-    /// <param name="editRequest">Unified edit request.</param>
-    /// <param name="transaction">Edit transaction.</param>
-    /// <param name="protocol">Source protocol.</param>
-    /// <param name="metadata">Protocol metadata.</param>
-    /// <returns>Successful result.</returns>
     public static UnifiedEditResult Success(
         FeatureEditResult result,
         UnifiedEditRequest editRequest,
@@ -77,65 +40,26 @@ public sealed record UnifiedEditResult
             Metadata = metadata
         };
 
-    /// <summary>
-    /// Creates a failed edit result.
-    /// </summary>
-    /// <param name="errorMessage">Error message.</param>
-    /// <param name="errorStatusCode">Optional HTTP status. Null keeps the caller's existing status.</param>
-    /// <returns>Failed result.</returns>
     public static UnifiedEditResult Failure(string errorMessage, int? errorStatusCode = null)
         => new() { IsSuccess = false, ErrorMessage = errorMessage, ErrorStatusCode = errorStatusCode };
 }
 
-/// <summary>
-/// Result of unified batch edit execution.
-/// </summary>
 public sealed record UnifiedBatchEditResult
 {
-    /// <summary>
-    /// Whether the batch edit execution succeeded.
-    /// </summary>
     public required bool IsSuccess { get; init; }
 
-    /// <summary>
-    /// Results of individual edit operations.
-    /// </summary>
     public ImmutableArray<FeatureEditResult>? Results { get; init; }
 
-    /// <summary>
-    /// The transaction that was executed.
-    /// </summary>
     public EditTransaction? Transaction { get; init; }
 
-    /// <summary>
-    /// Whether all operations succeeded.
-    /// </summary>
     public bool AllOperationsSucceeded { get; init; }
 
-    /// <summary>
-    /// Protocol that initiated the batch edit.
-    /// </summary>
     public string? Protocol { get; init; }
 
-    /// <summary>
-    /// Protocol-specific metadata for response formatting.
-    /// </summary>
     public IDictionary<string, object>? Metadata { get; init; }
 
-    /// <summary>
-    /// Error message if execution failed.
-    /// </summary>
     public string? ErrorMessage { get; init; }
 
-    /// <summary>
-    /// Creates a successful batch edit result.
-    /// </summary>
-    /// <param name="results">Edit results.</param>
-    /// <param name="transaction">Edit transaction.</param>
-    /// <param name="allSucceeded">Whether all operations succeeded.</param>
-    /// <param name="protocol">Source protocol.</param>
-    /// <param name="metadata">Protocol metadata.</param>
-    /// <returns>Successful result.</returns>
     public static UnifiedBatchEditResult Success(
         ImmutableArray<FeatureEditResult> results,
         EditTransaction transaction,
@@ -152,11 +76,6 @@ public sealed record UnifiedBatchEditResult
             Metadata = metadata
         };
 
-    /// <summary>
-    /// Creates a failed batch edit result.
-    /// </summary>
-    /// <param name="errorMessage">Error message.</param>
-    /// <returns>Failed result.</returns>
     public static UnifiedBatchEditResult Failure(string errorMessage)
         => new() { IsSuccess = false, ErrorMessage = errorMessage };
 }

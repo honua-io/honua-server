@@ -5,11 +5,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Core.Features.Reporting.Services;
 
-/// <summary>
-/// Source-generated structured log methods for the analysis reporting feature.
-/// Event ID range 8230-8239 — placed after the spec-grounding range
-/// (8220-8224) so dashboards can subscribe without colliding with grounding.
-/// </summary>
+// These event ids sit after the grounding range so a dashboard can subscribe without colliding with grounding.
 internal static partial class AnalysisReportLog
 {
     [LoggerMessage(8230, LogLevel.Warning,

@@ -9,15 +9,8 @@ using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Core.Features.Tiles;
 
-/// <summary>
-/// Validates operator-defined custom tile matrix sets at startup. Rejects duplicate or
-/// reserved-id collisions, non-monotonic scale denominators, non-positive matrix dimensions,
-/// invalid SRIDs, and malformed top-left corners so a misconfigured gridset fails fast instead
-/// of producing inconsistent capabilities.
-/// </summary>
 public sealed class TileMatrixSetOptionsValidator : OptionsValidator<TileMatrixSetDefinitionOptions>
 {
-    /// <inheritdoc />
     protected override void ValidateOptions(TileMatrixSetDefinitionOptions options, List<string> failures)
     {
         if (options.Custom is null || options.Custom.Count == 0)

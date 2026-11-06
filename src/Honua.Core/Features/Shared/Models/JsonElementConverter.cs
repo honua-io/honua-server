@@ -5,14 +5,8 @@ using System.Text.Json;
 
 namespace Honua.Core.Features.Shared.Models;
 
-/// <summary>
-/// Helpers for converting <see cref="JsonElement"/> values into CLR objects.
-/// </summary>
 public static class JsonElementConverter
 {
-    /// <summary>
-    /// Converts a <see cref="JsonElement"/> into a CLR object, expanding arrays and objects recursively.
-    /// </summary>
     public static object? ConvertToObject(JsonElement element)
     {
         return element.ValueKind switch
@@ -31,10 +25,6 @@ public static class JsonElementConverter
         };
     }
 
-    /// <summary>
-    /// Converts a <see cref="JsonElement"/> into a CLR scalar when possible.
-    /// Non-scalar values are returned as the original element.
-    /// </summary>
     public static object? ConvertToScalar(JsonElement element)
     {
         return element.ValueKind switch

@@ -5,26 +5,14 @@ using Honua.Core.Features.Infrastructure.Validation;
 
 namespace Honua.Core.Configuration;
 
-/// <summary>
-/// Base class for options validation using data annotations.
-/// </summary>
-/// <typeparam name="T">The options type to validate</typeparam>
 public abstract class OptionsValidator<
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] T> : IValidateOptions<T>
     where T : class
 {
-    /// <summary>
-    /// Performs custom validation for an options instance after data annotation validation.
-    /// </summary>
-    /// <param name="options">The options instance to validate.</param>
-    /// <param name="failures">The mutable collection of validation failures.</param>
     protected virtual void ValidateOptions(T options, List<string> failures)
     {
     }
 
-    /// <summary>
-    /// Validates a nested object using its data annotation attributes.
-    /// </summary>
     protected static void ValidateDataAnnotations<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TValue>(
         TValue? value,
@@ -49,11 +37,6 @@ public abstract class OptionsValidator<
         }
     }
 
-    /// <summary>
-    /// Validates an outbound HTTPS URL via <see cref="OutboundHttpUrlValidator.ValidateConfiguration(string)"/>,
-    /// which performs the same DNS-aware reservation checks as the runtime path so configuration-time
-    /// validation does not silently accept hostnames that the runtime would later reject.
-    /// </summary>
     protected static void ValidateOutboundHttpUrl(string? url, string propertyName, List<string> failures)
     {
         if (string.IsNullOrWhiteSpace(url))
@@ -69,9 +52,6 @@ public abstract class OptionsValidator<
         }
     }
 
-    /// <summary>
-    /// Validates a file size is within an inclusive range.
-    /// </summary>
     protected static void ValidateFileSize(long value, long min, long max, string propertyName, List<string> failures)
     {
         if (value < min || value > max)
@@ -80,9 +60,6 @@ public abstract class OptionsValidator<
         }
     }
 
-    /// <summary>
-    /// Validates that a smaller bound does not exceed a larger bound.
-    /// </summary>
     protected static void ValidateLogicalOrder<TValue>(TValue smaller, TValue larger, string smallerName, string largerName, List<string> failures)
         where TValue : IComparable<TValue>
     {
@@ -92,7 +69,6 @@ public abstract class OptionsValidator<
         }
     }
 
-    /// <inheritdoc />
     public ValidateOptionsResult Validate(string? name, T options)
     {
         ArgumentNullException.ThrowIfNull(options);

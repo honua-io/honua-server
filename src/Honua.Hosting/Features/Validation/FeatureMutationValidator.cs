@@ -5,6 +5,7 @@ using System.Buffers.Binary;
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Text.Json;
+using Honua.Core.Features.Edit;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -405,8 +406,7 @@ internal static class MetadataV2AttributeValidation
             // On insert this validator still accepts supplied values. GeoServices
             // applyEdits drops those client values and stamps server-owned GlobalID
             // and editor-tracking fields before validation (#6134).
-            if (isUpdate && (!field.Editable ||
-                field.Name.Equals(resource.Editing?.GlobalIdField, StringComparison.OrdinalIgnoreCase)))
+            if (isUpdate && AttributeMutationPolicy.IsReadOnlyOnUpdate(resource, field))
             {
                 errors.Add($"Field '{field.Name}' is not editable.");
                 continue;

@@ -162,6 +162,43 @@ def markdown_outside_fences(text):
     return "".join(lines)
 
 
+def link_destination(raw):
+    """Link destination without an optional title or angle brackets."""
+    target = raw.strip()
+    if target.startswith("<"):
+        end = target.find(">")
+        if end != -1:
+            return target[1:end].strip()
+    if not target:
+        return ""
+    return target.split(None, 1)[0]
+
+
+def link_targets(text):
+    """Markdown link targets outside fenced code, without a title suffix."""
+    for raw in LINK_RE.findall(markdown_outside_fences(text)):
+        target = link_destination(raw)
+        if target:
+            yield target
+
+
+def resolve_repo_path(base_dir, path_part, repo_root):
+    """Resolve a Markdown path. A leading slash is the repository root."""
+    if os.path.isabs(path_part):
+        return os.path.normpath(os.path.join(repo_root, path_part.lstrip("/")))
+    return os.path.normpath(os.path.join(base_dir, path_part))
+
+
+def inside_repo(candidate, repo_root):
+    """True when the resolved path is the repo root or a file inside it."""
+    root = os.path.realpath(repo_root)
+    try:
+        resolved = os.path.realpath(candidate)
+        return os.path.commonpath([root, resolved]) == root
+    except ValueError:
+        return False
+
+
 def iter_md_files(roots):
     for root in roots:
         if os.path.isfile(root):
@@ -315,66 +352,77 @@ def scan_for_docs_urls(repo_root, scan):
     return found
 
 
+class RelativeLinkReport:
+    def __init__(self):
+        self.errors = []
+        self.warnings = []
+        self.matched = set()
+        self.checked = 0
+
+    def record(self, key, detail, allowlist_entries):
+        if key in allowlist_entries:
+            self.matched.add(key)
+            self.warnings.append(f"allowlisted: {detail}")
+            return
+        self.errors.append(detail)
+
+
 def check_relative_links(docs_root, repo_root, allowlist_entries):
     """Port of the geospatial-mcp relative-link/anchor check, with the ratchet."""
+    return _relative_links(docs_root, repo_root, allowlist_entries, os.path.exists)
+
+
+def check_relative_files(docs_root, repo_root, allowlist_entries):
+    """Relative links that must name a regular file. A directory is not one."""
+    return _relative_links(docs_root, repo_root, allowlist_entries, os.path.isfile)
+
+
+def _relative_links(docs_root, repo_root, allowlist_entries, present):
     anchor_cache = {}
-    errors = []
-    warnings = []
-    matched_allowlist = set()
-    checked = 0
+    report = RelativeLinkReport()
 
     for md in iter_md_files([docs_root]):
         source = rel(md, repo_root)
         base_dir = os.path.dirname(md)
         with open(md, "r", encoding="utf-8") as fh:
             text = fh.read()
-        for raw in LINK_RE.findall(markdown_outside_fences(text)):
-            target = raw.strip()
-            # Drop an optional link title:  [t](path "title")
-            if not target.startswith("#") and " " in target:
-                target = target.split(" ", 1)[0]
-            if not target or target.startswith(SKIP_PREFIXES):
+        for target in link_targets(text):
+            if target.startswith(SKIP_PREFIXES):
                 continue
 
             path_part, _, fragment = target.partition("#")
             path_part = path_part.split("?", 1)[0]
-
             key = (source, target)
 
             if path_part == "":
                 resolved = md  # same-file anchor
             else:
-                resolved = os.path.normpath(os.path.join(base_dir, path_part))
-                if not os.path.exists(resolved):
-                    detail = f"{source} -> {target} (file not found)"
-                    if key in allowlist_entries:
-                        matched_allowlist.add(key)
-                        warnings.append(f"allowlisted: {detail}")
-                    else:
-                        errors.append(detail)
+                resolved = resolve_repo_path(base_dir, path_part, repo_root)
+                if not inside_repo(resolved, repo_root):
+                    report.record(key, f"{source} -> {target} (escapes the repository)", allowlist_entries)
+                    continue
+                if not present(resolved):
+                    report.record(key, f"{source} -> {target} (file not found)", allowlist_entries)
                     continue
 
-            checked += 1
+            report.checked += 1
             if fragment and resolved.endswith(".md"):
                 if resolved not in anchor_cache:
                     anchor_cache[resolved] = heading_anchors(resolved)
                 if fragment not in anchor_cache[resolved]:
-                    detail = (f"{source} -> {target} (anchor '#{fragment}' not a "
-                              f"heading in {rel(resolved, repo_root)})")
-                    if key in allowlist_entries:
-                        matched_allowlist.add(key)
-                        warnings.append(f"allowlisted: {detail}")
-                    else:
-                        errors.append(detail)
+                    report.record(
+                        key,
+                        f"{source} -> {target} (anchor '#{fragment}' not a "
+                        f"heading in {rel(resolved, repo_root)})",
+                        allowlist_entries)
 
-    stale = sorted(set(allowlist_entries) - matched_allowlist)
-    for source, target in stale:
-        errors.append(
+    for source, target in sorted(set(allowlist_entries) - report.matched):
+        report.errors.append(
             f"stale rot-allowlist entry: {source} -> {target} now resolves (or "
             f"the link is gone). Delete it from the allowlist; this list only "
             f"shrinks.")
 
-    return checked, errors, warnings
+    return report.checked, report.errors, report.warnings
 
 
 def check_manifest(manifest, repo_root, docs_root, redirects):

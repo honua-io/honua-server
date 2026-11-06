@@ -272,10 +272,7 @@ internal sealed partial class ODataStreamingQueryHandler(
 
                 var baseUrl = ODataUtilityService.GetBaseUrl(context.Request);
                 var result = await _querySearchService.HandleApplyAsync(
-                    resolvedLayerId.Value,
-                    apply,
-                    filter,
-                    baseUrl,
+                    new(resolvedLayerId.Value, apply, filter, baseUrl, context),
                     effectiveToken);
                 if (!ODataUtilityService.ShouldIncludeContext(context.Request, format))
                 {

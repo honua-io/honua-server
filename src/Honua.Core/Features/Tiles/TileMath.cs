@@ -6,25 +6,12 @@ using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Core.Features.Tiles;
 
-/// <summary>
-/// Utility class for tile coordinate and bounds calculations
-/// </summary>
 public static class TileMath
 {
     private const double WebMercatorExtent = SpatialConstants.WebMercatorExtent;
 
-    /// <summary>
-    /// Maximum tile zoom level supported by core tile coordinate validation.
-    /// </summary>
     public const int MaxSupportedZoomLevel = 24;
 
-    /// <summary>
-    /// Gets the bounding box for a tile in Web Mercator coordinates (EPSG:3857)
-    /// </summary>
-    /// <param name="x">Tile X coordinate</param>
-    /// <param name="y">Tile Y coordinate</param>
-    /// <param name="z">Zoom level</param>
-    /// <returns>Bounding box as (xmin, ymin, xmax, ymax)</returns>
     public static TileBounds GetTileBounds(int x, int y, int z)
     {
         var tileSize = 2.0 * WebMercatorExtent / Math.Pow(2, z);
@@ -36,29 +23,12 @@ public static class TileMath
         return new TileBounds(xMin, yMin, xMax, yMax);
     }
 
-    /// <summary>
-    /// Gets the bounding box for a tile using an explicit <see cref="GridGeometry"/> (the grid
-    /// origin, tile pixel size, and per-level cell size). This is the gridset-aware generalization
-    /// of <see cref="GetTileBounds(int, int, int)"/> / <see cref="GetTileBoundsGeographic(int, int, int)"/>
-    /// used by operator-defined custom tile matrix sets. Returns <see langword="null"/> when the
-    /// requested level is not part of the gridset.
-    /// </summary>
-    /// <param name="geometry">The grid geometry.</param>
-    /// <param name="x">Tile X (column) coordinate.</param>
-    /// <param name="y">Tile Y (row) coordinate.</param>
-    /// <param name="z">Tile matrix (zoom) level.</param>
-    /// <returns>Bounding box as (xmin, ymin, xmax, ymax) in the gridset CRS, or <see langword="null"/>.</returns>
     public static TileBounds? GetTileBounds(GridGeometry geometry, int x, int y, int z)
     {
         ArgumentNullException.ThrowIfNull(geometry);
         return geometry.GetTileBounds(x, y, z);
     }
 
-    /// <summary>
-    /// Calculates geometry simplification tolerance based on zoom level
-    /// </summary>
-    /// <param name="zoom">Zoom level</param>
-    /// <returns>Tolerance in meters for geometry simplification</returns>
     public static double GetSimplificationTolerance(int zoom)
     {
         // More aggressive simplification at lower zoom levels
@@ -72,15 +42,6 @@ public static class TileMath
         };
     }
 
-    /// <summary>
-    /// Gets the bounding box for a tile in geographic coordinates (EPSG:4326)
-    /// using the WorldCRS84Quad tile matrix set.
-    /// At zoom 0 the world is covered by 2 tiles wide x 1 tile tall.
-    /// </summary>
-    /// <param name="x">Tile X coordinate</param>
-    /// <param name="y">Tile Y coordinate</param>
-    /// <param name="z">Zoom level</param>
-    /// <returns>Bounding box as (xmin, ymin, xmax, ymax) in degrees</returns>
     public static TileBounds GetTileBoundsGeographic(int x, int y, int z)
     {
         // WorldCRS84Quad: at zoom 0, 2 cols x 1 row covering the full globe
@@ -97,13 +58,6 @@ public static class TileMath
         return new TileBounds(xMin, yMin, xMax, yMax);
     }
 
-    /// <summary>
-    /// Validates tile coordinates are within valid ranges
-    /// </summary>
-    /// <param name="x">Tile X coordinate</param>
-    /// <param name="y">Tile Y coordinate</param>
-    /// <param name="z">Zoom level</param>
-    /// <returns>True if coordinates are valid</returns>
     public static bool ValidateTileCoordinates(int x, int y, int z)
     {
         if (z is < 0 or > MaxSupportedZoomLevel)
@@ -113,14 +67,6 @@ public static class TileMath
         return x >= 0 && x < maxTile && y >= 0 && y < maxTile;
     }
 
-    /// <summary>
-    /// Validates tile coordinates for the WorldCRS84Quad tile matrix set.
-    /// At zoom 0 the grid is 2 columns x 1 row.
-    /// </summary>
-    /// <param name="x">Tile X coordinate</param>
-    /// <param name="y">Tile Y coordinate</param>
-    /// <param name="z">Zoom level</param>
-    /// <returns>True if coordinates are valid for WorldCRS84Quad</returns>
     public static bool ValidateTileCoordinatesGeographic(int x, int y, int z)
     {
         if (z is < 0 or > MaxSupportedZoomLevel)
@@ -132,11 +78,4 @@ public static class TileMath
     }
 }
 
-/// <summary>
-/// Represents a tile bounding box in map coordinates.
-/// </summary>
-/// <param name="XMin">Minimum X coordinate</param>
-/// <param name="YMin">Minimum Y coordinate</param>
-/// <param name="XMax">Maximum X coordinate</param>
-/// <param name="YMax">Maximum Y coordinate</param>
 public record TileBounds(double XMin, double YMin, double XMax, double YMax);

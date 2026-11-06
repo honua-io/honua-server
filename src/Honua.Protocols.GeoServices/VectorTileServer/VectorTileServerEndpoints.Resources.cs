@@ -198,7 +198,8 @@ internal static partial class VectorTileServerEndpoints
         CancellationToken cancellationToken)
     {
         (MetadataV2Publication Publication, MetadataV2Resource Resource)? best = null;
-        foreach (var publication in snapshot.Index.PublicationsByService[service.Metadata.Id])
+        foreach (var publication in TenantScopeHelpers.FilterVisiblePublications(
+                     context, snapshot, snapshot.Index.PublicationsByService[service.Metadata.Id]))
         {
             var resource = snapshot.ResolveResource(publication);
             if (!snapshot.IsRoutable(publication))

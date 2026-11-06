@@ -48,22 +48,13 @@ internal static partial class MapServerEndpoints
 
         try
         {
-            var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-            var serviceResult = await ServiceResourceValidationHelpers.ValidateServiceV2Async(
-                resourceValidator,
-                serviceId,
-                ServiceProtocols.MapServer,
-                context,
-                cancellationToken: cancellationToken);
-            if (!serviceResult.IsValid)
+            var (selection, publicationSelectionError) = await ResolveMapServerPublicationSelectionAsync(
+                context, serviceId, cancellationToken).ConfigureAwait(false);
+            if (publicationSelectionError is not null)
             {
-                return serviceResult.ErrorResult!;
+                return publicationSelectionError;
             }
-
-            var service = serviceResult.Service!;
-            var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
-            var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            var publishedLayers = ResolveMapServerMetadataLayers(snapshot, service);
+            var (service, snapshot, publishedLayers) = selection!;
 
             var (visibleLayers, accessError) = await AccessPolicyHelpers.FilterAccessibleResourcesAsync(
                 context,
@@ -164,22 +155,13 @@ internal static partial class MapServerEndpoints
 
         try
         {
-            var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-            var serviceResult = await ServiceResourceValidationHelpers.ValidateServiceV2Async(
-                resourceValidator,
-                serviceId,
-                ServiceProtocols.MapServer,
-                context,
-                cancellationToken: cancellationToken);
-            if (!serviceResult.IsValid)
+            var (selection, publicationSelectionError) = await ResolveMapServerPublicationSelectionAsync(
+                context, serviceId, cancellationToken).ConfigureAwait(false);
+            if (publicationSelectionError is not null)
             {
-                return serviceResult.ErrorResult!;
+                return publicationSelectionError;
             }
-
-            var service = serviceResult.Service!;
-            var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
-            var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            var publishedLayers = ResolveMapServerMetadataLayers(snapshot, service);
+            var (service, _, publishedLayers) = selection!;
 
             if (!TryResolveQueryDomainsLayers(values, publishedLayers, out var selectedLayers, out var selectionError))
             {

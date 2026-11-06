@@ -3,33 +3,12 @@
 
 namespace Honua.Core.Features.Collaboration.FeatureLocks;
 
-/// <summary>
-/// Identifies a single feature targeted by a collaborative editing lock.
-/// </summary>
-/// <param name="ServiceName">The name of the service that owns the feature.</param>
-/// <param name="LayerId">The identifier of the layer that contains the feature.</param>
-/// <param name="FeatureId">The provider-specific identifier of the feature.</param>
 public readonly record struct FeatureRef(
     string ServiceName,
     int LayerId,
     string FeatureId)
 {
-    /// <summary>
-    /// Builds a lease key in the one canonical form both the claim endpoints and every
-    /// write path use.
-    /// </summary>
-    /// <param name="serviceName">The routed service name, in whatever casing the caller used.</param>
-    /// <param name="layerId">The published layer id.</param>
-    /// <param name="featureId">The feature's OBJECTID, in whatever form the caller used.</param>
-    /// <returns>The canonical <see cref="FeatureRef"/>.</returns>
-    /// <remarks>
-    /// A <see cref="FeatureRef"/> is a dictionary key compared with ordinal string
-    /// equality, but the identifiers reaching it are not ordinal-stable: service routing
-    /// resolves names case-insensitively, and an object id may arrive as <c>001</c> from a
-    /// URL and as <c>1</c> from the writer. Without this normalisation a lease claimed as
-    /// <c>("TEST", 0, "001")</c> would silently fail to block a write evaluated as
-    /// <c>("test", 0, "1")</c> — enforcement would look correct and do nothing.
-    /// </remarks>
+    // The lease key normalizes service name and object id, or a claim and a write of the same feature compare unequal and the lock does nothing.
     public static FeatureRef Canonical(string serviceName, int layerId, string featureId)
     {
         ArgumentNullException.ThrowIfNull(serviceName);
@@ -50,34 +29,11 @@ public readonly record struct FeatureRef(
             normalizedFeatureId);
     }
 
-    /// <summary>
-    /// Builds a lease key for a numeric feature id.
-    /// </summary>
-    /// <param name="serviceName">The routed service name.</param>
-    /// <param name="layerId">The published layer id.</param>
-    /// <param name="objectId">The feature's OBJECTID.</param>
-    /// <returns>The canonical <see cref="FeatureRef"/>.</returns>
     public static FeatureRef Canonical(string serviceName, int layerId, long objectId)
         => Canonical(serviceName, layerId, objectId.ToString(System.Globalization.CultureInfo.InvariantCulture));
 }
 
-/// <summary>
-/// Describes the principal that holds or is requesting a feature lock.
-/// </summary>
-/// <param name="HolderId">The stable identifier of the lock holder.</param>
-/// <param name="DisplayName">An optional human-readable name for the holder.</param>
-/// <param name="SessionId">An optional editing session identifier for the holder.</param>
-/// <param name="TenantId">An optional tenant identifier scoping the holder.</param>
-/// <param name="PrincipalName">
-/// The authenticated principal the lease was claimed under. <b>Server-stamped, never
-/// client-supplied</b> — the lock endpoints overwrite whatever the request body carried
-/// with the authenticated identity. This is what makes lease ownership unforgeable: every
-/// other field on this record comes from the caller, so a second editor could otherwise
-/// copy the holder's <see cref="HolderId"/> onto its own write and be treated as the owner.
-/// <see langword="null"/> only for leases created outside an authenticated request (in
-/// tests, or by an embedding host calling <c>IFeatureLockService</c> directly), which are
-/// matched on the caller-supplied fields alone.
-/// </param>
+// The lease principal is server-stamped and is never taken from the client.
 public sealed record LockHolder(
     string HolderId,
     string? DisplayName = null,
@@ -85,15 +41,6 @@ public sealed record LockHolder(
     string? TenantId = null,
     string? PrincipalName = null);
 
-/// <summary>
-/// Represents an active lease on a feature lock, including its lifetime window.
-/// </summary>
-/// <param name="LockId">The unique identifier of the lock lease.</param>
-/// <param name="Feature">The feature protected by the lease.</param>
-/// <param name="Holder">The principal that holds the lease.</param>
-/// <param name="AcquiredAt">The instant the lease was first acquired.</param>
-/// <param name="ExpiresAt">The instant the lease expires unless renewed.</param>
-/// <param name="RenewedAt">The instant the lease was most recently renewed, if any.</param>
 public sealed record FeatureLockLease(
     string LockId,
     FeatureRef Feature,
@@ -102,39 +49,17 @@ public sealed record FeatureLockLease(
     DateTimeOffset ExpiresAt,
     DateTimeOffset? RenewedAt = null);
 
-/// <summary>
-/// Captures the authorization context used when evaluating feature lock operations.
-/// </summary>
-/// <param name="IsAuthorized">Whether the caller is authorized to access the feature.</param>
-/// <param name="CanWrite">Whether the caller is permitted to perform write operations.</param>
 public readonly record struct FeatureLockAccessContext(
     bool IsAuthorized,
     bool CanWrite)
 {
-    /// <summary>
-    /// Gets a context that grants authorized write access.
-    /// </summary>
     public static FeatureLockAccessContext AuthorizedWrite => new(IsAuthorized: true, CanWrite: true);
 
-    /// <summary>
-    /// Gets a context that denies all access.
-    /// </summary>
     public static FeatureLockAccessContext Unauthorized => new(IsAuthorized: false, CanWrite: false);
 
-    /// <summary>
-    /// Gets a context that grants authorized read-only access.
-    /// </summary>
     public static FeatureLockAccessContext ReadOnly => new(IsAuthorized: true, CanWrite: false);
 }
 
-/// <summary>
-/// Describes an error returned when a feature is already locked by another editor.
-/// </summary>
-/// <param name="Code">A stable machine-readable error code.</param>
-/// <param name="Message">A human-readable error message.</param>
-/// <param name="Feature">The feature that is locked.</param>
-/// <param name="Holder">The principal that currently holds the lock.</param>
-/// <param name="ExpiresAt">The instant the conflicting lock expires.</param>
 public sealed record FeatureLockHeldError(
     string Code,
     string Message,
@@ -142,11 +67,6 @@ public sealed record FeatureLockHeldError(
     LockHolder Holder,
     DateTimeOffset ExpiresAt)
 {
-    /// <summary>
-    /// Creates a <see cref="FeatureLockHeldError"/> from an existing lease.
-    /// </summary>
-    /// <param name="lease">The lease that caused the conflict.</param>
-    /// <returns>A populated <see cref="FeatureLockHeldError"/>.</returns>
     public static FeatureLockHeldError FromLease(FeatureLockLease lease)
         => new(
             "feature-lock-held",
@@ -156,15 +76,6 @@ public sealed record FeatureLockHeldError(
             lease.ExpiresAt);
 }
 
-/// <summary>
-/// Describes a mismatch between the feature version a client edited against and
-/// the version currently stored on the server (optimistic-concurrency failure).
-/// </summary>
-/// <param name="Code">A stable machine-readable error code.</param>
-/// <param name="Message">A human-readable error message.</param>
-/// <param name="Feature">The feature whose version is stale.</param>
-/// <param name="ExpectedVersion">The version token supplied by the client.</param>
-/// <param name="CurrentVersion">The version token currently stored on the server.</param>
 public sealed record FeatureVersionConflictError(
     string Code,
     string Message,
@@ -172,18 +83,8 @@ public sealed record FeatureVersionConflictError(
     string? ExpectedVersion,
     string CurrentVersion)
 {
-    /// <summary>
-    /// The stable code emitted for optimistic-concurrency (stale-version) conflicts.
-    /// </summary>
     public const string ConflictCode = "feature-version-conflict";
 
-    /// <summary>
-    /// Creates a <see cref="FeatureVersionConflictError"/> for a stale edit.
-    /// </summary>
-    /// <param name="feature">The feature whose version is stale.</param>
-    /// <param name="expectedVersion">The version token supplied by the client.</param>
-    /// <param name="currentVersion">The version token currently stored on the server.</param>
-    /// <returns>A populated <see cref="FeatureVersionConflictError"/>.</returns>
     public static FeatureVersionConflictError Create(
         FeatureRef feature,
         string? expectedVersion,
@@ -196,18 +97,6 @@ public sealed record FeatureVersionConflictError(
             currentVersion);
 }
 
-/// <summary>
-/// Represents the response returned when a feature edit conflicts with an active
-/// lock or with the version currently stored on the server.
-/// </summary>
-/// <param name="Code">A stable machine-readable conflict code.</param>
-/// <param name="Reason">The underlying reason for the conflict.</param>
-/// <param name="Message">A human-readable conflict message.</param>
-/// <param name="Operation">The edit operation that was attempted.</param>
-/// <param name="Feature">The feature that could not be edited.</param>
-/// <param name="Lock">The lock error that triggered the conflict, if any.</param>
-/// <param name="Version">The version error that triggered the conflict, if any.</param>
-/// <param name="OccurredAt">The instant the conflict occurred.</param>
 public sealed record FeatureEditConflictResponse(
     string Code,
     string Reason,
@@ -218,18 +107,8 @@ public sealed record FeatureEditConflictResponse(
     FeatureVersionConflictError? Version,
     DateTimeOffset OccurredAt)
 {
-    /// <summary>
-    /// The stable top-level conflict code shared by all feature-edit conflicts.
-    /// </summary>
     public const string ConflictCode = "edit-conflict";
 
-    /// <summary>
-    /// Creates a conflict response from a held-lock error.
-    /// </summary>
-    /// <param name="operation">The edit operation that was attempted.</param>
-    /// <param name="lockError">The held-lock error that caused the conflict.</param>
-    /// <param name="occurredAt">The instant the conflict occurred.</param>
-    /// <returns>A populated <see cref="FeatureEditConflictResponse"/>.</returns>
     public static FeatureEditConflictResponse FromLockHeld(
         string operation,
         FeatureLockHeldError lockError,
@@ -244,13 +123,6 @@ public sealed record FeatureEditConflictResponse(
             Version: null,
             occurredAt);
 
-    /// <summary>
-    /// Creates a conflict response from a stale-version (optimistic concurrency) error.
-    /// </summary>
-    /// <param name="operation">The edit operation that was attempted.</param>
-    /// <param name="versionError">The version error that caused the conflict.</param>
-    /// <param name="occurredAt">The instant the conflict occurred.</param>
-    /// <returns>A populated <see cref="FeatureEditConflictResponse"/>.</returns>
     public static FeatureEditConflictResponse FromVersionConflict(
         string operation,
         FeatureVersionConflictError versionError,
@@ -266,106 +138,57 @@ public sealed record FeatureEditConflictResponse(
             occurredAt);
 }
 
-/// <summary>
-/// Describes the outcome of attempting to claim a feature lock.
-/// </summary>
 public enum FeatureLockClaimStatus
 {
-    /// <summary>A new lock was successfully claimed.</summary>
     Claimed,
 
-    /// <summary>An existing lock held by the caller was renewed.</summary>
     Renewed,
 
-    /// <summary>The feature is locked by another holder.</summary>
     HeldByOther,
 
-    /// <summary>The claim was denied by authorization or policy.</summary>
     Denied
 }
 
-/// <summary>
-/// Represents the response returned when claiming a feature lock.
-/// </summary>
-/// <param name="Status">The outcome of the claim attempt.</param>
-/// <param name="Lease">The resulting lease when the claim succeeds.</param>
-/// <param name="Error">The held-lock error when the feature is locked by another holder.</param>
-/// <param name="DenialReason">The reason the claim was denied, if applicable.</param>
 public sealed record FeatureLockClaimResponse(
     FeatureLockClaimStatus Status,
     FeatureLockLease? Lease = null,
     FeatureLockHeldError? Error = null,
     string? DenialReason = null)
 {
-    /// <summary>
-    /// Gets a value indicating whether the claim resulted in an active lease.
-    /// </summary>
     public bool IsSuccess => Status is FeatureLockClaimStatus.Claimed or FeatureLockClaimStatus.Renewed;
 }
 
-/// <summary>
-/// Describes the outcome of attempting to renew a feature lock.
-/// </summary>
 public enum FeatureLockRenewStatus
 {
-    /// <summary>The lock was successfully renewed.</summary>
     Renewed,
 
-    /// <summary>No matching lock was found to renew.</summary>
     NotFound,
 
-    /// <summary>The lock is held by another holder.</summary>
     HeldByOther,
 
-    /// <summary>The renewal was denied by authorization or policy.</summary>
     Denied
 }
 
-/// <summary>
-/// Represents the response returned when renewing a feature lock.
-/// </summary>
-/// <param name="Status">The outcome of the renewal attempt.</param>
-/// <param name="Lease">The renewed lease when the renewal succeeds.</param>
-/// <param name="Error">The held-lock error when the feature is locked by another holder.</param>
-/// <param name="DenialReason">The reason the renewal was denied, if applicable.</param>
 public sealed record FeatureLockRenewResponse(
     FeatureLockRenewStatus Status,
     FeatureLockLease? Lease = null,
     FeatureLockHeldError? Error = null,
     string? DenialReason = null)
 {
-    /// <summary>
-    /// Gets a value indicating whether the renewal succeeded.
-    /// </summary>
     public bool IsSuccess => Status == FeatureLockRenewStatus.Renewed;
 }
 
-/// <summary>
-/// Describes the outcome of attempting to release a feature lock.
-/// </summary>
 public enum FeatureLockReleaseStatus
 {
-    /// <summary>The lock was successfully released.</summary>
     Released,
 
-    /// <summary>No matching lock was found to release.</summary>
     NotFound,
 
-    /// <summary>The lock is held by another holder.</summary>
     HeldByOther,
 
-    /// <summary>The release was denied by authorization or policy.</summary>
     Denied
 }
 
-/// <summary>
-/// Represents the response returned when releasing a feature lock.
-/// </summary>
-/// <param name="Status">The outcome of the release attempt.</param>
-/// <param name="Feature">The feature targeted by the release.</param>
-/// <param name="ReleasedLease">The lease that was released, when applicable.</param>
-/// <param name="Error">The held-lock error when the feature is locked by another holder.</param>
-/// <param name="DenialReason">The reason the release was denied, if applicable.</param>
 public sealed record FeatureLockReleaseResponse(
     FeatureLockReleaseStatus Status,
     FeatureRef Feature,
@@ -373,8 +196,5 @@ public sealed record FeatureLockReleaseResponse(
     FeatureLockHeldError? Error = null,
     string? DenialReason = null)
 {
-    /// <summary>
-    /// Gets a value indicating whether the release succeeded.
-    /// </summary>
     public bool IsSuccess => Status == FeatureLockReleaseStatus.Released;
 }

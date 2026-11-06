@@ -4269,6 +4269,7 @@
       "endpointContains": [],
       "operationKeys": [
         "Mcp::initialize",
+        "Mcp::server/discover",
         "Mcp::tools/list",
         "Mcp::tools/call",
         "Mcp::resources/list",
@@ -4304,7 +4305,7 @@
         },
         {
           "proofClass": "scenario-depth",
-          "proofMechanism": "JSON-RPC framing, auth, tool delegation, stub envelopes, resource reads, and error mapping are covered through unit and integration tests against the operator surface",
+          "proofMechanism": "Unit and HTTP contracts cover JSON-RPC framing, authorization, tool delegation, resource reads, error mapping, and 2026-07-28 discovery, request metadata/header validation, result/cache envelopes and bearer replay boundaries.",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "tests/dotnet/Honua.Ai.Tests/Source/McpEndpointIntegrationTests.cs",
@@ -4313,7 +4314,10 @@
             "tests/dotnet/Honua.Ai.UnitTests/Source/McpAuthorizationTests.cs",
             "tests/dotnet/Honua.Ai.UnitTests/Source/PlanAnalysisToolTests.cs",
             "tests/dotnet/Honua.Ai.UnitTests/Source/McpResourceSerializationTests.cs",
-            "tests/dotnet/Honua.Ai.UnitTests/Source/McpTaxonomyAlignmentTests.cs"
+            "tests/dotnet/Honua.Ai.UnitTests/Source/McpTaxonomyAlignmentTests.cs",
+            "tests/dotnet/Honua.Ai.Tests/Source/McpModernEndpointIntegrationTests.cs",
+            "tests/dotnet/Honua.Ai.Tests/Source/McpModernBearerAuthenticationTests.cs",
+            "tests/dotnet/Honua.Ai.UnitTests/Source/McpModernProtocolTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",

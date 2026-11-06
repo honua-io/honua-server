@@ -9,18 +9,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Core.Features.Compliance;
 
-/// <summary>
-/// Registers the compliance framework services: catalog, dependency gate, residency
-/// policy, encryption posture / key ring, evidence collector, renderers, and exporter.
-/// </summary>
-/// <remarks>
-/// Registration is idempotent — repeated calls are safe. The compliance services use
-/// scoped lifetimes where they depend on scoped dependencies (the audit log), and
-/// singletons elsewhere so the dashboard polling endpoints stay allocation-light.
-/// </remarks>
 public static class ServiceCollectionExtensions
 {
-    /// <summary>Add compliance framework services to the container.</summary>
     public static IServiceCollection AddCompliance(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);

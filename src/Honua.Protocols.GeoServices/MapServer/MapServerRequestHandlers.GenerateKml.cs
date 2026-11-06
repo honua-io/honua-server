@@ -106,7 +106,7 @@ internal static partial class MapServerEndpoints
             var service = serviceResult.Service!;
             var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            var publishedLayers = ResolveGenerateKmlPublishedLayers(snapshot, service);
+            var publishedLayers = ResolveGenerateKmlPublishedLayers(snapshot, service, context);
 
             var access = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
                 context,
@@ -334,10 +334,11 @@ internal static partial class MapServerEndpoints
 
     private static GenerateKmlLayerDescriptor[] ResolveGenerateKmlPublishedLayers(
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Service service)
+        MetadataV2Service service,
+        HttpContext context)
     {
         var descriptors = new List<GenerateKmlLayerDescriptor>();
-        foreach (var publication in MapServerPublicationResolver.ResolveLayerPublications(snapshot, service))
+        foreach (var publication in MapServerPublicationResolver.ResolveLayerPublications(snapshot, service, TenantScopeHelpers.ResolveRequestTenantId(context)))
         {
             if (publication.LayerIndex is not int publicLayerId)
             {

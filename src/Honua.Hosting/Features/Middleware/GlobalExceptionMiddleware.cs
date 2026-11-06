@@ -258,6 +258,16 @@ internal sealed class ExceptionCategorizer
         return _categoryCache.GetOrAdd(exceptionType, type => CreateCategory(type, exception));
     }
 
+    private static ExceptionCategory CreateResourceAccessDeniedCategory()
+        => new()
+        {
+            Type = ExceptionType.Authorization,
+            StatusCode = 403,
+            Title = "Forbidden",
+            Message = "The operation is not permitted for this resource.",
+            IsFastPath = true
+        };
+
     private static ExceptionCategory CreateCategory(Type exceptionType, Exception exception)
     {
         // Fast-path exceptions (common, lightweight processing)
@@ -295,6 +305,11 @@ internal sealed class ExceptionCategorizer
                 Message = "Resource not found",
                 IsFastPath = true
             };
+        }
+
+        if (typeof(ResourceAccessDeniedException).IsAssignableFrom(exceptionType))
+        {
+            return CreateResourceAccessDeniedCategory();
         }
 
         if (exceptionType == typeof(UnauthorizedAccessException))

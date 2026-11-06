@@ -5,13 +5,9 @@ using System.Diagnostics.CodeAnalysis;
 
 namespace Honua.Core.Features.Security;
 
-/// <summary>
-/// A request-supplied secret reference parsed with the whole-string <c>provider:identifier</c>
-/// grammar. Placeholders, embedded references and free-form text are not references.
-/// </summary>
+// Only a whole-string provider:identifier is a reference; a placeholder, an embedded reference, or free-form text is not.
 public readonly record struct RequestSecretReference
 {
-    /// <summary>The provider segment used for environment variables.</summary>
     public const string EnvironmentProvider = "env";
 
     private const int MaxLength = 512;
@@ -23,24 +19,14 @@ public readonly record struct RequestSecretReference
         Identifier = identifier;
     }
 
-    /// <summary>Lower-cased provider segment (for example <c>env</c>, <c>aws</c>, <c>azure</c>).</summary>
     public string Provider { get; }
 
-    /// <summary>Everything after the first colon, exactly as supplied.</summary>
     public string Identifier { get; }
 
-    /// <summary>Whether the reference names an environment variable.</summary>
     public bool IsEnvironment => string.Equals(Provider, EnvironmentProvider, StringComparison.Ordinal);
 
-    /// <summary>The reference with a normalized provider segment.</summary>
     public string Canonical => $"{Provider}:{Identifier}";
 
-    /// <summary>
-    /// Parses <paramref name="value"/> as a whole-string reference. Returns <see langword="false"/>
-    /// for blank input, surrounding or embedded whitespace, control characters, placeholder or
-    /// connection-string punctuation, an invalid provider segment, or an environment variable
-    /// identifier that is not a plain variable name.
-    /// </summary>
     public static bool TryParse([NotNullWhen(true)] string? value, out RequestSecretReference reference)
     {
         reference = default;

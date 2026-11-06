@@ -1,0 +1,32 @@
+{
+  "baseline": "800c0ec9277733433f90cd56e6e53f35bda1b11b",
+  "sourceRoots": [
+    "src"
+  ],
+  "inventoryPattern": "\\.Publications\\b|PublicationsBy\\w+|PublicationsFor\\w+|Resolve\\w*Publication|Find\\w*Publication",
+  "fileCount": 107,
+  "statusCounts": {
+    "non-serving": 17,
+    "enforced": 26,
+    "affected": 36,
+    "privileged-boundary": 24,
+    "binding-scoped": 1,
+    "resource-scoped": 3
+  },
+  "meaning": {
+    "enforced": "Inspected publication-sensitive serving path has a publication tenant check; source assessment only.",
+    "affected": "Supported omission or direct propagation from a supported omitted publication tenant check; pending fixes and regression evidence.",
+    "uncertain": "Caller authorization, non-serving role, or some enumerated paths remain unadjudicated; not an assertion of vulnerability.",
+    "non-serving": "Inspected graph/index/validation/storage helper does not project caller-facing publication output; this does not assess its callers.",
+    "privileged-boundary": "An authenticated admin/scoped-admin policy gates the operation; finer tenant-target semantics remain an explicit gap.",
+    "resource-scoped": "Inspected API intentionally authorizes a resource independently of publication presence; no publication-specific disclosure established. This is not an assertion that resource access hides all sibling publications.",
+    "binding-scoped": "Internal reader helper pins the already resolved storage binding; built-in provider source/policy cannot redirect through an alternate publication. Caller authorization and custom providers remain separate responsibilities."
+  },
+  "gaps": [
+    "Regex inventory does not establish semantic exhaustiveness or cover dynamically generated code.",
+    "No scanner/runtime assurance from CSO helper; start failed SNAPSHOT_RACE.",
+    "Rows refer to pinned baseline, not uncommitted repair worktrees.",
+    "Admin/storage graph enumeration alone is not classified as a confidentiality defect."
+  ],
+  "issue": "https://github.com/honua-io/honua-server/issues/6989"
+}

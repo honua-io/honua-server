@@ -1,11 +1,7 @@
 namespace Honua.Core.Configuration;
 
-/// <summary>
-/// Validates limits configuration beyond individual property annotations.
-/// </summary>
 public sealed class LimitsOptionsValidator : OptionsValidator<LimitsOptions>
 {
-    /// <inheritdoc />
     protected override void ValidateOptions(LimitsOptions options, List<string> failures)
     {
         ValidateDataAnnotations(options.Query, failures, "Query");

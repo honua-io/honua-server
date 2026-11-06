@@ -3,46 +3,18 @@
 
 namespace Honua.Core.Features.Capabilities;
 
-/// <summary>
-/// Stable, machine-readable reason codes returned by
-/// <see cref="ICapabilityRegistry.Resolve"/> / <see cref="CapabilityGateResolver"/>
-/// when a capability resolves <c>Enabled = false</c>. These are the registry-layer
-/// codes shared by every downstream gate (#2339 / T2 onward); the <c>/capabilities</c>
-/// manifest surface keeps its own richer availability codes and reuses the same
-/// string values where they overlap (for example <see cref="LicenseRequired"/>).
-/// </summary>
 public static class CapabilityReasonCodes
 {
-    /// <summary>No capability with the requested id is registered.</summary>
     public const string NotRegistered = "capability-not-registered";
 
-    /// <summary>The capability is declared as a known implementation gap.</summary>
     public const string NotImplemented = "capability-not-implemented";
 
-    /// <summary>
-    /// The capability is <see cref="CapabilityMaturity.Experimental"/> and neither the
-    /// per-capability nor the global experimental flag is enabled, so it is off by
-    /// default (#2339 / T2).
-    /// </summary>
     public const string ExperimentalDisabled = "experimental-disabled";
 
-    /// <summary>
-    /// The capability is implemented but its publishing surface is disabled by
-    /// the current host configuration.
-    /// </summary>
     public const string DisabledByConfiguration = "disabled-by-configuration";
 
-    /// <summary>
-    /// The capability's serving module was left out of the compiled protocol profile.
-    /// </summary>
     public const string ProtocolProfileExcluded = "protocol-profile-excluded";
 
-    /// <summary>
-    /// The active edition does not meet the capability's
-    /// <see cref="CapabilityDescriptor.MinimumEdition"/>. Mirrors the existing
-    /// license/entitlement reason the <c>/capabilities</c> manifest emits for a
-    /// wrong-edition capability, so an entitlement failure is never masked by the
-    /// experimental flag.
-    /// </summary>
+    // An edition failure uses the same reason as the capability manifest so the experimental flag cannot mask an entitlement failure.
     public const string LicenseRequired = "license-required";
 }

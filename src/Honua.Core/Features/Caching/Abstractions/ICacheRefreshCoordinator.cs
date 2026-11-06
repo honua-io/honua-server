@@ -3,85 +3,31 @@
 
 namespace Honua.Core.Features.Caching.Abstractions;
 
-/// <summary>
-/// Coordinates background cache refresh operations with per-key deduplication.
-/// </summary>
 public interface ICacheRefreshCoordinator
 {
-    /// <summary>
-    /// The current number of pending refresh operations (queued + in-flight).
-    /// </summary>
     int QueueDepth { get; }
 
-    /// <summary>
-    /// Total number of successful background refreshes since startup.
-    /// </summary>
     long SuccessCount { get; }
 
-    /// <summary>
-    /// Total number of failed background refreshes since startup.
-    /// </summary>
     long FailureCount { get; }
 
-    /// <summary>
-    /// Total number of background refreshes that completed but skipped write-back
-    /// because the key was invalidated while the refresh was in-flight.
-    /// </summary>
+    // A completed refresh skips write-back when the key was invalidated while the refresh was in flight.
     long SkippedCount { get; }
 
-    /// <summary>
-    /// Attempts to enqueue a background refresh for the given cache key.
-    /// Returns false if a refresh for this key is already pending (deduplication)
-    /// or if the key is still within a temporary retry backoff after a recent failure.
-    /// </summary>
-    /// <param name="key">Cache key being refreshed</param>
-    /// <param name="refreshCallback">Async callback that performs the actual refresh</param>
-    /// <returns>True if the refresh was enqueued, false if deduplicated</returns>
+    // Enqueue returns false when a refresh for the key is already pending or the key is in retry backoff.
     bool TryEnqueueRefresh(string key, Func<CancellationToken, Task> refreshCallback);
 
-    /// <summary>
-    /// Marks a cache key as explicitly invalidated while a refresh may be pending.
-    /// If a pending refresh for this key subsequently fails, stale-value restoration is skipped.
-    /// </summary>
-    /// <param name="key">Cache key that was invalidated</param>
     void NotifyInvalidation(string key);
 
-    /// <summary>
-    /// Returns true if the given key was explicitly invalidated while a refresh was pending.
-    /// </summary>
-    /// <param name="key">Cache key to check</param>
-    /// <returns>True if the key was invalidated after a refresh was enqueued</returns>
     bool WasInvalidated(string key);
 
-    /// <summary>
-    /// Atomically claims write-back rights for a completed refresh.
-    /// Returns true only if the key has not been invalidated since the refresh was enqueued.
-    /// The caller must call this immediately before the write-back to close the race window
-    /// between the invalidation check and the cache write.
-    /// </summary>
-    /// <param name="key">Cache key to claim</param>
-    /// <returns>True if the claim succeeded (safe to write), false if invalidated</returns>
+    // Claim write-back immediately before the cache write; it succeeds only if the key was not invalidated after enqueue.
     bool TryClaimWriteBack(string key);
 
-    /// <summary>
-    /// Asynchronous variant of <see cref="WasInvalidated"/>. Implementations backed by a
-    /// distributed store (Redis) should use this to avoid blocking a thread-pool thread.
-    /// The default implementation delegates synchronously to <see cref="WasInvalidated"/>.
-    /// </summary>
-    /// <param name="key">Cache key to check</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>True if the key was invalidated after a refresh was enqueued</returns>
     ValueTask<bool> WasInvalidatedAsync(string key, CancellationToken cancellationToken = default)
         => new(WasInvalidated(key));
 
-    /// <summary>
-    /// Asynchronous variant of <see cref="TryClaimWriteBack"/>. Implementations backed by a
-    /// distributed store (Redis) should use this to avoid blocking a thread-pool thread.
-    /// The default implementation delegates synchronously to <see cref="TryClaimWriteBack"/>.
-    /// </summary>
-    /// <param name="key">Cache key to claim</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>True if the claim succeeded (safe to write), false if invalidated</returns>
+    // A distributed claim must not block a thread; the default implementation calls the synchronous method.
     ValueTask<bool> TryClaimWriteBackAsync(string key, CancellationToken cancellationToken = default)
         => new(TryClaimWriteBack(key));
 }

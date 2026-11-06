@@ -3,96 +3,55 @@
 
 namespace Honua.Core.Features.Caching;
 
-/// <summary>
-/// Metadata and response classes known to the platform cache policy catalog.
-/// </summary>
 public enum MetadataCacheContentClass
 {
-    /// <summary>The list of available services.</summary>
     ServiceList,
 
-    /// <summary>A layer descriptor document.</summary>
     LayerDescriptor,
 
-    /// <summary>The field definitions of a layer.</summary>
     Fields,
 
-    /// <summary>The coded-value or range domains of a layer.</summary>
     Domains,
 
-    /// <summary>Service or layer capabilities documents.</summary>
     Capabilities,
 
-    /// <summary>Relationship definitions between layers.</summary>
     Relationships,
 
-    /// <summary>Renderer and style definitions.</summary>
     RenderersStyles,
 
-    /// <summary>Legend descriptions.</summary>
     Legends,
 
-    /// <summary>Tile matrix set definitions.</summary>
     TileMatrixSets,
 
-    /// <summary>STAC collection metadata documents.</summary>
     StacCollectionMetadata,
 
-    /// <summary>OGC API process description documents.</summary>
     OgcProcessDescriptions,
 
-    /// <summary>An ad hoc feature response payload.</summary>
     FeatureResponse,
 
-    /// <summary>An ad hoc query response payload.</summary>
     QueryResponse,
 
-    /// <summary>An execution result response payload.</summary>
     ResultResponse,
 
-    /// <summary>A realtime response payload.</summary>
     RealtimeResponse,
 
-    /// <summary>A routing response payload.</summary>
     RouteResponse,
 
-    /// <summary>A process job result response payload.</summary>
     ProcessResultResponse
 }
 
-/// <summary>
-/// TTL and stale-if-error policy for a metadata cache content class.
-/// </summary>
 public sealed record MetadataCachePolicy
 {
-    /// <summary>
-    /// Content class governed by the policy.
-    /// </summary>
     public required MetadataCacheContentClass ContentClass { get; init; }
 
-    /// <summary>
-    /// Whether this content class should be stored in the metadata cache.
-    /// </summary>
     public required bool IsCacheable { get; init; }
 
-    /// <summary>
-    /// Freshness lifetime for cacheable content.
-    /// </summary>
     public required TimeSpan Ttl { get; init; }
 
-    /// <summary>
-    /// Additional window where stale metadata can be served if source refresh fails.
-    /// </summary>
     public required TimeSpan StaleIfError { get; init; }
 
-    /// <summary>
-    /// Reason the content class bypasses metadata caching.
-    /// </summary>
     public string? NoCacheReason { get; init; }
 
-    /// <summary>
-    /// Returns the default policy for a known metadata or no-cache content class.
-    /// </summary>
     public static MetadataCachePolicy For(MetadataCacheContentClass contentClass)
     {
         return contentClass switch
@@ -118,9 +77,6 @@ public sealed record MetadataCachePolicy
         };
     }
 
-    /// <summary>
-    /// Returns whether the supplied content class is allowed to use the metadata cache.
-    /// </summary>
     public static bool IsCacheableContent(MetadataCacheContentClass contentClass) => For(contentClass).IsCacheable;
 
     private static MetadataCachePolicy Cacheable(

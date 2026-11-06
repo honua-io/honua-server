@@ -593,14 +593,15 @@ internal static class LayerValidationHelpers
 
     public static IReadOnlyDictionary<int, MetadataV2Service> BuildPrimaryServiceMapV2(
         MetadataV2GraphSnapshot snapshot,
-        string? requiredProtocol = null)
+        string? requiredProtocol = null,
+        IEnumerable<MetadataV2Publication>? publications = null)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
 
         // Track the chosen publication alongside the service so subsequent tie-break
         // decisions can consult publication.IsPrimary.
         var byLayer = new Dictionary<int, (MetadataV2Publication Publication, MetadataV2Service Service)>();
-        foreach (var pub in snapshot.Graph.Publications)
+        foreach (var pub in publications ?? snapshot.Graph.Publications)
         {
             if (!pub.LayerIndex.HasValue || !snapshot.IsRoutable(pub))
             {

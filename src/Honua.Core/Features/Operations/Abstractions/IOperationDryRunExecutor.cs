@@ -3,16 +3,8 @@
 
 namespace Honua.Core.Features.Operations.Abstractions;
 
-/// <summary>
-/// Marks an <see cref="IOperationExecutor"/> whose <see cref="IOperationExecutor.SubmitAsync"/>
-/// honors <see cref="Honua.Core.Features.Operations.Domain.OperationRequest.DryRun"/> by calling the declared dry-run route.
-/// The dispatcher invokes that executor on a dry run. Executors that do not implement this
-/// marker keep the synthetic completed result, so a dry-run flag cannot actuate them.
-/// </summary>
+// An executor that does not implement this marker keeps the synthetic completed result, so a dry-run flag cannot actuate it.
 public interface IOperationDryRunExecutor : IOperationExecutor
 {
-    /// <summary>
-    /// Confirms the executor performs its dry-run path from <see cref="IOperationExecutor.SubmitAsync"/>.
-    /// </summary>
     bool ExecutesDryRun => true;
 }

@@ -6,17 +6,8 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.Publishing.Reports;
 
-/// <summary>
-/// Purely structural validator for a <see cref="ReportDocument"/>. The report has no DB-backed publish
-/// validator (the publication registry hashes the payload opaquely), so this is the only validation gate
-/// — it requires no live metadata. It checks: a title is present, at least one panel exists, panel ids
-/// are non-empty and unique, every panel kind is in the allowed set, every chart panel carries a
-/// non-empty Vega-Lite spec, and — the converse — no non-chart panel carries one. The result mirrors the form package's
-/// <c>FormPackageValidationResult</c> (IsValid + Issues[code, severity, message, path]).
-/// </summary>
 public static class ReportDocumentValidator
 {
-    /// <summary>Validates the structural integrity of a report document.</summary>
     public static ReportValidationResult Validate(ReportDocument? document)
     {
         var issues = new List<ReportValidationIssue>();
@@ -152,34 +143,26 @@ public static class ReportDocumentValidator
         : $"index {index}";
 }
 
-/// <summary>Structural validation result for a report document. Mirrors <c>FormPackageValidationResult</c>.</summary>
 public sealed class ReportValidationResult
 {
-    /// <summary>Whether the document has no error-severity issues.</summary>
     [JsonPropertyName("isValid")]
     public bool IsValid { get; init; }
 
-    /// <summary>Validation issues.</summary>
     [JsonPropertyName("issues")]
     public ReportValidationIssue[] Issues { get; init => field = value ?? []; } = [];
 }
 
-/// <summary>Single report-document validation issue. Mirrors <c>FormValidationIssue</c>.</summary>
 public sealed class ReportValidationIssue
 {
-    /// <summary>Stable machine-readable issue code.</summary>
     [JsonPropertyName("code")]
     public string Code { get; init; } = string.Empty;
 
-    /// <summary>Issue severity, usually error or warning.</summary>
     [JsonPropertyName("severity")]
     public string Severity { get; init; } = "error";
 
-    /// <summary>Optional JSON pointer or property path.</summary>
     [JsonPropertyName("path")]
     public string? Path { get; init; }
 
-    /// <summary>Human-readable issue message.</summary>
     [JsonPropertyName("message")]
     public string Message { get; init; } = string.Empty;
 }

@@ -693,6 +693,7 @@ internal sealed partial class RedisTileCacheKeyIndex : ITileCacheKeyIndex, ITile
         }
     }
 
+    // Remove the snapshotted entry only when no later successful write replaced it, so a lifecycle delete cannot erase bookkeeping for an object regenerated before the index mutation.
     public async Task<bool> TryRemoveAsync(
         TileCacheEntry entry,
         CancellationToken cancellationToken = default)

@@ -250,6 +250,42 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
         ("import-beta", 4003, "POINT(-33.75 44.125)"),
     ];
 
+    [IntegrationTest]
+    public async Task ImportFileAsync_DependentMaterializedView_RefusesWithSafeDependencyFailure()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync("file_dependencies");
+        try
+        {
+            await EnsureImportFunctionsAsync();
+            foreach (var file in new[] { "070_AddImportLoadModes.sql", "071_FixImportStagingTableNameLength.sql", "108_FixLongImportIndexNames.sql", "129_ProtectImportTableOwnership.sql", "145_ProtectImportDependencies.sql" })
+            {
+                await fixture.ApplyGlobalSeedSqlAsync(await File.ReadAllTextAsync(RepositoryPaths.Resolve("src", "Honua.Server", "Migrations", file)));
+            }
+            await SeedOverwriteGuardTargetAsync(schema);
+            await MarkImporterOwnedAsync(schema, OverwriteGuardPhysicalTable);
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using (var create = new NpgsqlCommand($"CREATE MATERIALIZED VIEW \"{schema}\".dependent AS SELECT * FROM \"{schema}\".\"{OverwriteGuardPhysicalTable}\"", connection))
+            {
+                await create.ExecuteNonQueryAsync();
+            }
+
+            var result = await ImportOverwriteGuardFixtureAsync(schema, overwriteExisting: true);
+
+            result.Success.Should().BeFalse();
+            result.ErrorCode.Should().Be("IMPORT_TARGET_HAS_DEPENDENCIES");
+            result.ErrorMessage.Should().Contain("Existing data and dependencies were retained").And.NotContain("DROP TABLE");
+            (await ReadOverwriteGuardRowsAsync(schema)).Select(row => (row.Name, row.Code, row.Wkt)).Should().Equal(SeededLiveRows);
+            await using var verify = new NpgsqlCommand($"SELECT count(*) FROM \"{schema}\".dependent", connection);
+            (await verify.ExecuteScalarAsync()).Should().Be(2L);
+            (await StagingRelationsAsync(schema)).Should().BeEmpty();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+            await EnsureImportFunctionsAsync();
+        }
+    }
+
     /// <summary>
     /// honua-server#4002 (P0) — <c>ImportFileAsync</c> replaced a live target even when the
     /// caller explicitly declined the overwrite. The importer always took the replace path, so

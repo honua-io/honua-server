@@ -6,10 +6,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.Deployment.Domain;
 
-/// <summary>
-/// Source-generated JSON serialization context for deployment domain models. Provides
-/// AOT- and trim-safe serialization for deployment inspection and audit surfaces.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

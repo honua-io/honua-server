@@ -32,22 +32,9 @@ namespace Honua.Ai.Protocols.Mcp;
 /// </summary>
 internal sealed class McpDataAccessSurface
 {
-    /// <summary>
-    /// MCP protocol revisions this server can negotiate during <c>initialize</c>.
-    /// Listed newest-first so the latest entry is returned when the client asks
-    /// for an unsupported revision. <c>2025-06-18</c> is the default negotiated
-    /// revision (honua-server#1954); it adds the native tool <c>outputSchema</c>
-    /// field this server publishes. <c>2025-03-26</c> remains supported for older
-    /// clients, which negotiate it explicitly.
-    /// See https://modelcontextprotocol.io/docs/learn/versioning.
-    /// </summary>
-    public static readonly IReadOnlyList<string> SupportedProtocolVersions = ["2025-06-18", "2025-03-26"];
+    public static readonly IReadOnlyList<string> SupportedLegacyProtocolVersions = ["2025-06-18", "2025-03-26"];
 
-    /// <summary>
-    /// Latest MCP protocol revision supported by this server. Used when the
-    /// client requests a version we do not implement.
-    /// </summary>
-    public static string LatestProtocolVersion => SupportedProtocolVersions[0];
+    public static string LatestLegacyProtocolVersion => SupportedLegacyProtocolVersions[0];
 
     private readonly IReadOnlyDictionary<string, IMcpTool> _tools;
     private readonly List<IMcpToolSource> _toolSources;
@@ -173,6 +160,10 @@ internal sealed class McpDataAccessSurface
         {
             return request.Method switch
             {
+                "server/discover" when httpContext.Items.ContainsKey(McpModernProtocol.RequestItemKey) =>
+                    new McpJsonRpcResponse { Id = request.Id, Result = McpModernResults.Discover() },
+                "initialize" when httpContext.Items.ContainsKey(McpModernProtocol.RequestItemKey) =>
+                    ErrorResponse(request.Id, McpErrorMapper.MethodNotFound("initialize is a legacy method.")),
                 "initialize" => HandleInitialize(httpContext, request),
                 "ping" => Ping(request),
                 "tools/list" => await ListToolsAsync(httpContext, request, cancellationToken).ConfigureAwait(false),
@@ -318,15 +309,15 @@ internal sealed class McpDataAccessSurface
 
     private static string NegotiateProtocolVersion(string requestedVersion)
     {
-        for (var i = 0; i < SupportedProtocolVersions.Count; i++)
+        for (var i = 0; i < SupportedLegacyProtocolVersions.Count; i++)
         {
-            if (string.Equals(SupportedProtocolVersions[i], requestedVersion, StringComparison.Ordinal))
+            if (string.Equals(SupportedLegacyProtocolVersions[i], requestedVersion, StringComparison.Ordinal))
             {
                 return requestedVersion;
             }
         }
 
-        return LatestProtocolVersion;
+        return LatestLegacyProtocolVersion;
     }
 
     private async Task<McpJsonRpcResponse> ListToolsAsync(

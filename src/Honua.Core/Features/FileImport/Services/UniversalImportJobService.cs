@@ -17,10 +17,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Core.Features.FileImport.Services;
 
-/// <summary>
-/// Import job service that uses the unified progress store for progress tracking.
-/// Provides background job processing with centralized progress management.
-/// </summary>
 internal sealed partial class UniversalImportJobService : IImportJobService, IDisposable
 {
     // PA-016: this is the DI-registered IImportJobService (see ServiceCollectionExtensions.cs) and
@@ -76,7 +72,6 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
         return false;
     }
 
-    /// <inheritdoc/>
     public async Task<string> QueueImportAsync(
         ImportRequest request,
         long fileSize,
@@ -520,13 +515,11 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
         }
     }
 
-    /// <inheritdoc/>
     public async Task<ImportProgress?> GetProgressAsync(string jobId, CancellationToken cancellationToken = default)
     {
         return await _progressStore.GetProgressAsync<ImportProgress>(jobId, cancellationToken);
     }
 
-    /// <inheritdoc/>
     public Task<bool> CancelJobAsync(string jobId, CancellationToken cancellationToken = default)
     {
         if (_cancellationTokens.TryGetValue(jobId, out var cts) && !cts.IsCancellationRequested)
@@ -546,7 +539,6 @@ internal sealed partial class UniversalImportJobService : IImportJobService, IDi
         return Task.FromResult(false);
     }
 
-    /// <inheritdoc/>
     public async Task<IReadOnlyList<ImportProgress>> GetActiveJobsAsync(CancellationToken cancellationToken = default)
     {
         return await _progressStore.GetActiveOperationsAsync<ImportProgress>(OperationType.Import, cancellationToken);
