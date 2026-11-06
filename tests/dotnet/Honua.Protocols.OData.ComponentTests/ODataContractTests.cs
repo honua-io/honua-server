@@ -57,6 +57,8 @@ public sealed class ODataContractTests(ODataComponentFixture fixture) : IClassFi
         using var createPayload = ODataContent(new { Attributes = new { name, population = 12345 }, Geometry = new { type = "Point", coordinates = new[] { -122.0, 37.0 } } });
         using var created = await fixture.Client.PostAsync(Features, createPayload);
         created.StatusCode.Should().Be(HttpStatusCode.Created, await created.Content.ReadAsStringAsync());
+        var createdEtag = created.Headers.ETag?.ToString();
+        createdEtag.Should().NotBeNullOrEmpty();
         using var json = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
         var id = json.RootElement.GetProperty("ObjectId").GetInt64();
         var path = $"/odata/Features(LayerId=0,ObjectId={id})";
@@ -66,12 +68,13 @@ public sealed class ODataContractTests(ODataComponentFixture fixture) : IClassFi
             read.StatusCode.Should().Be(HttpStatusCode.OK);
             var etag = read.Headers.ETag?.ToString();
             etag.Should().NotBeNullOrEmpty();
+            etag.Should().Be(createdEtag);
             using var conditional = new HttpRequestMessage(HttpMethod.Get, path);
             conditional.Headers.TryAddWithoutValidation("If-None-Match", etag);
             using var unchanged = await fixture.Client.SendAsync(conditional);
             unchanged.StatusCode.Should().Be(HttpStatusCode.NotModified);
             using var patch = new HttpRequestMessage(HttpMethod.Patch, path) { Content = ODataContent(new { Attributes = new { name, population = 54321 } }) };
-            patch.Headers.TryAddWithoutValidation("If-Match", etag);
+            patch.Headers.TryAddWithoutValidation("If-Match", createdEtag);
             using var updated = await fixture.Client.SendAsync(patch);
             updated.IsSuccessStatusCode.Should().BeTrue(await updated.Content.ReadAsStringAsync());
             using var stale = new HttpRequestMessage(HttpMethod.Patch, path) { Content = ODataContent(new { Attributes = new { population = 1 } }) };
