@@ -25,18 +25,20 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
     public FolderServiceRoutingTests(WebAppFixture fixture) => _fixture = fixture;
 
     [IntegrationTheory]
-    [InlineData("GET")]
-    [InlineData("POST")]
+    [InlineData("GET", "")]
+    [InlineData("POST", "")]
+    [InlineData("GET", "/arcgis")]
+    [InlineData("POST", "/arcgis")]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services/{folderName}/{serviceId}/FeatureServer")]
     [Endpoint("POST /rest/services/{folderName}/{serviceId}/FeatureServer")]
-    public async Task ServiceMetadata_PublicLeafDiffersFromLogicalIdentity_ResolvesFolderPath(string method)
+    public async Task ServiceMetadata_PublicLeafDiffersFromLogicalIdentity_ResolvesFolderPath(string method, string mount)
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         SetGraph(OrganizeService(snapshot.Graph));
         try
         {
-            using var request = new HttpRequestMessage(new HttpMethod(method), "/rest/services/Public/Parcels/FeatureServer?f=json");
+            using var request = new HttpRequestMessage(new HttpMethod(method), $"{mount}/rest/services/Public/Parcels/FeatureServer?f=json");
             using var response = await _fixture.Client.SendAsync(request);
             var body = await response.Content.ReadAsStringAsync();
             response.StatusCode.Should().Be(HttpStatusCode.OK, body);
@@ -54,22 +56,27 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
         }
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData("GET")]
+    [InlineData("POST")]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services")]
+    [Endpoint("POST /rest/services")]
     [Endpoint("GET /rest/services/{folderName}")]
+    [Endpoint("POST /rest/services/{folderName}")]
     [Endpoint("GET /rest/services/{folderName}/{serviceId}")]
-    public async Task ServicesDirectory_PublicFolder_ReturnsOnlyCanonicalQualifiedEntries()
+    [Endpoint("POST /rest/services/{folderName}/{serviceId}")]
+    public async Task ServicesDirectory_PublicFolder_ReturnsOnlyCanonicalQualifiedEntries(string method)
     {
         var original = _fixture.GetCurrentV2GraphSnapshot().Graph;
         SetGraph(OrganizeService(original));
         try
         {
-            using var root = await ReadJsonAsync("/rest/services?f=json");
+            using var root = await ReadJsonAsync("/rest/services?f=json", method);
             root.RootElement.GetProperty("folders").EnumerateArray().Select(item => item.GetString()).Should().Contain("Public");
             root.RootElement.GetProperty("services").EnumerateArray()
                 .Should().NotContain(item => item.GetProperty("name").GetString() == "Public/Parcels");
-            using var folder = await ReadJsonAsync("/rest/services/Public?f=json");
+            using var folder = await ReadJsonAsync("/rest/services/Public?f=json", method);
             var entries = folder.RootElement.GetProperty("services").EnumerateArray().ToArray();
             entries.Should().NotBeEmpty();
             foreach (var entry in entries)
@@ -77,7 +84,7 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
                 entry.GetProperty("name").GetString().Should().Be("Public/Parcels");
                 entry.GetProperty("url").GetString().Should().Contain("/rest/services/Public/Parcels/");
             }
-            using var node = await ReadJsonAsync("/rest/services/Public/Parcels?f=json");
+            using var node = await ReadJsonAsync("/rest/services/Public/Parcels?f=json", method);
             node.RootElement.GetProperty("services").GetRawText().Should().Be(folder.RootElement.GetProperty("services").GetRawText());
         }
         finally
@@ -274,6 +281,33 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
         }
     }
 
+    [IntegrationTest]
+    [Protocol(TestProtocols.OgcApiRecords)]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/records/collections/{collectionId}/items/{recordId}")]
+    public async Task NativeRecords_FolderPublicName_KeepsRecordIdentityAndCanonicalServiceLinks()
+    {
+        var original = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        var organized = OrganizeService(original);
+        SetGraph(organized with
+        {
+            Services = organized.Services.Select(service => service.Metadata.Name == WebAppFixture.TestServiceId
+                ? service with { Metadata = service.Metadata with { Title = null } } : service).ToArray()
+        });
+        try
+        {
+            using var record = await ReadJsonAsync($"/ogc/records/collections/honua-catalog/items/service:{WebAppFixture.TestServiceId}");
+            record.RootElement.GetProperty("id").GetString().Should().Be($"service:{WebAppFixture.TestServiceId}");
+            record.RootElement.GetProperty("properties").GetProperty("title").GetString().Should().Be("Parcels");
+            record.RootElement.GetProperty("links").EnumerateArray().Where(link => link.GetProperty("rel").GetString() == "alternate")
+                .Should().Contain(link => link.GetProperty("href").GetString()!.Contains("/rest/services/Public/Parcels/", StringComparison.Ordinal));
+        }
+        finally
+        {
+            SetGraph(original);
+        }
+    }
+
     private async Task<string> QueryIdsAsync(string path)
     {
         using var form = new FormUrlEncodedContent(new Dictionary<string, string>
@@ -289,9 +323,10 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
         return ids.GetRawText();
     }
 
-    private async Task<JsonDocument> ReadJsonAsync(string path)
+    private async Task<JsonDocument> ReadJsonAsync(string path, string method = "GET")
     {
-        using var response = await _fixture.Client.GetAsync(path);
+        using var request = new HttpRequestMessage(new HttpMethod(method), path);
+        using var response = await _fixture.Client.SendAsync(request);
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);
         return JsonDocument.Parse(body);

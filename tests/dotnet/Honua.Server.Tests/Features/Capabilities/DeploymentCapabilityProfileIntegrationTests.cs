@@ -5,6 +5,8 @@ using System.Net;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Server.Features.Capabilities;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.TestKit.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -24,6 +26,39 @@ public sealed class DeploymentCapabilityProfileIntegrationTests
         "ops.health",
         "serve.stac",
     ];
+
+    [IntegrationTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    [Endpoint("GET /rest/services/{folderName}/{serviceId}/FeatureServer")]
+    public async Task FolderAlias_ConfiguredProfile_RequiresTheOriginalServiceCapability(bool enabled)
+    {
+        var fixture = CreateFixture([enabled ? "serve.geoservices-featureserver" : "serve.geoservices-mapserver"]);
+        await fixture.InitializeAsync();
+        try
+        {
+            var original = fixture.GetCurrentV2GraphSnapshot().Graph;
+            var provider = (TestMetadataV2GraphProvider)fixture.GetService<IMetadataV2GraphProvider>();
+            provider.SetGraph(original with
+            {
+                Folders = [new() { Metadata = new() { Id = "folder", Name = "Public" } }],
+                Services = original.Services.Select(service => service.Metadata.Name == WebAppFixture.TestServiceId
+                    ? service with { FolderId = "folder", PublicName = "Parcels" } : service).ToArray()
+            }, schema: fixture.CurrentSchema);
+            using var response = await fixture.Client.GetAsync("/rest/services/Public/Parcels/FeatureServer?f=json");
+            var body = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(enabled ? HttpStatusCode.OK : HttpStatusCode.NotFound, body);
+            if (enabled)
+            {
+                using var document = JsonDocument.Parse(body);
+                document.RootElement.GetProperty("serviceName").GetString().Should().Be("Parcels");
+            }
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/capabilities/manifest")]

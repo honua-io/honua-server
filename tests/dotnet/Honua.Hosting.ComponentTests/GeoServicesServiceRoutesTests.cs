@@ -37,14 +37,12 @@ public sealed class GeoServicesServiceRoutesTests
         string root, string serviceType, string serviceParameter = "{serviceId}")
     {
         await using var app = CreateApp();
-        app.UseGeoServicesServicePaths();
         app.MapMethods($"{root}/{serviceParameter}/{serviceType}/{{layerId:int}}/query", ["GET", "POST"],
             async (string serviceId, int layerId, HttpRequest request) =>
             {
                 using var reader = new StreamReader(request.Body);
                 return Results.Text($"{serviceId}:{layerId}:{await reader.ReadToEndAsync()}");
             }).WithName("ServiceQuery");
-        app.MapGeoServicesServicePaths();
         await app.StartAsync();
         using var client = app.GetTestClient();
         foreach (var path in new[] { "Public/Parcels", "Previous/Parcels" })
@@ -57,7 +55,7 @@ public sealed class GeoServicesServiceRoutesTests
         invalidConstraint.StatusCode.Should().Be(System.Net.HttpStatusCode.NotFound);
         var endpoints = ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints).ToArray();
         endpoints.Select(endpoint => endpoint.Metadata.GetMetadata<IEndpointNameMetadata>()?.EndpointName)
-            .Should().BeEquivalentTo("ServiceQuery", "ServiceQueryFolder");
+            .Should().BeEquivalentTo("ServiceQuery");
     }
 
     [Theory]
@@ -69,7 +67,6 @@ public sealed class GeoServicesServiceRoutesTests
     {
         await using var app = CreateApp();
         app.MapGet("/rest/services/{serviceId}/FeatureServer", () => Results.Text("must not run"));
-        app.MapGeoServicesServicePaths();
         await app.StartAsync();
         using var client = app.GetTestClient();
         using var response = await client.GetAsync($"/rest/services/{servicePath}/FeatureServer");
@@ -83,7 +80,6 @@ public sealed class GeoServicesServiceRoutesTests
         await using var app = CreateApp();
         app.MapGet("/rest/services/{id:int}/ImageServer", (int id) => Results.Text($"raster:{id}"));
         app.MapGet("/rest/services/Utilities/PrintingTools/GPServer", () => Results.Text("printing"));
-        app.MapGeoServicesServicePaths();
         await app.StartAsync();
         using var client = app.GetTestClient();
         (await client.GetStringAsync("/rest/services/123/ImageServer")).Should().Be("raster:123");
@@ -99,7 +95,6 @@ public sealed class GeoServicesServiceRoutesTests
     {
         await using var app = CreateApp("alpha", tenant);
         app.MapGet("/rest/services/{serviceId}/FeatureServer", () => Results.Text("authorized scope"));
-        app.MapGeoServicesServicePaths();
         await app.StartAsync();
         using var client = app.GetTestClient();
         using var response = await client.GetAsync("/rest/services/Previous/Parcels/FeatureServer");
@@ -168,7 +163,6 @@ public sealed class GeoServicesServiceRoutesTests
         app.MapGet("/rest/services/{id:int}/ImageServer", (int id) => Results.Text($"raster:{id}"));
         app.MapGet("/rest/services/{serviceId:regex(^(?!\\d+$).+$)}/ImageServer",
             (string serviceId) => Results.Text($"service:{serviceId}"));
-        app.MapGeoServicesServicePaths();
         await app.StartAsync();
         using var client = app.GetTestClient();
         (await client.GetStringAsync("/rest/services/123/ImageServer")).Should().Be("raster:123");
@@ -193,6 +187,7 @@ public sealed class GeoServicesServiceRoutesTests
         var provider = Substitute.For<IMetadataV2GraphProvider>();
         graph = graph with
         {
+            Folders = graph.Folders.Select(folder => folder with { Metadata = folder.Metadata with { Tenant = serviceTenant } }).ToArray(),
             Services = graph.Services.Select(service => service with { Metadata = service.Metadata with { Tenant = serviceTenant } }).ToArray(),
             ServicePathAliases = graph.ServicePathAliases.Select(alias => alias with { Tenant = serviceTenant }).ToArray()
         };
@@ -201,6 +196,11 @@ public sealed class GeoServicesServiceRoutesTests
         var tenantContext = Substitute.For<ITenantContext>();
         tenantContext.TenantId.Returns(requestTenant);
         builder.Services.AddSingleton(tenantContext);
-        return builder.Build();
+        var app = builder.Build();
+        app.UseGeoServicesFolderPaths();
+        app.UseRouting();
+        app.UseGeoServicesPublicPaths();
+        app.UseGeoServicesServicePaths();
+        return app;
     }
 }

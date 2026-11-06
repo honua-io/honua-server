@@ -49,6 +49,19 @@ public static class GeoServicesServerAdminEndpoints
             .AllowAnonymous()
             .Produces(StatusCodes.Status200OK, contentType: JsonContentType);
 
+        foreach (var (path, name) in new[]
+        {
+            ("/admin/services/{folderName}/{serviceName}.{serviceType}", "GeoServicesFolderAdminServiceResource"),
+            ("/rest/admin/{folderName}/{serviceName}.{serviceType}", "GeoServicesFolderAdminServiceResourceSiteless")
+        })
+        {
+            endpoints.MapMethods(path, ["GET", "POST"], HandleServiceResourceAsync)
+                .WithName(name)
+                .WithTags("GeoServices Sharing")
+                .AllowAnonymous()
+                .Produces(StatusCodes.Status200OK, contentType: JsonContentType);
+        }
+
         return endpoints;
     }
 
@@ -88,7 +101,7 @@ public static class GeoServicesServerAdminEndpoints
 
         var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
         var requestedType = serviceType.Trim();
-        var service = ResolveService(snapshot, serviceName, requestedType);
+        var service = ResolveService(snapshot, serviceName, requestedType, context);
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context).TrimEnd('/');
         if (service is null || projector.ProjectItem(snapshot, context.User, service.Metadata.Id, baseUrl) is null)
@@ -97,17 +110,6 @@ public static class GeoServicesServerAdminEndpoints
         }
 
         var protocols = new HashSet<string>(service.Protocols, StringComparer.OrdinalIgnoreCase);
-        var servesRequestedType = requestedType.Equals(ServiceProtocols.MapServer, StringComparison.OrdinalIgnoreCase)
-            ? protocols.Contains(ServiceProtocols.MapServer)
-                || protocols.Contains(ServiceProtocols.FeatureServer)
-                || protocols.Contains(ServiceProtocols.ImageServer)
-                || protocols.Contains(ServiceProtocols.Wcs)
-            : protocols.Contains(requestedType);
-        if (!servesRequestedType)
-        {
-            return StandardErrorHelpers.CreateNotFound(context, $"Service '{serviceName}.{serviceType}' was not found.");
-        }
-
         var branchVersioning = await FeatureServerEndpoints.HasAccessibleBranchVersionedPublicationsAsync(
             context, service, snapshot, context.RequestAborted).ConfigureAwait(false);
         var versionManagement = FeatureServerEndpoints.IsVersionManagementAvailable(context, branchVersioning);
@@ -147,7 +149,7 @@ public static class GeoServicesServerAdminEndpoints
         }
         var document = new JsonObject
         {
-            ["serviceName"] = service.Metadata.Name,
+            ["serviceName"] = service.EffectivePublicName,
             ["type"] = requestedType,
             ["description"] = service.Metadata.Description ?? string.Empty,
             ["capabilities"] = requestedType.Equals("MapServer", StringComparison.OrdinalIgnoreCase) ? "Map,Query,Data" : "Query",
@@ -229,63 +231,58 @@ public static class GeoServicesServerAdminEndpoints
     // The Admin API spells booleans as strings.
     private static JsonValue Flag(bool value) => JsonValue.Create(value ? "true" : "false");
 
-    // A name that matches neither a service name nor a service id is the storage-layer id arcpy copies from an ImageServer or WCS URL when it asks for that id as MapServer.
     private static MetadataV2Service? ResolveService(
-        MetadataV2GraphSnapshot snapshot, string serviceName, string requestedType)
+        MetadataV2GraphSnapshot snapshot, string serviceName, string requestedType, HttpContext context)
     {
-        if (snapshot.Index.ServicesByName.TryGetValue(serviceName, out var byName))
-        {
-            return byName;
-        }
-
-        if (snapshot.Index.ServicesById.TryGetValue(serviceName, out var byId))
-        {
-            return byId;
-        }
-
-        if (!int.TryParse(serviceName, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
-        {
+        var folder = context.Request.RouteValues["folderName"]?.ToString();
+        var tenant = TenantScopeHelpers.ResolveRequestTenantId(context);
+        var path = new MetadataV2ServicePathAlias { FolderName = folder, PublicName = serviceName, Tenant = tenant };
+        var candidates = MetadataV2ServicePaths.Resolve(snapshot.Graph, path);
+        if (candidates.Count > 0 || folder is not null)
+            return SelectService(candidates, requestedType);
+        if (snapshot.Graph.ServicePathAliases.Any(alias => MetadataV2ServicePaths.SamePath(alias, path) &&
+            MetadataV2TenantVisibility.IsVisibleToTenant(alias.Tenant, tenant)))
             return null;
+
+        // Desktop probes omit the folder, so only one logical service may own the requested public leaf.
+        var folders = MetadataV2ServicePaths.CanonicalPaths(snapshot.Graph).Concat(snapshot.Graph.ServicePathAliases)
+            .Where(candidate => string.Equals(candidate.PublicName, serviceName, StringComparison.OrdinalIgnoreCase))
+            .Select(candidate => candidate.FolderName).Distinct(StringComparer.OrdinalIgnoreCase);
+        var leafCandidates = folders.SelectMany(folderName => MetadataV2ServicePaths.Resolve(snapshot.Graph,
+            path with { FolderName = folderName })).DistinctBy(service => service.Metadata.Id).ToArray();
+        if (leafCandidates.Length > 0)
+        {
+            return leafCandidates.Select(service => service.Metadata.Name).Distinct(StringComparer.OrdinalIgnoreCase).Take(2).Count() == 1
+                ? SelectService(leafCandidates, requestedType) : null;
         }
 
-        MetadataV2Service? exact = null;
+        if (snapshot.Index.ServicesById.TryGetValue(serviceName, out var legacy) &&
+            TenantScopeHelpers.IsTenantVisible(context, null, legacy))
+            return SelectService([legacy], requestedType);
+        if (!int.TryParse(serviceName, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
+            return null;
+        var layerServices = snapshot.Graph.Publications
+            .Where(publication => publication.LayerIndex == layerId && snapshot.IsRoutable(publication))
+            .Select(publication => (Publication: publication, Service: snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service) ? service : null))
+            .Where(entry => entry.Service is not null && TenantScopeHelpers.IsPublicationVisible(
+                context, entry.Publication, snapshot.ResolveResource(entry.Publication), entry.Service))
+            .Select(entry => entry.Service!);
+        return SelectService(layerServices, requestedType);
+    }
+
+    private static MetadataV2Service? SelectService(IEnumerable<MetadataV2Service> services, string requestedType)
+    {
         MetadataV2Service? feature = null;
         MetadataV2Service? coverage = null;
         var mapServerRequest = requestedType.Equals(ServiceProtocols.MapServer, StringComparison.OrdinalIgnoreCase);
-        foreach (var publication in snapshot.Graph.Publications)
+        foreach (var service in services)
         {
-            if (publication.LayerIndex != layerId || !snapshot.IsRoutable(publication))
-            {
-                continue;
-            }
-
-            if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service))
-            {
-                continue;
-            }
-
-            if (ServiceProtocols.IsProtocolEnabled(service, requestedType))
-            {
-                exact ??= service;
-                continue;
-            }
-
-            if (!mapServerRequest)
-            {
-                continue;
-            }
-
-            if (ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.FeatureServer))
-            {
-                feature ??= service;
-            }
-            else if (ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.ImageServer)
-                || ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.Wcs))
-            {
-                coverage ??= service;
-            }
+            if (ServiceProtocols.IsProtocolEnabled(service, requestedType)) return service;
+            if (!mapServerRequest) continue;
+            if (ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.FeatureServer)) feature ??= service;
+            else if (ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.ImageServer) ||
+                ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.Wcs)) coverage ??= service;
         }
-
-        return exact ?? feature ?? coverage;
+        return feature ?? coverage;
     }
 }

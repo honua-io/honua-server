@@ -487,7 +487,7 @@ internal static class OgcRecordsEndpoints
             ?? throw new InvalidOperationException("Metadata v2 service metadata is required.");
         var servicePath = baseUrl + GeoServicesServiceUrls.CanonicalPath(snapshot.Graph, service);
         var links = ImmutableArray.CreateBuilder<Link>();
-        links.Add(Link.Create($"{baseUrl}/ogc/records/collections/{CatalogCollectionId}/items/{Uri.EscapeDataString($"service:{serviceMetadata.Name}")}", RelationTypes.Self, MediaTypes.GeoJson, serviceMetadata.Name));
+        links.Add(Link.Create($"{baseUrl}/ogc/records/collections/{CatalogCollectionId}/items/{Uri.EscapeDataString($"service:{serviceMetadata.Name}")}", RelationTypes.Self, MediaTypes.GeoJson, serviceMetadata.Title ?? service.EffectivePublicName));
         if (IsProtocolEnabled(service, FeatureServerProtocolName))
         {
             links.Add(Link.Create($"{servicePath}/FeatureServer", RelationTypes.Alternate, MediaTypes.Json, "FeatureServer"));
@@ -509,7 +509,7 @@ internal static class OgcRecordsEndpoints
 
         var properties = new OgcRecordProperties
         {
-            Title = serviceMetadata.Title ?? serviceMetadata.Name,
+            Title = serviceMetadata.Title ?? service.EffectivePublicName,
             Description = serviceMetadata.Description,
             Type = "service",
             ResourceType = "Service",

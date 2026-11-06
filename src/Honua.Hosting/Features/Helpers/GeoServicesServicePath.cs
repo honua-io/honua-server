@@ -28,13 +28,15 @@ internal sealed record GeoServicesServicePath(
     internal static async Task ResolveAsync(HttpContext context, RequestDelegate next)
     {
         if (FromRequest(context) is not null ||
-            context.GetEndpoint()?.Metadata.GetMetadata<GeoServicesServiceRoutes.ServiceRoute>() is not { } route)
+            context.GetEndpoint() is not RouteEndpoint endpoint ||
+            GeoServicesServiceRoutes.Match(endpoint.RoutePattern) is not { } route)
         {
             await next(context).ConfigureAwait(false);
             return;
         }
-        var publicName = context.Request.RouteValues[route.ServiceParameter]?.ToString() ?? string.Empty;
-        var folder = context.Request.RouteValues["folderName"]?.ToString();
+        var incoming = GeoServicesServiceRoutes.FromRequest(context);
+        var publicName = incoming?.PublicName ?? context.Request.RouteValues[route.ServiceParameter]?.ToString() ?? string.Empty;
+        var folder = incoming?.FolderName;
         var provider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         MetadataV2GraphSnapshot snapshot;
         try

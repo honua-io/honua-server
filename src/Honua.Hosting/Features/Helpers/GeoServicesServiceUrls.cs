@@ -25,7 +25,8 @@ internal static class GeoServicesServiceUrls
     public static string RequestedProtocol(HttpContext context, string protocol)
     {
         if (GeoServicesServicePath.FromRequest(context) is { } servicePath &&
-            context.GetEndpoint()?.Metadata.GetMetadata<GeoServicesServiceRoutes.ServiceRoute>() is { } route)
+            context.GetEndpoint() is RouteEndpoint endpoint &&
+            GeoServicesServiceRoutes.Match(endpoint.RoutePattern) is { } route)
         {
             return Requested(context, servicePath.PublicName, route.ServiceType) + '/' + protocol;
         }

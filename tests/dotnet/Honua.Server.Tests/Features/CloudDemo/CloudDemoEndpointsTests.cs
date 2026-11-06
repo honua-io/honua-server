@@ -5,6 +5,9 @@ using System.Net;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.TestKit;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.TestKit.Infrastructure;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
@@ -53,6 +56,42 @@ public sealed class CloudDemoEndpointsTests : IAsyncLifetime
     {
         _client.Dispose();
         await _fixture.DisposeAsync();
+    }
+
+    [IntegrationTheory]
+    [InlineData("applyEdits")]
+    [InlineData("0/applyEdits")]
+    [InlineData("0/1/addAttachment")]
+    [Operation(Operations.Update)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/applyEdits")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment")]
+    public async Task WritableFeatureGuard_FolderPublicPath_StillRequiresWriteToken(string operation)
+    {
+        var original = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        var graph = original with
+        {
+            Revision = original.Revision + 1,
+            Folders = [new() { Metadata = new() { Id = "demo-folder", Name = "Public" } }],
+            Services = original.Services.Select(service => service with
+            {
+                Metadata = service.Metadata with { Name = "field-inspections-demo-writable" },
+                FolderId = "demo-folder", PublicName = "Inspections"
+            }).ToArray()
+        };
+        var provider = (TestMetadataV2GraphProvider)_fixture.GetService<IMetadataV2GraphProvider>();
+        provider.SetGraph(graph, schema: _fixture.CurrentSchema);
+        try
+        {
+            using var response = await _client.PostAsync($"/rest/services/Public/Inspections/FeatureServer/{operation}",
+                new FormUrlEncodedContent(new Dictionary<string, string>()));
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+            (await response.Content.ReadAsStringAsync()).Should().Contain("cloud_demo_write_token_invalid");
+        }
+        finally
+        {
+            provider.SetGraph(original with { Revision = graph.Revision + 1 }, schema: _fixture.CurrentSchema);
+        }
     }
 
     [IntegrationTest]
