@@ -40,7 +40,10 @@ public sealed partial class RowLevelSecurityEndpointsTests
         using var document = JsonDocument.Parse(await read.Content.ReadAsStringAsync());
         document.RootElement.GetProperty("Geometry").ValueKind.Should().Be(JsonValueKind.Null);
         var body = new Dictionary<string, object?> { ["Attributes"] = new { name = "after" } };
-        if (mode == "patch-null") body["Geometry"] = null;
+        if (mode == "patch-null")
+        {
+            body["Geometry"] = null;
+        }
         var method = mode == "put-omitted" ? "PUT" : "PATCH";
 
         await SendGeometryIntentAsync(client, new GeometryMutation(method, body, batch));
@@ -98,8 +101,15 @@ public sealed partial class RowLevelSecurityEndpointsTests
     }
 
     private static object GeometryBatchItem(string id, string method, Dictionary<string, object?> body)
-        => new { id, method, url = GeometryIntentPath, atomicityGroup = "geometry", body,
-            headers = new Dictionary<string, string> { ["Content-Type"] = "application/json" } };
+        => new
+        {
+            id,
+            method,
+            url = GeometryIntentPath,
+            atomicityGroup = "geometry",
+            body,
+            headers = new Dictionary<string, string> { ["Content-Type"] = "application/json" }
+        };
 
     private static async Task AssertGeometryBatchSuccessAsync(HttpResponseMessage response, int expectedCount)
     {
@@ -136,17 +146,29 @@ public sealed partial class RowLevelSecurityEndpointsTests
         {
             Revision = original.Graph.Revision + 1,
             Services = [.. original.Graph.Services, service],
-            Publications = [publication with { Metadata = new MetadataV2ObjectMetadata { Id = "geometry-intent-publication" },
-                ServiceId = service.Metadata.Id, PublicationType = MetadataV2PublicationType.ODataEntitySet,
-                StorageBindingId = binding.Metadata.Id, Capabilities = ["Query", "Create", "Update", "Delete"] }, .. original.Graph.Publications],
+            Publications =
+            [
+                publication with
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "geometry-intent-publication" },
+                    ServiceId = service.Metadata.Id,
+                    PublicationType = MetadataV2PublicationType.ODataEntitySet,
+                    StorageBindingId = binding.Metadata.Id,
+                    Capabilities = ["Query", "Create", "Update", "Delete"]
+                },
+                .. original.Graph.Publications
+            ],
             Resources = original.Graph.Resources.Select(item => item.Metadata.Id == resource.Metadata.Id ? item with
             {
                 SchemaFields = item.SchemaFields.Where(field => field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography)).ToArray(),
                 Spatial = item.Spatial is null ? null : item.Spatial with { PrimaryGeometryField = null }
             } : item).ToArray(),
             StorageBindings = original.Graph.StorageBindings.Select(item => item.Metadata.Id == binding.Metadata.Id
-                ? item with { Options = item.Options.Where(pair => !pair.Key.Equals("geometryColumn", StringComparison.OrdinalIgnoreCase))
-                    .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase) }
+                ? item with
+                {
+                    Options = item.Options.Where(pair => !pair.Key.Equals("geometryColumn", StringComparison.OrdinalIgnoreCase))
+                        .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase)
+                }
                 : item).ToArray()
         };
         MetadataV2GraphValidator.Validate(graph).IsValid.Should().BeTrue();
