@@ -24,10 +24,13 @@ class PrManagedBuildTests(unittest.TestCase):
         self.assertIn('if: always()', required)
         script = re.search(r'        run: \|\n(.*?)(?=\n      #|\n      -|\Z)', required, re.S).group(1)
         script = textwrap.dedent(script)
-        keys = ['BUILD_AND_TEST_RESULT', 'TEST_RESULT', 'FORMAT_RESULT', 'CI_ROUTER_RESULT']
-        for key, dependency in zip(keys, ['pr-gate','pr-gate-tests','format','ci-router-validation']):
+        keys = ['BUILD_AND_TEST_RESULT', 'TEST_RESULT', 'FORMAT_RESULT', 'CI_ROUTER_RESULT',
+                'AFFECTED_SHARDS_RESULT']
+        dependencies = ['pr-gate', 'pr-gate-tests', 'format', 'ci-router-validation', 'affected-shards']
+        for key, dependency in zip(keys, dependencies):
             self.assertIn(key+': ${{ needs.'+dependency+'.result }}', required)
         success = {key: 'success' for key in keys}
+        success['GITHUB_EVENT_NAME'] = 'pull_request'
         self.assertEqual(subprocess.run(['bash','-e','-c',script], env=dict(os.environ,**success),capture_output=True).returncode, 0)
         for key in keys:
             for result in ['failure','cancelled','skipped','']:

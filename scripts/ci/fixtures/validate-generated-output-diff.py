@@ -305,13 +305,16 @@ class WorkflowCompletion(unittest.TestCase):
         self.assertIn('`${base}:scripts/ci/generated-output-diff.py`', resolve['with']['script'])
         for step in steps[steps.index(resolve)+1:]:
             self.assertIn("steps.artifact.outputs.generated_only != 'true'", step['if'])
-        # The stable aggregate really exits success only for successful named
-        # paths; it continues rejecting failed/skipped ordinary verification.
+    def test_required_context_rejects_failed_dependency_results(self):
+        import yaml
+        gate = yaml.safe_load((ROOT / '.github/workflows/pr-gate.yml').read_text())
         aggregate = gate['jobs']['required']['steps'][0]['run']
-        keys = ('BUILD_AND_TEST_RESULT', 'TEST_RESULT', 'FORMAT_RESULT', 'CI_ROUTER_RESULT')
+        keys = ('BUILD_AND_TEST_RESULT', 'TEST_RESULT', 'FORMAT_RESULT', 'CI_ROUTER_RESULT',
+                'AFFECTED_SHARDS_RESULT')
         for key in keys:
             for result, expected in (('success', 0), ('failure', 1), ('skipped', 1), ('cancelled', 1)):
-                env = dict(os.environ, **{name: 'success' for name in keys})
+                env = dict(os.environ, GITHUB_EVENT_NAME='pull_request',
+                           **{name: 'success' for name in keys})
                 env[key] = result
                 run = subprocess.run(['bash', '-c', aggregate], capture_output=True, env=env)
                 self.assertEqual(run.returncode, expected, (key, result))
