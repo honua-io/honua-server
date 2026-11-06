@@ -6,17 +6,8 @@ using System.Text;
 
 namespace Honua.Core.Features.Tiles;
 
-/// <summary>
-/// Builds the collision-resistant path identity used to isolate service-local publication layers
-/// in the generated tile cache.
-/// </summary>
 public static class TileCachePublicationScope
 {
-    /// <summary>
-    /// Returns a stable, path-safe identity for one metadata publication.
-    /// </summary>
-    /// <param name="publicationId">Canonical metadata publication identifier.</param>
-    /// <returns>The lower-case SHA-256 publication scope.</returns>
     public static string Create(string publicationId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(publicationId);

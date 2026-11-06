@@ -12,7 +12,7 @@ using Microsoft.Extensions.Options;
 namespace Honua.Core.Tests.Features.Forms;
 
 [Protocol(ProtocolNames.Admin)]
-public sealed class FormPackageValidatorTests
+public sealed partial class FormPackageValidatorTests
 {
     [UnitTest]
     public async Task ValidateForPublish_WithValidPackage_ReturnsValidResult()
@@ -605,7 +605,8 @@ public sealed class FormPackageValidatorTests
 
     private static FormPackageValidator CreateValidator(
         string[]? serviceCapabilities = null,
-        MetadataV2SpatialReference? spatialReference = null)
+        MetadataV2SpatialReference? spatialReference = null,
+        MetadataV2Resource? targetResource = null)
     {
         var service = new MetadataV2Service
         {
@@ -622,7 +623,7 @@ public sealed class FormPackageValidatorTests
             ResourceId = "resource-inspections",
             LayerIndex = 0
         };
-        var resource = CreateResource(spatialReference ?? MetadataV2SpatialReference.Wgs84);
+        var resource = targetResource ?? CreateResource(spatialReference ?? MetadataV2SpatialReference.Wgs84);
         return new FormPackageValidator(
             new StaticFormTargetMetadataResolver(new FormTargetMetadataResolution(service, publication, resource, 0)),
             Options.Create(new LimitsOptions

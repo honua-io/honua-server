@@ -2,35 +2,19 @@ using System.ComponentModel.DataAnnotations;
 
 namespace Honua.Core.Configuration;
 
-/// <summary>
-/// Base validation attribute for configuration values that need environment-aware validation.
-/// </summary>
 [AttributeUsage(AttributeTargets.Property, AllowMultiple = true)]
 public abstract class ConfigurationValidationAttribute : ValidationAttribute
 {
-    /// <summary>
-    /// Gets or sets the configuration path used in validation messages.
-    /// </summary>
     public string? ConfigurationPath { get; set; }
 
-    /// <summary>
-    /// Gets or sets an optional suggested fix for the configuration error.
-    /// </summary>
     public string? SuggestedFix { get; set; }
 
-    /// <summary>
-    /// Gets a value indicating whether validation is running in development mode.
-    /// </summary>
     protected static bool IsDevelopment(ValidationContext validationContext)
         => validationContext.Items.TryGetValue("IsDevelopment", out var value) && value is true;
 }
 
-/// <summary>
-/// Validates that a configuration value is present.
-/// </summary>
 public sealed class RequiredConfigurationAttribute : ConfigurationValidationAttribute
 {
-    /// <inheritdoc />
     protected override ValidationResult? IsValid(object? value, ValidationContext validationContext)
     {
         if (value is string stringValue)
@@ -46,22 +30,12 @@ public sealed class RequiredConfigurationAttribute : ConfigurationValidationAttr
     }
 }
 
-/// <summary>
-/// Validates a configuration URL.
-/// </summary>
 public sealed class ValidUrlAttribute : ConfigurationValidationAttribute
 {
-    /// <summary>
-    /// Gets or sets the allowed URL schemes.
-    /// </summary>
     public string[]? RequiredSchemes { get; set; }
 
-    /// <summary>
-    /// Gets or sets a value indicating whether HTTPS is required outside development.
-    /// </summary>
     public bool RequireHttpsInProduction { get; set; }
 
-    /// <inheritdoc />
     protected override ValidationResult? IsValid(object? value, ValidationContext validationContext)
     {
         if (value is null)
@@ -96,22 +70,12 @@ public sealed class ValidUrlAttribute : ConfigurationValidationAttribute
     }
 }
 
-/// <summary>
-/// Validates secret reference formats.
-/// </summary>
 public sealed class SecretReferenceAttribute : ConfigurationValidationAttribute
 {
-    /// <summary>
-    /// Gets or sets the allowed secret providers.
-    /// </summary>
     public string[]? AllowedProviders { get; set; }
 
-    /// <summary>
-    /// Gets or sets a value indicating whether plain text is allowed in development.
-    /// </summary>
     public bool AllowPlainTextInDevelopment { get; set; }
 
-    /// <inheritdoc />
     protected override ValidationResult? IsValid(object? value, ValidationContext validationContext)
     {
         if (value is null)

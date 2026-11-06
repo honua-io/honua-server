@@ -7,19 +7,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Compliance.Services;
 
-/// <summary>
-/// Walks the control catalog, queries the dependency gate, residency policy, and
-/// encryption posture, and rolls everything up into a <see cref="ComplianceSnapshot"/>.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Each control gets one evidence row per declared dependency plus a synthetic
-/// "claim" row describing the operator-attested readiness for the framework. The
-/// control's rolled-up <see cref="ComplianceControlStatus"/> is the worst case
-/// across all its evidence rows — "the chain is as strong as its weakest link"
-/// keeps the dashboard honest.
-/// </para>
-/// </remarks>
 internal sealed class DefaultComplianceEvidenceCollector : IComplianceEvidenceCollector
 {
     private static readonly string ServerVersion = ResolveServerVersion();

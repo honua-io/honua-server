@@ -6,39 +6,16 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Core.Features.AuditLog.Export;
 
-/// <summary>
-/// Tuning knobs for <see cref="AuditExportDispatcher"/> retry/backoff behavior.
-/// </summary>
 public sealed record AuditExportDispatcherOptions
 {
-    /// <summary>Maximum number of retry attempts after the initial send (default 3).</summary>
     public int MaxRetries { get; set; } = 3;
 
-    /// <summary>Delay before the first retry; grows by <see cref="BackoffMultiplier"/> each attempt (default 200ms).</summary>
     public TimeSpan BaseDelay { get; set; } = TimeSpan.FromMilliseconds(200);
 
-    /// <summary>Exponential backoff multiplier applied to <see cref="BaseDelay"/> per retry (default 2.0).</summary>
     public double BackoffMultiplier { get; set; } = 2.0;
 }
 
-/// <summary>
-/// Coordinates audit-event delivery to a single <see cref="IAuditSink"/> with
-/// shared data-residency enforcement, retry/backoff, and dead-lettering (#2157).
-/// </summary>
-/// <remarks>
-/// <para>
-/// Delivery flow:
-/// </para>
-/// <list type="number">
-/// <item>Residency is enforced first. A residency violation is <em>never</em>
-/// retried — the batch goes straight to the dead-letter store and a permanent
-/// failure is returned. The violation does not propagate out as an exception.</item>
-/// <item>The sink is invoked; transient (retryable) failures are retried up to
-/// <see cref="AuditExportDispatcherOptions.MaxRetries"/> with exponential backoff.</item>
-/// <item>A permanent failure, or exhausting retries, dead-letters the full batch
-/// (the tamper-evident chain is preserved) and returns the final failure.</item>
-/// </list>
-/// </remarks>
+// A residency violation is never retried; the batch is dead-lettered and the violation is not thrown.
 public sealed partial class AuditExportDispatcher
 {
     private readonly AuditExportDispatcherOptions _options;
@@ -46,13 +23,6 @@ public sealed partial class AuditExportDispatcher
     private readonly ILogger<AuditExportDispatcher> _logger;
     private readonly AuditResidencyGuard? _residencyGuard;
 
-    /// <summary>
-    /// Initializes a new dispatcher.
-    /// </summary>
-    /// <param name="options">Retry/backoff tuning.</param>
-    /// <param name="deadLetterStore">Holding area for undeliverable batches.</param>
-    /// <param name="logger">Structured logger.</param>
-    /// <param name="residencyGuard">Optional data-residency guard; when null, no residency restriction is applied.</param>
     public AuditExportDispatcher(
         AuditExportDispatcherOptions options,
         IAuditDeadLetterStore deadLetterStore,
@@ -69,20 +39,8 @@ public sealed partial class AuditExportDispatcher
         _residencyGuard = residencyGuard;
     }
 
-    /// <summary>
-    /// Test/seam hook for the inter-attempt delay. Defaults to <see cref="Task.Delay(TimeSpan, CancellationToken)"/>;
-    /// unit tests replace it so retries run without real wall-clock waits.
-    /// </summary>
     internal Func<TimeSpan, CancellationToken, Task> DelayAsync { get; set; } = Task.Delay;
 
-    /// <summary>
-    /// Delivers a batch of audit events to the sink, applying residency,
-    /// retry/backoff, and dead-lettering.
-    /// </summary>
-    /// <param name="sink">The destination connector.</param>
-    /// <param name="events">The events to deliver.</param>
-    /// <param name="ct">Cancellation token.</param>
-    /// <returns>The final delivery result.</returns>
     public async Task<AuditSinkResult> DispatchAsync(
         IAuditSink sink,
         IReadOnlyList<AuditEvent> events,

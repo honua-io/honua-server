@@ -8,24 +8,7 @@ using Honua.Core.Features.Compliance.Domain;
 
 namespace Honua.Core.Features.Compliance.Services;
 
-/// <summary>
-/// Minimal PDF 1.4 renderer for compliance reports. Generates a self-contained PDF
-/// with no external dependencies — auditors and procurement only need the bytes,
-/// not a typesetting library.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The renderer emits a single page per control plus a summary cover page using
-/// the PDF base font <c>Helvetica</c> (built into every conforming reader). Line
-/// wrapping is approximate — this is an evidence document, not a print layout.
-/// Avoiding QuestPDF, PdfSharp, etc. keeps the dependency footprint clean and
-/// AOT-trim-safe.
-/// </para>
-/// <para>
-/// The implementation hand-rolls PDF objects rather than streaming a content
-/// model so the structure of the document stays auditable in one screen of code.
-/// </para>
-/// </remarks>
+// The PDF is a self-contained 1.4 document in Helvetica; line wrapping is approximate because it is evidence, not a typeset report.
 internal sealed class PdfComplianceReportRenderer : IComplianceReportRenderer
 {
     private const string FontName = "Helvetica";

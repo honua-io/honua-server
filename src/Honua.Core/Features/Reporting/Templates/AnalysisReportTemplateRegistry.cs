@@ -6,21 +6,11 @@ using Honua.Core.Features.Reporting.Abstractions;
 
 namespace Honua.Core.Features.Reporting.Templates;
 
-/// <summary>
-/// Frozen registry that resolves an <see cref="IAnalysisReportTemplate"/> by
-/// process id. Mirrors the per-process catalog pattern used by
-/// <c>BuiltInProcessCatalog</c>: registered once at startup and then read-only.
-/// </summary>
 internal sealed class AnalysisReportTemplateRegistry : IAnalysisReportTemplateRegistry
 {
     private readonly FrozenDictionary<string, IAnalysisReportTemplate> _byProcessId;
     private readonly IAnalysisReportTemplate _fallback;
 
-    /// <summary>
-    /// Builds a registry from the supplied templates. The first template whose
-    /// <see cref="IAnalysisReportTemplate.ProcessId"/> equals <c>"*"</c> is
-    /// treated as the fallback; consumers may register at most one fallback.
-    /// </summary>
     public AnalysisReportTemplateRegistry(IEnumerable<IAnalysisReportTemplate> templates)
     {
         ArgumentNullException.ThrowIfNull(templates);
@@ -53,7 +43,6 @@ internal sealed class AnalysisReportTemplateRegistry : IAnalysisReportTemplateRe
         _byProcessId = dict.ToFrozenDictionary(StringComparer.Ordinal);
     }
 
-    /// <inheritdoc />
     public IAnalysisReportTemplate ResolveOrFallback(string processId)
     {
         if (!string.IsNullOrEmpty(processId) && _byProcessId.TryGetValue(processId, out var template))
@@ -64,6 +53,5 @@ internal sealed class AnalysisReportTemplateRegistry : IAnalysisReportTemplateRe
         return _fallback;
     }
 
-    /// <inheritdoc />
     public IReadOnlyCollection<string> RegisteredProcessIds => _byProcessId.Keys;
 }

@@ -9,11 +9,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Core.Features.Security;
 
-/// <summary>
-/// Default <see cref="IRequestSecretReferenceResolver"/>: applies the whole-string grammar and the
-/// operator policy, then delegates permitted references to the registered
-/// <see cref="IConnectionSecretResolver"/>.
-/// </summary>
 public sealed partial class RequestSecretReferenceResolver : IRequestSecretReferenceResolver
 {
     private const string MalformedReason =
@@ -23,10 +18,7 @@ public sealed partial class RequestSecretReferenceResolver : IRequestSecretRefer
     private readonly RequestSecretReferenceOptions _options;
     private readonly ILogger<RequestSecretReferenceResolver> _logger;
 
-    /// <summary>Creates the resolver.</summary>
-    /// <param name="inner">Provider-dispatching resolver used once a reference is permitted.</param>
-    /// <param name="options">Operator policy. Invalid entries are reported and never match.</param>
-    /// <param name="logger">Logger for operator-facing diagnostics.</param>
+    // Invalid policy entries are reported and never match.
     public RequestSecretReferenceResolver(
         IConnectionSecretResolver inner,
         RequestSecretReferenceOptions options,
@@ -44,7 +36,6 @@ public sealed partial class RequestSecretReferenceResolver : IRequestSecretRefer
         }
     }
 
-    /// <inheritdoc />
     public RequestSecretReferenceDecision Evaluate(string? reference)
     {
         if (!RequestSecretReference.TryParse(reference, out var parsed))
@@ -57,7 +48,6 @@ public sealed partial class RequestSecretReferenceResolver : IRequestSecretRefer
             : RequestSecretReferenceDecision.Refused(RequestSecretReferenceException.ClientSafeMessage);
     }
 
-    /// <inheritdoc />
     public async Task<string> ResolveAsync(string reference, CancellationToken cancellationToken = default)
     {
         if (!RequestSecretReference.TryParse(reference, out var parsed))
@@ -147,15 +137,8 @@ public sealed partial class RequestSecretReferenceResolver : IRequestSecretRefer
     private static partial void LogResolutionFailed(ILogger logger, string provider, Exception? exception);
 }
 
-/// <summary>
-/// Registration helpers for request-supplied secret reference resolution.
-/// </summary>
 public static class RequestSecretReferenceServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers <see cref="IRequestSecretReferenceResolver"/> bound to the
-    /// <c>Security:RequestSecretReferences</c> section. Safe to call more than once.
-    /// </summary>
     public static IServiceCollection AddRequestSecretReferenceResolution(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -172,10 +155,6 @@ public static class RequestSecretReferenceServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>
-    /// Binds <see cref="RequestSecretReferenceOptions"/> without reflection-based binding so the
-    /// path stays AOT-safe.
-    /// </summary>
     public static RequestSecretReferenceOptions BindOptions(IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);

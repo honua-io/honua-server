@@ -14,13 +14,6 @@ using Polly.CircuitBreaker;
 
 namespace Honua.Core.Features.Federation.Services;
 
-/// <summary>
-/// Default <see cref="IFederatedQueryExecutor"/>. It plans the push-down with the offline
-/// <see cref="IFederationQueryPlanner"/>, fetches candidate rows through the registered
-/// <see cref="IFederatedSourceConnector"/> for the source kind, and refines/combines the rows
-/// locally. Every remote fetch runs under a per-source timeout and a circuit breaker so a slow
-/// or failing source fast-fails and cannot cascade into a total outage (issue #341).
-/// </summary>
 internal sealed class FederatedQueryExecutor : IFederatedQueryExecutor
 {
     // PA-017: remote federated source calls had metrics and structured logging but no

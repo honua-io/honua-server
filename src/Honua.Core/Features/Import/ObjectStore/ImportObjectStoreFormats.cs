@@ -3,15 +3,8 @@
 
 namespace Honua.Core.Features.Import.ObjectStore;
 
-/// <summary>
-/// File-name and access-mode decisions for an object-store import.
-/// </summary>
 public static class ImportObjectStoreFormats
 {
-    /// <summary>
-    /// Leaf name used for format detection. When the key has no extension, a known content
-    /// type supplies one.
-    /// </summary>
     public static string FileNameFor(string key, string? contentType)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
@@ -33,15 +26,10 @@ public static class ImportObjectStoreFormats
         return extension is null ? leaf : leaf + extension;
     }
 
-    /// <summary>Zip and KMZ (including FileGDB <c>.gdb.zip</c>) need a seekable archive on the worker.</summary>
     public static bool IsArchive(string fileName)
         => fileName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)
            || fileName.EndsWith(".kmz", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Formats the streaming importer cannot read from a forward-only stream.
-    /// Archives are included.
-    /// </summary>
     public static bool NeedsRandomAccess(string fileName)
         => IsArchive(fileName)
            || HasExtension(fileName, ".gpkg", ".parquet", ".geoparquet", ".fgb", ".shp");

@@ -3,10 +3,13 @@
 
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Models;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Protocols.Ogc.Api.Maps.Handlers;
@@ -33,6 +36,39 @@ internal static class OgcMapsResourceResolver
     private static readonly ConditionalWeakTable<MetadataV2GraphSnapshot, ConcurrentDictionary<(string ResourceId, int TargetSrid), CachedTransform>>
         TransformCache = new();
 
+    internal sealed record AuthorizedCollection(MetadataV2Resource Resource, MetadataV2Service Service);
+
+    internal static async Task<(AuthorizedCollection? Collection, IResult? Error)> ResolveAuthorizedCollectionAsync(
+        MetadataV2GraphSnapshot snapshot,
+        (int LayerId, HttpContext? Context, ILogger Logger) request,
+        CancellationToken cancellationToken)
+    {
+        var (layerId, context, logger) = request;
+        var tenantId = context is null ? null : TenantScopeHelpers.ResolveRequestTenantId(context);
+        var (resource, service) = ResolveMapsResource(snapshot, (layerId, logger), tenantId);
+        if (resource is null)
+        {
+            OgcMapsLog.CollectionNotFound(logger, layerId);
+        }
+        if (resource is null || !IsProtocolEnabled(service, OgcApiMapsProtocol))
+        {
+            var error = context is null
+                ? Results.NotFound()
+                : StandardErrorHelpers.CreateNotFound(context, $"Collection {layerId} not found");
+            return (null, error);
+        }
+        if (context is not null)
+        {
+            var error = await AccessPolicyHelpers.RequireResourceAccessAsync(
+                context, resource, AuthorizationOperation.Query, service, cancellationToken).ConfigureAwait(false);
+            if (error is not null)
+            {
+                return (null, error);
+            }
+        }
+        return (new(resource, service!), null);
+    }
+
     /// <summary>
     /// Enumerates the dataset's collision-aware storage-layer entries once, so dataset
     /// rendering and dataset discovery describe the same resources (#5048).
@@ -45,7 +81,8 @@ internal static class OgcMapsResourceResolver
     /// </remarks>
     public static List<(int LayerId, MetadataV2Resource Resource, MetadataV2Service? Service)> EnumerateDatasetEntries(
         MetadataV2GraphSnapshot snapshot,
-        ILogger logger)
+        ILogger logger,
+        string? tenantId = null)
     {
         var entries = new List<(int LayerId, MetadataV2Resource Resource, MetadataV2Service? Service)>();
         var seenStorageLayerIds = new HashSet<int>();
@@ -57,14 +94,15 @@ internal static class OgcMapsResourceResolver
                 continue;
             }
 
-            var (resolvedResource, resolvedService) = ResolveMapsResource(snapshot, storageLayerId, logger);
+            var (resolvedResource, resolvedService) = ResolveMapsResource(snapshot, (storageLayerId, logger), tenantId);
             if (resolvedResource is not null)
             {
                 entries.Add((storageLayerId, resolvedResource, resolvedService));
             }
-            else if (snapshot.Index.ResourcesByStorageLayerId.TryGetValue(storageLayerId, out var indexResource))
+            else if (snapshot.Index.ResourcesByStorageLayerId.TryGetValue(storageLayerId, out var indexResource) &&
+                     !snapshot.Index.PublicationsByResource[indexResource.Metadata.Id].Any())
             {
-                entries.Add((storageLayerId, indexResource, ResolveOgcApiMapsService(snapshot, indexResource)));
+                entries.Add((storageLayerId, indexResource, ResolveOgcApiMapsService(snapshot, indexResource, tenantId)));
             }
         }
 
@@ -210,11 +248,18 @@ internal static class OgcMapsResourceResolver
         MetadataV2GraphSnapshot snapshot,
         int storageLayerId,
         ILogger logger)
+        => ResolveMapsResource(snapshot, (storageLayerId, logger), tenantId: null);
+
+    public static (MetadataV2Resource? Resource, MetadataV2Service? Service) ResolveMapsResource(
+        MetadataV2GraphSnapshot snapshot,
+        (int StorageLayerId, ILogger Logger) request,
+        string? tenantId)
     {
+        var (storageLayerId, logger) = request;
         MetadataV2Resource? indexedResource = null;
         if (snapshot.Index.ResourcesByStorageLayerId.TryGetValue(storageLayerId, out indexedResource))
         {
-            var indexedService = ResolveOgcApiMapsService(snapshot, indexedResource);
+            var indexedService = ResolveOgcApiMapsService(snapshot, indexedResource, tenantId);
             if (indexedService is not null)
             {
                 return (indexedResource, indexedService);
@@ -229,7 +274,7 @@ internal static class OgcMapsResourceResolver
                 continue;
             }
 
-            var service = ResolveOgcApiMapsService(snapshot, resource);
+            var service = ResolveOgcApiMapsService(snapshot, resource, tenantId);
             if (service is null)
             {
                 continue;
@@ -255,9 +300,10 @@ internal static class OgcMapsResourceResolver
     /// Returns the first Maps-enabled service that publishes <paramref name="resource"/>, or
     /// <see langword="null"/> when no Maps publication exists.
     /// </summary>
-    public static MetadataV2Service? ResolveOgcApiMapsService(MetadataV2GraphSnapshot snapshot, MetadataV2Resource resource)
+    public static MetadataV2Service? ResolveOgcApiMapsService(MetadataV2GraphSnapshot snapshot, MetadataV2Resource resource, string? tenantId = null)
     {
-        foreach (var publication in snapshot.Index.PublicationsByResource[resource.Metadata.Id])
+        foreach (var publication in TenantScopeHelpers.FilterVisiblePublications(
+                     snapshot, snapshot.Index.PublicationsByResource[resource.Metadata.Id], tenantId))
         {
             if (!snapshot.IsRoutable(publication))
             {

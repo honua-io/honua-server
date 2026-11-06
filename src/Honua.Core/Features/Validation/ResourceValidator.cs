@@ -9,24 +9,15 @@ using Honua.Core.Features.Validation.Abstractions;
 
 namespace Honua.Core.Features.Validation;
 
-/// <summary>
-/// Unified resource validation service for consistent service/layer/collection existence checks
-/// across all protocols (GeoServices REST, OGC API Features, OData).
-/// </summary>
 public sealed class ResourceValidator : IResourceValidator
 {
     private readonly IMetadataV2GraphProvider _v2Provider;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="ResourceValidator"/> class.
-    /// </summary>
-    /// <param name="v2Provider">Metadata v2 graph provider for canonical resource lookup.</param>
     public ResourceValidator(IMetadataV2GraphProvider v2Provider)
     {
         _v2Provider = v2Provider ?? throw new ArgumentNullException(nameof(v2Provider));
     }
 
-    /// <inheritdoc />
     public async Task<ResourceValidationResult<MetadataV2Resource>> ValidateLayerV2Async(
         int layerId,
         CancellationToken cancellationToken = default)
@@ -78,7 +69,6 @@ public sealed class ResourceValidator : IResourceValidator
         return ResourceValidationResult.Success(firstResource);
     }
 
-    /// <inheritdoc />
     public async Task<ResourceValidationResult<MetadataV2Resource>> ValidateCollectionV2Async(
         string collectionId,
         CancellationToken cancellationToken = default)
@@ -122,13 +112,11 @@ public sealed class ResourceValidator : IResourceValidator
             ErrorMessages.NotFound.FormatCollection(collectionId));
     }
 
-    /// <inheritdoc />
     public Task<ResourceValidationResult<MetadataV2Service>> ValidateServiceV2Async(
         string serviceId,
         CancellationToken cancellationToken = default)
         => ValidateServiceCoreAsync(serviceId, requiredProtocol: null, cancellationToken);
 
-    /// <inheritdoc />
     public Task<ResourceValidationResult<MetadataV2Service>> ValidateServiceV2Async(
         string serviceId,
         string requiredProtocol,
@@ -240,14 +228,12 @@ public sealed class ResourceValidator : IResourceValidator
     private static bool IsDedicatedGpService(MetadataV2Service service)
         => service.Route?.TrimEnd('/').EndsWith("/GPServer", StringComparison.OrdinalIgnoreCase) == true;
 
-    /// <inheritdoc />
     public Task<ResourceValidationResult<MetadataV2ServiceLayerTriple>> ValidateServiceLayerV2Async(
         string serviceId,
         int layerId,
         CancellationToken cancellationToken = default)
         => ValidateServiceLayerCoreAsync(serviceId, layerId, requiredProtocol: null, cancellationToken);
 
-    /// <inheritdoc />
     public Task<ResourceValidationResult<MetadataV2ServiceLayerTriple>> ValidateServiceLayerV2Async(
         string serviceId,
         int layerId,

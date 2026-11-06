@@ -9,36 +9,18 @@ namespace Honua.Core.Features.Admin.Domain;
 
 public static class LayerPublishSourceMetadataBounds
 {
-    /// <summary>Maximum coded values per domain; the import capture cap.</summary>
     public const int MaxCodedValuesPerDomain = GeoServicesFieldDomainParser.CodedValueDomainCap;
 
-    /// <summary>Maximum subtypes per layer; the import capture cap.</summary>
     public const int MaxSubtypes = GeoServicesSubtypeParser.SubtypeCap;
 
-    /// <summary>Maximum attribute rules per layer; the import capture cap.</summary>
     public const int MaxAttributeRules = GeoServicesAttributeRuleParser.AttributeRuleCap;
 
-    /// <summary>
-    /// Validates the captured source metadata on a publish request.
-    /// </summary>
-    /// <param name="request">The publish request.</param>
-    /// <param name="error">A client-safe reason when validation fails; otherwise <c>null</c>.</param>
-    /// <returns><c>true</c> when the metadata is absent or within bounds.</returns>
     public static bool TryValidate(LayerPublishRequest request, out string? error)
     {
         ArgumentNullException.ThrowIfNull(request);
         return TryValidate(request.FieldDomains, request.Subtypes, request.AttributeRules, out error);
     }
 
-    /// <summary>
-    /// Validates captured field domains, subtypes and attribute rules. Every argument is optional;
-    /// absent metadata is always valid.
-    /// </summary>
-    /// <param name="fieldDomains">Field domains keyed by field name, or <c>null</c>.</param>
-    /// <param name="subtypes">Subtype set, or <c>null</c>.</param>
-    /// <param name="attributeRules">Attribute rules, or <c>null</c>.</param>
-    /// <param name="error">A client-safe reason when validation fails; otherwise <c>null</c>.</param>
-    /// <returns><c>true</c> when the metadata is absent or within bounds.</returns>
     public static bool TryValidate(
         IReadOnlyDictionary<string, MetadataV2FieldDomain>? fieldDomains,
         MetadataV2Subtypes? subtypes,

@@ -2,17 +2,8 @@ using Microsoft.Extensions.Configuration;
 
 namespace Honua.Core.Configuration;
 
-/// <summary>
-/// Feature-flag helpers for mixed environment-variable and section-based configuration.
-/// </summary>
 public static class ConfigurationFeatureExtensions
 {
-    /// <summary>
-    /// Determines whether a feature flag is enabled.
-    /// </summary>
-    /// <param name="configuration">The configuration source.</param>
-    /// <param name="featureName">The feature name with or without the <c>HONUA_</c> prefix.</param>
-    /// <returns><see langword="true"/> when the feature is enabled; otherwise <see langword="false"/>.</returns>
     public static bool IsFeatureEnabled(this IConfiguration configuration, string featureName)
     {
         ArgumentNullException.ThrowIfNull(configuration);

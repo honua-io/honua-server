@@ -5,24 +5,16 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Features.Admin.Domain;
 
-/// <summary>
-/// Validated source-governance metadata authored for a published layer.
-/// </summary>
 public sealed record LayerSourceGovernance
 {
-    /// <summary>Canonical owner marker for links managed by the layer source-governance surface.</summary>
     public const string LinkManager = "layer-source-governance";
 
-    /// <summary>Maximum SPDX expression length.</summary>
     public const int MaxLicenseLength = SpdxLicensePolicy.MaxExpressionLength;
 
-    /// <summary>Maximum attribution length.</summary>
     public const int MaxAttributionLength = MetadataV2ObjectMetadata.MaxAttributionLength;
 
-    /// <summary>Maximum publisher length.</summary>
     public const int MaxPublisherLength = MetadataV2ObjectMetadata.MaxPublisherLength;
 
-    /// <summary>Maximum documentation URL length.</summary>
     public const int MaxUrlLength = MetadataV2Link.MaxGovernanceHrefLength;
 
     private LayerSourceGovernance(
@@ -39,38 +31,18 @@ public sealed record LayerSourceGovernance
         SourceUrl = sourceUrl;
     }
 
-    /// <summary>SPDX license expression or the literal <c>proprietary</c>.</summary>
     public string? License { get; }
 
-    /// <summary>Human-readable attribution that public protocol metadata must surface.</summary>
     public string? Attribution { get; }
 
-    /// <summary>Data producer or source organization.</summary>
     public string? Publisher { get; }
 
-    /// <summary>Absolute HTTP(S) URL for license documentation.</summary>
     public string? LicenseUrl { get; }
 
-    /// <summary>Absolute HTTP(S) URL for source documentation.</summary>
     public string? SourceUrl { get; }
 
-    /// <summary>
-    /// Effective license documentation URL, including the canonical SPDX URL derived for a
-    /// standalone cataloged license identifier when no explicit URL was authored.
-    /// </summary>
     public string? EffectiveLicenseUrl => LicenseUrl ?? GetSpdxLicenseUrl(License);
 
-    /// <summary>
-    /// Validates and normalizes optional source-governance input without deriving any rights or credits.
-    /// </summary>
-    /// <param name="license">SPDX expression or <c>proprietary</c>.</param>
-    /// <param name="attribution">Attribution text.</param>
-    /// <param name="publisher">Publisher text.</param>
-    /// <param name="licenseUrl">License documentation URL.</param>
-    /// <param name="sourceUrl">Source documentation URL.</param>
-    /// <param name="governance">Validated governance, or null when every value is absent/empty.</param>
-    /// <param name="error">Validation error when validation fails.</param>
-    /// <returns>True when the supplied values are valid.</returns>
     public static bool TryCreate(
         string? license,
         string? attribution,
@@ -123,24 +95,12 @@ public sealed record LayerSourceGovernance
         return true;
     }
 
-    /// <summary>
-    /// Determines whether a value is one standalone identifier from the embedded SPDX
-    /// License List snapshot. Expressions, custom references, and exception identifiers
-    /// are not standalone STAC license identifiers.
-    /// </summary>
-    /// <param name="license">Candidate SPDX license identifier.</param>
-    /// <returns><see langword="true"/> only for a cataloged SPDX license identifier.</returns>
     public static bool IsSpdxLicenseIdentifier(string? license)
         => SpdxLicensePolicy.IsLicenseIdentifier(license);
 
-    /// <summary>Returns the canonical SPDX documentation URL for a standalone license identifier.</summary>
-    /// <param name="license">Candidate SPDX license identifier.</param>
-    /// <returns>The canonical URL, or <see langword="null"/> for expressions and non-cataloged values.</returns>
     public static string? GetSpdxLicenseUrl(string? license)
         => SpdxLicensePolicy.GetLicenseUrl(license);
 
-    /// <summary>Builds canonical Metadata v2 license/source links for this value.</summary>
-    /// <returns>Zero to two canonical external links.</returns>
     public IReadOnlyList<MetadataV2Link> ToMetadataLinks()
     {
         var links = new List<MetadataV2Link>(2);

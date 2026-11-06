@@ -6,12 +6,8 @@ using Honua.Core.Features.Infrastructure.ServiceRegistration;
 
 namespace Honua.Core.Features.Alerts.Domain;
 
-/// <summary>
-/// Validates alerting configuration at startup.
-/// </summary>
 public sealed class AlertOptionsValidator : ConfigurationValidator<AlertOptions>
 {
-    /// <inheritdoc />
     protected override void PerformFeatureSpecificValidation(AlertOptions options, List<string> errors)
     {
         if (options.Edition is { } editionCap && !Enum.IsDefined(editionCap))

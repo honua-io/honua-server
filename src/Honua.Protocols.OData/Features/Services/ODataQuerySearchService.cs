@@ -136,12 +136,9 @@ internal sealed class ODataQuerySearchService
     }
 
     public async Task<ODataAggregationResult> HandleApplyAsync(
-        int layerId,
-        string applyExpression,
-        string? filter,
-        string baseUrl,
+        ODataApplyRequest request,
         CancellationToken cancellationToken = default)
     {
-        return await _searchService.HandleApplyAsync(layerId, applyExpression, filter, baseUrl, cancellationToken);
+        return await _searchService.HandleApplyAsync(request, cancellationToken);
     }
 }

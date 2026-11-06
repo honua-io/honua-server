@@ -3,195 +3,87 @@
 
 namespace Honua.Core.Features.Import.Domain;
 
-/// <summary>
-/// How an import load reconciles with an existing target table.
-/// </summary>
 public enum ImportLoadMode
 {
-    /// <summary>
-    /// Full replace. The target is rebuilt from the incoming features. Implemented as a
-    /// transactional staging-table swap so a failed or cancelled load never leaves a
-    /// half-dropped target. This is the historical behavior and the default; it is what
-    /// <see cref="ImportRequest.OverwriteExisting"/> maps to.
-    /// </summary>
+    // Full replace swaps a staging table so a failed or cancelled load never leaves a half-dropped target.
     Replace = 0,
 
-    /// <summary>
-    /// Append. Incoming features are inserted into the existing target without dropping it.
-    /// The target is created if it does not yet exist.
-    /// </summary>
     Append = 1,
 
-    /// <summary>
-    /// Keyed upsert/merge. Incoming features whose <see cref="ImportRequest.KeyColumns"/>
-    /// value(s) match an existing row UPDATE that row in place; the rest are inserted. The
-    /// target is never dropped, so an incremental update preserves untouched rows. Requires
-    /// at least one key column.
-    /// </summary>
     Upsert = 2,
 }
 
-/// <summary>Facts the import pipeline knows when it is about to commit imported rows.</summary>
 public sealed class ImportCommitScope
 {
-    /// <summary>Provider transaction that will commit the rows. PostgreSQL passes <c>NpgsqlTransaction</c>.</summary>
     public required object Transaction { get; init; }
 
-    /// <summary>Schema that owns the live table.</summary>
     public required string Schema { get; init; }
 
-    /// <summary>Physical table that receives the rows.</summary>
     public required string PhysicalTable { get; init; }
 
-    /// <summary>Row count included in this commit.</summary>
     public required int FeatureCount { get; init; }
 }
 
-/// <summary>Runs inside the transaction that commits imported rows, before that transaction commits.</summary>
 public delegate ValueTask ImportCommitParticipant(ImportCommitScope scope, CancellationToken cancellationToken);
 
-/// <summary>
-/// Request to import a geospatial file into a layer
-/// </summary>
 public sealed record ImportRequest
 {
-    /// <summary>Canonical governed operation instance that accepted this import.</summary>
     public string? OperationInstanceId { get; init; }
 
-    /// <summary>Canonical request correlation identity; never derived from job metadata.</summary>
+    // The correlation identity is canonical and is never derived from job metadata.
     public string? CorrelationId { get; init; }
 
-    /// <summary>Durable acceptance-audit identity for the governed import.</summary>
     public string? AuditId { get; init; }
 
-    /// <summary>Approved proposal identity when this import is an approved replay.</summary>
     public string? ProposalId { get; init; }
 
-    /// <summary>
-    /// File stream to import (optional if CloudFileId is provided)
-    /// </summary>
     public Stream? FileStream { get; init; }
 
-    /// <summary>
-    /// Cloud storage file ID (optional if FileStream is provided)
-    /// </summary>
     public string? CloudFileId { get; init; }
 
-    /// <summary>
-    /// Local staged file path (optional if FileStream or CloudFileId is provided).
-    /// Used for streamed ingest paths that spool to disk before import processing.
-    /// </summary>
     public string? LocalFilePath { get; init; }
 
-    /// <summary>
-    /// Customer object-store URI (<c>s3://bucket/key</c>). Exclusive with
-    /// <see cref="FileStream"/>, <see cref="CloudFileId"/>, and <see cref="LocalFilePath"/>.
-    /// The worker opens it with <see cref="ObjectStoreETag"/> pinned.
-    /// </summary>
     public string? ObjectStoreUri { get; init; }
 
-    /// <summary>ETag observed by HeadObject. The worker sends it as <c>If-Match</c>.</summary>
     public string? ObjectStoreETag { get; init; }
 
-    /// <summary>Allow-listed role ARN to assume, when the import does not use the host identity.</summary>
     public string? ObjectStoreRoleArn { get; init; }
 
-    /// <summary>Content type observed by HeadObject, used when the key has no extension.</summary>
     public string? ObjectStoreContentType { get; init; }
 
-    /// <summary>
-    /// Original filename (used for format detection)
-    /// </summary>
     public required string FileName { get; init; }
 
-    /// <summary>
-    /// Stable source kind for admin import job result views.
-    /// </summary>
     public string SourceKind { get; init; } = "file";
 
-    /// <summary>
-    /// Source URL when the import was accepted from a remote object URL.
-    /// </summary>
     public string? SourceUrl { get; init; }
 
-    /// <summary>
-    /// Upload operation ID associated with this import, when supplied by the client or storage provider.
-    /// </summary>
     public string? UploadId { get; init; }
 
-    /// <summary>
-    /// Target table name in PostgreSQL
-    /// </summary>
     public required string TableName { get; init; }
 
-    /// <summary>
-    /// Optional target schema for imported operational data.
-    /// When omitted, the configured PostgreSQL operational-data schema is used.
-    /// </summary>
     public string? TargetSchema { get; init; }
 
-    /// <summary>
-    /// Source coordinate reference system ID (detected or specified)
-    /// </summary>
     public int? SourceSrid { get; init; }
 
-    /// <summary>
-    /// Target coordinate reference system ID (for transformation)
-    /// </summary>
     public int TargetSrid { get; init; } = 4326;
 
-    /// <summary>
-    /// Whether to overwrite existing table.
-    /// </summary>
-    /// <remarks>
-    /// Preserved for backward compatibility. When <see cref="LoadMode"/> is left at its
-    /// default, <see langword="true"/> selects replace and <see langword="false"/> selects
-    /// append so an existing target is never silently destroyed.
-    /// </remarks>
+    // When the mode is left at its default, overwrite selects replace and otherwise the load appends, so an existing target is not silently destroyed.
     public bool OverwriteExisting { get; init; }
 
-    /// <summary>
-    /// How the load reconciles with an existing target table (replace / append / upsert).
-    /// Defaults to <see cref="ImportLoadMode.Replace"/> as the explicit API value; the
-    /// legacy <see cref="OverwriteExisting"/> flag is reconciled by <see cref="EffectiveLoadMode"/>.
-    /// </summary>
     public ImportLoadMode LoadMode { get; init; } = ImportLoadMode.Replace;
 
-    /// <summary>
-    /// One or more property key names used as the conflict target for
-    /// <see cref="ImportLoadMode.Upsert"/>. Required when <see cref="EffectiveLoadMode"/>
-    /// resolves to <see cref="ImportLoadMode.Upsert"/>; ignored for replace/append.
-    /// </summary>
     public IReadOnlyList<string> KeyColumns { get; init; } = [];
 
-    /// <summary>
-    /// Optional CSV-specific options (explicit longitude/latitude column names or an
-    /// address column resolved through a caller-supplied geocoder). Ignored for
-    /// non-CSV formats. When omitted the CSV reader's header auto-detection applies.
-    /// </summary>
     public CsvImportOptions? CsvOptions { get; init; }
 
-    /// <summary>
-    /// Runs inside the transaction that commits imported rows, before that transaction commits.
-    /// Job-artifact import stores its idempotency receipt there. When set, a direct append into
-    /// a table the importer does not own is refused because those batches commit on their own.
-    /// </summary>
+    // A direct append into a table the importer does not own is refused when a commit participant is set, because those batches commit on their own.
     public ImportCommitParticipant? CommitParticipant { get; init; }
 
-    /// <summary>
-    /// The resolved load mode, reconciling the legacy <see cref="OverwriteExisting"/> flag
-    /// with the explicit <see cref="LoadMode"/>. <see cref="LoadMode"/> wins when it is set
-    /// to a non-default value; otherwise <see cref="OverwriteExisting"/> selects replace.
-    /// </summary>
     public ImportLoadMode EffectiveLoadMode =>
         LoadMode != ImportLoadMode.Replace
             ? LoadMode
             : OverwriteExisting ? ImportLoadMode.Replace : ImportLoadMode.Append;
 
-    /// <summary>
-    /// Validates that exactly one import source is provided.
-    /// </summary>
-    /// <exception cref="InvalidOperationException">Thrown when the source is missing or ambiguous.</exception>
     public void Validate()
     {
         var cloudFileId = string.IsNullOrWhiteSpace(CloudFileId) ? null : CloudFileId;
@@ -235,18 +127,9 @@ public sealed record ImportRequest
         }
     }
 
-    /// <summary>
-    /// Gets a value indicating whether this request uses cloud storage
-    /// </summary>
     public bool UsesCloudStorage => !string.IsNullOrWhiteSpace(CloudFileId);
 
-    /// <summary>
-    /// Gets a value indicating whether this request uses a local staged file path.
-    /// </summary>
     public bool UsesLocalFile => !string.IsNullOrWhiteSpace(LocalFilePath);
 
-    /// <summary>
-    /// Gets a value indicating whether this request reads a customer object-store URI at execution time.
-    /// </summary>
     public bool UsesObjectStore => !string.IsNullOrWhiteSpace(ObjectStoreUri);
 }

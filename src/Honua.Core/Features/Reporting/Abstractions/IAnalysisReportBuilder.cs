@@ -7,23 +7,12 @@ using Honua.Core.Features.Security.Admission;
 
 namespace Honua.Core.Features.Reporting.Abstractions;
 
-/// <summary>
-/// Composes an <see cref="AnalysisReport"/> from an
-/// <see cref="AnalysisResultPackage"/>. Resolves the template, runs the
-/// narrative path, and stamps the result with template + contract version
-/// metadata.
-/// </summary>
 public interface IAnalysisReportBuilder
 {
-    /// <summary>
-    /// Builds a report for <paramref name="package"/>. Returns the structured
-    /// envelope; renderers convert to format-specific output.
-    /// </summary>
     Task<AnalysisReport> BuildAsync(
         string jobId,
         AnalysisResultPackage package,
         CancellationToken cancellationToken);
-    /// <summary>Builds with server-validated invocation context; legacy builders retain their existing deterministic behavior.</summary>
     Task<AnalysisReport> BuildAsync(string jobId, AnalysisResultPackage package,
         AiExecutionContext? executionContext, CancellationToken cancellationToken)
         => BuildAsync(jobId, package, cancellationToken);

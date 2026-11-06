@@ -406,21 +406,25 @@ public sealed class TestFeatureStore : IFeatureReader, IFeatureWriter, ITileProv
             update = update with { Geometry = stored.Geometry };
         }
 
-        if (!update.PreserveOmittedMaskedAttributes)
+        if (!update.PreserveOmittedMaskedAttributes && update.PreservedAttributeNames.IsDefaultOrEmpty)
         {
             return update;
         }
 
+        var preserved = update.PreservedAttributeNames.IsDefaultOrEmpty
+            ? null
+            : update.PreservedAttributeNames.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var supplied = new HashSet<string>(update.Attributes.Keys, StringComparer.OrdinalIgnoreCase);
-        if (!update.ExplicitAttributeRemovals.IsDefaultOrEmpty)
-        {
-            supplied.UnionWith(update.ExplicitAttributeRemovals);
-        }
+        var removals = update.ExplicitAttributeRemovals.IsDefaultOrEmpty
+            ? null
+            : update.ExplicitAttributeRemovals.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var attributes = update.Attributes.ToBuilder();
         foreach (var (name, value) in stored.Attributes)
         {
-            if (!name.Equals("objectid", StringComparison.OrdinalIgnoreCase) && !supplied.Contains(name))
+            if (!name.Equals("objectid", StringComparison.OrdinalIgnoreCase) && !supplied.Contains(name) &&
+                (preserved?.Contains(name) == true ||
+                 (update.PreserveOmittedMaskedAttributes && removals?.Contains(name) != true)))
             {
                 attributes[name] = value;
             }

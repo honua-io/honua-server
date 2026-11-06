@@ -121,26 +121,20 @@ internal sealed partial class FieldMaskSource : IFieldMaskSource
     {
         try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var snapshot = ValidatedMetadataSnapshot.Find(_httpContextAccessor.HttpContext, resource)
-                ?? await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            return snapshot.Index.ServiceNamesByResource.TryGetValue(resource.Metadata.Id, out var names)
-                ? names
-                : Array.Empty<string>();
+            return await ReadPolicyServiceScope.ResolveAsync(resource,
+                new(_httpContextAccessor.HttpContext, _graphProvider), cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
+        catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
         {
-            // Metadata resolution is best-effort for service scoping; "*"-service
-            // policies still apply via the wildcard lookup. Never fail the query.
             FieldMaskLog.ServiceResolutionFailed(_logger, resource.Metadata.Name, ex);
-            return Array.Empty<string>();
+            throw;
         }
     }
 
     private static partial class FieldMaskLog
     {
         [LoggerMessage(EventId = 4570, Level = LogLevel.Warning,
-            Message = "Field-mask service-name resolution failed for layer '{Layer}'; only wildcard-service policies will apply")]
+            Message = "Field-mask service-name resolution failed for layer '{Layer}'; policy resolution was refused")]
         public static partial void ServiceResolutionFailed(ILogger logger, string layer, Exception exception);
     }
 

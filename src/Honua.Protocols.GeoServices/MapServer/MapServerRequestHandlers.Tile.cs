@@ -79,7 +79,7 @@ internal static partial class MapServerEndpoints
             var service = serviceResult.Service!;
             var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            var publishedLayers = ResolveTileLayerDescriptors(snapshot, service);
+            var publishedLayers = ResolveTileLayerDescriptors(snapshot, service, context);
 
             var access = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
                 context,
@@ -243,10 +243,12 @@ internal static partial class MapServerEndpoints
 
     internal static TileLayerDescriptor[] ResolveTileLayerDescriptors(
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Service service)
+        MetadataV2Service service,
+        HttpContext? context = null)
     {
         var descriptors = new List<TileLayerDescriptor>();
-        foreach (var publication in snapshot.Index.PublicationsByService[service.Metadata.Id])
+        foreach (var publication in MapServerPublicationResolver.ResolveLayerPublications(
+                     snapshot, service, context is null ? null : TenantScopeHelpers.ResolveRequestTenantId(context)))
         {
             if (publication.LayerIndex is not int publicLayerId)
             {

@@ -6,9 +6,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.Forms.Packages;
 
-/// <summary>
-/// Source-generated JSON context for form package contracts.
-/// </summary>
 [JsonSourceGenerationOptions(
     JsonSerializerDefaults.General,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]

@@ -7,16 +7,9 @@ using System.Text;
 
 namespace Honua.Core.Features.WorkflowPackages.Domain;
 
-/// <summary>
-/// Stable content hash for a workflow package graph. Version creation compares this
-/// hash under the package-row lock so a draft that changed after validation cannot
-/// be stored under the hash of a different graph.
-/// </summary>
+// Version creation compares this hash under the package-row lock so a draft that changed after validation cannot be stored under another graph's hash.
 public static class WorkflowPackageGraphHasher
 {
-    /// <summary>
-    /// Computes the lowercase hex SHA-256 of the canonical graph content.
-    /// </summary>
     public static string Compute(WorkflowGraph graph)
     {
         ArgumentNullException.ThrowIfNull(graph);

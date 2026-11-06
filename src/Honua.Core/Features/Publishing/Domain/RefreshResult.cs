@@ -3,59 +3,26 @@
 
 namespace Honua.Core.Features.Publishing.Domain;
 
-/// <summary>
-/// Outcome of a one-way refresh operation that pulled source content into a published service.
-/// </summary>
 public sealed record RefreshResult
 {
-    /// <summary>
-    /// Identifier of the refresh request that produced this result.
-    /// </summary>
     public required string RequestId { get; init; }
 
-    /// <summary>
-    /// Identifier of the published service that was refreshed.
-    /// </summary>
     public required string ServiceId { get; init; }
 
-    /// <summary>
-    /// Outcome of the refresh operation.
-    /// </summary>
     public required RefreshOutcome Outcome { get; init; }
 
-    /// <summary>
-    /// When the refresh operation started.
-    /// </summary>
     public required DateTimeOffset StartedAt { get; init; }
 
-    /// <summary>
-    /// When the refresh operation completed.
-    /// </summary>
     public DateTimeOffset? CompletedAt { get; init; }
 
-    /// <summary>
-    /// Duration of the refresh operation.
-    /// </summary>
     public TimeSpan Duration => (CompletedAt ?? DateTimeOffset.UtcNow) - StartedAt;
 
-    /// <summary>
-    /// Number of items updated during the refresh.
-    /// </summary>
     public int ItemsUpdated { get; init; }
 
-    /// <summary>
-    /// Error messages encountered during the refresh.
-    /// </summary>
     public IReadOnlyList<string> Errors { get; init; } = [];
 
-    /// <summary>
-    /// Non-fatal warning messages encountered during the refresh.
-    /// </summary>
     public IReadOnlyList<string> Warnings { get; init; } = [];
 
-    /// <summary>
-    /// Creates a successful refresh result.
-    /// </summary>
     public static RefreshResult CreateSucceeded(
         string requestId,
         string serviceId,
@@ -73,9 +40,6 @@ public sealed record RefreshResult
             Warnings = warnings ?? []
         };
 
-    /// <summary>
-    /// Creates a failed refresh result.
-    /// </summary>
     public static RefreshResult CreateFailed(
         string requestId,
         string serviceId,

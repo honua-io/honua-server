@@ -9,11 +9,7 @@ using Honua.Core.Features.Import.Domain;
 
 namespace Honua.Core.Features.FileImport.Services;
 
-/// <summary>
-/// Infers promotable PostgreSQL column types from source attribute values seen during an import.
-/// Unsafe names, reserved import columns, PostgreSQL system columns, nested values, and keys
-/// past the column cap stay out of the result so they remain only in the properties document.
-/// </summary>
+// Unsafe names, reserved import columns, system columns, nested values, and keys past the column cap stay in the properties document.
 internal sealed partial class ImportTypedColumnInference(bool preserveStringScalars = false, bool inferTemporalStrings = true)
 {
     internal const int MaxColumns = 128;
@@ -35,9 +31,6 @@ internal sealed partial class ImportTypedColumnInference(bool preserveStringScal
     private readonly Dictionary<string, Kind> _columns = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _exactNames = new(StringComparer.Ordinal);
 
-    /// <summary>
-    /// Records one attribute value. Null and empty strings do not force a type on their own.
-    /// </summary>
     public void Observe(string name, object? value)
     {
         if (!IsPromotableName(name))
@@ -63,9 +56,6 @@ internal sealed partial class ImportTypedColumnInference(bool preserveStringScal
         _columns[name] = current == Kind.None ? observed : Merge(current, observed);
     }
 
-    /// <summary>
-    /// Returns the columns that can be promoted, in first-seen order.
-    /// </summary>
     public IReadOnlyList<ImportTypedColumn> Resolve()
     {
         var columns = new List<ImportTypedColumn>(_columns.Count);

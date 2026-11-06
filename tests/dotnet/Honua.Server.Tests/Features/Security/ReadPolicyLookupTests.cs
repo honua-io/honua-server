@@ -159,6 +159,13 @@ public sealed partial class ReadPolicyLookupTests
         var rls = new RowLevelSecurityFilterSource(accessor, recordingRls, graph, filters, options, NullLogger<RowLevelSecurityFilterSource>.Instance);
         var masks = new FieldMaskSource(accessor, recordingMasks, graph, options, NullLogger<FieldMaskSource>.Instance);
 
+        if (serviceCount < 0)
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() => rls.ResolveExpressionsAsync(resource));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => masks.ResolveAsync(resource));
+            return;
+        }
+
         var expressions = await rls.ResolveExpressionsAsync(resource);
         var maskedFields = await masks.ResolveAsync(resource);
 

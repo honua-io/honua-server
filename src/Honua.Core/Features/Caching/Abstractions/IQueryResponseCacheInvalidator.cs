@@ -3,16 +3,8 @@
 
 namespace Honua.Core.Features.Caching.Abstractions;
 
-/// <summary>
-/// Invalidates shared query-response cache namespaces after a change that can
-/// alter query results across services.
-/// </summary>
 public interface IQueryResponseCacheInvalidator
 {
-    /// <summary>
-    /// Bumps the FeatureServer, OGC, and OData query-response namespaces so later
-    /// reads miss entries stored before the change.
-    /// </summary>
-    /// <param name="cancellationToken">Cancellation token.</param>
+    // This bumps the FeatureServer, OGC, and OData query-response namespaces so later reads miss entries stored before the change.
     Task InvalidateQueryResponsesAsync(CancellationToken cancellationToken = default);
 }

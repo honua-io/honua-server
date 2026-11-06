@@ -3,10 +3,6 @@
 
 namespace Honua.Core.Features.FileImport.Domain;
 
-/// <summary>
-/// The background import queue has reached its configured concurrency and depth cap.
-/// Endpoints map this to HTTP 429.
-/// </summary>
 public sealed class ImportJobQueueFullException : Exception
 {
     public ImportJobQueueFullException()

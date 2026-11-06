@@ -70,6 +70,7 @@ Run `POST /api/v1/forms/packages/{formId}/submissions` with this body:
 - Idempotency is scoped by form id, package version, actor/client hash, and `idempotencyKey`. Exact replays return the stored terminal response with `idempotentReplay: true`; a changed payload with the same key returns `409`.
 - Responses: `200` accepted (or failed edit with retry guidance), `400` rejected validation failures, `403` policy denials, `404` missing published package or target layer, `409` idempotency conflicts, `500` server failure with `retryable: true`.
 - Accepted submissions flow into the shared edit pipeline; attachments upload only after a successful create/update edit resolves the target feature id.
+- Runtime validation enforces the current target field policy. Submitted values for read-only or hidden target fields are rejected; updates also reject changes or null removals of the bound GlobalID. Publishing a package does not freeze target field permissions.
 
 ### Offline policy
 
