@@ -29,7 +29,7 @@ namespace Honua.Server.Tests.Features.Admin;
 /// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
-public sealed class RowLevelSecurityEndpointsTests : IAsyncLifetime
+public sealed partial class RowLevelSecurityEndpointsTests : IAsyncLifetime
 {
     // The default seed for layer 0 has five features: three with category 'test' and
     // two with category 'sample' (tests/seed/server.yaml).
