@@ -1632,7 +1632,7 @@ jobs:
     # / manual full CI and merge-train batches set integration_changes=true, so
     # the job is part of the run_all lane too.
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: changes
     # Native PDAL compilation (30m), managed build (15m), and real execution
     # (10m) retain headroom for restore, image pulls, and receipt upload.
@@ -1782,7 +1782,7 @@ jobs:
   python-integration-tests:
     name: Python Integration Tests
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.full_ci == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: changes
     timeout-minutes: 25
     env:
@@ -1819,28 +1819,10 @@ jobs:
             --no-restore \
             --configuration Release
 
-      - name: Identify the Python native dependency runner image
-        id: python-native-image
-        run: echo "image=${ImageOS:?}-${ImageVersion:?}" >> "$GITHUB_OUTPUT"
-
-      - name: Restore Python native dependency packages
-        id: python-native-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ runner.temp }}/python-native-debs
-          key: python-native-debs-${{ runner.os }}-${{ runner.arch }}-${{ steps.python-native-image.outputs.image }}-${{ hashFiles('scripts/ci/provision-python-native.sh') }}
-
       - name: Install GDAL tools and native Parquet dependency
-        env:
-          PYTHON_NATIVE_CACHE_HIT: ${{ steps.python-native-cache.outputs.cache-hit }}
-        run: bash scripts/ci/provision-python-native.sh
-
-      - name: Save validated Python native dependency packages
-        if: steps.python-native-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: ./.github/actions/provision-gdal-cli
         with:
-          path: ${{ runner.temp }}/python-native-debs
-          key: python-native-debs-${{ runner.os }}-${{ runner.arch }}-${{ steps.python-native-image.outputs.image }}-${{ hashFiles('scripts/ci/provision-python-native.sh') }}
+          python-environment: setup-python
 
       - name: Install Python test dependencies
         run: |
