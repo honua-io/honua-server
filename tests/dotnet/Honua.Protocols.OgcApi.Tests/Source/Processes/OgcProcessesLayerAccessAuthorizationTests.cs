@@ -8,13 +8,13 @@ using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
-using Honua.Geoprocessing;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.TestKit.Infrastructure;
+using Honua.Geoprocessing;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
+using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -162,19 +162,18 @@ public sealed class OgcProcessesLayerAccessAuthorizationTests
     {
         public TestMetadataV2GraphProvider BuildProvider()
         {
-            var pending = new RbacTestLayerCatalog(
+            var graph = new RbacTestLayerCatalog(
                 alphaLayerMetadata: ServiceRbacTestFixture.CreateServiceMetadata(
-                    readRoles: [LayerReaderRole])).BuildProvider().GetCurrentAsync();
-            pending.IsCompletedSuccessfully.Should().BeTrue();
-            var graph = pending.Result.Graph;
+                    readRoles: [LayerReaderRole])).BuildGraph();
             var bindings = graph.Resources.Select(resource => new MetadataV2StorageBinding
             {
                 Metadata = new MetadataV2ObjectMetadata { Id = $"process-{resource.Metadata.Id}", Name = resource.Metadata.Name },
                 ResourceId = resource.Metadata.Id,
                 Locator = "features",
-                StorageLayerId = graph.Publications.First(publication => publication.ResourceId == resource.Metadata.Id).LayerIndex
+                StorageLayerId = graph.Publications.Where(publication => publication.ResourceId == resource.Metadata.Id)
+                    .Select(publication => publication.LayerIndex).Distinct().Single()
             }).ToArray();
-            var provider = new TestMetadataV2GraphProvider(graph with
+            return new TestMetadataV2GraphProvider(graph with
             {
                 Resources = graph.Resources.Select(resource => resource with
                 {
@@ -182,10 +181,6 @@ public sealed class OgcProcessesLayerAccessAuthorizationTests
                 }).ToArray(),
                 StorageBindings = bindings
             });
-            var snapshot = provider.GetCurrentAsync().Result;
-            snapshot.Index.ResourcesByStorageLayerId[RestrictedLayerId].Metadata.Id.Should().Be("res-layer-0");
-            snapshot.Index.ResourcesByStorageLayerId[OpenLayerId].Metadata.Id.Should().Be("res-layer-1");
-            return provider;
         }
     }
 

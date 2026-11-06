@@ -272,7 +272,6 @@ public sealed class FeatureServerReplicaEsriParityTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task SynchronizeReplica_UpdateAcrossTheScopeBoundary_DeletesRowsThatLeftTheScope()
     {
-        _fixture.RemoveRasterResources();
         // Scope: envelope (60,10)-(61,11). Each row is classified from its state before the first change
         // in the window (the change log's pre-change image, #4879) and its state now.
         var leaving = await AddFeatureAsync("boundary-leaving", 60.25, 10.5);

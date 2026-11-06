@@ -600,20 +600,25 @@ public sealed class WebAppFixture : IAsyncLifetime
     /// registration's lifetime is preserved.
     /// </summary>
     /// <param name="decorate">Builds the decorator from the resolved inner service.</param>
-    public WebAppFixture DecorateService<TService>(Func<TService, TService> decorate)
+    public WebAppFixture DecorateService<TService>(Func<TService, TService> decorate, bool decorateAll = false)
         where TService : class
     {
         ArgumentNullException.ThrowIfNull(decorate);
         _serviceConfigurations.Add(services =>
         {
-            var original = services.LastOrDefault(descriptor => descriptor.ServiceType == typeof(TService))
-                ?? throw new InvalidOperationException(
-                    $"No registration for {typeof(TService).Name} to decorate.");
-            services.Remove(original);
-            services.Add(ServiceDescriptor.Describe(
-                typeof(TService),
-                provider => decorate((TService)ResolveOriginal(provider, original)),
-                original.Lifetime));
+            var registrations = services.Where(descriptor => descriptor.ServiceType == typeof(TService)).ToArray();
+            if (registrations.Length == 0)
+            {
+                throw new InvalidOperationException($"No registration for {typeof(TService).Name} to decorate.");
+            }
+            foreach (var original in decorateAll ? registrations : registrations.TakeLast(1))
+            {
+                var index = services.IndexOf(original);
+                services[index] = ServiceDescriptor.Describe(
+                    typeof(TService),
+                    provider => decorate((TService)ResolveOriginal(provider, original)),
+                    original.Lifetime);
+            }
         });
         return this;
     }
