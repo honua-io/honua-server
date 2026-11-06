@@ -2,6 +2,7 @@
 -- Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 -- honua:compatibility-review reason=Refuse import replacement when external database objects depend on the target instead of silently deleting them.
+-- honua:reader-incompatible reason=Readers without this helper's exact-byte review classify its deferred DROP/RENAME statements as contract; coordinate the upgrade and restore the pre-upgrade database for rollback.
 CREATE OR REPLACE FUNCTION honua.swap_import_table(
     schema_name text,
     table_name text)

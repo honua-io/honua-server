@@ -190,7 +190,7 @@ public static class MigrationSafetyClassifier
             "145_ProtectImportDependencies.sql"
                 or "Honua.Server.Migrations.145_ProtectImportDependencies.sql"
                 or "src/Honua.Server/Migrations/145_ProtectImportDependencies.sql"
-                => "D32E27D1DB1DE5E7242EC777ABCC629C492ACDFA9E180ECDC1CB1B8D8F29A95D",
+                => "5137ECDF8A2C23C7503B048BA79EA21CF504B89DED7E0E5A64417724D7DEAEB1",
             _ => null
         };
         return reviewedHash is not null && Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(

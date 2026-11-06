@@ -141,11 +141,14 @@ replacement when other database objects depend on the target. Deploy it with the
 matching application so dependency failures receive the stable import error.
 The migration only installs the existing helper signature; it does not execute
 replacement or change the reader schema. Its exact reviewed bytes are additive.
-A previous reader must still qualify the recorded forward-compatibility declaration
-before rollback. If it refuses startup, restore the pre-upgrade database backup and
-its matching application image instead of rolling the application back over the
-migrated database. Do not remove the migration journal entry or reintroduce
-cascading replacement to bypass that boundary.
+**This requires a coordinated upgrade, not a rolling mixed-image deployment.**
+Earlier images lack that exact-byte review, classify the deferred helper operations
+as contract, and refuse startup against the migrated database. The migration records
+an explicit `reader-incompatible` declaration for this observed compatibility boundary.
+Upgrade all server and worker instances together. Application-only rollback is not
+supported after migration 145: restore the pre-upgrade database backup and its matching
+application image. Do not remove the migration journal entry or reintroduce cascading
+replacement to bypass that boundary.
 
 ### Configuration binding correction
 
