@@ -134,7 +134,9 @@ public sealed class ImageServerNumericLayerAuthorizationTests
         hidden = hidden with { Metadata = hidden.Metadata with { Tenant = "tenant-b" } };
         var visible = hidden with
         {
-            Metadata = hidden.Metadata with { Id = "visible-raster", Tenant = null }, IsPrimary = false, LayerIndex = 8
+            Metadata = hidden.Metadata with { Id = "visible-raster", Tenant = null },
+            IsPrimary = false,
+            LayerIndex = 8
         };
         graph.SetGraph(snapshot.Graph with { Publications = [snapshot.Graph.Publications[0], hidden, visible] });
         var result = await CreateResolver(graph).ValidateLayerAsync(StorageLayerId, CreateContext(tenant: "tenant-a"),
