@@ -164,6 +164,6 @@ public sealed record MigrationRelationshipApplyOutcome
 
     public required string TargetRelationshipRef { get; init; }
 
-    // A deferred relationship is a blocking incomplete migration, because an idempotent re-apply reports the same created flag.
+    // Deferred marks a blocking incomplete migration, because an idempotent re-apply also reports MigrationCatalogWriteOutcome.AlreadyExists.
     public bool Deferred { get; init; }
 }

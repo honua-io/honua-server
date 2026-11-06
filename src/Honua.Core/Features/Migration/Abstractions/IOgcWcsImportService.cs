@@ -12,7 +12,7 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Abstractions;
 
-// Only image/tiff is applied automatically; any other WCS format goes to manual review, and ingestion uses the single coverage sink.
+// image/tiff, image/geotiff, and image/tiff parameters are ingested; every other format is manual review before any bytes are downloaded.
 public interface IOgcWcsImportService
 {
     Task<OgcWcsImportResult> ImportAsync(

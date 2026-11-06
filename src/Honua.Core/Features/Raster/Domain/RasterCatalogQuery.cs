@@ -175,7 +175,6 @@ public sealed record RasterCatalogPage
 
     public long RowsReturned { get; init; }
 
-    // The duration is telemetry and never includes SQL text.
     public TimeSpan ProviderDuration { get; init; }
 
     public bool PredicatePushedDown { get; init; }

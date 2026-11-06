@@ -9,6 +9,7 @@ namespace Honua.Core.Features.Migration.Services;
 
 public static class GeoServicesSubtypeParser
 {
+    // Layers over this cap are omitted entirely, because a partial subtype set would false-fail later reconciliation.
     public const int SubtypeCap = 100;
 
     public static GeoServicesSubtypeParseResult Parse(JsonElement layerElement)

@@ -3,6 +3,7 @@
 
 namespace Honua.Core.Features.Migration.Domain;
 
+// A declaration is source evidence, not proof of the target binding, so missing facts stay null instead of being inferred from object ids.
 public sealed record GeoservicesRelationshipInfo
 {
     public int? Id { get; init; }

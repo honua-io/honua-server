@@ -36,10 +36,12 @@ public sealed record PMTilesPublishOptions
 
     public string KeyPrefix { get; set; } = "pmtiles";
 
+    // Seven days is the upper bound for AWS SigV4 IAM presigning.
     public TimeSpan SignedUrlLifetime { get; set; } = TimeSpan.FromDays(7);
 
     public string? PublicBucketBaseUrl { get; set; }
 
+    // Anonymous access is only for archives with no source binding; a bound, retired, or rebound source still uses that source's access policy.
     public bool AllowAnonymousUnboundArchives { get; set; }
 }
 

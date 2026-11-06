@@ -40,6 +40,7 @@ public static class MigrationMetricsAmbient
     }
 }
 
+// Mounted inside the resilience pipeline so each physical retry is counted, not only the logical operation.
 public sealed partial class MigrationRequestCountingHandler : DelegatingHandler
 {
     private readonly ILogger<MigrationRequestCountingHandler> _logger;

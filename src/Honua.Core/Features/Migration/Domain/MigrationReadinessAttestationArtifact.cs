@@ -18,7 +18,6 @@ public static class MigrationReadinessStatuses
     // Cutover waits until operator review closes the cited manual-review or warning conditions.
     public const string Conditional = "conditional";
 
-    // The source is not safe to cut over.
     public const string NotReady = "not-ready";
 }
 

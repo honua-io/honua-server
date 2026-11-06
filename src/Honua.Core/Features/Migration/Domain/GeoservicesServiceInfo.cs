@@ -48,6 +48,7 @@ public sealed record GeoservicesLayerInfo
 
     public bool HasM { get; init; }
 
+    // Null means the source did not advertise pagination, which is different from an explicit false.
     public bool? SupportsPagination { get; init; }
 
     public int? SpatialReferenceWkid { get; init; }

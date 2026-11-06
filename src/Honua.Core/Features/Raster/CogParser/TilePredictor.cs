@@ -5,6 +5,7 @@ using System.Buffers.Binary;
 
 namespace Honua.Core.Features.Raster.CogParser;
 
+// TIFF horizontal differences wrap at the sample bit depth, so the prefix sum is unchecked.
 internal static class TilePredictor
 {
     public static void Undo(Span<byte> pixels, in TilePixelLayout layout)

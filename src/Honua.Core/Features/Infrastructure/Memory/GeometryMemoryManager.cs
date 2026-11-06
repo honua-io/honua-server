@@ -121,7 +121,7 @@ public readonly struct ByteBufferRental : IDisposable
 
     public Span<byte> Span => new(_buffer, 0, _usableLength);
 
-    // The buffer is cleared before it returns to the pool.
+    // Clears the buffer before reuse so a later renter cannot read the previous caller's bytes.
     public void Dispose()
     {
         MemoryPool.ReturnByteArray(_buffer, clearArray: true);

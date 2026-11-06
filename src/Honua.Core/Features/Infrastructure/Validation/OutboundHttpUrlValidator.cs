@@ -240,6 +240,7 @@ public static class OutboundHttpUrlValidator
     private static HostVettingOutcome ToOutcome(bool isPrivateOrReserved)
         => isPrivateOrReserved ? HostVettingOutcome.Disallowed : HostVettingOutcome.Allowed;
 
+    // An empty address list is a conclusive denial, not an unavailable resolver that a caller could retry.
     private static bool ContainsPrivateOrReservedAddress(IPAddress[] addresses)
         => addresses.Length == 0 || addresses.Any(IsPrivateOrReservedAddress);
 

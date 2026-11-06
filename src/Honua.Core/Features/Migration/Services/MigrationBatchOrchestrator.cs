@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Core.Features.Migration.Services;
 
+// Scoped collaborators are resolved per call so a request handler and the long-lived batch service do not capture scoped lifetimes.
 public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestrator
 {
     private static readonly TimeSpan ChildJobTtl = TimeSpan.FromHours(24);

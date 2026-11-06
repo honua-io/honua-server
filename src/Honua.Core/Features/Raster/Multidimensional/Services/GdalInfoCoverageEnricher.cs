@@ -8,6 +8,7 @@ using Honua.Core.Features.Raster.Multidimensional.Domain;
 
 namespace Honua.Core.Features.Raster.Multidimensional.Services;
 
+// This structure pass leaves extent and resolution unset, so those values are filled from a gdalinfo -json pass over the same source.
 public static class GdalInfoCoverageEnricher
 {
     public static MultidimensionalCoverageMetadata Enrich(

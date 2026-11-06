@@ -30,6 +30,7 @@ public sealed class QueryPerformanceMonitoringOptions
 
     public int MaxSlowQueryHistory { get; set; } = 1000;
 
+    // Off by default because slow-query text can contain sensitive data.
     public bool CaptureQueryText { get; set; }
 
     public int MaxQueryTextLength { get; set; } = 2048;

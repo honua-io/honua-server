@@ -12,6 +12,7 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Abstractions;
 
+// Payloads stay JSONB so the store is not coupled to artifact schema versions; kind and version live in the document.
 public interface IGeoServicesMigrationEvidenceStore
 {
     Task SaveManifestAsync(

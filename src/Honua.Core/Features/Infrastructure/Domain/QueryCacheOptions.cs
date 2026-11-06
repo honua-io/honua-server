@@ -5,7 +5,6 @@ namespace Honua.Core.Features.Infrastructure.Domain;
 
 public sealed class QueryCacheOptions
 {
-    // Stay under PostgreSQL's session limit of 1000 prepared statements so other statements still fit.
     public int MaxCachedStatements { get; set; } = 100;
 
     public int StatementLifetimeMinutes { get; set; } = 30;

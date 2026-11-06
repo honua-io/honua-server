@@ -18,7 +18,7 @@ public static class MemoryPool
         return ByteArray.Rent(minimumLength);
     }
 
-    // The array is cleared by default before it returns to the pool.
+    // Clears by default so a later renter cannot read the previous caller's bytes.
     public static void ReturnByteArray(byte[] array, bool clearArray = true)
     {
         ByteArray.Return(array, clearArray);
@@ -39,7 +39,7 @@ public static class MemoryPool
         return CharArray.Rent(minimumLength);
     }
 
-    // The array is cleared by default before it returns to the pool.
+    // Clears by default so a later renter cannot read the previous caller's text.
     public static void ReturnCharArray(char[] array, bool clearArray = true)
     {
         CharArray.Return(array, clearArray);

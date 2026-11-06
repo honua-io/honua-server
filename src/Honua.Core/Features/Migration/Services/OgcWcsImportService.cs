@@ -13,7 +13,7 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-// Anything other than image/tiff is forced to manual review before any bytes are downloaded.
+// image/tiff, image/geotiff, and image/tiff parameters are ingested; every other format is manual review before any bytes are downloaded.
 public sealed partial class OgcWcsImportService : IOgcWcsImportService
 {
     private const string DefaultOutputFormat = "image/tiff";

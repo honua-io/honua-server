@@ -3,6 +3,7 @@
 
 namespace Honua.Core.Features.Infrastructure.Sql;
 
+// Callers that interpolate a predicate must validate the finished statement before execution.
 internal static class ReadOnlyDynamicSql
 {
     private static readonly HashSet<string> MutatingTokens = new(StringComparer.OrdinalIgnoreCase)

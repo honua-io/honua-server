@@ -5,6 +5,7 @@ using Honua.Core.Features.Infrastructure.Crs;
 
 namespace Honua.Core.Features.Infrastructure.Abstractions;
 
+// NAD 83 (4269) to WGS 84 (4326) is not an identity; the offset can reach about 2 m, so that pair uses the PostGIS transform.
 public interface ICoordinateTransformService
 {
     ValueTask<(double MinX, double MinY, double MaxX, double MaxY)?> TransformExtentAsync(

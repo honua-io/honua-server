@@ -6,6 +6,7 @@ using System.Text;
 
 namespace Honua.Core.Features.Migration.Services;
 
+// Responses come from operator-supplied sources, so an unbounded read of one large document could exhaust memory.
 internal static class MigrationHttpContentReader
 {
     public const long DefaultMaxResponseBytes = 64L * 1024 * 1024;

@@ -81,6 +81,7 @@ public sealed record MigrationFidelityClassificationRecord
 
     public string[] RelatedIds { get; init; } = [];
 
+    // Review metadata only; raw source documents and secrets are not copied here.
     public Dictionary<string, string> Metadata { get; init; } = [];
 }
 
@@ -225,6 +226,7 @@ public sealed record MigrationInventoryResource
 
     public int? FeatureCount { get; init; }
 
+    // Null means the source omitted attachment state, which is not a reported false.
     public bool? HasAttachments { get; init; }
 
     public string[] Capabilities { get; init; } = [];
@@ -248,6 +250,7 @@ public sealed record MigrationInventoryField
 
     public required string FieldType { get; init; }
 
+    // Null means the source omitted nullability, which is not a reported false.
     public bool? Nullable { get; init; }
 
     public string? DomainType { get; init; }
@@ -280,6 +283,7 @@ public sealed record MigrationInventoryStyle
 
     public string[] ExternalDependencyIds { get; init; } = [];
 
+    // Planning metadata only; raw style documents are not copied here.
     public Dictionary<string, string> Metadata { get; init; } = [];
 
     public required MigrationCompatibilityAssessment Compatibility { get; init; }
@@ -299,6 +303,7 @@ public sealed record MigrationExternalDependency
 
     public string? DependencyType { get; init; }
 
+    // External URLs are stored in a secret-safe form.
     public string? Address { get; init; }
 
     public Dictionary<string, string> Metadata { get; init; } = [];

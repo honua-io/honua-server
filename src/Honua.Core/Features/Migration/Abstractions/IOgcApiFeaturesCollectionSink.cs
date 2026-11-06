@@ -31,6 +31,7 @@ public interface IOgcApiFeaturesCollectionSink
         CancellationToken cancellationToken)
         => Task.CompletedTask;
 
+    // An empty column list means the target schema is unknown, so the importer skips diagnostics instead of inventing mismatches.
     Task<IReadOnlyList<OgcApiFeaturesSinkColumn>> GetTargetColumnsAsync(
         OgcApiFeaturesSinkTarget target,
         CancellationToken cancellationToken)

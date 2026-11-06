@@ -31,7 +31,6 @@ public enum MigrationStyleApplyOutcome
 
     AlreadyApplied,
 
-    // The conversion requires manual review and was deliberately not applied.
     SkippedManualReview,
 
     SkippedConflict,

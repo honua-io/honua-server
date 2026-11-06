@@ -23,6 +23,7 @@ public readonly record struct RasterInfo
 
     public double? NoDataValue { get; init; }
 
+    // False includes the case where the provider has not established uniformity, not only proven nonuniformity.
     public bool HasUniformNoDataValue { get; init; }
 
     public double[]? GeoTransform { get; init; }

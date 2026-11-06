@@ -114,6 +114,7 @@ public static partial class CrsLinearUnitFactor
         return false;
     }
 
+    // The unit match is not anchored at the end of the WKT, so a trailing AUTHORITY clause does not hide the unit.
     public static double? LinearUnitFromWkt(string? wkt) =>
         string.IsNullOrWhiteSpace(wkt) ? null : ParseUnitFactor(LinearUnitPattern().Matches(wkt).LastOrDefault());
 

@@ -70,6 +70,7 @@ public sealed record OgcCoverageMigrationEvidencePackSummary
 
     public int StyleDiagnosticCount { get; init; }
 
+    // Manual-review coverage styles block a visual-parity claim.
     public int StyleManualReviewCount { get; init; }
 }
 

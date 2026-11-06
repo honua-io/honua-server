@@ -96,7 +96,7 @@ public sealed record OgcMigrationEvidencePackSummary
 
     public int WmtsPlanEntryCount { get; init; }
 
-    // Assisted and manual-review render entries block an automated render-parity claim and must be reviewed before cutover.
+    // Manual-review and unsupported render entries block an automated render-parity claim.
     public int RenderManualReviewOrUnsupportedCount { get; init; }
 
     public bool TileCacheExportExecuted { get; init; }

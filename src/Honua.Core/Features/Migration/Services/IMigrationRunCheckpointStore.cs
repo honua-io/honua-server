@@ -12,7 +12,7 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-// Markers that look like URLs are rejected, and marker payloads are truncated to a fixed bound.
+// A marker containing :// is replaced wholesale, then cut to a fixed bound. The save is not rejected.
 public interface IMigrationRunCheckpointStore
 {
     ValueTask SaveAsync(MigrationRunCheckpoint checkpoint, CancellationToken cancellationToken = default);

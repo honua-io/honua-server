@@ -25,6 +25,7 @@ public sealed record MigrationCutoverReadinessAttestationArtifact
 
     public required string FixtureName { get; init; }
 
+    // Stored as normalized ISO-8601 text so the artifact stays stable across serializers.
     public required string GeneratedAtUtc { get; init; }
 
     public required MigrationCutoverReadinessClassificationCounts ClassificationCounts { get; init; }

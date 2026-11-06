@@ -3,6 +3,7 @@
 
 namespace Honua.Core.Features.Migration.Watermark;
 
+// The mark is read before a pull and advanced only after that pull succeeds, so a failed run resumes from the last durable mark.
 public interface ISourceWatermarkStore
 {
     Task<SourceWatermark?> GetAsync(

@@ -10,6 +10,7 @@ public enum WatermarkKind
     FileModifiedTime
 }
 
+// Recovery resumes from this mark because it advances only after a successful pull.
 public sealed record SourceWatermark
 {
     public required string PipelineId { get; init; }

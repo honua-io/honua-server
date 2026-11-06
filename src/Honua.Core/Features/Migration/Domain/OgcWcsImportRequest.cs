@@ -19,7 +19,7 @@ public sealed record OgcWcsImportRequest
 
     public required MigrationSourceInventoryArtifact Inventory { get; init; }
 
-    // Only image/tiff is applied; any other format is manual review because ingestion accepts only GeoTIFF or COG bytes.
+    // image/tiff, image/geotiff, and image/tiff parameters are ingested; every other format is manual review before any bytes are downloaded.
     public string OutputFormat { get; init; } = "image/tiff";
 
     public string[] CoverageSelection { get; init; } = [];

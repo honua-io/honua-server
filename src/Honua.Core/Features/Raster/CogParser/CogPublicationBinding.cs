@@ -7,7 +7,7 @@ namespace Honua.Core.Features.Raster.CogParser;
 
 public static class CogPublicationBinding
 {
-    // Only an image publication can back a COG, and two image publications on the same index still fail closed.
+    // Prefer the single image publication; when none exists, keep the single publication of any type, and fail closed when that choice is ambiguous.
     public static MetadataV2Publication? Resolve(MetadataV2GraphSnapshot snapshot, int layerIndex)
     {
         ArgumentNullException.ThrowIfNull(snapshot);

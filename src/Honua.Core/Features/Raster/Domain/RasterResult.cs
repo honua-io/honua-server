@@ -38,6 +38,7 @@ public readonly record struct PixelValueResult
 
     public bool HasData { get; init; }
 
+    // Empty means the point is NoData. Null means the identify did not report contribution, which a single-raster read does not.
     public IReadOnlyList<long>? ContributingRasterIds { get; init; }
 }
 

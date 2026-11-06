@@ -6,6 +6,7 @@ namespace Honua.Core.Features.Migration.Domain;
 // A discovered construct with no matrix row is still accounted and sent to review, so it cannot be omitted silently.
 public static class MigrationConstructMatrix
 {
+    // Bump this whenever a row is added, removed, or its verification changes.
     public const string Version = "2026.1";
 
     public static IReadOnlyList<MigrationConstructMatrixRow> Rows { get; } =

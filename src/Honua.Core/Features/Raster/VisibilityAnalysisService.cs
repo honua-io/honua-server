@@ -19,6 +19,7 @@ public sealed class VisibilityAnalysisService : IVisibilityAnalysisService
 
     public const int DefaultLineOfSightSampleCount = 128;
 
+    // Caps the request independently of ProfileSamplingOptions.MaxSampleCount, so one call cannot drive an unbounded sampling query.
     public const int MaxLineOfSightSampleCount = 2048;
 
     public const int DefaultRayCount = 120;
@@ -348,6 +349,7 @@ public sealed class VisibilityAnalysisService : IVisibilityAnalysisService
         return buffer;
     }
 
+    // Spherical interpolation is accepted for reported coordinates; the profile sampler still follows the geodesic, and the difference is sub-meter at the distances this analysis uses.
     internal static (double Longitude, double Latitude) InterpolateGeodesic(
         double startLon,
         double startLat,

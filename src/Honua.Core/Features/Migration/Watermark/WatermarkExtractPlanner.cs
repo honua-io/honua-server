@@ -56,7 +56,7 @@ public static class WatermarkExtractPlanner
         return since is null || fileModifiedAt.ToUniversalTime() > since.Value;
     }
 
-    // The stored watermark only moves forward; a batch with no newer record keeps the previous mark.
+    // Persisted after a successful pull; the mark only moves forward, and a batch with no newer record keeps the previous mark.
     public static SourceWatermark Advance(
         SourceWatermark current,
         DateTimeOffset? maxObservedTimestamp,

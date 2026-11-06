@@ -11,14 +11,13 @@ using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
 namespace Honua.Core.Features.Migration.Domain;
 
-// The resume marker must not contain URLs or credentials; the store sanitizes it on write.
 public sealed record MigrationRunCheckpoint
 {
     public required string RunId { get; init; }
 
     public required string Phase { get; init; }
 
-    // The marker must not contain URLs or credentials; the store sanitizes it on write.
+    // On write, a marker containing :// is replaced wholesale and then cut to the marker length bound.
     public required string ResumeMarker { get; init; }
 
     public int CompletedItemCount { get; init; }

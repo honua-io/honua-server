@@ -13,6 +13,7 @@ public interface ICloudFileStorage
 
     Task<UploadResult> UploadAsync(FileUploadRequest request, CancellationToken cancellationToken = default);
 
+    // A null expected ETag requires the object to be absent, so two writers cannot overwrite one deterministic cache key.
     Task<UploadResult> UploadIfMatchAsync(
         FileUploadRequest request,
         string? expectedETag,

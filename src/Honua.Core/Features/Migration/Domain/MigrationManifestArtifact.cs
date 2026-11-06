@@ -196,7 +196,6 @@ public static class MigrationManifestRelationshipClassifications
 
     public const string ManualReview = "manual-review";
 
-    // This relationship is not supported here and must be remodeled by hand.
     public const string Unsupported = "unsupported";
 }
 
@@ -216,6 +215,7 @@ public sealed record MigrationManifestRelationshipRecord
 
     public string? Role { get; init; }
 
+    // For a simple ArcGIS relationship this matches DestinationKeyField because both sides share one keyField.
     public string? OriginKeyField { get; init; }
 
     public string? DestinationKeyField { get; init; }

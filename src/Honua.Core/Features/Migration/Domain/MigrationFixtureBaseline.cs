@@ -11,6 +11,7 @@ using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
 namespace Honua.Core.Features.Migration.Domain;
 
+// Capitalized to match the Status values the baseline artifact requires.
 public static class MigrationMetricBaselineStatuses
 {
     public const string Pass = "Pass";

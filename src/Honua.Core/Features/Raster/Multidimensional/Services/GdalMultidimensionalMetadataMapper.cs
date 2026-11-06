@@ -9,6 +9,7 @@ using Honua.Core.Features.Raster.Multidimensional.Domain;
 
 namespace Honua.Core.Features.Raster.Multidimensional.Services;
 
+// The gdalmdiminfo pass used here reports structure and leaves extent, resolution, and axis bounds unset.
 public static class GdalMultidimensionalMetadataMapper
 {
     private const string DegreesEast = "degrees_east";

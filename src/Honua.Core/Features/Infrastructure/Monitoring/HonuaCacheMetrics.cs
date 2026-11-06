@@ -5,6 +5,7 @@ using System.Diagnostics.Metrics;
 
 namespace Honua.Core.Features.Infrastructure.Monitoring;
 
+// Callers must use one name per logical cache; Normalize only replaces a blank name and does not bound distinct cache_name values.
 public static class HonuaCacheMetrics
 {
     public const string CacheNameTag = "cache_name";

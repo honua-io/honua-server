@@ -208,6 +208,7 @@ internal sealed partial class GeoServicesRestClient
             ? property.GetBoolean()
             : null;
 
+    // A request message can be sent by only one HttpClient, so each SDK request is re-issued as a forwarded message.
     private sealed class SourceTransportHandler(
         HttpClient transport,
         GeoservicesCredentialDescriptor? credentials) : HttpMessageHandler

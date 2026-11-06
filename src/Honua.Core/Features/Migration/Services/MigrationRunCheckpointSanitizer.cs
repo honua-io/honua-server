@@ -12,7 +12,7 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-// URLs and credential-like strings are stripped from the resume marker, and the marker is truncated to a fixed bound.
+// A marker containing :// is replaced wholesale, then cut to MaxMarkerLength. Bare credential text is not scrubbed, and the save is not rejected.
 public static class MigrationRunCheckpointSanitizer
 {
     public const int MaxMarkerLength = 128;

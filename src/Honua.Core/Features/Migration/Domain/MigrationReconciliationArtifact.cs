@@ -145,6 +145,7 @@ public sealed record MigrationReconciliationExtentProbe
     public string? Reason { get; init; }
 }
 
+// A flat extent, so reconciliation evidence does not take on BoundingBox's CRS and axis-order surface.
 public readonly record struct ExtentBox
 {
     public required double MinX { get; init; }

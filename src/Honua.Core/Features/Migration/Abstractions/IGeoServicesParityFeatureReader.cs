@@ -16,5 +16,6 @@ public interface IGeoServicesParityFeatureReader
 {
     Task<long?> GetFeatureCountAsync(string targetResourceId, CancellationToken cancellationToken = default);
 
+    // An empty list means the target advertises no schema; null means the target resource was not found.
     Task<IReadOnlyList<string>?> GetFieldNamesAsync(string targetResourceId, CancellationToken cancellationToken = default);
 }

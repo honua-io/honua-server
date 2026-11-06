@@ -11,6 +11,7 @@ using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
 namespace Honua.Core.Features.Migration.Domain;
 
+// Listing columns are copied out so the store can range-scan without unpacking the artifact, and EvidenceId is the fingerprint so a repeat upload is idempotent.
 public sealed record MigrationPerformanceEvidenceRecord
 {
     public required string EvidenceId { get; init; }
