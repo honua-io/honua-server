@@ -1,40 +1,36 @@
 name: Provision GDAL CLI
-description: >-
-  Install gdal-bin, python3-gdal, python3-numpy and python3-scipy from a
-  cached .deb set. A cache hit installs with --no-download. A cache miss
-  downloads from the apt mirror and saves the .deb set.
+description: Install verified native packages from an exact runner-image cache with bounded mirror fallback.
+
+inputs:
+  python-environment:
+    description: Select system to publish distro Python, or setup-python to preserve the caller's interpreter.
+    default: system
 
 runs:
   using: composite
   steps:
-    - name: Resolve the GDAL CLI package versions
+    - name: Identify the native dependency runner image
       id: resolve
       shell: bash
       run: bash scripts/ci/provision-gdal-cli.sh resolve
 
-    - name: Restore cached GDAL CLI packages
+    - name: Restore native dependency packages
       id: gdal-debs
-      if: steps.resolve.outputs.index == 'ok'
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      with:
-        path: ${{ steps.resolve.outputs.cache-dir }}
-        key: gdal-cli-debs-${{ runner.os }}-${{ runner.arch }}-${{ steps.resolve.outputs.image }}-${{ steps.resolve.outputs.versions }}
-
-    # restore has no save step. A unique primary key misses, and the prefix
-    # selects the newest versioned set already saved for this runner image.
-    - name: Restore the newest saved GDAL CLI packages
-      id: gdal-debs-fallback
-      if: steps.resolve.outputs.index != 'ok'
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ steps.resolve.outputs.cache-dir }}
-        key: gdal-cli-debs-offline-${{ github.run_id }}-${{ github.run_attempt }}
-        restore-keys: gdal-cli-debs-${{ runner.os }}-${{ runner.arch }}-${{ steps.resolve.outputs.image }}-
+        key: gdal-cli-debs-${{ runner.os }}-${{ runner.arch }}-${{ steps.resolve.outputs.image }}-${{ hashFiles('scripts/ci/provision-gdal-cli.sh') }}
 
-    - name: Install the GDAL CLI packages
+    - name: Install and verify native dependency packages
       shell: bash
       env:
         GDAL_DEB_CACHE_HIT: ${{ steps.gdal-debs.outputs.cache-hit }}
-        GDAL_INDEX_STATE: ${{ steps.resolve.outputs.index }}
-        GDAL_DEB_CACHE_DIR: ${{ steps.resolve.outputs.cache-dir }}
+        GDAL_PYTHON_ENVIRONMENT: ${{ inputs.python-environment }}
       run: bash scripts/ci/provision-gdal-cli.sh install
+
+    - name: Save verified native dependency packages
+      if: steps.gdal-debs.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.resolve.outputs.cache-dir }}
+        key: gdal-cli-debs-${{ runner.os }}-${{ runner.arch }}-${{ steps.resolve.outputs.image }}-${{ hashFiles('scripts/ci/provision-gdal-cli.sh') }}

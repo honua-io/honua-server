@@ -73,5 +73,5 @@ arm, the same product and client revisions, equivalent permissions and tasks,
 and per-stage measured outcomes. The two skills above stayed after one informal
 local comparison on a quickstart. That comparison did not pin product revisions,
 client versions, or file hashes. The notes are
-[operating-skills-ab.md](../../internal/evidence/operating-skills-ab.md).
+[operating-skills-ab.md](https://github.com/honua-io/honua-server/blob/213e7ef3bf243fddf30c06a4cdb4cac737b9bfc8/docs/internal/evidence/operating-skills-ab.md).
 The record is not part of the quickstart package.
