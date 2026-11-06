@@ -13,7 +13,6 @@ using Honua.Server.Features.Admin.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Honua.TestKit.Helpers;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
@@ -91,6 +90,9 @@ public sealed partial class RowLevelSecurityEndpointsTests : IAsyncLifetime
         using var adminClient = CreateAdminClient();
         Guid? policyId = null;
         var policyPath = fieldMask ? "/api/v1/admin/field-mask-policies" : "/api/v1/admin/rls-policies";
+        Func<HttpClient, Task> assertPolicyResponse = fieldMask
+            ? AssertFieldMaskCollisionResponsesAsync
+            : AssertRowFilterCollisionResponsesAsync;
         try
         {
             using var client = _fixture.CreateClient();
@@ -106,13 +108,11 @@ public sealed partial class RowLevelSecurityEndpointsTests : IAsyncLifetime
                 ? await CreateCollisionMaskPolicyAsync(adminClient, resourceName)
                 : await CreatePolicyAsync(adminClient, resourceName);
             provider.SetGraph(baseline, schema: _fixture.MetadataGraphSchema);
-            await AssertCollisionPolicyResponseAsync(client, fieldMask);
-            await AssertODataCollisionPolicyResponseAsync(client, fieldMask);
+            await assertPolicyResponse(client);
             provider.SetGraph(graph, schema: _fixture.MetadataGraphSchema);
             using (new AssertionScope())
             {
-                await AssertCollisionPolicyResponseAsync(client, fieldMask);
-                await AssertODataCollisionPolicyResponseAsync(client, fieldMask);
+                await assertPolicyResponse(client);
             }
         }
         finally
@@ -198,42 +198,6 @@ public sealed partial class RowLevelSecurityEndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.Created, payload);
         using var body = JsonDocument.Parse(payload);
         return body.RootElement.GetProperty("data").GetProperty("policyId").GetGuid();
-    }
-
-    private static async Task AssertCollisionPolicyResponseAsync(HttpClient client, bool fieldMask)
-    {
-        var response = await client.GetAsync($"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?where=1%3D1&outFields=*&returnGeometry=false&f=json");
-        var payload = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.OK, payload);
-        using var document = JsonDocument.Parse(payload);
-        var attributes = document.RootElement.GetProperty("features").EnumerateArray()
-            .Select(feature => feature.GetProperty("attributes")).ToArray();
-        AssertCollisionPolicyAttributes(attributes, fieldMask);
-    }
-
-    private static async Task AssertODataCollisionPolicyResponseAsync(HttpClient client, bool fieldMask)
-    {
-        var response = await client.GetAsync($"/odata/Features({WebAppFixture.TestLayerId})?$top=10");
-        var payload = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.OK, payload);
-        using var document = JsonDocument.Parse(payload);
-        var attributes = document.RootElement.GetProperty("value").EnumerateArray()
-            .Select(ODataTestHelpers.ParseAttributes).ToArray();
-        AssertCollisionPolicyAttributes(attributes, fieldMask);
-    }
-
-    private static void AssertCollisionPolicyAttributes(JsonElement[] attributes, bool fieldMask)
-    {
-        if (fieldMask)
-        {
-            attributes.Should().HaveCount(TestFeatureCount);
-            attributes.Should().OnlyContain(value => !value.EnumerateObject().Any(property => property.Name == "description"));
-        }
-        else
-        {
-            attributes.Should().HaveCount(CategoryTestCount);
-            attributes.Should().OnlyContain(value => value.GetProperty("category").GetString() == "test");
-        }
     }
 
     [IntegrationTest]

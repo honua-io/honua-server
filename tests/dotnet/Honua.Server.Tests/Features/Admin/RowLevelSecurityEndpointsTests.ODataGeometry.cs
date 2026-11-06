@@ -46,7 +46,10 @@ public sealed partial class RowLevelSecurityEndpointsTests
         }
         var method = mode == "put-omitted" ? "PUT" : "PATCH";
 
-        await SendGeometryIntentAsync(client, new GeometryMutation(method, body, batch));
+        Func<HttpClient, GeometryMutation, Task> sendMutation = batch
+            ? SendBatchGeometryMutationAsync
+            : SendDirectGeometryMutationAsync;
+        await sendMutation(client, new GeometryMutation(method, body));
 
         var stored = await ReadGeometryIntentAsync();
         stored.Geometry.Should().Be(mode == "patch-omitted" ? "POINT(1 1)" : null);
@@ -79,19 +82,19 @@ public sealed partial class RowLevelSecurityEndpointsTests
         stored.Name.Should().Be("second");
     }
 
-    private sealed record GeometryMutation(string Method, Dictionary<string, object?> Body, bool Batch);
+    private sealed record GeometryMutation(string Method, Dictionary<string, object?> Body);
 
-    private static async Task SendGeometryIntentAsync(HttpClient client, GeometryMutation mutation)
+    private static async Task SendBatchGeometryMutationAsync(HttpClient client, GeometryMutation mutation)
     {
-        if (mutation.Batch)
+        using var response = await client.PostAsJsonAsync("/odata/$batch", new
         {
-            using var response = await client.PostAsJsonAsync("/odata/$batch", new
-            {
-                requests = new[] { GeometryBatchItem("edit", mutation.Method, mutation.Body) }
-            });
-            await AssertGeometryBatchSuccessAsync(response, 1);
-            return;
-        }
+            requests = new[] { GeometryBatchItem("edit", mutation.Method, mutation.Body) }
+        });
+        await AssertGeometryBatchSuccessAsync(response, 1);
+    }
+
+    private static async Task SendDirectGeometryMutationAsync(HttpClient client, GeometryMutation mutation)
+    {
         using var request = new HttpRequestMessage(new HttpMethod(mutation.Method), GeometryIntentPath)
         {
             Content = JsonContent.Create(mutation.Body)

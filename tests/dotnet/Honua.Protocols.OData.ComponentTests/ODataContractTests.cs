@@ -57,7 +57,7 @@ public sealed class ODataContractTests(ODataComponentFixture fixture) : IClassFi
         using var createPayload = ODataContent(new { Attributes = new { name, population = 12345 }, Geometry = new { type = "Point", coordinates = new[] { -122.0, 37.0 } } });
         using var created = await fixture.Client.PostAsync(Features, createPayload);
         created.StatusCode.Should().Be(HttpStatusCode.Created, await created.Content.ReadAsStringAsync());
-        var createdEtag = created.Headers.ETag?.ToString();
+        var createdEtag = Assert.IsType<string>(created.Headers.ETag?.ToString());
         createdEtag.Should().NotBeNullOrEmpty();
         using var json = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
         var id = json.RootElement.GetProperty("ObjectId").GetInt64();
