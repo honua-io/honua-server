@@ -5,6 +5,7 @@ using System.Security.Claims;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Validation;
 using Honua.Infrastructure.Validation;
@@ -82,6 +83,85 @@ public sealed class ImageServerNumericLayerAuthorizationTests
         resolution.LayerId.Should().Be(StorageLayerId);
     }
 
+    [UnitTheory]
+    [InlineData("numeric", null, false)]
+    [InlineData("numeric", "tenant-a", false)]
+    [InlineData("numeric", "tenant-b", true)]
+    [InlineData("default", null, false)]
+    [InlineData("default", "tenant-a", false)]
+    [InlineData("default", "tenant-b", true)]
+    [InlineData("publication", null, false)]
+    [InlineData("publication", "tenant-a", false)]
+    [InlineData("publication", "tenant-b", true)]
+    public async Task ResolveLayer_PublicationTenant_EnforcesVisibility(string route, string? tenant, bool allowed)
+    {
+        var graph = BuildCollidingGraph(new AccessPolicy { AllowAnonymous = true }, new AccessPolicy { AllowAnonymous = true });
+        var snapshot = await graph.GetCurrentAsync();
+        graph.SetGraph(snapshot.Graph with
+        {
+            Publications = snapshot.Graph.Publications.Select(p => p.Metadata.Id == "pub-raster"
+                ? p with { Metadata = p.Metadata with { Tenant = "tenant-b" } }
+                : p).ToArray()
+        });
+        var resolver = CreateResolver(graph);
+        var context = CreateContext(tenant: tenant);
+        var result = route switch
+        {
+            "numeric" => await resolver.ValidateLayerAsync(StorageLayerId, context, AuthorizationOperation.Query, CancellationToken.None),
+            "default" => await resolver.ResolveFirstAccessibleLayerAsync("zzz-imagery", context, AuthorizationOperation.Query, CancellationToken.None),
+            _ => await resolver.ValidatePublicationAsync("svc-imagery", "pub-raster", StorageLayerId, StorageLayerId,
+                context, AuthorizationOperation.Query, CancellationToken.None)
+        };
+        if (allowed)
+        {
+            result.ErrorResult.Should().BeNull();
+            result.PublicationId.Should().Be("pub-raster");
+        }
+        else
+        {
+            result.PublicationId.Should().BeNull();
+            result.ErrorResult.Should().NotBeNull();
+            await AssertGeoServicesErrorAsync(context, result.ErrorResult!, StatusCodes.Status404NotFound);
+        }
+    }
+
+    [UnitTest]
+    public async Task ValidateLayerAsync_HiddenPrimary_UsesVisiblePublication()
+    {
+        var graph = BuildCollidingGraph(new AccessPolicy { AllowAnonymous = true }, new AccessPolicy { AllowAnonymous = true });
+        var snapshot = await graph.GetCurrentAsync();
+        var hidden = snapshot.Graph.Publications.Single(p => p.Metadata.Id == "pub-raster") with { IsPrimary = true };
+        hidden = hidden with { Metadata = hidden.Metadata with { Tenant = "tenant-b" } };
+        var visible = hidden with
+        {
+            Metadata = hidden.Metadata with { Id = "visible-raster", Tenant = null }, IsPrimary = false, LayerIndex = 8
+        };
+        graph.SetGraph(snapshot.Graph with { Publications = [snapshot.Graph.Publications[0], hidden, visible] });
+        var result = await CreateResolver(graph).ValidateLayerAsync(StorageLayerId, CreateContext(tenant: "tenant-a"),
+            AuthorizationOperation.Query, CancellationToken.None);
+        result.ErrorResult.Should().BeNull();
+        result.PublicationId.Should().Be("visible-raster");
+    }
+
+    [UnitTest]
+    public async Task FindByStorageLayerId_BoundPublicationBecameTenantScoped_DoesNotRebind()
+    {
+        var graph = BuildCollidingGraph(new AccessPolicy { AllowAnonymous = true }, new AccessPolicy { AllowAnonymous = true });
+        var context = CreateContext(tenant: "tenant-a");
+        var resolution = await CreateResolver(graph).ValidateLayerAsync(StorageLayerId, context,
+            AuthorizationOperation.Query, CancellationToken.None);
+        ImageServerV2Lookups.RecordRouteBinding(context, resolution, AuthorizationOperation.Query);
+        var snapshot = await graph.GetCurrentAsync();
+        graph.SetGraph(snapshot.Graph with
+        {
+            Publications = snapshot.Graph.Publications.Select(p => p.Metadata.Id == "pub-raster"
+                ? p with { Metadata = p.Metadata with { Tenant = "tenant-b" } }
+                : p).ToArray()
+        });
+        var resolved = ImageServerV2Lookups.FindByStorageLayerId(await graph.GetCurrentAsync(), StorageLayerId, context);
+        resolved.Should().BeNull();
+    }
+
     private static MetadataV2ImageServerLayerResolver CreateResolver(TestMetadataV2GraphProvider graph)
         => new(new ResourceValidator(graph), graph, Substitute.For<IRasterStore>());
 
@@ -113,11 +193,14 @@ public sealed class ImageServerNumericLayerAuthorizationTests
                 publicationType: MetadataV2PublicationType.EsriImageLayer)
             .BuildProvider();
 
-    private static DefaultHttpContext CreateContext(Claim? role = null)
+    private static DefaultHttpContext CreateContext(Claim? role = null, string? tenant = null)
     {
         var services = new ServiceCollection();
         services.AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance);
         services.AddValidationServices();
+        var tenantContext = Substitute.For<ITenantContext>();
+        tenantContext.TenantId.Returns(tenant);
+        services.AddSingleton(tenantContext);
         var context = new DefaultHttpContext
         {
             RequestServices = services.BuildServiceProvider(),

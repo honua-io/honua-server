@@ -413,7 +413,7 @@ internal sealed class ImageServerExportTilesHandler
         var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var resolved = publicationId is null
             ? ImageServerV2Lookups.FindByStorageLayerId(snapshot, layerId, context)
-            : ImageServerV2Lookups.FindByPublicationId(snapshot, publicationId);
+            : ImageServerV2Lookups.FindByPublicationId(snapshot, publicationId, context);
         if (resolved is not { } resolvedLayer || !snapshot.IsRoutable(resolvedLayer.Publication))
         {
             ImageServerLog.LayerNotFound(_logger, layerId);
@@ -1061,7 +1061,7 @@ internal sealed class ImageServerExportTilesHandler
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(publicationId);
         var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var resolved = ImageServerV2Lookups.FindByPublicationId(snapshot, publicationId);
+        var resolved = ImageServerV2Lookups.FindByPublicationId(snapshot, publicationId, context);
         if (resolved is not { } resolvedLayer || !snapshot.IsRoutable(resolvedLayer.Publication))
         {
             return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
@@ -1119,7 +1119,7 @@ internal sealed class ImageServerExportTilesHandler
         var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var resolved = publicationId is null
             ? ImageServerV2Lookups.FindByStorageLayerId(snapshot, layerId, context)
-            : ImageServerV2Lookups.FindByPublicationId(snapshot, publicationId);
+            : ImageServerV2Lookups.FindByPublicationId(snapshot, publicationId, context);
         if (resolved is not { } resolvedLayer || !snapshot.IsRoutable(resolvedLayer.Publication))
         {
             return (null, StandardErrorHelpers.CreateNotFound(context, "Layer not found."));
