@@ -23,10 +23,6 @@
       "why": "Contributor notes, ADRs, spikes and evidence, flattened together. Reachable from its own README, not from SUMMARY.md. Needs its own curation pass before path-as-identity means anything here."
     },
     {
-      "path": "docs/audit",
-      "why": "Dated security-audit dispositions. Evidence of a review pass, not product documentation."
-    },
-    {
       "path": "docs/gis",
       "why": "Capability data and client-certification evidence. The JSON under docs/gis/data is the generated spine other gates read; the markdown beside it is evidence, not prose documentation."
     },
@@ -76,7 +72,7 @@
     },
     {
       "path": "docs/internal/README.md",
-      "why": "The doorway into docs/internal. The tree stays out of the bundle; its entry point is listed in SUMMARY.md and so must be a concept — OKF's `index` is exactly this role."
+      "why": "The doorway into docs/internal. The tree stays out of the bundle; its entry point is listed in SUMMARY.md and so must be a concept \u2014 OKF's `index` is exactly this role."
     },
     {
       "path": "docs/internal/demo/README.md",

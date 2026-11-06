@@ -178,8 +178,7 @@ public sealed class ImageServerMultidimensionalSoapTests
         finally { await fixture.DisposeAsync(); }
     }
 
-    // Verbatim ArcGIS Pro 3.7.2 request from the licensed capture in
-    // docs/internal/evidence/imageserver-multidim-soap-3558-20261022 (runs/honua-trunk).
+    // Verbatim ArcGIS Pro 3.7.2 request from the licensed capture.
     private const string CapturedProRequest =
         """<?xml version="1.0" encoding="utf-8" ?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:tns="http://www.esri.com/schemas/ArcGIS/10.8"><soap:Body><tns:GetMultidimensionalInfo></tns:GetMultidimensionalInfo></soap:Body></soap:Envelope>""";
     private const string CapturedProRequestSha256 = "6905eea88938ed1e916ad9bc82de521929db6278ced75fd5131109587dc77b5a";

@@ -30,7 +30,7 @@ This image provisions exactly those grids (see [`grids.txt`](grids.txt)) into
 [`grids.txt`](grids.txt) is the auditable manifest. It is kept in sync with the
 `requiredGrids` entries in
 `src/Honua.Core/Features/Infrastructure/Crs/Resources/esri-default-datum-transformations.json`
-and the grid names in `docs/internal/evidence/datum-transformation-parity.md`.
+and the grid names in `docs/reference/compatibility/datum-transformation-parity.md`.
 The grids are fetched from the PROJ CDN (`https://cdn.proj.org`) at **build time**
 by [`fetch-grids.sh`](fetch-grids.sh); the build fails loudly if any grid is
 missing or truncated.
