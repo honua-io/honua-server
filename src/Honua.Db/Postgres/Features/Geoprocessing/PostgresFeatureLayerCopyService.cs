@@ -42,7 +42,13 @@ internal sealed class PostgresFeatureLayerCopyService(
         {
             throw new InvalidOperationException("Source layer does not exist.");
         }
-        var publication = snapshot.Graph.Publications.First(p => p.ResourceId == resource.Metadata.Id && snapshot.IsRoutable(p));
+        var tenantId = JobSecurityScope.Current?.Submitter?.TenantId;
+        var publication = snapshot.Graph.Publications.FirstOrDefault(publication =>
+            publication.ResourceId == resource.Metadata.Id && snapshot.IsRoutable(publication)
+            && snapshot.ResolveStorageLayerId(publication, resource) == sourceLayerId
+            && snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var candidateService)
+            && MetadataV2TenantVisibility.IsVisibleToTenant(publication, resource, candidateService, tenantId))
+            ?? throw new UnauthorizedAccessException("Source layer is not accessible to the submitting tenant.");
         var service = snapshot.Index.ServicesById[publication.ServiceId];
         var serviceName = service.Metadata.Name;
         var reader = await router.ResolveReaderAsync(snapshot, service, resource, publication,

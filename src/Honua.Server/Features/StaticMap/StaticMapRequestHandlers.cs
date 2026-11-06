@@ -151,7 +151,7 @@ internal static partial class StaticMapEndpoints
             var service = serviceV2Result.Service!;
             var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
             var snapshot = await snapshotProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
-            var availableLayers = ResolveAvailableLayers(snapshot, service).ToArray();
+            var availableLayers = ResolveAvailableLayers(snapshot, service, context).ToArray();
 
             // Enforce static map entitlement limits before any provider work.
             if (parameters.Width > StaticMapEditionLimits.ProMaxDimension ||
@@ -692,12 +692,14 @@ internal static partial class StaticMapEndpoints
 
     private static IEnumerable<StaticMapRenderLayer> ResolveAvailableLayers(
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Service service)
+        MetadataV2Service service,
+        HttpContext context)
     {
         foreach (var publication in snapshot.Index.PublicationsByService[service.Metadata.Id])
         {
             var resource = snapshot.ResolveResource(publication);
-            if (!snapshot.IsRoutable(publication))
+            if (!snapshot.IsRoutable(publication)
+                || !TenantScopeHelpers.IsPublicationVisible(context, publication, resource, service))
             {
                 continue;
             }

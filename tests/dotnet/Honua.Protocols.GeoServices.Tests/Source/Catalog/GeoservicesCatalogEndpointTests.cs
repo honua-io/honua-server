@@ -3,8 +3,8 @@
 
 using System.Diagnostics;
 using System.Globalization;
-using System.Text;
 using System.Text.Json;
+using System.Text;
 using System.Xml.Linq;
 using FluentAssertions;
 using Honua.Core.Features.Authorization.Domain;
@@ -14,15 +14,16 @@ using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Protocols.GeoServices.ImageServer.Services;
 using Honua.ServiceDefaults;
-using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Honua.TestKit.Helpers;
 using Honua.TestKit.Infrastructure;
+using Honua.TestKit;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using SkiaSharp;
 
@@ -30,7 +31,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.Catalog;
 
 [Collection("Database.GeoServicesCatalog")]
 [Protocol(TestProtocols.GeoservicesCatalog)]
-public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixture>
+public sealed partial class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixture>
 {
     private readonly WebAppFixture _fixture;
 
