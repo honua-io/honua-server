@@ -5,34 +5,11 @@ using Honua.Core.Features.Infrastructure.Domain;
 
 namespace Honua.Core.Features.Infrastructure.Abstractions;
 
-/// <summary>
-/// Universal progress store for tracking any type of operation progress.
-/// Provides a unified interface for storing and retrieving progress across all operation types.
-/// </summary>
 public interface IUniversalProgressStore
 {
-    /// <summary>
-    /// Store progress for any operation.
-    /// </summary>
-    /// <param name="operationId">Operation identifier</param>
-    /// <param name="progress">Progress data implementing IOperationProgress</param>
-    /// <param name="ttl">Time-to-live for the progress data</param>
-    /// <param name="cancellationToken">Cancellation token</param>
     Task SetProgressAsync(string operationId, IOperationProgress progress, TimeSpan? ttl = null, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Conditionally store progress for an operation only while the currently stored progress still has
-    /// <paramref name="expectedStatus"/> (compare-and-set). Implementations make the status check and the
-    /// write atomic with respect to other conditional writes and to terminal-status writes performed
-    /// through <see cref="SetProgressAsync"/>, eliminating lost-update races such as a cancellation
-    /// overwriting a concurrently persisted terminal state (honua-server#1593).
-    /// </summary>
-    /// <param name="operationId">Operation identifier</param>
-    /// <param name="progress">Progress data to store when the status check passes</param>
-    /// <param name="expectedStatus">Status the currently stored progress must have for the write to apply</param>
-    /// <param name="ttl">Time-to-live for the progress data</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>The conditional-write outcome, including the observed progress when the check fails.</returns>
+    // The status check and the write are atomic, so a cancellation cannot overwrite a terminal state that landed at the same time.
     Task<ProgressCompareAndSetResult> TrySetProgressAsync(
         string operationId,
         IOperationProgress progress,
@@ -40,17 +17,7 @@ public interface IUniversalProgressStore
         TimeSpan? ttl = null,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Atomically replaces an unchanged progress snapshot. Lease owners and reconcilers use this
-    /// operation so a concurrent heartbeat, owner change, or terminal update prevents stale writes.
-    /// Implementations without snapshot comparison must refuse rather than degrade to a status check.
-    /// </summary>
-    /// <param name="operationId">Operation identifier.</param>
-    /// <param name="progress">Replacement progress.</param>
-    /// <param name="expectedProgress">Entire previously observed progress snapshot.</param>
-    /// <param name="ttl">Time-to-live for the replacement.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The conditional-write outcome.</returns>
+    // A store that cannot compare the whole snapshot must refuse the write instead of falling back to a status check.
     Task<ProgressCompareAndSetResult> TryReplaceProgressAsync(
         string operationId,
         IOperationProgress progress,
@@ -59,45 +26,15 @@ public interface IUniversalProgressStore
         CancellationToken cancellationToken = default)
         => throw new NotSupportedException("Atomic progress snapshot comparison is required.");
 
-    /// <summary>
-    /// Retrieve progress for any operation.
-    /// </summary>
-    /// <typeparam name="TProgress">Expected progress type</typeparam>
-    /// <param name="operationId">Operation identifier</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Progress data or null if not found</returns>
     Task<TProgress?> GetProgressAsync<TProgress>(string operationId, CancellationToken cancellationToken = default)
         where TProgress : class, IOperationProgress;
 
-    /// <summary>
-    /// Retrieve progress for any operation without type constraint.
-    /// </summary>
-    /// <param name="operationId">Operation identifier</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Progress data or null if not found</returns>
     Task<IOperationProgress?> GetProgressAsync(string operationId, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Delete progress data for an operation.
-    /// </summary>
-    /// <param name="operationId">Operation identifier</param>
-    /// <param name="cancellationToken">Cancellation token</param>
     Task DeleteProgressAsync(string operationId, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Get all active operation IDs (operations with progress data).
-    /// </summary>
-    /// <param name="operationType">Optional filter by operation type</param>
-    /// <param name="cancellationToken">Cancellation token</param>
     Task<IReadOnlyList<string>> GetActiveOperationIdsAsync(OperationType? operationType = null, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Get all active operations of a specific type.
-    /// </summary>
-    /// <typeparam name="TProgress">Progress type to retrieve</typeparam>
-    /// <param name="operationType">Operation type filter</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>List of active operations</returns>
     Task<IReadOnlyList<TProgress>> GetActiveOperationsAsync<TProgress>(OperationType operationType, CancellationToken cancellationToken = default)
         where TProgress : class, IOperationProgress;
 }

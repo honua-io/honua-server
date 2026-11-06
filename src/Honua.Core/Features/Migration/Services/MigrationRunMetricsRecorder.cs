@@ -13,22 +13,7 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Thread-safe collector for raw migration run metrics emitted by scan/manifest/apply/import code paths.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The recorder buffers in-memory measurements (counters and sampled snapshots) and produces a
-/// <see cref="MigrationRunMetricsArtifact"/> via <see cref="Build"/>. Builders scrub URLs and
-/// credentials before publishing the artifact; the recorder itself never accepts URL or credential
-/// inputs.
-/// </para>
-/// <para>
-/// Phase scoping: callers wrap each migration phase with <see cref="BeginPhase"/> and dispose the
-/// returned scope when the phase ends. Counters submitted inside the scope are attributed to that
-/// phase; counters submitted outside any scope are attributed to the run totals only.
-/// </para>
-/// </remarks>
+// Counters inside a phase scope are attributed to that phase, and the recorder never accepts a URL or a credential.
 public sealed class MigrationRunMetricsRecorder
 {
     private readonly object _gate = new();
@@ -57,24 +42,14 @@ public sealed class MigrationRunMetricsRecorder
     private long _cancellationCount;
     private bool? _resumeFromCheckpoint;
 
-    /// <summary>
-    /// Initializes a new <see cref="MigrationRunMetricsRecorder"/>.
-    /// </summary>
-    /// <param name="startedAt">Wall-clock instant when the recorder was opened. Defaults to <see cref="DateTimeOffset.UtcNow"/>.</param>
     public MigrationRunMetricsRecorder(DateTimeOffset? startedAt = null)
     {
         _startedAt = startedAt ?? DateTimeOffset.UtcNow;
         _completedAt = _startedAt;
     }
 
-    /// <summary>Wall-clock instant the recorder opened.</summary>
     public DateTimeOffset StartedAt => _startedAt;
 
-    /// <summary>
-    /// Starts a measurement scope for the given migration phase. Dispose the returned scope when
-    /// the phase ends.
-    /// </summary>
-    /// <param name="phase">Phase identifier (see <see cref="MigrationCostPerformancePhases"/>).</param>
     public PhaseScope BeginPhase(string phase)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(phase);
@@ -87,13 +62,6 @@ public sealed class MigrationRunMetricsRecorder
         }
     }
 
-    /// <summary>Records a source request (typically HTTP) issued during the run.</summary>
-    /// <param name="count">Number of requests to add (defaults to 1).</param>
-    /// <param name="bytesRead">
-    /// Optional bytes-read attribution for the request (e.g. response Content-Length). When greater
-    /// than zero, also increments the <see cref="MigrationRunMetricsValues.BytesRead"/> total so the
-    /// HTTP boundary can attribute payload size without forcing the caller to buffer the response.
-    /// </param>
     public void RecordSourceRequest(long count = 1, long bytesRead = 0)
     {
         if (count <= 0 && bytesRead <= 0) return;
@@ -113,7 +81,6 @@ public sealed class MigrationRunMetricsRecorder
         }
     }
 
-    /// <summary>Records bytes read from a source.</summary>
     public void RecordBytesRead(long bytes)
     {
         if (bytes <= 0) return;
@@ -124,7 +91,6 @@ public sealed class MigrationRunMetricsRecorder
         }
     }
 
-    /// <summary>Records bytes written to a Honua-owned store or artifact.</summary>
     public void RecordBytesWritten(long bytes)
     {
         if (bytes <= 0) return;
@@ -135,7 +101,6 @@ public sealed class MigrationRunMetricsRecorder
         }
     }
 
-    /// <summary>Records a retry attempt.</summary>
     public void RecordRetry(long count = 1)
     {
         if (count <= 0) return;
@@ -146,7 +111,6 @@ public sealed class MigrationRunMetricsRecorder
         }
     }
 
-    /// <summary>Records a resume attempt with an optional safe marker label (no URLs or secrets).</summary>
     public void RecordResume(string? safeMarker = null, long count = 1)
     {
         if (count <= 0) return;
@@ -161,11 +125,6 @@ public sealed class MigrationRunMetricsRecorder
         }
     }
 
-    /// <summary>
-    /// Marks that this run resumed from (or did not resume from) a previously persisted
-    /// checkpoint. Pass <c>true</c> when a checkpoint was found and used; pass <c>false</c>
-    /// to explicitly record that resume was attempted but no checkpoint was available.
-    /// </summary>
     public void RecordResumeFromCheckpoint(bool resumed)
     {
         lock (_gate)
@@ -176,10 +135,6 @@ public sealed class MigrationRunMetricsRecorder
         }
     }
 
-    /// <summary>
-    /// Records that an apply or import phase replayed previously-applied work without
-    /// producing any incremental change. Used as idempotency evidence (issue #1033 slice 3).
-    /// </summary>
     public void RecordIdempotentReplay(long count = 1)
     {
         if (count <= 0) return;
@@ -189,9 +144,6 @@ public sealed class MigrationRunMetricsRecorder
         }
     }
 
-    /// <summary>
-    /// Records that the run observed a cancellation request (issue #1033 slice 3).
-    /// </summary>
     public void RecordCancellation(long count = 1)
     {
         if (count <= 0) return;
@@ -201,7 +153,6 @@ public sealed class MigrationRunMetricsRecorder
         }
     }
 
-    /// <summary>Records resource (workspace/layer/service) processing count.</summary>
     public void RecordResourceCount(long count)
     {
         if (count <= 0) return;
@@ -212,7 +163,6 @@ public sealed class MigrationRunMetricsRecorder
         }
     }
 
-    /// <summary>Records feature processing count.</summary>
     public void RecordFeatureCount(long count)
     {
         if (count <= 0) return;
@@ -223,7 +173,6 @@ public sealed class MigrationRunMetricsRecorder
         }
     }
 
-    /// <summary>Records coverage/raster processing count.</summary>
     public void RecordCoverageCount(long count)
     {
         if (count <= 0) return;
@@ -234,7 +183,6 @@ public sealed class MigrationRunMetricsRecorder
         }
     }
 
-    /// <summary>Records the manual review ratio's numerator and denominator.</summary>
     public void RecordManualReview(long manualReview, long candidateItems)
     {
         if (manualReview <= 0 && candidateItems <= 0) return;
@@ -254,7 +202,6 @@ public sealed class MigrationRunMetricsRecorder
         }
     }
 
-    /// <summary>Records database growth attributed to the active phase.</summary>
     public void RecordDatabaseGrowth(long rows, long bytes)
     {
         if (rows <= 0 && bytes <= 0) return;
@@ -266,7 +213,6 @@ public sealed class MigrationRunMetricsRecorder
         }
     }
 
-    /// <summary>Records the size in bytes of an emitted evidence artifact.</summary>
     public void RecordArtifactBytes(long bytes)
     {
         if (bytes <= 0) return;
@@ -277,11 +223,6 @@ public sealed class MigrationRunMetricsRecorder
         }
     }
 
-    /// <summary>
-    /// Samples CPU and memory snapshots from the current process. Safe to call at intervals
-    /// from a background timer.
-    /// </summary>
-    /// <param name="now">Optional wall-clock instant. Defaults to <see cref="DateTimeOffset.UtcNow"/>.</param>
     public MigrationRunMetricsResourceSample SampleResources(DateTimeOffset? now = null)
     {
         var sampledAt = now ?? DateTimeOffset.UtcNow;
@@ -340,16 +281,6 @@ public sealed class MigrationRunMetricsRecorder
         }
     }
 
-    /// <summary>
-    /// Builds a deterministic <see cref="MigrationRunMetricsArtifact"/> capturing the recorded
-    /// measurements. Source URLs and credentials are scrubbed from the supplied source identity.
-    /// </summary>
-    /// <param name="sourceKind">Stable source kind identifier (e.g. <c>geoserver-rest</c>).</param>
-    /// <param name="sourceFamily">Source family classification.</param>
-    /// <param name="source">Raw source identity. URLs and credentials are stripped before emission.</param>
-    /// <param name="measurementScope">Human-readable measurement scope.</param>
-    /// <param name="runId">Optional deterministic run identifier.</param>
-    /// <param name="completedAt">Optional wall-clock instant; defaults to <see cref="DateTimeOffset.UtcNow"/>.</param>
     public MigrationRunMetricsArtifact Build(
         string sourceKind,
         string sourceFamily,
@@ -476,9 +407,6 @@ public sealed class MigrationRunMetricsRecorder
         return trimmed.Length > 128 ? trimmed[..128] : trimmed;
     }
 
-    /// <summary>
-    /// Disposable scope returned by <see cref="BeginPhase"/>.
-    /// </summary>
     public sealed class PhaseScope : IDisposable
     {
         private readonly MigrationRunMetricsRecorder _recorder;
@@ -494,10 +422,8 @@ public sealed class MigrationRunMetricsRecorder
 
         internal PhaseAccumulator Accumulator { get; }
 
-        /// <summary>Phase identifier this scope applies to.</summary>
         public string Phase => _phase;
 
-        /// <summary>Disposes the scope and closes the phase window.</summary>
         public void Dispose()
         {
             if (_disposed) return;

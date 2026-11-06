@@ -12,42 +12,10 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Drives the apply stage of the migration acceptance suite by translating per-source
-/// <see cref="MigrationSourceInventoryArtifact"/> inputs into deterministic
-/// <see cref="MigrationManifestArtifact"/> outputs and rolling them into a
-/// <see cref="MigrationApplyStageReport"/>.
-/// </summary>
-/// <remarks>
-/// <para>
-/// This runner is import-service-agnostic: it relies on the existing
-/// <see cref="MigrationManifestTranslator"/> to translate the slice-2 inventory output into a
-/// target manifest, and on <see cref="MigrationApplyPlanBuilder"/> to derive a deterministic
-/// apply-plan replay token plus per-item dispositions. The runner does not reimplement apply,
-/// does not introduce additional protocol surface, and does not require a database connection
-/// or live HTTP target.
-/// </para>
-/// <para>
-/// Fixture sources whose source family does not yet support a non-destructive apply against the
-/// fixture target run in <c>dry-run</c> mode; the runner still emits the
-/// <see cref="MigrationManifestArtifact"/> and classifies items deterministically so downstream
-/// publish, parity, and readiness stages can replay from the same source set. Callers can opt a
-/// fixture into <c>apply</c> mode by setting
-/// <see cref="MigrationAcceptanceApplyStageInput.ApplyMode"/> when the upstream import service
-/// has already produced an apply outcome.
-/// </para>
-/// </remarks>
 public static class MigrationAcceptanceApplyStageRunner
 {
-    /// <summary>
-    /// Default apply mode used when a fixture does not explicitly opt into a real apply.
-    /// </summary>
     public const string DryRunMode = "dry-run";
 
-    /// <summary>
-    /// Apply mode indicating the upstream import service performed a real apply for the fixture
-    /// target.
-    /// </summary>
     public const string ApplyMode = "apply";
 
     private const string AppliedDisposition = "applied";
@@ -55,13 +23,6 @@ public static class MigrationAcceptanceApplyStageRunner
     private const string UnsupportedDisposition = "unsupported";
     private const string ReadyApplyPlanDisposition = "ready";
 
-    /// <summary>
-    /// Build a deterministic apply stage report from the supplied per-source inventories.
-    /// </summary>
-    /// <param name="runId">Stable identifier for this acceptance apply run (e.g. fixture set name).</param>
-    /// <param name="scanRunId">Identifier of the upstream scan stage report.</param>
-    /// <param name="inputs">Per-fixture apply inputs.</param>
-    /// <returns>Aggregate report pinning the apply stage outputs.</returns>
     public static MigrationApplyStageReport BuildReport(
         string runId,
         string scanRunId,
@@ -115,12 +76,6 @@ public static class MigrationAcceptanceApplyStageRunner
         };
     }
 
-    /// <summary>
-    /// Build a deterministic per-source apply outcome from a translated manifest. Exposed for
-    /// callers (and tests) that drive the apply stage one fixture at a time.
-    /// </summary>
-    /// <param name="manifest">Translated manifest artifact for the source.</param>
-    /// <returns>Deterministic per-source outcome.</returns>
     public static MigrationApplyStageOutcome BuildOutcome(MigrationManifestArtifact manifest)
     {
         ArgumentNullException.ThrowIfNull(manifest);
@@ -259,38 +214,15 @@ public static class MigrationAcceptanceApplyStageRunner
     }
 }
 
-/// <summary>
-/// One per-fixture input to <see cref="MigrationAcceptanceApplyStageRunner.BuildReport"/>.
-/// </summary>
 public sealed record MigrationAcceptanceApplyStageInput
 {
-    /// <summary>
-    /// Stable fixture identifier (e.g. <c>arcgis-mapserver-mixed-renderers</c>).
-    /// </summary>
     public required string FixtureId { get; init; }
 
-    /// <summary>
-    /// Inventory artifact produced by the upstream scan stage for this fixture.
-    /// </summary>
     public required MigrationSourceInventoryArtifact Inventory { get; init; }
 
-    /// <summary>
-    /// Optional pre-built manifest artifact. When supplied the runner skips translation and uses
-    /// the supplied manifest directly. When omitted the runner translates the inventory with
-    /// <see cref="MigrationManifestTranslator"/>.
-    /// </summary>
     public MigrationManifestArtifact? Manifest { get; init; }
 
-    /// <summary>
-    /// Optional manifest translation options. Ignored when <see cref="Manifest"/> is supplied.
-    /// </summary>
     public MigrationManifestTranslationOptions? ManifestOptions { get; init; }
 
-    /// <summary>
-    /// Apply mode for the fixture. Defaults to
-    /// <see cref="MigrationAcceptanceApplyStageRunner.DryRunMode"/>. Set to
-    /// <see cref="MigrationAcceptanceApplyStageRunner.ApplyMode"/> when the upstream import
-    /// service has performed a real apply against the fixture target.
-    /// </summary>
     public string? ApplyMode { get; init; }
 }

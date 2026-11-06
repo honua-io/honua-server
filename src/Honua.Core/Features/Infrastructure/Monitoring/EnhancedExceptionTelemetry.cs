@@ -9,307 +9,129 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Enhanced exception telemetry system with standardized correlation ID propagation
-/// and exception classification for improved observability.
-/// </summary>
 public interface IEnhancedExceptionTelemetry
 {
-    /// <summary>
-    /// Records an exception with enhanced telemetry data.
-    /// </summary>
-    /// <param name="exception">The exception to record</param>
-    /// <param name="context">Additional context about the exception</param>
     void RecordException(Exception exception, ExceptionContext? context = null);
 
-    /// <summary>
-    /// Records an exception with correlation ID and operation context.
-    /// </summary>
-    /// <param name="exception">The exception to record</param>
-    /// <param name="correlationId">Correlation ID for distributed tracing</param>
-    /// <param name="operationType">Type of operation that failed</param>
-    /// <param name="additionalProperties">Additional properties for telemetry</param>
     void RecordException(Exception exception, string correlationId, string operationType, IDictionary<string, object>? additionalProperties = null);
 
-    /// <summary>
-    /// Gets exception statistics for monitoring and alerting.
-    /// </summary>
     ExceptionStatistics GetStatistics();
 
-    /// <summary>
-    /// Gets recent exceptions for analysis.
-    /// </summary>
     IReadOnlyList<ExceptionRecord> GetRecentExceptions(int maxCount = 100, ExceptionSeverity? minSeverity = null);
 }
 
-/// <summary>
-/// Context information for exception recording.
-/// </summary>
 public sealed class ExceptionContext
 {
-    /// <summary>
-    /// Correlation ID for distributed tracing.
-    /// </summary>
     public string? CorrelationId { get; set; }
 
-    /// <summary>
-    /// Type of operation that failed.
-    /// </summary>
     public string? OperationType { get; set; }
 
-    /// <summary>
-    /// User ID if available.
-    /// </summary>
     public string? UserId { get; set; }
 
-    /// <summary>
-    /// Request path or endpoint.
-    /// </summary>
     public string? RequestPath { get; set; }
 
-    /// <summary>
-    /// HTTP method if applicable.
-    /// </summary>
     public string? HttpMethod { get; set; }
 
-    /// <summary>
-    /// Additional properties for telemetry.
-    /// </summary>
     public Dictionary<string, object>? AdditionalProperties { get; set; }
 
-    /// <summary>
-    /// Whether this exception represents a critical failure.
-    /// </summary>
     public bool IsCritical { get; set; }
 
-    /// <summary>
-    /// Expected recovery time if known.
-    /// </summary>
     public TimeSpan? ExpectedRecoveryTime { get; set; }
 }
 
-/// <summary>
-/// Severity classification for exceptions.
-/// </summary>
 public enum ExceptionSeverity
 {
-    /// <summary>
-    /// Low severity - information or expected errors.
-    /// </summary>
     Low = 1,
 
-    /// <summary>
-    /// Medium severity - recoverable errors.
-    /// </summary>
     Medium = 2,
 
-    /// <summary>
-    /// High severity - significant failures.
-    /// </summary>
     High = 3,
 
-    /// <summary>
-    /// Critical severity - system-threatening failures.
-    /// </summary>
     Critical = 4
 }
 
-/// <summary>
-/// Classification of an exception for telemetry purposes.
-/// </summary>
 public sealed record ExceptionClassification
 {
-    /// <summary>
-    /// Severity level of the exception.
-    /// </summary>
     public ExceptionSeverity Severity { get; init; }
 
-    /// <summary>
-    /// Category of the exception (e.g., Database, Network, Authentication).
-    /// </summary>
     public string Category { get; init; } = string.Empty;
 
-    /// <summary>
-    /// Subcategory for more specific classification.
-    /// </summary>
     public string? Subcategory { get; init; }
 
-    /// <summary>
-    /// Whether this exception type is expected/recoverable.
-    /// </summary>
     public bool IsRecoverable { get; init; }
 
-    /// <summary>
-    /// Whether this exception should trigger alerts.
-    /// </summary>
     public bool ShouldAlert { get; init; }
 
-    /// <summary>
-    /// Rate limiting key for similar exceptions.
-    /// </summary>
     public string? RateLimitKey { get; init; }
 }
 
-/// <summary>
-/// Statistics about recorded exceptions.
-/// </summary>
 public sealed record ExceptionStatistics
 {
-    /// <summary>
-    /// Total number of exceptions recorded.
-    /// </summary>
     public long TotalExceptions { get; init; }
 
-    /// <summary>
-    /// Number of critical exceptions.
-    /// </summary>
     public long CriticalExceptions { get; init; }
 
-    /// <summary>
-    /// Exceptions by category.
-    /// </summary>
     public IReadOnlyDictionary<string, long> ByCategory { get; init; } =
         new Dictionary<string, long>();
 
-    /// <summary>
-    /// Exceptions by severity.
-    /// </summary>
     public IReadOnlyDictionary<ExceptionSeverity, long> BySeverity { get; init; } =
         new Dictionary<ExceptionSeverity, long>();
 
-    /// <summary>
-    /// Most common exception types.
-    /// </summary>
     public IReadOnlyList<ExceptionTypeStatistic> MostCommonTypes { get; init; } =
         Array.Empty<ExceptionTypeStatistic>();
 
-    /// <summary>
-    /// Exception rate per minute.
-    /// </summary>
     public double ExceptionsPerMinute { get; init; }
 
-    /// <summary>
-    /// Timestamp when statistics were collected.
-    /// </summary>
     public DateTime CollectedAt { get; init; } = DateTime.UtcNow;
 }
 
-/// <summary>
-/// Statistics for a specific exception type.
-/// </summary>
 public sealed record ExceptionTypeStatistic
 {
-    /// <summary>
-    /// Exception type name.
-    /// </summary>
     public string ExceptionType { get; init; } = string.Empty;
 
-    /// <summary>
-    /// Number of occurrences.
-    /// </summary>
     public long Count { get; init; }
 
-    /// <summary>
-    /// Most recent occurrence.
-    /// </summary>
     public DateTime LastOccurred { get; init; }
 }
 
-/// <summary>
-/// Record of a specific exception occurrence.
-/// </summary>
 public sealed record ExceptionRecord
 {
-    /// <summary>
-    /// Unique identifier for this exception record.
-    /// </summary>
     public string Id { get; init; } = string.Empty;
 
-    /// <summary>
-    /// Correlation ID for distributed tracing.
-    /// </summary>
     public string? CorrelationId { get; init; }
 
-    /// <summary>
-    /// Exception type name.
-    /// </summary>
     public string ExceptionType { get; init; } = string.Empty;
 
-    /// <summary>
-    /// Exception message.
-    /// </summary>
     public string Message { get; init; } = string.Empty;
 
-    /// <summary>
-    /// Classification of the exception.
-    /// </summary>
     public ExceptionClassification Classification { get; init; } = new();
 
-    /// <summary>
-    /// Operation type that failed.
-    /// </summary>
     public string? OperationType { get; init; }
 
-    /// <summary>
-    /// Request path or endpoint.
-    /// </summary>
     public string? RequestPath { get; init; }
 
-    /// <summary>
-    /// When the exception occurred.
-    /// </summary>
     public DateTime OccurredAt { get; init; }
 
-    /// <summary>
-    /// Additional telemetry properties.
-    /// </summary>
     public IReadOnlyDictionary<string, object>? Properties { get; init; }
 
-    /// <summary>
-    /// Stack trace (sanitized).
-    /// </summary>
     public string? StackTrace { get; init; }
 }
 
-/// <summary>
-/// Configuration options for enhanced exception telemetry.
-/// </summary>
 public sealed class ExceptionTelemetryOptions
 {
-    /// <summary>
-    /// Maximum number of recent exceptions to keep in memory.
-    /// </summary>
     public int MaxRecentExceptions { get; set; } = 1000;
 
-    /// <summary>
-    /// Whether to capture stack traces for exceptions.
-    /// </summary>
     public bool CaptureStackTraces { get; set; } = true;
 
-    /// <summary>
-    /// Maximum length of captured stack traces.
-    /// </summary>
     public int MaxStackTraceLength { get; set; } = 4096;
 
-    /// <summary>
-    /// Whether to sanitize sensitive data from exception details.
-    /// </summary>
     public bool SanitizeSensitiveData { get; set; } = true;
 
-    /// <summary>
-    /// Rate limiting window for similar exceptions.
-    /// </summary>
     public TimeSpan RateLimitWindow { get; set; } = TimeSpan.FromMinutes(1);
 
-    /// <summary>
-    /// Maximum occurrences per rate limit window.
-    /// </summary>
     public int MaxOccurrencesPerWindow { get; set; } = 10;
 }
 
-/// <summary>
-/// Enhanced exception telemetry implementation.
-/// </summary>
 internal sealed partial class EnhancedExceptionTelemetry : IEnhancedExceptionTelemetry, IDisposable
 {
     private readonly ILogger<EnhancedExceptionTelemetry> _logger;

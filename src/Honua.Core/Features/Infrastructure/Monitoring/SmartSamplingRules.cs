@@ -5,20 +5,12 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Core.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Smart sampling rules that implement business logic for intelligent trace sampling.
-/// Considers critical operations, error conditions, performance characteristics,
-/// client priority, and geospatial complexity to make sampling decisions.
-/// </summary>
 public sealed partial class SmartSamplingRules : ISmartSamplingRules
 {
     private readonly ILogger<SmartSamplingRules> _logger;
     private readonly HashSet<string> _vipClients;
     private readonly Dictionary<string, double> _operationBaselines;
 
-    /// <summary>
-    /// Initializes smart sampling rules with VIP client configuration.
-    /// </summary>
     public SmartSamplingRules(
         ILogger<SmartSamplingRules> logger,
         IEnumerable<string>? vipClients = null)
@@ -28,11 +20,6 @@ public sealed partial class SmartSamplingRules : ISmartSamplingRules
         _operationBaselines = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Evaluates if an operation should be sampled based on smart sampling rules.
-    /// </summary>
-    /// <param name="context">The sampling context with operation details.</param>
-    /// <returns>Sampling decision with reason and confidence score.</returns>
     public SmartSamplingDecision EvaluateSampling(SamplingContext context)
     {
         if (context == null)
@@ -110,11 +97,6 @@ public sealed partial class SmartSamplingRules : ISmartSamplingRules
         return new SmartSamplingDecision(null, "No smart rules matched, defer to adaptive sampling", 0.0);
     }
 
-    /// <summary>
-    /// Updates performance baselines for operations based on historical data.
-    /// </summary>
-    /// <param name="operationName">The name of the operation.</param>
-    /// <param name="baselineDurationMs">The baseline duration in milliseconds.</param>
     public void UpdatePerformanceBaseline(string operationName, double baselineDurationMs)
     {
         if (string.IsNullOrEmpty(operationName) || baselineDurationMs <= 0)
@@ -130,10 +112,6 @@ public sealed partial class SmartSamplingRules : ISmartSamplingRules
         }
     }
 
-    /// <summary>
-    /// Adds a VIP client to the priority sampling list.
-    /// </summary>
-    /// <param name="clientId">The client identifier.</param>
     public void AddVipClient(string clientId)
     {
         if (string.IsNullOrEmpty(clientId))
@@ -145,10 +123,6 @@ public sealed partial class SmartSamplingRules : ISmartSamplingRules
         Log.VipClientAdded(_logger, clientId);
     }
 
-    /// <summary>
-    /// Removes a VIP client from the priority sampling list.
-    /// </summary>
-    /// <param name="clientId">The client identifier.</param>
     public void RemoveVipClient(string clientId)
     {
         if (string.IsNullOrEmpty(clientId))
@@ -432,102 +406,58 @@ public sealed partial class SmartSamplingRules : ISmartSamplingRules
     }
 }
 
-/// <summary>
-/// Interface for smart sampling rule evaluation.
-/// </summary>
 public interface ISmartSamplingRules
 {
-    /// <summary>
-    /// Evaluates if an operation should be sampled based on smart rules.
-    /// </summary>
     SmartSamplingDecision EvaluateSampling(SamplingContext context);
 
-    /// <summary>
-    /// Updates performance baselines for operations.
-    /// </summary>
     void UpdatePerformanceBaseline(string operationName, double baselineDurationMs);
 
-    /// <summary>
-    /// Adds a VIP client to priority sampling.
-    /// </summary>
     void AddVipClient(string clientId);
 
-    /// <summary>
-    /// Removes a VIP client from priority sampling.
-    /// </summary>
     void RemoveVipClient(string clientId);
 }
 
-/// <summary>
-/// Context information for smart sampling decisions.
-/// </summary>
 public sealed record SamplingContext
 {
-    /// <summary>Name of the operation being sampled.</summary>
     public string? OperationName { get; init; }
 
-    /// <summary>Duration of the operation in milliseconds.</summary>
     public double DurationMs { get; init; }
 
-    /// <summary>Number of features being processed.</summary>
     public int FeatureCount { get; init; }
 
-    /// <summary>Size of data being transferred in bytes.</summary>
     public long DataSizeBytes { get; init; }
 
-    /// <summary>Client identifier for VIP detection.</summary>
     public string? ClientId { get; init; }
 
-    /// <summary>User identifier for personalization.</summary>
     public string? UserId { get; init; }
 
-    /// <summary>Exception if operation failed.</summary>
     public Exception? Exception { get; init; }
 
-    /// <summary>HTTP status code if applicable.</summary>
     public int? HttpStatusCode { get; init; }
 
-    /// <summary>Database error code if applicable.</summary>
     public int? DatabaseErrorCode { get; init; }
 
-    /// <summary>Geospatial complexity score.</summary>
     public int GeospatialComplexity { get; init; }
 
-    /// <summary>Number of spatial dimensions (2D, 3D, 4D).</summary>
     public int SpatialDimensions { get; init; }
 
-    /// <summary>Whether high-precision calculations are required.</summary>
     public bool RequiresHighPrecision { get; init; }
 
-    /// <summary>Business value score (0-100).</summary>
     public int BusinessValue { get; init; }
 
-    /// <summary>Security risk level.</summary>
     public string? SecurityRiskLevel { get; init; }
 
-    /// <summary>API version being used.</summary>
     public string? ApiVersion { get; init; }
 
-    /// <summary>Current system CPU usage percentage.</summary>
     public double SystemCpuUsage { get; init; }
 
-    /// <summary>Current system memory usage percentage.</summary>
     public double SystemMemoryUsage { get; init; }
 
-    /// <summary>Number of active requests.</summary>
     public int ActiveRequests { get; init; }
 
-    /// <summary>Database connection pool usage percentage.</summary>
     public double DatabaseConnectionPoolUsage { get; init; }
 
-    /// <summary>Activity tags for additional context.</summary>
     public IReadOnlyDictionary<string, object?>? ActivityTags { get; init; }
 }
 
-/// <summary>
-/// Result of smart sampling rule evaluation.
-/// </summary>
-/// <param name="ShouldSample">Whether the operation should be sampled. Null means defer to adaptive sampling.</param>
-/// <param name="Reason">Reason for the sampling decision.</param>
-/// <param name="ConfidenceScore">Confidence score of the decision (0.0-1.0).</param>
 public readonly record struct SmartSamplingDecision(bool? ShouldSample, string Reason, double ConfidenceScore);

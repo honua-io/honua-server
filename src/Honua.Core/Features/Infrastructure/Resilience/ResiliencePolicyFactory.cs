@@ -5,12 +5,8 @@ using Polly;
 
 namespace Honua.Core.Features.Infrastructure.Resilience;
 
-/// <summary>
-/// Factory helpers to build consistent Polly retry/circuit policies across dependencies.
-/// </summary>
 public static class ResiliencePolicyFactory
 {
-    /// <inheritdoc/>
     public static IAsyncPolicy CreateStandardPolicy(
         PolicyBuilder builder,
         ResiliencePolicyOptions? options = null,
@@ -35,7 +31,6 @@ public static class ResiliencePolicyFactory
         return Policy.WrapAsync(retryPolicy, circuitPolicy);
     }
 
-    /// <inheritdoc/>
     public static IAsyncPolicy<TResult> CreateStandardPolicy<TResult>(
         PolicyBuilder<TResult> builder,
         ResiliencePolicyOptions? options = null,

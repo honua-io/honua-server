@@ -3,11 +3,7 @@
 
 namespace Honua.Core.Features.Infrastructure.Sql;
 
-/// <summary>
-/// Rejects dynamic SQL that is not one read-only <c>SELECT</c> or <c>WITH</c> statement.
-/// Callers that interpolate a predicate compose the finished statement and run it through
-/// <see cref="ValidateReadOnlySingleStatement"/> before execution.
-/// </summary>
+// Callers that interpolate a predicate must validate the finished statement before execution.
 internal static class ReadOnlyDynamicSql
 {
     private static readonly HashSet<string> MutatingTokens = new(StringComparer.OrdinalIgnoreCase)

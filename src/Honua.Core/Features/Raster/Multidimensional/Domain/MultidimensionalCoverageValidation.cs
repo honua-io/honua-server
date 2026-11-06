@@ -5,41 +5,24 @@ using Honua.Core.Features.Infrastructure.Domain;
 
 namespace Honua.Core.Features.Raster.Multidimensional.Domain;
 
-/// <summary>
-/// Server-side validation for multidimensional coverage registration input.
-/// Keeps URL/path safety, length limits, and variable selection rules in one
-/// place so admin endpoints and gRPC adapters share identical rejection
-/// behavior.
-/// </summary>
 public static class MultidimensionalCoverageValidation
 {
-    /// <summary>Maximum bucket name length (S3 cap + Azure container cap).</summary>
     public const int MaxBucketLength = 255;
 
-    /// <summary>Maximum object key length (S3 cap).</summary>
     public const int MaxObjectKeyLength = 1024;
 
-    /// <summary>Maximum length for a variable name (CF/CDM allow up to 255).</summary>
     public const int MaxVariableNameLength = 255;
 
-    /// <summary>Maximum number of operator-declared variable names per registration.</summary>
     public const int MaxVariables = 64;
 
-    /// <summary>Maximum length of the registration name.</summary>
     public const int MaxNameLength = 255;
 
-    /// <summary>Maximum length of an optional description.</summary>
     public const int MaxDescriptionLength = 4000;
 
     private static readonly string[] AllowedHdfExtensions = [".h5", ".hdf5"];
     private static readonly string[] AllowedNetCdfExtensions = [".nc", ".nc4"];
     private static readonly string[] AllowedGribExtensions = [".grib", ".grb", ".grb2", ".grib2"];
 
-    /// <summary>
-    /// Validates a registration request. Returns <c>true</c> when the request
-    /// is acceptable; otherwise sets <paramref name="error"/> to a stable,
-    /// non-leaking explanation suitable for an admin client.
-    /// </summary>
     public static bool TryValidate(
         MultidimensionalCoverageRegistrationRequest request,
         out string error)

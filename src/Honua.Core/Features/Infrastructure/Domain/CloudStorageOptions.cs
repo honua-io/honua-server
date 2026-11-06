@@ -5,197 +5,77 @@ using Honua.Core.Features.Tiles.PMTiles;
 
 namespace Honua.Core.Features.Infrastructure.Domain;
 
-/// <summary>
-/// Configuration options for cloud file storage
-/// </summary>
 public sealed record CloudStorageOptions
 {
-    /// <summary>
-    /// Whether storage integration is enabled.
-    /// </summary>
     public bool Enabled { get; set; } = true;
 
-    /// <summary>
-    /// The cloud storage provider to use
-    /// </summary>
     public CloudStorageProvider Provider { get; set; } = CloudStorageProvider.Local;
 
-    /// <summary>
-    /// Default time-to-live for temporary files
-    /// </summary>
     public TimeSpan DefaultTimeToLive { get; set; } = TimeSpan.FromHours(24);
 
-    /// <summary>
-    /// Maximum file size allowed for upload (in bytes)
-    /// </summary>
     public long MaxFileSizeBytes { get; set; } = 1024L * 1024L * 1024L; // 1 GB default
 
-    /// <summary>
-    /// Options specific to local filesystem storage
-    /// </summary>
     public LocalStorageOptions? LocalStorage { get; set; }
 
-    /// <summary>
-    /// Options specific to AWS S3 storage
-    /// </summary>
     public AwsS3Options? AwsS3 { get; set; }
 
-    /// <summary>
-    /// Options specific to Azure Blob storage
-    /// </summary>
     public AzureBlobOptions? AzureBlob { get; set; }
 
-    /// <summary>
-    /// Lifetime for pre-signed download/upload URLs.
-    /// Default: 15 minutes.
-    /// </summary>
     public TimeSpan SignedUrlLifetime { get; set; } = TimeSpan.FromMinutes(15);
 
-    /// <summary>
-    /// Whether to enable automatic cleanup of expired files
-    /// </summary>
     public bool EnableAutomaticCleanup { get; set; } = true;
 
-    /// <summary>
-    /// Interval at which to run automatic cleanup
-    /// </summary>
     public TimeSpan CleanupInterval { get; set; } = TimeSpan.FromHours(1);
 
-    /// <summary>
-    /// Configuration for the durable PMTiles publish workflow.
-    /// </summary>
     public PMTilesPublishOptions PMTilesPublish { get; set; } = new();
 }
 
-/// <summary>
-/// Configuration options for the durable PMTiles publish workflow.
-/// Distinct from the temporary admin archive download (which uses
-/// <see cref="CloudStorageOptions.DefaultTimeToLive"/>).
-/// </summary>
 public sealed record PMTilesPublishOptions
 {
-    /// <summary>
-    /// URL strategy used for browser access to published artifacts.
-    /// Defaults to <see cref="PMTilesUrlStrategy.SignedUrl"/> which is safe for
-    /// private buckets without exposing object-storage credentials.
-    /// </summary>
     public PMTilesUrlStrategy UrlStrategy { get; set; } = PMTilesUrlStrategy.SignedUrl;
 
-    /// <summary>
-    /// Object-key prefix for published PMTiles artifacts. Combined with the
-    /// configured S3 KeyPrefix or Azure BlobPrefix.
-    /// </summary>
     public string KeyPrefix { get; set; } = "pmtiles";
 
-    /// <summary>
-    /// Lifetime for presigned/SAS URLs returned to clients when
-    /// <see cref="UrlStrategy"/> is <see cref="PMTilesUrlStrategy.SignedUrl"/>.
-    /// Defaults to 7 days, the upper bound for AWS SigV4 IAM presigning.
-    /// </summary>
+    // Seven days is the upper bound for AWS SigV4 IAM presigning.
     public TimeSpan SignedUrlLifetime { get; set; } = TimeSpan.FromDays(7);
 
-    /// <summary>
-    /// Public base URL used to construct artifact access URLs when
-    /// <see cref="UrlStrategy"/> is <see cref="PMTilesUrlStrategy.PublicUrl"/>.
-    /// Required only for that strategy. Should not include a trailing slash.
-    /// </summary>
     public string? PublicBucketBaseUrl { get; set; }
 
-    /// <summary>
-    /// Serves operator-provisioned PMTiles archives through the range proxy to
-    /// any caller. An archive is unbound when its object metadata carries the
-    /// publish tags (<c>application/vnd.pmtiles</c>, <c>operation=publish</c>)
-    /// but no source binding (<c>layerId</c>, <c>serviceId</c>,
-    /// <c>publicationId</c>, <c>resourceId</c>, <c>storageBindingId</c>).
-    /// Honua's own publish job always writes a binding, so an unbound archive
-    /// was uploaded directly to the bucket, for example an extracted basemap.
-    /// It has no source layer whose access policy the proxy could check.
-    /// Defaults to <c>false</c>, so unbound archives return 404. Archives that
-    /// carry a binding always go through the source layer's access policy, and
-    /// a retired or rebound source is not served whatever this is set to.
-    /// </summary>
+    // Anonymous access is only for archives with no source binding; a bound archive requires that source's access policy, and a retired or rebound source is not found before that check.
     public bool AllowAnonymousUnboundArchives { get; set; }
 }
 
-/// <summary>
-/// Configuration options for local filesystem storage
-/// </summary>
 public sealed record LocalStorageOptions
 {
-    /// <summary>
-    /// Base directory path for storing files
-    /// </summary>
     public string BasePath { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Whether to create the base directory if it doesn't exist
-    /// </summary>
     public bool CreateDirectoryIfNotExists { get; set; } = true;
 }
 
-/// <summary>
-/// Configuration options for AWS S3 storage
-/// </summary>
 public sealed record AwsS3Options
 {
-    /// <summary>
-    /// S3 bucket name
-    /// </summary>
     public string BucketName { get; set; } = string.Empty;
 
-    /// <summary>
-    /// AWS region (e.g., "us-east-1")
-    /// </summary>
     public string Region { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Optional key prefix for all stored files
-    /// </summary>
     public string? KeyPrefix { get; set; }
 
-    /// <summary>
-    /// Optional service URL for S3-compatible endpoints (e.g., Localstack or MinIO)
-    /// </summary>
     public string? ServiceUrl { get; set; }
 
-    /// <summary>
-    /// Whether to force path-style S3 addressing (useful for local emulators)
-    /// </summary>
     public bool ForcePathStyle { get; set; }
 
-    /// <summary>
-    /// AWS access key ID (if not using IAM role)
-    /// </summary>
     public string? AccessKeyId { get; set; }
 
-    /// <summary>
-    /// AWS secret access key (if not using IAM role)
-    /// </summary>
     public string? SecretAccessKey { get; set; }
 
-    /// <summary>
-    /// Whether to use server-side encryption
-    /// </summary>
     public bool EnableServerSideEncryption { get; set; } = true;
 }
 
-/// <summary>
-/// Configuration options for Azure Blob storage
-/// </summary>
 public sealed record AzureBlobOptions
 {
-    /// <summary>
-    /// Azure Storage connection string
-    /// </summary>
     public string ConnectionString { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Container name for storing files
-    /// </summary>
     public string ContainerName { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Optional blob prefix for all stored files
-    /// </summary>
     public string? BlobPrefix { get; set; }
 }

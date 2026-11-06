@@ -5,25 +5,6 @@ using Honua.Core.Features.Infrastructure.Domain;
 
 namespace Honua.Core.Features.Raster.Domain;
 
-/// <summary>
-/// Parsed COG structure from IFD chain traversal.
-/// </summary>
-/// <param name="Width">Base image width in pixels.</param>
-/// <param name="Height">Base image height in pixels.</param>
-/// <param name="BandCount">Samples per pixel.</param>
-/// <param name="PixelType">Classified sample type, e.g. <c>uint8</c> or <c>float32</c>.</param>
-/// <param name="Srid">EPSG code parsed from the GeoTIFF keys, or 0 when absent.</param>
-/// <param name="Compression">TIFF compression name, e.g. <c>LZW</c>.</param>
-/// <param name="TileWidth">Tile width in pixels.</param>
-/// <param name="TileHeight">Tile height in pixels.</param>
-/// <param name="OverviewLevels">IFD chain, base level first.</param>
-/// <param name="Extent">Georeferenced extent of the base level.</param>
-/// <param name="BitsPerSample">Bits per sample (TIFF tag 258), needed to reverse a predictor.</param>
-/// <param name="Predictor">TIFF predictor (tag 317): 1 = none, 2 = horizontal differencing.</param>
-/// <param name="IsLittleEndian">Byte order of the source TIFF, which multi-byte samples are stored in.</param>
-/// <param name="PhotometricInterpretation">TIFF color interpretation: 0 white-is-zero, 1 black-is-zero, 2 RGB.</param>
-/// <param name="PlanarConfiguration">TIFF sample organization: 1 chunky, 2 separate planes.</param>
-/// <param name="NoData">GDAL nodata sample text, or null when the source does not declare one.</param>
 public sealed record CogMetadata(
     int Width,
     int Height,
@@ -42,23 +23,6 @@ public sealed record CogMetadata(
     int PlanarConfiguration = 1,
     string? NoData = null);
 
-/// <summary>
-/// One IFD resolution level within a COG.
-/// </summary>
-/// <param name="Level">IFD index, base level first.</param>
-/// <param name="Width">Level width in pixels.</param>
-/// <param name="Height">Level height in pixels.</param>
-/// <param name="IfdOffset">File offset of the level's IFD.</param>
-/// <param name="TileOffsets">File offset of each tile, row-major.</param>
-/// <param name="TileByteCounts">Stored byte length of each tile, row-major.</param>
-/// <param name="JpegTables">
-/// Shared JPEGTables (TIFF tag 347) of this level, or null. TIFF-JPEG tiles referencing them
-/// are abbreviated streams that must be assembled before they can be served.
-/// </param>
-/// <param name="Predictor">
-/// TIFF predictor (tag 317) of this IFD: 1 none, 2 horizontal differencing, 3 floating point.
-/// Zero means the level was rebuilt without the tag, and decoding uses the base image predictor.
-/// </param>
 public sealed record CogOverviewLevel(
     int Level,
     int Width,
@@ -69,104 +33,44 @@ public sealed record CogOverviewLevel(
     byte[]? JpegTables = null,
     int Predictor = 0);
 
-/// <summary>
-/// Lightweight overview level summary for JSONB persistence (no tile offset arrays).
-/// </summary>
 public sealed record CogOverviewLevelSummary(int Level, int Width, int Height);
 
-/// <summary>
-/// Persisted catalog entry for a cloud-hosted COG.
-/// </summary>
 public sealed record CogRegistration
 {
-    /// <summary>
-    /// Unique registration identifier.
-    /// </summary>
     public required long Id { get; init; }
 
-    /// <summary>
-    /// Layer this COG is associated with.
-    /// </summary>
     public required int LayerId { get; init; }
 
-    /// <summary>
-    /// Human-readable name for the registration.
-    /// </summary>
     public required string Name { get; init; }
 
-    /// <summary>
-    /// Optional description.
-    /// </summary>
     public string? Description { get; init; }
 
-    /// <summary>
-    /// Cloud storage provider hosting the COG.
-    /// </summary>
     public required CloudStorageProvider Provider { get; init; }
 
-    /// <summary>
-    /// Bucket or container name.
-    /// </summary>
     public required string Bucket { get; init; }
 
-    /// <summary>
-    /// Object key or blob path.
-    /// </summary>
     public required string ObjectKey { get; init; }
 
-    /// <summary>
-    /// Parsed COG metadata (null if scan hasn't completed).
-    /// </summary>
     public CogMetadata? Metadata { get; init; }
 
-    /// <summary>
-    /// Serialized IFD cache for fast tile offset lookup.
-    /// </summary>
     public byte[]? IfdCache { get; init; }
 
-    /// <summary>
-    /// When metadata was last scanned from the cloud object.
-    /// </summary>
     public DateTimeOffset? MetadataScannedAt { get; init; }
 
-    /// <summary>
-    /// Registration timestamp.
-    /// </summary>
     public required DateTimeOffset CreatedAt { get; init; }
 }
 
-/// <summary>
-/// Request to register a cloud-hosted COG.
-/// </summary>
 public sealed record CogRegistrationRequest
 {
-    /// <summary>
-    /// Layer to associate the COG with.
-    /// </summary>
     public required int LayerId { get; init; }
 
-    /// <summary>
-    /// Human-readable name.
-    /// </summary>
     public required string Name { get; init; }
 
-    /// <summary>
-    /// Optional description.
-    /// </summary>
     public string? Description { get; init; }
 
-    /// <summary>
-    /// Cloud storage provider.
-    /// </summary>
     public required CloudStorageProvider Provider { get; init; }
 
-    /// <summary>
-    /// Bucket or container name.
-    /// </summary>
     public required string Bucket { get; init; }
 
-    /// <summary>
-    /// Object key or blob path.
-    /// </summary>
     public required string ObjectKey { get; init; }
 }

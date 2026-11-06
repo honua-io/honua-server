@@ -7,15 +7,6 @@ using Honua.Core.Features.Infrastructure.Validation;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Product-specific wording for the shared migration outbound HTTP guard.
-/// The checks are the same; only the exception text differs.
-/// </summary>
-/// <param name="HttpOrHttpsMessage">Error when HTTP and HTTPS are both allowed and the scheme is neither.</param>
-/// <param name="HttpsOnlyMessage">Error when only HTTPS is allowed and the scheme is not HTTPS.</param>
-/// <param name="EmbeddedCredentialsMessage">Error when the URL contains user info.</param>
-/// <param name="DisallowedAddressMessage">Error when the host is loopback, private, or unresolvable.</param>
-/// <param name="ConnectionFailureMessage">Error when every resolved address refuses the TCP connection.</param>
 internal readonly record struct MigrationServiceUrlPolicy(
     string HttpOrHttpsMessage,
     string HttpsOnlyMessage,
@@ -23,10 +14,6 @@ internal readonly record struct MigrationServiceUrlPolicy(
     string DisallowedAddressMessage,
     string ConnectionFailureMessage);
 
-/// <summary>
-/// Shared HTTPS, redirect, and pinned-DNS checks for migration clients, which may opt in to
-/// local destinations for development sources.
-/// </summary>
 internal static class MigrationPinnedDns
 {
     internal static Uri ValidateServiceUri(string serviceUrl, bool allowUnsafeLocalUrls, MigrationServiceUrlPolicy policy)

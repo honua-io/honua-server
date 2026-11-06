@@ -3,9 +3,6 @@
 
 namespace Honua.Core.Features.Infrastructure.Backpressure;
 
-/// <summary>
-/// Stable machine codes and transport metadata names for retryable backpressure responses.
-/// </summary>
 public static class BackpressureMetadata
 {
     public const string RateLimitExceededCode = "rate_limit_exceeded";

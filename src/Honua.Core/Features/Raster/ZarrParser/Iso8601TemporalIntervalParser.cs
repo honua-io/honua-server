@@ -5,27 +5,8 @@ using System.Globalization;
 
 namespace Honua.Core.Features.Raster.ZarrParser;
 
-/// <summary>
-/// Neutral, protocol-agnostic parser for an RFC 3339 / ISO 8601 datetime parameter
-/// expressed as an instant or a half-open interval. Lives in <see cref="Honua.Core"/>
-/// so coverage/datacube tile rendering and the OGC protocol adapters can share one
-/// implementation instead of any protocol family taking a dependency on another's
-/// temporal parser. Pure and AOT-safe.
-/// </summary>
 public static class Iso8601TemporalIntervalParser
 {
-    /// <summary>
-    /// Parses an OGC-style datetime parameter into a <c>(start, end)</c> pair without
-    /// requiring a layer or any protocol context. Supported forms: a single instant,
-    /// <c>start/end</c>, <c>../end</c>, and <c>start/..</c>. For an instant <c>T</c>,
-    /// both <paramref name="start"/> and <paramref name="end"/> are set to <c>T</c>.
-    /// An empty/whitespace input is accepted and resolves to <c>(null, null)</c>.
-    /// </summary>
-    /// <param name="datetime">The raw datetime parameter, or null.</param>
-    /// <param name="start">Resolved interval start, or null when open/unset.</param>
-    /// <param name="end">Resolved interval end, or null when open/unset.</param>
-    /// <param name="errorMessage">Client-safe error when the method returns false.</param>
-    /// <returns>True when the value is empty or a well-formed instant/interval.</returns>
     public static bool TryParseRange(
         string? datetime,
         out DateTimeOffset? start,

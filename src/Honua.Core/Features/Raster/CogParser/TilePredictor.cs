@@ -5,18 +5,9 @@ using System.Buffers.Binary;
 
 namespace Honua.Core.Features.Raster.CogParser;
 
-/// <summary>
-/// Reverses the TIFF horizontal differencing predictor (tag 317 = 2) in place.
-/// Encoders store each sample as the difference from the sample one pixel to its
-/// left in the same row, so decoding runs a prefix sum along each row with the
-/// sample stride set by <see cref="TilePixelLayout.SamplesPerPixel"/>.
-/// Differences wrap at the sample's bit depth, so all arithmetic is unchecked.
-/// </summary>
+// TIFF horizontal differences wrap at the sample bit depth, so the prefix sum is unchecked.
 internal static class TilePredictor
 {
-    /// <summary>
-    /// Applies the inverse predictor described by <paramref name="layout"/> to decompressed tile bytes.
-    /// </summary>
     public static void Undo(Span<byte> pixels, in TilePixelLayout layout)
     {
         if (!layout.HasPredictor || pixels.IsEmpty)

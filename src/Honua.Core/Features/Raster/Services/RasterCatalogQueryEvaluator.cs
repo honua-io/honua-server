@@ -6,36 +6,9 @@ using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Core.Features.Raster.Services;
 
-/// <summary>
-/// Reference in-memory evaluation of the neutral <see cref="RasterCatalogQuery"/> contract. This is
-/// the <b>explicitly-declared bounded fallback</b> for raster providers that cannot push the
-/// predicate into storage: they materialize the layer's rasters once and hand them here. PostGIS
-/// overrides the contract with an indexed, paged SQL pushdown instead; this path exists so a
-/// non-pushdown provider still produces byte-for-byte identical envelope-intersects, identity,
-/// temporal, paging, count, and aggregate-extent semantics.
-/// </summary>
-/// <remarks>
-/// Evaluation order mirrors the canonical provider query so the fallback and the pushdown agree:
-/// temporal "newest batch" (layer-wide) → identity (<c>objectIds</c>) → envelope-intersects → paging.
-/// Input order is preserved (no re-sort) so the catalog's natural order flows through unchanged.
-/// This fallback has no geometry engine, so an exact
-/// <see cref="RasterCatalogSpatialPredicate.Relation"/> (Intersects/Contains/Within/Overlaps) is
-/// evaluated with the envelope-intersects box only — a conservative superset of every exact
-/// relation's match set. Providers with spatial storage (PostGIS) apply the exact predicate instead.
-/// </remarks>
+// An exact spatial relation is evaluated here as a bounding-box overlap, which is a superset of the true matches; PostGIS applies the exact predicate.
 public static class RasterCatalogQueryEvaluator
 {
-    /// <summary>
-    /// Evaluates <paramref name="query"/> against an already-materialized raster set.
-    /// </summary>
-    /// <param name="rasters">The layer's rasters, in the catalog's natural order.</param>
-    /// <param name="query">The validated neutral query.</param>
-    /// <param name="transformService">
-    /// Optional CRS pipeline used to transform the spatial predicate into a footprint's SRID when
-    /// they differ. When <c>null</c> and the SRIDs differ, the footprint is conservatively excluded.
-    /// </param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The evaluated page, with <see cref="RasterCatalogPage.PredicatePushedDown"/> false.</returns>
     public static async Task<RasterCatalogPage> EvaluateAsync(
         IReadOnlyList<RasterInfo> rasters,
         RasterCatalogQuery query,
@@ -130,11 +103,6 @@ public static class RasterCatalogQueryEvaluator
     private static DateTimeOffset EffectiveAcquisition(RasterInfo raster)
         => raster.AcquisitionDate ?? raster.CreatedAt;
 
-    /// <summary>
-    /// Axis-aligned envelope intersection. Edge contact counts as an intersection, matching the
-    /// inclusive semantics of <c>esriSpatialRelEnvelopeIntersects</c> and the PostGIS <c>&amp;&amp;</c>
-    /// bounding-box operator used by the pushdown.
-    /// </summary>
     private static bool EnvelopesIntersect(RasterCatalogSpatialPredicate filter, RasterExtent extent)
         => filter.XMin <= extent.XMax &&
            filter.XMax >= extent.XMin &&

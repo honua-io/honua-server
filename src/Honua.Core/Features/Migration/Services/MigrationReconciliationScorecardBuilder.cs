@@ -7,34 +7,8 @@ using Honua.Core.Features.Migration.Domain;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Pure, deterministic builder for <see cref="MigrationReconciliationScorecard"/> (issue #1381).
-/// Aggregates the per-layer data-reconciliation artifact (and optional catalog parity report) into
-/// the data-reconciliation dimension, folds the per-construct automation statuses into the distinct
-/// capability-parity dimension, and signs the body with the evidence-pack fingerprint mechanism.
-/// </summary>
 public static class MigrationReconciliationScorecardBuilder
 {
-    /// <summary>
-    /// Build and sign a scorecard from a completed reconciliation run.
-    /// </summary>
-    /// <param name="runId">Stable migration run identifier.</param>
-    /// <param name="sourceKind">Source kind, e.g. <c>arcgis-geoservices-rest</c>.</param>
-    /// <param name="generatedAt">UTC instant the scorecard is generated.</param>
-    /// <param name="dataArtifact">
-    /// Per-layer data-reconciliation artifact (count/geometry/content/extent). Required: this is the
-    /// gating dimension.
-    /// </param>
-    /// <param name="catalogReport">
-    /// Optional deeper catalog parity report (schema/domain/identifier/relationship/attachment/
-    /// subtype). Its findings are folded into the data-reconciliation dimension when supplied.
-    /// </param>
-    /// <param name="capabilityAutomationStatuses">
-    /// Per-construct automation statuses from the Esri construct capability registry / fidelity
-    /// matrix (see <see cref="MigrationFidelityAutomationStatuses"/>). Drives the capability-parity
-    /// dimension, which is kept strictly separate from data reconciliation and never gates the run.
-    /// </param>
-    /// <returns>A signed scorecard whose <see cref="MigrationReconciliationScorecard.Fingerprint"/> is set.</returns>
     public static MigrationReconciliationScorecard Build(
         string runId,
         string sourceKind,
@@ -70,12 +44,6 @@ public static class MigrationReconciliationScorecardBuilder
         return unsigned with { Fingerprint = ComputeFingerprint(unsigned) };
     }
 
-    /// <summary>
-    /// Compute the deterministic SHA-256 fingerprint over the unsigned scorecard body (i.e. with
-    /// <see cref="MigrationReconciliationScorecard.Fingerprint"/> set to <c>null</c>). Mirrors the
-    /// evidence-pack fingerprint mechanism (<c>sha256:&lt;lowercase-hex&gt;</c>) so downstream
-    /// verifiers can recompute it independently. Exposed for tests and verifiers.
-    /// </summary>
     public static string ComputeFingerprint(MigrationReconciliationScorecard scorecard)
     {
         ArgumentNullException.ThrowIfNull(scorecard);

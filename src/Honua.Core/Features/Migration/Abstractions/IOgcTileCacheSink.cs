@@ -12,156 +12,74 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Abstractions;
 
-/// <summary>
-/// Idempotent sink for tile records emitted by
-/// <see cref="IOgcTileCacheExportService"/>. Implementations persist tile
-/// bytes into Honua's tile catalog. Repeated writes for the same
-/// (cache, z, x, y) tuple must leave existing rows untouched.
-/// </summary>
 public interface IOgcTileCacheSink
 {
-    /// <summary>
-    /// Ensure a tile-cache catalog row exists for the supplied descriptor.
-    /// Implementations must return the stable target identifier they will
-    /// use for tile rows referencing this cache.
-    /// </summary>
-    /// <param name="descriptor">Tile-cache descriptor.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Stable target tile-cache identifier.</returns>
     Task<string> EnsureTileCacheAsync(
         OgcTileCacheDescriptor descriptor,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Write a single tile record into the cache. Implementations must be
-    /// idempotent: a repeated write for the same (cache, z, x, y) tuple
-    /// returns <see cref="OgcTileCacheWriteStatus.AlreadyPresent"/> and does
-    /// not overwrite the existing row. Package re-import uses
-    /// <see cref="ReplaceTileAsync"/> instead.
-    /// </summary>
-    /// <param name="record">Tile record to persist.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Whether the record was inserted or skipped as already present.</returns>
+    // An export write does not replace bytes already stored at that coordinate; package re-import uses the overwrite path.
     Task<OgcTileCacheWriteStatus> WriteTileAsync(
         OgcTileCacheRecord record,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Insert a tile or overwrite the bytes already stored at its coordinate.
-    /// Package re-import uses this so an updated package replaces stale tiles.
-    /// Resumable export must keep using <see cref="WriteTileAsync"/>.
-    /// </summary>
-    /// <param name="record">Tile record to persist.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>
-    /// <see cref="OgcTileCacheWriteStatus.Inserted"/> or
-    /// <see cref="OgcTileCacheWriteStatus.Replaced"/>.
-    /// </returns>
+    // Package re-import overwrites the bytes at a coordinate; resumable export must keep the insert-if-absent path.
     Task<OgcTileCacheWriteStatus> ReplaceTileAsync(
         OgcTileCacheRecord record,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Delete tiles in <paramref name="tileCacheId"/> whose coordinates are not
-    /// listed in <paramref name="retained"/>. An empty list removes every tile
-    /// in the cache. Package re-import calls this after a full replace so tiles
-    /// dropped from the new package do not stay served.
-    /// </summary>
-    /// <param name="tileCacheId">Target tile-cache identifier.</param>
-    /// <param name="retained">Coordinates that must remain.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
+    // An empty keep-list deletes every tile in the cache.
     Task DeleteTilesExceptAsync(
         string tileCacheId,
         IReadOnlyList<OgcTileCoordinate> retained,
         CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// One tile coordinate inside a tile cache.
-/// </summary>
-/// <param name="Z">Zoom level.</param>
-/// <param name="X">Tile column.</param>
-/// <param name="Y">Tile row.</param>
 public readonly record struct OgcTileCoordinate(int Z, int X, int Y);
 
-/// <summary>
-/// Stable descriptor for a tile cache.
-/// </summary>
 public sealed record OgcTileCacheDescriptor
 {
-    /// <summary>Source WMTS layer identifier.</summary>
     public required string LayerIdentifier { get; init; }
 
-    /// <summary>Source WMTS tile-matrix-set identifier.</summary>
     public required string TileMatrixSetIdentifier { get; init; }
 
-    /// <summary>Sanitized source service URL the export ran against.</summary>
     public required string SourceServiceUrl { get; init; }
 
-    /// <summary>Tile format such as <c>image/png</c>.</summary>
     public required string TileFormat { get; init; }
 
-    /// <summary>WMTS style identifier the export was fetched with.</summary>
     public required string StyleIdentifier { get; init; }
 
-    /// <summary>Resolved minimum zoom level included in the export.</summary>
     public required int MinZoom { get; init; }
 
-    /// <summary>Resolved maximum zoom level included in the export.</summary>
     public required int MaxZoom { get; init; }
 
-    /// <summary>
-    /// Tile payload kind served from this cache: <c>raster</c> (PNG/JPEG) or
-    /// <c>vector</c> (MVT/PBF). The WMTS exporter leaves this <see langword="null"/>
-    /// (the catalog default <c>raster</c> applies); the package importer (#1269)
-    /// sets it from the imported package's tiling scheme.
-    /// </summary>
     public string? DataType { get; init; }
 
-    /// <summary>
-    /// Optional human-readable title carried into the served tileset descriptor.
-    /// </summary>
     public string? Title { get; init; }
 }
 
-/// <summary>
-/// One tile-cache row.
-/// </summary>
 public sealed record OgcTileCacheRecord
 {
-    /// <summary>Target tile-cache identifier this tile belongs to.</summary>
     public required string TileCacheId { get; init; }
 
-    /// <summary>Zoom level.</summary>
     public required int Z { get; init; }
 
-    /// <summary>Tile column.</summary>
     public required int X { get; init; }
 
-    /// <summary>Tile row.</summary>
     public required int Y { get; init; }
 
-    /// <summary>Tile content type, such as <c>image/png</c>.</summary>
     public required string ContentType { get; init; }
 
-    /// <summary>Tile content bytes.</summary>
     public required byte[] Content { get; init; }
 
-    /// <summary>Sanitized source URL the tile was fetched from.</summary>
     public required string SourceUrl { get; init; }
 }
 
-/// <summary>
-/// Outcome of a tile-cache write.
-/// </summary>
 public enum OgcTileCacheWriteStatus
 {
-    /// <summary>The tile was inserted into the cache.</summary>
     Inserted = 0,
 
-    /// <summary>A tile already existed at this coordinate; no write occurred.</summary>
     AlreadyPresent = 1,
 
-    /// <summary>A tile already existed at this coordinate and its bytes were replaced.</summary>
     Replaced = 2
 }

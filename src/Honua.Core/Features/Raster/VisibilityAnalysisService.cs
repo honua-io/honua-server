@@ -7,12 +7,6 @@ using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Core.Features.Raster;
 
-/// <summary>
-/// Default <see cref="IVisibilityAnalysisService"/> implementation. Builds on
-/// the elevation profile sampler so it inherits the geodesic profile geometry,
-/// mosaic merge strategy, and no-data handling of the elevation API and does
-/// not re-implement DEM sampling.
-/// </summary>
 public sealed class VisibilityAnalysisService : IVisibilityAnalysisService
 {
     private const int Wgs84Srid = SpatialConstants.DefaultSrid;
@@ -23,50 +17,28 @@ public sealed class VisibilityAnalysisService : IVisibilityAnalysisService
     // produce NaN/Infinity from dividing by a near-zero sinAngular below.
     private const double AngularEqualityTolerance = 1e-9;
 
-    /// <summary>
-    /// Default number of profile samples taken along a line of sight when the
-    /// caller does not supply an explicit count.
-    /// </summary>
     public const int DefaultLineOfSightSampleCount = 128;
 
-    /// <summary>
-    /// Upper bound on line-of-sight profile samples. Without it the request's
-    /// sample count would become its own <see cref="ProfileSamplingOptions.MaxSampleCount"/>,
-    /// letting a single request drive an unbounded DB sampling query.
-    /// </summary>
+    // Caps the request independently of ProfileSamplingOptions.MaxSampleCount, so one call cannot drive an unbounded sampling query.
     public const int MaxLineOfSightSampleCount = 2048;
 
-    /// <summary>
-    /// Default and bounding values for viewshed ray casting. The defaults keep
-    /// a full-radius viewshed at a few thousand profile samples to avoid
-    /// runaway cost.
-    /// </summary>
     public const int DefaultRayCount = 120;
 
-    /// <summary>Lower bound on viewshed ray count.</summary>
     public const int MinRayCount = 8;
 
-    /// <summary>Upper bound on viewshed ray count.</summary>
     public const int MaxRayCount = 720;
 
-    /// <summary>Default range samples per viewshed ray.</summary>
     public const int DefaultSamplesPerRay = 64;
 
-    /// <summary>Upper bound on viewshed range samples per ray.</summary>
     public const int MaxSamplesPerRay = 512;
 
     private readonly IElevationService _elevationService;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="VisibilityAnalysisService"/> class.
-    /// </summary>
-    /// <param name="elevationService">Elevation profile sampler.</param>
     public VisibilityAnalysisService(IElevationService elevationService)
     {
         _elevationService = elevationService ?? throw new ArgumentNullException(nameof(elevationService));
     }
 
-    /// <inheritdoc />
     public async Task<LineOfSightResult> ComputeLineOfSightAsync(
         int layerId,
         VisibilityPoint observer,
@@ -164,7 +136,6 @@ public sealed class VisibilityAnalysisService : IVisibilityAnalysisService
         };
     }
 
-    /// <inheritdoc />
     public async Task<ViewshedResult> ComputeViewshedAsync(
         int layerId,
         VisibilityPoint observer,
@@ -299,11 +270,6 @@ public sealed class VisibilityAnalysisService : IVisibilityAnalysisService
         };
     }
 
-    /// <summary>
-    /// Evaluates the sight line against the intermediate terrain samples.
-    /// Returns whether the target is visible, the index of the first
-    /// obstruction (or -1), and whether any intermediate sample was no-data.
-    /// </summary>
     internal static (bool Visible, int ObstructionIndex, bool HasNoData) EvaluateSightLine(
         ElevationSample[] samples,
         double observerHeight,
@@ -368,10 +334,6 @@ public sealed class VisibilityAnalysisService : IVisibilityAnalysisService
             cancellationToken);
     }
 
-    /// <summary>
-    /// Builds a 2-point 2D LineString WKB (little-endian) for a geodesic
-    /// profile between two WGS 84 coordinates.
-    /// </summary>
     internal static byte[] BuildLineWkb(double startLon, double startLat, double endLon, double endLat)
     {
         // Byte order (1) + type (4) + numPoints (4) + 2 * (x,y as float8) = 41 bytes.
@@ -387,12 +349,7 @@ public sealed class VisibilityAnalysisService : IVisibilityAnalysisService
         return buffer;
     }
 
-    /// <summary>
-    /// Spherical great-circle interpolation between two WGS 84 coordinates.
-    /// Used to report obstruction/sample coordinates; sub-meter divergence from
-    /// the geodesic path used by the profile sampler is negligible at the
-    /// distances this analysis targets.
-    /// </summary>
+    // Spherical interpolation is accepted for reported coordinates; the profile sampler still follows the geodesic, and the difference is sub-meter at the distances this analysis uses.
     internal static (double Longitude, double Latitude) InterpolateGeodesic(
         double startLon,
         double startLat,
@@ -439,12 +396,6 @@ public sealed class VisibilityAnalysisService : IVisibilityAnalysisService
         return (RadToDeg(lambda), RadToDeg(phi));
     }
 
-    /// <summary>
-    /// Computes the destination WGS 84 coordinate reached by travelling
-    /// <paramref name="distanceMeters"/> along <paramref name="azimuthDegrees"/>
-    /// (clockwise from north) from the start, using the spherical
-    /// great-circle direct formula.
-    /// </summary>
     internal static (double Longitude, double Latitude) DestinationPoint(
         double startLon,
         double startLat,

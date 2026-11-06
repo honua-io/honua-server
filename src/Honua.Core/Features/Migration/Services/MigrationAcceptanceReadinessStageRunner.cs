@@ -14,33 +14,6 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Drives the readiness stage of the migration acceptance suite by consuming the per-source outputs
-/// of the slice-2 scan stage, the slice-3 apply stage, and the slice-4 parity stage and producing
-/// one <see cref="MigrationReadinessAttestationArtifact"/> per source (rolled up into a
-/// <see cref="MigrationReadinessStageReport"/>).
-/// </summary>
-/// <remarks>
-/// <para>
-/// The readiness stage is the final pipeline stage emitted by the migration acceptance suite
-/// described in issue #1024 (scan -> manifest -> apply/dry-run -> publish -> parity -> readiness).
-/// It does not re-run probes against the source or the target: the upstream stage reports are the
-/// authoritative inputs and the readiness attestation is a deterministic projection of their
-/// outcomes plus cited artifact hashes so cutover gates can verify the attestation against the
-/// same artifacts.
-/// </para>
-/// <para>
-/// Classification rules:
-/// <list type="bullet">
-///   <item>every parity probe is <c>pass</c> and no manual-review items remain -&gt;
-///   <see cref="MigrationReadinessStatuses.Ready"/>;</item>
-///   <item>at least one parity probe is <c>fail</c> -&gt;
-///   <see cref="MigrationReadinessStatuses.NotReady"/>;</item>
-///   <item>otherwise (manual-review items only, or parity warnings without failures) -&gt;
-///   <see cref="MigrationReadinessStatuses.Conditional"/>.</item>
-/// </list>
-/// </para>
-/// </remarks>
 public static class MigrationAcceptanceReadinessStageRunner
 {
     private const string ScanStage = "scan";
@@ -51,15 +24,6 @@ public static class MigrationAcceptanceReadinessStageRunner
     private const string ParityWarnClassification = "warn";
     private const string ParityManualReviewClassification = "manual-review";
 
-    /// <summary>
-    /// Build a deterministic readiness stage report from the supplied scan, apply, and parity
-    /// stage reports.
-    /// </summary>
-    /// <param name="runId">Stable identifier for this acceptance readiness run.</param>
-    /// <param name="scanReport">Upstream scan stage report.</param>
-    /// <param name="applyReport">Upstream apply stage report.</param>
-    /// <param name="parityReport">Upstream parity stage report.</param>
-    /// <returns>Aggregate report pinning the per-source readiness attestations.</returns>
     public static MigrationReadinessStageReport BuildReport(
         string runId,
         MigrationScanStageReport scanReport,
@@ -117,14 +81,6 @@ public static class MigrationAcceptanceReadinessStageRunner
         };
     }
 
-    /// <summary>
-    /// Build a deterministic per-source readiness attestation. Exposed for callers (and tests) that
-    /// drive the readiness stage one fixture at a time.
-    /// </summary>
-    /// <param name="scanEntry">Per-source scan stage entry for the fixture.</param>
-    /// <param name="applyEntry">Per-source apply stage entry for the fixture.</param>
-    /// <param name="parityEntry">Per-source parity stage entry for the fixture.</param>
-    /// <returns>Deterministic per-source readiness attestation.</returns>
     public static MigrationReadinessAttestationArtifact BuildAttestation(
         MigrationScanStageEntry scanEntry,
         MigrationApplyStageEntry applyEntry,

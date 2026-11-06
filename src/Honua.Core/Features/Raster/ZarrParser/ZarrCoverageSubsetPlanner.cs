@@ -6,42 +6,12 @@ using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Core.Features.Raster.ZarrParser;
 
-/// <summary>
-/// One named-dimension subset over a Zarr array expressed as grid indices:
-/// inclusive <paramref name="Start"/>, exclusive <paramref name="Stop"/>.
-/// </summary>
-/// <param name="Dimension">Dimension name as discovered in the store metadata.</param>
-/// <param name="Start">Inclusive start index.</param>
-/// <param name="Stop">Exclusive stop index.</param>
 public sealed record ZarrCoverageDimensionSubset(string Dimension, int Start, int Stop);
 
-/// <summary>
-/// Validated plan for one bounded Zarr coverage read: the resolved array and
-/// the per-dimension subset request ready for <see cref="Abstractions.IZarrSubsetReader"/>.
-/// </summary>
-/// <param name="Array">Array (variable) metadata the plan targets.</param>
-/// <param name="Request">Bounded subset request covering every dimension of the array.</param>
 public sealed record ZarrCoverageSubsetPlan(ZarrArrayMetadata Array, ZarrSubsetRequest Request);
 
-/// <summary>
-/// Translates protocol-level coverage subset requests (named dimensions, grid
-/// indices) into bounded <see cref="ZarrSubsetRequest"/> reads. Shared by every
-/// protocol adapter that serves registered Zarr stores so variable selection,
-/// dimension matching, bounds validation, and output-size limits stay consistent.
-/// </summary>
 public static class ZarrCoverageSubsetPlanner
 {
-    /// <summary>
-    /// Attempts to build a bounded subset plan for one variable of a Zarr store.
-    /// Dimensions without an explicit subset default to their full index range.
-    /// </summary>
-    /// <param name="metadata">Scanned store metadata.</param>
-    /// <param name="variable">Variable name, or null to use the store's primary variable.</param>
-    /// <param name="subsets">Named-dimension subsets; may be empty.</param>
-    /// <param name="maxOutputBytes">Upper bound for the raw decoded subset payload.</param>
-    /// <param name="plan">Validated plan when the method returns true.</param>
-    /// <param name="error">Client-safe validation error when the method returns false.</param>
-    /// <returns>True when the request is valid and within limits.</returns>
     public static bool TryPlan(
         ZarrStoreMetadata metadata,
         string? variable,

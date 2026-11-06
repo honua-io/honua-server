@@ -8,29 +8,7 @@ using System.Text.Json;
 
 namespace Honua.Core.Features.Infrastructure.Crs;
 
-/// <summary>
-/// Authoritative, embedded catalog of PROJJSON coordinate reference system definitions
-/// used to populate the GeoParquet <c>geo</c> column <c>crs</c> metadata for non-default
-/// output CRS.
-/// </summary>
-/// <remarks>
-/// <para>
-/// GeoParquet 1.1 stores each geometry column's CRS as a PROJJSON object. The .NET server
-/// runtime has no in-process PROJ library, and PostGIS exposes no SRID → PROJJSON function,
-/// so the PROJJSON cannot be synthesized at request time. Instead the definitions are
-/// pre-generated from PROJ (via pyproj) for a curated set of common output CRS, committed
-/// as an embedded resource, and looked up here. The generator lives at
-/// <c>scripts/geoparquet/generate-projjson-catalog.py</c>; each entry is validated to
-/// round-trip back to its own EPSG code and is byte-for-byte what geopandas / GDAL write
-/// for the same CRS, so emitted files round-trip through GeoParquet readers.
-/// </para>
-/// <para>
-/// The default GeoParquet CRS is OGC:CRS84 (longitude, latitude), which is emitted by
-/// omitting the <c>crs</c> field; EPSG:4326 output therefore does not require a catalog
-/// entry. SRIDs absent from the catalog are treated as unresolvable so callers can surface
-/// a precise error rather than emitting hand-rolled or hardcoded CRS metadata.
-/// </para>
-/// </remarks>
+// PROJJSON is embedded because the server has no PROJ library and PostGIS cannot emit it; an unknown SRID is an error rather than a hand-written CRS.
 public static class GeoParquetProjJsonCatalog
 {
     private const string ResourceName =
@@ -47,37 +25,17 @@ public static class GeoParquetProjJsonCatalog
 
     private static readonly FrozenDictionary<int, string> _catalog = Load();
 
-    /// <summary>
-    /// Attempts to resolve the PROJJSON definition for an output SRID.
-    /// </summary>
-    /// <param name="srid">EPSG SRID (Web Mercator aliases are normalized to 3857).</param>
-    /// <param name="projJson">
-    /// On success, the compact PROJJSON object as a JSON string suitable for embedding
-    /// directly as the GeoParquet column <c>crs</c> value.
-    /// </param>
-    /// <returns><see langword="true"/> when a definition exists; otherwise <see langword="false"/>.</returns>
     public static bool TryGetProjJson(int srid, [NotNullWhen(true)] out string? projJson)
     {
         var normalized = _aliases.TryGetValue(srid, out var alias) ? alias : srid;
         return _catalog.TryGetValue(normalized, out projJson);
     }
 
-    /// <summary>
-    /// Indicates whether a PROJJSON definition is resolvable for the given SRID.
-    /// </summary>
-    /// <param name="srid">EPSG SRID (Web Mercator aliases are normalized to 3857).</param>
-    /// <returns><see langword="true"/> when a definition exists; otherwise <see langword="false"/>.</returns>
     public static bool IsSupported(int srid) => TryGetProjJson(srid, out _);
 
-    /// <summary>
-    /// The set of EPSG SRIDs with a resolvable PROJJSON definition (excludes alias SRIDs).
-    /// </summary>
     public static IReadOnlyCollection<int> SupportedSrids => _catalog.Keys;
 
-    /// <summary>
-    /// Authoritative OGC:CRS84 definition for resolving explicit GeoParquet source CRS metadata.
-    /// This does not change the EPSG:4326 export lookup or its default-CRS omission behavior.
-    /// </summary>
+    // This definition resolves an explicit OGC:CRS84 source and does not change the EPSG:4326 export lookup.
     public static string Crs84ProjJson { get; } = LoadCrs84();
 
     private static string LoadCrs84()

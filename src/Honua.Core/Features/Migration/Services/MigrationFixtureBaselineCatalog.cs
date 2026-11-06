@@ -13,28 +13,12 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Seed registry of <see cref="MigrationMetricBaseline"/> entries for migration cost
-/// and performance evidence (issue #1033 slice 2).
-/// </summary>
-/// <remarks>
-/// <para>
-/// Slice 2 seeds GeoServer Small only. ArcGIS, OGC Features, OGC map/tile metadata,
-/// and Coverage baselines are intentionally deferred to later slices so each can
-/// be tuned against a real fixture run. Callers must handle <c>TryGet</c> returning
-/// <c>false</c> until those slices land.
-/// </para>
-/// </remarks>
 public static class MigrationFixtureBaselineCatalog
 {
     private static readonly ReadOnlyDictionary<string, MigrationMetricBaseline> Seeded = BuildSeed();
 
-    /// <summary>Number of baselines currently seeded. Used by tests to assert the seed cut.</summary>
     public static int SeededCount => Seeded.Count;
 
-    /// <summary>
-    /// Lookup the seeded baseline for a source family + fixture size pair.
-    /// </summary>
     public static bool TryGet(string sourceFamily, string size, out MigrationMetricBaseline baseline)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sourceFamily);
@@ -42,7 +26,6 @@ public static class MigrationFixtureBaselineCatalog
         return Seeded.TryGetValue(Key(sourceFamily, size), out baseline!);
     }
 
-    /// <summary>Enumerate all seeded baselines in deterministic order.</summary>
     public static IReadOnlyCollection<MigrationMetricBaseline> All() => Seeded.Values;
 
     private static string Key(string sourceFamily, string size)
@@ -56,11 +39,6 @@ public static class MigrationFixtureBaselineCatalog
         return new ReadOnlyDictionary<string, MigrationMetricBaseline>(dict);
     }
 
-    /// <summary>
-    /// Initial GeoServer Small baseline. Expected envelope and bands are calibrated for
-    /// a small deterministic GeoServer fixture (≤20 workspaces / ≤200 layers /
-    /// ≤10k features / ≤60s wall clock).
-    /// </summary>
     public static MigrationMetricBaseline GeoServerSmallBaseline() => new()
     {
         ProfileName = "geoserver-small-v1",

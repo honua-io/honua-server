@@ -14,36 +14,11 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Slice 5 of issue #1016. Aggregates the slice 1-4 outputs emitted by a
-/// classic OGC (WFS / WMS / WMTS) migration run into a single deterministic
-/// <see cref="OgcMigrationEvidencePackArtifact"/>.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The builder is intentionally pure and side-effect free so the same inputs
-/// always produce the same output (and the same
-/// <see cref="OgcMigrationEvidencePackArtifact.BundleFingerprint"/>). It
-/// performs no I/O, no logging, and no clock reads except for the caller-
-/// supplied <see cref="OgcMigrationEvidencePackBuilderOptions.GeneratedAt"/>
-/// stamp, which is excluded from the fingerprint.
-/// </para>
-/// <para>
-/// Credential redaction: every embedded source URL is sanitized by stripping
-/// userinfo, query, and fragment components. The builder never copies raw
-/// capabilities documents, feature payloads, or tile bytes — only deterministic
-/// counts, ordered plan entries, and plan diagnostics surfaced by slices 1-4.
-/// </para>
-/// </remarks>
+// The fingerprint excludes the caller timestamp, and the builder strips URL secrets and never copies capabilities documents, feature payloads, or tile bytes.
 public static class OgcMigrationEvidencePackBuilder
 {
     private const string BuilderGenerator = "honua.migration.ogc.evidence-pack-builder/1.0";
 
-    /// <summary>
-    /// Build an OGC migration evidence pack from the slice 1-4 inputs.
-    /// </summary>
-    /// <param name="inputs">Inventory, WFS import, WMS/WMTS plans, and tile-cache export inputs.</param>
-    /// <param name="options">Optional run id / generator / clock overrides.</param>
     public static OgcMigrationEvidencePackArtifact Build(
         OgcMigrationEvidencePackInputs inputs,
         OgcMigrationEvidencePackBuilderOptions? options = null)
@@ -118,11 +93,6 @@ public static class OgcMigrationEvidencePackBuilder
         };
     }
 
-    /// <summary>
-    /// Compute the deterministic SHA-256 fingerprint that is also embedded in
-    /// the pack via <see cref="OgcMigrationEvidencePackArtifact.BundleFingerprint"/>.
-    /// Exposed for tests and downstream verifiers.
-    /// </summary>
     public static string ComputeBundleFingerprint(OgcMigrationEvidencePackBundle bundle)
     {
         ArgumentNullException.ThrowIfNull(bundle);
@@ -231,64 +201,24 @@ public static class OgcMigrationEvidencePackBuilder
     }
 }
 
-/// <summary>
-/// Aggregated inputs consumed by <see cref="OgcMigrationEvidencePackBuilder.Build"/>.
-/// </summary>
 public sealed record OgcMigrationEvidencePackInputs
 {
-    /// <summary>
-    /// Slice-1 inventory artifact captured from the OGC service scan.
-    /// Required: the inventory anchors the pack to a single source.
-    /// </summary>
     public required MigrationSourceInventoryArtifact Inventory { get; init; }
 
-    /// <summary>
-    /// Slice-2 WFS data-import result, or <c>null</c> when no WFS data
-    /// import was executed (e.g. WMS- or WMTS-only run).
-    /// </summary>
     public OgcWfsImportResult? WfsImport { get; init; }
 
-    /// <summary>
-    /// Slice-3 WMS migration planner output, or <c>null</c> when no WMS
-    /// planning was executed.
-    /// </summary>
     public OgcRenderMigrationPlanResult? WmsPlan { get; init; }
 
-    /// <summary>
-    /// Slice-3 WMTS migration planner output, or <c>null</c> when no WMTS
-    /// planning was executed.
-    /// </summary>
     public OgcRenderMigrationPlanResult? WmtsPlan { get; init; }
 
-    /// <summary>
-    /// Slice-4 tile-cache export result, or <c>null</c> when no tile cache
-    /// export was executed.
-    /// </summary>
     public OgcTileCacheExportResult? TileCacheExport { get; init; }
 }
 
-/// <summary>
-/// Override hooks for tests and the nightly workflow.
-/// </summary>
 public sealed record OgcMigrationEvidencePackBuilderOptions
 {
-    /// <summary>
-    /// Run identifier embedded in the artifact. Excluded from the bundle
-    /// fingerprint so the same inputs produce the same fingerprint across
-    /// nightly runs.
-    /// </summary>
     public string? RunId { get; init; }
 
-    /// <summary>
-    /// Generator label embedded in the artifact. Excluded from the bundle
-    /// fingerprint.
-    /// </summary>
     public string? Generator { get; init; }
 
-    /// <summary>
-    /// Generation timestamp. Excluded from the bundle fingerprint. Defaults to
-    /// <see cref="DateTimeOffset.UnixEpoch"/> when omitted so deterministic
-    /// tests do not have to set it.
-    /// </summary>
     public DateTimeOffset? GeneratedAt { get; init; }
 }

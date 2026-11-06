@@ -7,7 +7,6 @@ using System.Text.Json;
 
 namespace Honua.Core.Features.Raster.ZarrParser;
 
-/// <summary>Preserves the scalar dtype and bits of Zarr fill values.</summary>
 internal static class ZarrFillValueCodec
 {
     internal static object? Parse(JsonElement value, string dtype, string name, bool v3)

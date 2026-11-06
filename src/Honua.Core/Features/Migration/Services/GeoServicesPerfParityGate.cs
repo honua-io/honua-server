@@ -6,34 +6,8 @@ using Honua.Core.Features.Migration.Domain;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Grades measured Honua-vs-source latency ratios against a configurable
-/// <see cref="PerfParityBudget"/> and emits a <see cref="PerfParityVerdict"/> (issue #1249).
-/// </summary>
-/// <remarks>
-/// <para>
-/// The reconciliation suite already <em>computes</em> p95/p99 latency ratios for sampled
-/// operations but never <em>gated</em> them, so a performance regression could ship silently. This
-/// gate is the performance analogue of <see cref="MigrationRunMetricsBaselineEvaluator"/>: it is a
-/// pure, deterministic function over the already-measured ratios, so the gating logic, the verdict
-/// emission, and the scorecard shape are all fully testable offline without a live benchmark run.
-/// </para>
-/// <para>
-/// Wiring: the GeoServices parity integration suite calls <see cref="Evaluate"/> with the ratios it
-/// already measures and embeds the returned verdict into the emitted scorecard; CI then enforces the
-/// verdict via <c>scripts/ci/check-import-fidelity-perf-budget.sh</c>.
-/// </para>
-/// </remarks>
 public static class GeoServicesPerfParityGate
 {
-    /// <summary>
-    /// Grade the supplied latency ratios against <paramref name="budget"/>.
-    /// </summary>
-    /// <param name="sampleCount">Number of latency samples that produced the ratios.</param>
-    /// <param name="honuaToSourceP95Ratio">Honua/source p95 latency ratio, or <c>null</c> when unmeasured.</param>
-    /// <param name="honuaToSourceP99Ratio">Honua/source p99 latency ratio, or <c>null</c> when unmeasured.</param>
-    /// <param name="budget">Budget to grade against.</param>
-    /// <returns>A verdict with per-metric signals and an aggregate Pass/Warn/Fail/Unknown state.</returns>
     public static PerfParityVerdict Evaluate(
         int sampleCount,
         double? honuaToSourceP95Ratio,

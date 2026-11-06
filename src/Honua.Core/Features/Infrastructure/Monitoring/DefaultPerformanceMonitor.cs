@@ -10,13 +10,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Default implementation of <see cref="IPerformanceMonitor"/> using .NET Metrics API.
-/// </summary>
-/// <remarks>
-/// This implementation provides comprehensive performance monitoring using the .NET Metrics API
-/// and integrates with OpenTelemetry for telemetry export.
-/// </remarks>
 internal sealed partial class DefaultPerformanceMonitor : IPerformanceMonitor, ICacheMetricsSnapshotProvider, IHttpRequestMetricsSnapshotProvider
 {
     private readonly ConcurrentDictionary<string, CacheOperationCounters> _cacheCounters = new(StringComparer.OrdinalIgnoreCase);
@@ -39,7 +32,6 @@ internal sealed partial class DefaultPerformanceMonitor : IPerformanceMonitor, I
         _logger = logger;
     }
 
-    /// <inheritdoc />
     public void RecordDatabaseQuery(string queryType, string layerId, TimeSpan duration, int recordCount)
     {
         var tags = new KeyValuePair<string, object?>[]
@@ -53,7 +45,6 @@ internal sealed partial class DefaultPerformanceMonitor : IPerformanceMonitor, I
         PerformanceMetrics.DatabaseQueryRecordCount.Record(recordCount, tags);
     }
 
-    /// <inheritdoc />
     public void RecordHttpRequest(string method, string endpoint, int statusCode, TimeSpan duration)
     {
         var tags = new KeyValuePair<string, object?>[]
@@ -68,14 +59,12 @@ internal sealed partial class DefaultPerformanceMonitor : IPerformanceMonitor, I
         _requestMetrics.RecordRequest(statusCode, duration.TotalMilliseconds);
     }
 
-    /// <inheritdoc />
     public void RecordActiveHttpRequestDelta(int delta)
     {
         PerformanceMetrics.ActiveHttpRequests.Add(delta);
         _requestMetrics.RecordActiveDelta(delta);
     }
 
-    /// <inheritdoc />
     public void RecordMemoryUsage(long allocatedBytes, int gen0Collections, int gen1Collections, int gen2Collections)
     {
         // Record GC metrics for each generation
@@ -122,7 +111,6 @@ internal sealed partial class DefaultPerformanceMonitor : IPerformanceMonitor, I
         }
     }
 
-    /// <inheritdoc />
     public void RecordCacheMetrics(string cacheType, string operation)
     {
         var tags = new KeyValuePair<string, object?>[]
@@ -149,7 +137,6 @@ internal sealed partial class DefaultPerformanceMonitor : IPerformanceMonitor, I
         }
     }
 
-    /// <inheritdoc />
     public void RecordTransactionDuration(TimeSpan duration, int operationCount, bool wasCommitted)
     {
         var tags = new KeyValuePair<string, object?>[]
@@ -162,7 +149,6 @@ internal sealed partial class DefaultPerformanceMonitor : IPerformanceMonitor, I
         PerformanceMetrics.TransactionCount.Add(1, tags);
     }
 
-    /// <inheritdoc />
     public CacheMetricsSnapshot GetCacheMetricsSnapshot()
     {
         var types = new Dictionary<string, CacheTypeMetricsSnapshot>(StringComparer.OrdinalIgnoreCase);
@@ -188,19 +174,16 @@ internal sealed partial class DefaultPerformanceMonitor : IPerformanceMonitor, I
         };
     }
 
-    /// <inheritdoc />
     public HttpRequestMetricsSnapshot GetHttpRequestMetricsSnapshot()
     {
         return _requestMetrics.Snapshot();
     }
 
-    /// <inheritdoc />
     public IOperationScope StartOperation(string operationName)
     {
         return new OperationScope(operationName);
     }
 
-    /// <inheritdoc />
     public void RecordCounter(string name, long value, IDictionary<string, string>? tags = null)
     {
         var tagPairs = ConvertTags(tags);
@@ -208,7 +191,6 @@ internal sealed partial class DefaultPerformanceMonitor : IPerformanceMonitor, I
         counter.Add(value, tagPairs);
     }
 
-    /// <inheritdoc />
     public void RecordHistogram(string name, double value, IDictionary<string, string>? tags = null)
     {
         var tagPairs = ConvertTags(tags);
@@ -216,7 +198,6 @@ internal sealed partial class DefaultPerformanceMonitor : IPerformanceMonitor, I
         histogram.Record(value, tagPairs);
     }
 
-    /// <inheritdoc />
     public void RecordGeospatialOperation(string operationType, TimeSpan duration, int coordinateCount, int? fromSrid = null, int? toSrid = null)
     {
         var durationMs = duration.TotalMilliseconds;
@@ -277,7 +258,6 @@ internal sealed partial class DefaultPerformanceMonitor : IPerformanceMonitor, I
         tracker.RecordLatency(durationMs);
     }
 
-    /// <inheritdoc />
     public void RecordMemoryPressure(double memoryPressurePercent, long allocatedMB, long availableMB)
     {
         PerformanceMetrics.AllocatedMemoryMB.Record(allocatedMB);
@@ -303,7 +283,6 @@ internal sealed partial class DefaultPerformanceMonitor : IPerformanceMonitor, I
         PerformanceMetrics.CreateHistogram("honua_memory_pressure_detailed").Record(memoryPressurePercent, tags);
     }
 
-    /// <inheritdoc />
     public void RecordCacheLatency(string cacheType, string operation, TimeSpan duration, bool success = true)
     {
         var tags = new KeyValuePair<string, object?>[]
@@ -326,7 +305,6 @@ internal sealed partial class DefaultPerformanceMonitor : IPerformanceMonitor, I
         tracker.RecordLatency(duration.TotalMilliseconds);
     }
 
-    /// <inheritdoc />
     public void RecordErrorWithContext(string errorType, string operation, IDictionary<string, object>? context, Exception? exception = null)
     {
         var tags = new List<KeyValuePair<string, object?>>
@@ -385,11 +363,6 @@ internal sealed partial class DefaultPerformanceMonitor : IPerformanceMonitor, I
         };
     }
 
-    /// <summary>
-    /// Converts a dictionary of tags to KeyValuePair array for metrics.
-    /// </summary>
-    /// <param name="tags">Tags dictionary</param>
-    /// <returns>Array of key-value pairs</returns>
     private static KeyValuePair<string, object?>[] ConvertTags(IDictionary<string, string>? tags)
     {
         if (tags == null || tags.Count == 0)
@@ -400,11 +373,6 @@ internal sealed partial class DefaultPerformanceMonitor : IPerformanceMonitor, I
         return tags.Select(kvp => new KeyValuePair<string, object?>(kvp.Key, kvp.Value)).ToArray();
     }
 
-    /// <summary>
-    /// Gets the pressure level category for the given pressure percentage.
-    /// </summary>
-    /// <param name="pressurePercent">Memory pressure percentage</param>
-    /// <returns>Pressure level category</returns>
     private static string GetPressureLevel(double pressurePercent)
     {
         return pressurePercent switch
@@ -416,9 +384,6 @@ internal sealed partial class DefaultPerformanceMonitor : IPerformanceMonitor, I
         };
     }
 
-    /// <summary>
-    /// Internal implementation of operation scope for measuring operation duration.
-    /// </summary>
     private sealed class OperationScope : IOperationScope
     {
         private readonly string _operationName;
@@ -432,14 +397,12 @@ internal sealed partial class DefaultPerformanceMonitor : IPerformanceMonitor, I
             _stopwatch = Stopwatch.StartNew();
         }
 
-        /// <inheritdoc />
         public IOperationScope WithTag(string key, string value)
         {
             _tags[key] = value;
             return this;
         }
 
-        /// <inheritdoc />
         public void Dispose()
         {
             _stopwatch.Stop();
@@ -610,9 +573,6 @@ internal sealed partial class DefaultPerformanceMonitor : IPerformanceMonitor, I
         }
     }
 
-    /// <summary>
-    /// Tracks latency metrics and calculates percentiles.
-    /// </summary>
     private sealed class LatencyTracker
     {
         private const int SampleSize = 100;
@@ -659,14 +619,8 @@ internal sealed partial class DefaultPerformanceMonitor : IPerformanceMonitor, I
         }
     }
 
-    /// <summary>
-    /// Represents latency percentile measurements.
-    /// </summary>
     private sealed record LatencyPercentiles(double Average, double P50, double P95, double P99);
 
-    /// <summary>
-    /// Tracks memory pressure and triggers alerts for sustained high pressure.
-    /// </summary>
     private sealed class MemoryPressureTracker
     {
         private const int HighPressureThreshold = 80;
@@ -712,9 +666,6 @@ internal sealed partial class DefaultPerformanceMonitor : IPerformanceMonitor, I
         }
     }
 
-    /// <summary>
-    /// Logging definitions for performance monitoring.
-    /// </summary>
     private static partial class PerformanceMonitorLog
     {
         [LoggerMessage(7001, LogLevel.Warning,

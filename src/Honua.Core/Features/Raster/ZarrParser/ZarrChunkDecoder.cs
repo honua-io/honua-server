@@ -8,7 +8,6 @@ using ICSharpCode.SharpZipLib.Zip.Compression;
 
 namespace Honua.Core.Features.Raster.ZarrParser;
 
-/// <summary>Validates complete bounded Zarr chunk streams without process-wide compression switches.</summary>
 internal static class ZarrChunkDecoder
 {
     private const int InflateBlockBytes = 64 * 1024;

@@ -19,30 +19,17 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Imports OGC WCS / OGC API Coverages GeoTIFF and Cloud Optimized GeoTIFF coverages
-/// into Honua's raster store using a slice-1 migration source inventory as the
-/// deterministic source-of-truth selection.
-/// </summary>
 public sealed partial class OgcCoverageImportService : IOgcCoverageImportService
 {
     private const string GeoTiffFormat = "GeoTIFF";
     private const string CogFormat = "CloudOptimizedGeoTIFF";
 
-    /// <summary>
-    /// Ceiling for a staged GetCoverage download. Classic (non-BigTIFF) GeoTIFF tops out at
-    /// 4 GiB; 8 GiB leaves headroom for BigTIFF COGs while preventing a misbehaving or
-    /// hostile coverage server from streaming until the temp volume fills.
-    /// </summary>
     private const long MaxCoverageDownloadBytes = 8L * 1024 * 1024 * 1024;
 
     private readonly HttpClient _httpClient;
     private readonly IRasterImportService _rasterImportService;
     private readonly ILogger<OgcCoverageImportService> _logger;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="OgcCoverageImportService"/> class.
-    /// </summary>
     public OgcCoverageImportService(
         HttpClient httpClient,
         IRasterImportService rasterImportService,
@@ -53,7 +40,6 @@ public sealed partial class OgcCoverageImportService : IOgcCoverageImportService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <inheritdoc />
     public async Task<OgcCoverageImportResult> ImportAsync(
         OgcCoverageImportRequest request,
         CancellationToken cancellationToken = default)

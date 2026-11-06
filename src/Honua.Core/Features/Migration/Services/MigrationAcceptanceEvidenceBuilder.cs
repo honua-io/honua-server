@@ -12,18 +12,8 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Builds release-gate migration acceptance evidence from source-specific artifacts.
-/// </summary>
 public static class MigrationAcceptanceEvidenceBuilder
 {
-    /// <summary>
-    /// Builds a deterministic acceptance-suite artifact from source inventory, manifest, and parity evidence inputs.
-    /// </summary>
-    /// <param name="runId">Stable workflow or release run identifier.</param>
-    /// <param name="inputs">Per-source evidence inputs.</param>
-    /// <param name="options">Optional suite gate options.</param>
-    /// <returns>Migration acceptance evidence suite artifact.</returns>
     public static MigrationAcceptanceEvidenceArtifact Build(
         string runId,
         IEnumerable<MigrationAcceptanceEvidenceInput> inputs,
@@ -938,191 +928,80 @@ public static class MigrationAcceptanceEvidenceBuilder
             .ToArray();
 }
 
-/// <summary>
-/// Per-source inputs used to build an acceptance-suite evidence entry.
-/// </summary>
 public sealed record MigrationAcceptanceEvidenceInput
 {
-    /// <summary>
-    /// Stable source evidence entry identifier.
-    /// </summary>
     public required string Id { get; init; }
 
-    /// <summary>
-    /// Source inventory artifact.
-    /// </summary>
     public required MigrationSourceInventoryArtifact Inventory { get; init; }
 
-    /// <summary>
-    /// Optional migration manifest. When omitted, the builder translates the inventory.
-    /// </summary>
     public MigrationManifestArtifact? Manifest { get; init; }
 
-    /// <summary>
-    /// Optional parity evidence. When omitted, the builder generates parity from the inventory and manifest.
-    /// </summary>
     public MigrationParityEvidenceArtifact? ParityEvidence { get; init; }
 
-    /// <summary>
-    /// Optional readiness attestation used when parity evidence must be generated.
-    /// </summary>
     public MigrationReadinessAttestation? ReadinessAttestation { get; init; }
 
-    /// <summary>
-    /// Optional performance and migration-cost evidence used when parity evidence must be generated.
-    /// </summary>
     public MigrationPerformanceCostEvidence? PerformanceCost { get; init; }
 
-    /// <summary>
-    /// Optional externally collected evidence for canonical acceptance stages such as apply/dry-run and publish.
-    /// </summary>
     public MigrationAcceptanceStageEvidenceInput[] StageEvidence { get; init; } = [];
 
-    /// <summary>
-    /// Secret-safe artifact references supporting this evidence entry.
-    /// </summary>
     public string[] EvidenceReferences { get; init; } = [];
 }
 
-/// <summary>
-/// Externally collected evidence for one canonical migration acceptance stage.
-/// </summary>
 public sealed record MigrationAcceptanceStageEvidenceInput
 {
-    /// <summary>
-    /// Stable stage identifier from <see cref="MigrationAcceptanceStageIds"/>.
-    /// </summary>
     public required string Id { get; init; }
 
-    /// <summary>
-    /// Stage state: <c>pass</c>, <c>fail</c>, <c>unknown</c>, or <c>not-applicable</c>.
-    /// </summary>
     public required string State { get; init; }
 
-    /// <summary>
-    /// Human-readable summary for this stage.
-    /// </summary>
     public required string Summary { get; init; }
 
-    /// <summary>
-    /// Artifact kinds supporting this stage.
-    /// </summary>
     public string[] ArtifactKinds { get; init; } = [];
 
-    /// <summary>
-    /// Secret-safe links or paths to supporting evidence artifacts for this stage.
-    /// </summary>
     public string[] EvidenceReferences { get; init; } = [];
 
-    /// <summary>
-    /// Deterministic notes explaining stage limitations or follow-up work.
-    /// </summary>
     public string[] Notes { get; init; } = [];
 }
 
-/// <summary>
-/// Options for building a migration acceptance evidence suite.
-/// </summary>
 public sealed record MigrationAcceptanceEvidenceOptions
 {
-    /// <summary>
-    /// Source kinds that must be represented for the suite to pass.
-    /// </summary>
     public string[] RequiredSourceKinds { get; init; } = [];
 
-    /// <summary>
-    /// Whether non-automated entries should produce blocking gaps.
-    /// </summary>
     public bool RequireAutomatedEntries { get; init; } = true;
 
-    /// <summary>
-    /// Whether non-passing readiness should be surfaced in entry notes.
-    /// </summary>
     public bool RequireReadinessPass { get; init; } = true;
 
-    /// <summary>
-    /// Whether each entry must include passing cost evidence for the suite to pass.
-    /// </summary>
     public bool RequireCostEvidence { get; init; }
 
-    /// <summary>
-    /// Cost evidence metric coverage and warning/failure thresholds.
-    /// </summary>
     public MigrationAcceptanceCostEvidenceThresholds CostEvidenceThresholds { get; init; } = new();
 }
 
-/// <summary>
-/// Thresholds and required metric coverage for migration cost evidence.
-/// </summary>
 public sealed record MigrationAcceptanceCostEvidenceThresholds
 {
-    /// <summary>
-    /// Whether core cost metrics must be present: duration, scan/apply durations, throughput, source requests, retries, bytes, artifact size, and manual-review ratio.
-    /// </summary>
     public bool RequireMetricContract { get; init; }
 
-    /// <summary>
-    /// Operation stages that must include measured durations.
-    /// </summary>
     public string[] RequiredDurationStages { get; init; } = [];
 
-    /// <summary>
-    /// Total duration warning threshold in milliseconds.
-    /// </summary>
     public long? MaxDurationMillisecondsWarn { get; init; }
 
-    /// <summary>
-    /// Total duration failure threshold in milliseconds.
-    /// </summary>
     public long? MaxDurationMillisecondsFail { get; init; }
 
-    /// <summary>
-    /// Feature throughput warning threshold in features per second.
-    /// </summary>
     public double? MinFeatureThroughputPerSecondWarn { get; init; }
 
-    /// <summary>
-    /// Feature throughput failure threshold in features per second.
-    /// </summary>
     public double? MinFeatureThroughputPerSecondFail { get; init; }
 
-    /// <summary>
-    /// Source request warning threshold.
-    /// </summary>
     public int? MaxSourceRequestCountWarn { get; init; }
 
-    /// <summary>
-    /// Source request failure threshold.
-    /// </summary>
     public int? MaxSourceRequestCountFail { get; init; }
 
-    /// <summary>
-    /// Retry warning threshold.
-    /// </summary>
     public int? MaxRetryCountWarn { get; init; }
 
-    /// <summary>
-    /// Retry failure threshold.
-    /// </summary>
     public int? MaxRetryCountFail { get; init; }
 
-    /// <summary>
-    /// Cost evidence artifact-size warning threshold in bytes.
-    /// </summary>
     public long? MaxArtifactSizeBytesWarn { get; init; }
 
-    /// <summary>
-    /// Cost evidence artifact-size failure threshold in bytes.
-    /// </summary>
     public long? MaxArtifactSizeBytesFail { get; init; }
 
-    /// <summary>
-    /// Manual-review ratio warning threshold.
-    /// </summary>
     public double? MaxManualReviewRatioWarn { get; init; }
 
-    /// <summary>
-    /// Manual-review ratio failure threshold.
-    /// </summary>
     public double? MaxManualReviewRatioFail { get; init; }
 }

@@ -17,9 +17,6 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// HTTP-backed scanner for OGC API Features migration inventories.
-/// </summary>
 public sealed partial class OgcApiFeaturesMigrationScanner : IOgcApiFeaturesMigrationScanner
 {
     private const string SourceKind = "ogc-api-features";
@@ -39,12 +36,6 @@ public sealed partial class OgcApiFeaturesMigrationScanner : IOgcApiFeaturesMigr
     private readonly ILogger<OgcApiFeaturesMigrationScanner> _logger;
     private readonly Func<string, CancellationToken, Task<IPAddress[]>> _hostAddressResolver;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="OgcApiFeaturesMigrationScanner"/> class.
-    /// </summary>
-    /// <param name="httpClient">HTTP client used for OGC API Features discovery.</param>
-    /// <param name="logger">Logger instance.</param>
-    /// <param name="hostAddressResolver">Optional host resolver used by tests.</param>
     public OgcApiFeaturesMigrationScanner(
         HttpClient httpClient,
         ILogger<OgcApiFeaturesMigrationScanner> logger,
@@ -55,11 +46,6 @@ public sealed partial class OgcApiFeaturesMigrationScanner : IOgcApiFeaturesMigr
         _hostAddressResolver = hostAddressResolver ?? ((host, ct) => Dns.GetHostAddressesAsync(host, ct));
     }
 
-    /// <summary>
-    /// Creates an HTTP handler that pins DNS resolution before connecting to an OGC API Features source host.
-    /// </summary>
-    /// <param name="hostAddressResolver">Optional host resolver used by tests.</param>
-    /// <returns>HTTP message handler with bounded connections and pinned DNS validation.</returns>
     public static HttpMessageHandler CreatePinnedDnsHttpMessageHandler(
         Func<string, CancellationToken, Task<IPAddress[]>>? hostAddressResolver = null)
     {
@@ -74,7 +60,6 @@ public sealed partial class OgcApiFeaturesMigrationScanner : IOgcApiFeaturesMigr
         };
     }
 
-    /// <inheritdoc />
     public async Task<MigrationSourceInventoryArtifact> ScanSourceAsync(
         OgcApiFeaturesScanRequest request,
         CancellationToken cancellationToken = default)

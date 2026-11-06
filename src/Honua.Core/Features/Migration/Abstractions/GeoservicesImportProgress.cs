@@ -13,168 +13,68 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Abstractions;
 
-/// <summary>
-/// Progress information for a Geoservices import operation.
-/// </summary>
 public sealed record GeoservicesImportProgress : IOperationProgress, ICancellableOperationProgress
 {
-    /// <summary>
-    /// Unique identifier for this import job.
-    /// </summary>
     public required string JobId { get; init; }
 
-    /// <summary>
-    /// Current status of the import.
-    /// </summary>
     public required GeoservicesImportStatus Status { get; init; }
 
-    /// <summary>
-    /// Number of features processed so far.
-    /// </summary>
     public int FeaturesProcessed { get; init; }
 
-    /// <summary>
-    /// Estimated total number of features.
-    /// </summary>
     public int? EstimatedTotalFeatures { get; init; }
 
-    /// <summary>
-    /// Number of batches completed.
-    /// </summary>
     public int BatchesCompleted { get; init; }
 
-    /// <summary>
-    /// Total number of batches (if known).
-    /// </summary>
     public int? TotalBatches { get; init; }
 
-    /// <summary>
-    /// Number of features that failed to import.
-    /// </summary>
     public int FailedFeatures { get; init; }
 
-    /// <summary>
-    /// Number of feature attachments copied so far while the import is in the
-    /// <see cref="GeoservicesImportStatus.CopyingAttachments"/> phase.
-    /// </summary>
     public int AttachmentsProcessed { get; init; }
 
-    /// <summary>
-    /// Number of source attachments that failed to copy.
-    /// </summary>
     public int FailedAttachments { get; init; }
 
-    /// <summary>
-    /// Progress percentage (0-100), null if total is unknown.
-    /// </summary>
     public double? PercentComplete => EstimatedTotalFeatures > 0
         ? (double)FeaturesProcessed / EstimatedTotalFeatures * 100
         : null;
 
-    /// <summary>
-    /// Source ArcGIS service URL.
-    /// </summary>
     public required string SourceServiceUrl { get; init; }
 
-    /// <summary>
-    /// Stable source kind for admin clients that render mixed import job results.
-    /// </summary>
     public string SourceKind { get; init; } = MigrationSourceKinds.GeoServicesRest;
 
-    /// <summary>
-    /// Source URL alias used by generic admin import result views.
-    /// </summary>
     public string SourceUrl => SourceServiceUrl;
 
-    /// <summary>
-    /// Source layer ID.
-    /// </summary>
     public required int SourceLayerId { get; init; }
 
-    /// <summary>
-    /// Source layer name.
-    /// </summary>
     public string? SourceLayerName { get; init; }
 
-    /// <summary>
-    /// Target table name.
-    /// </summary>
     public required string TableName { get; init; }
 
-    /// <summary>
-    /// Target Honua service name when the import requested or completed publishing.
-    /// </summary>
     public string? ServiceName { get; init; }
 
-    /// <summary>
-    /// Published Honua layer ID when auto-publish completed successfully.
-    /// </summary>
     public int? PublishedLayerId { get; init; }
 
-    /// <summary>
-    /// Published layer ID alias used by generic admin import result views.
-    /// </summary>
     public int? LayerId => PublishedLayerId;
 
-    /// <summary>
-    /// When the import started.
-    /// </summary>
     public DateTimeOffset StartedAt { get; init; }
 
-    /// <summary>
-    /// When the import completed (null if still running).
-    /// </summary>
     public DateTimeOffset? CompletedAt { get; init; }
 
-    /// <summary>
-    /// Duration of the import operation.
-    /// </summary>
     public TimeSpan Duration => (CompletedAt ?? DateTimeOffset.UtcNow) - StartedAt;
 
-    /// <summary>
-    /// Error message if the import failed.
-    /// </summary>
     public string? ErrorMessage { get; init; }
 
-    /// <summary>Stable machine-readable failure code, when available.</summary>
     public string? ErrorCode { get; init; }
 
-    /// <summary>
-    /// List of warning messages encountered during import.
-    /// </summary>
     public IReadOnlyList<string> Warnings { get; init; } = [];
 
-    /// <summary>
-    /// Current processing phase description.
-    /// </summary>
     public string? CurrentPhase { get; init; }
 
-    /// <summary>
-    /// Per-layer data-reconciliation artifact produced by the <see cref="GeoservicesImportStatus.Validating"/>
-    /// phase, when reconciliation ran. <c>null</c> until the Validating phase completes (or when the
-    /// import did not publish a queryable layer to reconcile against).
-    /// </summary>
     public MigrationReconciliationArtifact? ReconciliationArtifact { get; init; }
 
-    /// <summary>
-    /// Catalog parity report produced by the <see cref="GeoservicesImportStatus.Validating"/> phase,
-    /// when a published Metadata v2 entry was available to reconcile against. <c>null</c> otherwise.
-    /// </summary>
     public MigrationCatalogReconciliationReport? CatalogReconciliationReport { get; init; }
 
-    /// <summary>
-    /// Unified migration fidelity verdict for the run (issue #4600). <c>null</c> until the terminal
-    /// phase, where it is one of <see cref="MigrationFidelityVerdicts.FullFidelity"/>,
-    /// <see cref="MigrationFidelityVerdicts.Unverified"/> or
-    /// <see cref="MigrationFidelityVerdicts.Incomplete"/>. The status says whether the job finished;
-    /// this says whether the migrated layer is equivalent to the source.
-    /// </summary>
     public string? FidelityVerdict { get; init; }
 
-    /// <summary>
-    /// Actionable per-resource differences (and unexecuted checks) behind
-    /// <see cref="FidelityVerdict"/>, ordered deterministically by code then subject.
-    /// </summary>
     public MigrationFidelityDifference[] FidelityDifferences { get; init; } = [];
 
     // IOperationProgress implementation
@@ -201,7 +101,6 @@ public sealed record GeoservicesImportProgress : IOperationProgress, ICancellabl
         _ => OperationStatus.Queued
     };
 
-    /// <inheritdoc />
     public IOperationProgress WithCancellation(DateTimeOffset completedAt, string? currentPhase)
         => this with
         {
@@ -210,9 +109,6 @@ public sealed record GeoservicesImportProgress : IOperationProgress, ICancellabl
             CurrentPhase = currentPhase
         };
 
-    /// <summary>
-    /// Create an initial progress record for a new import job.
-    /// </summary>
     public static GeoservicesImportProgress CreateInitial(
         string jobId,
         string sourceServiceUrl,
@@ -234,71 +130,29 @@ public sealed record GeoservicesImportProgress : IOperationProgress, ICancellabl
         };
 }
 
-/// <summary>
-/// Status of a Geoservices import operation.
-/// </summary>
 public enum GeoservicesImportStatus
 {
-    /// <summary>
-    /// Import is queued for processing.
-    /// </summary>
     Queued,
 
-    /// <summary>
-    /// Discovering service metadata.
-    /// </summary>
     Discovering,
 
-    /// <summary>
-    /// Retrieving features from remote service.
-    /// </summary>
     RetrievingFeatures,
 
-    /// <summary>
-    /// Creating PostGIS table.
-    /// </summary>
     CreatingTable,
 
-    /// <summary>
-    /// Inserting features into PostGIS.
-    /// </summary>
     InsertingFeatures,
 
-    /// <summary>
-    /// Publishing the imported layer.
-    /// </summary>
     Publishing,
 
-    /// <summary>
-    /// Copying source feature attachments into the Honua attachment store.
-    /// </summary>
     CopyingAttachments,
 
-    /// <summary>
-    /// Post-publish reconciliation is comparing the published layer against the source snapshot.
-    /// </summary>
     Validating,
 
-    /// <summary>
-    /// Import completed successfully.
-    /// </summary>
     Completed,
 
-    /// <summary>
-    /// The import published data but a hard reconciliation finding (count/geometry/content/extent
-    /// or catalog parity) routed the run to operator review before it can be declared complete. The
-    /// imported data and layer are left in place; an operator audits the discrepancy and decides
-    /// whether to accept, re-import, or roll back.
-    /// </summary>
     NeedsReview,
 
-    /// <summary>
-    /// Import failed with errors.
-    /// </summary>
     Failed,
 
-    /// <summary>
-    /// Import was cancelled.
-    /// </summary>
     Cancelled
 }

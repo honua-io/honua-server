@@ -5,25 +5,15 @@ using System.Text.Json;
 
 namespace Honua.Core.Features.Raster.Domain;
 
-/// <summary>
-/// Outcome classification for <see cref="InlineColorRamp.Resolve"/>.
-/// </summary>
 public enum InlineColorRampStatus
 {
-    /// <summary>The ramp was recognised and resolved to a colormap.</summary>
     Resolved,
 
-    /// <summary>The ramp document is malformed or references an unknown type (HTTP 400).</summary>
     Invalid,
 
-    /// <summary>The ramp form is recognised but not supported on this service (HTTP 501).</summary>
     Unsupported,
 }
 
-/// <summary>
-/// Result of resolving an inline Esri <c>Colorramp</c> object into a canonical
-/// <see cref="RasterColormap"/>.
-/// </summary>
 public readonly record struct InlineColorRampResolution(
     InlineColorRampStatus Status,
     RasterColormap? Colormap,
@@ -39,39 +29,6 @@ public readonly record struct InlineColorRampResolution(
         => new(InlineColorRampStatus.Unsupported, null, error);
 }
 
-/// <summary>
-/// Resolves the supported subset of Esri inline <c>Colorramp</c> objects (the richer
-/// algorithmic/multipart ramp definitions embedded in a <c>Colormap</c> raster function) into
-/// the same canonical <see cref="RasterColormap"/> the named-ramp path (<see cref="NamedColorRamp"/>)
-/// produces, so a resolved ramp flows through the shared render pipeline unchanged.
-/// </summary>
-/// <remarks>
-/// <para>Supported forms (per Esri's ColorRamp specification):</para>
-/// <list type="bullet">
-/// <item><description>
-/// <b>algorithmic</b> — <c>fromColor</c>/<c>toColor</c> RGB(A) stops interpolated with an
-/// <c>algorithm</c> of <c>esriHSVAlgorithm</c>, <c>esriCIELabAlgorithm</c>, or
-/// <c>esriLabLChAlgorithm</c> (the algorithm is applied when sampling the gradient so the
-/// emitted stops follow the requested colour-space arc). When <c>algorithm</c> is omitted the
-/// CIELAB path is used, matching the ArcGIS Pro default for continuous ramps.
-/// </description></item>
-/// <item><description>
-/// <b>multipart</b> — a <c>colorRamps</c> array of algorithmic ramps laid end to end across
-/// the display range in equal segments.
-/// </description></item>
-/// </list>
-/// <para>
-/// Every other form is rejected explicitly rather than silently ignored or approximated:
-/// <c>random</c> ramps are rejected as unsupported (non-deterministic output), and unknown
-/// types, missing colours, or malformed colour arrays are rejected as invalid.
-/// </para>
-/// <para>
-/// The ramp is sampled at several intermediate stops per segment so the raster store's linear
-/// RGB interpolation between stops faithfully reproduces the (potentially non-linear)
-/// colour-space gradient. Stops are spread across the same 0..255 post-stretch display range as
-/// the named-ramp path.
-/// </para>
-/// </remarks>
 public static class InlineColorRamp
 {
     // Esri authors ramps over the post-stretch 8-bit display range; mirror NamedColorRamp so a
@@ -83,19 +40,10 @@ public static class InlineColorRamp
     // interpolates linearly in RGB between stops, so several samples keep an HSV/Lab arc faithful.
     private const int SamplesPerSegment = 9;
 
-    /// <summary>Human-readable description of the supported inline ramp subset, for error messages.</summary>
     public static string SupportedFormsText =>
         "algorithmic (fromColor/toColor with algorithm esriHSVAlgorithm, esriCIELabAlgorithm, or esriLabLChAlgorithm) " +
         "and multipart (a colorRamps array of algorithmic ramps)";
 
-    /// <summary>
-    /// Resolves an inline <c>Colorramp</c> object into a <see cref="RasterColormap"/>.
-    /// </summary>
-    /// <param name="element">The parsed <c>Colorramp</c> JSON object.</param>
-    /// <returns>
-    /// A resolution whose <see cref="InlineColorRampResolution.Status"/> distinguishes a resolved
-    /// colormap from an explicit invalid (400) or unsupported (501) rejection.
-    /// </returns>
     public static InlineColorRampResolution Resolve(JsonElement element)
     {
         if (element.ValueKind != JsonValueKind.Object)

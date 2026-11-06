@@ -6,19 +6,8 @@ using System.Data.Common;
 
 namespace Honua.Core.Features.Infrastructure.Session;
 
-/// <summary>
-/// Binds an opaque <c>parameters</c> object to a <see cref="DbCommand"/>
-/// for the <see cref="Abstractions.IDatabaseSession"/> abstraction. Supports:
-/// <list type="bullet">
-///   <item><description><c>null</c> — no parameters.</description></item>
-///   <item><description><c>IReadOnlyDictionary&lt;string, object?&gt;</c> or any <see cref="IDictionary"/>.</description></item>
-/// </list>
-/// </summary>
 public static class ParameterBinder
 {
-    /// <summary>
-    /// Binds <paramref name="parameters"/> onto <paramref name="command"/>.
-    /// </summary>
     public static void Bind(DbCommand command, object? parameters)
     {
         ArgumentNullException.ThrowIfNull(command);

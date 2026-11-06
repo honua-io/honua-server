@@ -19,10 +19,6 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// HTTP-backed OGC API Features collection importer. Paginates the source items endpoint,
-/// projects features deterministically, and writes them to the configured sink.
-/// </summary>
 public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportService
 {
     private const int MaxJsonDocumentRedirects = 5;
@@ -46,13 +42,6 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
     private readonly ILogger<OgcApiFeaturesImportService> _logger;
     private readonly Func<string, CancellationToken, Task<IPAddress[]>> _hostAddressResolver;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="OgcApiFeaturesImportService"/> class.
-    /// </summary>
-    /// <param name="httpClient">HTTP client used to fetch OGC API Features documents.</param>
-    /// <param name="sink">Target sink that persists features.</param>
-    /// <param name="logger">Logger instance.</param>
-    /// <param name="hostAddressResolver">Optional DNS resolver, used by tests to pin addresses.</param>
     public OgcApiFeaturesImportService(
         HttpClient httpClient,
         IOgcApiFeaturesCollectionSink sink,
@@ -65,11 +54,6 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
         _hostAddressResolver = hostAddressResolver ?? ((host, ct) => Dns.GetHostAddressesAsync(host, ct));
     }
 
-    /// <summary>
-    /// Creates an HTTP handler that pins DNS resolution before connecting to an OGC API Features host.
-    /// </summary>
-    /// <param name="hostAddressResolver">Optional host resolver used by tests.</param>
-    /// <returns>HTTP message handler with bounded connections and pinned DNS validation.</returns>
     public static HttpMessageHandler CreatePinnedDnsHttpMessageHandler(
         Func<string, CancellationToken, Task<IPAddress[]>>? hostAddressResolver = null)
     {
@@ -84,7 +68,6 @@ public sealed partial class OgcApiFeaturesImportService : IOgcApiFeaturesImportS
         };
     }
 
-    /// <inheritdoc />
     public async Task<OgcApiFeaturesImportResult> ImportCollectionAsync(
         OgcApiFeaturesImportRequest request,
         CancellationToken cancellationToken = default)

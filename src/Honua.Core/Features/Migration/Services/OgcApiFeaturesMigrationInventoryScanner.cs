@@ -13,9 +13,6 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Builds migration source inventory artifacts from captured OGC API Features scan facts.
-/// </summary>
 public static class OgcApiFeaturesMigrationInventoryScanner
 {
     private const string SourceKind = "ogc-api-features";
@@ -42,11 +39,6 @@ public static class OgcApiFeaturesMigrationInventoryScanner
         "http://www.opengis.net/def/rel/ogc/1.0/schema"
     ];
 
-    /// <summary>
-    /// Builds a deterministic migration source inventory artifact from captured OGC API Features scan facts.
-    /// </summary>
-    /// <param name="snapshot">Captured OGC API Features source snapshot.</param>
-    /// <returns>Shared migration source inventory artifact.</returns>
     public static MigrationSourceInventoryArtifact BuildInventory(OgcApiFeaturesMigrationSourceSnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(snapshot);

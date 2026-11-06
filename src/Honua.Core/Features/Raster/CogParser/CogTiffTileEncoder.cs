@@ -7,13 +7,8 @@ using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Core.Features.Raster.CogParser;
 
-/// <summary>Packages a decoded tile as a single-tile GeoTIFF without changing its numeric samples.</summary>
 public static class CogTiffTileEncoder
 {
-    /// <summary>
-    /// Writes unsigned, signed or floating-point chunky grayscale/RGB samples, with pixel-area
-    /// georeferencing for the requested tile. Unsupported layouts return null.
-    /// </summary>
     public static byte[]? Encode(byte[] samples, CogMetadata metadata, RasterExtent extent)
     {
         var bits = metadata.BitsPerSample;

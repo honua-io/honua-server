@@ -9,50 +9,12 @@ using Honua.Core.Features.Raster.Multidimensional.Domain;
 
 namespace Honua.Core.Features.Raster.Multidimensional.Services;
 
-/// <summary>
-/// Maps the JSON produced by GDAL <c>gdalmdiminfo</c> into the canonical
-/// <see cref="MultidimensionalCoverageMetadata"/> domain model. This is the
-/// pure, AOT-safe core of the Path B reader strategy recorded in ADR-0039:
-/// the GDAL worker extracts structure from a NetCDF4/HDF5 source and this
-/// mapper translates it; no native dependency reaches the server.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <c>gdalmdiminfo</c> reports the cube's <em>structure</em> — variables,
-/// data types, dimensions, chunk (<c>block_size</c>) layout, compression,
-/// CF attributes (<c>units</c>, <c>standard_name</c>, <c>long_name</c>),
-/// <c>nodata_value</c>, and the CF axis classification of each dimension
-/// (<c>TEMPORAL</c> / <c>HORIZONTAL_X</c> / <c>HORIZONTAL_Y</c> /
-/// <c>VERTICAL</c>). It does <em>not</em> emit coordinate variable
-/// <em>values</em>, so the spatial <see cref="MultidimensionalCoverageMetadata.Extent"/>,
-/// <see cref="MultidimensionalCoverageMetadata.Resolution"/>, and the
-/// start/end bounds of <see cref="MultidimensionalCoverageMetadata.Temporal"/> /
-/// <see cref="MultidimensionalCoverageMetadata.Vertical"/> cannot be derived
-/// here. Those are populated by the convert-time enrichment pass (a classic
-/// <c>gdalinfo -json</c> over the produced Zarr/2D view) — see ADR-0039
-/// "Path Selection (#1756)".
-/// </para>
-/// </remarks>
+// The gdalmdiminfo pass used here reports structure and leaves extent, resolution, and axis bounds unset.
 public static class GdalMultidimensionalMetadataMapper
 {
     private const string DegreesEast = "degrees_east";
     private const string DegreesNorth = "degrees_north";
 
-    /// <summary>
-    /// Maps a <c>gdalmdiminfo</c> JSON document to coverage metadata.
-    /// </summary>
-    /// <param name="gdalMdimInfoJson">Raw stdout of <c>gdalmdiminfo &lt;source&gt;</c>.</param>
-    /// <param name="format">Container format of the registered source.</param>
-    /// <param name="selectedVariables">
-    /// Operator-declared variable names to expose. Empty means "every
-    /// non-coordinate (data) variable discovered".
-    /// </param>
-    /// <returns>The structural coverage metadata.</returns>
-    /// <exception cref="ArgumentException">The JSON is null/empty.</exception>
-    /// <exception cref="MultidimensionalCoverageUnsupportedLayoutException">
-    /// The document is not a parseable GDAL multidimensional group, or exposes
-    /// no data variables matching the selection.
-    /// </exception>
     public static MultidimensionalCoverageMetadata Map(
         string gdalMdimInfoJson,
         MultidimensionalCoverageFormat format,

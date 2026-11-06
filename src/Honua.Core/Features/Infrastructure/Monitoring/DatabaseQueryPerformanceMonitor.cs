@@ -8,219 +8,92 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Monitors database query performance and detects slow queries for optimization opportunities.
-/// Provides detailed telemetry for query execution patterns and performance bottlenecks.
-/// </summary>
 public interface IDatabaseQueryPerformanceMonitor
 {
-    /// <summary>
-    /// Starts monitoring a database query operation.
-    /// </summary>
-    /// <param name="queryType">Type/category of the query</param>
-    /// <param name="correlationId">Correlation ID for distributed tracing</param>
-    /// <returns>Query execution context for tracking</returns>
     IQueryExecutionContext StartQueryExecution(string queryType, string correlationId);
 
-    /// <summary>
-    /// Gets performance statistics for query operations.
-    /// </summary>
     QueryPerformanceStatistics GetStatistics();
 
-    /// <summary>
-    /// Gets recent slow queries for analysis.
-    /// </summary>
     IReadOnlyList<SlowQueryRecord> GetRecentSlowQueries(int maxCount = 100);
 }
 
-/// <summary>
-/// Context for tracking a specific query execution.
-/// </summary>
 public interface IQueryExecutionContext : IDisposable
 {
-    /// <summary>
-    /// Records the completion of the query execution.
-    /// </summary>
-    /// <param name="success">Whether the query executed successfully</param>
-    /// <param name="rowCount">Number of rows affected/returned</param>
-    /// <param name="additionalMetrics">Additional performance metrics</param>
     void Complete(bool success, long? rowCount = null, IDictionary<string, object>? additionalMetrics = null);
 
-    /// <summary>
-    /// Records an exception that occurred during query execution.
-    /// </summary>
-    /// <param name="exception">The exception that occurred</param>
     void RecordException(Exception exception);
 }
 
-/// <summary>
-/// Configuration options for database query performance monitoring.
-/// </summary>
 public sealed class QueryPerformanceMonitoringOptions
 {
-    /// <summary>
-    /// Threshold in milliseconds above which queries are considered slow.
-    /// </summary>
     public double SlowQueryThresholdMs { get; set; } = 1000; // 1 second
 
-    /// <summary>
-    /// Maximum number of slow queries to retain in memory.
-    /// </summary>
     public int MaxSlowQueryHistory { get; set; } = 1000;
 
-    /// <summary>
-    /// Whether to capture query text for slow queries (may contain sensitive data).
-    /// </summary>
+    // Off by default because slow-query text can contain sensitive data.
     public bool CaptureQueryText { get; set; }
 
-    /// <summary>
-    /// Maximum length of query text to capture.
-    /// </summary>
     public int MaxQueryTextLength { get; set; } = 2048;
 
-    /// <summary>
-    /// Threshold for very slow queries that require immediate attention (in milliseconds).
-    /// </summary>
     public double CriticalSlowQueryThresholdMs { get; set; } = 5000; // 5 seconds
 }
 
-/// <summary>
-/// Statistics about query performance across all operations.
-/// </summary>
 public sealed record QueryPerformanceStatistics
 {
-    /// <summary>
-    /// Total number of queries executed.
-    /// </summary>
     public long TotalQueries { get; init; }
 
-    /// <summary>
-    /// Number of slow queries detected.
-    /// </summary>
     public long SlowQueries { get; init; }
 
-    /// <summary>
-    /// Number of failed queries.
-    /// </summary>
     public long FailedQueries { get; init; }
 
-    /// <summary>
-    /// Average query execution time in milliseconds.
-    /// </summary>
     public double AvgExecutionTimeMs { get; init; }
 
-    /// <summary>
-    /// 95th percentile query execution time in milliseconds.
-    /// </summary>
     public double P95ExecutionTimeMs { get; init; }
 
-    /// <summary>
-    /// Maximum query execution time in milliseconds.
-    /// </summary>
     public double MaxExecutionTimeMs { get; init; }
 
-    /// <summary>
-    /// Performance statistics by query type.
-    /// </summary>
     public IReadOnlyDictionary<string, QueryTypeStatistics> ByQueryType { get; init; } =
         new Dictionary<string, QueryTypeStatistics>();
 
-    /// <summary>
-    /// Timestamp when statistics were collected.
-    /// </summary>
     public DateTime CollectedAt { get; init; } = DateTime.UtcNow;
 }
 
-/// <summary>
-/// Performance statistics for a specific type of query.
-/// </summary>
 public sealed record QueryTypeStatistics
 {
-    /// <summary>
-    /// Number of queries of this type.
-    /// </summary>
     public long Count { get; init; }
 
-    /// <summary>
-    /// Average execution time for this query type in milliseconds.
-    /// </summary>
     public double AvgTimeMs { get; init; }
 
-    /// <summary>
-    /// Maximum execution time for this query type in milliseconds.
-    /// </summary>
     public double MaxTimeMs { get; init; }
 
-    /// <summary>
-    /// Number of slow queries of this type.
-    /// </summary>
     public long SlowCount { get; init; }
 
-    /// <summary>
-    /// Number of failed queries of this type.
-    /// </summary>
     public long FailedCount { get; init; }
 }
 
-/// <summary>
-/// Record of a slow query for performance analysis.
-/// </summary>
 public sealed record SlowQueryRecord
 {
-    /// <summary>
-    /// Correlation ID for distributed tracing.
-    /// </summary>
     public string CorrelationId { get; init; } = string.Empty;
 
-    /// <summary>
-    /// Type/category of the query.
-    /// </summary>
     public string QueryType { get; init; } = string.Empty;
 
-    /// <summary>
-    /// Query execution time in milliseconds.
-    /// </summary>
     public double ExecutionTimeMs { get; init; }
 
-    /// <summary>
-    /// Number of rows affected/returned.
-    /// </summary>
     public long? RowCount { get; init; }
 
-    /// <summary>
-    /// Timestamp when the query was executed.
-    /// </summary>
     public DateTime ExecutedAt { get; init; }
 
-    /// <summary>
-    /// Query text (if captured and configured).
-    /// </summary>
     public string? QueryText { get; init; }
 
-    /// <summary>
-    /// Additional performance metrics.
-    /// </summary>
     public IReadOnlyDictionary<string, object>? AdditionalMetrics { get; init; }
 
-    /// <summary>
-    /// Whether this query failed.
-    /// </summary>
     public bool Failed { get; init; }
 
-    /// <summary>
-    /// Exception information if the query failed.
-    /// </summary>
     public string? ExceptionType { get; init; }
 
-    /// <summary>
-    /// Exception message if the query failed.
-    /// </summary>
     public string? ExceptionMessage { get; init; }
 }
 
-/// <summary>
-/// Production implementation of database query performance monitoring.
-/// </summary>
 internal sealed partial class DatabaseQueryPerformanceMonitor : IDatabaseQueryPerformanceMonitor, IDisposable
 {
     private readonly ILogger<DatabaseQueryPerformanceMonitor> _logger;
@@ -386,9 +259,6 @@ internal sealed partial class DatabaseQueryPerformanceMonitor : IDatabaseQueryPe
         while (_slowQueryRecords.TryDequeue(out _)) { }
     }
 
-    /// <summary>
-    /// Internal data structure for tracking query execution metrics by type.
-    /// </summary>
     private sealed class QueryTypeMetrics
     {
         private long _count;
@@ -433,9 +303,6 @@ internal sealed partial class DatabaseQueryPerformanceMonitor : IDatabaseQueryPe
         }
     }
 
-    /// <summary>
-    /// Internal data structure for passing query execution data.
-    /// </summary>
     internal sealed record QueryExecutionData
     {
         public string QueryType { get; init; } = string.Empty;
@@ -449,9 +316,6 @@ internal sealed partial class DatabaseQueryPerformanceMonitor : IDatabaseQueryPe
         public Exception? Exception { get; init; }
     }
 
-    /// <summary>
-    /// Query execution context implementation.
-    /// </summary>
     private sealed class QueryExecutionContext : IQueryExecutionContext
     {
         private readonly DatabaseQueryPerformanceMonitor _monitor;

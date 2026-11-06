@@ -5,28 +5,10 @@ using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Core.Features.Raster.ZarrParser;
 
-/// <summary>
-/// Renders a single-band Zarr coverage slice to an RGBA PNG map tile. AOT-safe and
-/// dependency-light: decodes the little-endian subset buffer into a 2D value grid,
-/// maps each value to a colour (linear colormap interpolation, or a grayscale ramp
-/// over the slice min/max when no colormap is supplied), nearest-samples the grid
-/// into the requested tile pixel dimensions, and encodes a PNG with the managed
-/// DEFLATE encoder. NaN / fill values render fully transparent.
-/// </summary>
 public static class ZarrTileRenderer
 {
-    /// <summary>Default tile edge length in pixels.</summary>
     public const int DefaultTileSize = 256;
 
-    /// <summary>
-    /// Renders a resolved tile slice to a PNG.
-    /// </summary>
-    /// <param name="result">Decoded subset payload from <see cref="Abstractions.IZarrSubsetReader"/>.</param>
-    /// <param name="slice">Resolved slice plan describing the X/Y dimension positions.</param>
-    /// <param name="tileSize">Output tile edge length in pixels.</param>
-    /// <param name="colormap">Optional colormap; grayscale auto-ramp is used when null.</param>
-    /// <param name="fillValue">Optional source fill value rendered transparent.</param>
-    /// <returns>PNG-encoded RGBA tile.</returns>
     public static byte[] Render(
         ZarrSubsetResult result,
         ZarrTileSlicePlan slice,
@@ -35,16 +17,6 @@ public static class ZarrTileRenderer
         double? fillValue = null)
         => Render(result, slice, tileSize, tileSize, colormap, fillValue);
 
-    /// <summary>
-    /// Renders a resolved slice to a rectangular PNG using bounded nearest-neighbor sampling.
-    /// </summary>
-    /// <param name="result">Decoded subset payload from <see cref="Abstractions.IZarrSubsetReader"/>.</param>
-    /// <param name="slice">Resolved slice plan describing the X/Y dimension positions.</param>
-    /// <param name="outputWidth">Output width in pixels.</param>
-    /// <param name="outputHeight">Output height in pixels.</param>
-    /// <param name="colormap">Optional colormap; grayscale auto-ramp is used when null.</param>
-    /// <param name="fillValue">Optional source fill value rendered transparent.</param>
-    /// <returns>PNG-encoded RGBA image.</returns>
     public static byte[] Render(
         ZarrSubsetResult result,
         ZarrTileSlicePlan slice,
@@ -54,26 +26,11 @@ public static class ZarrTileRenderer
         double? fillValue = null)
         => RenderWithTypedFill(result, slice, outputWidth, outputHeight, colormap, fillValue);
 
-    /// <summary>Renders a square tile with an explicit source-typed nodata sentinel.</summary>
-    /// <param name="result">Decoded subset payload.</param>
-    /// <param name="slice">Resolved spatial slice plan.</param>
-    /// <param name="tileSize">Output tile edge length.</param>
-    /// <param name="colormap">Optional colormap.</param>
-    /// <param name="fillValue">Typed source sentinel; null opts out of finite nodata masking.</param>
-    /// <returns>PNG-encoded RGBA tile.</returns>
     public static byte[] RenderWithTypedFill(
         ZarrSubsetResult result, ZarrTileSlicePlan slice, int tileSize = DefaultTileSize,
         RasterColormap? colormap = null, object? fillValue = null)
         => RenderWithTypedFill(result, slice, tileSize, tileSize, colormap, fillValue);
 
-    /// <summary>Renders a rectangular image, comparing an explicit sentinel before numeric conversion.</summary>
-    /// <param name="result">Decoded subset payload.</param>
-    /// <param name="slice">Resolved spatial slice plan.</param>
-    /// <param name="outputWidth">Output width.</param>
-    /// <param name="outputHeight">Output height.</param>
-    /// <param name="colormap">Optional colormap.</param>
-    /// <param name="fillValue">Typed source sentinel; null opts out of finite nodata masking.</param>
-    /// <returns>PNG-encoded RGBA image.</returns>
     public static byte[] RenderWithTypedFill(
         ZarrSubsetResult result, ZarrTileSlicePlan slice, int outputWidth, int outputHeight,
         RasterColormap? colormap = null, object? fillValue = null)
@@ -132,25 +89,6 @@ public static class ZarrTileRenderer
         return PngEncoder.Encode(pixels, outputWidth, outputHeight);
     }
 
-    /// <summary>
-    /// Renders a resolved slice into a row-major 8-bit RGBA pixel buffer, sampling the
-    /// source grid at caller-supplied per-pixel coordinates in the storage (native) CRS.
-    /// This is the transformed-export path: it supports reprojection (the caller warps the
-    /// output-pixel centres into native coordinates), nearest / bilinear / bicubic
-    /// resampling, an explicit display stretch range, and an optional pseudocolour colormap.
-    /// NaN / fill values render fully transparent.
-    /// </summary>
-    /// <param name="result">Decoded subset payload from <see cref="Abstractions.IZarrSubsetReader"/>.</param>
-    /// <param name="slice">Resolved slice plan describing the X/Y dimension positions and native grid geometry.</param>
-    /// <param name="outputWidth">Output width in pixels.</param>
-    /// <param name="outputHeight">Output height in pixels.</param>
-    /// <param name="sampleX">Native-CRS X coordinate to sample for each output pixel (row-major, length <c>outputWidth*outputHeight</c>).</param>
-    /// <param name="sampleY">Native-CRS Y coordinate to sample for each output pixel (row-major, same length as <paramref name="sampleX"/>).</param>
-    /// <param name="resampling">Resampling algorithm used when sampling the source grid.</param>
-    /// <param name="colormap">Optional colormap; grayscale ramp is used when null.</param>
-    /// <param name="stretchRange">Optional explicit display range (low,high); auto slice range is used when null.</param>
-    /// <param name="fillValue">Optional source fill value rendered transparent.</param>
-    /// <returns>Row-major RGBA pixel buffer (4 bytes/pixel).</returns>
     public static byte[] RenderRgba(
         ZarrSubsetResult result,
         ZarrTileSlicePlan slice,
@@ -165,18 +103,6 @@ public static class ZarrTileRenderer
         => RenderRgbaWithTypedFill(result, slice, outputWidth, outputHeight, sampleX, sampleY,
             resampling, colormap, stretchRange, fillValue);
 
-    /// <summary>Samples a transformed grid using source-typed nodata equality before interpolation.</summary>
-    /// <param name="result">Decoded subset payload.</param>
-    /// <param name="slice">Resolved spatial slice plan.</param>
-    /// <param name="outputWidth">Output width.</param>
-    /// <param name="outputHeight">Output height.</param>
-    /// <param name="sampleX">Native X coordinates.</param>
-    /// <param name="sampleY">Native Y coordinates.</param>
-    /// <param name="resampling">Sampling method.</param>
-    /// <param name="colormap">Optional colormap.</param>
-    /// <param name="stretchRange">Optional explicit stretch.</param>
-    /// <param name="fillValue">Typed source sentinel; null opts out of finite nodata masking.</param>
-    /// <returns>Row-major RGBA bytes.</returns>
     public static byte[] RenderRgbaWithTypedFill(
         ZarrSubsetResult result, ZarrTileSlicePlan slice, int outputWidth, int outputHeight,
         double[] sampleX, double[] sampleY, ResamplingAlgorithm resampling, RasterColormap? colormap,

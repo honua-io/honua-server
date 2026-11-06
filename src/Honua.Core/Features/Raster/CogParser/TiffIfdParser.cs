@@ -5,30 +5,15 @@ using System.Buffers.Binary;
 
 namespace Honua.Core.Features.Raster.CogParser;
 
-/// <summary>
-/// AOT-safe TIFF/BigTIFF IFD chain parser.
-/// Uses only <see cref="Span{T}"/>, <see cref="BinaryPrimitives"/>, and primitive types.
-/// No reflection, no external TIFF library.
-/// </summary>
 internal sealed class TiffIfdParser
 {
-    /// <summary>
-    /// Maximum number of entries accepted in a single IFD (classic TIFF's ushort ceiling,
-    /// also enforced for BigTIFF to bound buffer sizes against crafted files).
-    /// </summary>
     public const int MaxIfdEntryCount = 65535;
 
     private readonly bool _isLittleEndian;
     private readonly bool _isBigTiff;
 
-    /// <summary>
-    /// Whether the TIFF uses little-endian byte order.
-    /// </summary>
     public bool IsLittleEndian => _isLittleEndian;
 
-    /// <summary>
-    /// Whether this is a BigTIFF (8-byte offsets) rather than classic TIFF (4-byte offsets).
-    /// </summary>
     public bool IsBigTiff => _isBigTiff;
 
     private TiffIfdParser(bool isLittleEndian, bool isBigTiff)
@@ -37,10 +22,6 @@ internal sealed class TiffIfdParser
         _isBigTiff = isBigTiff;
     }
 
-    /// <summary>
-    /// Parses the TIFF header from the first 16 bytes.
-    /// Returns the parser instance and the offset to the first IFD.
-    /// </summary>
     public static (TiffIfdParser Parser, long FirstIfdOffset) ParseHeader(ReadOnlySpan<byte> header)
     {
         if (header.Length < TiffConstants.ClassicHeaderSize)
@@ -91,10 +72,6 @@ internal sealed class TiffIfdParser
         return (new TiffIfdParser(isLittleEndian, isBigTiff), firstIfdOffset);
     }
 
-    /// <summary>
-    /// Parses IFD entries from a buffer positioned at the start of an IFD.
-    /// Returns the parsed entries and the offset to the next IFD (0 if none).
-    /// </summary>
     public (IfdEntry[] Entries, long NextIfdOffset) ParseIfd(ReadOnlySpan<byte> ifdData)
     {
         long entryCount;
@@ -148,10 +125,6 @@ internal sealed class TiffIfdParser
         return (entries, nextIfdOffset);
     }
 
-    /// <summary>
-    /// Reads the declared entry count at the start of an IFD without parsing the entries,
-    /// so callers can re-read the IFD at its exact size when it exceeds their estimate.
-    /// </summary>
     public long ReadIfdEntryCount(ReadOnlySpan<byte> ifdData)
     {
         if (_isBigTiff)
@@ -172,9 +145,6 @@ internal sealed class TiffIfdParser
         return ReadUInt16(ifdData, 0, _isLittleEndian);
     }
 
-    /// <summary>
-    /// Calculates the byte size needed to read an IFD at the given entry count.
-    /// </summary>
     public int CalculateIfdReadSize(long estimatedEntryCount)
     {
         var entrySize = _isBigTiff ? TiffConstants.BigTiffIfdEntrySize : TiffConstants.ClassicIfdEntrySize;
@@ -183,9 +153,6 @@ internal sealed class TiffIfdParser
         return countSize + (int)estimatedEntryCount * entrySize + nextPtrSize;
     }
 
-    /// <summary>
-    /// Reads an array of long values from a byte buffer (for tile offsets/byte counts).
-    /// </summary>
     public long[] ReadLongArray(ReadOnlySpan<byte> data, int count, ushort type)
     {
         var result = new long[count];
@@ -207,9 +174,6 @@ internal sealed class TiffIfdParser
         return result;
     }
 
-    /// <summary>
-    /// Reads an array of int values from a byte buffer.
-    /// </summary>
     public int[] ReadIntArray(ReadOnlySpan<byte> data, int count, ushort type)
     {
         var result = new int[count];
@@ -231,9 +195,6 @@ internal sealed class TiffIfdParser
         return result;
     }
 
-    /// <summary>
-    /// Reads an inline array of long values from an IFD entry's value/offset field.
-    /// </summary>
     public long[] ReadInlineLongArray(long valueOrOffset, int count, ushort type)
     {
         Span<byte> inlineData = stackalloc byte[_isBigTiff ? 8 : 4];
@@ -241,9 +202,6 @@ internal sealed class TiffIfdParser
         return ReadLongArray(inlineData[..(count * TiffConstants.GetTypeSize(type))], count, type);
     }
 
-    /// <summary>
-    /// Reads an inline array of int values from an IFD entry's value/offset field.
-    /// </summary>
     public int[] ReadInlineIntArray(long valueOrOffset, int count, ushort type)
     {
         Span<byte> inlineData = stackalloc byte[_isBigTiff ? 8 : 4];
@@ -339,9 +297,6 @@ internal sealed class TiffIfdParser
     }
 }
 
-/// <summary>
-/// A parsed TIFF IFD entry (directory tag).
-/// </summary>
 internal readonly record struct IfdEntry(
     ushort Tag,
     ushort Type,

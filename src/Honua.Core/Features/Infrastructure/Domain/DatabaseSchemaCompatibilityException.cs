@@ -3,27 +3,16 @@
 
 namespace Honua.Core.Features.Infrastructure.Domain;
 
-/// <summary>
-/// The database contains migration identities this reader has not qualified. Application rollback
-/// must stop before serving; deploy a compatible reader or restore its matching database backup.
-/// </summary>
+// Serving must stop when the database contains migration identities this reader has not qualified.
 public sealed class DatabaseSchemaCompatibilityException : InvalidOperationException
 {
-    /// <summary>Stable startup failure code for deployment and release receipts.</summary>
     public const string ErrorCode = "schema_reader_incompatible";
 
-    /// <summary>Creates a failure for unrecognized applied migrations.</summary>
     public DatabaseSchemaCompatibilityException(IReadOnlyList<string> unknownMigrations)
         : this(unknownMigrations, null)
     {
     }
 
-    /// <summary>
-    /// Creates a failure for unrecognized applied migrations, naming why any recorded
-    /// forward-compatibility declaration for them was refused (#6477).
-    /// </summary>
-    /// <param name="unknownMigrations">Applied migration identities this reader cannot qualify.</param>
-    /// <param name="declarationRefusals">Refusal reason per refused forward-compatibility declaration.</param>
     public DatabaseSchemaCompatibilityException(
         IReadOnlyList<string> unknownMigrations,
         IReadOnlyDictionary<string, string>? declarationRefusals)
@@ -39,13 +28,8 @@ public sealed class DatabaseSchemaCompatibilityException : InvalidOperationExcep
             : new Dictionary<string, string>(declarationRefusals, StringComparer.Ordinal);
     }
 
-    /// <summary>Applied migration identities absent from this reader's manifest.</summary>
     public IReadOnlyList<string> UnknownMigrations { get; }
 
-    /// <summary>
-    /// Unknown migrations whose recorded forward-compatibility declaration this reader refused, with
-    /// the reason. Empty when no declaration was recorded for any of them.
-    /// </summary>
     public IReadOnlyDictionary<string, string> DeclarationRefusals { get; }
 
     private static string DescribeRefusals(IReadOnlyDictionary<string, string>? refusals)

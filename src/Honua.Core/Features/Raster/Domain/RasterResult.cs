@@ -3,174 +3,71 @@
 
 namespace Honua.Core.Features.Raster.Domain;
 
-/// <summary>
-/// Result of a raster query operation.
-/// </summary>
 public readonly record struct RasterResult
 {
-    /// <summary>
-    /// Raster data as byte array in the requested format.
-    /// </summary>
     public required byte[] Data { get; init; }
 
-    /// <summary>
-    /// MIME content type for the raster data.
-    /// </summary>
     public required string ContentType { get; init; }
 
-    /// <summary>
-    /// Width of the returned raster in pixels.
-    /// </summary>
     public required int Width { get; init; }
 
-    /// <summary>
-    /// Height of the returned raster in pixels.
-    /// </summary>
     public required int Height { get; init; }
 
-    /// <summary>
-    /// Spatial reference system identifier of the result.
-    /// </summary>
     public int? Srid { get; init; }
 
-    /// <summary>
-    /// Geotransform coefficients for the result raster.
-    /// Array of 6 values: [upperleftx, scalex, skewx, upperlefty, skewy, scaley].
-    /// </summary>
     public double[]? GeoTransform { get; init; }
 
-    /// <summary>
-    /// Spatial extent of the result raster.
-    /// </summary>
     public RasterExtent? Extent { get; init; }
 
-    /// <summary>
-    /// Number of bands in the result.
-    /// </summary>
     public int BandCount { get; init; }
 
-    /// <summary>
-    /// Pixel type of the result data.
-    /// </summary>
     public string? PixelType { get; init; }
 
-    /// <summary>
-    /// Optional per-band validity masks for raw samples: one bit per pixel, most-significant
-    /// bit first, with one meaning valid. Raw data is little-endian and band sequential;
-    /// the stored NoData sample values remain in <see cref="Data"/>.
-    /// </summary>
     public byte[][]? BandValidityMasks { get; init; }
 }
 
-/// <summary>
-/// Result of pixel value identification at a point.
-/// </summary>
 public readonly record struct PixelValueResult
 {
-    /// <summary>
-    /// X coordinate of the query point.
-    /// </summary>
     public required double X { get; init; }
 
-    /// <summary>
-    /// Y coordinate of the query point.
-    /// </summary>
     public required double Y { get; init; }
 
-    /// <summary>
-    /// Spatial reference system identifier.
-    /// </summary>
     public int? Srid { get; init; }
 
-    /// <summary>
-    /// Pixel values for each band at the query point.
-    /// Key is band number (1-based), value is pixel value.
-    /// </summary>
     public required Dictionary<int, object?> BandValues { get; init; }
 
-    /// <summary>
-    /// Whether the query point contains valid data (not NoData).
-    /// </summary>
     public bool HasData { get; init; }
 
-    /// <summary>
-    /// Rasters that supplied this sample. Each band is resolved on its own, so the list contains
-    /// every raster that won at least one band. One id means a single raster supplied the whole
-    /// sample. An average contains every raster with a non-NoData sample at the point. Empty when
-    /// the point is NoData. Null when the identify did not report contribution, which a
-    /// single-raster read does not.
-    /// </summary>
+    // Empty means the point is NoData. Null means the identify did not report contribution, which a single-raster read does not.
     public IReadOnlyList<long>? ContributingRasterIds { get; init; }
 }
 
-/// <summary>
-/// Histogram of pixel value distribution for a single raster band.
-/// </summary>
 public readonly record struct RasterHistogram
 {
-    /// <summary>
-    /// Band number (1-based).
-    /// </summary>
     public required int Band { get; init; }
 
-    /// <summary>
-    /// Number of bins.
-    /// </summary>
     public required int BinCount { get; init; }
 
-    /// <summary>
-    /// Lower bound of the value range.
-    /// </summary>
     public required double Min { get; init; }
 
-    /// <summary>
-    /// Upper bound of the value range.
-    /// </summary>
     public required double Max { get; init; }
 
-    /// <summary>
-    /// Counts per bin, ordered from <see cref="Min"/> to <see cref="Max"/>.
-    /// </summary>
     public required long[] Counts { get; init; }
 }
 
-/// <summary>
-/// Statistical information about raster data.
-/// </summary>
 public readonly record struct RasterStatistics
 {
-    /// <summary>
-    /// Band number (1-based).
-    /// </summary>
     public required int Band { get; init; }
 
-    /// <summary>
-    /// Minimum pixel value.
-    /// </summary>
     public double? MinValue { get; init; }
 
-    /// <summary>
-    /// Maximum pixel value.
-    /// </summary>
     public double? MaxValue { get; init; }
 
-    /// <summary>
-    /// Mean pixel value.
-    /// </summary>
     public double? MeanValue { get; init; }
 
-    /// <summary>
-    /// Standard deviation of pixel values.
-    /// </summary>
     public double? StandardDeviation { get; init; }
 
-    /// <summary>
-    /// Number of valid (non-NoData) pixels.
-    /// </summary>
     public long ValidPixelCount { get; init; }
 
-    /// <summary>
-    /// Number of NoData pixels.
-    /// </summary>
     public long NoDataPixelCount { get; init; }
 }

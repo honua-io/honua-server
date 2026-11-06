@@ -14,26 +14,8 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Derives the source property set for an OGC API Features collection (either from the advertised
-/// JSON schema document or inferred from the first page of features) and compares it to the
-/// target table columns to emit <see cref="OgcApiFeaturesSchemaMappingDiagnostic"/> entries.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The mapper is intentionally side-effect free: callers supply the parsed first-page JSON document
-/// plus the optional schema document and receive a deterministic list of diagnostics. The classifier
-/// is conservative — only properties that need operator attention are reported, so a clean run
-/// returns an empty list.
-/// </para>
-/// </remarks>
 internal static class OgcApiFeaturesSchemaMapper
 {
-    /// <summary>
-    /// Derives the source property set from <paramref name="schemaDocument"/> (when supplied) or
-    /// infers it from <paramref name="firstPageFeatures"/>. Schema-derived types win when both
-    /// sources advertise a property, since the schema is authoritative.
-    /// </summary>
     public static IReadOnlyDictionary<string, string> DeriveSourceProperties(
         JsonElement? schemaDocument,
         JsonElement firstPageFeatures)
@@ -77,11 +59,6 @@ internal static class OgcApiFeaturesSchemaMapper
         return properties;
     }
 
-    /// <summary>
-    /// Compares the derived source property set to the target columns and emits one diagnostic per
-    /// non-automated mapping. The output is deterministic (ordered by property name) so snapshots
-    /// and JSON round-trip tests are stable.
-    /// </summary>
     public static IReadOnlyList<OgcApiFeaturesSchemaMappingDiagnostic> Diagnose(
         IReadOnlyDictionary<string, string> sourceProperties,
         IReadOnlyList<OgcApiFeaturesSinkColumn> targetColumns)

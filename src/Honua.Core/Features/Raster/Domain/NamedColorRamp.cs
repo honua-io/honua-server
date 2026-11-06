@@ -5,14 +5,6 @@ using System.Globalization;
 
 namespace Honua.Core.Features.Raster.Domain;
 
-/// <summary>
-/// Resolves Esri <c>Colormap</c> raster-function named colour ramps
-/// (<c>ColorrampName</c>) into a canonical <see cref="RasterColormap"/>. Esri ships a
-/// fixed catalogue of named multi-part ramps (e.g. <c>Elevation #1</c>, <c>Red to Green</c>);
-/// this resolver implements the most commonly requested members as evenly spaced anchor
-/// stops over a normalised display range so the rendered output matches the named ramp's
-/// hue progression. Values between anchors are interpolated by the raster store.
-/// </summary>
 public static class NamedColorRamp
 {
     // Esri's named ramps are authored over the post-stretch 8-bit display range. The
@@ -60,12 +52,6 @@ public static class NamedColorRamp
         [255, 255, 255], // peak – snow white
     ];
 
-    /// <summary>
-    /// Attempts to resolve a named colour ramp into a <see cref="RasterColormap"/>.
-    /// </summary>
-    /// <param name="name">The Esri <c>ColorrampName</c> to resolve (case-insensitive).</param>
-    /// <param name="colormap">The resolved colormap when the name is recognised.</param>
-    /// <returns><c>true</c> when <paramref name="name"/> maps to a known ramp.</returns>
     public static bool TryResolve(string? name, out RasterColormap colormap)
     {
         colormap = null!;
@@ -78,10 +64,6 @@ public static class NamedColorRamp
         return true;
     }
 
-    /// <summary>
-    /// Gets the catalogue of supported named colour ramp identifiers, for error messages
-    /// and capability advertising.
-    /// </summary>
     public static IReadOnlyCollection<string> SupportedNames =>
         Ramps.Keys.ToArray();
 
@@ -100,9 +82,6 @@ public static class NamedColorRamp
         return new RasterColormap { Entries = entries };
     }
 
-    /// <summary>
-    /// Renders the supported ramp names as a stable, comma-separated string for diagnostics.
-    /// </summary>
     public static string SupportedNamesText()
         => string.Join(", ", Ramps.Keys.OrderBy(static k => k, StringComparer.Ordinal)
             .Select(static k => string.Create(CultureInfo.InvariantCulture, $"'{k}'")));

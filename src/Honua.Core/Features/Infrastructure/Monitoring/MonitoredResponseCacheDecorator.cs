@@ -8,25 +8,12 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Core.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Decorator for IResponseCache that adds comprehensive performance monitoring and cache metrics tracking.
-/// </summary>
-/// <remarks>
-/// This decorator wraps any IResponseCache implementation to provide detailed cache performance metrics
-/// including hit/miss ratios, operation timing, cache effectiveness, and storage analytics.
-/// </remarks>
 public sealed class MonitoredResponseCacheDecorator : IResponseCache
 {
     private readonly IResponseCache _innerCache;
     private readonly IPerformanceMonitor _performanceMonitor;
     private readonly ILogger<MonitoredResponseCacheDecorator> _logger;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="MonitoredResponseCacheDecorator"/> class.
-    /// </summary>
-    /// <param name="innerCache">The underlying response cache implementation to decorate.</param>
-    /// <param name="performanceMonitor">The performance monitor for tracking cache metrics.</param>
-    /// <param name="logger">The logger for diagnostic information.</param>
     public MonitoredResponseCacheDecorator(
         IResponseCache innerCache,
         IPerformanceMonitor performanceMonitor,
@@ -37,11 +24,9 @@ public sealed class MonitoredResponseCacheDecorator : IResponseCache
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <inheritdoc />
     public Task<string> BindKeyAsync(string key, CancellationToken cancellationToken = default)
         => _innerCache.BindKeyAsync(key, cancellationToken);
 
-    /// <inheritdoc />
     public async Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken = default) where T : class
     {
         using var scope = _performanceMonitor.StartOperation("cache_get")
@@ -83,7 +68,6 @@ public sealed class MonitoredResponseCacheDecorator : IResponseCache
         }
     }
 
-    /// <inheritdoc />
     public async Task SetAsync<T>(string key, T value, TimeSpan expiration, CancellationToken cancellationToken = default) where T : class
     {
         using var scope = _performanceMonitor.StartOperation("cache_set")
@@ -112,7 +96,6 @@ public sealed class MonitoredResponseCacheDecorator : IResponseCache
         }
     }
 
-    /// <inheritdoc />
     public async Task<T> GetOrCreateAsync<T>(string key, Func<Task<T>> factory, TimeSpan expiration, CancellationToken cancellationToken = default) where T : class
     {
         using var scope = _performanceMonitor.StartOperation("cache_get_or_create")
@@ -173,7 +156,6 @@ public sealed class MonitoredResponseCacheDecorator : IResponseCache
         }
     }
 
-    /// <inheritdoc />
     public async Task RemoveAsync(string key, CancellationToken cancellationToken = default)
     {
         using var scope = _performanceMonitor.StartOperation("cache_remove")
@@ -202,7 +184,6 @@ public sealed class MonitoredResponseCacheDecorator : IResponseCache
         }
     }
 
-    /// <inheritdoc />
     public async Task RemoveByPatternAsync(string pattern, CancellationToken cancellationToken = default)
     {
         using var scope = _performanceMonitor.StartOperation("cache_remove_pattern")
@@ -231,11 +212,6 @@ public sealed class MonitoredResponseCacheDecorator : IResponseCache
         }
     }
 
-    /// <summary>
-    /// Determines cache type from cache key for metrics categorization.
-    /// </summary>
-    /// <param name="key">Cache key</param>
-    /// <returns>Cache type category</returns>
     private static string GetCacheType(string key)
     {
         if (string.IsNullOrEmpty(key))

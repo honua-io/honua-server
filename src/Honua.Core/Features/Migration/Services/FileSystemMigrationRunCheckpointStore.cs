@@ -14,31 +14,12 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Simple file-backed implementation of <see cref="IMigrationRunCheckpointStore"/>
-/// that persists each run's checkpoint as a JSON file under the configured root
-/// directory.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>Development and test use only.</b> This store writes durable, cross-request
-/// checkpoint state to the compute node's local disk, so a run checkpointed on one
-/// node cannot resume on another. It is not the intended production persistence path
-/// (see ADR-0060, two-plane operability). Production hosts must register a shared-store
-/// implementation such as <c>PostgresMigrationRunCheckpointStore</c>; the default
-/// registration falls back to <see cref="InMemoryMigrationRunCheckpointStore"/> when no
-/// durable provider is active.
-/// </para>
-/// </remarks>
+// A checkpoint written here cannot resume on another node; production must use the shared store.
 public sealed class FileSystemMigrationRunCheckpointStore : IMigrationRunCheckpointStore, IDisposable
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly string _rootDirectory;
 
-    /// <summary>
-    /// Initializes a new <see cref="FileSystemMigrationRunCheckpointStore"/>.
-    /// </summary>
-    /// <param name="rootDirectory">Directory under which per-run checkpoint files are stored.</param>
     public FileSystemMigrationRunCheckpointStore(string rootDirectory)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(rootDirectory);
@@ -46,10 +27,8 @@ public sealed class FileSystemMigrationRunCheckpointStore : IMigrationRunCheckpo
         Directory.CreateDirectory(_rootDirectory);
     }
 
-    /// <summary>Root directory used to persist checkpoint files.</summary>
     public string RootDirectory => _rootDirectory;
 
-    /// <inheritdoc />
     public async ValueTask SaveAsync(MigrationRunCheckpoint checkpoint, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(checkpoint);
@@ -70,7 +49,6 @@ public sealed class FileSystemMigrationRunCheckpointStore : IMigrationRunCheckpo
         }
     }
 
-    /// <inheritdoc />
     public async ValueTask<MigrationRunCheckpoint?> LoadAsync(string runId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(runId);
@@ -93,7 +71,6 @@ public sealed class FileSystemMigrationRunCheckpointStore : IMigrationRunCheckpo
         }
     }
 
-    /// <inheritdoc />
     public async ValueTask<bool> DeleteAsync(string runId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(runId);
@@ -112,7 +89,6 @@ public sealed class FileSystemMigrationRunCheckpointStore : IMigrationRunCheckpo
         }
     }
 
-    /// <inheritdoc />
     public void Dispose() => _gate.Dispose();
 
     private string PathFor(string runId)
@@ -155,12 +131,6 @@ public sealed class FileSystemMigrationRunCheckpointStore : IMigrationRunCheckpo
     }
 }
 
-/// <summary>
-/// Source-generated, AOT-safe JSON serialization context for
-/// <see cref="MigrationRunCheckpoint"/> snapshots. Shared by every
-/// <see cref="IMigrationRunCheckpointStore"/> implementation so persisted checkpoint
-/// JSON round-trips through the same reflection-free contract.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

@@ -13,31 +13,7 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Inspects <see cref="MigrationInventoryResource"/> coverage records and emits
-/// <see cref="MigrationCoverageStyleDiagnostic"/> entries describing per-style
-/// hints (color maps, band statistics, NoData markers, transparency presets,
-/// legends, vendor-specific rendering hints) that need separate operator
-/// attention when migrating to Honua. Slice 4 of issue #1030.
-/// </summary>
-/// <remarks>
-/// Classification rules:
-/// <list type="bullet">
-///   <item><description>Single-band grayscale with stats → automated; suggests
-///   <c>grayscale-linear-stretch</c>.</description></item>
-///   <item><description>Indexed color tables (≤256 entries) → assisted; preserves
-///   the source table and emits an informational diagnostic so it can be
-///   transferred verbatim.</description></item>
-///   <item><description>Continuous color ramps with formulas or unresolved color
-///   tables → manual-review; the raw style is preserved but a warning is
-///   raised.</description></item>
-///   <item><description>Vendor-specific extension markers (Esri, GeoServer, etc.)
-///   → manual-review with the vendor name surfaced so operators know which
-///   product authored the style.</description></item>
-/// </list>
-/// The builder is deterministic: it ignores input ordering and emits records
-/// sorted by source coverage id, kind, then source style id.
-/// </remarks>
+// Indexed color tables are copied as assisted, formula ramps and vendor extensions go to manual review, and the records are sorted so input order does not matter.
 internal static class CoverageStyleDiagnosticBuilder
 {
     private const string KindColorMap = "colorMap";
@@ -54,12 +30,6 @@ internal static class CoverageStyleDiagnosticBuilder
     private const string SuggestedGrayscaleLinearStretch = "grayscale-linear-stretch";
     private const string SuggestedIndexedColor = "indexed-color-table";
 
-    /// <summary>
-    /// Builds the deterministic ordered diagnostic collection for the supplied
-    /// inventory coverage resources.
-    /// </summary>
-    /// <param name="resources">Coverage resources from the source migration inventory.</param>
-    /// <returns>Empty array when no style hints were discovered.</returns>
     public static MigrationCoverageStyleDiagnostic[] Build(IEnumerable<MigrationInventoryResource> resources)
     {
         ArgumentNullException.ThrowIfNull(resources);

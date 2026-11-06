@@ -14,14 +14,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Default <see cref="ILayerReconciliationService"/> implementation. Drives the
-/// post-apply Validating phase by issuing target-only probes against the catalog
-/// <see cref="IFeatureReader"/> and comparing them with the per-layer source snapshot
-/// supplied in the request. Source-side facts (count, extent, field names) are read from
-/// the snapshot so the gate remains deterministic against the apply moment and is not
-/// vulnerable to source-side drift.
-/// </summary>
 public sealed partial class LayerReconciliationService : ILayerReconciliationService
 {
     private const int MinSampleSize = 1;
@@ -48,17 +40,7 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<LayerReconciliationService> _logger;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="LayerReconciliationService"/> class.
-    /// </summary>
-    /// <param name="featureReader">Target catalog feature reader.</param>
-    /// <param name="timeProvider">Time provider used to stamp the artifact.</param>
-    /// <param name="logger">Logger.</param>
-    /// <param name="queryBuilder">Canonical query compiler, required for shared-target filter mirrors.</param>
-    /// <param name="topologyValidator">
-    /// Topology check used when an invalid source id is still present on the target.
-    /// A missing validator does not treat a WKB header as a successful repair.
-    /// </param>
+    // A missing topology validator does not treat a WKB header as a successful repair.
     public LayerReconciliationService(
         IFeatureReader featureReader,
         TimeProvider timeProvider,
@@ -73,7 +55,6 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <inheritdoc />
     public async Task<MigrationReconciliationArtifact> ReconcileAsync(
         LayerReconciliationRequest request,
         CancellationToken cancellationToken = default)
@@ -284,10 +265,6 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
         return await _queryBuilder.BuildAsync(layer, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Reads the geometry and content population. A source census pages the filtered target
-    /// until the reader is exhausted. Without a census, one sample page is enough.
-    /// </summary>
     private async Task<(QueryResult<Feature>? Result, bool PopulationUnread)> ReadComparisonFeaturesAsync(
         int targetLayerId,
         FeatureQuery compiled,
@@ -546,12 +523,6 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
         };
     }
 
-    /// <summary>
-    /// Identity-mapped geometry probe. A known transfer loss fails the probe even when it is
-    /// one row. Matching null source geometries are inherited defects. An invalid source that
-    /// remains topologically invalid is inherited; only a topology-valid target is a rewrite,
-    /// and that rewrite is not a successful repair (#4826, #6377).
-    /// </summary>
     private async Task<MigrationReconciliationGeometryProbe> BuildCensusGeometryProbe(
         SourceGeometryCensus census,
         IReadOnlyList<Feature> features,
@@ -902,10 +873,6 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
             }
             : null;
 
-    /// <summary>
-    /// Relative disagreement between two extents in the same CRS. Degenerate extents that
-    /// are not exactly equal return <see cref="double.PositiveInfinity"/>.
-    /// </summary>
     private static double MeasureExtentDisagreement(ExtentBox left, ExtentBox right)
     {
         var width = Math.Abs(left.MaxX - left.MinX);
@@ -1232,10 +1199,6 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
         };
     }
 
-    /// <summary>
-    /// Topology result for an invalid-source target. A null validator, an empty payload, or a
-    /// validator failure is not a repair. Cancellation still propagates.
-    /// </summary>
     private async Task<bool> IsTopologicallyValidAsync(byte[]? wkb, CancellationToken cancellationToken)
     {
         if (_topologyValidator is null || wkb is not { Length: > 0 })
@@ -1254,11 +1217,6 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
         }
     }
 
-    /// <summary>
-    /// Cheap, NTS-free geometry well-formedness check. Mirrors the SDK <c>reconcile.ts</c>
-    /// "geometry is present" heuristic: a non-empty WKB payload with a byte-order byte and a
-    /// type marker is good enough to distinguish "feature copied" from "geometry dropped".
-    /// </summary>
     private static bool IsGeometryWellFormed(byte[]? wkb)
     {
         if (wkb is null || wkb.Length < 5)

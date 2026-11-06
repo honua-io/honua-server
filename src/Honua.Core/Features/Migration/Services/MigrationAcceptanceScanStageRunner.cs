@@ -12,27 +12,8 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Drives the scan stage of the migration acceptance suite by aggregating per-source
-/// <see cref="MigrationSourceInventoryArtifact"/> outputs into a deterministic
-/// <see cref="MigrationScanStageReport"/>.
-/// </summary>
-/// <remarks>
-/// This runner is scanner-agnostic: callers invoke the existing per-source scanners
-/// (<c>GeoservicesImportService.ScanSourceAsync</c>, <c>GeoServerImportService.ScanSourceAsync</c>,
-/// <see cref="OgcApiFeaturesMigrationInventoryScanner"/>, ...) themselves and hand the resulting
-/// inventory artifacts to <see cref="BuildReport"/>. The runner does not reimplement scanning
-/// and does not introduce additional protocol surface; it only rolls up classifications and
-/// orders results deterministically so the report is stable across re-runs.
-/// </remarks>
 public static class MigrationAcceptanceScanStageRunner
 {
-    /// <summary>
-    /// Builds a deterministic scan stage report from the supplied per-source inventories.
-    /// </summary>
-    /// <param name="runId">Stable identifier for the acceptance run (e.g. fixture set name).</param>
-    /// <param name="inputs">Per-fixture scan inputs.</param>
-    /// <returns>Aggregate report pinning the scan stage outputs.</returns>
     public static MigrationScanStageReport BuildReport(
         string runId,
         IEnumerable<MigrationAcceptanceScanStageInput> inputs)
@@ -128,18 +109,9 @@ public static class MigrationAcceptanceScanStageRunner
     }
 }
 
-/// <summary>
-/// One per-fixture input to <see cref="MigrationAcceptanceScanStageRunner.BuildReport"/>.
-/// </summary>
 public sealed record MigrationAcceptanceScanStageInput
 {
-    /// <summary>
-    /// Stable fixture identifier (e.g. <c>arcgis-featureserver-supported</c>).
-    /// </summary>
     public required string FixtureId { get; init; }
 
-    /// <summary>
-    /// Inventory artifact produced by the underlying scanner for this fixture.
-    /// </summary>
     public required MigrationSourceInventoryArtifact Inventory { get; init; }
 }

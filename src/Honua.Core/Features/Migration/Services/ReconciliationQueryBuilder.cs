@@ -8,15 +8,9 @@ using Honua.Core.Queries.Filters;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Compiles a shared-target reconciliation predicate against the published target schema.
-/// Dedicated import targets are probed in full so a predicate cannot conceal extra rows.
-/// </summary>
-/// <param name="metadata">Published target metadata.</param>
-/// <param name="filters">Canonical filter parser and compiler, required only for shared-target filter mirrors.</param>
+// A dedicated import target is counted in full so a filter cannot hide extra rows.
 public sealed class ReconciliationQueryBuilder(IMetadataV2GraphProvider metadata, IFilterExpressionService? filters = null)
 {
-    /// <summary>Builds the common predicate for count, extent, and sample probes.</summary>
     public async Task<FeatureQuery> BuildAsync(LayerReconciliationLayerInput layer, CancellationToken cancellationToken = default)
     {
         if (layer.TargetContainsOnlyImportedFeatures || string.IsNullOrWhiteSpace(layer.FilterMirror))
