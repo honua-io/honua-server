@@ -80,6 +80,7 @@ public sealed class ODataContractTests(ODataComponentFixture fixture) : IClassFi
             rejected.StatusCode.Should().Be(HttpStatusCode.PreconditionFailed);
             using var final = await GetJsonAsync(path);
             Attributes(final.RootElement).GetProperty("population").GetInt64().Should().Be(54321);
+            await AssertConditionalBatchUpdateAsync(path);
         }
         finally
         {
@@ -146,6 +147,34 @@ public sealed class ODataContractTests(ODataComponentFixture fixture) : IClassFi
         delete.Headers.TryAddWithoutValidation("If-Match", currentEtag);
         using var deleted = await fixture.Client.SendAsync(delete);
         deleted.StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    private async Task AssertConditionalBatchUpdateAsync(string path)
+    {
+        using var current = await fixture.Client.GetAsync(path);
+        var etag = current.Headers.ETag?.ToString();
+        etag.Should().NotBeNullOrEmpty();
+        (await BatchUpdateAsync(path, etag!, 98765)).Should().BeInRange(200, 299);
+        (await BatchUpdateAsync(path, etag!, 1)).Should().Be(412);
+        using var final = await GetJsonAsync(path);
+        Attributes(final.RootElement).GetProperty("population").GetInt64().Should().Be(98765);
+    }
+
+    private async Task<int> BatchUpdateAsync(string path, string etag, int population)
+    {
+        using var payload = ODataContent(new
+        {
+            requests = new[]
+            {
+                new { id = "conditional", method = "PATCH", url = path, atomicityGroup = "conditional",
+                    headers = new Dictionary<string, string> { ["Content-Type"] = "application/json", ["If-Match"] = etag },
+                    body = new { Attributes = new { population } } }
+            }
+        });
+        using var response = await fixture.Client.PostAsync("/odata/$batch", payload);
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        using var result = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        return result.RootElement.GetProperty("responses")[0].GetProperty("status").GetInt32();
     }
 
     private static StringContent ODataContent<T>(T value)
