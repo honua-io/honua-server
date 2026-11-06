@@ -41,7 +41,7 @@ public sealed record PMTilesPublishOptions
 
     public string? PublicBucketBaseUrl { get; set; }
 
-    // Anonymous access is only for archives with no source binding; a bound, retired, or rebound source still uses that source's access policy.
+    // Anonymous access is only for archives with no source binding; a bound archive requires that source's access policy, and a retired or rebound source is not found before that check.
     public bool AllowAnonymousUnboundArchives { get; set; }
 }
 
