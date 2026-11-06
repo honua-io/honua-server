@@ -21,7 +21,7 @@ public interface IAlertAuditOutbox
         DateTimeOffset claimedUntil,
         CancellationToken cancellationToken = default);
 
-    // Completing an already completed intent keeps the first audit identity. A false return means the lease was reclaimed and this caller's record may be a duplicate.
+    // Completing an already completed intent keeps the first audit identity. A false return means no pending row still holds this claim token.
     Task<bool> CompleteAsync(
         long outboxId,
         Guid claimToken,

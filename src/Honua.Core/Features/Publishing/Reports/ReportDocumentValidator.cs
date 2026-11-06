@@ -6,7 +6,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.Publishing.Reports;
 
-// This checks document structure only and does not require live metadata.
 public static class ReportDocumentValidator
 {
     public static ReportValidationResult Validate(ReportDocument? document)
