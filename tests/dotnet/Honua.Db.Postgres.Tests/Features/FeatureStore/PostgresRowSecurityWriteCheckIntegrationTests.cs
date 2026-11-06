@@ -4,15 +4,19 @@
 using System.Collections.Immutable;
 using System.Data;
 using System.Data.Common;
+using System.Text.Json;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Events.Outbox;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Queries.Filters;
 using Honua.Db.Postgres.Features.FeatureStore;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
+using Honua.Db.Postgres.Features.Infrastructure.Events.Outbox;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -185,6 +189,150 @@ public sealed class PostgresRowSecurityWriteCheckIntegrationTests(PostgresFixtur
         (await CountRowsAsync("south")).Should().Be(0);
     }
 
+    [IntegrationTheory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task ApplyEdits_ReplacementPreservesProtectedFieldsInsideWriterTransaction(bool ordered, bool rollbackOnFailure)
+    {
+        await fixture.ExecuteAsync($$"""
+            UPDATE "{{_schema}}".features
+            SET attributes = attributes || '{"code":"A","globalid":"stable-id","description":"remove","undeclared":"remove"}'::jsonb,
+                geometry = ST_GeomFromText('POINT(1 2)', 4326)
+            WHERE objectid = {{NorthRowId}};
+            """);
+        var replacement = Row(NorthRowId, "north", "after") with
+        {
+            PreservedAttributeNames = ["code", "globalid"],
+            ExplicitAttributeRemovals = ["code"]
+        };
+        var batch = ordered
+            ? FeatureEditBatch.Create(operations: [FeatureEditOperation.Update(replacement)], rollbackOnFailure: rollbackOnFailure)
+            : FeatureEditBatch.Create(updates: [replacement], rollbackOnFailure: rollbackOnFailure);
+
+        var result = await _store.ApplyEditsAsync(LayerId, batch);
+
+        result.IsSuccess.Should().BeTrue();
+        await using var command = fixture.DataSource.CreateCommand(
+            $"SELECT attributes::text, geometry IS NULL FROM \"{_schema}\".features WHERE objectid = $1");
+        command.Parameters.AddWithValue(NorthRowId);
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+        using var attributes = JsonDocument.Parse(reader.GetString(0));
+        attributes.RootElement.GetProperty("name").GetString().Should().Be("after");
+        attributes.RootElement.GetProperty("code").GetString().Should().Be("A");
+        attributes.RootElement.GetProperty("globalid").GetString().Should().Be("stable-id");
+        attributes.RootElement.TryGetProperty("description", out _).Should().BeFalse();
+        attributes.RootElement.TryGetProperty("undeclared", out _).Should().BeFalse();
+        reader.GetBoolean(1).Should().BeTrue();
+    }
+
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ApplyEdits_HiddenRlsRow_DeleteIsRejected(bool ordered)
+    {
+        await InsertHiddenRowAsync();
+        var batch = ordered
+            ? FeatureEditBatch.Create(operations: [FeatureEditOperation.Delete(2)])
+            : FeatureEditBatch.Create(deletes: [2]);
+
+        var result = await _store.ApplyEditsAsync(LayerId, batch);
+
+        result.DeleteResults.Should().ContainSingle().Which.IsSuccess.Should().BeFalse();
+        (await CountRowsAsync("south")).Should().Be(1);
+    }
+
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ApplyEdits_HiddenRlsRow_UpdateIntoVisiblePartitionIsRejected(bool ordered)
+    {
+        await InsertHiddenRowAsync();
+        var update = Row(2, "north", "stolen") with { PreserveOmittedMaskedAttributes = true };
+        var batch = ordered
+            ? FeatureEditBatch.Create(operations: [FeatureEditOperation.Update(update)])
+            : FeatureEditBatch.Create(updates: [update]);
+
+        var result = await _store.ApplyEditsAsync(LayerId, batch);
+
+        result.UpdateResults.Should().ContainSingle().Which.IsSuccess.Should().BeFalse();
+        (await ReadAttributesAsync(2)).Should().Be("south|private");
+    }
+
+    [IntegrationTheory]
+    [InlineData("create", false)]
+    [InlineData("update", false)]
+    [InlineData("delete", false)]
+    [InlineData("create", true)]
+    [InlineData("update", true)]
+    [InlineData("delete", true)]
+    public async Task ApplyEdits_HiddenRlsRow_SingleWriterCannotBypassPolicy(string operation, bool withOutbox)
+    {
+        await InsertHiddenRowAsync();
+        var outbox = new RecordingOutboxWriter();
+        _store = CreateStore(outbox);
+        using var scope = withOutbox ? BeginOutboxScope() : null;
+        Func<Task> write = operation switch
+        {
+            "create" => async () => { await _store.CreateAsync(LayerId, Row(0, "south", "new-private")); },
+            "update" => async () => { await _store.UpdateAsync(LayerId, Row(2, "north", "stolen")); },
+            _ => async () => { await _store.DeleteAsync(LayerId, 2); }
+        };
+
+        await write.Should().ThrowAsync<ResourceAccessDeniedException>();
+        outbox.Writes.Should().Be(0);
+        (await ReadAttributesAsync(2)).Should().Be("south|private");
+        (await CountRowsAsync("south")).Should().Be(1);
+    }
+
+    [IntegrationTheory]
+    [InlineData("create", false)]
+    [InlineData("update", false)]
+    [InlineData("delete", false)]
+    [InlineData("create", true)]
+    [InlineData("update", true)]
+    [InlineData("delete", true)]
+    public async Task ApplyEdits_HiddenRlsRow_SingleWriterInScopePreservesCommitAndReturningContract(string operation, bool withOutbox)
+    {
+        var outbox = new RecordingOutboxWriter();
+        _store = CreateStore(outbox);
+        using var scope = withOutbox ? BeginOutboxScope() : null;
+        if (operation == "delete")
+        {
+            (await _store.DeleteAsync(LayerId, NorthRowId)).Should().BeTrue();
+            (await CountRowsAsync("north")).Should().Be(0);
+        }
+        else
+        {
+            var returned = operation == "create"
+                ? await _store.CreateAsync(LayerId, Row(0, "north", "accepted"))
+                : await _store.UpdateAsync(LayerId, Row(NorthRowId, "north", "accepted"));
+            returned.Id.Should().BePositive();
+            returned.Attributes.Should().ContainKey("objectid");
+            (await ReadAttributesAsync(returned.Id)).Should().Be("north|accepted");
+        }
+        outbox.Writes.Should().Be(withOutbox ? 1 : 0);
+    }
+
+    private static IDisposable BeginOutboxScope()
+        => FeatureMutationOutboxScope.Begin(new FeatureMutationOutboxScopeData
+        {
+            EntryFactory = (id, kind, _) => new FeatureChangeOutboxEntry
+            {
+                OutboxId = Guid.NewGuid(), ServiceId = "regions", LayerId = LayerId, ObjectId = id,
+                Operation = kind, Protocol = "test", RequestId = "policy-test", EventId = "policy-test",
+                EventPayload = "{}", Status = "pending", RetryCount = 0, CreatedAt = DateTimeOffset.UtcNow
+            }
+        });
+
+    private Task InsertHiddenRowAsync()
+        => fixture.ExecuteAsync($$"""
+            INSERT INTO "{{_schema}}".features (objectid, layer_id, attributes)
+            VALUES (2, {{LayerId}}, '{"region":"south","name":"private","secret":"hidden"}');
+            """);
+
     private static Feature Row(long id, string region, string name)
         => Feature.Create(
             id,
@@ -208,7 +356,7 @@ public sealed class PostgresRowSecurityWriteCheckIntegrationTests(PostgresFixtur
         return (string)(await command.ExecuteScalarAsync())!;
     }
 
-    private PostgresFeatureStoreRefactored CreateStore()
+    private PostgresFeatureStoreRefactored CreateStore(IFeatureChangeOutboxWriter? outbox = null)
     {
         var connections = Substitute.For<IAdoNetDatabaseConnectionProvider>();
         connections.OpenConnectionAsync(Arg.Any<CancellationToken>()).Returns(async call =>
@@ -227,7 +375,7 @@ public sealed class PostgresRowSecurityWriteCheckIntegrationTests(PostgresFixtur
         var dictionaryPool = new DefaultObjectPoolProvider().Create(new DefaultPooledObjectPolicy<Dictionary<string, object?>>());
         var dataAccess = new FeatureDataAccess(new FeatureDataAccessDependencies(
             connections, new GeometryProcessor(), cacheManager, dictionaryPool,
-            null, NullLogger<FeatureDataAccess>.Instance, null, null, null, _schema));
+            null, NullLogger<FeatureDataAccess>.Instance, null, null, null, _schema, OutboxRepository: outbox));
 
         var resource = new MetadataV2Resource
         {
@@ -274,4 +422,16 @@ public sealed class PostgresRowSecurityWriteCheckIntegrationTests(PostgresFixtur
         public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(long revision, CancellationToken cancellationToken = default)
             => ValueTask.FromResult<MetadataV2GraphSnapshot?>(revision == snapshot.Revision ? snapshot : null);
     }
+    private sealed class RecordingOutboxWriter : IFeatureChangeOutboxWriter
+    {
+        public int Writes { get; private set; }
+
+        public Task WriteOutboxRowAsync(DbConnection connection, DbTransaction transaction,
+            FeatureChangeOutboxEntry entry, CancellationToken cancellationToken)
+        {
+            Writes++;
+            return Task.CompletedTask;
+        }
+    }
+
 }

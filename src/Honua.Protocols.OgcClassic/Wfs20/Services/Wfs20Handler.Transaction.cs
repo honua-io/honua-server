@@ -772,6 +772,16 @@ internal sealed partial class Wfs20Handler
         var payload = await ReadTransactionFeaturePayloadAsync(
             resource, featureElement, cancellationToken).ConfigureAwait(false);
 
+        var attributes = _mutationValidator.ValidateAttributes(
+            resource,
+            payload.Attributes,
+            ValidationExtensions.AttributeValidationMode.Strict,
+            isUpdate: true);
+        if (!attributes.IsValid)
+        {
+            throw new ArgumentException(attributes.ErrorMessage ?? "Invalid attributes.");
+        }
+
         return await CreateTransactionFeatureAsync(
             resource,
             objectId,

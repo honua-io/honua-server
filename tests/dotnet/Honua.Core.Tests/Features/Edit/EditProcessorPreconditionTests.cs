@@ -25,6 +25,38 @@ public sealed class EditProcessorPreconditionTests
 
     private static EditProcessor CreateProcessor() => new(NullLogger<EditProcessor>.Instance);
 
+    [UnitTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ToFeatureEditBatch_ReplacementWithProtectedFields_PreservesProtectedAndRemovesOmittedEditableFields(bool ordered)
+    {
+        var resource = new MetadataV2Resource
+        {
+            Editing = new MetadataV2ResourceEditing { GlobalIdField = "globalid" },
+            SchemaFields =
+            [
+                new() { Name = "name", Editable = true },
+                new() { Name = "description", Editable = true },
+                new() { Name = "code", Editable = false },
+                new() { Name = "globalid", Editable = true }
+            ]
+        };
+        var update = EditFeature.ForUpdate(42, null,
+            ImmutableDictionary<string, object?>.Empty.Add("name", "after"), EditUpdateMode.Replace);
+        var request = ordered
+            ? UnifiedEditRequest.WithOperations([UnifiedEditOperation.Update(update)])
+            : UnifiedEditRequest.WithUpdates([update]);
+
+        var batch = CreateProcessor().ToFeatureEditBatch(request, resource);
+        var feature = ordered ? batch.Operations[0].Feature!.Value : batch.Updates[0];
+
+        feature.PreserveOmittedMaskedAttributes.Should().BeFalse();
+        feature.PreservedAttributeNames.Should().BeEquivalentTo(["code", "globalid"]);
+        feature.ExplicitAttributeRemovals.Should().BeEmpty();
+        feature.Attributes.Should().ContainSingle().Which.Key.Should().Be("name");
+        feature.PreserveOmittedGeometry.Should().BeFalse("replacement still clears omitted geometry");
+    }
+
     [UnitTest]
     public void ToFeatureEditBatch_WithoutPreconditions_ProducesEmptyPreconditions()
     {

@@ -861,50 +861,56 @@ internal sealed partial class OgcFeaturesTransactionHandler(
                     $"Invalid geometry: {geometryValidation.ErrorMessage}");
             }
 
-            var attributesBuilder = existing.Attributes.ToBuilder();
-            if (patchRequest.HasProperties)
+            var fieldsByName = resource.SchemaFields.ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
+            var removals = ImmutableArray.CreateBuilder<string>();
+            foreach (var (name, value) in (IReadOnlyDictionary<string, object?>?)patchRequest.Properties ?? ImmutableDictionary<string, object?>.Empty)
             {
-                if (patchRequest.Properties == null)
+                if (value is not null)
                 {
-                    attributesBuilder.Clear();
+                    continue;
                 }
-                else
+                if (fieldsByName.TryGetValue(name, out var field) && AttributeMutationPolicy.IsReadOnlyOnUpdate(resource, field))
                 {
-                    foreach (var (key, value) in patchRequest.Properties)
-                    {
-                        if (value == null)
-                        {
-                            attributesBuilder.Remove(key);
-                        }
-                        else
-                        {
-                            attributesBuilder[key] = value;
-                        }
-                    }
+                    return StandardErrorHelpers.CreateBadRequest(context, $"Field '{field.Name}' is not editable.");
                 }
+                removals.Add(field?.Name ?? name);
             }
-
-            var attributesResult = _mutationValidator.ValidateAttributes(
+            var submittedAttributes = _mutationValidator.ValidateAttributes(
                 resource,
-                attributesBuilder.ToImmutable(),
+                patchRequest.Properties?.Where(property => property.Value is not null)
+                    .ToImmutableDictionary(property => property.Key, property => property.Value, StringComparer.OrdinalIgnoreCase),
                 ValidationExtensions.AttributeValidationMode.Strict,
                 isUpdate: true);
-            if (!attributesResult.IsValid)
+            if (!submittedAttributes.IsValid)
             {
                 return StandardErrorHelpers.CreateBadRequest(
                     context,
-                    attributesResult.ErrorMessage ?? "Invalid attributes.");
+                    submittedAttributes.ErrorMessage ?? "Invalid attributes.");
+            }
+
+            var attributesBuilder = existing.Attributes.ToBuilder();
+            if (patchRequest.HasProperties && patchRequest.Properties is null)
+            {
+                attributesBuilder.Clear();
+            }
+            else
+            {
+                foreach (var name in removals)
+                {
+                    attributesBuilder.Remove(name);
+                }
+                foreach (var (key, value) in submittedAttributes.Value!)
+                {
+                    attributesBuilder[key] = value;
+                }
             }
 
             var feature = Feature.Create(
                 objectId,
                 geometryValidation.Geometry,
-                attributesResult.Value!) with
+                attributesBuilder.ToImmutable()) with
             {
-                ExplicitAttributeRemovals = patchRequest.Properties?
-                    .Where(property => property.Value is null)
-                    .Select(property => property.Key)
-                    .ToImmutableArray() ?? ImmutableArray<string>.Empty
+                ExplicitAttributeRemovals = removals.ToImmutable()
             };
 
             try
