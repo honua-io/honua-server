@@ -20,6 +20,7 @@ using NSubstitute;
 
 namespace Honua.Hosting.ComponentTests;
 
+[Trait("Tier", "Integration")]
 public sealed class GeoServicesServiceRoutesTests
 {
     [Theory]
