@@ -258,7 +258,7 @@ internal sealed partial class ODataBatchHandler
                             var existing = snapshot.Existing;
                             var isFirstMutation = snapshot.IsFirstMutation;
 
-                            Feature? mergeExisting = isPatch ? existing.Value : null;
+                            Feature? mergeExisting = isPatch ? existing : null;
 
                             Feature parsedFeature;
                             // PATCH preserves existing geometry when the body omits Geometry,
@@ -271,7 +271,7 @@ internal sealed partial class ODataBatchHandler
                             // PATCH attribute-only updates because the merge preserves the
                             // prior WKB.
                             var requestGeometryChanged = TryGetGeometrySpecified(request.Body)
-                                || (!isPatch && existing.Value.Geometry is { Length: > 0 });
+                                || (!isPatch && existing.Geometry is { Length: > 0 });
                             try
                             {
                                 parsedFeature = await CreateFeatureFromBodyAsync(
@@ -325,7 +325,7 @@ internal sealed partial class ODataBatchHandler
                             // later conditions were validated against their prepared results.
                             if (isFirstMutation)
                             {
-                                RegisterPrecondition(preconditionsByLayer, layerId.Value, objectId.Value, request.Headers, existing.Value, requireSnapshot: isPatch);
+                                RegisterPrecondition(preconditionsByLayer, layerId.Value, objectId.Value, request.Headers, existing, requireSnapshot: isPatch);
                             }
                             writeLayerIds.Add(layer.PublicLayerId);
                             break;
@@ -387,11 +387,11 @@ internal sealed partial class ODataBatchHandler
                                 deleteRequests[layerId.Value] = deleteList;
                             }
 
-                            deleteList.Add((request.Id, deleteValidation.Batch.Value.Deletes[0], existing.Value));
+                            deleteList.Add((request.Id, deleteValidation.Batch.Value.Deletes[0], existing));
                             preparedFeatures[target] = null;
                             if (isFirstMutation)
                             {
-                                RegisterPrecondition(preconditionsByLayer, layerId.Value, deleteValidation.Batch.Value.Deletes[0], request.Headers, existing.Value);
+                                RegisterPrecondition(preconditionsByLayer, layerId.Value, deleteValidation.Batch.Value.Deletes[0], request.Headers, existing);
                             }
                             writeLayerIds.Add(layer.PublicLayerId);
                             break;

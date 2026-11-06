@@ -36,8 +36,11 @@ public sealed partial class PostgresStorageMappedFeatureReaderVersionIntegration
         var visible = feature!.Value;
         var stored = Feature.Create(1, visible.Geometry, new Dictionary<string, object?>
         {
-            ["objectid"] = 1L, ["count"] = 1L, ["tenant"] = "a",
-            ["secret"] = "base-one", ["storedOnly"] = "internal-value"
+            ["objectid"] = 1L,
+            ["count"] = 1L,
+            ["tenant"] = "a",
+            ["secret"] = "base-one",
+            ["storedOnly"] = "internal-value"
         }.ToImmutableDictionary());
         visible.ReadStateToken.Should().Be(FeatureStateToken.Compute(stored));
         visible.ReadStateToken.Should().NotBe(FeatureStateToken.Compute(visible));
