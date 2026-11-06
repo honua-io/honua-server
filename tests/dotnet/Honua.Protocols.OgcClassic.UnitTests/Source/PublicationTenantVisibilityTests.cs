@@ -101,7 +101,8 @@ public sealed class PublicationTenantVisibilityTests
             : await WmtsRequestHandlers.HandleWmts(context);
         await result.ExecuteAsync(context);
         context.Response.Body.Position = 0;
-        var body = await new StreamReader(context.Response.Body).ReadToEndAsync();
+        using var reader = new StreamReader(context.Response.Body);
+        var body = await reader.ReadToEndAsync();
         context.Response.StatusCode.Should().Be(200, body);
         return body;
     }
