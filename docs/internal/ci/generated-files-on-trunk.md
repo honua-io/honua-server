@@ -200,5 +200,5 @@ receipt. It does not dispatch another regeneration.
 The named PR Gate jobs still run and complete; they skip the expensive steps.
 The normalization consumer proves the same exemption from base policy before it
 will skip a missing envelope. CodeQL's `pull_request` path filter does not
-include these four outputs. A generated-only pull request opened after this
+include these three outputs. A generated-only pull request opened after this
 policy is on trunk is the hosted demonstration that the expensive steps skip.

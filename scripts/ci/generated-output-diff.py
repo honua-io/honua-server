@@ -25,7 +25,6 @@ import zipfile
 REPOSITORY = 'honua-io/honua-server'
 WORKFLOW = '.github/workflows/generated-files-on-trunk.yml'
 SHA = re.compile(r'[0-9a-f]{40}')
-# Admission requires every named output to remain on the base allowlist.
 NAMED_OUTPUTS = (
     'docs/gis/data/capability-matrix.v1.json',
     'docs/gis/data/feature-catalog.json',
