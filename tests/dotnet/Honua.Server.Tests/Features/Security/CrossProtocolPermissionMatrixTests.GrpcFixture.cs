@@ -55,7 +55,11 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     private static MetadataV2GraphSnapshot ReadSnapshot(TestMetadataV2GraphProvider provider)
     {
         var pending = provider.GetCurrentAsync();
-        pending.IsCompletedSuccessfully.Should().BeTrue();
-        return pending.Result;
+        if (pending.IsCompletedSuccessfully)
+        {
+            return pending.Result;
+        }
+
+        throw new InvalidOperationException("The in-memory metadata fixture must complete synchronously.");
     }
 }
