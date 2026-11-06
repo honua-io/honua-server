@@ -3,23 +3,6 @@
 
 namespace Honua.Core.Features.Licensing.Domain;
 
-/// <summary>
-/// Definition of a customer-facing capability key — the canonical, dot-namespaced
-/// <c>&lt;category&gt;.&lt;name&gt;</c> vocabulary a buyer recognizes (issue #2893,
-/// epic #2892). This is a strictly broader vocabulary than
-/// <see cref="FeatureCatalog"/>: <see cref="FeatureCatalog"/> enumerates only the
-/// edition-gated (Pro/Enterprise) entitlement keys enforced by
-/// <c>LicenseGate</c>, while <see cref="CapabilityKeyCatalog"/> additionally
-/// enumerates Community-tier capabilities that ship ungated and descriptive
-/// edition-qualified keys whose existing runtime gates are not owned by
-/// <see cref="FeatureCatalog"/>.
-/// </summary>
-/// <param name="Key">Unique capability identifier (dot-namespaced, lowercase).</param>
-/// <param name="DisplayName">Human-readable capability name.</param>
-/// <param name="Category">Capability category for grouping.</param>
-/// <param name="Edition">Minimum edition required to use this capability.</param>
-/// <param name="Description">Brief description of the capability.</param>
-/// <param name="Status">Optional release posture for keys whose live/preview/experimental state is part of the public contract.</param>
 public sealed record CapabilityKeyDefinition(
     string Key,
     string DisplayName,
@@ -28,50 +11,22 @@ public sealed record CapabilityKeyDefinition(
     string Description,
     string? Status = null);
 
-/// <summary>
-/// Canonical customer-facing capability vocabulary (#2893). Extends
-/// <see cref="FeatureCatalog"/> with Community-tier and descriptive
-/// edition-qualified capability keys. This type is purely a description layer:
-/// it does not touch <c>LicenseGate</c> or any entitlement-enforcement code path.
-/// <see cref="All"/> is the single list downstream consumers (the route→capability
-/// mapping, the crosswalk artifact, honua-evidence, honua-site, and the SDK
-/// coverage snapshots) must treat as authoritative; nothing else may fork it.
-/// </summary>
 public static class CapabilityKeyCatalog
 {
-    /// <summary>
-    /// Release-posture value marking a capability as experimental. Experimental maturity is
-    /// independent of deployability: routed keys remain valid deployment-profile inputs, while
-    /// descriptive-only keys are excluded because no runtime route resolves them.
-    /// </summary>
+    // Experimental maturity does not remove a routed key from deployment profiles; a descriptive-only key is excluded because no route resolves it.
     public const string ExperimentalStatus = "experimental";
 
-    /// <summary>
-    /// Release-posture value marking a shipped capability as Preview, outside the GA
-    /// operational, SLA, and scale commitments.
-    /// </summary>
     public const string PreviewStatus = "preview";
 
-    /// <summary>
-    /// Release-posture value for capabilities that support Honua's own hosted operation and are
-    /// not offered to licensees. Distinct from <see cref="PreviewStatus"/>, which promises a GA
-    /// path: this one promises the opposite. A licensee cannot operate these at all, because the
-    /// Fair Core License prohibits providing Honua to third parties as a hosted or managed
-    /// service. Capabilities with this status are never published as customer documentation.
-    /// </summary>
+    // These capabilities run Honua's own hosted operation and are never offered to a licensee, because the Fair Core License prohibits providing Honua as a hosted service.
     public const string InternalStatus = "internal";
 
-    /// <summary>
-    /// Edition-qualified, routed capabilities that remain deployable while their public release
-    /// posture is experimental.
-    /// </summary>
     public static IReadOnlyList<CapabilityKeyDefinition> RoutedExperimentalKeys { get; } =
     [
         new("serve.i3s-scene", "I3S Scene Serving", Categories.Serve,
             HonuaEdition.Enterprise, "Serve I3S metadata previews through Enterprise-gated SceneServer handlers; unlicensed requests return HTTP 402.", Status: ExperimentalStatus),
     ];
 
-    /// <summary>Routed capabilities that ship as explicit opt-in Preview.</summary>
     public static IReadOnlyList<CapabilityKeyDefinition> RoutedPreviewKeys { get; } =
     [
         new("admin.multi-tenancy", "Multi-Tenant Operation", Categories.Internal,
@@ -83,62 +38,34 @@ public static class CapabilityKeyCatalog
             HonuaEdition.Pro, "Use disconnected field sync, form offline policy discovery, GeoServices replica delta sync delivered as Esri JSON, and FieldCollection cursor/change exchange.", Status: PreviewStatus),
     ];
 
-    /// <summary>
-    /// Capability categories introduced alongside the existing
-    /// <see cref="FeatureCatalog.Categories"/> set. Community-only groupings
-    /// that do not correspond to an edition-gated feature category.
-    /// </summary>
     public static class Categories
     {
-        /// <summary>Protocol/query serve surfaces (Community-tier "you can reach this protocol").</summary>
         public const string Serve = "Serve";
 
-        /// <summary>Capability/service discovery and metadata-advertisement surfaces.</summary>
         public const string Discovery = "Discovery";
 
-        /// <summary>General admin/control-plane CRUD surfaces with no dedicated entitlement.</summary>
         public const string ControlPlane = "ControlPlane";
 
-        /// <summary>
-        /// Capabilities that exist to run Honua's own hosted offering, not to be deployed by a
-        /// licensee. Not part of the customer-deployable product surface and with no path to
-        /// general availability as a customer feature: the Fair Core License prohibits
-        /// providing Honua to third parties as a hosted or managed service, so a licensee can
-        /// never be the party operating them. Never published as customer documentation.
-        /// </summary>
+        // A licensee can never operate the hosted-only capabilities, and they are never published as customer documentation.
         public const string Internal = "Internal";
 
-        /// <summary>Operational health, metrics, and observability surfaces.</summary>
         public const string Ops = "Ops";
 
-        /// <summary>Configured external data-provider implementations.</summary>
         public const string DataProviders = "DataProviders";
 
-        /// <summary>Provider-neutral interchange and response formats.</summary>
         public const string Format = "Format";
 
-        /// <summary>Job/process execution surfaces (geoprocessing, OGC API Processes).</summary>
         public const string Process = "Process";
 
-        /// <summary>Collaborative map/content session surfaces.</summary>
         public const string Collaboration = "Collaboration";
 
-        /// <summary>Showcase/demo-only surfaces (not a sellable capability).</summary>
         public const string Demo = "Demo";
 
-        /// <summary>Third-party data enrichment dataset surfaces.</summary>
         public const string Enrichment = "Enrichment";
 
-        /// <summary>Durable job/task execution substrate surfaces.</summary>
         public const string Jobs = "Jobs";
     }
 
-    /// <summary>
-    /// The Community-tier capability keys this catalog adds. Every entry here
-    /// carries <see cref="HonuaEdition.Community"/> — Pro/Enterprise capabilities
-    /// remain sourced exclusively from <see cref="FeatureCatalog.All"/> so the
-    /// entitlement vocabulary has exactly one owner.
-    /// </summary>
     public static IReadOnlyList<CapabilityKeyDefinition> CommunityKeys { get; } =
     [
         // Serve — GeoServices REST protocol surfaces (query/read side; write
@@ -278,11 +205,6 @@ public static class CapabilityKeyCatalog
             HonuaEdition.Community, "Read-only retrieval of executable spec artifacts by content hash. Applying a spec plan remains Pro-gated (ai.spec-apply)."),
     ];
 
-    /// <summary>
-    /// Descriptive keys that are edition-qualified but intentionally do not enter
-    /// <see cref="FeatureCatalog"/> or change runtime entitlement enforcement. Warehouse
-    /// providers remain experimental and fail closed behind their existing feature gates.
-    /// </summary>
     public static IReadOnlyList<CapabilityKeyDefinition> DescriptiveKeys { get; } =
     [
         new("provider.redshift", "Amazon Redshift Provider", Categories.DataProviders,
@@ -293,14 +215,6 @@ public static class CapabilityKeyCatalog
             HonuaEdition.Enterprise, "Experimental, off-by-default Databricks SQL feature provider; enabling the capability key alone does not enable the provider.", Status: ExperimentalStatus),
     ];
 
-    /// <summary>
-    /// The full canonical capability vocabulary: <see cref="CommunityKeys"/>,
-    /// descriptive edition-qualified keys, plus
-    /// every existing edition-gated key from <see cref="FeatureCatalog.All"/>,
-    /// projected into the shared <see cref="CapabilityKeyDefinition"/> shape.
-    /// This is the list every downstream consumer (route→capability mapping,
-    /// crosswalk artifact, honua-evidence) must resolve against.
-    /// </summary>
     public static IReadOnlyList<CapabilityKeyDefinition> All { get; } =
     [
         .. CommunityKeys,
@@ -323,15 +237,7 @@ public static class CapabilityKeyCatalog
         => string.Equals(feature.Category, FeatureCatalog.Categories.Alerts, StringComparison.Ordinal)
             || string.Equals(feature.Category, FeatureCatalog.Categories.Channels, StringComparison.Ordinal);
 
-    /// <summary>
-    /// The deployable subset of <see cref="All"/> — every key a deployment profile may enable.
-    /// Descriptive keys are excluded because no route resolves to them, so enabling one narrows
-    /// a deployment to nothing served (every request 404s at
-    /// <c>UseDeploymentCapabilityProfile</c>) while still deriving a paid <c>requiredEdition</c>
-    /// from the key's edition qualifier. They stay in <see cref="All"/> because the vocabulary
-    /// is what the crosswalk artifact and honua-evidence resolve against; they are kept out of
-    /// deployment inputs because that is the only place their lack of enforcement is harmful.
-    /// </summary>
+    // Descriptive keys are excluded from deployment profiles because enabling one would make every request miss while still deriving a paid edition.
     public static IReadOnlyList<CapabilityKeyDefinition> DeployableKeys { get; } =
     [
         .. All.Except(DescriptiveKeys),

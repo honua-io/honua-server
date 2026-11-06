@@ -3,18 +3,10 @@
 
 namespace Honua.Core.Features.Import.ObjectStore;
 
-/// <summary>
-/// Parses an <c>s3://</c> source and applies the bucket and role allow-lists.
-/// A denial does not call the cloud.
-/// </summary>
 public static class ImportObjectStorePolicy
 {
     private const int MaxSourceUriLength = 2048;
 
-    /// <summary>
-    /// Admits <paramref name="sourceUri"/> when the scheme is <c>s3</c>, the bucket is
-    /// allow-listed, and <paramref name="assumeRoleArn"/> is either omitted or allow-listed.
-    /// </summary>
     public static bool TryAdmit(
         string? sourceUri,
         string? assumeRoleArn,
@@ -48,7 +40,6 @@ public static class ImportObjectStorePolicy
         return true;
     }
 
-    /// <summary>Whether <paramref name="bucket"/> matches an exact name or a trailing-<c>*</c> prefix.</summary>
     public static bool IsBucketAllowed(string bucket, IEnumerable<string>? patterns)
     {
         if (string.IsNullOrWhiteSpace(bucket) || patterns is null)
@@ -81,7 +72,6 @@ public static class ImportObjectStorePolicy
         return false;
     }
 
-    /// <summary>Whether <paramref name="roleArn"/> equals a configured role ARN.</summary>
     public static bool IsRoleAllowed(string roleArn, IEnumerable<ImportObjectStoreRoleOptions>? roles)
     {
         if (string.IsNullOrWhiteSpace(roleArn) || roles is null)
@@ -179,10 +169,6 @@ public static class ImportObjectStorePolicy
         return true;
     }
 
-    /// <summary>
-    /// Path after the bucket, without the separator slash and without a query or fragment.
-    /// Taken from the original text so '.' and '..' are still present.
-    /// </summary>
     private static bool TryReadRawKey(string candidate, out string rawKey)
     {
         rawKey = string.Empty;

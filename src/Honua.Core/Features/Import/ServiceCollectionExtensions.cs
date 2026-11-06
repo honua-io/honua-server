@@ -12,16 +12,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Core.Features.Import;
 
-/// <summary>
-/// Service registration helpers for import schema analysis.
-/// </summary>
 public static class ServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers the import schema suggestion service and supporting services.
-    /// </summary>
-    /// <param name="services">The service collection.</param>
-    /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddImportSuggestionsCore(this IServiceCollection services)
     {
         services.TryAddSingleton<IEsriConstructCapabilityRegistry>(

@@ -6,10 +6,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.Publishing.Dashboards;
 
-/// <summary>
-/// Source-generated JSON context for the dashboard document contracts. Mirrors
-/// <c>ReportDocumentJsonContext</c> (reflection-based serialization is disabled app-wide).
-/// </summary>
 [JsonSourceGenerationOptions(
     JsonSerializerDefaults.General,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]

@@ -5,13 +5,9 @@ using Honua.Core.Features.Operations.Domain;
 
 namespace Honua.Core.Features.Operations.Abstractions;
 
-/// <summary>Optionally captures stable execution targets before validation, policy and approval.</summary>
 public interface IOperationRequestPreparer
 {
-    /// <summary>
-    /// Returns a copied request with its resolved target pinned. Approved replay must
-    /// retain and verify its sealed target rather than resolving a new authority.
-    /// </summary>
+    // Approved replay must keep and verify its sealed target rather than resolving a new authority.
     Task<OperationRequest> PrepareAsync(
         OperationRequest request,
         OperationPolicyContext context,

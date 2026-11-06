@@ -6,59 +6,31 @@ using Honua.Core.Features.Security.Domain;
 
 namespace Honua.Core.Features.Publishing.Content.Domain;
 
-/// <summary>
-/// Server-owned access/share/embed/public-link policy for a published route. This
-/// is the authoritative source of truth; Console must not treat publish/share/embed
-/// state as local UI state. A snapshot of this policy is also captured on each
-/// immutable version at publish time.
-/// </summary>
+// This policy is the source of truth; the console must not treat publish, share, or embed state as local UI state.
 public sealed record ContentPublicationPolicy
 {
-    /// <summary>Visibility scope of the route. Defaults to <see cref="ContentPublicationVisibility.Private"/>.</summary>
     [JsonPropertyName("visibility")]
     public ContentPublicationVisibility Visibility { get; init; } = ContentPublicationVisibility.Private;
 
-    /// <summary>
-    /// Role/anonymous access policy enforced by backend reads via the shared
-    /// <c>IAccessPolicyEvaluator</c>. When null, visibility alone governs access.
-    /// </summary>
     [JsonPropertyName("access")]
     public AccessPolicy? Access { get; init; }
 
-    /// <summary>Sharing policy.</summary>
     [JsonPropertyName("share")]
     public ContentSharePolicy Share { get; init; } = new();
 
-    /// <summary>Embedding policy.</summary>
     [JsonPropertyName("embed")]
     public ContentEmbedPolicy Embed { get; init; } = new();
 
-    /// <summary>Backing-service policy.</summary>
     [JsonPropertyName("service")]
     public ContentServicePolicy Service { get; init; } = new();
 
-    /// <summary>Public-link policy. Disabled by default; tokens are stored as hashes only.</summary>
     [JsonPropertyName("publicLink")]
     public ContentPublicLinkPolicy PublicLink { get; init; } = new();
 }
 
-/// <summary>
-/// Normalizes a <see cref="ContentPublicationPolicy"/> so its nested members are
-/// never null. JSON deserialization (including the source-generated path) does not
-/// run record property initializers for members absent from the payload, so a
-/// minimal create body (for example <c>{"visibility":"organization"}</c>) can
-/// produce a policy with null <c>Share</c>/<c>Embed</c>/<c>Service</c>/<c>PublicLink</c>
-/// members. Callers that persist or mutate a policy run it through this normalizer
-/// first so downstream code can dereference nested members safely.
-/// </summary>
+// Source-generated JSON does not run property initializers for omitted members, so a policy must be normalized before it is persisted.
 public static class ContentPublicationPolicyNormalizer
 {
-    /// <summary>
-    /// Returns a policy whose nested members are guaranteed non-null, defaulting any
-    /// null member (or the policy itself) to its initialized default.
-    /// </summary>
-    /// <param name="policy">The policy to normalize, or null to produce a default policy.</param>
-    /// <returns>A policy with non-null nested members.</returns>
     public static ContentPublicationPolicy Normalize(ContentPublicationPolicy? policy)
     {
         policy ??= new ContentPublicationPolicy();
@@ -80,105 +52,76 @@ public static class ContentPublicationPolicyNormalizer
     }
 }
 
-/// <summary>Sharing policy for a published route.</summary>
 public sealed record ContentSharePolicy
 {
-    /// <summary>When true, the artifact may be shared with other principals.</summary>
     [JsonPropertyName("allowSharing")]
     public bool AllowSharing { get; init; }
 
-    /// <summary>When true, anonymous (unauthenticated) reads are permitted via the route.</summary>
     [JsonPropertyName("allowAnonymous")]
     public bool AllowAnonymous { get; init; }
 
-    /// <summary>Optional explicit scopes the artifact may be shared with (org/team ids).</summary>
     [JsonPropertyName("allowedScopes")]
     public IReadOnlyList<string>? AllowedScopes { get; init; }
 }
 
-/// <summary>Embedding policy. Default denies embedding.</summary>
 public sealed record ContentEmbedPolicy
 {
-    /// <summary>Allow/deny flag for embedding the artifact in an iframe.</summary>
     [JsonPropertyName("allowEmbedding")]
     public bool AllowEmbedding { get; init; }
 
-    /// <summary>Allowed embedding origins (used to gate embed reads and emit CSP/CORS hints).</summary>
     [JsonPropertyName("allowedOrigins")]
     public IReadOnlyList<string>? AllowedOrigins { get; init; }
 
-    /// <summary>Allowed frame ancestors for the embedded artifact.</summary>
     [JsonPropertyName("frameAncestors")]
     public IReadOnlyList<string>? FrameAncestors { get; init; }
 }
 
-/// <summary>Policy describing how the artifact's backing services are exposed.</summary>
 public sealed record ContentServicePolicy
 {
-    /// <summary>When true, backing service reads still require authentication even for a public route.</summary>
     [JsonPropertyName("requireAuthenticatedServices")]
     public bool RequireAuthenticatedServices { get; init; }
 
-    /// <summary>Optional explicit list of backing service ids the artifact exposes.</summary>
     [JsonPropertyName("allowedServiceIds")]
     public IReadOnlyList<string>? AllowedServiceIds { get; init; }
 }
 
-/// <summary>
-/// Public-link policy. Public-link support is security sensitive: it is disabled by
-/// default, and link records store only a stable unguessable id plus an optional
-/// hash of the link token. The raw token is never persisted.
-/// </summary>
+// Public links are off by default, and the registry stores an id plus an optional token hash, never the raw token.
 public sealed record ContentPublicLinkPolicy
 {
-    /// <summary>Master enable flag. When false, all public-link reads are denied.</summary>
     [JsonPropertyName("enabled")]
     public bool Enabled { get; init; }
 
-    /// <summary>Issued public links (ids and hashes only).</summary>
     [JsonPropertyName("links")]
     public IReadOnlyList<ContentPublicLink> Links { get; init; } = [];
 }
 
-/// <summary>
-/// A single public link. Stores a stable id and an optional token hash only;
-/// the raw token is returned once at creation time and never stored or echoed.
-/// </summary>
 public sealed record ContentPublicLink
 {
-    /// <summary>Stable, unguessable link id used in the read request.</summary>
     [JsonPropertyName("linkId")]
     public required string LinkId { get; init; }
 
-    /// <summary>Base64 hash of the optional link token. Never the raw token.</summary>
+    // The stored value is a hash of the link token, never the raw token.
     [JsonPropertyName("tokenHash")]
     public string? TokenHash { get; init; }
 
-    /// <summary>Hash algorithm used for <see cref="TokenHash"/> (e.g. <c>SHA-256</c>).</summary>
     [JsonPropertyName("tokenHashAlgorithm")]
     public string? TokenHashAlgorithm { get; init; }
 
-    /// <summary>Optional human-readable label.</summary>
     [JsonPropertyName("label")]
     public string? Label { get; init; }
 
-    /// <summary>Actor that created the link.</summary>
     [JsonPropertyName("createdBy")]
     public required string CreatedBy { get; init; }
 
-    /// <summary>Creation time.</summary>
     [JsonPropertyName("createdAt")]
     public required DateTimeOffset CreatedAt { get; init; }
 
-    /// <summary>Optional expiry. Reads after this instant are denied.</summary>
     [JsonPropertyName("expiresAt")]
     public DateTimeOffset? ExpiresAt { get; init; }
 
-    /// <summary>When true, the link is revoked and reads are denied.</summary>
     [JsonPropertyName("revoked")]
     public bool Revoked { get; init; }
 
-    /// <summary>Revocation time, when revoked.</summary>
     [JsonPropertyName("revokedAt")]
     public DateTimeOffset? RevokedAt { get; init; }
 }

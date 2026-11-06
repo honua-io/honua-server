@@ -8,30 +8,11 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Operations.Services;
 
-/// <summary>
-/// Configuration-driven <see cref="IOperationPolicyDecisionPoint"/>. Evaluates the ordered
-/// <see cref="OperationPolicyOptions.Rules"/> against the operation id, caller tier, and caller
-/// role(s) on a first-match-wins basis, falling back to <see cref="OperationPolicyOptions.DefaultDecision"/>.
-/// When <see cref="OperationPolicyOptions.Enabled"/> is <see langword="false"/> it is a pass-through
-/// allow, identical to <see cref="AllowAllPolicyDecisionPoint"/>, so the default deployment stays
-/// permissive. In the Production environment the effective rule set is the operator rules followed
-/// by <see cref="OperationPolicyBuiltInRules.Production"/> (unless
-/// <see cref="OperationPolicyOptions.BuiltInProductionRules"/> opts out); a decision produced by a
-/// built-in rule carries that rule's <c>built-in:</c> reason. Evaluation is deterministic and
-/// reflection-free (AOT-safe).
-/// </summary>
+// Outside Production the decision point allows by default; Production appends the built-in rules unless the operator opts out.
 public sealed class ConfigurableOperationPolicyDecisionPoint : IOperationPolicyDecisionPoint
 {
     private readonly OperationPolicyOptions _options;
 
-    /// <summary>
-    /// Initializes a new instance of <see cref="ConfigurableOperationPolicyDecisionPoint"/>.
-    /// </summary>
-    /// <param name="options">The bound policy options.</param>
-    /// <param name="productionEnvironment">
-    /// Whether the host runs in the Production environment, which appends the built-in
-    /// administrator rules after the operator rules.
-    /// </param>
     public ConfigurableOperationPolicyDecisionPoint(
         IOptions<OperationPolicyOptions> options,
         bool productionEnvironment = false)
@@ -41,13 +22,8 @@ public sealed class ConfigurableOperationPolicyDecisionPoint : IOperationPolicyD
         Composition = OperationPolicyBuiltInRules.Compose(_options, productionEnvironment);
     }
 
-    /// <summary>
-    /// The effective policy this decision point evaluates: operator rules, built-in rules, and the
-    /// default decision.
-    /// </summary>
     public OperationPolicyComposition Composition { get; }
 
-    /// <inheritdoc />
     public Task<PolicyDecision> EvaluateAsync(
         IOperationDescriptor descriptor,
         OperationRequest request,

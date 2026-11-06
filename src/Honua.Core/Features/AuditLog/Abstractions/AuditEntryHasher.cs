@@ -7,56 +7,12 @@ using System.Text;
 
 namespace Honua.Core.Features.AuditLog.Abstractions;
 
-/// <summary>
-/// Computes the tamper-evident hash chain for audit log rows (#350).
-/// </summary>
-/// <remarks>
-/// <para>
-/// Each row carries an <c>entry_hash</c>. New rows use
-/// <see cref="ComputeEntryMac"/>, an HMAC-SHA256 under a key that is not stored
-/// in the database. Rows written before that key were
-/// <c>SHA-256(prev_hash || canonical(row))</c> via <see cref="ComputeEntryHash"/>.
-/// <c>canonical(row)</c> is a stable, ordered, separator-escaped serialization of
-/// the row's immutable fields, shared by both digests so a verifier can replay
-/// either form.
-/// </para>
-/// <para>
-/// The serialization is deliberately framework-free and allocation-light so it
-/// is AOT-safe and identical across the writer and the verifier. Field values
-/// are length-prefixed to make the encoding injective: no combination of field
-/// contents can be confused with a different combination.
-/// </para>
-/// </remarks>
+// New rows are HMAC-SHA256 under a key that is not stored in the database; older rows stay SHA-256 of the previous hash and the canonical row.
 public static class AuditEntryHasher
 {
-    /// <summary>
-    /// Canonical sentinel written into the chain for a <c>null</c> field value,
-    /// distinct from an empty string (which is encoded with length 0).
-    /// The leading NUL is part of the stored canonical form; do not drop it or
-    /// every existing legacy digest stops matching.
-    /// </summary>
+    // A null field uses a sentinel distinct from an empty string, and dropping that sentinel would invalidate every existing legacy digest.
     private const string NullSentinel = "\0null";
 
-    /// <summary>
-    /// Computes the legacy unkeyed hex SHA-256 <c>entry_hash</c> for an audit row.
-    /// </summary>
-    /// <param name="previousHash">
-    /// The <c>entry_hash</c> of the preceding row, or <c>null</c>/empty for the
-    /// genesis row.
-    /// </param>
-    /// <param name="timestamp">The row timestamp (UTC instant).</param>
-    /// <param name="eventType">The event type.</param>
-    /// <param name="actor">The actor identifier.</param>
-    /// <param name="actorType">The actor classification.</param>
-    /// <param name="resourceType">The resource type.</param>
-    /// <param name="resourceId">The optional resource identifier.</param>
-    /// <param name="action">The dotted action name.</param>
-    /// <param name="outcome">The outcome classification.</param>
-    /// <param name="correlationId">The correlation identifier.</param>
-    /// <param name="remoteIp">The optional remote IP.</param>
-    /// <param name="userAgent">The optional user agent.</param>
-    /// <param name="details">The opaque detail payload.</param>
-    /// <returns>A lowercase 64-character hex SHA-256 digest.</returns>
     public static string ComputeEntryHash(
         string? previousHash,
         DateTimeOffset timestamp,
@@ -89,27 +45,6 @@ public static class AuditEntryHasher
         return Convert.ToHexStringLower(SHA256.HashData(bytes));
     }
 
-    /// <summary>
-    /// Computes the keyed hex HMAC-SHA256 <c>entry_hash</c> for an audit row.
-    /// </summary>
-    /// <param name="chainKey">Key material held outside the database. At least 32 bytes.</param>
-    /// <param name="previousHash">
-    /// The <c>entry_hash</c> of the preceding row, or <c>null</c>/empty for the
-    /// genesis row.
-    /// </param>
-    /// <param name="timestamp">The row timestamp (UTC instant).</param>
-    /// <param name="eventType">The event type.</param>
-    /// <param name="actor">The actor identifier.</param>
-    /// <param name="actorType">The actor classification.</param>
-    /// <param name="resourceType">The resource type.</param>
-    /// <param name="resourceId">The optional resource identifier.</param>
-    /// <param name="action">The dotted action name.</param>
-    /// <param name="outcome">The outcome classification.</param>
-    /// <param name="correlationId">The correlation identifier.</param>
-    /// <param name="remoteIp">The optional remote IP.</param>
-    /// <param name="userAgent">The optional user agent.</param>
-    /// <param name="details">The opaque detail payload.</param>
-    /// <returns>A lowercase 64-character hex HMAC-SHA256 digest.</returns>
     public static string ComputeEntryMac(
         ReadOnlySpan<byte> chainKey,
         string? previousHash,

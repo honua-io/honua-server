@@ -3,18 +3,8 @@
 
 namespace Honua.Core.Features.Shared.Models;
 
-/// <summary>
-/// Extension methods for converting between different field definition formats.
-/// Eliminates duplication in field type mapping and conversion logic.
-/// </summary>
 public static class FieldDefinitionExtensions
 {
-    /// <summary>
-    /// Converts an Esri field type to the corresponding PostgreSQL type
-    /// </summary>
-    /// <param name="esriType">The Esri field type string</param>
-    /// <param name="length">The field length for variable-length types</param>
-    /// <returns>The corresponding PostgreSQL type declaration</returns>
     public static string ToPostgresType(this string esriType, int? length = null)
     {
         return esriType.ToUpperInvariant() switch
@@ -38,11 +28,6 @@ public static class FieldDefinitionExtensions
         };
     }
 
-    /// <summary>
-    /// Validates that a field name is safe for database usage
-    /// </summary>
-    /// <param name="fieldName">The field name to validate</param>
-    /// <returns>A sanitized field name safe for database usage</returns>
     public static string SanitizeFieldName(this string fieldName)
     {
         if (string.IsNullOrWhiteSpace(fieldName))

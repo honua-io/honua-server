@@ -3,10 +3,8 @@
 
 namespace Honua.Core.Features.Alerts.Abstractions;
 
-/// <summary>Owns the atomic persistence boundary for an alert mutation and its audit receipt.</summary>
 public interface IAlertMutationExecutor
 {
-    /// <summary>Commits successful results together; otherwise rolls back every enlisted write.</summary>
     ValueTask<T> ExecuteAsync<T>(
         Func<ValueTask<T>> mutation,
         Func<T, bool> shouldCommit,

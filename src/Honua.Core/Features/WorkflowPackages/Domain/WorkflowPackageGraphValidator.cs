@@ -3,14 +3,8 @@
 
 namespace Honua.Core.Features.WorkflowPackages.Domain;
 
-/// <summary>
-/// Validates graph invariants that are independent of a specific runtime provider.
-/// </summary>
 public static class WorkflowPackageGraphValidator
 {
-    /// <summary>
-    /// Validates the graph structure against the supplied node definitions.
-    /// </summary>
     public static WorkflowPackageValidationResult Validate(
         WorkflowGraph graph,
         IReadOnlyDictionary<string, WorkflowNodeDefinition> nodeDefinitions,

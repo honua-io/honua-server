@@ -7,9 +7,6 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Features.Federation.Services;
 
-/// <summary>
-/// Applies the shared feature ordering semantics with a deterministic object-id tie-breaker.
-/// </summary>
 public static class FeatureOrdering
 {
     public static ImmutableArray<Feature> Apply(
@@ -34,11 +31,6 @@ public static class FeatureOrdering
             .ToImmutableArray();
     }
 
-    /// <summary>
-    /// Compares features from potentially different resource schemas using shared ordering semantics.
-    /// Requested field names are resolved case-insensitively to each schema's actual field name, and
-    /// a resource's primary-id field is read from <see cref="Feature.Id"/> rather than attributes.
-    /// </summary>
     public static int Compare(
         in Feature left,
         MetadataV2Resource? leftResource,
@@ -62,11 +54,6 @@ public static class FeatureOrdering
         return left.Id.CompareTo(right.Id);
     }
 
-    /// <summary>
-    /// Compares features whose sort fields were resolved against different schemas.
-    /// Each side is read through its own clause, so <c>sortby=id</c> uses that
-    /// collection's item-id column rather than the first collection's column.
-    /// </summary>
     public static int CompareResolved(
         in Feature left,
         MetadataV2Resource? leftResource,

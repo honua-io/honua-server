@@ -148,6 +148,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
           -p:PublishAot=true \
           -p:DebugType=None \
           -p:DebugSymbols=false \
+          -p:HonuaNobleRuntimePublish=true \
           -p:StripSymbols=true \
           -p:OptimizationPreference=Speed \
           -p:IlcOptimizationPreference=Speed \

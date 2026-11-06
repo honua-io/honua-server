@@ -3,41 +3,7 @@
 
 namespace Honua.Core.Features.Capabilities;
 
-/// <summary>
-/// The shared format-negotiation gate (#2342 / T6). Every format-negotiation seam
-/// — the GeoServices query output formatter, the OGC/OData converters, and the
-/// file-import reader dispatch — consults this gate <b>before</b> dispatching to a
-/// reader or writer, so a data format the unified capability registry (ADR-0058)
-/// reports as gated off (an <see cref="CapabilityMaturity.Experimental"/> format
-/// whose flag is unset, or a format the active edition is not entitled to) is
-/// rejected with a clear reason instead of being silently served or silently
-/// coerced to another format.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The gate is a thin projection over <see cref="ICapabilityRegistry.Resolve"/>
-/// (the T2 <see cref="CapabilityGateResolver"/> precedence): it maps a data-format
-/// name (the segment after <see cref="CapabilityRegistry.DataFormatIdPrefix"/>, for
-/// example <c>geoparquet</c>) to its <c>format.*</c> descriptor, resolves it against
-/// the supplied <see cref="CapabilityGateContext"/>, and translates the registry
-/// reason code into a format-scoped one (<see cref="FormatCapabilityReasonCodes"/>).
-/// </para>
-/// <para>
-/// The original format names describe shared codecs. File import/export callers
-/// may resolve <c>read.&lt;name&gt;</c> or <c>write.&lt;name&gt;</c> to check a specific
-/// direction; a declared implementation gap resolves
-/// <see cref="FormatGateStatus.NotImplemented"/> and is blocked.
-/// </para>
-/// <para>
-/// A format the registry does not manage resolves <see cref="FormatGateStatus.Unknown"/>
-/// (it is not a <c>format.*</c> descriptor). The gate does not itself reject an
-/// unknown format — the seam owns whether an unrecognised token is a hard error
-/// (see <see cref="FormatGateDecision.IsBlocked"/>): a seam that already validates
-/// its wire tokens against a fixed supported set keeps that behaviour, while the
-/// gate only adds the <see cref="FormatGateStatus.ExperimentalDisabled"/> /
-/// <see cref="FormatGateStatus.LicenseRequired"/> rejection on top.
-/// </para>
-/// </remarks>
+// Every format-negotiation seam consults this gate before dispatch, so a format the registry reports as off is rejected.
 public static class FormatCapabilityGate
 {
     // A default registry backed by the same static roster CapabilityRegistry.All
@@ -62,16 +28,6 @@ public static class FormatCapabilityGate
         return FormatGateDecision.FromResolution(effectiveRegistry.Resolve(capabilityId, effectiveContext));
     }
 
-    /// <summary>
-    /// Filters an advertised list of data-format names down to those that are not
-    /// gated off, preserving order and dropping only registry-managed formats the
-    /// gate <see cref="FormatGateDecision.IsBlocked"/> reports as blocked. Names the
-    /// registry does not manage (<see cref="FormatGateStatus.Unknown"/>) are kept —
-    /// the advertising seam owns those.
-    /// </summary>
-    /// <param name="formatNames">The candidate registry data-format names.</param>
-    /// <param name="context">The gate context, or <c>null</c> for the default.</param>
-    /// <param name="registry">The registry, or <c>null</c> for the shared default.</param>
     public static IReadOnlyList<string> FilterAdvertised(
         IEnumerable<string> formatNames,
         CapabilityGateContext? context = null,
@@ -97,56 +53,23 @@ public static class FormatCapabilityGate
     }
 }
 
-/// <summary>
-/// The outcome of a <see cref="FormatCapabilityGate"/> evaluation.
-/// </summary>
 public enum FormatGateStatus
 {
-    /// <summary>The format is registered and enabled for the context.</summary>
     Enabled = 0,
 
-    /// <summary>
-    /// The format is not managed by the capability registry (no <c>format.*</c>
-    /// descriptor). Not a rejection on its own — the seam decides.
-    /// </summary>
     Unknown = 1,
 
-    /// <summary>
-    /// The format is an <see cref="CapabilityMaturity.Experimental"/> format whose
-    /// per-capability/global flag is unset, so it is off by default and must be
-    /// rejected.
-    /// </summary>
     ExperimentalDisabled = 2,
 
-    /// <summary>
-    /// The format's <see cref="CapabilityDescriptor.MinimumEdition"/> exceeds the
-    /// active edition, so it must be rejected on entitlement.
-    /// </summary>
     LicenseRequired = 3,
 
-    /// <summary>The requested file-format direction has no implementation.</summary>
     NotImplemented = 4,
 }
 
-/// <summary>
-/// A <see cref="FormatCapabilityGate"/> decision: the <see cref="Status"/> plus a
-/// stable, format-scoped <see cref="ReasonCode"/> when the format is not enabled.
-/// </summary>
-/// <param name="Status">The gate status.</param>
-/// <param name="ReasonCode">
-/// The <see cref="FormatCapabilityReasonCodes"/> value when <see cref="Status"/> is
-/// not <see cref="FormatGateStatus.Enabled"/>, or <c>null</c> when enabled.
-/// </param>
 public readonly record struct FormatGateDecision(FormatGateStatus Status, string? ReasonCode)
 {
-    /// <summary>Whether the format is registered and enabled for the context.</summary>
     public bool IsEnabled => Status == FormatGateStatus.Enabled;
 
-    /// <summary>
-    /// Whether the format is registry-managed <b>and</b> gated off, so the seam must
-    /// reject it (return a 400). An <see cref="FormatGateStatus.Unknown"/> format is
-    /// <b>not</b> blocked — it is simply not registry-managed.
-    /// </summary>
     public bool IsBlocked => Status is FormatGateStatus.ExperimentalDisabled or FormatGateStatus.LicenseRequired or FormatGateStatus.NotImplemented;
 
     internal static FormatGateDecision FromResolution(CapabilityResolution resolution)
@@ -164,26 +87,13 @@ public readonly record struct FormatGateDecision(FormatGateStatus Status, string
             };
 }
 
-/// <summary>
-/// Stable, machine-readable reason codes a format-negotiation seam returns on a 400
-/// when <see cref="FormatCapabilityGate"/> rejects a format. Format-scoped mirrors of
-/// the registry-layer <see cref="CapabilityReasonCodes"/> so the wire contract names
-/// the <c>format</c> axis explicitly.
-/// </summary>
 public static class FormatCapabilityReasonCodes
 {
-    /// <summary>The requested file-format direction has no implementation.</summary>
     public const string NotImplemented = "format-not-implemented";
 
-    /// <summary>The requested format is not a recognised/registered data format.</summary>
     public const string Unknown = "format-unknown";
 
-    /// <summary>
-    /// The requested format is experimental and off by default (its experimental flag
-    /// is unset). Returned on the <c>f</c>/<c>outputFormat</c> value.
-    /// </summary>
     public const string ExperimentalDisabled = "format-experimental-disabled";
 
-    /// <summary>The active edition is not entitled to the requested format.</summary>
     public const string LicenseRequired = "format-license-required";
 }

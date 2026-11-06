@@ -36,6 +36,42 @@ public sealed class GeoservicesImportReplacementTests(PostgresFixture fixture)
 {
     private const string TableName = "geoservices_replace_target";
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ImportLayerAsync_DependentViewOrForeignKey_RefusesAndPreservesOriginal(bool foreignKey)
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync("ImportDependencies");
+        try
+        {
+            await SeedPriorTargetAsync(schema);
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            var dependencySql = foreignKey
+                ? $"CREATE TABLE \"{schema}\".dependent (target_id bigint REFERENCES \"{schema}\".\"{TableName}\"(objectid)); INSERT INTO \"{schema}\".dependent VALUES (1)"
+                : $"CREATE MATERIALIZED VIEW \"{schema}\".dependent AS SELECT code FROM \"{schema}\".\"{TableName}\"";
+            await using (var create = new NpgsqlCommand(dependencySql, connection))
+            {
+                await create.ExecuteNonQueryAsync();
+            }
+            var service = CreateService(new ReplacementFeatureServerHandler(["CCC"]), targetSchema: schema);
+
+            var result = await service.ImportLayerAsync(BuildRequest(schema, overwrite: true));
+
+            result.Success.Should().BeFalse();
+            result.ErrorCode.Should().Be("IMPORT_TARGET_HAS_DEPENDENCIES");
+            result.ErrorMessage.Should().Contain("Existing data and dependencies were retained").And.NotContain("DROP TABLE").And.NotContain("CASCADE");
+            (await ReadCodesAsync(schema)).Should().Equal("AAA", "BBB");
+            await using var verify = new NpgsqlCommand(foreignKey
+                ? $"SELECT count(*) FROM pg_constraint WHERE conrelid = '\"{schema}\".dependent'::regclass AND contype = 'f'"
+                : $"SELECT count(*) FROM \"{schema}\".dependent", connection);
+            (await verify.ExecuteScalarAsync()).Should().Be(foreignKey ? 1L : 2L);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
     [Fact]
     public async Task ImportLayerAsync_UnownedExistingTarget_RefusesWithoutChangingRows()
     {

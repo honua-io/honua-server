@@ -3,15 +3,12 @@
 
 namespace Honua.Core.Features.Security.Admission;
 
-/// <summary>Deployment identity and authoritative backend selection for model invocation admission.</summary>
 public sealed class AiExecutionAdmissionOptions
 {
-    /// <summary>Configuration section shared by all model surfaces and admission controls.</summary>
     public const string SectionName = "AiExecutionAdmission";
 
-    /// <summary>Stable deployment identity shared by all replicas; absent identity denies model invocations.</summary>
     public string DeploymentId { get; set; } = string.Empty;
 
-    /// <summary>Authoritative backend: auto (registered Postgres, otherwise shared Redis), postgres or redis. Failures never trigger fallback.</summary>
+    // An admission-backend failure never falls back to the other backend.
     public string Backend { get; set; } = "auto";
 }

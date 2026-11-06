@@ -7,25 +7,16 @@ using Honua.Core.Features.Reporting.Domain;
 
 namespace Honua.Core.Features.Reporting.Templates;
 
-/// <summary>
-/// Template for <c>surface.slope</c> result packages. Surfaces the slope units
-/// and z-factor and reports min/mean/max slope when the artifact metadata
-/// exposes them.
-/// </summary>
 internal sealed class SurfaceSlopeReportTemplate : IAnalysisReportTemplate
 {
     private const string ProcessIdentifier = "surface.slope";
 
-    /// <inheritdoc />
     public string ProcessId => ProcessIdentifier;
 
-    /// <inheritdoc />
     public string TemplateId => "analysis-report.surface-slope";
 
-    /// <inheritdoc />
     public string TemplateVersion => "1.0.0";
 
-    /// <inheritdoc />
     public AnalysisReportDraft Build(AnalysisResultPackage package)
     {
         ArgumentNullException.ThrowIfNull(package);

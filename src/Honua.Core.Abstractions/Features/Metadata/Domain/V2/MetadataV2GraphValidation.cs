@@ -5,16 +5,8 @@ using Honua.Core.Features.Studio.Domain;
 
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
-/// <summary>
-/// Validates canonical Metadata v2 graph identity and reference integrity.
-/// </summary>
 public static class MetadataV2GraphValidator
 {
-    /// <summary>
-    /// Validates graph entity identifiers and resource-first references.
-    /// </summary>
-    /// <param name="graph">Graph to validate.</param>
-    /// <returns>Validation result with stable error messages.</returns>
     public static MetadataV2GraphValidationResult Validate(MetadataV2Graph graph)
     {
         ArgumentNullException.ThrowIfNull(graph);
@@ -589,13 +581,7 @@ public static class MetadataV2GraphValidator
         }
     }
 
-    /// <summary>
-    /// A storage-backed publication that carries no storage binding of its own, on a
-    /// resource that resolves no storage-layer id, is addressed by its service-local
-    /// layer index alone. That index must not equal a storage-layer id another resource
-    /// binds: the two would then name the same storage, and the publication would read
-    /// and write the other resource's data under its own access policy (SEC-4).
-    /// </summary>
+    // A service-local layer index must not equal another resource's storage-layer id, or this publication would read and write that resource's data under its own access policy.
     private static void ValidateUnboundPublicationLayerIndexes(
         List<string> errors,
         MetadataV2Graph graph,
@@ -883,9 +869,4 @@ public static class MetadataV2GraphValidator
     }
 }
 
-/// <summary>
-/// Result of validating a canonical Metadata v2 graph.
-/// </summary>
-/// <param name="IsValid">True when graph identity and references are valid.</param>
-/// <param name="Errors">Stable validation errors in discovery order.</param>
 public sealed record MetadataV2GraphValidationResult(bool IsValid, IReadOnlyList<string> Errors);

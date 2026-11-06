@@ -3,22 +3,8 @@
 
 namespace Honua.Core.Features.Tiles.PMTiles;
 
-/// <summary>
-/// Hilbert curve mapping for PMTiles v3 tile IDs.
-/// Converts (z, x, y) tile coordinates to a single Hilbert curve tile ID
-/// per the PMTiles specification.
-/// </summary>
 public static class HilbertCurve
 {
-    /// <summary>
-    /// Converts tile coordinates to a PMTiles v3 Hilbert tile ID.
-    /// The tile ID is the position on the Hilbert curve at zoom level z,
-    /// offset by the cumulative tile count of all preceding zoom levels.
-    /// </summary>
-    /// <param name="z">Zoom level (0-26).</param>
-    /// <param name="x">Tile column.</param>
-    /// <param name="y">Tile row.</param>
-    /// <returns>The Hilbert tile ID.</returns>
     public static ulong XYZToTileId(int z, int x, int y)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(z);
@@ -41,11 +27,6 @@ public static class HilbertCurve
         return offset + (ulong)hilbertIndex;
     }
 
-    /// <summary>
-    /// Converts a PMTiles v3 Hilbert tile ID back to (z, x, y) coordinates.
-    /// </summary>
-    /// <param name="tileId">The Hilbert tile ID.</param>
-    /// <returns>A tuple of (z, x, y) coordinates.</returns>
     public static (int Z, int X, int Y) TileIdToXYZ(ulong tileId)
     {
         if (tileId == 0)

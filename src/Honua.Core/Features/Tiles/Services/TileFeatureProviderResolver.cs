@@ -7,21 +7,10 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Features.Tiles.Services;
 
-/// <summary>
-/// Resolves raster/vector tile and aggregate reads through the provider selected by a
-/// layer's Metadata v2 storage binding (honua-server#2962). A publication only routes away
-/// from the primary reader/tile provider when its resolved storage binding carries a
-/// connection id.
-/// </summary>
 public sealed class TileFeatureProviderResolver(FeatureProviderQueryRouter? providerQueryRouter)
 {
     private readonly FeatureProviderQueryRouter? _providerQueryRouter = providerQueryRouter;
 
-    /// <summary>
-    /// Resolves the feature reader used for raster rendering and H3 aggregation. Callers handle
-    /// optional operations that the selected reader does not support. Falls back to the DI-registered
-    /// primary reader when routing does not apply for this publication.
-    /// </summary>
     public async Task<IFeatureReader> ResolveFeatureReaderAsync(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service,
@@ -40,11 +29,6 @@ public sealed class TileFeatureProviderResolver(FeatureProviderQueryRouter? prov
             fallbackStorageSrid: null,
             cancellationToken).ConfigureAwait(false)).Reader;
 
-    /// <summary>
-    /// Resolves the raster feature reader together with the physical storage SRID selected by
-    /// its binding. Routed providers compare filters against, and return WKB in, this CRS even
-    /// when the publication advertises a projected-on-read CRS.
-    /// </summary>
     public async Task<TileFeatureReaderResolution> ResolveFeatureReaderWithStorageAsync(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service,
@@ -79,14 +63,6 @@ public sealed class TileFeatureProviderResolver(FeatureProviderQueryRouter? prov
             binding.StorageMapping.StorageSrid ?? fallbackStorageSrid);
     }
 
-    /// <summary>
-    /// Resolves the tile provider used for vector (MVT) tile rendering. Falls back to the
-    /// DI-registered primary tile provider when routing does not apply for this publication.
-    /// Native MVT generation is a per-provider capability (only the PostGIS provider implements
-    /// <see cref="ITileProvider"/> today); when routing resolves to a provider that does not
-    /// implement it, <see cref="TileProviderResolution.UnsupportedProviderName"/> is set so the
-    /// caller can fail loudly instead of silently falling back to the primary tile provider.
-    /// </summary>
     public async Task<TileProviderResolution> ResolveTileProviderAsync(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service,
@@ -125,11 +101,7 @@ public sealed class TileFeatureProviderResolver(FeatureProviderQueryRouter? prov
         return new TileProviderResolution(null, binding.Provider.ProviderName);
     }
 
-    /// <summary>
-    /// Reports whether a collection can safely advertise native vector tiles. Routed
-    /// publications require a binding-aware tile provider; otherwise their discoverable tile
-    /// metadata must advertise the raster path that every query-capable provider supports.
-    /// </summary>
+    // A routed publication without a binding-aware tile provider must advertise the raster path instead of native vector tiles.
     public async Task<bool> SupportsVectorTilesAsync(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service,
@@ -155,13 +127,6 @@ public sealed class TileFeatureProviderResolver(FeatureProviderQueryRouter? prov
         return binding.Provider is IBindableTileProvider;
     }
 
-    /// <summary>
-    /// A publication only routes away from the primary reader/tile provider when its resolved
-    /// storage binding carries a connection id. Resolution follows Metadata v2 semantics:
-    /// publication binding, resource primary binding, then the resource's first binding. A
-    /// resolved binding with no connection keeps using the primary pipeline byte-identically —
-    /// the common case for default single-provider deployments.
-    /// </summary>
     public static bool RequiresRouting(MetadataV2GraphSnapshot snapshot, MetadataV2Publication publication)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
@@ -184,20 +149,6 @@ public sealed class TileFeatureProviderResolver(FeatureProviderQueryRouter? prov
     }
 }
 
-/// <summary>
-/// Result of resolving the tile provider for a routed collection: either the provider to
-/// render with, or the canonical name of a resolved provider that does not implement
-/// <see cref="ITileProvider"/> so the caller can reject the request with a clear error.
-/// </summary>
-/// <param name="Provider">The resolved tile provider, or <see langword="null"/> when the
-/// routed provider does not support tile generation.</param>
-/// <param name="UnsupportedProviderName">Canonical name of the resolved provider when it does
-/// not implement <see cref="ITileProvider"/>; <see langword="null"/> otherwise.</param>
 public readonly record struct TileProviderResolution(ITileProvider? Provider, string? UnsupportedProviderName);
 
-/// <summary>
-/// Raster reader resolution, including the physical SRID used by the selected storage binding.
-/// </summary>
-/// <param name="Reader">Resolved feature reader.</param>
-/// <param name="StorageSrid">Physical storage SRID, when declared by metadata.</param>
 public readonly record struct TileFeatureReaderResolution(IFeatureReader Reader, int? StorageSrid);

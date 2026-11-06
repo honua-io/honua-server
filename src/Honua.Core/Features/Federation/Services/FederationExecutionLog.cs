@@ -5,9 +5,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Core.Features.Federation.Services;
 
-/// <summary>
-/// Source-generated structured logging for the federated-query executor (issue #341).
-/// </summary>
 internal static partial class FederationExecutionLog
 {
     [LoggerMessage(EventId = 4510, Level = LogLevel.Debug,

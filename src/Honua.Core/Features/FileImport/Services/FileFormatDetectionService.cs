@@ -15,18 +15,10 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.FileImport.Services;
 
-/// <summary>
-/// Focused service responsible only for file format detection.
-/// Extracted from the original StreamingFileImportService god class.
-/// Follows Single Responsibility Principle by handling only format detection logic.
-/// </summary>
 internal sealed class FileFormatDetectionService : IFileFormatDetectionService
 {
     private readonly ILogger<FileFormatDetectionService> _logger;
 
-    /// <summary>
-    /// Supported file extensions mapped to formats
-    /// </summary>
     private static readonly FrozenDictionary<string, SupportedFileFormat> FileExtensions =
         new Dictionary<string, SupportedFileFormat>(StringComparer.OrdinalIgnoreCase)
         {
@@ -63,9 +55,6 @@ internal sealed class FileFormatDetectionService : IFileFormatDetectionService
         _logger = logger;
     }
 
-    /// <summary>
-    /// Detect file format from filename extension
-    /// </summary>
     public SupportedFileFormat? DetectFormat(string fileName)
     {
         if (string.IsNullOrWhiteSpace(fileName))
@@ -94,17 +83,11 @@ internal sealed class FileFormatDetectionService : IFileFormatDetectionService
         return null;
     }
 
-    /// <summary>
-    /// Get supported file extensions
-    /// </summary>
     public string[] GetSupportedExtensions()
     {
         return FileExtensions.Keys.Append(".gdb.zip").ToArray();
     }
 
-    /// <summary>
-    /// Detect file format from content analysis using magic numbers
-    /// </summary>
     public SupportedFileFormat? DetectFormatFromContent(ReadOnlySpan<byte> fileContent, string fileName)
     {
         if (fileContent.Length < 4)
@@ -148,9 +131,6 @@ internal sealed class FileFormatDetectionService : IFileFormatDetectionService
         return DetectFormat(fileName);
     }
 
-    /// <summary>
-    /// Attempt to decode binary content as text
-    /// </summary>
     private static string? TryDecodeAsText(ReadOnlySpan<byte> content)
     {
         try
@@ -172,9 +152,6 @@ internal sealed class FileFormatDetectionService : IFileFormatDetectionService
         }
     }
 
-    /// <summary>
-    /// Detect format from text content
-    /// </summary>
     private static SupportedFileFormat? DetectTextFormat(string textContent, string fileName)
     {
         var trimmed = textContent.TrimStart();
@@ -252,15 +229,6 @@ internal sealed class FileFormatDetectionService : IFileFormatDetectionService
         return null;
     }
 
-    /// <summary>
-    /// Structurally recognises a Well-Known Binary (WKB/EWKB) geometry payload from its leading
-    /// bytes: a byte-order flag (<c>0x00</c> big-endian/XDR or <c>0x01</c> little-endian/NDR)
-    /// followed by a geometry-type <c>uint32</c>. Standard WKB uses base types 1-7
-    /// (Point..GeometryCollection); ISO WKB adds Z/M variants (e.g. 1001, 2001, 3001); PostGIS
-    /// EWKB sets the high flag bits <c>0x80000000</c> (Z), <c>0x40000000</c> (M), and
-    /// <c>0x20000000</c> (SRID). After stripping the EWKB flag bits and normalising the ISO
-    /// thousands offset, the base type must fall in 1-7 for the payload to be WKB.
-    /// </summary>
     private static bool LooksLikeWkb(ReadOnlySpan<byte> content)
     {
         if (content.Length < 5)
@@ -285,12 +253,7 @@ internal sealed class FileFormatDetectionService : IFileFormatDetectionService
         return baseType is >= 1 and <= 7;
     }
 
-    /// <summary>
-    /// Heuristically decide whether a JSON document is an Esri feature set rather than GeoJSON.
-    /// Esri payloads use <c>attributes</c> (not GeoJSON <c>properties</c>) and Esri geometry
-    /// shapes (<c>x</c>/<c>y</c>, <c>points</c>, <c>paths</c>, <c>rings</c>), and never carry a
-    /// GeoJSON <c>"type":"Feature"</c>/<c>"FeatureCollection"</c> discriminator.
-    /// </summary>
+    // An Esri feature set uses attributes and Esri geometry shapes and never carries a GeoJSON Feature or FeatureCollection type.
     private static bool LooksLikeEsriJson(string trimmed)
     {
         // A GeoJSON document is unambiguously identified by its "type" discriminator; if present,

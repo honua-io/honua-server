@@ -12,13 +12,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Core.Features.Publishing.Content.Services;
 
-/// <summary>
-/// Default <see cref="IContentPublicationService"/>. Validates requests, normalizes
-/// route slugs, allocates monotonic revisions, hashes content, validates dependency
-/// references against registered stores, and writes route-state changes atomically
-/// alongside append-only events. Optional dependency stores are injected as nullable
-/// so the slice degrades gracefully when those features are not registered.
-/// </summary>
 public sealed class ContentPublicationService : IContentPublicationService
 {
     private const int VersionPageSize = 100;
@@ -62,7 +55,6 @@ public sealed class ContentPublicationService : IContentPublicationService
     private readonly IPublishedServiceStore? _publishedServiceStore;
     private readonly ILogger<ContentPublicationService> _logger;
 
-    /// <summary>Initializes a new instance.</summary>
     public ContentPublicationService(
         IContentPublicationStore store,
         TimeProvider timeProvider,
@@ -77,7 +69,6 @@ public sealed class ContentPublicationService : IContentPublicationService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <inheritdoc />
     public async Task<ContentPublicationDetail> PublishAsync(
         PublishContentRequest request,
         string actor,
@@ -163,7 +154,6 @@ public sealed class ContentPublicationService : IContentPublicationService
         return new ContentPublicationDetail { Route = route, Versions = [version] };
     }
 
-    /// <inheritdoc />
     public async Task<ContentPublicationDetail?> GetAsync(string publicationId, CancellationToken cancellationToken = default)
     {
         ValidatePublicationId(publicationId);
@@ -178,7 +168,6 @@ public sealed class ContentPublicationService : IContentPublicationService
         return new ContentPublicationDetail { Route = route, Versions = versions };
     }
 
-    /// <inheritdoc />
     public async Task<ContentPublicationListResponse> ListAsync(ContentPublicationListQuery query, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(query);
@@ -208,7 +197,6 @@ public sealed class ContentPublicationService : IContentPublicationService
         };
     }
 
-    /// <inheritdoc />
     public async Task<ContentPublicationVersion?> GetVersionAsync(string publicationId, string versionSelector, CancellationToken cancellationToken = default)
     {
         ValidatePublicationId(publicationId);
@@ -237,7 +225,6 @@ public sealed class ContentPublicationService : IContentPublicationService
             path: "/versionSelector");
     }
 
-    /// <inheritdoc />
     public async Task<ContentPublicationDetail> RepublishAsync(
         string publicationId,
         RepublishContentRequest request,
@@ -311,7 +298,6 @@ public sealed class ContentPublicationService : IContentPublicationService
         return new ContentPublicationDetail { Route = updatedRoute, Versions = versions };
     }
 
-    /// <inheritdoc />
     public async Task<ContentPublicationDetail> RollbackAsync(
         string publicationId,
         RollbackContentRequest request,
@@ -380,7 +366,6 @@ public sealed class ContentPublicationService : IContentPublicationService
         return new ContentPublicationDetail { Route = updatedRoute, Versions = versions };
     }
 
-    /// <inheritdoc />
     public async Task<ContentPublicationPolicyUpdateResult> UpdatePolicyAsync(
         string publicationId,
         UpdatePublicationPolicyRequest request,
@@ -526,7 +511,6 @@ public sealed class ContentPublicationService : IContentPublicationService
         };
     }
 
-    /// <inheritdoc />
     public async Task<ContentPublicationRouteState?> ResolveRouteAsync(string routeSlug, CancellationToken cancellationToken = default)
     {
         if (!ContentPublicationSlug.TryNormalize(routeSlug, out var slug))

@@ -6,21 +6,11 @@ using System.Text.Json;
 
 namespace Honua.Core.Features.Collaboration.Operations;
 
-/// <summary>
-/// Compares a saved-map append with the operation already stored for the same actor and id or key.
-/// </summary>
 public static class SavedMapOperationIdempotency
 {
-    /// <summary>
-    /// Client-safe explanation when an id or key is reused for a different request.
-    /// </summary>
     public const string MismatchMessage =
         "The operation id or idempotency key was already accepted for this actor with a different request.";
 
-    /// <summary>
-    /// True when <paramref name="stored"/> and <paramref name="request"/> are the same actor, kind,
-    /// and canonical payload. Object key order is ignored; array order and number lexemes are not.
-    /// </summary>
     public static bool Matches(SavedMapOperationEnvelope stored, SavedMapOperationAppendRequest request)
     {
         ArgumentNullException.ThrowIfNull(stored);
@@ -30,9 +20,6 @@ public static class SavedMapOperationIdempotency
             string.Equals(CanonicalPayload(stored.Payload), CanonicalPayload(request.Payload), StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// Canonical JSON for an idempotency payload comparison.
-    /// </summary>
     public static string CanonicalPayload(JsonElement payload)
     {
         if (payload.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
