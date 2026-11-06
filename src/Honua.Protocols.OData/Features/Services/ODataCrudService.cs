@@ -185,6 +185,7 @@ internal sealed partial class ODataCrudService
                     Payload = new ParsedFeaturePayload
                     {
                         Geometry = payload.Geometry,
+                        GeometrySpecified = payload.GeometrySpecified,
                         Attributes = new Dictionary<string, object?>(validatedAttributes, StringComparer.OrdinalIgnoreCase)
                     }
                 },
@@ -378,6 +379,7 @@ internal sealed partial class ODataCrudService
                     Payload = new ParsedFeaturePayload
                     {
                         Geometry = payload.Geometry,
+                        GeometrySpecified = payload.GeometrySpecified,
                         Attributes = mergedAttributes
                     }
                 },

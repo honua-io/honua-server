@@ -18,10 +18,10 @@ public sealed partial class PostgresStorageMappedFeatureReaderVersionIntegration
 
         var projected = await reader.GetAsync(1, 1);
 
-        projected.Should().NotBeNull();
-        projected!.Value.Geometry.Should().BeNull();
-        projected.Value.Attributes.Keys.Should().Equal("objectid");
-        projected.Value.ReadStateToken.Should().NotBeNullOrEmpty().And.Be(full!.Value.ReadStateToken);
+        var actual = Assert.IsType<Feature>(projected);
+        actual.Geometry.Should().BeNull();
+        actual.Attributes.Keys.Should().Equal("objectid");
+        actual.ReadStateToken.Should().NotBeNullOrEmpty().And.Be(Assert.IsType<Feature>(full).ReadStateToken);
     }
 
     [Theory]
