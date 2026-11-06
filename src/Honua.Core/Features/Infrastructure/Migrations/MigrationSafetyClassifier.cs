@@ -186,7 +186,7 @@ public static class MigrationSafetyClassifier
             "129_ProtectImportTableOwnership.sql"
                 or "Honua.Server.Migrations.129_ProtectImportTableOwnership.sql"
                 or "src/Honua.Server/Migrations/129_ProtectImportTableOwnership.sql"
-                => "81D2BE992221BE7A5267BAF1DFD6A4CFE5FEB94E926B1E4E770A72EAE7BB7427",
+                => "A62328A559BC22113185838F0EEC3CAC22FA50352F9CD6C9D98BD0E42B9DD77B",
             "145_ProtectImportDependencies.sql"
                 or "Honua.Server.Migrations.145_ProtectImportDependencies.sql"
                 or "src/Honua.Server/Migrations/145_ProtectImportDependencies.sql"
