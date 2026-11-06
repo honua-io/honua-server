@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using NSubstitute;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -35,14 +37,21 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
 
     [IntegrationTheory]
     [InlineData(null, true)]
+    [InlineData("tenant-a", true)]
     [InlineData("another-tenant", false)]
     [Operation(Operations.Security)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
     public async Task CreateReplica_PublicationTenant_RestrictsLayerSelection(string? publicationTenant, bool visible)
     {
-        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        await using var fixture = new WebAppFixture().WithTestLicense(Honua.Core.Features.Licensing.Domain.HonuaEdition.Pro);
+        var tenant = Substitute.For<ITenantContext>();
+        tenant.TenantId.Returns("tenant-a");
+        fixture.ReplaceService(tenant);
+        await fixture.InitializeAsync();
+        fixture.UpdateV2ServiceMetadata(WebAppFixture.TestServiceId, capabilities: ["Query", "Sync"]);
+        var snapshot = fixture.GetCurrentV2GraphSnapshot();
         var service = snapshot.FindService(WebAppFixture.TestServiceId)!;
-        var provider = (TestMetadataV2GraphProvider)_fixture.GetService<IMetadataV2GraphProvider>();
+        var provider = (TestMetadataV2GraphProvider)fixture.GetService<IMetadataV2GraphProvider>();
         provider.SetGraph(snapshot.Graph with
         {
             Revision = snapshot.Graph.Revision + 1,
@@ -50,7 +59,12 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
                 publication.ServiceId == service.Metadata.Id && publication.LayerIndex == WebAppFixture.TestLayerId
                     ? publication with { Metadata = publication.Metadata with { Tenant = publicationTenant } }
                     : publication).ToArray()
-        }, schema: _fixture.CurrentSchema);
+        }, schema: fixture.CurrentSchema);
+        fixture.GetService<IMetadataV2GraphProvider>().Should().BeSameAs(provider);
+        fixture.GetCurrentV2GraphSnapshot().Graph.Publications
+            .Where(publication => publication.ServiceId == service.Metadata.Id && publication.LayerIndex == WebAppFixture.TestLayerId)
+            .Should().NotBeEmpty().And.OnlyContain(publication => publication.Metadata.Tenant == publicationTenant);
+        tenant.ClearReceivedCalls();
         using var payload = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["replicaName"] = "PublicationTenantReplica",
@@ -59,10 +73,11 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
             ["f"] = "json"
         });
 
-        using var response = await _fixture.Client.PostAsync(
+        using var response = await fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica", payload);
         var body = await response.Content.ReadAsStringAsync();
 
+        _ = tenant.Received().TenantId;
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);
         using var document = JsonDocument.Parse(body);
         document.RootElement.TryGetProperty("replicaID", out _).Should().Be(visible, body);
