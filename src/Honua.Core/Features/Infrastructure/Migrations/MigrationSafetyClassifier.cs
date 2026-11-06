@@ -176,11 +176,11 @@ public static class MigrationSafetyClassifier
 
     private static bool IsReviewedImportGuardDefinition(string scriptName, string sql)
     {
-        // These exact installations only define existing import helpers; they do not invoke
-        // their DROP/RENAME operations during migration or alter the reader's schema/signatures.
-        // #5394 adds ownership guards. #6993 replaces CASCADE with RESTRICT in the same swap
-        // helper while retaining ownership and index naming. Routine/DO/dynamic-SQL detection
-        // remains enabled for every other name or byte change, including appended statements.
+        // These exact installations only define import helpers; they do not invoke their
+        // DROP/RENAME operations during migration or alter the reader's schema/signatures.
+        // Ownership checks and RESTRICT protect importer-owned targets and dependencies.
+        // Routine/DO/dynamic-SQL detection remains enabled for every other name or byte
+        // change, including appended statements.
         var reviewedHash = scriptName switch
         {
             "129_ProtectImportTableOwnership.sql"
