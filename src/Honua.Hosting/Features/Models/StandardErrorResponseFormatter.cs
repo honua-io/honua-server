@@ -251,12 +251,13 @@ internal static class StandardErrorResponseFormatter
             errorResponse.StatusCode);
     }
 
-    // Authentication and server failures retain the WMS handler's transport status.
+    // Infrastructure refusals retain the WMS handler's transport status.
     private static IResult FormatWmsAliasError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
     {
         AddResponseHeaders(context, options);
         if (string.IsNullOrWhiteSpace(options.WmsExceptionCode) &&
-            (IsAuthenticationFailure(errorResponse) || errorResponse.StatusCode >= StatusCodes.Status500InternalServerError))
+            (errorResponse.StatusCode == StatusCodes.Status400BadRequest || IsAuthenticationFailure(errorResponse) ||
+             errorResponse.StatusCode >= StatusCodes.Status500InternalServerError))
         {
             return WmsServiceExceptionReport.CreateXmlResult(
                 context,

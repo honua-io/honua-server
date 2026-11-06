@@ -37,6 +37,12 @@ internal sealed record GeoServicesServicePath(
         var incoming = GeoServicesServiceRoutes.FromRequest(context);
         var publicName = incoming?.PublicName ?? context.Request.RouteValues[route.ServiceParameter]?.ToString() ?? string.Empty;
         var folder = incoming?.FolderName;
+        if (string.IsNullOrWhiteSpace(publicName))
+        {
+            await StandardErrorHelpers.CreateBadRequest(context, "Service ID is required.")
+                .ExecuteAsync(context).ConfigureAwait(false);
+            return;
+        }
         var provider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         MetadataV2GraphSnapshot snapshot;
         try
@@ -60,6 +66,12 @@ internal sealed record GeoServicesServicePath(
         var names = services.Select(service => service.Metadata.Name).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         if (names.Length != 1)
         {
+            if (names.Length == 0 && HasForeignCanonicalPath(snapshot, publicPath))
+            {
+                await StandardErrorHelpers.CreateForbidden(context, AccessPolicyHelpers.AccessForbiddenMessage)
+                    .ExecuteAsync(context).ConfigureAwait(false);
+                return;
+            }
             if (names.Length == 0 && folder is null && IsStandaloneRoute(route, publicPath, snapshot.Graph))
             {
                 await next(context).ConfigureAwait(false);
@@ -74,6 +86,12 @@ internal sealed record GeoServicesServicePath(
         context.Request.RouteValues[route.ServiceParameter] = names[0];
         await next(context).ConfigureAwait(false);
     }
+
+    private static bool HasForeignCanonicalPath(MetadataV2GraphSnapshot snapshot, MetadataV2ServicePathAlias path)
+        => MetadataV2ServicePaths.CanonicalPaths(snapshot.Graph).Any(candidate =>
+            !MetadataV2TenantVisibility.IsVisibleToTenant(candidate.Tenant, path.Tenant) &&
+            MetadataV2ServicePaths.SamePath(candidate with { Tenant = path.Tenant }, path) &&
+            candidate.TargetFacetIds.Any(id => snapshot.Index.ServicesById.TryGetValue(id, out var service) && service.IsRoutable()));
 
     private static bool IsStandaloneRoute(GeoServicesServiceRoutes.ServiceRoute route, MetadataV2ServicePathAlias path, MetadataV2Graph graph)
     {
