@@ -14,9 +14,9 @@
     "not-executable": "The inventory item is not an independent runnable example; no green execution claim is made."
   },
   "summary": {
-    "total": 1228,
+    "total": 1232,
     "byStatus": {
-      "not-executable": 1212,
+      "not-executable": 1216,
       "unvalidated": 13,
       "passed": 3
     }
@@ -3802,9 +3802,9 @@
         "check": "content-hash-evidence"
       },
       "fence": 4,
-      "line": 304,
-      "language": "bash",
-      "contentSha256": "d2436bef2404852d37923566117b1ed0a26d678db8bdc2609cf148808d732a37"
+      "line": 288,
+      "language": "powershell",
+      "contentSha256": "a8da6d3a194fad80fcc74cf8b97b2878ddfa4bbe519de9a64d493c645b07de78"
     },
     {
       "id": "057001304ec19ecc",
@@ -3816,9 +3816,9 @@
         "check": "content-hash-evidence"
       },
       "fence": 5,
-      "line": 324,
+      "line": 326,
       "language": "bash",
-      "contentSha256": "37314c95ec829697032de866c421070bfe92182cd343ade5ac1cfa146586d850"
+      "contentSha256": "d2436bef2404852d37923566117b1ed0a26d678db8bdc2609cf148808d732a37"
     },
     {
       "id": "0c493dc491dd6e6f",
@@ -3830,9 +3830,9 @@
         "check": "content-hash-evidence"
       },
       "fence": 3,
-      "line": 266,
-      "language": "powershell",
-      "contentSha256": "a8da6d3a194fad80fcc74cf8b97b2878ddfa4bbe519de9a64d493c645b07de78"
+      "line": 269,
+      "language": "bash",
+      "contentSha256": "f0edc39fcd8460bccca73cc1536e76759fb064dcc7098aecd532be13111ec04e"
     },
     {
       "id": "28da1cee54396e02",
@@ -3844,9 +3844,9 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 106,
-      "language": "yaml",
-      "contentSha256": "56d8008196671fac7b41f64b257954d53764974eb331e779f2a22106208b1587"
+      "line": 73,
+      "language": "bash",
+      "contentSha256": "00b9ec041a65f09706945833d13e7266e20ed2a3b2fff96634528f72db2fee79"
     },
     {
       "id": "30ac7bc0ce1dbb2b",
@@ -3858,9 +3858,9 @@
         "check": "content-hash-evidence"
       },
       "fence": 7,
-      "line": 363,
+      "line": 369,
       "language": "bash",
-      "contentSha256": "3cd42db4b4befcde664344baf037f328b00b0b1fa9f68b9a49fc065439ec6794"
+      "contentSha256": "0081c527235bda649a7a3ceedcf66d1aef0b45bbd9dff73c6b069a1d0b89dee1"
     },
     {
       "id": "318680fdf881d7ce",
@@ -3872,9 +3872,9 @@
         "check": "content-hash-evidence"
       },
       "fence": 10,
-      "line": 472,
+      "line": 426,
       "language": "bash",
-      "contentSha256": "668c8bf3ed79497ec0e9ea2c5960cd3bb6f056f01d550717218bff11a7116cae"
+      "contentSha256": "1dbf290131afb98991c4335fd6204e47f3c7f44b7f47f479b1740c85b17721fd"
     },
     {
       "id": "39742a93f739c5c5",
@@ -3886,9 +3886,9 @@
         "check": "content-hash-evidence"
       },
       "fence": 2,
-      "line": 247,
-      "language": "bash",
-      "contentSha256": "f0edc39fcd8460bccca73cc1536e76759fb064dcc7098aecd532be13111ec04e"
+      "line": 128,
+      "language": "yaml",
+      "contentSha256": "56d8008196671fac7b41f64b257954d53764974eb331e779f2a22106208b1587"
     },
     {
       "id": "77b9999559e6114b",
@@ -3900,9 +3900,9 @@
         "check": "content-hash-evidence"
       },
       "fence": 9,
-      "line": 404,
-      "language": "bash",
-      "contentSha256": "1dbf290131afb98991c4335fd6204e47f3c7f44b7f47f479b1740c85b17721fd"
+      "line": 394,
+      "language": "python",
+      "contentSha256": "74c5a54bcc4ea8ff591b6be281eca0dfa3846c07839f8fbef10bf926b80e92ad"
     },
     {
       "id": "9f087ffab7caa432",
@@ -3914,9 +3914,9 @@
         "check": "content-hash-evidence"
       },
       "fence": 6,
-      "line": 347,
+      "line": 346,
       "language": "bash",
-      "contentSha256": "0081c527235bda649a7a3ceedcf66d1aef0b45bbd9dff73c6b069a1d0b89dee1"
+      "contentSha256": "37314c95ec829697032de866c421070bfe92182cd343ade5ac1cfa146586d850"
     },
     {
       "id": "a6140e26c47bc567",
@@ -3928,9 +3928,9 @@
         "check": "content-hash-evidence"
       },
       "fence": 8,
-      "line": 372,
-      "language": "python",
-      "contentSha256": "74c5a54bcc4ea8ff591b6be281eca0dfa3846c07839f8fbef10bf926b80e92ad"
+      "line": 385,
+      "language": "bash",
+      "contentSha256": "3cd42db4b4befcde664344baf037f328b00b0b1fa9f68b9a49fc065439ec6794"
     },
     {
       "id": "a647d9f5132b4698",
@@ -3942,9 +3942,9 @@
         "check": "content-hash-evidence"
       },
       "fence": 12,
-      "line": 545,
+      "line": 533,
       "language": "bash",
-      "contentSha256": "8cb1c5549586be537a9c5143d1f10eb05da1811088b2fb29f05e7792e97758ac"
+      "contentSha256": "fb5ecea41ab888db236f0ab83f55c2b68e408da158a51616b75d18a8a8324b21"
     },
     {
       "id": "b221f0b7144712dc",
@@ -3956,9 +3956,23 @@
         "check": "inventory-classification"
       },
       "fence": 11,
-      "line": 511,
+      "line": 494,
       "language": "bash",
-      "contentSha256": "fb5ecea41ab888db236f0ab83f55c2b68e408da158a51616b75d18a8a8324b21"
+      "contentSha256": "668c8bf3ed79497ec0e9ea2c5960cd3bb6f056f01d550717218bff11a7116cae"
+    },
+    {
+      "id": "eac3016ed971ba59",
+      "kind": "docs-fence",
+      "path": "docs/get-started/quickstart.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 13,
+      "line": 567,
+      "language": "bash",
+      "contentSha256": "8cb1c5549586be537a9c5143d1f10eb05da1811088b2fb29f05e7792e97758ac"
     },
     {
       "id": "9ebbb6bd8236a6aa",
@@ -4360,7 +4374,7 @@
         "check": "inventory-classification"
       },
       "fence": 5,
-      "line": 104,
+      "line": 112,
       "language": "bash"
     },
     {
@@ -4373,7 +4387,7 @@
         "check": "inventory-classification"
       },
       "fence": 6,
-      "line": 394,
+      "line": 402,
       "language": "jsonc"
     },
     {
@@ -4386,7 +4400,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 45,
+      "line": 53,
       "language": "json"
     },
     {
@@ -4399,7 +4413,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 100,
+      "line": 108,
       "language": "bash"
     },
     {
@@ -4412,7 +4426,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 80,
+      "line": 88,
       "language": "json"
     },
     {
@@ -4425,7 +4439,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 66,
+      "line": 74,
       "language": "json"
     },
     {
@@ -4505,6 +4519,45 @@
       "fence": 1,
       "line": 26,
       "language": "html"
+    },
+    {
+      "id": "36e817d065c439ab",
+      "kind": "docs-fence",
+      "path": "docs/guides/connect/operating-skills.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 2,
+      "line": 41,
+      "language": "bash"
+    },
+    {
+      "id": "f07cdd4742c41c91",
+      "kind": "docs-fence",
+      "path": "docs/guides/connect/operating-skills.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 1,
+      "line": 26,
+      "language": "bash"
+    },
+    {
+      "id": "bdc2ae58ada55af0",
+      "kind": "docs-fence",
+      "path": "docs/guides/connect/working-with-ai-agents.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 1,
+      "line": 151,
+      "language": "bash"
     },
     {
       "id": "20d593abd87e0bb0",
@@ -5548,7 +5601,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 455,
+      "line": 471,
       "language": "bash"
     },
     {
@@ -5561,7 +5614,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 207,
+      "line": 223,
       "language": "bash"
     },
     {
@@ -5574,7 +5627,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 234,
+      "line": 250,
       "language": "bash"
     },
     {
@@ -14258,7 +14311,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 461,
+      "line": 468,
       "language": "sql"
     },
     {
