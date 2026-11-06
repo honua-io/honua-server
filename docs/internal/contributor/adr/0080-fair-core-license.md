@@ -34,16 +34,14 @@ License. Licensor: Honua Geo Inc.
   own managed service is a Competing Use and requires a partner agreement.
 - The repository does not accept external contributions (`close-external-prs.yml`), so Honua Geo
   Inc. retains full copyright and the ability to relicense.
-- Every already-journaled SQL migration keeps its original ELv2 header bytes. The
-  migration-safety classifier accepts the frozen set (`SchemaReaderBaseline.json`, plus
-  129) by exact SHA-256, and any change under the migration directories triggers the
-  N-1 reader compatibility gate, which cannot pass for pre-guard images. A header
-  rewrite would therefore break startup or block the gate for no functional change.
-  Those files are Honua-authored and covered by the repository LICENSE regardless of
-  the comment text; new migrations use the FCL header.
-- The same rule covers hash-pinned migration contracts that are not journaled. The
-  attachment preamble (`src/Honua.Server/MigrationContracts/attachment-schema-preamble.v1.sql.template`)
-  is pinned by SHA-256 in `ServerCoreSchemaMigrations` and keeps its v1 ELv2 header bytes;
-  a header change there makes every non-default-schema attachment migration refuse to load.
+- Frozen reader-baseline migrations keep their original header bytes. The baseline file
+  hash is pinned, and changing those scripts fails the rolling-upgrade test. Post-baseline
+  migrations use the Fair Core License header. Their ledger digests, and the reviewed hash
+  for migration 129, match those bytes. The SQL statements are unchanged. DbUp journals a
+  script by name and does not rewrite a reader-compatibility declaration already recorded.
+  Editing a migration directory still schedules the N-1 reader compatibility job.
+- The attachment preamble (`src/Honua.Server/MigrationContracts/attachment-schema-preamble.v1.sql.template`)
+  keeps its immutable v1 bytes. That preamble is pinned by SHA-256 in `ServerCoreSchemaMigrations`,
+  and a header change there makes every non-default-schema attachment migration refuse to load.
 - Capacity metering must stay on the license-validated code path to remain covered by the
   Limitations clause.

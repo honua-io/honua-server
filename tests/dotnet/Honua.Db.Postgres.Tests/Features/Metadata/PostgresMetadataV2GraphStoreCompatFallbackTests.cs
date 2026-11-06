@@ -26,6 +26,128 @@ namespace Honua.Db.Postgres.Tests.Features.Metadata;
 public sealed class PostgresMetadataV2GraphStoreCompatFallbackTests(PostgresFixture fixture)
 {
     [IntegrationTest]
+    public async Task SaveAsync_RootBootstrapWithNullLegacyBounds_PersistsSnapshot()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreCompatFallbackTests));
+        try
+        {
+            await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
+            await SeedV1CatalogAsync(fixture.DataSource, schema, "cite_features", 700, "CITE Features");
+            await ExecuteAsync(fixture.DataSource, schema, $"UPDATE \"{schema}\".layers SET extent = NULL;");
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresMetadataV2GraphStore(
+                provider, "Test", FixtureBypassDatabaseSchemaGuard.Instance, schema);
+
+            var saved = await store.SaveAsync(new MetadataV2Graph { Environment = "Test" }, expectedEtag: null);
+
+            (await store.TryGetPersistedCurrentAsync()).Should().NotBeNull();
+            saved.Graph.Folders.Should().BeEmpty();
+            saved.Graph.ServicePathAliases.Should().BeEmpty();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task SaveAsync_FirstFolderWithNullLegacyBounds_PreservesSeededCatalog()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreCompatFallbackTests));
+        try
+        {
+            await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
+            await SeedV1CatalogAsync(fixture.DataSource, schema, "cite_features", 700, "CITE Features");
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresMetadataV2GraphStore(
+                provider, "Test", FixtureBypassDatabaseSchemaGuard.Instance, schema);
+            var legacy = (await store.GetCurrentAsync()).Graph;
+            var candidate = legacy with
+            {
+                Folders = [new MetadataV2Folder
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "folder-first", Name = "First" }
+                }]
+            };
+            await ExecuteAsync(fixture.DataSource, schema, $"UPDATE \"{schema}\".layers SET extent = NULL;");
+
+            var saved = await store.SaveAsync(candidate, expectedEtag: null);
+
+            saved.Graph.Folders.Should().ContainSingle().Which.Metadata.Id.Should().Be("folder-first");
+            saved.Graph.Services.Should().BeEquivalentTo(legacy.Services);
+            (await store.TryGetPersistedCurrentAsync()).Should().NotBeNull();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task GetCurrentAsync_NullLegacyBounds_MaterializesResourcesWithoutBbox()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreCompatFallbackTests));
+        try
+        {
+            await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
+            await SeedV1CatalogAsync(fixture.DataSource, schema, "cite_features", 700, "CITE Features");
+            await ExecuteAsync(fixture.DataSource, schema, $"UPDATE \"{schema}\".layers SET extent = NULL;");
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresMetadataV2GraphStore(
+                provider, "Test", FixtureBypassDatabaseSchemaGuard.Instance, schema);
+
+            var snapshot = await store.GetCurrentAsync();
+
+            snapshot.Graph.Resources.Should().HaveCount(2);
+            snapshot.Graph.Resources.Should().OnlyContain(resource =>
+                resource.Spatial != null && resource.Spatial.Bbox == null &&
+                resource.Spatial.SpatialReference != null && resource.Spatial.SpatialReference.Srid == 4326);
+            (await store.TryGetPersistedCurrentAsync()).Should().BeNull();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task SaveAndStageAsync_OrganizedBootstrap_RejectLegacyPathRebinding()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreCompatFallbackTests));
+        try
+        {
+            await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
+            await SeedV1CatalogAsync(fixture.DataSource, schema, "cite_features", 700, "CITE Features");
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresMetadataV2GraphStore(
+                provider, "Test", FixtureBypassDatabaseSchemaGuard.Instance, schema);
+            var legacy = (await store.GetCurrentAsync()).Graph;
+            var candidate = legacy with
+            {
+                Services = legacy.Services.Select(service => service with
+                {
+                    Metadata = service.Metadata with { Id = "replacement-" + service.Metadata.Id, Name = "replacement" },
+                    PublicName = "cite_features"
+                }).ToArray(),
+                Publications = legacy.Publications.Select(publication => publication with
+                {
+                    ServiceId = "replacement-" + publication.ServiceId
+                }).ToArray()
+            };
+
+            var save = () => store.SaveAsync(candidate, expectedEtag: null);
+            var stage = () => store.StageAsync(candidate);
+            await save.Should().ThrowAsync<InvalidOperationException>().WithMessage("*reservation*");
+            await stage.Should().ThrowAsync<InvalidOperationException>().WithMessage("*reservation*");
+            (await store.TryGetPersistedCurrentAsync()).Should().BeNull();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
     public async Task GetCurrentAsync_NoV2SnapshotButV1CatalogPresent_SynthesizesCompatSnapshotFromV1()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreCompatFallbackTests));
@@ -54,6 +176,13 @@ public sealed class PostgresMetadataV2GraphStoreCompatFallbackTests(PostgresFixt
             var resource = snapshot.Graph.Resources.Should()
                 .ContainSingle(r => r.Metadata.Id == "res-layer-700").Which;
             resource.Metadata.Name.Should().Be("CITE Features");
+            resource.ReadBbox().Should().BeEquivalentTo(new MetadataV2Bbox
+            {
+                West = -180,
+                South = -90,
+                East = 180,
+                North = 90
+            });
 
             var ogcPublication = snapshot.Graph.Publications.Should()
                 .ContainSingle(p => p.Metadata.Id == "pub-cite-features-ogc-700").Which;

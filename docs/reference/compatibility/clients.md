@@ -61,6 +61,15 @@ issuance uses its existing identity projection.
 Scoped Portal-token authentication is therefore not available to desktop clients. See
 [authentication setup and token revocation during upgrades](../../guides/secure/authentication.md#4-issue-geoservices-rest-compatible-tokens).
 
+## OIDC audience identity
+
+OIDC audience values must match the configured client ID or additional audience
+exactly, including letter case. Tokens for a case-distinct audience are rejected
+by bearer authentication, Portal token exchange, and provider-specific validation.
+Issuer-to-audience bindings also retain exact issuer identity. Deployments that
+previously relied on case-insensitive audience matching must align their issuer's
+token audience with the configured value before upgrading.
+
 ## Realtime credentials and reconnects
 
 Protected FeatureServer and SensorThings SSE/WebSocket subscriptions revalidate

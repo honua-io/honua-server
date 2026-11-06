@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -61,4 +62,18 @@ public sealed class ProviderOnlyServiceSettingsTests : IAsyncLifetime
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         document.RootElement.GetProperty("data").GetProperty("serviceName").GetString().Should().Be("test");
     }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/folders")]
+    [Endpoint("POST /api/v1/admin/folders")]
+    public async Task Folders_WithoutGraphStore_ListReadsAndMutationReturnsUnavailable()
+    {
+        var listed = await _client.GetAsync("/api/v1/admin/folders");
+        listed.StatusCode.Should().Be(HttpStatusCode.OK);
+        listed.Headers.ETag.Should().NotBeNull();
+        _client.DefaultRequestHeaders.TryAddWithoutValidation("If-Match", listed.Headers.ETag!.ToString());
+        var mutation = await _client.PostAsJsonAsync("/api/v1/admin/folders", new { name = "Survey" });
+        mutation.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+    }
+
 }

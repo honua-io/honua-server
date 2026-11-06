@@ -182,7 +182,7 @@ public static class MigrationSafetyClassifier
         // Keep routine/DO/dynamic-SQL detection unchanged for every other script. This review
         // covers only these exact bytes: a marker, another name, or any later edit cannot inherit it.
         const string name = "129_ProtectImportTableOwnership.sql";
-        const string reviewedHash = "81D2BE992221BE7A5267BAF1DFD6A4CFE5FEB94E926B1E4E770A72EAE7BB7427";
+        const string reviewedHash = "A62328A559BC22113185838F0EEC3CAC22FA50352F9CD6C9D98BD0E42B9DD77B";
         return (string.Equals(scriptName, name, StringComparison.Ordinal)
                 || string.Equals(scriptName, "Honua.Server.Migrations." + name, StringComparison.Ordinal)
                 || string.Equals(scriptName, "src/Honua.Server/Migrations/" + name, StringComparison.Ordinal))
