@@ -164,18 +164,18 @@ internal static class ImportBackgroundServiceCoordinator
         {
             try
             {
-                var current = await jobManager.ProgressStore.GetProgressAsync(jobId, token).ConfigureAwait(false);
-                if (current != null && isCancelled(current))
-                {
-                    jobCancellation.Cancel();
-                    return;
-                }
-
                 var leadershipMaintained = await jobManager.LeaderElection.HeartbeatAsync(token).ConfigureAwait(false);
                 if (!leadershipMaintained)
                 {
                     markLeadershipLost();
                     logLeadershipLost(logger, jobId);
+                    jobCancellation.Cancel();
+                    return;
+                }
+
+                var current = await jobManager.ProgressStore.GetProgressAsync(jobId, token).ConfigureAwait(false);
+                if (current != null && isCancelled(current))
+                {
                     jobCancellation.Cancel();
                     return;
                 }
