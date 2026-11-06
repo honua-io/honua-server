@@ -247,33 +247,16 @@ internal sealed partial class ODataBatchHandler
                             }
 
                             var target = (layerId.Value, objectId.Value);
-                            var isFirstMutation = !preparedFeatures.TryGetValue(target, out var existing);
-                            if (isFirstMutation)
+                            var snapshot = await ReadMutationSnapshotAsync(
+                                new BatchMutationRead(layer, objectId.Value, request, preparedFeatures), cancellationToken);
+                            if (snapshot.Error is not null)
                             {
-                                existing = await layer.Reader.GetAsync(layer.StorageLayerId, objectId.Value, cancellationToken);
-                            }
-                            if (!existing.HasValue)
-                            {
-                                responses.Add(CreateErrorResponse(
-                                    request.Id,
-                                    404,
-                                    "ResourceNotFound",
-                                    $"Feature {objectId} not found in layer {layerId}."));
+                                responses.Add(snapshot.Error);
                                 rollback = true;
                                 break;
                             }
-
-                            var precondition = await ValidatePreconditionsAsync(layer, existing.Value, request.Headers, cancellationToken);
-                            if (!precondition.IsValid)
-                            {
-                                responses.Add(CreateErrorResponse(
-                                    request.Id,
-                                    412,
-                                    "PreconditionFailed",
-                                    precondition.ErrorMessage ?? "Precondition failed."));
-                                rollback = true;
-                                break;
-                            }
+                            var existing = snapshot.Existing;
+                            var isFirstMutation = snapshot.IsFirstMutation;
 
                             Feature? mergeExisting = isPatch ? existing.Value : null;
 
@@ -362,33 +345,16 @@ internal sealed partial class ODataBatchHandler
                             }
 
                             var target = (layerId.Value, objectId.Value);
-                            var isFirstMutation = !preparedFeatures.TryGetValue(target, out var existing);
-                            if (isFirstMutation)
+                            var snapshot = await ReadMutationSnapshotAsync(
+                                new BatchMutationRead(layer, objectId.Value, request, preparedFeatures), cancellationToken);
+                            if (snapshot.Error is not null)
                             {
-                                existing = await layer.Reader.GetAsync(layer.StorageLayerId, objectId.Value, cancellationToken);
-                            }
-                            if (!existing.HasValue)
-                            {
-                                responses.Add(CreateErrorResponse(
-                                    request.Id,
-                                    404,
-                                    "ResourceNotFound",
-                                    $"Feature {objectId} not found in layer {layerId}."));
+                                responses.Add(snapshot.Error);
                                 rollback = true;
                                 break;
                             }
-
-                            var precondition = await ValidatePreconditionsAsync(layer, existing.Value, request.Headers, cancellationToken);
-                            if (!precondition.IsValid)
-                            {
-                                responses.Add(CreateErrorResponse(
-                                    request.Id,
-                                    412,
-                                    "PreconditionFailed",
-                                    precondition.ErrorMessage ?? "Precondition failed."));
-                                rollback = true;
-                                break;
-                            }
+                            var existing = snapshot.Existing;
+                            var isFirstMutation = snapshot.IsFirstMutation;
 
                             var deleteValidation = await BuildValidatedEditBatchAsync(
                                 layer.Resource,
