@@ -5,6 +5,7 @@ using FluentAssertions;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Protocols.OData.Services;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
 using NSubstitute;
