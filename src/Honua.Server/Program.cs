@@ -2223,9 +2223,7 @@ if (Honua.ControlPlane.SelfHostedRollingProxyRegistration.IsSelfHostedProxyEnabl
     app.MapReverseProxy();
 }
 
-#if !HONUA_EXCLUDE_GEOSERVICES
 app.MapGeoServicesServicePaths();
-#endif
 
 app.Run();
 
