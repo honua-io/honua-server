@@ -125,7 +125,7 @@ public sealed class MetadataV2LifecycleRoutingTests
     {
         var method = handlerType.GetMethod(methodName, BindingFlags.NonPublic | BindingFlags.Static);
         method.Should().NotBeNull();
-        return (Array)method!.Invoke(null, [snapshot, service])!;
+        return (Array)method!.Invoke(null, [snapshot, service, new DefaultHttpContext()])!;
     }
 
     private static MetadataV2GraphSnapshot CreateSnapshot(

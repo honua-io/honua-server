@@ -152,8 +152,8 @@ public sealed partial class LayerPublishingIntegrationTests
             $"/api/v1/admin/connections/{_connectionId}/layers?serviceName={_serviceName}");
         var listPayload = await listResponse.Content.ReadAsStringAsync();
         listResponse.StatusCode.Should().Be(HttpStatusCode.OK, listPayload);
-        var layers = JsonSerializer.Deserialize<ApiResponse<List<PublishedLayerSummary>>>(listPayload, _jsonOptions);
-        layers!.Data.Should().BeEmpty();
+        var layers = JsonSerializer.Deserialize<ApiResponse<PublishedLayerPage>>(listPayload, _jsonOptions);
+        layers!.Data!.Items.Should().BeEmpty();
 
         // The shared publishing service applies the same bounds for every caller, including import.
         var publish = () => _fixture.GetService<ILayerPublishingService>().PublishLayerAsync(

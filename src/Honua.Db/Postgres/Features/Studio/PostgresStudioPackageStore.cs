@@ -766,7 +766,7 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
         if (!string.IsNullOrWhiteSpace(query.SearchTerm))
         {
             clauses.Add("package_key ILIKE @search_term");
-            parameters.Add(("@search_term", NpgsqlDbType.Text, $"%{EscapeLike(query.SearchTerm.Trim())}%"));
+            parameters.Add(("@search_term", NpgsqlDbType.Text, $"%{PostgresLikeLiteral.Escape(query.SearchTerm.Trim())}%"));
         }
 
         if (query.States is { Count: > 0 } states)
@@ -806,7 +806,7 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
         if (!string.IsNullOrWhiteSpace(query.SearchTerm))
         {
             clauses.Add("package_key ILIKE @search_term");
-            parameters.Add(("@search_term", NpgsqlDbType.Text, $"%{EscapeLike(query.SearchTerm.Trim())}%"));
+            parameters.Add(("@search_term", NpgsqlDbType.Text, $"%{PostgresLikeLiteral.Escape(query.SearchTerm.Trim())}%"));
         }
 
         AppendTenantClause(query.Tenant, clauses, parameters);
@@ -850,11 +850,6 @@ internal sealed partial class PostgresStudioPackageStore : IStudioPackageStore
         StudioContentItemState.Published => "published_version_id IS NOT NULL",
         _ => "FALSE",
     };
-
-    private static string EscapeLike(string value)
-        => value.Replace("\\", "\\\\", StringComparison.Ordinal)
-            .Replace("%", "\\%", StringComparison.Ordinal)
-            .Replace("_", "\\_", StringComparison.Ordinal);
 
     private static StudioContentItemSummary ReadContentItemSummary(NpgsqlDataReader reader)
     {

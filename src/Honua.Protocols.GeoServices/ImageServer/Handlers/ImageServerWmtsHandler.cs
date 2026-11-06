@@ -596,7 +596,7 @@ internal sealed class ImageServerWmtsHandler(
         PixelValueResult? pixel = null;
         var featureInfoLayer = publicationId is null
             ? ImageServerV2Lookups.FindByStorageLayerId(snapshot, layerId, context)
-            : ImageServerV2Lookups.FindByPublicationId(snapshot, publicationId);
+            : ImageServerV2Lookups.FindByPublicationId(snapshot, publicationId, context);
         if (featureInfoLayer is { } resolved)
         {
             var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, GetQueryString(query, "mosaicRule"));

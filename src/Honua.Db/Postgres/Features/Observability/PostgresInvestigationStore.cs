@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Buffers;
 using System.Collections.Immutable;
 using System.Security.Cryptography;
 using System.Text;
@@ -23,8 +22,6 @@ internal sealed class PostgresInvestigationStore : IInvestigationStore
     internal const int MinPageSize = 1;
     internal const int MaxPageSize = 200;
     internal const int DefaultPageSize = 50;
-
-    private static readonly SearchValues<char> _likeMetacharacters = SearchValues.Create("\\%_");
 
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly string _investigationsTable;
@@ -121,7 +118,7 @@ internal sealed class PostgresInvestigationStore : IInvestigationStore
         if (!string.IsNullOrWhiteSpace(filter.TitleContains))
         {
             sql.Append(@" AND i.title ILIKE @title_contains ESCAPE '\'");
-            command.Parameters.AddWithValue("title_contains", NpgsqlDbType.Text, "%" + EscapeLikePattern(filter.TitleContains) + "%");
+            command.Parameters.AddWithValue("title_contains", NpgsqlDbType.Text, "%" + PostgresLikeLiteral.Escape(filter.TitleContains) + "%");
         }
 
         if (cursor is not null)
@@ -523,27 +520,6 @@ internal sealed class PostgresInvestigationStore : IInvestigationStore
         }
 
         return Math.Min(MaxPageSize, Math.Max(MinPageSize, requested));
-    }
-
-    internal static string EscapeLikePattern(string value)
-    {
-        if (value.AsSpan().IndexOfAny(_likeMetacharacters) < 0)
-        {
-            return value;
-        }
-
-        var sb = new StringBuilder(value.Length + 4);
-        foreach (var ch in value)
-        {
-            if (ch is '\\' or '%' or '_')
-            {
-                sb.Append('\\');
-            }
-
-            sb.Append(ch);
-        }
-
-        return sb.ToString();
     }
 
     internal static string GenerateInvestigationId()

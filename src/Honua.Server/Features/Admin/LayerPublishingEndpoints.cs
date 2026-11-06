@@ -102,7 +102,7 @@ internal static class LayerPublishingEndpoints
             .ProducesProblem(StatusCodes.Status500InternalServerError);
     }
 
-    private static async Task<Results<Ok<ApiResponse<IReadOnlyList<PublishedLayerSummary>>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, Conflict<ApiResponse<object>>, ProblemHttpResult, ForbidHttpResult>>
+    private static async Task<Results<Ok<ApiResponse<PublishedLayerPage>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, Conflict<ApiResponse<object>>, ProblemHttpResult, ForbidHttpResult>>
         HandleListLayers(
             string id,
             string? serviceName,
@@ -111,17 +111,19 @@ internal static class LayerPublishingEndpoints
             HttpContext context,
             [FromServices] ILogger<LayerPublishingEndpointsLog> logger)
     {
+        if (!AdminListQueryParser.TryParse(context.Request.Query, out var listQuery, out var queryError))
+        {
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(queryError));
+        }
+
         try
         {
-            var connectionId = await ResolveConnectionIdAsync(id, context).ConfigureAwait(false);
-            var connectionString = await resolver.ResolveConnectionStringAsync(connectionId, context.RequestAborted);
-            var layers = await publishingService.ListPublishedLayersAsync(
-                connectionString,
-                serviceName ?? "default",
-                connectionId,
-                context.RequestAborted);
-
-            return TypedResults.Ok(ApiResponse<IReadOnlyList<PublishedLayerSummary>>.CreateSuccess(layers));
+            var page = await ReadLayerPageAsync(
+                new LayerListRequest(id, serviceName, listQuery),
+                resolver,
+                publishingService,
+                context).ConfigureAwait(false);
+            return TypedResults.Ok(ApiResponse<PublishedLayerPage>.CreateSuccess(page));
         }
         catch (LayerPublishingException ex) when (ex.ErrorKind == LayerPublishingErrorKind.NotFound)
         {
@@ -159,6 +161,27 @@ internal static class LayerPublishingEndpoints
             LayerPublishingLog.LayerListForbidden(logger, ex);
             return TypedResults.Forbid();
         }
+    }
+
+    private readonly record struct LayerListRequest(string Id, string? ServiceName, AdminListQuery Query);
+
+    private static async Task<PublishedLayerPage> ReadLayerPageAsync(
+        LayerListRequest request,
+        ISecureConnectionResolver resolver,
+        ILayerPublishingService publishingService,
+        HttpContext context)
+    {
+        var connectionId = await ResolveConnectionIdAsync(request.Id, context).ConfigureAwait(false);
+        var connectionString = await resolver.ResolveConnectionStringAsync(connectionId, context.RequestAborted);
+        return await publishingService.ListPublishedLayersPageAsync(
+            connectionString,
+            new PublishedLayerPageQuery(
+                request.ServiceName ?? "default",
+                connectionId,
+                request.Query.Page,
+                request.Query.PageSize,
+                request.Query.NameQuery),
+            context.RequestAborted).ConfigureAwait(false);
     }
 
     private static async Task<IResult>

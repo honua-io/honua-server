@@ -40,6 +40,15 @@ precedence. Request host validation, strict startup validation
 An explicit host allowlist still takes precedence over the public URL, and
 unrelated request hosts remain rejected when host validation is enabled.
 
+## Publication tenant scope for imagery
+
+WMS and WMTS discovery and layer selection exclude publications owned by another
+tenant, even when the underlying resource is public. ImageServer numeric, default
+and publication-specific routes apply the same publication scope before selecting
+a source. A hidden primary publication does not shadow a visible alias. If a
+previously selected publication is no longer visible, raster and tile requests
+return not found without rebinding the request to another publication.
+
 ## Managed API keys and Portal token exchange
 
 Managed API-key expiry rejects the credential while retaining its registry
@@ -60,6 +69,15 @@ issuance uses its existing identity projection.
 
 Scoped Portal-token authentication is therefore not available to desktop clients. See
 [authentication setup and token revocation during upgrades](../../guides/secure/authentication.md#4-issue-geoservices-rest-compatible-tokens).
+
+## OIDC audience identity
+
+OIDC audience values must match the configured client ID or additional audience
+exactly, including letter case. Tokens for a case-distinct audience are rejected
+by bearer authentication, Portal token exchange, and provider-specific validation.
+Issuer-to-audience bindings also retain exact issuer identity. Deployments that
+previously relied on case-insensitive audience matching must align their issuer's
+token audience with the configured value before upgrading.
 
 ## Realtime credentials and reconnects
 

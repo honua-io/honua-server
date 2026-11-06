@@ -76,7 +76,7 @@ internal static partial class FeatureServerEndpoints
         var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
-        var allPairs = GetRoutableFeaturePublicationsV2(service, snapshot);
+        var allPairs = GetRoutableFeaturePublicationsV2(service, snapshot, context);
 
         if (RequiresDefaultMetadataAuthenticationV2(
                 context,
@@ -313,7 +313,7 @@ internal static partial class FeatureServerEndpoints
                     extrusionValidationErrors);
             }
 
-            var allPairs = GetRoutableFeaturePublicationsV2(service, snapshot);
+            var allPairs = GetRoutableFeaturePublicationsV2(service, snapshot, context);
             var access = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
                 context, allPairs.Select(pair => pair.Resource), service,
                 AuthorizationOperation.Metadata, cancellationToken).ConfigureAwait(false);

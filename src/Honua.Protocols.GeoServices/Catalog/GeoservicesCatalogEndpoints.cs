@@ -736,6 +736,8 @@ internal static class GeoservicesCatalogEndpoints
             var visibleResources = new List<MetadataV2Resource>();
             foreach (var resource in snapshot.PublicationsForService(service.Metadata.Id)
                 .Where(snapshot.IsRoutable)
+                .Where(publication => TenantScopeHelpers.IsPublicationVisible(
+                    context, publication, snapshot.ResolveResource(publication), service))
                 .Select(snapshot.ResolveResource)
                 .OfType<MetadataV2Resource>())
             {
@@ -790,6 +792,7 @@ internal static class GeoservicesCatalogEndpoints
 
         if (imageServerServices.Count > 0)
         {
+            var tenantId = TenantScopeHelpers.ResolveRequestTenantId(context);
             var imageServerEntries = new ServiceDirectoryEntry?[imageServerServices.Count];
             await Parallel.ForEachAsync(
                 Enumerable.Range(0, imageServerServices.Count),
@@ -801,7 +804,7 @@ internal static class GeoservicesCatalogEndpoints
                     try
                     {
                         var probe = await GetImageServerLayerIdAsync(
-                            snapshot, service, candidate.VisibleResources, rasterStore, logger, ct).ConfigureAwait(false);
+                            new(snapshot, service, candidate.VisibleResources, tenantId), rasterStore, logger, ct).ConfigureAwait(false);
                         if (probe.AllLookupsFailed)
                         {
                             Interlocked.Increment(ref failedImageServerProbes);
@@ -1198,14 +1201,19 @@ internal static class GeoservicesCatalogEndpoints
         return true;
     }
 
+    private readonly record struct ImageServerProbeRequest(
+        MetadataV2GraphSnapshot Snapshot,
+        MetadataV2Service Service,
+        IReadOnlyCollection<MetadataV2Resource> VisibleResources,
+        string? TenantId);
+
     private static async Task<ImageServerProbeResult> GetImageServerLayerIdAsync(
-        MetadataV2GraphSnapshot snapshot,
-        MetadataV2Service service,
-        IReadOnlyCollection<MetadataV2Resource> visibleResources,
+        ImageServerProbeRequest request,
         IRasterStore rasterStore,
         ILogger logger,
         CancellationToken cancellationToken)
     {
+        var (snapshot, service, visibleResources, tenantId) = request;
         var visibleResourceIds = visibleResources
             .Select(static resource => resource.Metadata.Id)
             .ToHashSet(StringComparer.Ordinal);
@@ -1214,6 +1222,7 @@ internal static class GeoservicesCatalogEndpoints
         foreach (var publication in snapshot.PublicationsForService(service.Metadata.Id))
         {
             if (!snapshot.IsRoutable(publication)
+                || !MetadataV2TenantVisibility.IsVisibleToTenant(publication, snapshot.ResolveResource(publication), service, tenantId)
                 || !visibleResourceIds.Contains(publication.ResourceId)
                 || publication.LayerIndex is not { } layerIndex
                 || snapshot.ResolveStorageLayerId(publication) is not { } storageLayerId)

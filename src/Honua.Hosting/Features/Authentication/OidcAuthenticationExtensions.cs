@@ -446,7 +446,7 @@ public static partial class OidcAuthenticationExtensions
             };
 
             // Set valid issuers based on configured providers
-            var validIssuers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var validIssuers = new HashSet<string>(StringComparer.Ordinal);
 
             if (oidcOptions.AzureAd?.IsValid == true)
             {
@@ -487,14 +487,14 @@ public static partial class OidcAuthenticationExtensions
             options.TokenValidationParameters.ValidIssuers = validIssuers.ToArray();
 
             // Set valid audiences
-            var validAudiences = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var validAudiences = new HashSet<string>(StringComparer.Ordinal);
 
             // Per-issuer audience map. Without this, ValidIssuers and ValidAudiences are
             // merged into flat sets and a token whose iss belongs to provider A but whose
             // aud is provider B's client id would validate (cross-issuer/audience pairing).
             // The AudienceValidator wired below uses this map to enforce that a token's
             // audience matches the audience(s) configured for its (already validated) issuer.
-            var audiencesByIssuer = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+            var audiencesByIssuer = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
 
             void MapIssuerAudiences(IEnumerable<string> issuers, IEnumerable<string> audiences)
             {
@@ -507,7 +507,7 @@ public static partial class OidcAuthenticationExtensions
 
                     if (!audiencesByIssuer.TryGetValue(issuer, out var set))
                     {
-                        set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        set = new HashSet<string>(StringComparer.Ordinal);
                         audiencesByIssuer[issuer] = set;
                     }
 
@@ -601,7 +601,7 @@ public static partial class OidcAuthenticationExtensions
                     var fallback = validationParameters.ValidAudiences;
                     return audiences is not null && fallback is not null &&
                         audiences.Any(audience =>
-                            fallback.Any(valid => string.Equals(valid, audience, StringComparison.OrdinalIgnoreCase)));
+                            fallback.Any(valid => string.Equals(valid, audience, StringComparison.Ordinal)));
                 };
             }
 

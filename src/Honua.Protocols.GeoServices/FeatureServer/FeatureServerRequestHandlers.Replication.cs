@@ -149,7 +149,7 @@ internal static partial class FeatureServerEndpoints
 
         var service = serviceValidationResult.Service!;
         var snapshot = serviceValidationResult.Snapshot!;
-        var serviceLayers = ResolveServiceReplicaLayersV2(service, snapshot);
+        var serviceLayers = ResolveServiceReplicaLayersV2(service, snapshot, context);
         var access = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
             context,
             serviceLayers.Select(layer => layer.Resource),
@@ -374,7 +374,7 @@ internal static partial class FeatureServerEndpoints
                 "layers parameter contains one or more invalid layer IDs for this service.");
         }
 
-        var createLayers = ResolveServiceReplicaLayersV2(service, snapshot)
+        var createLayers = ResolveServiceReplicaLayersV2(service, snapshot, context)
             .Where(layer => layerIds.Contains(layer.PublicLayerId))
             .ToArray();
         var createRbacError = await RequireReplicaWriteAccessV2Async(
@@ -858,7 +858,7 @@ internal static partial class FeatureServerEndpoints
         }
 
         var requestedIdSet = requestedLayerIds.ToHashSet();
-        var extractLayers = ResolveServiceReplicaLayersV2(service, snapshot)
+        var extractLayers = ResolveServiceReplicaLayersV2(service, snapshot, context)
             .Where(layer => requestedIdSet.Contains(layer.PublicLayerId))
             .DistinctBy(layer => layer.PublicLayerId)
             .ToArray();
@@ -2194,12 +2194,15 @@ internal static partial class FeatureServerEndpoints
 
     private static ReplicaLayerV2[] ResolveServiceReplicaLayersV2(
         MetadataV2Service service,
-        MetadataV2GraphSnapshot snapshot)
+        MetadataV2GraphSnapshot snapshot,
+        HttpContext context)
     {
         return
         [
             ..snapshot.PublicationsForService(service.Metadata.Id)
                 .Where(snapshot.IsRoutable)
+                .Where(publication => TenantScopeHelpers.IsPublicationVisible(
+                    context, publication, snapshot.ResolveResource(publication), service))
                 .Select(publication =>
                 {
                     var resource = snapshot.ResolveResource(publication);
@@ -2244,7 +2247,7 @@ internal static partial class FeatureServerEndpoints
         CancellationToken cancellationToken)
         => AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
             context,
-            ResolveServiceReplicaLayersV2(service, snapshot).Select(layer => layer.Resource),
+            ResolveServiceReplicaLayersV2(service, snapshot, context).Select(layer => layer.Resource),
             service,
             scope == AccessScope.Write ? _replicaWriteOperations : _replicaReadOperations,
             cancellationToken);
@@ -2263,7 +2266,7 @@ internal static partial class FeatureServerEndpoints
 
         if (string.IsNullOrWhiteSpace(layersParam))
         {
-            var serviceLayers = ResolveServiceReplicaLayersV2(service, snapshot);
+            var serviceLayers = ResolveServiceReplicaLayersV2(service, snapshot, context);
             var accessibleLayers = serviceLayers
                 .Where(layer => access.IsAccessible(layer.Resource))
                 .Select(layer => layer.PublicLayerId)
@@ -2280,7 +2283,7 @@ internal static partial class FeatureServerEndpoints
             return true;
         }
 
-        var layerById = ResolveServiceReplicaLayersV2(service, snapshot)
+        var layerById = ResolveServiceReplicaLayersV2(service, snapshot, context)
             .ToDictionary(layer => layer.PublicLayerId);
 
         // Accept both the comma-separated form (layers=0 / layers=0,1) and the Esri
@@ -2349,7 +2352,7 @@ internal static partial class FeatureServerEndpoints
         layers = [];
         error = null;
 
-        var serviceLayerById = ResolveServiceReplicaLayersV2(service, snapshot)
+        var serviceLayerById = ResolveServiceReplicaLayersV2(service, snapshot, context)
             .ToDictionary(layer => layer.PublicLayerId);
         var resolved = new List<ReplicaLayerV2>(replica.LayerIds.Length);
 
@@ -2475,7 +2478,7 @@ internal static partial class FeatureServerEndpoints
         CancellationToken cancellationToken)
     {
         IResult? firstError = null;
-        foreach (var layer in ResolveServiceReplicaLayersV2(service, snapshot).DistinctBy(static layer => layer.PublicLayerId))
+        foreach (var layer in ResolveServiceReplicaLayersV2(service, snapshot, context).DistinctBy(static layer => layer.PublicLayerId))
         {
             var rbacError = await ServiceDataEditorAuthorization.RequireResourceDataEditorAsync(
                 context,

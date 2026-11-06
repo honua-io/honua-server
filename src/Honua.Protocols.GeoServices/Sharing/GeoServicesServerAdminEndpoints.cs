@@ -122,7 +122,7 @@ public static class GeoServicesServerAdminEndpoints
         {
             var (visiblePairs, accessError) = await AccessPolicyHelpers.FilterAccessibleResourcesAsync(
                 context,
-                FeatureServerEndpoints.GetRoutableFeaturePublicationsV2(service, snapshot),
+                FeatureServerEndpoints.GetRoutableFeaturePublicationsV2(service, snapshot, context),
                 static pair => pair.Resource,
                 service,
                 AuthorizationOperation.Metadata,

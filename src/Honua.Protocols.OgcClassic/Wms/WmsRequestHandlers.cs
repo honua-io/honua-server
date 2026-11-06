@@ -160,7 +160,7 @@ internal static partial class WmsRequestHandlers
             // Sorted by storage layer id so capabilities ordering is stable — matches
             // the resolution order WCS/WMTS V2 ports use and the FeatureServer V2
             // cluster established earlier in the cutover.
-            var wmsLayers = ResolveWmsLayers(snapshot, svcDef);
+            var wmsLayers = ResolveWmsLayers(snapshot, svcDef, context);
 
             var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
                 context,
@@ -266,13 +266,14 @@ internal static partial class WmsRequestHandlers
         }
     }
 
-    private static WmsLayer[] ResolveWmsLayers(MetadataV2GraphSnapshot snapshot, MetadataV2Service service)
+    private static WmsLayer[] ResolveWmsLayers(MetadataV2GraphSnapshot snapshot, MetadataV2Service service, HttpContext context)
     {
         var byResource = new Dictionary<string, WmsLayer>(StringComparer.Ordinal);
         foreach (var publication in snapshot.Index.PublicationsByService[service.Metadata.Id])
         {
             var resource = snapshot.ResolveResource(publication);
-            if (!snapshot.IsRoutable(publication) || !ResourceHasGeometry(resource!))
+            if (!snapshot.IsRoutable(publication) || !ResourceHasGeometry(resource!)
+                || !TenantScopeHelpers.IsPublicationVisible(context, publication, resource, service))
             {
                 continue;
             }
