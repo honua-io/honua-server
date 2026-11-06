@@ -96,9 +96,9 @@ class GateTests(unittest.TestCase):
         code, _, _ = self.run_gate({"version": 1})
         self.assertEqual(code, 2)
 
-    def test_repository_props_suppressions_parse(self) -> None:
+    def test_production_sqlite_advisory_is_not_suppressed(self) -> None:
         props = SCRIPT.parents[2] / "Directory.Build.props"
-        self.assertIn("https://github.com/advisories/ghsa-2m69-gcr7-jv3q", gate.suppressed_advisories(props))
+        self.assertNotIn("https://github.com/advisories/ghsa-2m69-gcr7-jv3q", gate.suppressed_advisories(props))
 
 
 if __name__ == "__main__":
