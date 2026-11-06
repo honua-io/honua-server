@@ -252,8 +252,11 @@ public sealed class GeoServicesServiceRoutesTests
     {
         await using var app = CreateApp();
         var provider = app.Services.GetRequiredService<IMetadataV2GraphProvider>();
+#pragma warning disable CA2012 // NSubstitute consumes this ValueTask configuration once per invocation.
         provider.GetCurrentAsync(Arg.Any<CancellationToken>())
-            .Returns(_ => throw new InvalidOperationException("Catalog unavailable"));
+            .Returns(_ => ValueTask.FromException<MetadataV2GraphSnapshot>(
+                new InvalidOperationException("Catalog unavailable")));
+#pragma warning restore CA2012
         app.MapGet($"{root}/{{serviceId}}/MapServer/WMS", (string serviceId) => Results.Text(serviceId));
         await app.StartAsync();
         using var client = app.GetTestClient();
