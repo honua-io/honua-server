@@ -13,6 +13,7 @@ using Honua.Core.Features.Operations.Domain;
 using Honua.Ai.Protocols.Mcp.Models;
 using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
@@ -102,6 +103,7 @@ internal static class McpTestFactory
     {
         var license = new TestLicenseEntitlementService(edition);
         var services = new ServiceCollection()
+            .AddSingleton<IConfiguration>(new ConfigurationBuilder().Build())
             .AddSingleton<ILicenseEntitlementService>(license)
             .AddSingleton<ILicenseStatusProvider>(license);
         configureServices?.Invoke(services);

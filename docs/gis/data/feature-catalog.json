@@ -1142,6 +1142,21 @@
       "capability": "ai.mcp-discovery"
     },
     {
+      "id": "get-admin-services-foldername-servicename-servicetype",
+      "route": "/admin/services/{folderName}/{serviceName}.{serviceType}",
+      "method": "GET",
+      "family": "GeoServices REST",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Capabilities.DeploymentCapabilityProfileIntegrationTests.FolderPath_ConfiguredProfile_EnforcesItsCapability",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Sharing.FolderAdminProbeTests.ServiceProbe_FolderPublicName_ResolvesLeafAndQualifiedSpellings"
+      ],
+      "proof_ledger_surface": "geoservices-catalog",
+      "maturity": "implemented",
+      "capability": "serve.geoservices-root"
+    },
+    {
       "id": "get-admin-services-servicename-servicetype",
       "route": "/admin/services/{serviceName}.{serviceType}",
       "method": "GET",
@@ -1150,6 +1165,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.AdminServiceResource_ResolvesLayerIdAndAdvertisesCoverageExtension",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Sharing.FolderAdminProbeTests.ServiceProbe_FolderPublicName_ResolvesLeafAndQualifiedSpellings",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningMetadataTests.AdminFeatureServer_UsesEffectivePublicCapabilitiesAndQueryLimit",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningMetadataTests.AdminService_GetAndPostReturnTheSameBranchMetadataAtBothRouteSpellings",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningMetadataTests.DisabledExperimentalCapability_KeepsVersionedDataWithoutVersionManagement",
@@ -1159,6 +1175,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.EmptyService_DoesNotInheritHostVersioningCapability",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.ExplicitPublicationBinding_OverridesSameResourcesManagedPrimary",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.ExternalOnlyService_DoesNotAdvertiseRegardlessOfSourceBackedFlag",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.InaccessibleManagedPublication_DoesNotLeakVersioningThroughServiceOrAdmin",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.InaccessibleManagedResource_DoesNotLeakVersioningThroughServiceOrAdmin",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.ManagedPublication_AdvertisesAtLayerServiceAndAdmin",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.RetiredManagedPublication_DoesNotMakeExternalServiceVersioned",
@@ -6264,6 +6281,7 @@
         "Honua.Server.Tests.Features.Studio.StudioPublishedSourceProjectionTests.MapBinding_SelectsMapServerWhenTheServiceExposesBothProtocols",
         "Honua.Server.Tests.Features.Studio.StudioPublishedSourceProjectionTests.MapServerOnlyService_ProjectsTheMapServerLocator",
         "Honua.Server.Tests.Features.Studio.StudioPublishedSourceProjectionTests.PrivatePublication_StillDeniesAnonymousProjection",
+        "Honua.Server.Tests.Features.Studio.StudioPublishedSourceProjectionTests.Projection_FolderMove_KeepsLogicalSourceIdentityAndReachableCanonicalUrl",
         "Honua.Server.Tests.Features.Studio.StudioPublishedSourceProjectionTests.Projection_RechecksCurrentSourceAccess_AfterPublicAccessIsRevoked",
         "Honua.Server.Tests.Features.Studio.StudioPublishedSourceProjectionTests.Projection_RefusesConflictingResourcesForOneSource_WithoutExposingDetails",
         "Honua.Server.Tests.Features.Studio.StudioPublishedSourceProjectionTests.Projection_UsesCurrentReaderAndActualLocator_WithoutUnrelatedOrCrossTenantSources",
@@ -7524,6 +7542,7 @@
         "Honua.Server.Tests.Comprehensive.TestQualityValidationTests.TestCoverage_CriticalEndpoints_AreFullyCovered",
         "Honua.Server.Tests.Features.API.EndpointCoverageTests.OgcApi_GetFeatures_ShouldReturnGeoJSON",
         "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.StoryCollection_AfterReset_ReturnsSeededOgcFeatures",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.FolderServiceRoutingTests.NativeFeatures_FolderMove_PreservesCollectionIdsAndData",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesAdmissionErrorTests.FeatureRead_WhenAdmissionUnavailable_Preserves503AndRetryAfter",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesAdmissionErrorTests.StreamingItems_EmptyOrSingleRow_PreservesRowsAndDisposesSource",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesAdmissionErrorTests.StreamingItems_WhenFirstAdmissionFails_ReturnsCompleteProblemDetails",
@@ -8248,6 +8267,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.FolderServiceRoutingTests.NativeRecords_FolderPublicName_KeepsRecordIdentityAndCanonicalServiceLinks",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsDepthTests.GetItem_WithNonServiceRecordId_IsCaseSensitive",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsDepthTests.GetItem_WithServiceRecordId_IsCaseInsensitive",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsDepthTests.GetItem_WithUnknownQueryParameter_ReturnsBadRequest",
@@ -8767,6 +8787,22 @@
       "capability": "serve.geoservices-root"
     },
     {
+      "id": "get-rest-admin-foldername-servicename-servicetype",
+      "route": "/rest/admin/{folderName}/{serviceName}.{serviceType}",
+      "method": "GET",
+      "family": "GeoServices REST",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Capabilities.DeploymentCapabilityProfileIntegrationTests.FolderPath_ConfiguredProfile_EnforcesItsCapability",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Sharing.FolderAdminProbeTests.ServiceProbe_DuplicatePublicLeaves_RequiresQualifiedFolder",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Sharing.FolderAdminProbeTests.ServiceProbe_FolderPublicName_ResolvesLeafAndQualifiedSpellings"
+      ],
+      "proof_ledger_surface": "geoservices-catalog",
+      "maturity": "implemented",
+      "capability": "serve.geoservices-root"
+    },
+    {
       "id": "get-rest-admin-servicename-servicetype",
       "route": "/rest/admin/{serviceName}.{serviceType}",
       "method": "GET",
@@ -8775,6 +8811,11 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.AdminServiceResource_ResolvesLayerIdAndAdvertisesCoverageExtension",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Sharing.FolderAdminProbeTests.ServiceProbe_DuplicatePublicLeaves_RequiresQualifiedFolder",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Sharing.FolderAdminProbeTests.ServiceProbe_FolderPublicName_ResolvesLeafAndQualifiedSpellings",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Sharing.FolderAdminProbeTests.ServiceProbe_LogicalAndMetadataIdentities_RemainReadableAfterFolderMove",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Sharing.FolderAdminProbeTests.ServiceProbe_NumericLayerSpelling_RemainsReadableAfterFolderMove",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Sharing.FolderAdminProbeTests.ServiceProbe_RetiredRootReservation_DoesNotRebindToFolderLeaf",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningMetadataTests.AdminService_GetAndPostReturnTheSameBranchMetadataAtBothRouteSpellings",
         "Honua.Server.Tests.Features.Sharing.PortalFacadeDiscoveryContractTests.AdminProjection_AnonymousCanReadOnlyPublicServices"
       ],
@@ -8811,12 +8852,14 @@
         "Honua.Server.Tests.Features.Geocoding.Issue5536RootMountedGeocodeDiscoveryTests.RootMountedTree_MatchesInstancePathDiscovery",
         "Honua.Server.Tests.Features.Infrastructure.EmptyServerCatalogEndpointTests.GetRestServices_FreshServer_Returns200WithEmptyServicesList",
         "Honua.Server.Tests.Features.Infrastructure.EmptyServerCatalogEndpointTests.GetRestServices_FreshServer_ReturnsValidJson",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.FolderServiceRoutingTests.ServicesDirectory_PublicFolder_ReturnsOnlyCanonicalQualifiedEntries",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.GetServicesDirectory_DefaultFormat_ReturnsCatalogPayload",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.GetServicesDirectory_ImageServerEntriesUseServiceScopedUrls",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.GetServicesDirectory_IncludesServicesWithExpectedStructure",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.GetServicesDirectory_IncludesVectorTileServerEntry",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.GetServicesDirectory_InvalidFormat_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.GetServicesDirectory_PjsonFormat_ReturnsCatalogPayload",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.ServicesDirectory_PublicationTenant_FiltersFeatureMapEntriesAndRetainsPublicGp",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogGeocodeServerTests.Catalogs_ConfiguredLocator_AdvertiseCanonicalReachableMetadata",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogGeocodeServerTests.Catalogs_ProviderFactoryFails_PreserveOtherServiceDiscovery",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogGeocodeServerTests.Catalogs_PublicLocatorAndRestrictedFeatures_ExposeOnlyLocatorToAnonymousCaller",
@@ -9395,8 +9438,25 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Geocoding.Issue5536RootMountedGeocodeDiscoveryTests.RootMountedTree_MatchesInstancePathDiscovery",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.FolderServiceRoutingTests.FolderAccess_HiddenService_DoesNotExposeFolderOrBypassPolicy",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.FolderServiceRoutingTests.ServicesDirectory_PublicFolder_ReturnsOnlyCanonicalQualifiedEntries",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.ServiceFolder_ReturnsOnlyTheRequestedServicesCatalogEntries",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogGeocodeServerTests.ServiceFolder_PublicLocator_PreservesProtectedFolderAuthorization"
+      ],
+      "proof_ledger_surface": "geoservices-catalog",
+      "maturity": "implemented",
+      "capability": "serve.geoservices-root"
+    },
+    {
+      "id": "get-rest-services-foldername-serviceid",
+      "route": "/rest/services/{folderName}/{serviceId}",
+      "method": "GET",
+      "family": "GeoServices REST",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Capabilities.DeploymentCapabilityProfileIntegrationTests.FolderPath_ConfiguredProfile_EnforcesItsCapability",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.FolderServiceRoutingTests.ServicesDirectory_PublicFolder_ReturnsOnlyCanonicalQualifiedEntries"
       ],
       "proof_ledger_surface": "geoservices-catalog",
       "maturity": "implemented",
@@ -10535,6 +10595,7 @@
         "Honua.Server.Tests.FeatureServerEndpointTests.GetServiceMetadata_WithUnsupportedFormat_Returns400",
         "Honua.Server.Tests.FeatureServerEndpointTests.GetServiceMetadata_WithValidServiceId_ReturnsServiceInfo",
         "Honua.Server.Tests.FeatureServerEndpointTests.GetServiceMetadata_WithWrongHttpMethod_Returns405",
+        "Honua.Server.Tests.Features.Admin.FolderPersistenceTests.FolderMove_AfterRestart_PreservesMembershipAndServicePaths",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogGeocodeServerTests.Catalogs_PublicLocatorAndRestrictedFeatures_ExposeOnlyLocatorToAnonymousCaller",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesSoapCatalogDiscoveryTests.PostSoapCatalog_AdminAndRoleControlsAgreeWithServiceAndLayerHandoffs",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesSoapCatalogDiscoveryTests.PostSoapCatalog_DeniedDirectory_UsesSoapFaultWithRestStatus",
@@ -10559,6 +10620,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.EmptyService_DoesNotInheritHostVersioningCapability",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.ExplicitPublicationBinding_OverridesSameResourcesManagedPrimary",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.ExternalOnlyService_DoesNotAdvertiseRegardlessOfSourceBackedFlag",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.InaccessibleManagedPublication_DoesNotLeakVersioningThroughServiceOrAdmin",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.InaccessibleManagedResource_DoesNotLeakVersioningThroughServiceOrAdmin",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.ManagedPublication_AdvertisesAtLayerServiceAndAdmin",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.RetiredManagedPublication_DoesNotMakeExternalServiceVersioned",
@@ -10644,6 +10706,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerServiceQueryTests.ServiceQuery_Get_NullLayerDefsEntry_KeepsObjectIdWhere",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerServiceQueryTests.ServiceQuery_Get_ReturnsPerLayerResults",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerServiceQueryTests.ServiceQuery_Get_WithLayerDefs_AppliesPerLayerWhere",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerServiceQueryTests.ServiceQuery_PublicationTenant_FiltersBeforeLayerSelection",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerServiceQueryTests.ServiceQuery_WithGeoJsonFormat_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerServiceQueryTests.ServiceQuery_WithJsonFormat_ReturnsOk"
       ],
@@ -11035,6 +11098,7 @@
         "Honua.Server.Tests.FeatureServerStatisticsHavingTests.QueryStatistics_WithHavingPredicate_FiltersAggregatedGroups",
         "Honua.Server.Tests.FeatureServerStatisticsHavingTests.QueryStatistics_WithoutHaving_ReturnsAllGroups",
         "Honua.Server.Tests.Features.Admin.FieldMaskPolicyEndpointsTests.FieldMaskPolicy_MasksColumn_ForRestrictedRoleOnly",
+        "Honua.Server.Tests.Features.Admin.FolderPersistenceTests.FolderMove_AfterRestart_PreservesMembershipAndServicePaths",
         "Honua.Server.Tests.Features.Admin.LayerFieldConfigurationEndpointsTests.UpdateLayerFilter_WithValidPermanentFilter_PersistsAndFiltersPublicQueries",
         "Honua.Server.Tests.Features.Admin.RowLevelSecurityEndpointsTests.RlsPolicy_FiltersFeatureServerQuery_ByCallerClaim",
         "Honua.Server.Tests.Features.Caching.AnonymousResponseCacheAdmissionTests.AdminLoginCookie_DoesNotReplayTheStoredResponse",
@@ -12300,6 +12364,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.EmptyService_DoesNotInheritHostVersioningCapability",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.ExplicitPublicationBinding_OverridesSameResourcesManagedPrimary",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.ExternalOnlyService_DoesNotAdvertiseRegardlessOfSourceBackedFlag",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.InaccessibleManagedPublication_DoesNotLeakVersioningThroughServiceOrAdmin",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.InaccessibleManagedResource_DoesNotLeakVersioningThroughServiceOrAdmin",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.ManagedPublication_AdvertisesAtLayerServiceAndAdmin",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.RetiredManagedPublication_DoesNotMakeExternalServiceVersioned",
@@ -13320,6 +13385,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.EmptyService_DoesNotInheritHostVersioningCapability",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.ExplicitPublicationBinding_OverridesSameResourcesManagedPrimary",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.ExternalOnlyService_DoesNotAdvertiseRegardlessOfSourceBackedFlag",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.InaccessibleManagedPublication_DoesNotLeakVersioningThroughServiceOrAdmin",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.InaccessibleManagedResource_DoesNotLeakVersioningThroughServiceOrAdmin",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.ManagedPublication_AdvertisesAtLayerServiceAndAdmin",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.RetiredManagedPublication_DoesNotMakeExternalServiceVersioned",
@@ -14970,7 +15036,8 @@
         "Honua.Server.Tests.Features.StaticMap.StaticMapEndpointTests.CenterZoom_WithInvalidRequestedLayer_ReturnsBadRequest",
         "Honua.Server.Tests.Features.StaticMap.StaticMapEndpointTests.CenterZoom_WithLayers_ReturnsImage",
         "Honua.Server.Tests.Features.StaticMap.StaticMapEndpointTests.CenterZoom_WithMarkers_ReturnsImage",
-        "Honua.Server.Tests.Features.StaticMap.StaticMapEndpointTests.CenterZoom_WithPath_ReturnsImage"
+        "Honua.Server.Tests.Features.StaticMap.StaticMapEndpointTests.CenterZoom_WithPath_ReturnsImage",
+        "Honua.Server.Tests.Features.StaticMap.StaticMapPublicationTenantTests.StaticMap_PublicationTenant_QueriesOnlyVisibleAliases"
       ],
       "proof_ledger_surface": "ogc-api-maps-and-static-rendering",
       "maturity": "implemented",
@@ -15986,6 +16053,20 @@
       "capability": "serve.sensorthings"
     },
     {
+      "id": "post-admin-services-foldername-servicename-servicetype",
+      "route": "/admin/services/{folderName}/{serviceName}.{serviceType}",
+      "method": "POST",
+      "family": "GeoServices REST",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Sharing.FolderAdminProbeTests.ServiceProbe_FolderPublicName_ResolvesLeafAndQualifiedSpellings"
+      ],
+      "proof_ledger_surface": "geoservices-catalog",
+      "maturity": "implemented",
+      "capability": "serve.geoservices-root"
+    },
+    {
       "id": "post-admin-services-servicename-servicetype",
       "route": "/admin/services/{serviceName}.{serviceType}",
       "method": "POST",
@@ -15993,6 +16074,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Sharing.FolderAdminProbeTests.ServiceProbe_FolderPublicName_ResolvesLeafAndQualifiedSpellings",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningMetadataTests.AdminService_GetAndPostReturnTheSameBranchMetadataAtBothRouteSpellings"
       ],
       "proof_ledger_surface": "geoservices-catalog",
@@ -16939,7 +17021,7 @@
         "Honua.Server.Tests.Features.Admin.FolderEndpointsTests.CreateFolder_WithoutPrecondition_Returns428",
         "Honua.Server.Tests.Features.Admin.FolderEndpointsTests.FolderLifecycle_WithCurrentEtag_MovesAllFacetsAndPreservesAliases",
         "Honua.Server.Tests.Features.Admin.FolderEndpointsTests.FolderScope_OmittedOrSuppliedNamespace_UsesPublicationOwnership",
-        "Honua.Server.Tests.Features.Admin.FolderPersistenceTests.FolderMove_AfterRestart_PreservesMembershipAndFlatReads",
+        "Honua.Server.Tests.Features.Admin.FolderPersistenceTests.FolderMove_AfterRestart_PreservesMembershipAndServicePaths",
         "Honua.Server.Tests.Features.Admin.ProviderOnlyServiceSettingsTests.Folders_WithoutGraphStore_ListReadsAndMutationReturnsUnavailable"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -20735,6 +20817,20 @@
       "capability": "styling.ogc-api-styles"
     },
     {
+      "id": "post-rest-admin-foldername-servicename-servicetype",
+      "route": "/rest/admin/{folderName}/{serviceName}.{serviceType}",
+      "method": "POST",
+      "family": "GeoServices REST",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Sharing.FolderAdminProbeTests.ServiceProbe_FolderPublicName_ResolvesLeafAndQualifiedSpellings"
+      ],
+      "proof_ledger_surface": "geoservices-catalog",
+      "maturity": "implemented",
+      "capability": "serve.geoservices-root"
+    },
+    {
       "id": "post-rest-admin-servicename-servicetype",
       "route": "/rest/admin/{serviceName}.{serviceType}",
       "method": "POST",
@@ -20742,6 +20838,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Sharing.FolderAdminProbeTests.ServiceProbe_FolderPublicName_ResolvesLeafAndQualifiedSpellings",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningMetadataTests.AdminService_GetAndPostReturnTheSameBranchMetadataAtBothRouteSpellings"
       ],
       "proof_ledger_surface": "geoservices-catalog",
@@ -20771,6 +20868,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.FolderServiceRoutingTests.ServicesDirectory_PublicFolder_ReturnsOnlyCanonicalQualifiedEntries",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostCatalog_WithUnsupportedFormFormat_ReturnsValidationError",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostServicesDirectory_WithFormBody_ReturnsCatalogPayload"
       ],
@@ -21306,7 +21404,22 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.FolderServiceRoutingTests.ServicesDirectory_PublicFolder_ReturnsOnlyCanonicalQualifiedEntries",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.ServiceFolder_ReturnsOnlyTheRequestedServicesCatalogEntries"
+      ],
+      "proof_ledger_surface": "geoservices-catalog",
+      "maturity": "implemented",
+      "capability": "serve.geoservices-root"
+    },
+    {
+      "id": "post-rest-services-foldername-serviceid",
+      "route": "/rest/services/{folderName}/{serviceId}",
+      "method": "POST",
+      "family": "GeoServices REST",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.FolderServiceRoutingTests.ServicesDirectory_PublicFolder_ReturnsOnlyCanonicalQualifiedEntries"
       ],
       "proof_ledger_surface": "geoservices-catalog",
       "maturity": "implemented",
@@ -21818,7 +21931,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.WritableFeatureGuard_WithoutWriteToken_ReturnsUnauthorizedForWritableOperations",
+        "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.WritableFeatureGuard_PublicPathsWithoutWriteToken_RequireAuthorization",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMaintenanceTests.ServiceAppend_InvalidService_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMaintenanceTests.ServiceAppend_MissingEdits_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMaintenanceTests.ServiceAppend_ValidRequest_ReturnsSuccess"
@@ -21844,7 +21957,7 @@
         "Honua.Server.Tests.FeatureServerEndpointTests.ApplyEdits_ServiceLevel_WithMalformedJson_DoesNotLeakParserDetails",
         "Honua.Server.Tests.FeatureServerEndpointTests.ApplyEdits_ServiceLevel_WithUnsupportedContentType_ReturnsUnsupportedMediaType",
         "Honua.Server.Tests.FeatureServerEndpointTests.ApplyEdits_ServiceLevel_WithUseGlobalIdsEnabled_ReturnsBadRequest",
-        "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.WritableFeatureGuard_WithoutWriteToken_ReturnsUnauthorizedForWritableOperations",
+        "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.WritableFeatureGuard_PublicPathsWithoutWriteToken_RequireAuthorization",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMutationScenarioTests.MutationEndpoints_AcceptValidEdits_AndRoundTripEachState",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMutationScenarioTests.MutationEndpoints_RejectInvalidEdits_WithoutChangingStoredState",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.FeatureServerGdbVersionFlowTests.ServiceApplyEdits_FormGdbVersion_RoutesEditToBranch",
@@ -21862,7 +21975,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.WritableFeatureGuard_WithoutWriteToken_ReturnsUnauthorizedForWritableOperations",
+        "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.WritableFeatureGuard_PublicPathsWithoutWriteToken_RequireAuthorization",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerAccessFilteringTests.CreateReplica_WhenServiceDoesNotAdvertiseSync_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaDeliveryWindowTests.CreateReplica_ScopeLargerThanQueryAndChangeLimits_DeliversEveryFeatureInBoundedWindows",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaDeliveryWindowTests.CreateReplica_SmallScopeOnLayerWithLargeUnrelatedHistory_ReturnsTheWholeSnapshot",
@@ -21876,6 +21989,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.CreateReplica_InvalidService_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.CreateReplica_LayersAsJsonArray_ReturnsReplicaId",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.CreateReplica_MissingReplicaName_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.CreateReplica_PublicationTenant_RestrictsLayerSelection",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.CreateReplica_ValidRequest_ReturnsReplicaId",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.CreateReplica_WhenPersistenceFails_ReturnsServiceUnavailable",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.CreateReplica_WithCommunityLicense_ReturnsPaymentRequired",
@@ -22021,7 +22135,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.WritableFeatureGuard_WithoutWriteToken_ReturnsUnauthorizedForWritableOperations",
+        "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.WritableFeatureGuard_PublicPathsWithoutWriteToken_RequireAuthorization",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaDeliveryWindowTests.CreateReplica_ScopeLargerThanQueryAndChangeLimits_DeliversEveryFeatureInBoundedWindows",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaDeliveryWindowTests.SynchronizeReplica_BacklogLargerThanChangeLimit_AdvancesInWindowsAndConverges",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaEsriParityTests.CreateReplica_GeometryLayerQueriesAndReplicaSR_ScopeDataDeltasAndReplicaInfo",
@@ -22080,7 +22194,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.WritableFeatureGuard_WithoutWriteToken_ReturnsUnauthorizedForWritableOperations",
+        "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.WritableFeatureGuard_PublicPathsWithoutWriteToken_RequireAuthorization",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.UnRegisterReplica_MissingReplicaId_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.UnRegisterReplica_NonexistentReplica_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.UnRegisterReplica_ValidReplica_ReturnsSuccess",
@@ -22150,7 +22264,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.WritableFeatureGuard_WithoutWriteToken_ReturnsUnauthorizedForWritableOperations",
+        "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.WritableFeatureGuard_PublicPathsWithoutWriteToken_RequireAuthorization",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMaintenanceTests.LayerAppend_InvalidEditsJson_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMaintenanceTests.LayerAppend_MissingEdits_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMaintenanceTests.LayerAppend_ValidRequest_ReturnsSuccess",
@@ -22205,7 +22319,7 @@
         "Honua.Server.Tests.Features.Caching.FeatureServerEditCacheInvalidationTests.ApplyEdits_Delete_InvalidatesTheLayersCachedQueryResponsesOnAWarmReplica",
         "Honua.Server.Tests.Features.Caching.FeatureServerEditCacheInvalidationTests.ApplyEdits_FailedEdit_LeavesTheCacheAlone",
         "Honua.Server.Tests.Features.Caching.FeatureServerEditCacheInvalidationTests.ApplyEdits_Update_InvalidatesTheLayersCachedQueryResponsesOnAWarmReplica",
-        "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.WritableFeatureGuard_WithoutWriteToken_ReturnsUnauthorizedForWritableOperations",
+        "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.WritableFeatureGuard_PublicPathsWithoutWriteToken_RequireAuthorization",
         "Honua.Server.Tests.Features.Licensing.FeatureEditsDeniedPathSkipsResourceValidatorTests.ApplyEdits_UnlicensedHostWithBrokenResourceValidator_Returns402NotA500",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerApplyEditsAmbiguousWriteTests.ApplyEdits_RetryAfterAmbiguousZeroCountResult_ReportsConflict",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerApplyEditsAmbiguousWriteTests.ApplyEdits_RetryAfterGenericNotSupportedWriteWithUnknownOutcome_ReportsConflict",
@@ -22304,7 +22418,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.FeatureServerEndpointTests.Calculate_AcceptsEsriValueAndSqlExpressionForms",
-        "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.WritableFeatureGuard_WithoutWriteToken_ReturnsUnauthorizedForWritableOperations",
+        "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.WritableFeatureGuard_PublicPathsWithoutWriteToken_RequireAuthorization",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerCalculateBatchAtomicityTests.Calculate_LaterBatchFailure_RetryOfIncrementIncreasesStoredValuesOnce",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMaintenanceTests.Calculate_Get_IsRefusedAndLeavesRowsUnchanged",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMaintenanceTests.Calculate_InvalidCalcExpression_ReturnsBadRequest",
@@ -22674,7 +22788,7 @@
         "Honua.Server.Tests.AttachmentEndpointTests.AddAttachment_WithUnsupportedContentType_Returns415",
         "Honua.Server.Tests.AttachmentEndpointTests.AddAttachment_WithValidFile_ReturnsSuccess",
         "Honua.Server.Tests.AttachmentEndpointTests.AddAttachment_WithoutFile_Returns400",
-        "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.WritableFeatureGuard_WithoutWriteToken_ReturnsUnauthorizedForWritableOperations"
+        "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.WritableFeatureGuard_PublicPathsWithoutWriteToken_RequireAuthorization"
       ],
       "proof_ledger_surface": "feature-server",
       "maturity": "implemented",
@@ -22728,7 +22842,7 @@
         "Honua.Server.Tests.AttachmentEndpointTests.DeleteAttachments_WithUnsupportedContentType_Returns415",
         "Honua.Server.Tests.AttachmentEndpointTests.DeleteAttachments_WithValidIds_ReturnsSuccess",
         "Honua.Server.Tests.AttachmentEndpointTests.DeleteAttachments_WithoutAttachmentIds_Returns400",
-        "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.WritableFeatureGuard_WithoutWriteToken_ReturnsUnauthorizedForWritableOperations"
+        "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.WritableFeatureGuard_PublicPathsWithoutWriteToken_RequireAuthorization"
       ],
       "proof_ledger_surface": "feature-server",
       "maturity": "implemented",
@@ -22749,7 +22863,7 @@
         "Honua.Server.Tests.AttachmentEndpointTests.UpdateAttachment_WithReplacementFile_ReplacesStoredContent",
         "Honua.Server.Tests.AttachmentEndpointTests.UpdateAttachment_WithUnsupportedContentType_Returns415",
         "Honua.Server.Tests.AttachmentEndpointTests.UpdateAttachment_WithValidData_ReturnsSuccess",
-        "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.WritableFeatureGuard_WithoutWriteToken_ReturnsUnauthorizedForWritableOperations"
+        "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.WritableFeatureGuard_PublicPathsWithoutWriteToken_RequireAuthorization"
       ],
       "proof_ledger_surface": "feature-server",
       "maturity": "implemented",
@@ -23823,6 +23937,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.EmptyService_DoesNotInheritHostVersioningCapability",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.ExplicitPublicationBinding_OverridesSameResourcesManagedPrimary",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.ExternalOnlyService_DoesNotAdvertiseRegardlessOfSourceBackedFlag",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.InaccessibleManagedPublication_DoesNotLeakVersioningThroughServiceOrAdmin",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.InaccessibleManagedResource_DoesNotLeakVersioningThroughServiceOrAdmin",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.ManagedPublication_AdvertisesAtLayerServiceAndAdmin",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningPublicationMetadataTests.RetiredManagedPublication_DoesNotMakeExternalServiceVersioned",
@@ -24153,6 +24268,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.PrintingTools.PrintingToolsGpServerService5546Tests.PrintingTools_SoapBindingAndCatalog_ListBothTasks",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.FolderServiceRoutingTests.SoapCatalog_PublicFolder_ScopesQualifiedNamesAndAddresses",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapCatalog_AllRasterProbesFail_ReturnsServerFault",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapCatalog_EnvelopeAndContentTypeVersionsMustMatch",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapCatalog_GeoServicesPro37LegacyNamespace_NegotiatesCatalogVersion",
@@ -25720,7 +25836,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.FolderEndpointsTests.FolderLifecycle_WithCurrentEtag_MovesAllFacetsAndPreservesAliases",
         "Honua.Server.Tests.Features.Admin.FolderEndpointsTests.MoveService_WhenLogicalServiceDenied_DoesNotSaveEvenForCurrentMembership",
-        "Honua.Server.Tests.Features.Admin.FolderPersistenceTests.FolderMove_AfterRestart_PreservesMembershipAndFlatReads"
+        "Honua.Server.Tests.Features.Admin.FolderPersistenceTests.FolderMove_AfterRestart_PreservesMembershipAndServicePaths"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",

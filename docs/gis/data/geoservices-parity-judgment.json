@@ -2744,7 +2744,9 @@
         ],
         "tests": [
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Catalog/GeoservicesCatalogEndpointTests.cs",
-          "tests/dotnet/Honua.Server.Tests/Features/PrintingTools/PrintingToolsGpServerService5546Tests.cs"
+          "tests/dotnet/Honua.Server.Tests/Features/PrintingTools/PrintingToolsGpServerService5546Tests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Catalog/FolderServiceRoutingTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Sharing/FolderAdminProbeTests.cs"
         ]
       },
       "operations": [
@@ -2752,9 +2754,10 @@
           "name": "Service administration metadata",
           "status": "partial",
           "geoServicesPaths": [
-            "/rest/admin/{serviceName}.{serviceType}"
+            "/rest/admin/{serviceName}.{serviceType}",
+            "/rest/admin/{folderName}/{serviceName}.{serviceType}"
           ],
-          "notes": "Read-only service metadata for connections without a site segment. GET and POST expose the same principal-filtered service and branch-versioning metadata. This does not implement the ArcGIS Server administration mutation API."
+          "notes": "Read-only service metadata for connections without a site segment. GET and POST expose the same principal-filtered service and branch-versioning metadata. Qualified folder/public-leaf probes use the canonical reservation resolver; bare public leaves require an unambiguous service, and logical/metadata identities remain readable. This does not implement the ArcGIS Server administration mutation API."
         },
         {
           "name": "Catalog (service directory)",
@@ -2762,15 +2765,16 @@
           "geoServicesPaths": [
             "/rest/services"
           ],
-          "notes": "Graph-backed service directory, RBAC-filtered per principal, listing every service type a publication exposes. Returns 401/403 rather than a misleading empty list when every publication is denied. Emits the Utilities folder for the built-in PrintingTools GPServer; currentVersion is deliberately omitted (see knownLimitations)."
+          "notes": "Graph-backed, principal-filtered service directory listing root service facets and caller-visible folders. Folder entries contain canonical qualified public names and reachable facet URLs; historical aliases are excluded. Returns 401/403 rather than a misleading empty list when every publication is denied. Emits Utilities for built-in PrintingTools; currentVersion is deliberately omitted (see knownLimitations)."
         },
         {
           "name": "Service-name catalog node",
           "status": "partial",
           "geoServicesPaths": [
-            "/rest/services/{folderName}"
+            "/rest/services/{folderName}",
+            "/rest/services/{folderName}/{serviceId}"
           ],
-          "notes": "GET and POST expose the visible service-type entries for one service name using the same RBAC-filtered projection as the root directory. The built-in Utilities folder returns the PrintingTools GPServer entry. Supports client traversal through a service's parent node; nested folder hierarchies are not implemented."
+          "notes": "GET and POST expose visible facets of a root service or services in one folder, using the same RBAC-filtered projection as the root directory. A folder/service node lists the canonical qualified entries for that service. The built-in Utilities folder returns PrintingTools. Empty and hidden folders match unknown-folder behavior; nested folder hierarchies are not implemented."
         },
         {
           "name": "PrintingTools service node",

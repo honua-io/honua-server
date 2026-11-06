@@ -7,6 +7,7 @@ using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.Server.Tests.Features.Protocols.GeoServices.Catalog;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.NAServer;
 
@@ -25,6 +26,29 @@ public sealed class NAServerMetadataEndpointTests : IClassFixture<NAServerEndpoi
     public NAServerMetadataEndpointTests(NAServerEndpointTestsFixture wrapper)
     {
         _fixture = wrapper.App;
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /rest/services/{folderName}/{serviceId}/NAServer")]
+    public async Task NetworkMetadata_FolderPublicName_UsesPublicDescription()
+    {
+        var original = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        FolderServiceTestCatalog.ReplaceGraph(_fixture, FolderServiceTestCatalog.WithPublicParcels(original));
+        try
+        {
+            using var response = await _fixture.Client.GetAsync("/rest/services/Public/Parcels/NAServer?f=json");
+            var body = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+            using var metadata = JsonDocument.Parse(body);
+            metadata.RootElement.TryGetProperty("serviceDescription", out var description).Should().BeTrue(body);
+            description.GetString()
+                .Should().Be("Network analysis service for Parcels");
+        }
+        finally
+        {
+            FolderServiceTestCatalog.ReplaceGraph(_fixture, original);
+        }
     }
 
     [IntegrationTest]

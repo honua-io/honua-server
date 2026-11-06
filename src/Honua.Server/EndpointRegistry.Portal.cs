@@ -14,6 +14,10 @@ public static partial class EndpointRegistry
         new("POST", "/admin/services/{serviceName}.{serviceType}"),
         new("GET", "/rest/admin/{serviceName}.{serviceType}"),
         new("POST", "/rest/admin/{serviceName}.{serviceType}"),
+        new("GET", "/admin/services/{folderName}/{serviceName}.{serviceType}"),
+        new("POST", "/admin/services/{folderName}/{serviceName}.{serviceType}"),
+        new("GET", "/rest/admin/{folderName}/{serviceName}.{serviceType}"),
+        new("POST", "/rest/admin/{folderName}/{serviceName}.{serviceType}"),
 
         // ArcGIS Portal Sharing token issuance (#1241).
         new("POST", "/sharing/rest/generateToken"),

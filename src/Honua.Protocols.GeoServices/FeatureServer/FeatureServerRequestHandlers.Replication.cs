@@ -229,8 +229,7 @@ internal static partial class FeatureServerEndpoints
         var record = await replicaRepository.GetAsync(replicaId, cancellationToken).ConfigureAwait(false);
         if (record == null || !string.Equals(record.Value.ServiceId, serviceId, StringComparison.OrdinalIgnoreCase))
         {
-            return StandardErrorHelpers.CreateNotFound(context,
-                $"Replica '{replicaId}' not found for service '{serviceId}'.");
+            return ReplicaNotFound(context, replicaId);
         }
 
         // Snapshot the resolved value once: the record is a nullable struct, and reading
@@ -239,17 +238,14 @@ internal static partial class FeatureServerEndpoints
         var replicaRecord = record.Value;
         if (!IsReplicaOwnerOrAdmin(context, replicaRecord.OwnerId))
         {
-            return StandardErrorHelpers.CreateNotFound(context,
-                $"Replica '{replicaId}' not found for service '{serviceId}'.");
+            return ReplicaNotFound(context, replicaId);
         }
 
         var replica = ToReplicaState(replicaRecord);
         var replicaAccess = await ResolveReplicaLayerAccessAsync(context, service, snapshot, AccessScope.Read, cancellationToken).ConfigureAwait(false);
         if (!TryResolveReplicaLayersV2(context, service, snapshot, replica, replicaAccess, out var replicaLayers, out var replicaLayerError))
         {
-            return replicaLayerError ?? StandardErrorHelpers.CreateNotFound(
-                context,
-                $"Replica '{replicaId}' not found for service '{serviceId}'.");
+            return replicaLayerError ?? ReplicaNotFound(context, replicaId);
         }
 
         var syncCapabilityError = RequireServiceSyncCapability(context, service);
@@ -606,23 +602,19 @@ internal static partial class FeatureServerEndpoints
 
         if (!string.Equals(replica.ServiceId, serviceId, StringComparison.OrdinalIgnoreCase))
         {
-            return StandardErrorHelpers.CreateNotFound(context,
-                $"Replica '{replicaId}' not found for service '{serviceId}'.");
+            return ReplicaNotFound(context, replicaId);
         }
 
         if (!IsReplicaOwnerOrAdmin(context, replica.OwnerId))
         {
-            return StandardErrorHelpers.CreateNotFound(context,
-                $"Replica '{replicaId}' not found for service '{serviceId}'.");
+            return ReplicaNotFound(context, replicaId);
         }
 
         var replicaAccess = await ResolveReplicaLayerAccessAsync(context, service, snapshot, AccessScope.Read, cancellationToken).ConfigureAwait(false);
 
         if (!TryResolveReplicaLayersV2(context, service, snapshot, replica, replicaAccess, out var replicaLayers, out var replicaLayerError))
         {
-            return replicaLayerError ?? StandardErrorHelpers.CreateNotFound(
-                context,
-                $"Replica '{replicaId}' not found for service '{serviceId}'.");
+            return replicaLayerError ?? ReplicaNotFound(context, replicaId);
         }
 
         var syncCapabilityError = RequireServiceSyncCapability(context, service);
@@ -1022,23 +1014,19 @@ internal static partial class FeatureServerEndpoints
 
         if (!string.Equals(replica.ServiceId, serviceId, StringComparison.OrdinalIgnoreCase))
         {
-            return StandardErrorHelpers.CreateNotFound(context,
-                $"Replica '{replicaId}' not found for service '{serviceId}'.");
+            return ReplicaNotFound(context, replicaId);
         }
 
         if (!IsReplicaOwnerOrAdmin(context, replica.OwnerId))
         {
-            return StandardErrorHelpers.CreateNotFound(context,
-                $"Replica '{replicaId}' not found for service '{serviceId}'.");
+            return ReplicaNotFound(context, replicaId);
         }
 
         var replicaAccess = await ResolveReplicaLayerAccessAsync(context, service, snapshot, AccessScope.Write, cancellationToken).ConfigureAwait(false);
 
         if (!TryResolveReplicaLayersV2(context, service, snapshot, replica, replicaAccess, out var replicaLayers, out var replicaLayerError))
         {
-            return replicaLayerError ?? StandardErrorHelpers.CreateNotFound(
-                context,
-                $"Replica '{replicaId}' not found for service '{serviceId}'.");
+            return replicaLayerError ?? ReplicaNotFound(context, replicaId);
         }
 
         var synchronizeRbacError = await RequireReplicaWriteAccessV2Async(
@@ -2132,23 +2120,19 @@ internal static partial class FeatureServerEndpoints
         if (replica == null ||
             !string.Equals(replica.ServiceId, serviceId, StringComparison.OrdinalIgnoreCase))
         {
-            return StandardErrorHelpers.CreateNotFound(context,
-                $"Replica '{replicaId}' not found for service '{serviceId}'.");
+            return ReplicaNotFound(context, replicaId);
         }
 
         if (!IsReplicaOwnerOrAdmin(context, replica.OwnerId))
         {
-            return StandardErrorHelpers.CreateNotFound(context,
-                $"Replica '{replicaId}' not found for service '{serviceId}'.");
+            return ReplicaNotFound(context, replicaId);
         }
 
         var replicaAccess = await ResolveReplicaLayerAccessAsync(context, service, snapshot, AccessScope.Write, cancellationToken).ConfigureAwait(false);
 
         if (!TryResolveReplicaLayersV2(context, service, snapshot, replica, replicaAccess, out var replicaLayers, out var replicaLayerError))
         {
-            return replicaLayerError ?? StandardErrorHelpers.CreateNotFound(
-                context,
-                $"Replica '{replicaId}' not found for service '{serviceId}'.");
+            return replicaLayerError ?? ReplicaNotFound(context, replicaId);
         }
 
         var unregisterRbacError = await RequireReplicaWriteAccessV2Async(
@@ -2176,6 +2160,9 @@ internal static partial class FeatureServerEndpoints
         MetadataV2Service? Service,
         MetadataV2GraphSnapshot? Snapshot,
         IResult? ErrorResult);
+
+    private static IResult ReplicaNotFound(HttpContext context, string replicaId)
+        => StandardErrorHelpers.CreateNotFound(context, $"Replica '{replicaId}' was not found for this service.");
 
     private sealed record ReplicaLayerV2(
         int PublicLayerId,
@@ -2375,7 +2362,7 @@ internal static partial class FeatureServerEndpoints
             {
                 error = StandardErrorHelpers.CreateNotFound(
                     context,
-                    $"Replica '{replica.ReplicaId}' not found for service '{service.Metadata.Name}'.");
+                    $"Replica '{replica.ReplicaId}' not found for service '{service.EffectivePublicName}'.");
                 return false;
             }
 
@@ -2393,7 +2380,7 @@ internal static partial class FeatureServerEndpoints
         {
             error = StandardErrorHelpers.CreateNotFound(
                 context,
-                $"Replica '{replica.ReplicaId}' not found for service '{service.Metadata.Name}'.");
+                $"Replica '{replica.ReplicaId}' not found for service '{service.EffectivePublicName}'.");
             return false;
         }
 

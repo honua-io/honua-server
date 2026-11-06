@@ -163,7 +163,8 @@ public sealed class PortalItemProjector : IPortalItemProjector
         }
 
         var access = DeriveAccessTier(firstVisibleResource?.AccessPolicy, service.AccessPolicy);
-        return BuildItem(service, firstVisibleResource, itemType, urlType, access, baseUrl);
+        var url = $"{baseUrl.TrimEnd('/')}{MetadataV2ServicePaths.GeoServicesPath(snapshot.Graph, service)}/{urlType}";
+        return BuildItem(service, firstVisibleResource, itemType, access, url);
     }
 
     private string DeriveAccessTier(AccessPolicy? layerPolicy, AccessPolicy? servicePolicy)
@@ -183,12 +184,11 @@ public sealed class PortalItemProjector : IPortalItemProjector
         MetadataV2Service service,
         MetadataV2Resource? resource,
         string itemType,
-        string urlType,
         string access,
-        string baseUrl)
+        string url)
     {
         var metadata = service.Metadata;
-        var title = FirstNonEmpty(metadata.Title, metadata.Name, metadata.Id);
+        var title = FirstNonEmpty(metadata.Title, service.EffectivePublicName, metadata.Id);
         var owner = FirstNonEmpty(metadata.Publisher, "honua");
         var created = ToEpochMilliseconds(metadata.CreatedAt);
         var modified = ToEpochMilliseconds(metadata.UpdatedAt ?? metadata.CreatedAt);
@@ -207,19 +207,12 @@ public sealed class PortalItemProjector : IPortalItemProjector
             Snippet = metadata.Description,
             Description = metadata.Description,
             Tags = metadata.Keywords.Count > 0 ? metadata.Keywords : metadata.Tags,
-            Url = BuildServiceUrl(baseUrl, metadata.Name, urlType),
+            Url = url,
             Access = access,
             Extent = extent,
             SpatialReference = spatialReference,
             Culture = metadata.Language,
         };
-    }
-
-    private static string BuildServiceUrl(string baseUrl, string serviceName, string urlType)
-    {
-        var trimmedBase = baseUrl.TrimEnd('/');
-        var escapedName = Uri.EscapeDataString(serviceName);
-        return $"{trimmedBase}/rest/services/{escapedName}/{urlType}";
     }
 
     private static bool TryMapItemType(

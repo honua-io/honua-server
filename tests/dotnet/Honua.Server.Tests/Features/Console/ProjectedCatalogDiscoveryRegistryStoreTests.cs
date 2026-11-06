@@ -25,6 +25,41 @@ namespace Honua.Server.Tests.Features.Console;
 public sealed class ProjectedCatalogDiscoveryRegistryStoreTests
 {
     [UnitTest]
+    public async Task FolderMove_PublicIdentityChanges_KeepLogicalItemIdentifiersAndOneUrlPerFacet()
+    {
+        var original = Graph();
+        using var scope = new ProjectionScope(original);
+        var before = await scope.Store.GetEndpointAsync("default", "esri");
+        Assert.NotNull(before);
+        var graph = original with
+        {
+            Folders = [new() { Metadata = new() { Id = "folder", Name = "Public", Tenant = "public" } }],
+            Services = original.Services.Select(service => service with
+            {
+                FolderId = "folder",
+                PublicName = "Parcels",
+                Metadata = service.Metadata with { Title = "Parcel inventory" }
+            }).ToArray()
+        };
+        scope.Provider.GetCurrentAsync(Arg.Any<CancellationToken>())
+            .Returns(new MetadataV2GraphSnapshot(graph, "moved", DateTimeOffset.UnixEpoch));
+
+        var after = await scope.Store.GetEndpointAsync("default", "esri");
+        Assert.NotNull(after);
+        Assert.Equal(before.Items.Select(item => item.Id).Order(), after.Items.Select(item => item.Id).Order());
+        Assert.Equal(2, after.Items.Count);
+        Assert.All(after.Items, item =>
+        {
+            Assert.Equal("Parcel inventory", item.Title);
+            Assert.Contains("/rest/services/Public/Parcels/", item.Resource);
+        });
+        var snapshot = await scope.Provider.GetCurrentAsync();
+        var projected = await GeoServicesCatalogProjection.ReadFeatureMapAsync(scope.Context, snapshot);
+        Assert.All(projected, entry => Assert.Equal("service with space", entry.Name));
+        Assert.Equal(projected.Count, projected.Select(entry => entry.Url).Distinct().Count());
+    }
+
+    [UnitTest]
     public async Task TwoConfiguredNamespaces_DoNotShareEntriesOrItemIdentifiers()
     {
         var alpha = Graph();

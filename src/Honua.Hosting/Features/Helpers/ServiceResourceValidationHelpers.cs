@@ -13,7 +13,7 @@ namespace Honua.Infrastructure.Helpers;
 
 internal static class ServiceResourceValidationHelpers
 {
-    private const string ServiceCatalogUnavailableMessage = "Service catalog is temporarily unavailable.";
+    internal const string ServiceCatalogUnavailableMessage = "Service catalog is temporarily unavailable.";
 
     internal readonly record struct ServiceValidationV2Result(
         bool IsValid,
@@ -26,6 +26,13 @@ internal static class ServiceResourceValidationHelpers
         MetadataV2Publication? Publication,
         MetadataV2Resource? Resource,
         IResult? ErrorResult);
+
+    public static ResourceValidationResult<MetadataV2Service> ValidateResolvedServicePath(
+        HttpContext context, ResourceValidationResult<MetadataV2Service> result)
+        => GeoServicesServicePath.FromRequest(context) is null ||
+           (result.IsValid && result.Resource is { } service && GeoServicesServicePath.TargetsService(context, service))
+            ? result
+            : ResourceValidationResult.NotFound<MetadataV2Service>("Service was not found.");
 
     public static async Task<ServiceValidationV2Result> ValidateServiceV2Async(
         IResourceValidator resourceValidator,
@@ -47,6 +54,7 @@ internal static class ServiceResourceValidationHelpers
             serviceResult = await resourceValidator
                 .ValidateServiceV2Async(serviceId, protocol, cancellationToken)
                 .ConfigureAwait(false);
+            serviceResult = ValidateResolvedServicePath(context, serviceResult);
         }
         catch (Exception ex) when (IsCatalogStorageUnavailable(ex))
         {
@@ -136,6 +144,13 @@ internal static class ServiceResourceValidationHelpers
                     retryable: true));
         }
 
+        if (GeoServicesServicePath.FromRequest(context) is not null &&
+            (!resourceResult.IsValid || !GeoServicesServicePath.TargetsService(context, resourceResult.Resource.Service)))
+        {
+            return new ServiceLayerValidationV2Result(false, null, null, null,
+                StandardErrorHelpers.CreateNotFound(context, "Service layer was not found."));
+        }
+
         if (!resourceResult.IsValid)
         {
             var errorMessage = resourceResult.ErrorMessage ?? "Resource not found.";
@@ -185,6 +200,6 @@ internal static class ServiceResourceValidationHelpers
             null);
     }
 
-    private static bool IsCatalogStorageUnavailable(Exception exception)
+    internal static bool IsCatalogStorageUnavailable(Exception exception)
         => exception is DbException { SqlState: "42P01" };
 }

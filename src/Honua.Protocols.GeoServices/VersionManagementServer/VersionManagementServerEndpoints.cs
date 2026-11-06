@@ -14,6 +14,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Capabilities;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Helpers;
 using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Protocols.GeoServices.VersionManagementServer.Models;
 using Microsoft.AspNetCore.Http;
@@ -1397,7 +1398,7 @@ public static class VersionManagementServerEndpoints
         JobId = job.JobId.ToString(),
         Kind = job.Kind == VersionJobKind.Reconcile ? "reconcile" : "post",
         Status = JobStatusToString(job.Status),
-        StatusUrl = $"{context.Request.PathBase}/rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}/jobs/{job.JobId}",
+        StatusUrl = $"{GeoServicesServiceUrls.RequestedLocation(context, serviceId, "VersionManagementServer")}/versions/{versionGuid}/jobs/{job.JobId}",
         ConflictCount = job.ConflictCount,
         AutoResolvedCount = job.AutoResolvedCount,
         CanPost = job.CanPost,

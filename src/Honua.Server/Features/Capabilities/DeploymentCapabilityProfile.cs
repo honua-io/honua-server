@@ -5,6 +5,7 @@ using System.Collections.Concurrent;
 using System.Reflection;
 using System.Text.Json;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Infrastructure.Helpers;
 using Microsoft.AspNetCore.Routing.Template;
 
 namespace Honua.Server.Features.Capabilities;
@@ -163,7 +164,7 @@ internal sealed class DeploymentCapabilityRouteCatalog
         }
 
         var match = candidates.FirstOrDefault(candidate =>
-            candidate.Matcher.TryMatch(context.Request.Path, new RouteValueDictionary()));
+            candidate.Matcher.TryMatch(GeoServicesServiceRoutes.RoutingPath(context), new RouteValueDictionary()));
         return match is null
             ? RouteResolution.Unmapped
             : new RouteResolution(true, match.Capability);

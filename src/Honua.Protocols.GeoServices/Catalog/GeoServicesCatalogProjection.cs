@@ -8,7 +8,7 @@ using Honua.Core.Features.Raster.Abstractions;
 
 namespace Honua.Protocols.GeoServices.Catalog;
 
-public sealed record GeoServicesCatalogEntry(string Name, string Type, string Url);
+public sealed record GeoServicesCatalogEntry(string Name, string Type, string Url, string? DisplayName = null);
 
 public static class GeoServicesCatalogProjection
 {
@@ -28,6 +28,6 @@ public static class GeoServicesCatalogProjection
             snapshot,
             featureMapOnly: true).ConfigureAwait(false);
         return projection.Entries.Select(static entry =>
-            new GeoServicesCatalogEntry(entry.Name, entry.Type, entry.Url)).ToArray();
+            new GeoServicesCatalogEntry(entry.LogicalName ?? entry.Name, entry.Type, entry.Url, entry.DisplayName)).ToArray();
     }
 }

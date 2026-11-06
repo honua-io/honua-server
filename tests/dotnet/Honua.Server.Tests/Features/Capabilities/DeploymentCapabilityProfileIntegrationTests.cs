@@ -5,8 +5,11 @@ using System.Net;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Server.Features.Capabilities;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.TestKit.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Extensions;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
@@ -24,6 +27,59 @@ public sealed class DeploymentCapabilityProfileIntegrationTests
         "ops.health",
         "serve.stac",
     ];
+
+    [IntegrationTheory]
+    [InlineData("/rest/services/Public/Parcels/FeatureServer", "serve.geoservices-featureserver", HttpStatusCode.OK)]
+    [InlineData("/rest/services/Public/Parcels/FeatureServer", "serve.geoservices-mapserver", HttpStatusCode.NotFound)]
+    [InlineData("/rest/services/Public/Parcels", "serve.geoservices-root", HttpStatusCode.OK)]
+    [InlineData("/rest/services/Public/Parcels", "serve.stac", HttpStatusCode.NotFound)]
+    [InlineData("/rest/admin/Public/Parcels.MapServer", "serve.geoservices-root", HttpStatusCode.OK)]
+    [InlineData("/rest/admin/Public/Parcels.MapServer", "serve.stac", HttpStatusCode.NotFound)]
+    [InlineData("/admin/services/Public/Parcels.MapServer", "serve.geoservices-root", HttpStatusCode.OK)]
+    [InlineData("/admin/services/Public/Parcels.MapServer", "serve.stac", HttpStatusCode.NotFound)]
+    [Endpoint("GET /rest/services/{folderName}/{serviceId}/FeatureServer")]
+    [Endpoint("GET /rest/services/{folderName}/{serviceId}")]
+    [Endpoint("GET /rest/admin/{folderName}/{serviceName}.{serviceType}")]
+    [Endpoint("GET /admin/services/{folderName}/{serviceName}.{serviceType}")]
+    public async Task FolderPath_ConfiguredProfile_EnforcesItsCapability(string path, string capability, HttpStatusCode expectedStatus)
+    {
+        var fixture = CreateFixture([capability]);
+        await fixture.InitializeAsync();
+        try
+        {
+            var original = fixture.GetCurrentV2GraphSnapshot().Graph;
+            var provider = (TestMetadataV2GraphProvider)fixture.GetService<IMetadataV2GraphProvider>();
+            provider.SetGraph(original with
+            {
+                Folders = [new() { Metadata = new() { Id = "folder", Name = "Public" } }],
+                Services = original.Services.Select(service => service.Metadata.Name == WebAppFixture.TestServiceId
+                    ? service with { FolderId = "folder", PublicName = "Parcels" } : service).ToArray()
+            }, schema: fixture.CurrentSchema);
+            using var response = await fixture.Client.GetAsync(path + "?f=json");
+            var body = await response.Content.ReadAsStringAsync();
+            if (expectedStatus == HttpStatusCode.NotFound && response.StatusCode == HttpStatusCode.OK)
+            {
+                await response.AssertGeoServicesErrorAsync(404);
+            }
+            else
+            {
+                response.StatusCode.Should().Be(expectedStatus, body);
+            }
+            if (expectedStatus == HttpStatusCode.OK)
+            {
+                using var document = JsonDocument.Parse(body);
+                document.RootElement.TryGetProperty("error", out _).Should().BeFalse(body);
+                if (path.EndsWith("/Parcels", StringComparison.Ordinal))
+                    document.RootElement.GetProperty("services").GetArrayLength().Should().BeGreaterThan(0);
+                else
+                    document.RootElement.GetProperty("serviceName").GetString().Should().Be("Parcels");
+            }
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/capabilities/manifest")]

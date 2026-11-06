@@ -46,8 +46,8 @@ internal static class FolderReplayRequest
         if (approvedRequest.OperationId == "service.move")
         {
             var body = invocation.Arguments.OfType<MoveServiceRequest>().SingleOrDefault();
-            return body is not null && body.FolderId.IsSpecified && approvedRequest.Parameters.ContainsKey("folderId") &&
-                body.FolderId.Value == approvedRequest.Parameters["folderId"];
+            return body is not null && body.FolderId.IsSpecified && approvedRequest.Parameters.TryGetValue("folderId", out var approvedFolderId) &&
+                body.FolderId.Value == approvedFolderId;
         }
         var folder = invocation.Arguments.OfType<FolderRequest>().SingleOrDefault();
         return folder is not null && folder.Name == approvedRequest.Parameters.GetValueOrDefault("name") &&

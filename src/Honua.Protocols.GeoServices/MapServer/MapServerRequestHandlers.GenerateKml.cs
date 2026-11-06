@@ -143,7 +143,7 @@ internal static partial class MapServerEndpoints
             var documentName = GetValue(values, "docName");
             if (string.IsNullOrWhiteSpace(documentName))
             {
-                documentName = service.Metadata.Name;
+                documentName = service.EffectivePublicName;
             }
 
             if (string.IsNullOrWhiteSpace(documentName))

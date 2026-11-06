@@ -274,7 +274,7 @@ internal static partial class MapServerEndpoints
         return new MapServerResponse
         {
             ServiceDescription = service.Metadata.Description,
-            MapName = service.Metadata.Name,
+            MapName = service.EffectivePublicName,
             Description = service.Metadata.Description,
             SpatialReference = serviceExtent.SpatialReference,
             Layers = [.. visibleFeatureLayers.Select(layer => new MapServerLayerInfo
@@ -320,7 +320,7 @@ internal static partial class MapServerEndpoints
             TimeInfo = timeInfo,
             DocumentInfo = new MapServerDocumentInfo
             {
-                Title = service.Metadata.Name ?? "",
+                Title = service.Metadata.Title ?? service.EffectivePublicName,
                 Author = service.Metadata.ContactPoint?.Name ?? "",
                 Comments = service.Metadata.Description ?? "",
                 Subject = service.Metadata.Publisher ?? "",

@@ -1056,17 +1056,7 @@ internal sealed class ImageServerWmtsHandler(
     }
 
     private static string BuildWmtsBaseUrl(HttpContext context)
-    {
-        var path = context.Request.Path.Value ?? string.Empty;
-        var wmtsIndex = path.IndexOf("/WMTS", StringComparison.OrdinalIgnoreCase);
-        var wmtsPath = wmtsIndex >= 0
-            ? path[..(wmtsIndex + "/WMTS".Length)]
-            : path.TrimEnd('/');
-
-        // Request.Path is decoded; re-escape it so a service-name segment such as
-        // "imagery#west" stays inside the advertised path.
-        return $"{BaseUrlResolver.GetBaseUrl(context)}{new PathString(wmtsPath).ToUriComponent()}";
-    }
+        => GeoServicesServiceUrls.RequestedProtocol(context, "WMTS");
 
     private static bool RequireQueryValue(
         IQueryCollection query,

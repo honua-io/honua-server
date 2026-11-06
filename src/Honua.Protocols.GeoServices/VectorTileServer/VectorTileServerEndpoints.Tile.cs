@@ -117,7 +117,7 @@ internal static partial class VectorTileServerEndpoints
             if (primary is null)
             {
                 return StandardErrorHelpers.CreateNotFound(context,
-                    $"Service '{service.Metadata.Name}' has no tiled layer to render.");
+                    $"Service '{service.EffectivePublicName}' has no tiled layer to render.");
             }
 
             var (publication, resource) = primary.Value;

@@ -134,6 +134,7 @@ internal static partial class WmsRequestHandlers
 
             var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
             var serviceResult = await resourceValidator.ValidateServiceV2Async(serviceId, cancellationToken);
+            serviceResult = ServiceResourceValidationHelpers.ValidateResolvedServicePath(context, serviceResult);
             if (!serviceResult.IsValid)
             {
                 var errorMessage = serviceResult.ErrorMessage ?? "Service not found.";
@@ -208,8 +209,7 @@ internal static partial class WmsRequestHandlers
                 }
 
                 OgcClassicLog.WmsRequested(logger, serviceId, "GetCapabilities");
-                var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-                var xml = await BuildWmsCapabilities(context, svcDef, accessibleLayers, serviceId, baseUrl, capabilitiesVersion).ConfigureAwait(false);
+                var xml = await BuildWmsCapabilities(context, svcDef, accessibleLayers, capabilitiesVersion).ConfigureAwait(false);
                 return Results.Content(xml, GetWmsCapabilitiesMimeType(capabilitiesVersion), Encoding.UTF8, StatusCodes.Status200OK);
             }
 

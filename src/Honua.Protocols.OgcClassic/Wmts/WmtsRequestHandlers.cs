@@ -142,6 +142,7 @@ internal static class WmtsRequestHandlers
 
             var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
             var serviceResult = await resourceValidator.ValidateServiceV2Async(serviceId, cancellationToken);
+            serviceResult = ServiceResourceValidationHelpers.ValidateResolvedServicePath(context, serviceResult);
             if (!serviceResult.IsValid)
             {
                 var errorMessage = serviceResult.ErrorMessage ?? "Service not found.";
@@ -321,7 +322,6 @@ internal static class WmtsRequestHandlers
             }
 
             OgcClassicLog.WmtsRequested(logger, serviceId, "GetCapabilities");
-            var baseUrl = BaseUrlResolver.GetBaseUrl(context);
             var coordinateTransformService = context.RequestServices.GetService<ICoordinateTransformService>();
             var capabilitiesFeatureReader = context.RequestServices.GetService<IFeatureReader>();
             var tileMatrixSetRegistry = context.RequestServices.GetService<ITileMatrixSetRegistry>();
@@ -335,8 +335,7 @@ internal static class WmtsRequestHandlers
                 context.Request,
                 svcDef,
                 visibleLayers,
-                serviceId,
-                baseUrl,
+                snapshot.Graph,
                 sections,
                 wmtsMaxZoom,
                 coordinateTransformService,
@@ -1246,8 +1245,7 @@ internal static class WmtsRequestHandlers
         HttpRequest request,
         MetadataV2Service service,
         IReadOnlyList<WmtsLayer> visibleLayers,
-        string serviceId,
-        string baseUrl,
+        MetadataV2Graph graph,
         WmtsCapabilitiesSections sections,
         int wmtsMaxZoom,
         ICoordinateTransformService? coordinateTransformService,
@@ -1264,12 +1262,15 @@ internal static class WmtsRequestHandlers
         var includeThemes = sections.HasFlag(WmtsCapabilitiesSections.Themes);
         var includeServiceMetadataUrl = sections == WmtsCapabilitiesSections.All;
 
-        var normalizedBaseUrl = baseUrl.TrimEnd('/');
-        var wmtsEndpoint = $"{normalizedBaseUrl}/rest/services/{serviceId}/MapServer/WMTS";
+        var normalizedBaseUrl = BaseUrlResolver.GetBaseUrl(request.HttpContext).TrimEnd('/');
+        var wmtsEndpoint = GeoServicesServiceUrls.RequestedProtocol(request.HttpContext, "WMTS");
+        var wmtsRestEndpoint = GeoServicesServicePath.FromRequest(request.HttpContext) is not null
+            ? wmtsEndpoint
+            : $"{normalizedBaseUrl}{GeoServicesServiceUrls.CanonicalPath(graph, service)}/MapServer/WMTS";
         var credentialedWmtsEndpoint = BaseUrlResolver.PreserveToken(request, wmtsEndpoint);
         var wmtsKvpUrlPrefix = $"{credentialedWmtsEndpoint}{(credentialedWmtsEndpoint.Contains('?') ? '&' : '?')}";
-        var wmtsRestUrlPrefix = BaseUrlResolver.PreserveToken(request, $"{wmtsEndpoint}/");
-        var serviceMetadataUrl = BaseUrlResolver.PreserveToken(request, $"{wmtsEndpoint}/{WmtsVersion}/WMTSCapabilities.xml");
+        var wmtsRestUrlPrefix = BaseUrlResolver.PreserveToken(request, $"{wmtsRestEndpoint}/");
+        var serviceMetadataUrl = BaseUrlResolver.PreserveToken(request, $"{wmtsRestEndpoint}/{WmtsVersion}/WMTSCapabilities.xml");
         sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
         sb.AppendLine("<Capabilities xmlns=\"http://www.opengis.net/wmts/1.0\"");
         sb.AppendLine("  xmlns:ows=\"http://www.opengis.net/ows/1.1\"");
@@ -1284,7 +1285,7 @@ internal static class WmtsRequestHandlers
         if (includeServiceIdentification)
         {
             sb.AppendLine("  <ows:ServiceIdentification>");
-            var serviceTitle = service.Metadata.Title ?? service.Metadata.Name ?? serviceId;
+            var serviceTitle = service.Metadata.Title ?? service.EffectivePublicName;
             sb.Append("    <ows:Title>").Append(EscapeXml(serviceTitle)).AppendLine("</ows:Title>");
             if (!string.IsNullOrWhiteSpace(service.Metadata.Description))
             {
@@ -1429,10 +1430,10 @@ internal static class WmtsRequestHandlers
                 // WebMapTileServiceImageryProvider, so the advertised template was
                 // unusable even though the route itself is positional and
                 // case-insensitive. Only the advertised name changes here.
-                var tileTemplate = BaseUrlResolver.PreserveToken(request, $"{wmtsEndpoint}/{layerId}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}.png{dimensionTemplateSuffix}");
-                var featureInfoTextTemplate = BaseUrlResolver.PreserveToken(request, $"{wmtsEndpoint}/{layerId}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}/{{J}}/{{I}}.txt{dimensionTemplateSuffix}");
-                var featureInfoJsonTemplate = BaseUrlResolver.PreserveToken(request, $"{wmtsEndpoint}/{layerId}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}/{{J}}/{{I}}.json{dimensionTemplateSuffix}");
-                var legendHref = BaseUrlResolver.PreserveToken(request, $"{normalizedBaseUrl}/rest/services/{serviceId}/MapServer/WMS?SERVICE=WMS&REQUEST=GetLegendGraphic&VERSION=1.3.0&LAYER={Uri.EscapeDataString(GetWmsLayerName(layer.Resource, layer.Publication))}&STYLE=default&FORMAT=image/png{legendDimensionSuffix}");
+                var tileTemplate = BaseUrlResolver.PreserveToken(request, $"{wmtsRestEndpoint}/{layerId}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}.png{dimensionTemplateSuffix}");
+                var featureInfoTextTemplate = BaseUrlResolver.PreserveToken(request, $"{wmtsRestEndpoint}/{layerId}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}/{{J}}/{{I}}.txt{dimensionTemplateSuffix}");
+                var featureInfoJsonTemplate = BaseUrlResolver.PreserveToken(request, $"{wmtsRestEndpoint}/{layerId}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}/{{J}}/{{I}}.json{dimensionTemplateSuffix}");
+                var legendHref = BaseUrlResolver.PreserveToken(request, $"{wmtsEndpoint[..^"WMTS".Length]}WMS?SERVICE=WMS&REQUEST=GetLegendGraphic&VERSION=1.3.0&LAYER={Uri.EscapeDataString(GetWmsLayerName(layer.Resource, layer.Publication))}&STYLE=default&FORMAT=image/png{legendDimensionSuffix}");
 
                 sb.AppendLine("    <Layer>");
                 var layerTitle = layer.Resource.Metadata.Title

@@ -95,6 +95,22 @@ public sealed class McpPublishedCatalogReadbackTests
     }
 
     [UnitTest]
+    [Endpoint("POST /mcp resources/read honua://published-services/{serviceId}")]
+    public async Task Read_FolderMembership_ChangesEndpointAndPreservesLogicalResourceIdentity()
+    {
+        var graph = Catalog();
+        var foldered = graph with
+        {
+            Folders = [new() { Metadata = new() { Id = "folder", Name = "Public" } }],
+            Services = graph.Services.Select(service => service with { FolderId = "folder", PublicName = "Parcels" }).ToArray()
+        };
+        var result = await ReadAsync(foldered);
+        result.GetProperty("resourceUri").GetString().Should().Be(ServiceUri);
+        result.GetProperty("serviceId").GetString().Should().Be(ServiceName);
+        result.GetProperty("endpoint").GetString().Should().Be("/rest/services/Public/Parcels/FeatureServer");
+    }
+
+    [UnitTest]
     [Endpoint("POST /mcp resources/read honua://published-services")]
     public async Task Index_CatalogPublication_AdvertisesSameReadableUriAndEtag()
     {

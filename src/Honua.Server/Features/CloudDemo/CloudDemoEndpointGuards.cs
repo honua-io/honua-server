@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Text.Json;
+using Honua.Infrastructure.Helpers;
 
 namespace Honua.Server.Features.CloudDemo;
 
@@ -66,7 +67,7 @@ internal static class CloudDemoEndpointGuards
         {
             var configuration = context.RequestServices.GetRequiredService<IConfiguration>();
             if (!CloudDemoConfiguration.IsEnabled(configuration) ||
-                !IsGuardedWritableFeatureServerRequest(context.Request))
+                !IsGuardedWritableFeatureServerRequest(context))
             {
                 await next(context).ConfigureAwait(false);
                 return;
@@ -113,9 +114,22 @@ internal static class CloudDemoEndpointGuards
         });
     }
 
-    private static bool IsGuardedWritableFeatureServerRequest(HttpRequest request)
+    private static string? LogicalFeatureServerPath(HttpContext context)
     {
-        var value = request.Path.Value;
+        var path = context.Request.Path.Value;
+        if (GeoServicesServicePath.FromRequest(context) is not { } binding)
+            return path;
+        var prefix = $"{binding.Root}/{binding.QualifiedName}";
+        var serviceId = context.Request.RouteValues["serviceId"]?.ToString();
+        return serviceId is not null && path is not null &&
+            path.StartsWith(prefix + "/FeatureServer", StringComparison.OrdinalIgnoreCase)
+            ? $"/rest/services/{serviceId}{path[prefix.Length..]}" : path;
+    }
+
+    private static bool IsGuardedWritableFeatureServerRequest(HttpContext context)
+    {
+        var request = context.Request;
+        var value = LogicalFeatureServerPath(context);
         if (string.IsNullOrWhiteSpace(value))
         {
             return false;

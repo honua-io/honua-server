@@ -5,6 +5,8 @@ using System.Net;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.TestKit;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.TestKit.Infrastructure;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
@@ -21,31 +23,34 @@ public sealed class CloudDemoEndpointsTests : IAsyncLifetime
 {
     private const string ResetToken = "test-reset-token";
     private const string WriteToken = "test-write-token";
+    private const string WritableServiceName = "field-inspections-demo-writable";
+    private const string DemoFolderId = "demo-folder";
 
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
 
     public CloudDemoEndpointsTests()
     {
-        _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
-            .ConfigureWebHost(builder =>
+        _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
+        _fixture.ConfigureWebHost(builder =>
+        {
+            builder.ConfigureAppConfiguration((_, configBuilder) =>
             {
-                builder.ConfigureAppConfiguration((_, configBuilder) =>
+                configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
-                    {
-                        ["CloudDemoServices:Enabled"] = "true",
-                        ["CloudDemoServices:AllowWrites"] = "true",
-                        ["CloudDemoServices:ResetToken"] = ResetToken,
-                        ["CloudDemoServices:WriteToken"] = WriteToken
-                    });
+                    ["CloudDemoServices:Enabled"] = "true",
+                    ["CloudDemoServices:AllowWrites"] = "true",
+                    ["CloudDemoServices:ResetToken"] = ResetToken,
+                    ["CloudDemoServices:WriteToken"] = WriteToken
                 });
             });
+        });
     }
 
     public async Task InitializeAsync()
     {
         await _fixture.InitializeAsync();
+        await ServerTestData.EnsureFixtureAttachmentsAsync(_fixture.Postgres, "honua");
         _client = _fixture.Client;
     }
 
@@ -130,7 +135,10 @@ public sealed class CloudDemoEndpointsTests : IAsyncLifetime
         content.RootElement.GetProperty("features").GetArrayLength().Should().BeGreaterThan(0);
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData(null, WritableServiceName)]
+    [InlineData(null, "Inspections")]
+    [InlineData("Public", "Inspections")]
     [Operation(Operations.ApplyEdits)]
     [Operation(Operations.Append)]
     [Operation(Operations.Calculate)]
@@ -151,36 +159,41 @@ public sealed class CloudDemoEndpointsTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment")]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/updateAttachment")]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/deleteAttachments")]
-    public async Task WritableFeatureGuard_WithoutWriteToken_ReturnsUnauthorizedForWritableOperations()
+    public async Task WritableFeatureGuard_PublicPathsWithoutWriteToken_RequireAuthorization(string? folderName, string publicName)
     {
-        var cases = new (HttpMethod Method, string Path)[]
+        SetWritableServicePath(folderName, publicName);
+        var servicePath = folderName is null ? publicName : $"{folderName}/{publicName}";
+        foreach (var operation in new[]
         {
-            (HttpMethod.Post, "/rest/services/field-inspections-demo-writable/FeatureServer/applyEdits"),
-            (HttpMethod.Post, "/rest/services/field-inspections-demo-writable/FeatureServer/append"),
-            (HttpMethod.Post, "/rest/services/field-inspections-demo-writable/FeatureServer/createReplica"),
-            (HttpMethod.Post, "/rest/services/field-inspections-demo-writable/FeatureServer/synchronizeReplica"),
-            (HttpMethod.Post, "/rest/services/field-inspections-demo-writable/FeatureServer/unRegisterReplica"),
-            (HttpMethod.Post, "/rest/services/field-inspections-demo-writable/FeatureServer/0/applyEdits"),
-            (HttpMethod.Post, "/rest/services/field-inspections-demo-writable/FeatureServer/0/append"),
-            (HttpMethod.Post, "/rest/services/field-inspections-demo-writable/FeatureServer/0/calculate"),
-            (HttpMethod.Post, "/rest/services/field-inspections-demo-writable/FeatureServer/0/1/addAttachment"),
-            (HttpMethod.Post, "/rest/services/field-inspections-demo-writable/FeatureServer/0/1/updateAttachment"),
-            (HttpMethod.Post, "/rest/services/field-inspections-demo-writable/FeatureServer/0/1/deleteAttachments")
-        };
-
-        foreach (var (method, path) in cases)
+            "applyEdits", "append", "createReplica", "synchronizeReplica", "unRegisterReplica",
+            "0/applyEdits", "0/append", "0/calculate", "0/1/addAttachment", "0/1/updateAttachment", "0/1/deleteAttachments"
+        })
         {
-            using var request = new HttpRequestMessage(method, path);
-            if (method != HttpMethod.Get)
-            {
-                request.Content = new FormUrlEncodedContent(new Dictionary<string, string>());
-            }
-
-            using var response = await _client.SendAsync(request);
-
+            var path = $"/rest/services/{servicePath}/FeatureServer/{operation}";
+            using var content = new FormUrlEncodedContent([]);
+            using var response = await _client.PostAsync(path, content);
             response.StatusCode.Should().Be(HttpStatusCode.Unauthorized, path);
-            var body = await response.Content.ReadAsStringAsync();
-            body.Should().Contain("cloud_demo_write_token_invalid", path);
+            (await response.Content.ReadAsStringAsync()).Should().Contain("cloud_demo_write_token_invalid", path);
         }
+    }
+
+    private void SetWritableServicePath(string? folderName, string publicName)
+    {
+        var original = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        var folderId = folderName is null ? null : DemoFolderId;
+        var graph = original with
+        {
+            Revision = original.Revision + 1,
+            Folders = folderName is null ? [] : [new() { Metadata = new() { Id = DemoFolderId, Name = folderName } }],
+            Services = original.Services.Select(service => service.Metadata.Name == WebAppFixture.TestServiceId
+                ? service with
+                {
+                    Metadata = service.Metadata with { Name = WritableServiceName },
+                    FolderId = folderId,
+                    PublicName = publicName
+                } : service).ToArray()
+        };
+        ((TestMetadataV2GraphProvider)_fixture.GetService<IMetadataV2GraphProvider>())
+            .SetGraph(graph, schema: _fixture.CurrentSchema);
     }
 }
