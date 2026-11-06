@@ -251,15 +251,16 @@ internal static class StandardErrorResponseFormatter
             errorResponse.StatusCode);
     }
 
-    // A WMS alias infrastructure error is an HTTP 200 service-exception report, except an authentication failure, which stays 401 or 403 so it matches the handler.
+    // Authentication and server failures retain the WMS handler's transport status.
     private static IResult FormatWmsAliasError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
     {
         AddResponseHeaders(context, options);
-        if (string.IsNullOrWhiteSpace(options.WmsExceptionCode) && IsAuthenticationFailure(errorResponse))
+        if (string.IsNullOrWhiteSpace(options.WmsExceptionCode) &&
+            (IsAuthenticationFailure(errorResponse) || errorResponse.StatusCode >= StatusCodes.Status500InternalServerError))
         {
             return WmsServiceExceptionReport.CreateXmlResult(
                 context,
-                AccessDeniedExceptionCode,
+                MapWmsAliasCode(errorResponse),
                 BuildDetailWithExtras(errorResponse, options),
                 errorResponse.StatusCode);
         }
