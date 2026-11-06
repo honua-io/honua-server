@@ -173,7 +173,7 @@ public sealed class RowLevelSecurityEndpointsTests : IAsyncLifetime
         if (fieldMask)
         {
             features.Should().HaveCount(TestFeatureCount);
-            features.Should().OnlyContain(feature => !feature.GetProperty("attributes").TryGetProperty("description", out _));
+            features.Should().OnlyContain(feature => !feature.GetProperty("attributes").EnumerateObject().Any(property => property.Name == "description"));
         }
         else
         {
