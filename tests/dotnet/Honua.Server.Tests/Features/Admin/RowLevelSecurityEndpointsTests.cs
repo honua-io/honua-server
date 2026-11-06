@@ -96,7 +96,11 @@ public sealed class RowLevelSecurityEndpointsTests : IAsyncLifetime
             client.DefaultRequestHeaders.Add(RlsClaimsTestAuthHandler.UserHeader, "restricted-user");
             client.DefaultRequestHeaders.Add(RlsClaimsTestAuthHandler.CategoryHeader, "test");
             var denied = await client.GetAsync($"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/77/query?where=1%3D1&outFields=*&returnGeometry=false&f=json");
-            denied.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            denied.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var deniedDocument = JsonDocument.Parse(await denied.Content.ReadAsStringAsync());
+            deniedDocument.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(403);
+            var deniedOData = await client.GetAsync("/odata/Features(77)?$top=10");
+            deniedOData.StatusCode.Should().Be(HttpStatusCode.Forbidden);
             policyId = fieldMask
                 ? await CreateCollisionMaskPolicyAsync(adminClient, resourceName)
                 : await CreatePolicyAsync(adminClient, resourceName);
