@@ -229,5 +229,3 @@ Each link resolves to the page's source on `trunk`. These pages are also rendere
 - [Demo runbooks](https://github.com/honua-io/honua-server/blob/trunk/docs/internal/demo/README.md): Entry point for the demo runbooks, which now live in honua-demo.
 
 ## Archive
-
-- [Historical archive](https://github.com/honua-io/honua-server/blob/trunk/docs/archive/README.md): Superseded pages kept for history; their claims are not current.

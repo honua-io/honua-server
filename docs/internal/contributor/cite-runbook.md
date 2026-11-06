@@ -7,7 +7,7 @@ This is the operational guide. The authoritative records live elsewhere:
 - [OGC Certification Path](ogc-certification-path.md) — decision record, gaps, and re-entry criteria.
 - [OGC CITE Conformance Evidence](ogc-cite-conformance-evidence.md) — current pass-state evidence linked from the public site.
 
-For WMS 1.1.1 / WFS 1.0.0 / WFS 1.1.0 (manual-only legacy suites), see [Legacy OGC CITE](../../archive/contributor/cite-legacy-ogc-conformance-testing.md) in the archive — those are not part of the automated runbook.
+For WMS 1.1.1 / WFS 1.0.0 / WFS 1.1.0 (manual-only legacy suites), see [Legacy OGC CITE](../../../eng/protocol-coverage/cite-legacy-ogc-conformance-testing.md) in the archive — those are not part of the automated runbook.
 
 ## Suites covered
 
