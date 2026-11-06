@@ -2,7 +2,7 @@
 
 # Build (or refresh) a Honua release-train manifest from release-bundle evidence.
 #
-# This replaces the hand-editing of release/honua-<id>.json documented in
+# This replaces the hand-editing of artifacts/release/honua-<id>.json documented in
 # docs/contributor/RELEASE_CHECKLIST.md. The release-bundle orchestrator
 # (.github/workflows/release-bundle.yml) builds ONE Native AOT release-candidate
 # image, runs the integration/conformance/SDK evidence against that exact image
@@ -40,7 +40,7 @@ Candidate identity (image is what makes candidate.image.evidenceState pass):
 Other:
   --observed-at <iso8601>  Timestamp recorded in the manifest (default: env OBSERVED_AT, else error)
   --base <manifest>        Existing manifest to carry static fields forward from
-  --output <path>          Output path (default: release/<release-id>.json)
+  --output <path>          Output path (default: artifacts/release/<release-id>.json)
 
 Evidence JSON shape (all arrays optional; entries replace the base when present):
   {
@@ -119,7 +119,7 @@ if [[ -n "$BASE_MANIFEST" ]]; then
   base_json="$(cat "$BASE_MANIFEST")"
 fi
 
-OUTPUT="${OUTPUT:-release/${RELEASE_ID}.json}"
+OUTPUT="${OUTPUT:-artifacts/release/${RELEASE_ID}.json}"
 
 manifest="$(
   jq -n \
