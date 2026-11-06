@@ -34,12 +34,20 @@ public sealed class FormPackageValidatorTests
         var package = CreatePackage(allowedOperations: [FormSubmissionOperations.Update]);
         package.Fields[0] = new FormFieldDefinition
         {
-            FieldId = "name", Label = "Name", Type = "text", TargetField = "name", SectionId = "main", Required = false
+            FieldId = "name",
+            Label = "Name",
+            Type = "text",
+            TargetField = "name",
+            SectionId = "main",
+            Required = false
         };
         (await CreateValidator().ValidateForPublishAsync(package)).IsValid.Should().BeTrue();
         var version = new FormPackageVersion
         {
-            FormId = "inspection", Version = 1, Status = FormPackageStatus.Published, Package = package
+            FormId = "inspection",
+            Version = 1,
+            Status = FormPackageStatus.Published,
+            Package = package
         };
         var request = CreateSubmissionRequest(FormSubmissionOperations.Update, targetFeatureId: 42,
             values: new Dictionary<string, JsonElement> { ["name"] = Json(explicitNull ? "null" : "\"changed\"") });
@@ -60,7 +68,9 @@ public sealed class FormPackageValidatorTests
         resource = resource with { Editing = resource.Editing! with { GlobalIdField = globalId ? "name" : null } };
         var version = new FormPackageVersion
         {
-            FormId = "inspection", Version = 1, Status = FormPackageStatus.Published,
+            FormId = "inspection",
+            Version = 1,
+            Status = FormPackageStatus.Published,
             Package = CreatePackage(allowedOperations: [operation])
         };
         var request = CreateSubmissionRequest(operation, targetFeatureId: operation == FormSubmissionOperations.Update ? 42 : null);

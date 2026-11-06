@@ -960,9 +960,9 @@ internal sealed partial class FeatureDataAccess
         cancellationToken.ThrowIfCancellationRequested();
 
         var (deletedCount, deleteResults) = await ProcessDeletesWithResultsAsync(
-                new(editBatch.Deletes, (layerId, editBatch.RowSecurityWriteCheck), editBatch.OwnerGuards),
-                new(connection, transaction, preconditions),
-                cancellationToken).ConfigureAwait(false);
+            new(editBatch.Deletes, (layerId, editBatch.RowSecurityWriteCheck), editBatch.OwnerGuards),
+            new(connection, transaction, preconditions),
+            cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
 
         var hasErrors = System.Linq.Enumerable.Any(createResults, static result => !result.IsSuccess) ||
