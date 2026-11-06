@@ -276,9 +276,9 @@ public sealed class PostgresRowSecurityWriteCheckIntegrationTests(PostgresFixtur
         using var scope = withOutbox ? BeginOutboxScope() : null;
         Func<Task> write = operation switch
         {
-            "create" => async () => { await _store.CreateAsync(LayerId, Row(0, "south", "new-private")); },
-            "update" => async () => { await _store.UpdateAsync(LayerId, Row(2, "north", "stolen")); },
-            _ => async () => { await _store.DeleteAsync(LayerId, 2); }
+            "create" => () => _store.CreateAsync(LayerId, Row(0, "south", "new-private")),
+            "update" => () => _store.UpdateAsync(LayerId, Row(2, "north", "stolen")),
+            _ => () => _store.DeleteAsync(LayerId, 2)
         };
 
         await write.Should().ThrowAsync<ResourceAccessDeniedException>();
@@ -321,9 +321,18 @@ public sealed class PostgresRowSecurityWriteCheckIntegrationTests(PostgresFixtur
         {
             EntryFactory = (id, kind, _) => new FeatureChangeOutboxEntry
             {
-                OutboxId = Guid.NewGuid(), ServiceId = "regions", LayerId = LayerId, ObjectId = id,
-                Operation = kind, Protocol = "test", RequestId = "policy-test", EventId = "policy-test",
-                EventPayload = "{}", Status = "pending", RetryCount = 0, CreatedAt = DateTimeOffset.UtcNow
+                OutboxId = Guid.NewGuid(),
+                ServiceId = "regions",
+                LayerId = LayerId,
+                ObjectId = id,
+                Operation = kind,
+                Protocol = "test",
+                RequestId = "policy-test",
+                EventId = "policy-test",
+                EventPayload = "{}",
+                Status = "pending",
+                RetryCount = 0,
+                CreatedAt = DateTimeOffset.UtcNow
             }
         });
 
