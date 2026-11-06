@@ -40,6 +40,15 @@ precedence. Request host validation, strict startup validation
 An explicit host allowlist still takes precedence over the public URL, and
 unrelated request hosts remain rejected when host validation is enabled.
 
+## Publication tenant scope for imagery
+
+WMS and WMTS discovery and layer selection exclude publications owned by another
+tenant, even when the underlying resource is public. ImageServer numeric, default
+and publication-specific routes apply the same publication scope before selecting
+a source. A hidden primary publication does not shadow a visible alias. If a
+previously selected publication is no longer visible, raster and tile requests
+return not found without rebinding the request to another publication.
+
 ## Managed API keys and Portal token exchange
 
 Managed API-key expiry rejects the credential while retaining its registry
