@@ -32,8 +32,9 @@ re-certified automatically on every run.
 
 ## Policies on resources sharing managed storage
 
-Explicitly bound reads apply the selected resource's row and field policies,
-including OData publications backed by the managed shared feature table.
+Reads through explicit or resource-primary bindings apply the selected resource's
+row and field policies, including FeatureServer and OData publications backed by
+the managed shared feature table.
 
 OData writes through an explicit binding require the bound reader to verify the
 managed writer's connection, physical table, column mapping and layer partition.
