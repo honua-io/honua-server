@@ -48,7 +48,7 @@ What gets verified against actual desktop apps, browser clients, GDAL, BI tools,
 - **Cross-client certification envelope** — [`gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md`](../../gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md). The JSON envelope schema each lane emits.
 - **Client template version matrix** — [`gis/CLIENT_TEMPLATE_VERSION_MATRIX.md`](../../gis/CLIENT_TEMPLATE_VERSION_MATRIX.md). Which versions of which clients have been certified.
 - **Client template runbook** — [`gis/CLIENT_TEMPLATE_RUNBOOK.md`](../../gis/CLIENT_TEMPLATE_RUNBOOK.md). How to run a manual client smoke-cert.
-- **Nightly gap report** — [workflow gap-report artifacts](https://github.com/honua-io/honua-server/actions/workflows/client-interop-nightly.yml). Auto-refreshed by the `client-interop-nightly` workflow; do not hand-edit.
+- **Nightly gap report** — [client-interop gap-report artifacts](https://github.com/honua-io/honua-server/actions/workflows/client-interop-nightly.yml). Auto-refreshed by the `client-interop-nightly` workflow; do not hand-edit.
 - **Historical certification snapshot** — [`gis/certification-evidence/`](../../gis/certification-evidence). Timestamped snapshots retained for release evidence.
 - **Bounded 2026.1 roster on `nightly-2cc2213`** — [`client-certification-2cc2213/`](client-certification-2cc2213/README.md). Candidate-bound receipts for the 59 governed QGIS/GDAL/MapLibre/OWSLib/PySTAC cells (honua-server#3434), produced by `certification/bounded-roster/`; 43 pass, 15 fail, 1 blocked.
 
@@ -56,7 +56,7 @@ What gets verified against actual desktop apps, browser clients, GDAL, BI tools,
 
 How well Honua-as-client consumes other geospatial servers (the inverse direction of the parity matrices above).
 
-- **Cross-server consume gap report** — [workflow gap-report artifacts](https://github.com/honua-io/honua-server/actions/workflows/cross-server-consume-nightly.yml). Auto-refreshed nightly.
+- **Cross-server consume gap report** — [cross-server gap-report artifacts](https://github.com/honua-io/honua-server/actions/workflows/cross-server-consume-nightly.yml). Auto-refreshed nightly.
 
 ## Migration and import capability
 
@@ -92,7 +92,7 @@ Cross-repo coordination between Honua server and the first-party SDKs (`honua-sd
 
 | Refreshed | Where to look |
 |---|---|
-| Nightly (auto-generated) | [workflow gap-report artifacts](https://github.com/honua-io/honua-server/actions/workflows/client-interop-nightly.yml), [workflow gap-report artifacts](https://github.com/honua-io/honua-server/actions/workflows/cross-server-consume-nightly.yml), [migration performance evidence](migration-performance-evidence.md) |
+| Nightly (auto-generated) | [client-interop gap-report artifacts](https://github.com/honua-io/honua-server/actions/workflows/client-interop-nightly.yml), [cross-server gap-report artifacts](https://github.com/honua-io/honua-server/actions/workflows/cross-server-consume-nightly.yml), [migration performance evidence](migration-performance-evidence.md) |
 | Per release | All `contributor/*-evidence.md` files, the [public-interface quality model](../contributor/public-interface-quality-model.md), the [release checklist](../contributor/RELEASE_CHECKLIST.md) |
 | Per SDK release | [`developer/SDK_COMPATIBILITY_*`](../../developer), [`developer/metadata-catalog-parity-matrix.md`](../developer/metadata-catalog-parity-matrix.md) |
 | When suite state changes | [`contributor/ogc-cite-conformance-evidence.md`](../contributor/ogc-cite-conformance-evidence.md), [`contributor/ogc-certification-path.md`](../contributor/ogc-certification-path.md) |

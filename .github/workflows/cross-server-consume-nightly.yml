@@ -44,7 +44,7 @@ jobs:
         env:
           HONUA_TEST_CROSS_SERVER_CONSUME: '1'
         run: |
-          mkdir -p artifacts/test-results
+          mkdir -p artifacts/cross-server-consume
           dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
             --no-build \
             --no-restore \
@@ -52,18 +52,18 @@ jobs:
             --filter "FullyQualifiedName~CrossServerConsume" \
             --logger "trx;LogFileName=cross-server-consume.trx" \
             --logger "console;verbosity=minimal" \
-            --results-directory ./artifacts/test-results
+            --results-directory ./artifacts/cross-server-consume
 
       - name: Generate gap report
-        if: always() && hashFiles('artifacts/test-results/cross-server-consume.trx') != ''
+        if: always() && hashFiles('artifacts/cross-server-consume/cross-server-consume.trx') != ''
         run: |
           bash scripts/ci/generate-cross-server-gap-report.sh \
-            artifacts/test-results/cross-server-consume.trx \
-            artifacts/client-compat/cross-server-gap-report.md
+            artifacts/cross-server-consume/cross-server-consume.trx \
+            artifacts/cross-server-consume/gap-report.md
 
       - name: Write gap report summary
-        if: always() && hashFiles('artifacts/client-compat/cross-server-gap-report.md') != ''
-        run: cat artifacts/client-compat/cross-server-gap-report.md >> "$GITHUB_STEP_SUMMARY"
+        if: always() && hashFiles('artifacts/cross-server-consume/gap-report.md') != ''
+        run: cat artifacts/cross-server-consume/gap-report.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload consume artifacts
         if: always()
@@ -71,8 +71,8 @@ jobs:
         with:
           name: cross-server-consume-${{ github.run_id }}
           path: |
-            artifacts/test-results/cross-server-consume.trx
-            artifacts/client-compat/cross-server-gap-report.md
+            artifacts/cross-server-consume/cross-server-consume.trx
+            artifacts/cross-server-consume/gap-report.md
 
       - name: Fail on consume test failure
         if: steps.consume-tests.outcome == 'failure'
