@@ -29,6 +29,12 @@ the main per-provider variable and is exercised by the conformance matrix tests.
 | Single Logout (SLO) — IdP-initiated, HTTP-POST, signed `LogoutRequest` | Supported | Supported | Supported | Supported |
 | Single Logout (SLO) — SP-initiated / HTTP-Redirect binding | Partial (deferred) | Partial (deferred) | Partial (deferred) | Partial (deferred) |
 
+Each `AudienceRestriction` condition must include the configured SP entity ID among its
+`Audience` values. Alternatives within a condition are allowed; every separate condition
+must pass. Assertions are accepted only once, including concurrent submissions on the same
+node. With Redis configured, replay claims are shared across replicas and fail closed when
+Redis is unavailable. Without Redis, replay protection applies to the current node only.
+
 ### Per-provider attribute configuration
 
 Set `Saml:RoleAttribute`, `Saml:EmailAttribute`, and `Saml:DisplayNameAttribute` to match

@@ -188,13 +188,10 @@ internal sealed class SamlAssertionValidator(
             return SamlValidationResult.Failure("SAML assertion has expired (NotOnOrAfter).");
         }
 
-        var audiences = conditions
-            .Elements(XName.Get("AudienceRestriction", SamlAssertionNs))
-            .SelectMany(ar => ar.Elements(XName.Get("Audience", SamlAssertionNs)))
-            .Select(a => a.Value.Trim())
-            .ToList();
-        if (audiences.Count == 0 ||
-            !audiences.Any(a => string.Equals(a, _options.EntityId, StringComparison.Ordinal)))
+        var audienceRestrictions = conditions.Elements(XName.Get("AudienceRestriction", SamlAssertionNs)).ToArray();
+        if (audienceRestrictions.Length == 0 ||
+            audienceRestrictions.Any(restriction => !restriction.Elements(XName.Get("Audience", SamlAssertionNs))
+                .Any(audience => string.Equals(audience.Value.Trim(), _options.EntityId, StringComparison.Ordinal))))
         {
             return SamlValidationResult.Failure("SAML assertion audience does not match this SP.");
         }

@@ -79,6 +79,31 @@ internal static class SamlTestAssertions
         return Convert.ToBase64String(Encoding.UTF8.GetBytes(signed));
     }
 
+    public static string CreateSignedResponseWithAudienceGroups(
+        X509Certificate2 certificate, IReadOnlyList<string[]> audienceGroups)
+    {
+        const string saml = "urn:oasis:names:tc:SAML:2.0:assertion";
+        var document = new XmlDocument { PreserveWhitespace = false };
+        document.LoadXml(BuildResponseXml("user@example.com", "user@example.com", "User", ["viewer"], null, null));
+        var conditions = (XmlElement)document.GetElementsByTagName("Conditions", saml)[0]!;
+        foreach (var restriction in conditions.ChildNodes.OfType<XmlElement>().ToArray())
+        {
+            conditions.RemoveChild(restriction);
+        }
+        foreach (var group in audienceGroups)
+        {
+            var restriction = document.CreateElement("AudienceRestriction", saml);
+            foreach (var value in group)
+            {
+                var audience = document.CreateElement("Audience", saml);
+                audience.InnerText = value;
+                restriction.AppendChild(audience);
+            }
+            conditions.AppendChild(restriction);
+        }
+        return SignAssertion(document.OuterXml, certificate);
+    }
+
     /// <summary>
     /// Signed response whose <c>saml</c>, <c>xs</c>, and <c>xsi</c> prefixes are declared only
     /// on the Response. Keycloak and SimpleSAMLphp emit this shape; exclusive C14N must keep

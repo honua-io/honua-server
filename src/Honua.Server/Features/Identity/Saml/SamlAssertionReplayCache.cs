@@ -17,6 +17,7 @@ internal sealed class SamlAssertionReplayCache(IMemoryCache memoryCache, IConnec
     : ISamlAssertionReplayCache
 {
     private const string KeyPrefix = "saml:replay:";
+    private static readonly object _memoryLock = new();
 
     private readonly IMemoryCache _memoryCache = memoryCache;
     private readonly IConnectionMultiplexer? _redis = redis;
@@ -61,13 +62,15 @@ internal sealed class SamlAssertionReplayCache(IMemoryCache memoryCache, IConnec
 
     private bool RememberInMemory(string key, DateTimeOffset expiresAt)
     {
-        var created = false;
-        _memoryCache.GetOrCreate(key, entry =>
+        lock (_memoryLock)
         {
-            entry.AbsoluteExpiration = expiresAt;
-            created = true;
-            return (byte)1;
-        });
-        return created;
+            if (_memoryCache.TryGetValue(key, out _))
+            {
+                return false;
+            }
+
+            _memoryCache.Set(key, (byte)1, expiresAt);
+            return true;
+        }
     }
 }
