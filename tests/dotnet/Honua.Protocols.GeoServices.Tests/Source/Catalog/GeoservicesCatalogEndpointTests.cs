@@ -18,6 +18,7 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Honua.TestKit.Helpers;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -35,6 +36,39 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
     private readonly WebAppFixture _fixture;
 
     public GeoservicesCatalogEndpointTests(WebAppFixture fixture) => _fixture = fixture;
+
+    [IntegrationTheory]
+    [InlineData(null, true)]
+    [InlineData("another-tenant", false)]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /rest/services")]
+    public async Task ServicesDirectory_PublicationTenant_HidesServicesWithoutVisiblePublications(string? publicationTenant, bool visible)
+    {
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var provider = (TestMetadataV2GraphProvider)_fixture.GetService<IMetadataV2GraphProvider>();
+        var serviceIds = snapshot.Graph.Services.Where(service => service.Metadata.Name == WebAppFixture.TestServiceId)
+            .Select(service => service.Metadata.Id).ToHashSet(StringComparer.Ordinal);
+        serviceIds.Should().NotBeEmpty();
+        provider.SetGraph(snapshot.Graph with
+        {
+            Revision = snapshot.Graph.Revision + 1,
+            Publications = snapshot.Graph.Publications.Select(publication => serviceIds.Contains(publication.ServiceId)
+                ? publication with { Metadata = publication.Metadata with { Tenant = publicationTenant } }
+                : publication).ToArray()
+        }, schema: _fixture.CurrentSchema);
+        try
+        {
+            using var response = await _fixture.Client.GetAsync("/rest/services?f=json");
+            response.Be200Ok();
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            document.RootElement.GetProperty("services").EnumerateArray()
+                .Any(entry => entry.GetProperty("name").GetString() == WebAppFixture.TestServiceId).Should().Be(visible);
+        }
+        finally
+        {
+            provider.SetGraph(snapshot.Graph with { Revision = snapshot.Graph.Revision + 2 }, schema: _fixture.CurrentSchema);
+        }
+    }
 
     [IntegrationTheory]
     [InlineData("GET")]
