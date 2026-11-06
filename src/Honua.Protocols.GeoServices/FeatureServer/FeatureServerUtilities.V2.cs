@@ -29,7 +29,6 @@ internal static partial class FeatureServerEndpoints
         bool branchVersioningEnabled,
         bool versionManagementEnabled,
         bool offlineSyncEnabled,
-        PathString pathBase = default,
         string? versionManagementServerUrl = null)
     {
         ArgumentNullException.ThrowIfNull(service);
@@ -94,7 +93,7 @@ internal static partial class FeatureServerEndpoints
             IsDataVersioned = branchVersioningEnabled,
             SupportsBranchVersioning = versionManagementEnabled,
             VersionManagementServerUrl = versionManagementEnabled
-                ? versionManagementServerUrl ?? $"{pathBase}{GeoServicesServiceUrls.CanonicalPath(snapshot.Graph, service)}/VersionManagementServer"
+                ? versionManagementServerUrl ?? $"{GeoServicesServiceUrls.CanonicalPath(snapshot.Graph, service)}/VersionManagementServer"
                 : null,
         };
     }

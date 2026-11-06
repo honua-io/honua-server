@@ -138,7 +138,6 @@ internal static partial class FeatureServerEndpoints
                 branchVersioningEnabled: branchVersioningEnabled,
                 versionManagementEnabled: IsVersionManagementAvailable(context, branchVersioningEnabled),
                 offlineSyncEnabled: offlineSyncEnabled,
-                pathBase: context.Request.PathBase,
                 versionManagementServerUrl: GeoServicesServiceUrls.RequestedLocation(context, service.EffectivePublicName, "VersionManagementServer"));
 
             FeatureServerLog.ServiceMetadataReturned(logger, service.Metadata.Name, response.Layers.Length);
