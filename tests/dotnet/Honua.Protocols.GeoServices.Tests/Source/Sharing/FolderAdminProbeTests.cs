@@ -6,6 +6,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Security.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Infrastructure;
@@ -19,6 +20,54 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.Sharing;
 public sealed class FolderAdminProbeTests(WebAppFixture fixture) : IClassFixture<WebAppFixture>
 {
     private long _revision = 100;
+
+    [IntegrationTest]
+    [Endpoint("GET /admin/services/{folderName}/{serviceName}.{serviceType}")]
+    [Endpoint("POST /admin/services/{folderName}/{serviceName}.{serviceType}")]
+    [Endpoint("GET /rest/admin/{folderName}/{serviceName}.{serviceType}")]
+    [Endpoint("POST /rest/admin/{folderName}/{serviceName}.{serviceType}")]
+    public async Task ServiceProbe_AnonymousCaller_SeesOnlyPublicFolderServices()
+    {
+        var anonymousFixture = new WebAppFixture().ConfigureWebHost(builder => builder.UseSetting("HONUA_DEV_AUTH", "false"));
+        await anonymousFixture.InitializeAsync();
+        try
+        {
+            var original = anonymousFixture.GetCurrentV2GraphSnapshot().Graph;
+            var organized = Organize(original);
+            var provider = (TestMetadataV2GraphProvider)anonymousFixture.GetService<IMetadataV2GraphProvider>();
+            using var client = anonymousFixture.CreateClient();
+            foreach (var allowAnonymous in new[] { true, false })
+            {
+                provider.SetGraph(organized with
+                {
+                    Revision = ++_revision,
+                    Services = organized.Services.Select(service => service.Metadata.Name == WebAppFixture.TestServiceId
+                        ? service with { AccessPolicy = new AccessPolicy { AllowAnonymous = allowAnonymous, AllowedRoles = ["folder-reader"] } }
+                        : service).ToArray()
+                }, schema: anonymousFixture.CurrentSchema);
+                using var adminGet = await client.GetAsync("/admin/services/Public/Parcels.MapServer?f=json");
+                using var adminPost = await client.PostAsync("/admin/services/Public/Parcels.MapServer?f=json", null);
+                using var sitelessGet = await client.GetAsync("/rest/admin/Public/Parcels.MapServer?f=json");
+                using var sitelessPost = await client.PostAsync("/rest/admin/Public/Parcels.MapServer?f=json", null);
+                foreach (var response in new[] { adminGet, adminPost, sitelessGet, sitelessPost })
+                {
+                    if (!allowAnonymous)
+                    {
+                        await response.AssertGeoServicesErrorAsync(404);
+                        continue;
+                    }
+                    var body = await response.Content.ReadAsStringAsync();
+                    response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+                    using var document = JsonDocument.Parse(body);
+                    document.RootElement.GetProperty("serviceName").GetString().Should().Be("Parcels");
+                }
+            }
+        }
+        finally
+        {
+            await anonymousFixture.DisposeAsync();
+        }
+    }
 
     [IntegrationTheory]
     [InlineData("GET", "/rest/admin")]

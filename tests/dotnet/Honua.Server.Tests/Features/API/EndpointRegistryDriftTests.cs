@@ -78,6 +78,8 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
         // both verbs by BranchVersioningMetadataTests.
         "GET /admin/services/{serviceName}.{serviceType}",
         "POST /admin/services/{serviceName}.{serviceType}",
+        "GET /admin/services/{folderName}/{serviceName}.{serviceType}",
+        "POST /admin/services/{folderName}/{serviceName}.{serviceType}",
         "GET /monitoring/alerts",
         "GET /monitoring/health/comprehensive",
         "GET /monitoring/health/production",

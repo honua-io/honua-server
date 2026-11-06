@@ -193,6 +193,8 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services/{folderName}")]
+    [Endpoint("GET /rest/services/{folderName}/{serviceId}")]
+    [Endpoint("POST /rest/services/{folderName}/{serviceId}")]
     [Endpoint("GET /rest/services/{folderName}/{serviceId}/FeatureServer")]
     public async Task FolderAccess_HiddenService_DoesNotExposeFolderOrBypassPolicy()
     {
@@ -201,6 +203,16 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
         try
         {
             var organized = FolderServiceTestCatalog.WithPublicParcels(fixture.GetCurrentV2GraphSnapshot().Graph);
+            FolderServiceTestCatalog.ReplaceGraph(fixture, organized);
+            using var client = fixture.CreateClient();
+            using var publicParentGet = await client.GetAsync("/rest/services/Public/Parcels?f=json");
+            using var publicParentPost = await client.PostAsync("/rest/services/Public/Parcels?f=json", null);
+            foreach (var response in new[] { publicParentGet, publicParentPost })
+            {
+                response.StatusCode.Should().Be(HttpStatusCode.OK);
+                using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                document.RootElement.GetProperty("services").GetArrayLength().Should().BeGreaterThan(0);
+            }
             var graph = organized with
             {
                 Services = organized.Services.Select(service => service.Metadata.Name == WebAppFixture.TestServiceId
@@ -208,9 +220,12 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
                     : service).ToArray()
             };
             FolderServiceTestCatalog.ReplaceGraph(fixture, graph);
-            using var client = fixture.CreateClient();
             using var folder = await client.GetAsync("/rest/services/Public?f=json");
             await folder.AssertGeoServicesErrorAsync(404);
+            using var privateParentGet = await client.GetAsync("/rest/services/Public/Parcels?f=json");
+            await privateParentGet.AssertGeoServicesErrorAsync(404);
+            using var privateParentPost = await client.PostAsync("/rest/services/Public/Parcels?f=json", null);
+            await privateParentPost.AssertGeoServicesErrorAsync(404);
             using var service = await client.GetAsync("/rest/services/Public/Parcels/FeatureServer?f=json");
             await service.AssertGeoServicesErrorAsync(499);
         }

@@ -18,6 +18,7 @@ anonymous DELETE /ogc/processes/jobs/{jobId}
 anonymous DELETE /scim/v2/Groups/{id}
 anonymous DELETE /scim/v2/Users/{id}
 anonymous GET /
+anonymous GET /admin/services/{folderName}/{serviceName}.{serviceType}
 anonymous GET /admin/services/{serviceName}.{serviceType}
 anonymous GET /api/enrich/catalog
 anonymous GET /api/enrich/datasets
@@ -43,6 +44,7 @@ anonymous GET /api/v{version:apiVersion}/streaming/features/capabilities
 anonymous GET /arcgis
 anonymous GET /arcgisuris.xml
 anonymous GET /rest
+anonymous GET /rest/admin/{folderName}/{serviceName}.{serviceType}
 anonymous GET /rest/admin/{serviceName}.{serviceType}
 anonymous GET /rest/services/{id:int}/ImageServer/
 anonymous GET /rest/services/{id:int}/ImageServer/WMTS
@@ -185,6 +187,7 @@ anonymous PATCH /odata/Layers({layerId:int})/Features({objectId:long})
 anonymous PATCH /ogc/features/collections/{collectionId}/items/{featureId}
 anonymous PATCH /scim/v2/Groups/{id}
 anonymous PATCH /scim/v2/Users/{id}
+anonymous POST /admin/services/{folderName}/{serviceName}.{serviceType}
 anonymous POST /admin/services/{serviceName}.{serviceType}
 anonymous POST /api/enrich
 anonymous POST /api/v1/cloud-demo/reset
@@ -213,6 +216,7 @@ anonymous POST /ogc/features/collections/{collectionId}/items
 anonymous POST /ogc/features/collections/{collectionId}/items/batch
 anonymous POST /ogc/features/collections/{collectionId}/spatial-join
 anonymous POST /ogc/processes/processes/{processId}/execution
+anonymous POST /rest/admin/{folderName}/{serviceName}.{serviceType}
 anonymous POST /rest/admin/{serviceName}.{serviceType}
 anonymous POST /rest/services/GeocodeServer
 anonymous POST /rest/services/GeocodeServer/findAddressCandidates
@@ -579,6 +583,7 @@ none GET /rest/services/Utilities/PrintingTools/GPServer/Export Web Map Task/sub
 none GET /rest/services/Utilities/PrintingTools/GPServer/Get Layout Templates Info Task
 none GET /rest/services/Utilities/PrintingTools/GPServer/Get Layout Templates Info Task/execute
 none GET /rest/services/{folderName}
+none GET /rest/services/{folderName}/{serviceId}
 none GET /rest/services/{id:int}/ImageServer/WCS
 none GET /rest/services/{locatorName}/GeocodeServer
 none GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates
@@ -798,6 +803,7 @@ none POST /rest/info
 none POST /rest/services
 none POST /rest/services/Utilities/PrintingTools
 none POST /rest/services/{folderName}
+none POST /rest/services/{folderName}/{serviceId}
 none POST /rest/services/{serviceId}/FeatureServer/{layerId:int}/queryAttachments
 none POST /rest/services/{serviceId}/FeatureServer/{layerId:int}/{featureId:long}/attachments
 none POST /rest/services/{serviceId}/FeatureServer/{layerId:int}/{featureId:long}/attachments/{attachmentId:long}
