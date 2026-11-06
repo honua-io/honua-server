@@ -83,13 +83,6 @@ class OperatingSkillsTests(unittest.TestCase):
     def test_skill_relative_and_docs_links_resolve(self):
         self.assertEqual([], skill_link_errors(ROOT / 'skills'))
 
-    def test_skill_links_are_files_or_published_pages(self):
-        spec = importlib.util.spec_from_file_location(
-            'skill_links', ROOT / 'scripts/ci/check-skill-links.py')
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        self.assertEqual([], module.check_skill_tree(ROOT / 'skills', ROOT, module.fetch_page))
-
     def test_skill_links_reject_missing_files_and_anchors(self):
         targets = ('references/missing.md', '#missing',
                    'https://honua.io/docs/concepts/domain/missing/',

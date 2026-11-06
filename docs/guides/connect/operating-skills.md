@@ -70,7 +70,8 @@ its execution approval policy. Reading `SKILL.md` alone grants no permission.
 Format validation and package byte checks do not measure agent task success.
 A separate evaluation needs a pinned guide-only baseline and a guide-plus-skills
 arm, the same product and client revisions, equivalent permissions and tasks,
-and per-stage measured outcomes. The skills above are the ones that passed that
-comparison on a local quickstart. The run record is
+and per-stage measured outcomes. The two skills above stayed after one informal
+local comparison on a quickstart. That comparison did not pin product revisions,
+client versions, or file hashes. The notes are
 [operating-skills-ab.md](../../internal/evidence/operating-skills-ab.md).
 The record is not part of the quickstart package.

@@ -30,7 +30,7 @@ With the skill, the agent registered the catalog connection, ingested the datase
 
 Task: save a Studio map of the published layer and share it.
 
-Without the skill the agent stopped after an unauthenticated call and created no draft. With the skill the agent also stopped, because the skill allows a script to read `secrets/honua_admin_password` and `AGENTS.md` says never to read `secrets/`. It asked which rule to follow. No draft and no share URL. The skill did not produce a passing run.
+Without the skill the agent stopped after an unauthenticated call and created no draft. With the skill the agent also stopped and asked which rule to follow. The copy under test told it to read `secrets/honua_admin_password`, and the packaged guide in that run said not to read `secrets/`. That sentence was only in the uncommitted copy used for the run. The deleted trunk skill does not contain it. No draft and no share URL. The run with the skill did not pass.
 
 ## Release check
 

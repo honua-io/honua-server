@@ -162,6 +162,26 @@ def markdown_outside_fences(text):
     return "".join(lines)
 
 
+def link_targets(text):
+    """Markdown link targets outside fenced code, without a title suffix."""
+    for raw in LINK_RE.findall(markdown_outside_fences(text)):
+        target = raw.strip().strip("<>")
+        if not target.startswith("#") and " " in target:
+            target = target.split(" ", 1)[0].strip("<>")
+        if target:
+            yield target
+
+
+def inside_repo(candidate, repo_root):
+    """True when the resolved path is the repo root or a file inside it."""
+    root = os.path.realpath(repo_root)
+    try:
+        resolved = os.path.realpath(candidate)
+        return os.path.commonpath([root, resolved]) == root
+    except ValueError:
+        return False
+
+
 def iter_md_files(roots):
     for root in roots:
         if os.path.isfile(root):
@@ -328,12 +348,8 @@ def check_relative_links(docs_root, repo_root, allowlist_entries):
         base_dir = os.path.dirname(md)
         with open(md, "r", encoding="utf-8") as fh:
             text = fh.read()
-        for raw in LINK_RE.findall(markdown_outside_fences(text)):
-            target = raw.strip()
-            # Drop an optional link title:  [t](path "title")
-            if not target.startswith("#") and " " in target:
-                target = target.split(" ", 1)[0]
-            if not target or target.startswith(SKIP_PREFIXES):
+        for target in link_targets(text):
+            if target.startswith(SKIP_PREFIXES):
                 continue
 
             path_part, _, fragment = target.partition("#")
@@ -345,6 +361,14 @@ def check_relative_links(docs_root, repo_root, allowlist_entries):
                 resolved = md  # same-file anchor
             else:
                 resolved = os.path.normpath(os.path.join(base_dir, path_part))
+                if not inside_repo(resolved, repo_root):
+                    detail = f"{source} -> {target} (escapes the repository)"
+                    if key in allowlist_entries:
+                        matched_allowlist.add(key)
+                        warnings.append(f"allowlisted: {detail}")
+                    else:
+                        errors.append(detail)
+                    continue
                 if not os.path.exists(resolved):
                     detail = f"{source} -> {target} (file not found)"
                     if key in allowlist_entries:

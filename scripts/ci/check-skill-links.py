@@ -2,9 +2,10 @@
 """Fail when a skill link is a missing file, an HTTP error, or the GitBook home page.
 
 GitBook answers a missing page with HTTP 200 and the space home title, so status
-alone does not prove a page exists. Relative links must name a file in this repo.
+alone does not prove a page exists. Relative links use the documentation checker.
 """
 import html
+import importlib.util
 import os
 from pathlib import Path
 import re
@@ -15,31 +16,13 @@ import urllib.request
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = Path(HERE).resolve().parents[1]
 HOME_URL = "https://honua.gitbook.io/honuaio"
-LINK_RE = re.compile(r"\]\(([^)]+)\)")
-FENCE_RE = re.compile(r"^\s*(```+|~~~+)")
 TITLE_RE = re.compile(r"<title>(.*?)</title>", re.IGNORECASE | re.DOTALL)
 USER_AGENT = "honua-skill-link-check"
 
-
-def link_targets(text):
-    """Markdown link targets outside fenced code, without a title suffix."""
-    fenced = False
-    fence = ""
-    for line in text.splitlines():
-        marker = FENCE_RE.match(line)
-        if marker:
-            token = marker.group(1)[0]
-            if not fenced:
-                fenced, fence = True, token
-            elif token == fence:
-                fenced = False
-            continue
-        if fenced:
-            continue
-        for raw in LINK_RE.findall(line):
-            target = raw.strip().split()[0].strip("<>")
-            if target:
-                yield target
+_DOC_SPEC = importlib.util.spec_from_file_location(
+    "check_doc_links", os.path.join(HERE, "check-doc-links.py"))
+DOC_LINKS = importlib.util.module_from_spec(_DOC_SPEC)
+_DOC_SPEC.loader.exec_module(DOC_LINKS)
 
 
 def page_title(body):
@@ -60,56 +43,38 @@ def fetch_page(url):
         return error.code, ""
 
 
-def resolve_repo_file(markdown_file, target, repo_root):
-    """Return the linked file, or None when the target is only a fragment."""
-    path = target.split("#", 1)[0].split("?", 1)[0]
-    if path == "":
-        return None
-    if path.startswith("/"):
-        candidate = (repo_root / path.lstrip("/")).resolve()
-    else:
-        candidate = (markdown_file.parent / path).resolve()
-    return candidate
-
-
-def inside_repo(candidate, repo_root):
-    root = repo_root.resolve()
-    return candidate == root or root in candidate.parents
-
-
-def check_skill_tree(skill_root, repo_root, fetch):
-    """Errors for missing relative files and for pages that are absent or the home page."""
+def published_page_errors(skill_root, repo_root, fetch):
+    """Errors when an absolute page is missing, untitled, or the GitBook home page."""
     errors = []
     pages = {}
     home_title = None
-    root = repo_root.resolve()
-    for path in sorted(skill_root.rglob("*.md")):
-        for target in link_targets(path.read_text(encoding="utf-8")):
-            location = f"{path.relative_to(root)} -> {target}"
-            if target.startswith(("http://", "https://")):
-                if home_title is None:
-                    status, home_title = fetch(HOME_URL)
-                    if status != 200 or not home_title:
-                        errors.append(f"GitBook home page title was not readable ({status})")
-                        home_title = home_title or ""
-                if target not in pages:
-                    pages[target] = fetch(target)
-                status, title = pages[target]
-                if status != 200:
-                    errors.append(f"{location} returned HTTP {status}")
-                elif not title:
-                    errors.append(f"{location} returned no page title")
-                elif title == home_title:
-                    errors.append(f"{location} is the GitBook home page")
+    for path in sorted(Path(skill_root).rglob("*.md")):
+        text = path.read_text(encoding="utf-8")
+        for target in DOC_LINKS.link_targets(text):
+            if not target.startswith(("http://", "https://")):
                 continue
-            if target.startswith(("mailto:", "honua://")):
-                continue
-            candidate = resolve_repo_file(path, target, root)
-            if candidate is None:
-                continue
-            if not inside_repo(candidate, root) or not candidate.is_file():
-                errors.append(f"{location} does not resolve to a file in the repo")
+            location = f"{DOC_LINKS.rel(path, repo_root)} -> {target}"
+            if home_title is None:
+                status, home_title = fetch(HOME_URL)
+                if status != 200 or not home_title:
+                    errors.append(f"GitBook home page title was not readable ({status})")
+                    home_title = home_title or ""
+            if target not in pages:
+                pages[target] = fetch(target)
+            status, title = pages[target]
+            if status != 200:
+                errors.append(f"{location} returned HTTP {status}")
+            elif not title:
+                errors.append(f"{location} returned no page title")
+            elif title == home_title:
+                errors.append(f"{location} is the GitBook home page")
     return errors
+
+
+def check_skill_tree(skill_root, repo_root, fetch):
+    """Errors for relative links and for pages that are absent or the home page."""
+    _, relative_errors, _ = DOC_LINKS.check_relative_links(str(skill_root), str(repo_root), set())
+    return relative_errors + published_page_errors(skill_root, repo_root, fetch)
 
 
 def main():
