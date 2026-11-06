@@ -562,15 +562,19 @@ internal static partial class FeatureServerEndpoints
             .Select(publication => (publication, snapshot.ResolveResource(publication)!))
             .ToArray();
 
+    internal readonly record struct ServiceLayerSelectionRequest(
+        MetadataV2Service Service,
+        MetadataV2GraphSnapshot Snapshot,
+        HttpContext Context,
+        IReadOnlyDictionary<string, StringValues> Values);
+
     internal static bool TryResolveRequestedServiceLayersV2(
-        MetadataV2Service service,
-        MetadataV2GraphSnapshot snapshot,
-        HttpContext context,
-        IReadOnlyDictionary<string, StringValues> values,
+        ServiceLayerSelectionRequest request,
         out (MetadataV2Publication Publication, MetadataV2Resource Resource)[] layers,
         out bool selectorSpecified,
         out string? error)
     {
+        var (service, snapshot, context, values) = request;
         ArgumentNullException.ThrowIfNull(service);
         ArgumentNullException.ThrowIfNull(snapshot);
 

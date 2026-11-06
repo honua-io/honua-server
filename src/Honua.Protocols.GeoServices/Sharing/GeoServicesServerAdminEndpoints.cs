@@ -248,6 +248,15 @@ public static class GeoServicesServerAdminEndpoints
             return null;
         }
 
+        return ResolveNumericService(new(snapshot, context), layerId, requestedType);
+    }
+
+    private readonly record struct ServiceResolutionScope(MetadataV2GraphSnapshot Snapshot, HttpContext Context);
+
+    private static MetadataV2Service? ResolveNumericService(
+        ServiceResolutionScope scope, int layerId, string requestedType)
+    {
+        var (snapshot, context) = scope;
         MetadataV2Service? exact = null;
         MetadataV2Service? feature = null;
         MetadataV2Service? coverage = null;
