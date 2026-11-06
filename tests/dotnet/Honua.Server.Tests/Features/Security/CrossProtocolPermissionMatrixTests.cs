@@ -44,7 +44,7 @@ namespace Honua.Server.Tests.Features.Security;
 /// that allows <c>query</c> but not <c>update</c> still denies writes.
 /// </para>
 /// </summary>
-public sealed class CrossProtocolPermissionMatrixTests
+public sealed partial class CrossProtocolPermissionMatrixTests
 {
     private const string GrantedRole = "matrix-grant-role";
     private const string UngrantedRole = "matrix-ungranted-role";
@@ -417,21 +417,6 @@ public sealed class CrossProtocolPermissionMatrixTests
             $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/query?where=1=1&f=json");
 
         await response.AssertGeoServicesErrorAsync(403);
-    }
-
-    [IntegrationTest]
-    [Protocol(TestProtocols.FeatureServer)]
-    [Operation(Operations.Query)]
-    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
-    public async Task FeatureServerQuery_GrantScopedToTargetLayer_AllowsThatLayer()
-    {
-        using var factory = CreateFactory(Grant("query", layer: "Alpha Layer"));
-        using var client = ServiceRbacTestFixture.CreateClient(factory, GrantedRole);
-
-        var response = await client.GetAsync(
-            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/{ServiceRbacTestFixture.AlphaLayerId}/query?where=1=1&f=json");
-
-        await ServiceRbacTestFixture.AssertStatusAsync(response, HttpStatusCode.OK);
     }
 
     // ---- OData query ----
