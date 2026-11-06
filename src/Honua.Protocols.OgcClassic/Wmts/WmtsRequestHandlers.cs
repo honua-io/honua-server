@@ -165,7 +165,7 @@ internal static class WmtsRequestHandlers
             // Resolve all WMTS layers on the service up-front: walk publications, dedupe by
             // resource (prefer IsPrimary), drop those without a usable storage layer id, and
             // sort by storage layer id so capabilities/themes order is stable.
-            var layers = ResolveWmtsLayers(snapshot, svcDef);
+            var layers = ResolveWmtsLayers(snapshot, svcDef, context);
 
             var accessibleLayers = layers
                 .Where(l => AccessPolicyHelpers.IsResourceAccessible(context, l.Resource, svcDef))
@@ -1021,13 +1021,14 @@ internal static class WmtsRequestHandlers
         return Results.Content(body, PlainTextMimeType);
     }
 
-    private static WmtsLayer[] ResolveWmtsLayers(MetadataV2GraphSnapshot snapshot, MetadataV2Service service)
+    private static WmtsLayer[] ResolveWmtsLayers(MetadataV2GraphSnapshot snapshot, MetadataV2Service service, HttpContext context)
     {
         var byResource = new Dictionary<string, WmtsLayer>(StringComparer.Ordinal);
         foreach (var publication in snapshot.Index.PublicationsByService[service.Metadata.Id])
         {
             var resource = snapshot.ResolveResource(publication);
-            if (!snapshot.IsRoutable(publication))
+            if (!snapshot.IsRoutable(publication)
+                || !TenantScopeHelpers.IsPublicationVisible(context, publication, resource, service))
             {
                 continue;
             }

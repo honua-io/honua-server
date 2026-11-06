@@ -232,11 +232,7 @@ internal static partial class FeatureServerEndpoints
         var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         var snapshot = await snapshotProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
-        var allPairs = snapshot.Index.PublicationsByService[service.Metadata.Id]
-            .Select(pub => (Publication: pub, Resource: snapshot.ResolveResource(pub)))
-            .Where(pair => snapshot.IsRoutable(pair.Publication))
-            .Select(pair => (pair.Publication, Resource: pair.Resource!))
-            .ToArray();
+        var allPairs = GetRoutableServicePublicationsV2(service, snapshot, context);
 
         return await AccessPolicyHelpers.RequireAnyResourceAccessAsync(
             context,
@@ -266,11 +262,7 @@ internal static partial class FeatureServerEndpoints
         var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         var snapshot = await snapshotProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
-        var allPairs = snapshot.Index.PublicationsByService[service.Metadata.Id]
-            .Select(pub => (Publication: pub, Resource: snapshot.ResolveResource(pub)))
-            .Where(pair => snapshot.IsRoutable(pair.Publication))
-            .Select(pair => (pair.Publication, Resource: pair.Resource!))
-            .ToArray();
+        var allPairs = GetRoutableServicePublicationsV2(service, snapshot, context);
 
         var access = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
             context,
