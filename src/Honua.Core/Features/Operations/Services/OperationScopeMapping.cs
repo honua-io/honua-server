@@ -18,6 +18,12 @@ public static class OperationScopeMapping
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        if (FolderOperation(request.OperationId) is { } folderOperation)
+        {
+            operation = folderOperation;
+            return true;
+        }
+
         if (TryResolveAdminAccessOperation(request.OperationId, out operation))
             return true;
 
@@ -84,6 +90,13 @@ public static class OperationScopeMapping
                 || !OperatorScopeCatalog.PermitsOperation(
                     context.RecognizedScopes.ToHashSet(StringComparer.Ordinal), requiredOperation));
     }
+
+    private static OperatorOperation? FolderOperation(string operationId) => operationId switch
+    {
+        "folder.list" => OperatorOperation.Read,
+        "folder.create" or "folder.update" or "folder.delete" or "service.move" => OperatorOperation.Publish,
+        _ => null
+    };
 
     private static bool IsStudioOperation(string operationId)
         => ResolveStudioOperation(operationId) != default;
