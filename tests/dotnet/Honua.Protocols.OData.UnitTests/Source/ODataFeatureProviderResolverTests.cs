@@ -134,6 +134,8 @@ public sealed partial class ODataFeatureProviderResolverTests
             Substitute.For<IFeatureReader>(), primaryWriter, ODataProviderTestData.CreateRouter(connectionId, provider));
         var (snapshot, service, resource, publication) = ODataProviderTestData.CreateSnapshot(connectionId: null);
 
+        snapshot = WithoutStorageBindings(snapshot);
+
         var support = await resolver.CheckWriteSupportAsync(
             snapshot, service, resource, publication with { StorageBindingId = null }, 41, CancellationToken.None);
 
@@ -197,6 +199,8 @@ public sealed partial class ODataFeatureProviderResolverTests
             Substitute.For<IFeatureWriter>(),
             ODataProviderTestData.CreateRouter(connectionId, provider));
         var (snapshot, service, resource, publication) = ODataProviderTestData.CreateSnapshot(connectionId.ToString());
+
+        snapshot = WithoutStorageBindings(snapshot);
 
         var resolved = await resolver.ResolveReaderAsync(
             snapshot,
