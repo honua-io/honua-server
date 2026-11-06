@@ -158,24 +158,26 @@ public sealed class RoutingUtilityServiceTests : IClassFixture<NAServerEndpointT
         }
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData("")]
+    [InlineData("/arcgis")]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /rest/services/{serviceId}/GPServer")]
-    public async Task ExistingPrivateRoutingStableId_RootTaskAndExecuteKeepItsAccessPolicy()
+    public async Task ExistingPrivateRoutingStableId_RootTaskAndExecuteKeepItsAccessPolicy(string mount)
     {
         var fixture = await CreateCatalogCollisionFixtureAsync(gpServerEnabled: true, stableIdCollision: true);
         try
         {
             // GeoServices represents a missing credential as body error 499 (TokenRequired),
             // while retaining HTTP 200 for Esri clients' authentication flow.
-            await AssertErrorAsync(fixture.Client, "/rest/services/Routing/GPServer?f=json", 499);
-            await AssertErrorAsync(fixture.Client, "/rest/services/Routing/GPServer/GetTravelModes?f=json", 499);
-            await AssertErrorAsync(fixture.Client, "/rest/services/Routing/GPServer/FindRoutes/execute?f=json", 499);
+            await AssertErrorAsync(fixture.Client, $"{mount}/rest/services/Routing/GPServer?f=json", 499);
+            await AssertErrorAsync(fixture.Client, $"{mount}/rest/services/Routing/GPServer/GetTravelModes?f=json", 499);
+            await AssertErrorAsync(fixture.Client, $"{mount}/rest/services/Routing/GPServer/FindRoutes/execute?f=json", 499);
             // Stable IDs are ordinal. The lowercase route is absent, and must not
             // create a public synthetic alias for the private uppercase ID.
-            await AssertErrorAsync(fixture.Client, "/rest/services/routing/GPServer?f=json", 404);
-            await AssertErrorAsync(fixture.Client, "/rest/services/routing/GPServer/GetTravelModes?f=json", 404);
-            await AssertErrorAsync(fixture.Client, "/rest/services/routing/GPServer/FindRoutes/execute?f=json", 404);
+            await AssertErrorAsync(fixture.Client, $"{mount}/rest/services/routing/GPServer?f=json", 404);
+            await AssertErrorAsync(fixture.Client, $"{mount}/rest/services/routing/GPServer/GetTravelModes?f=json", 404);
+            await AssertErrorAsync(fixture.Client, $"{mount}/rest/services/routing/GPServer/FindRoutes/execute?f=json", 404);
         }
         finally
         {

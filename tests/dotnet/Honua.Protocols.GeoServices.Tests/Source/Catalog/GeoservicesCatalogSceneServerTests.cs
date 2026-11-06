@@ -40,7 +40,7 @@ public sealed class GeoservicesCatalogSceneServerTests
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services")]
-    public async Task GetServicesDirectory_Enterprise_ListsRegisteredSceneServer()
+    public async Task GetServicesDirectory_Enterprise_ListsRegisteredSceneAndReachableParents()
     {
         var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Enterprise);
         await fixture.InitializeAsync();
@@ -65,6 +65,8 @@ public sealed class GeoservicesCatalogSceneServerTests
             sceneServers[0].GetProperty("name").GetString().Should().Be(SceneName);
             sceneServers[0].GetProperty("url").GetString().Should()
                 .MatchRegex(@".*/rest/services/catalog-scene/SceneServer$");
+            await AssertSceneParentAsync(fixture, "/rest/services");
+            await AssertSceneParentAsync(fixture, "/arcgis/rest/services");
         }
         finally
         {
@@ -103,6 +105,20 @@ public sealed class GeoservicesCatalogSceneServerTests
         {
             await ResetSceneRegistryAsync(fixture);
             await fixture.DisposeAsync();
+        }
+    }
+
+    private static async Task AssertSceneParentAsync(WebAppFixture fixture, string root)
+    {
+        foreach (var parent in new[] { SceneId, SceneName })
+        {
+            using var response = await fixture.Client.GetAsync($"{root}/{Uri.EscapeDataString(parent)}?f=json");
+            response.Be200Ok();
+            using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var entry = payload.RootElement.GetProperty("services").EnumerateArray().Should().ContainSingle().Which;
+            entry.GetProperty("name").GetString().Should().Be(SceneName);
+            entry.GetProperty("type").GetString().Should().Be("SceneServer");
+            entry.GetProperty("url").GetString().Should().EndWith($"/rest/services/{SceneId}/SceneServer");
         }
     }
 
