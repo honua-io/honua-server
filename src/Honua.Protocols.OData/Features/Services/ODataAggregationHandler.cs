@@ -42,8 +42,8 @@ internal sealed class ODataAggregationHandler
         string applyExpression,
         string? filter,
         string baseUrl,
-        CancellationToken cancellationToken,
-        int? publicLayerId = null)
+        int? publicLayerId,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(resource);
 

@@ -376,11 +376,41 @@ public sealed class LayerReadSecurityResolver
             .Where(candidate => candidate.Resource is not null &&
                 snapshot.ResolveStorageLayerId(candidate.Publication, candidate.Resource) == layerId)
             .Select(candidate => candidate.Resource!);
-        return boundResources.Concat(publishedResources)
-            .Where(candidate => candidate.Type is MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table)
+        var candidates = boundResources.Concat(publishedResources)
             .DistinctBy(candidate => candidate.Metadata.Id, StringComparer.Ordinal)
             .ToArray();
+        var featureResources = candidates.Where(IsFeatureResource).ToArray();
+        if (featureResources.Length == 0 || featureResources.Length == candidates.Length)
+        {
+            return candidates;
+        }
+
+        var bindings = snapshot.Graph.StorageBindings.Where(binding => binding.StorageLayerId == layerId)
+            .ToLookup(binding => binding.ResourceId, StringComparer.Ordinal);
+        if (featureResources.Any(resource =>
+            !bindings[resource.Metadata.Id].Any() || bindings[resource.Metadata.Id]
+                .Any(binding => binding.StorageType != MetadataV2StorageType.RelationalTable)))
+        {
+            return candidates;
+        }
+
+        // Numeric handles cannot distinguish schemas or connection aliases; matching table names remain ambiguous.
+        var featureTableNames = featureResources.SelectMany(resource => bindings[resource.Metadata.Id]
+                .Select(binding => FeatureStorageMapping.FromMetadata(resource, binding).TableName))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return candidates.Where(resource => IsFeatureResource(resource) || !UsesDistinctTables(resource)).ToArray();
+
+        bool UsesDistinctTables(MetadataV2Resource resource)
+        {
+            var resourceBindings = bindings[resource.Metadata.Id].ToArray();
+            return resourceBindings.Length > 0 && resourceBindings.All(binding =>
+                binding.StorageType == MetadataV2StorageType.RelationalTable &&
+                !featureTableNames.Contains(FeatureStorageMapping.FromMetadata(resource, binding).TableName));
+        }
     }
+
+    private static bool IsFeatureResource(MetadataV2Resource resource)
+        => resource.Type is MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table;
 
     private async Task RejectAmbiguousPolicyAsync(
         IReadOnlyList<MetadataV2Resource> resources, CancellationToken cancellationToken)

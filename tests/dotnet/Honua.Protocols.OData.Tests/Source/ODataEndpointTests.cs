@@ -42,12 +42,18 @@ public sealed class ODataEndpointTests : IAsyncLifetime
     [InlineData("query", false)]
     [InlineData("count", false)]
     [InlineData("search", false)]
+    [InlineData("apply", false)]
+    [InlineData("delta", false)]
     [InlineData("query", true)]
     [InlineData("count", true)]
     [InlineData("search", true)]
+    [InlineData("apply", true)]
     [Operation(Operations.Query)]
     [Endpoint("GET /odata/Features")]
     [Endpoint("GET /odata/Features/$count")]
+    [Endpoint("GET /odata/Layers({layerId})/Features")]
+    [Endpoint("GET /odata/Layers({layerId})/Features/$count")]
+    [InterfaceOperation(TestProtocols.ODataV4, "DeltaTracking")]
     public async Task Features_PublicLayerDiffersFromStorage_FilterUsesPublicIdentity(string operation, bool conflicting)
     {
         const int publicLayerId = 17;
@@ -66,9 +72,20 @@ public sealed class ODataEndpointTests : IAsyncLifetime
         var filter = $"LayerId eq {filterLayerId} and ObjectId eq {id}";
         var collection = conflicting ? $"/odata/Layers({publicLayerId})/Features" : "/odata/Features";
         var path = operation == "count" ? $"{collection}/$count" : collection;
-        var suffix = operation == "search" ? "&$search=IdentityProbe" : "";
+        var suffix = operation switch
+        {
+            "search" => "&$search=IdentityProbe",
+            "apply" => "&$apply=" + Uri.EscapeDataString($"filter({filter})/aggregate($count as n)"),
+            _ => ""
+        };
 
-        var response = await _fixture.Client.GetAsync($"{path}?$filter={Uri.EscapeDataString(filter)}{suffix}");
+        var routingFilter = operation == "apply" ? $"LayerId eq {publicLayerId}" : filter;
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"{path}?$filter={Uri.EscapeDataString(routingFilter)}{suffix}");
+        if (operation == "delta")
+        {
+            request.Headers.TryAddWithoutValidation("Prefer", "odata.track-changes");
+        }
+        var response = await _fixture.Client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
         var content = await response.Content.ReadAsStringAsync();
@@ -80,6 +97,16 @@ public sealed class ODataEndpointTests : IAsyncLifetime
         {
             using var document = JsonDocument.Parse(content);
             var values = document.RootElement.GetProperty("value");
+            if (operation == "delta")
+            {
+                document.RootElement.GetProperty("@odata.deltaLink").GetString().Should().NotBeNullOrEmpty();
+                response.Headers.GetValues("Preference-Applied").Should().Contain("odata.track-changes");
+            }
+            if (operation == "apply")
+            {
+                values[0].GetProperty("n").GetInt64().Should().Be(conflicting ? 0 : 1);
+                return;
+            }
             values.GetArrayLength().Should().Be(conflicting ? 0 : 1);
             if (!conflicting)
             {
@@ -87,6 +114,18 @@ public sealed class ODataEndpointTests : IAsyncLifetime
                 values[0].GetProperty("ObjectId").GetInt64().Should().Be(id);
             }
         }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /odata/Layers({layerId})/Features")]
+    public async Task Features_ApplyWithInvalidVirtualLayerLiteral_ReturnsBadRequest()
+    {
+        var apply = Uri.EscapeDataString("filter(LayerId eq 'invalid')/aggregate($count as n)");
+
+        var response = await _fixture.Client.GetAsync($"/odata/Layers({TestLayerId})/Features?$apply={apply}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [IntegrationTest]

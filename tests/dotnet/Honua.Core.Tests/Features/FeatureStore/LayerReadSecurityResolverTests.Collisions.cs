@@ -77,13 +77,43 @@ public sealed partial class LayerReadSecurityResolverTests
     [Trait("Tier", "Fast")]
     public async Task ApplyAsync_FeatureAndRasterShareNumericLayer_EnforcesFeaturePolicy()
     {
-        var (resolver, _) = CreateCollisionResolver("row-mask", MetadataV2ResourceType.RasterDataset);
+        var (resolver, _) = CreateCollisionResolver("row-mask", MetadataV2ResourceType.RasterDataset, "honua.rasters");
 
         var read = await resolver.ApplyAsync(LayerId, new FeatureQuery(), CancellationToken.None);
         var write = await resolver.ResolveRowLevelSecurityFilterAsync(LayerId, CancellationToken.None);
 
         read.EnforcedSqlFilter!.Sql.Should().Be("region = @p0");
         read.EnforcedSqlFilter.Parameters.Should().Equal("north");
+        read.EnforcedMaskedFields!.Value.Should().Equal("secret");
+        write!.Sql.Should().Be("region = @p0");
+    }
+
+    [Theory]
+    [Trait("Tier", "Fast")]
+    [InlineData("honua.features")]
+    [InlineData("features")]
+    [InlineData("\"honua\".\"features\"")]
+    public async Task ApplyAsync_RasterSharesFeatureTable_FailsClosed(string rasterLocator)
+    {
+        var (resolver, _) = CreateCollisionResolver("row-mask", MetadataV2ResourceType.RasterDataset, rasterLocator);
+
+        await Assert.ThrowsAsync<ResourceAccessDeniedException>(() =>
+            resolver.ApplyAsync(LayerId, new FeatureQuery(), CancellationToken.None));
+        await Assert.ThrowsAsync<ResourceAccessDeniedException>(() =>
+            resolver.ResolveRowLevelSecurityFilterAsync(LayerId, CancellationToken.None));
+    }
+
+    [Fact]
+    [Trait("Tier", "Fast")]
+    public async Task ApplyAsync_OnlyRasterCandidate_PreservesReadAndWritePolicies()
+    {
+        var (resolver, _) = CreateCollisionResolver("row-mask", firstResourceType: null,
+            restrictedResourceType: MetadataV2ResourceType.RasterDataset);
+
+        var read = await resolver.ApplyAsync(LayerId, new FeatureQuery(), CancellationToken.None);
+        var write = await resolver.ResolveRowLevelSecurityFilterAsync(LayerId, CancellationToken.None);
+
+        read.EnforcedSqlFilter!.Sql.Should().Be("region = @p0");
         read.EnforcedMaskedFields!.Value.Should().Equal("secret");
         write!.Sql.Should().Be("region = @p0");
     }
@@ -102,25 +132,28 @@ public sealed partial class LayerReadSecurityResolverTests
     }
 
     private static (LayerReadSecurityResolver Resolver, MetadataV2Resource Resource) CreateCollisionResolver(
-        string policy, MetadataV2ResourceType firstResourceType = MetadataV2ResourceType.FeatureDataset)
+        string policy, MetadataV2ResourceType? firstResourceType = MetadataV2ResourceType.FeatureDataset,
+        string firstLocator = "honua.features",
+        MetadataV2ResourceType restrictedResourceType = MetadataV2ResourceType.FeatureDataset)
     {
-        var restricted = CreateResource(withPermanentFilter: policy == "permanent");
+        var restricted = CreateResource(withPermanentFilter: policy == "permanent") with { Type = restrictedResourceType };
         var first = restricted with
         {
             Metadata = restricted.Metadata with { Id = "unrestricted-first", Name = "unrestricted-first" },
-            Type = firstResourceType,
+            Type = firstResourceType.GetValueOrDefault(),
             StorageBindingIds = ["first-binding"],
             PermanentFilter = null
         };
-        var bindings = new[] { first, restricted }.Select(resource => new MetadataV2StorageBinding
+        MetadataV2Resource[] resources = firstResourceType.HasValue ? [first, restricted] : [restricted];
+        var bindings = resources.Select(resource => new MetadataV2StorageBinding
         {
             Metadata = new MetadataV2ObjectMetadata { Id = resource.StorageBindingIds![0], Name = resource.Metadata.Name },
             ResourceId = resource.Metadata.Id,
             StorageType = MetadataV2StorageType.RelationalTable,
-            Locator = resource.Type == MetadataV2ResourceType.RasterDataset ? "honua.rasters" : "honua.features",
+            Locator = resource.Metadata.Id == first.Metadata.Id ? firstLocator : "honua.features",
             StorageLayerId = LayerId
         }).ToArray();
-        var graph = new MetadataV2Graph { Revision = 1, Resources = [first, restricted], StorageBindings = bindings };
+        var graph = new MetadataV2Graph { Revision = 1, Resources = resources, StorageBindings = bindings };
         MetadataV2GraphValidator.Validate(graph).IsValid.Should().BeTrue();
         var rows = new Mock<IRowLevelSecurityFilterSource>();
         rows.Setup(source => source.ResolveAsync(It.IsAny<MetadataV2Resource>(), It.IsAny<CancellationToken>()))

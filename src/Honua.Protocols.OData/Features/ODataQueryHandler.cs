@@ -548,7 +548,7 @@ internal sealed partial class ODataQueryHandler(
                 compute,
                 format,
                 bbox,
-                effectiveToken, publicLayerId: publicLayerId);
+                publicLayerId: publicLayerId, cancellationToken: effectiveToken);
 
             if (queryError != null)
             {
@@ -820,7 +820,7 @@ internal sealed partial class ODataQueryHandler(
                 compute,
                 format,
                 bbox,
-                cancellationToken, publicLayerId: publicLayerId);
+                publicLayerId: publicLayerId, cancellationToken: cancellationToken);
 
             if (queryError != null)
             {

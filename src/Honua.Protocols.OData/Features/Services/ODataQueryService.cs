@@ -41,8 +41,8 @@ internal sealed partial class ODataQueryService
         string? compute = null,
         string? format = null,
         BoundingBox? bbox = null,
-        CancellationToken cancellationToken = default,
-        int? publicLayerId = null)
+        int? publicLayerId = null,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(resource);
 
@@ -169,7 +169,7 @@ internal sealed partial class ODataQueryService
             return null;
         }
 
-        var parseResult = _filterExpressionService.Parse(FilterLanguage.OData, odataFilter);
+        var parseResult = _filterExpressionService.ParseAndNormalize(FilterLanguage.OData, odataFilter, resource);
         if (!parseResult.IsSuccess)
         {
             throw new ArgumentException(parseResult.ErrorMessage ?? "Invalid OData filter.");
@@ -195,8 +195,7 @@ internal sealed partial class ODataQueryService
 
     private static FilterExpression BindPublicLayerId(FilterExpression expression, int publicLayerId)
         => FilterExpressionHelpers.RewriteProperties(expression, property =>
-            property.PropertyName.Equals("LayerId", StringComparison.OrdinalIgnoreCase) ||
-            property.PropertyName.Equals("layer_id", StringComparison.OrdinalIgnoreCase)
+            property.PropertyName.Equals("LayerId", StringComparison.OrdinalIgnoreCase)
                 ? new Literal(publicLayerId, LiteralType.Number)
                 : property);
 

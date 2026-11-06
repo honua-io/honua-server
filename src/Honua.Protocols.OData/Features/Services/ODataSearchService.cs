@@ -301,7 +301,8 @@ internal sealed partial class ODataSearchService
             applyExpression,
             filter,
             baseUrl,
-            cancellationToken, publicLayerId: resolvedLayer.PublicLayerId);
+            resolvedLayer.PublicLayerId,
+            cancellationToken);
     }
 
     private static void ValidateAggregationFields(ParsedAggregation aggregation, MetadataV2Resource resource)
