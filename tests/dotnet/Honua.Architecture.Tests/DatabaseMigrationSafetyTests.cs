@@ -128,19 +128,26 @@ public sealed class DatabaseMigrationSafetyTests
             .Classification.Should().Be(MigrationSafetyClassification.Expand);
 
     [Theory]
-    [InlineData("")]
-    [InlineData("Honua.Server.Migrations.")]
-    [InlineData("src/Honua.Server/Migrations/")]
-    public void MigrationClassifier_ReviewedImportGuardDefinitions_RequireExactNameAndBytes(string prefix)
+    [InlineData("129_ProtectImportTableOwnership.sql", "")]
+    [InlineData("129_ProtectImportTableOwnership.sql", "Honua.Server.Migrations.")]
+    [InlineData("129_ProtectImportTableOwnership.sql", "src/Honua.Server/Migrations/")]
+    [InlineData("145_ProtectImportDependencies.sql", "")]
+    [InlineData("145_ProtectImportDependencies.sql", "Honua.Server.Migrations.")]
+    [InlineData("145_ProtectImportDependencies.sql", "src/Honua.Server/Migrations/")]
+    public void MigrationClassifier_ReviewedImportGuardDefinitions_RequireExactNameAndBytes(string name, string prefix)
     {
         var root = FindProjectRoot(Directory.GetCurrentDirectory());
-        const string name = "129_ProtectImportTableOwnership.sql";
         var sql = File.ReadAllText(Path.Join(root, "src", "Honua.Server", "Migrations", name));
         MigrationSafetyClassifier.DetectBreakingRules(sql).Should().Contain("drop-table",
             "routine body inspection must remain enabled; only the exact reviewed installation is additive");
         MigrationSafetyClassifier.Classify(prefix + name, sql).Classification.Should()
             .Be(MigrationSafetyClassification.Expand);
         MigrationSafetyClassifier.Classify(prefix + "future.sql", sql).IsBreaking.Should().BeTrue();
+        if (name == "145_ProtectImportDependencies.sql")
+        {
+            MigrationSafetyClassifier.Classify(prefix + name, sql.Replace(" RESTRICT", " CASCADE", StringComparison.Ordinal))
+                .IsBreaking.Should().BeTrue("restoring the destructive dependency behavior is outside this review");
+        }
         foreach (var suffix in new[]
         {
             "\n-- changed",
