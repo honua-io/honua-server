@@ -13,6 +13,11 @@ namespace Honua.Server.Features.Admin.Models;
 /// </summary>
 public sealed class PublishLayerRequest
 {
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public Honua.Core.Features.Metadata.Domain.V2.MetadataV2FolderSelection FolderId { get; init; }
+
+    public string? PublicName { get; init; }
+
     /// <summary>
     /// Creates a publication request with the default serving behavior.
     /// </summary>

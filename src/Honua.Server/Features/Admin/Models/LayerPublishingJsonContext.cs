@@ -13,6 +13,8 @@ namespace Honua.Server.Features.Admin.Models;
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     WriteIndented = false)]
 [JsonSerializable(typeof(ApiResponse<IReadOnlyList<PublishedLayerSummary>>))]
+[JsonSerializable(typeof(ApiResponse<PublishedLayerPage>))]
+[JsonSerializable(typeof(PublishedLayerPage))]
 [JsonSerializable(typeof(ApiResponse<PublishedLayerSummary>))]
 [JsonSerializable(typeof(ApiResponse<LayerPublishAcceptedResponse>))]
 [JsonSerializable(typeof(ApiResponse<LayerPublishJobStatusResponse>))]

@@ -1456,15 +1456,50 @@
               "type": "string",
               "default": "default"
             }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "One-based page number. Defaults to 1; values below 1 return 400.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "description": "Page size. Defaults to 100; values outside 1 to 100 return 400.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 100
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Case-insensitive layer name filter. Longer than 200 characters returns 400.",
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "Published layers",
+            "description": "One page of published layers",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponsePublishedLayerSummaryArray"
+                  "$ref": "#/components/schemas/ApiResponsePublishedLayerPage"
                 }
               }
             }
@@ -3315,18 +3350,75 @@
           "Services"
         ],
         "summary": "List Services",
-        "description": "List available services with enabled protocol metadata.",
+        "description": "List one page of services with enabled protocol metadata. layerTotal counts layers for every match, including services outside the page.",
         "operationId": "listServices",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "One-based page number. Defaults to 1; values below 1 return 400.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "description": "Page size. Defaults to 100; values outside 1 to 100 return 400.",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 100
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Case-insensitive service name filter. Longer than 200 characters returns 400.",
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "folderId",
+            "in": "query",
+            "required": false,
+            "description": "Omit for all services; root selects services without a folder.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
-            "description": "Service list",
+            "description": "One page of services",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponseServiceSummaryArray"
+                  "$ref": "#/components/schemas/ApiResponseServiceListPage"
                 }
               }
+            },
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Current graph snapshot ETag; pass unchanged as If-Match on the next mutation."
+              }
             }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -21485,6 +21577,411 @@
         }
       }
     },
+    "/folders": {
+      "get": {
+        "operationId": "listFolders",
+        "tags": [
+          "Services"
+        ],
+        "summary": "listFolders",
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "query",
+            "required": false,
+            "description": "Omit for unscoped catalog ownership; supply a publication namespace to select the resolved tenant.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._-]+$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Current graph snapshot ETag"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ServiceFolder"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createFolder",
+        "tags": [
+          "Services"
+        ],
+        "summary": "createFolder",
+        "parameters": [
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "description": "Current graph snapshot ETag, returned by folder/service listing.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "namespace",
+            "in": "query",
+            "required": false,
+            "description": "Omit for unscoped catalog ownership; supply a publication namespace to select the resolved tenant.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._-]+$"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Success",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Current graph snapshot ETag"
+              },
+              "Location": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Created folder Admin resource."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/ServiceFolder"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "409": {
+            "description": "Catalog or permanent path reservation conflict"
+          },
+          "412": {
+            "description": "Snapshot changed"
+          },
+          "428": {
+            "description": "If-Match is required"
+          },
+          "503": {
+            "description": "Folder mutation is unavailable on a read-only metadata catalog."
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "title": {
+                    "type": "string",
+                    "nullable": true
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/folders/{id}": {
+      "patch": {
+        "operationId": "updateFolder",
+        "tags": [
+          "Services"
+        ],
+        "summary": "updateFolder",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "description": "Current graph snapshot ETag, returned by folder/service listing.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "namespace",
+            "in": "query",
+            "required": false,
+            "description": "Omit for unscoped catalog ownership; supply a publication namespace to select the resolved tenant.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._-]+$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Current graph snapshot ETag"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/ServiceFolder"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "409": {
+            "description": "Catalog or permanent path reservation conflict"
+          },
+          "412": {
+            "description": "Snapshot changed"
+          },
+          "428": {
+            "description": "If-Match is required"
+          },
+          "503": {
+            "description": "Folder mutation is unavailable on a read-only metadata catalog."
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FolderRequest"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteFolder",
+        "tags": [
+          "Services"
+        ],
+        "summary": "deleteFolder",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "description": "Current graph snapshot ETag, returned by folder/service listing.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "namespace",
+            "in": "query",
+            "required": false,
+            "description": "Omit for unscoped catalog ownership; supply a publication namespace to select the resolved tenant.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._-]+$"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Current graph snapshot ETag; pass unchanged as If-Match on the next mutation."
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "409": {
+            "description": "Catalog or permanent path reservation conflict"
+          },
+          "412": {
+            "description": "Snapshot changed"
+          },
+          "428": {
+            "description": "If-Match is required"
+          },
+          "503": {
+            "description": "Folder mutation is unavailable on a read-only metadata catalog."
+          }
+        }
+      }
+    },
+    "/services/{serviceName}/folder": {
+      "put": {
+        "operationId": "moveService",
+        "tags": [
+          "Services"
+        ],
+        "summary": "moveService",
+        "parameters": [
+          {
+            "name": "serviceName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "description": "Current graph snapshot ETag, returned by folder/service listing.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "namespace",
+            "in": "query",
+            "required": false,
+            "description": "Omit for unscoped catalog ownership; supply a publication namespace to select the resolved tenant.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._-]+$"
+            }
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "Invalid input"
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "409": {
+            "description": "Catalog or permanent path reservation conflict"
+          },
+          "412": {
+            "description": "Snapshot changed"
+          },
+          "428": {
+            "description": "If-Match is required"
+          },
+          "204": {
+            "description": "Success",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Current graph snapshot ETag; pass unchanged as If-Match on the next mutation."
+              }
+            }
+          },
+          "503": {
+            "description": "Folder mutation is unavailable on a read-only metadata catalog."
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveServiceRequest"
+              }
+            }
+          }
+        }
+      }
+    },
     "/metadata/layers/{layerId}/discovery": {
       "get": {
         "tags": [
@@ -24250,6 +24747,14 @@
             "type": "boolean",
             "default": false,
             "description": "Declares attachment support for the published resource. Does not enable editing."
+          },
+          "folderId": {
+            "type": "string",
+            "nullable": true
+          },
+          "publicName": {
+            "type": "string",
+            "maxLength": 64
           }
         }
       },
@@ -25711,6 +26216,58 @@
           }
         }
       },
+      "PublishedLayerPage": {
+        "type": "object",
+        "required": [
+          "items",
+          "page",
+          "pageSize",
+          "total"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublishedLayerSummary"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0,
+            "description": "Matched layers across every page."
+          }
+        }
+      },
+      "ApiResponsePublishedLayerPage": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/PublishedLayerPage"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "ApiResponseLayerStyleResponse": {
         "type": "object",
         "properties": {
@@ -26152,17 +26709,55 @@
           }
         }
       },
-      "ApiResponseServiceSummaryArray": {
+      "ServiceListPage": {
+        "type": "object",
+        "required": [
+          "items",
+          "page",
+          "pageSize",
+          "total",
+          "layerTotal"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServiceSummary"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0,
+            "description": "Services matching the query across every page."
+          },
+          "layerTotal": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0,
+            "description": "Sum of layer counts for every matching service, including services outside this page."
+          }
+        }
+      },
+      "ApiResponseServiceListPage": {
         "type": "object",
         "properties": {
           "success": {
             "type": "boolean"
           },
           "data": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ServiceSummary"
-            }
+            "$ref": "#/components/schemas/ServiceListPage"
           },
           "message": {
             "type": "string"
@@ -26233,6 +26828,29 @@
             "items": {
               "type": "string"
             }
+          },
+          "folderId": {
+            "type": "string",
+            "nullable": true
+          },
+          "folderName": {
+            "type": "string",
+            "nullable": true
+          },
+          "publicName": {
+            "type": "string",
+            "nullable": true
+          },
+          "title": {
+            "type": "string",
+            "nullable": true
+          },
+          "folderMutationIssues": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Preflight diagnostics for legacy identities before folder mutations."
           }
         }
       },
@@ -50556,6 +51174,66 @@
           },
           "artifactsUrl": {
             "type": "string"
+          }
+        }
+      },
+      "ServiceFolder": {
+        "type": "object",
+        "properties": {
+          "metadata": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "nullable": true
+              },
+              "name": {
+                "type": "string",
+                "nullable": true
+              },
+              "title": {
+                "type": "string",
+                "nullable": true
+              },
+              "tenant": {
+                "type": "string",
+                "nullable": true
+              }
+            }
+          },
+          "previousNames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "deleted": {
+            "type": "boolean"
+          }
+        }
+      },
+      "FolderRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "title": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "MoveServiceRequest": {
+        "type": "object",
+        "required": [
+          "folderId"
+        ],
+        "properties": {
+          "folderId": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
