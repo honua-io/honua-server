@@ -1,32 +1,16 @@
 ---
 name: honua-ops
-description: Use when diagnosing Honua operational findings, proposing approved restarts, or upgrading and rolling back a Compose installation.
+description: Use when checking a Honua Compose release, proposing an upgrade or rollback, or acting on an operational finding.
 ---
 
-# Operate Honua
+# Check and change a running install
 
-Operator-installed estates hand off to the installed server's own `/mcp` for day-2 work.
+Read the install `AGENTS.md`. Day-2 calls go to that install's MCP. Release status, upgrade, and rollback use the management endpoint (`HONUA_MANAGER_PORT`, 18082 unless `.env` changed it) and `secrets/honua_manager_admin_password`. Findings use the serving endpoint. A script may read either secret file. Do not print it. If `tools/list` lacks `honua_platform_release_status` or `honua_ops_findings`, reconnect that endpoint with `?view=operate`. Use the live `tools/list` schemas. Read [release readback](references/releases.md) before calling a release done.
 
-Read the install's `AGENTS.md`. Discover tools on the endpoint where the action
-belongs: serving on port 18080, management on port 18082 in the quickstart.
-Use the live `tools/list` schemas; missing tools can mean the selected view,
-permissions or edition does not support the action.
+Findings: `honua_ops_findings` lists active findings, or one finding when `findingId` is set. `honua_propose_finding` requires `findingId` and `candidateId`. Set `candidateId` to that finding's `subject.targetId`. Do not pass the finding id as `candidateId`. If `subject.targetId` is absent, stop and report that. Do not invent a target.
 
-For diagnosis, call `honua_ops_findings`. Select the finding that matches the
-observed symptom. Pass its id as `findingId` to `honua_propose_finding`, and copy
-**the finding's `subject.targetId` into `candidateId`**. Do not substitute a
-finding id or invent a deployment target. If the finding has no action target,
-follow its advertised action schema rather than guessing one.
+A proposal result is not the change. The same identity that requested a proposal currently receives HTTP 403 if it tries to approve, and the change does not run. Poll `honua://proposals/{id}` until `Succeeded` or `Completed`, or stop on `Failed`, `Rejected`, or `Cancelled`. Then read release status or the target health again.
 
-A restart or repair that returns an approval proposal is pending, not executed.
-Give the proposal id to a separate approver. Poll `honua://proposals/{id}` for
-its terminal state, then read the affected target's health again. Do not
-restart containers directly to bypass a proposal or a denial.
+Upgrade and rollback stay on the path in the install `AGENTS.md` and [Upgrade & rollback](https://honua.gitbook.io/honuaio/deploy-and-operate/honua-server/deploy-and-operate/upgrade-and-rollback). Never run `docker compose down --volumes` and never delete `backups/`.
 
-For upgrades and rollback, read [release operations](references/releases.md).
-After a lost reply to any mutation, read its proposal, job or target state
-before retrying. Retry only transient failures, at most three times, and stop
-on a permanent denial. Report what the readback proves, including pending or
-failed work.
-
-See the [approval concept](https://honua.io/docs/concepts/domain/approval/) in the OKF documentation.
+Common failure: proposing convergence before `releaseVersion` is the target. The server rejects that with `platform_release_version_mismatch`. Set `HONUA_RELEASE_IMAGE`, `HONUA_RELEASE_WORKER_IMAGE`, and `HONUA_RELEASE_VERSION` from the new lock, pull the serving image, and run `python3 quickstart.py` so the manager advertises that version before the proposal.

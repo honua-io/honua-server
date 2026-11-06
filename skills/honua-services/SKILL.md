@@ -1,34 +1,20 @@
 ---
 name: honua-services
-description: Use when importing data, publishing a Honua service or layer, and verifying a filtered feature query without duplicating a lost publish.
+description: Use when importing a small dataset, publishing it as a Honua layer, and checking a filtered feature query.
 ---
 
-# Import, publish and verify a service
+# Import, publish, and query
 
-Read the install's `AGENTS.md`. Discover the serving MCP tools and their schemas.
-For administration use the `configure` workflow view if available. Discover
-connections and source tables before asking the operator for ids.
+Read the install `AGENTS.md`. Call serving MCP at `http://127.0.0.1:<HONUA_HTTP_PORT>/mcp` with header `X-API-Key` from `secrets/honua_admin_password`. Do not print that file. If `tools/list` lacks `honua_ingest_dataset` and `honua_publish_service`, reconnect with `?view=configure`.
 
-1. Import through the available ingest/import tool. For small inline datasets,
-   `honua_ingest_dataset` returns the source identity used by publishing.
-   Preserve the returned connection, schema, table, geometry column, primary key
-   and spatial reference. Wait for asynchronous imports to complete. Some import
-   flows publish automatically: inspect their result before publishing again.
-2. Publish an unpublished source with `honua_publish_service` or
-   `honua_admin_layer_publish`, whichever the server advertises for the task.
-   Copy source identity and field metadata from discovery/import results. Follow
-   the live schema rather than substituting a display name for an id.
-3. Treat a publish handle's `RequiresApproval` or a proposal's `AwaitingApproval`
-   as pending; a `Queued` publish handle identifies a job to poll. A request or accepted proposal is not a published service. Let a separate
-   approver act when required.
-4. On a lost response, read back the operation, job, proposal and published layer
-   inventory before retrying. Publishing is not inherently idempotent: a repeated
-   `honua_publish_service` can create another layer.
-5. Discover and describe the published layer. Build the requested filter from
-   its actual field names and types, then run `honua_query_features` with bounded
-   fields and page size. Read [query verification](references/query.md).
-6. Report the service/layer identifiers and exactly the result you verified.
-   Leave any access restriction until verification is finished. Change service
-   access only if the user asked for it.
+1. For inline data of at most 4 MB, call `honua_ingest_dataset` with `format` `geojson` or `csv` and a `datasetName`. Keep `connectionId`, `schema`, `table`, `geometryColumn`, and `primaryKey` from the result. The same `datasetName` replaces that table. When `connectionId` is omitted, register the quickstart catalog once and do not ingest again. POST `/api/v1/admin/connections` on the serving port with `name` `catalog`, `host` `postgres`, `port` 5432, `databaseName` `honua`, `username` `honua`, `provider` `postgis`, `sslRequired` false, and `sslMode` `Disable`. A script may read `secrets/postgres_password` into that request and `secrets/honua_admin_password` into `X-API-Key`. Print neither. Pass the returned `name` as `connectionId`.
+2. Call `honua_publish_service` with `connectionId`, `schema`, `table`, and `layerName`. Pass `geometryColumn` and `primaryKey` when ingest returned them. `Completed` includes the published service and layer. `RequiresApproval` is not published. `Queued` is a job id to poll.
+3. If the reply is lost, call `honua_list_layers` before publishing again. A second `honua_publish_service` creates another layer.
+4. Verify with [a feature query](references/query.md).
+5. Success is the new layer in `honua_list_layers` and a query whose features or `count` match the filter you sent. Say when the count could not be checked.
 
-See the [layer concept](https://honua.io/docs/concepts/domain/layer/) in the OKF documentation.
+Common failure: HTTP 401 means the API key header was missing. An import refusal for admin write means the configure view was not selected. A timeout after ingest, with no `Completed` publish, means the table is there and publication did not finish. Continue from that table. Do not ingest it again.
+
+Leave service access unchanged unless the user asked to change it.
+
+Layer publication behaviour: [Publish layers](https://honua.gitbook.io/honuaio/work-with-your-data/publish-data/publish-layers).

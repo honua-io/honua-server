@@ -31,6 +31,9 @@ on:
     paths:
       - 'README.md'
       - 'docs/**'
+      - 'skills/**'
+      - 'scripts/ci/check-skill-links.py'
+      - 'scripts/ci/check-skill-links.test.py'
       - 'src/**'
       - 'docker/**'
       - 'observability/**'
@@ -89,6 +92,9 @@ jobs:
       # genuine break is named by BOTH steps rather than only the second.
       - name: Test the documentation link checker
         run: python3 scripts/ci/check-doc-links.test.py
+
+      - name: Test skill links against published page titles
+        run: python3 scripts/ci/check-skill-links.test.py
 
       - name: Test documentation example surface enforcement
         run: python3 scripts/ci/check-doc-example-surfaces.test.py
