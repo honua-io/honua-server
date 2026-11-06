@@ -36,7 +36,7 @@ class Sources(NamedTuple):
     workflow: str
     script: str
     action: str
-    worker: str
+    ci: str
 
 
 def _step(steps: list, name: str) -> tuple[int, dict]:
@@ -126,6 +126,8 @@ def _require_shared_use(document: dict, job_name: str, step_name: str) -> dict:
     if not isinstance(job, dict) or not isinstance(job.get("steps"), list):
         raise ContractError(f"{job_name!r} no longer declares steps")
     _, step = _step(job["steps"], step_name)
+    if "continue-on-error" in step:
+        raise ContractError(f"{job_name} native provisioning must stay blocking")
     if step.get("uses") != ACTION:
         raise ContractError(f"{job_name} {step_name!r} must use the shared GDAL CLI provisioner")
     if "apt-get" in str(step.get("run") or ""):
@@ -176,9 +178,9 @@ def _require_gate(sources: Sources, worst_case: int) -> None:
 
 
 
-def _require_workers(worker: dict) -> None:
-    _require_shared_use(worker, WORKER_JOB, WORKER_STEP)
-    worker_job = worker["jobs"][WORKER_JOB]
+def _require_ci_native_callers(ci: dict) -> None:
+    _require_shared_use(ci, WORKER_JOB, WORKER_STEP)
+    worker_job = ci["jobs"][WORKER_JOB]
     worker_enabled = (worker_job.get("env") or {}).get("HONUA_REQUIRE_GDAL_CLI")
     if worker_enabled is not True and str(worker_enabled) != "true":
         raise ContractError(f"{WORKER_JOB} must set HONUA_REQUIRE_GDAL_CLI so a missing tool fails the run")
@@ -188,8 +190,8 @@ def _require_workers(worker: dict) -> None:
         if "python3-scipy" in str(step.get("run") or ""):
             raise ContractError(f"{WORKER_JOB} must not keep a second copy of the GDAL CLI install")
 
-    python = _require_shared_use(worker, PYTHON_JOB, PYTHON_STEP)
-    python_job = worker["jobs"][PYTHON_JOB]
+    python = _require_shared_use(ci, PYTHON_JOB, PYTHON_STEP)
+    python_job = ci["jobs"][PYTHON_JOB]
     if python_job.get("timeout-minutes") != PYTHON_JOB_MINUTES:
         raise ContractError("Python integration must retain its 25-minute job budget")
     if python.get("with") != {"python-environment": "setup-python"}:
@@ -209,7 +211,7 @@ def validate(sources: Sources) -> None:
     worst_case = provisioning_worst_case_seconds(sources.script)
     _require_cache_action(sources.action)
     _require_gate(sources, worst_case)
-    _require_workers(yaml.safe_load(sources.worker))
+    _require_ci_native_callers(yaml.safe_load(sources.ci))
 
 
 def read_sources(workflow: Path) -> Sources:
@@ -221,6 +223,11 @@ def read_sources(workflow: Path) -> Sources:
 def self_test(sources: Sources) -> None:
     subprocess.run(["bash", str(ROOT / "scripts/ci/provision-gdal-cli.sh"), "self-test"], check=True)
     mutations = (
+        (0, f"      - name: {PROOF}\n", f"      - name: {PROOF}\n        continue-on-error: true\n"),
+        (0, f"      - name: {PROVISION}\n", f"      - name: {PROVISION}\n        continue-on-error: true\n"),
+        (0, "        uses: ./.github/actions/provision-gdal-cli\n", "        run: sudo apt-get install -yqq gdal-bin\n"),
+        (3, "        uses: ./.github/actions/provision-gdal-cli\n", "        run: sudo apt-get install -yqq gdal-bin\n"),
+        (3, f"      - name: {PYTHON_STEP}\n", f"      - name: {PYTHON_STEP}\n        continue-on-error: true\n"),
         (0, 'HONUA_REQUIRE_GDAL_CLI: "true"', 'HONUA_REQUIRE_GDAL_CLI: "false"'),
         (0, 'timeout-minutes: 30', 'timeout-minutes: 1'),
         (0, 'timeout-minutes: 75', 'timeout-minutes: 60'),
