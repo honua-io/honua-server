@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline proof that report-mode affected-shard success is not a test pass."""
+"""Prove selected-shard enforcement from measured execution receipts."""
 
 from __future__ import annotations
 
@@ -50,7 +50,12 @@ def decide(**overrides):
         "timings": [timing("Reporting")],
     }
     fields.update(overrides)
-    return verdict.decide(**fields)
+    selection = verdict.Selection(
+        result=fields.pop("select_result"), skip=fields.pop("select_skip"),
+        reason=fields.pop("select_reason"), count=fields.pop("select_count"),
+        shards=fields.pop("selected_shards", None),
+    )
+    return verdict.decide(selection=selection, **fields)
 
 
 def messages(outcome) -> list[str]:
@@ -177,6 +182,7 @@ class AffectedShardVerdictTests(unittest.TestCase):
                     "SELECT_SKIP": "false",
                     "SELECT_REASON": "targeted",
                     "SELECT_COUNT": "1",
+                    "SELECT_MATRIX": json.dumps([{"shard_name": "Reporting"}]),
                     "SHARDS_RESULT": "success",
                     "GITHUB_STEP_SUMMARY": str(summary),
                 },
@@ -189,28 +195,69 @@ class AffectedShardVerdictTests(unittest.TestCase):
             self.assertNotIn("HONUA_AFFECTED_SHARD_GREEN", completed.stdout)
             self.assertIn("not a test pass", summary.read_text(encoding="utf-8"))
 
-    def test_workflow_stays_in_report_and_keeps_the_promotion_bar(self) -> None:
-        workflow = (ROOT / ".github/workflows/pr-gate.yml").read_text(encoding="utf-8")
-        self.assertIn("AFFECTED_SHARDS_MODE: report\n", workflow)
-        self.assertNotIn("AFFECTED_SHARDS_MODE: enforce", workflow)
-        self.assertIn("name: PR Gate / Affected shards\n", workflow)
-        self.assertIn("scripts/ci/affected-shard-verdict.py", workflow)
-        self.assertIn("60 executed samples minimum", workflow)
-        self.assertIn("Below 2% is the bar", workflow)
-        record = json.loads(
-            (ROOT / "docs/ci/affected-shards-disposition-20261027.json").read_text(encoding="utf-8")
-        )
-        self.assertEqual(record["approved_mode"], "report")
-        self.assertFalse(record["promotion_ready"])
-        self.assertEqual(record["branch_protection"]["required_contexts"][1], "PR Gate / Affected shards")
-        self.assertFalse(record["configuration"]["protection_was_edited"])
-        self.assertFalse(record["configuration"]["mode_was_flipped"])
-        self.assertIn("not a test pass", record["disposition"])
-        promotion = (ROOT / "docs/ci/affected-shards-promotion.md").read_text(encoding="utf-8")
-        self.assertIn("below 2%", promotion)
-        self.assertIn("at least 60 executed samples", promotion)
-        self.assertIn("#6663", promotion)
-        self.assertIn("40423291836", promotion)
+    def test_workflow_enforces_receipts_in_the_required_gate(self) -> None:
+        import yaml
+
+        workflow = yaml.safe_load((ROOT / ".github/workflows/pr-gate.yml").read_text())
+        self.assertEqual(workflow["env"]["AFFECTED_SHARDS_MODE"], "enforce")
+        self.assertEqual(workflow["env"]["AFFECTED_SHARDS_CAP"], "6")
+        required = workflow["jobs"]["required"]
+        self.assertIn("affected-shards", required["needs"])
+        step = required["steps"][0]
+        self.assertIn("needs.affected-shards.result", step["env"]["AFFECTED_SHARDS_RESULT"])
+        self.assertIn('"${AFFECTED_SHARDS_RESULT}" != success', step["run"])
+        self.assertIn('"${GITHUB_EVENT_NAME}" == pull_request', step["run"])
+
+    def test_duplicate_extra_and_wrong_family_receipts_fail_closed(self) -> None:
+        for shards in (["Reporting", "Reporting"], ["Reporting", "Ai Units"], ["Other"]):
+            with self.subTest(shards=shards):
+                result = decide(mode="enforce", selected_shards=["Reporting"],
+                                timings=[timing(shard) for shard in shards])
+                self.assertEqual(result["exit_code"], 1)
+                self.assertFalse(result["receipt"]["test_pass"])
+
+    def test_passed_timing_requires_unchanged_passing_trx(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "control.trx"
+            path.write_text('<TestRun><Results><UnitTestResult testName="control" outcome="Passed" />'
+                            '</Results><ResultSummary><Counters total="1" executed="1" passed="1" '
+                            'failed="0" /></ResultSummary></TestRun>')
+            import runpy
+
+            execution = runpy.run_path(str(ROOT / "scripts/ci/shard-execution-evidence.py"))
+            measured = execution["observe"](path, "Reporting", "control.csproj")
+            receipt = {**timing("Reporting"), "log_name": "control", "execution": measured}
+            (root / "control.timing.json").write_text(json.dumps(receipt))
+            self.assertEqual(verdict._load_timings(root)[0]["status"], "passed")
+            for content in ('<bad', '', path.read_text().replace('Passed', 'Failed')):
+                with self.subTest(content=content):
+                    path.write_text(content)
+                    self.assertEqual(verdict._load_timings(root)[0]["status"], "invalid_execution")
+            path.unlink()
+            self.assertEqual(verdict._load_timings(root)[0]["status"], "invalid_execution")
+
+    def test_passed_timing_without_execution_evidence_is_red(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "control.timing.json").write_text(json.dumps(timing("Reporting")))
+            self.assertEqual(verdict._load_timings(root)[0]["status"], "invalid_execution")
+
+    def test_required_gate_propagates_aggregate_failure(self) -> None:
+        import yaml
+
+        workflow = yaml.safe_load((ROOT / ".github/workflows/pr-gate.yml").read_text())
+        command = workflow["jobs"]["required"]["steps"][0]["run"]
+        for result in ("success", "failure", "cancelled", "skipped", ""):
+            with self.subTest(result=result):
+                env = {**os.environ, "GITHUB_EVENT_NAME": "pull_request",
+                       "BUILD_AND_TEST_RESULT": "success", "TEST_RESULT": "success",
+                       "FORMAT_RESULT": "success", "CI_ROUTER_RESULT": "success",
+                       "AFFECTED_SHARDS_RESULT": result}
+                run = subprocess.run(["bash", "-c", command], env=env, capture_output=True)
+                self.assertEqual(run.returncode == 0, result == "success")
+        env.update(GITHUB_EVENT_NAME="workflow_dispatch", AFFECTED_SHARDS_RESULT="skipped")
+        self.assertEqual(subprocess.run(["bash", "-c", command], env=env).returncode, 0)
 
 
 if __name__ == "__main__":

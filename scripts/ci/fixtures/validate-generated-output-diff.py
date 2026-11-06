@@ -261,7 +261,7 @@ class WorkflowCompletion(unittest.TestCase):
         for job in ('format', 'pr-gate', 'pr-gate-tests', 'ci-router-validation', 'required'):
             self.assertNotIn('if', gate['jobs'][job]) if job != 'required' else self.assertEqual(gate['jobs'][job]['if'], 'always()')
         self.assertEqual(gate['jobs']['required']['name'], 'PR Gate')
-        self.assertEqual(gate['jobs']['required']['needs'], ['pr-gate', 'pr-gate-tests', 'format', 'ci-router-validation'])
+        self.assertEqual(gate['jobs']['required']['needs'], ['pr-gate', 'pr-gate-tests', 'format', 'ci-router-validation', 'affected-shards'])
         # Evaluate actual Actions expressions for the expensive steps. True and
         # false/absent classification must respectively skip and preserve them.
         for verdict in ('true', 'false', ''):

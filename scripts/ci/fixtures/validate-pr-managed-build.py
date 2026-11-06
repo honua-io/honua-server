@@ -20,7 +20,7 @@ def job(name):
 class PrManagedBuildTests(unittest.TestCase):
     def test_required_results_fail_closed(self):
         required = job('required')
-        self.assertIn('needs: [pr-gate, pr-gate-tests, format, ci-router-validation]', required)
+        self.assertIn('needs: [pr-gate, pr-gate-tests, format, ci-router-validation, affected-shards]', required)
         self.assertIn('if: always()', required)
         script = re.search(r'        run: \|\n(.*?)(?=\n      #|\n      -|\Z)', required, re.S).group(1)
         script = textwrap.dedent(script)
