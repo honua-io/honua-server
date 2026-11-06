@@ -772,12 +772,6 @@ jobs:
             exit 1
           fi
 
-      # The proof below needs the GDAL CLI, its Python bindings, NumPy and SciPy.
-      # The shared provisioner installs a cached .deb set with --no-download.
-      # It downloads only when the package index is readable and that exact
-      # version is not cached. An unreadable index installs the newest saved
-      # .deb files with dpkg, because apt cannot resolve names without lists.
-      # scripts/ci/fixtures/validate-pr-gate-apt-provisioning.py holds that split.
       - name: Provision the GDAL CLI packages for the real-GDAL proof
         id: gdal-cli-packages
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'
