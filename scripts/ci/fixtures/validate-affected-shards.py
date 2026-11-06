@@ -183,6 +183,36 @@ def check_feature_namespace_selects_its_shard(
     return covered
 
 
+def check_temporal_source_survives_the_cap(config: dict[str, Any]) -> None:
+    changed = [
+        "src/Honua.Server/Features/Temporal/TemporalHistoryEndpoints.cs",
+        "src/Honua.Server/Features/Geocoding/Probe.cs",
+        "src/Honua.Server/Hosting/Probe.cs",
+        "src/Honua.Server/Features/Security/Probe.cs",
+    ]
+    owner = "Server Features Packages and Temporal"
+
+    def require_owner(shards: dict[str, Any]) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "shards.json"
+            path.write_text(json.dumps(shards))
+            result = select_offline(shards, changed, descriptor=router(shards, changed, config_path=path))
+        if len(result["shards"]) != 6 or result["candidate_count"] <= 6:
+            raise FixtureError("temporal cap probe must fill six slots and drop other candidates")
+        if owner not in result["shards"]:
+            raise FixtureError(f"changed temporal source lost its executing owner: {result['shards']}")
+
+    require_owner(config)
+    copied = copy.deepcopy(config)
+    parent = next(shard for shard in copied["shards"] if shard["name"] == "Server Features Miscellaneous")
+    parent["paths"].append("src/Honua.Server/Features/Temporal/")
+    try:
+        require_owner(copied)
+    except FixtureError:
+        return
+    raise FixtureError("temporal cap probe accepted copied catch-all source ownership")
+
+
 def check_cap_is_enforced(config: dict[str, Any]) -> None:
     """A run_all router answer must never fan out past the cap."""
     probe = ["tests/dotnet/Honua.TestKit/AffectedShardsFixtureProbe.cs"]
@@ -755,6 +785,7 @@ def main() -> int:
     config = selector.load_config(CONFIG_PATH)
     covered = check_feature_namespace_selects_its_shard(config)
     check_cap_is_enforced(config)
+    check_temporal_source_survives_the_cap(config)
     check_largest_impact_first(config)
     owned = check_changed_test_file_selects_its_running_shard(config)
     check_wps_and_h3_tests_select_both_owners(config)

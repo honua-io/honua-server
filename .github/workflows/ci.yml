@@ -1632,7 +1632,7 @@ jobs:
     # / manual full CI and merge-train batches set integration_changes=true, so
     # the job is part of the run_all lane too.
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: changes
     # Native PDAL compilation (30m), managed build (15m), and real execution
     # (10m) retain headroom for restore, image pulls, and receipt upload.
@@ -1782,7 +1782,7 @@ jobs:
   python-integration-tests:
     name: Python Integration Tests
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' && needs.changes.outputs.full_ci == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: changes
     timeout-minutes: 25
     env:
@@ -1820,10 +1820,9 @@ jobs:
             --configuration Release
 
       - name: Install GDAL tools and native Parquet dependency
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -yqq gdal-bin libatomic1
-          ogrinfo --version
+        uses: ./.github/actions/provision-gdal-cli
+        with:
+          python-environment: setup-python
 
       - name: Install Python test dependencies
         run: |

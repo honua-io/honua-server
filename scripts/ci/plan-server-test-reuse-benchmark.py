@@ -10,7 +10,7 @@ from pathlib import Path
 
 CONTRACT = "honua.server-test-reuse-plan/v1"
 DEFAULT_PROJECT = "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj"
-MAX_SHARDS = 128
+GITHUB_MATRIX_JOB_LIMIT = 256
 
 
 def load_object(path: Path) -> dict:
@@ -79,7 +79,7 @@ def build_plan(config: dict, shard_config: dict, registry: dict, mode: str) -> d
     else:
         raise ValueError(f"unsupported mode: {mode}")
 
-    if not shards or len(shards) > MAX_SHARDS:
+    if not shards or len(shards) > GITHUB_MATRIX_JOB_LIMIT:
         raise ValueError("benchmark shard count is outside the bounded range")
     identities = [item["identity"] for item in shards]
     if len(identities) != len(set(identities)):

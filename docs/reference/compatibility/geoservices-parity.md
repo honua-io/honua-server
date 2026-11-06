@@ -9,6 +9,9 @@ resources:
 ---
 # GeoServices REST parity
 
+For transformation selection and editing coverage, see [datum transformation parity](datum-transformation-parity.md)
+and [editing parity conformance](editing-parity-conformance.md).
+
 ## Forbidden FeatureServer edits
 
 Honua normally reports GeoServices operation errors in an HTTP 200 GeoServices REST JSON

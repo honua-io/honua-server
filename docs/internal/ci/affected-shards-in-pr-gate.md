@@ -1,13 +1,13 @@
 # Affected shard families in PR Gate
 
-Status: **report-only**, measuring. Owner: `.github/workflows/pr-gate.yml`
+Status: **enforcing**, required through the stable `PR Gate` context. Owner: `.github/workflows/pr-gate.yml`
 (`affected-shards-select` / `affected-shard` / `affected-shards`).
 Related: ADR-0037 (shard routing), ADR-0043 (affected projects), #3204, #3213.
 
 ## The gap this closes
 
 `PR Gate` is a lean subset — build, fast unit, architecture — on one runner.
-The 71 server-test shard families in `.github/ci-shards.json` run per trunk tip
+The server-test shard families in `.github/ci-shards.json` run per trunk tip
 in the trailing matrix (p50 44 min, p90 65 min, plus a rerun to classify), so a
 shard regression is found *after* the merge that caused it.
 
@@ -80,7 +80,7 @@ delegated to machinery that already gates trunk.
 Shard `paths` name individual test *files* for the protocol-split projects, so
 a diff that **adds** a test file to a directory a shard already owns files in is
 claimed by no routing entry at all and escalates to `run_all` — leaving the cap
-to choose among 71 families with no routing signal. On the merge commits of
+to choose among the full inventory with no routing signal. On the merge commits of
 #4465 and #4489 this term moves the family that actually went red on trunk to
 rank 4 and rank 2. Without it, #4465's owner sat at rank 10, outside the cap.
 
@@ -90,7 +90,7 @@ changes trailing-matrix routing and belongs in its own change.
 
 ### Why the cap is not negotiable
 
-A `run_all` answer is 71 shard jobs. Fanning that out per pull request is the
+A `run_all` answer includes the complete shard inventory. Fanning that out per pull request is the
 2026-06-18 runner-starvation spiral that #2865 removed and that
 `.github/actions/lean-gate` is written to avoid. This lane buys a *bounded*
 probability of catching the regression pre-merge; the trailing matrix remains
@@ -114,8 +114,9 @@ Offline dry run over the 20 most recently merged pull requests
 Minutes are `dispatch_rank`, the observed shard duration ci.yml dispatches by;
 runner-minutes are the sum over selected shards and wall clock is the maximum,
 since the shards run as a parallel matrix. The lane runs beside the required
-`PR Gate / Build and tests` job (~18.7 min p50), so it does not extend the
-required context's critical path.
+`PR Gate / Build and tests` job (~18.7 min p50), and its selected executions contribute to the
+required context's critical path. These measurements describe the original window,
+not a guarantee about current gate duration.
 
 That window is unusually CI-heavy — 14 of 20 were Dependabot action bumps,
 Lambda-certification fixes, or docs. A week weighted toward product changes
@@ -136,58 +137,35 @@ The dry run builds its test-class inventory from the current working tree
 rather than each commit's tree, so a class deleted since would be missed. None
 of the four depends on one.
 
-## Report-only, and how it gets promoted
+## Required execution verdict
 
-`AFFECTED_SHARDS_MODE` in `.github/workflows/pr-gate.yml` starts at `report`:
+`AFFECTED_SHARDS_MODE` in `.github/workflows/pr-gate.yml` is `enforce`.
+The per-shard test step preserves results with `continue-on-error`; its job
+conclusion is not execution evidence. The aggregate reads exactly one timing
+receipt per selected family and uses the existing `shard-execution-evidence.py`
+verifier to re-read each passing receipt's exact TRX. The measured status,
+counts and digest must agree. Failed, timed-out, missing or inconsistent results
+fail `PR Gate / Affected shards` and the stable required `PR Gate` context through
+`required.needs`. Branch protection requires no additional context.
+The shard job can conclude success after a test failure; re-running only the
+aggregate does not repeat the selected tests.
 
-- the per-shard test failure is swallowed at the step (the ci.yml advisory-shard
-  pattern — a red check-run on a *non-required* job still forces the pull
-  request to `UNSTABLE` and stalls the clean-only merge train), and
-- the aggregate context **`PR Gate / Affected shards`** publishes the verdict in
-  its step summary and as `HONUA_AFFECTED_SHARD_*` annotations while concluding
-  success. That success is not a test pass. `scripts/ci/affected-shard-verdict.py`
-  sets `test_pass` false for every `report` result. Trunk protection already
-  requires the context; that requirement is not promotion (see
-  `docs/ci/affected-shards-promotion.md`).
+Only empty selections with `docs_only`, `validated_generated_only`,
+`no_product_code` or `no_shards_selected` may skip successfully. An
+`untrustworthy_base` or unknown skip reason fails closed in enforce mode.
+A successful skip is not a test pass. The six-family fan-out cap and each
+shard's existing test and job budgets are unchanged.
 
-Missing evidence is mode-aware, because promotion is only those two changes and
-the context must not be able to pass by failing to look. In `report` an
-unavailable selection, an absent receipt, or a receipt set smaller than the
-selection warns and passes; in `enforce` each of those fails the context
-(`HONUA_AFFECTED_SHARD_UNAVAILABLE`). In particular a *partial* receipt set is
-never green: one shard dying before `run-server-test-shard.sh` writes its timing
-file while another passes would otherwise report every family it heard from as
-green and hide the one it was spending a runner to learn about. A confirmed red
-is still reported as a red rather than as infrastructure.
+The founder authorized enforcement after real selected-shard failures merged
+through report mode. The retained false-red audit still contains unresolved
+classifications; this policy decision does not claim that its historical
+promotion threshold passed. The evidence and disposition remain in
+[the enforcement and promotion record](../../ci/affected-shards-promotion.md).
 
-**Promotion rule: make the context required when its false-red rate over 7 days
-of runs is below 2%.** A false red is a run emitting
-`HONUA_AFFECTED_SHARD_RED` for a head whose change did not in fact break that
-shard — flake, cross-shard interference, or an environment difference from
-`ci.yml::server-tests`. Below 2% is the bar because the lane spends a bounded
-fan-out on every product-code PR; a noisier detector spends that budget on
-re-running green shards by hand.
-
-Collect the window with the GitHub CLI:
-
-```bash
-gh run list --repo honua-io/honua-server --workflow pr-gate.yml \
-  --created "$(date -u -d '7 days ago' +%Y-%m-%d)..$(date -u +%Y-%m-%d)" \
-  --json databaseId --jq '.[].databaseId' \
-| while read -r run_id; do
-    gh run view "${run_id}" --repo honua-io/honua-server --log \
-      | grep -o 'HONUA_AFFECTED_SHARD_[A-Z]* .*' || true
-  done
-```
-
-Then reconcile each `HONUA_AFFECTED_SHARD_RED` against the same shard's result
-in the trailing matrix run for that PR's merge commit. Promotion is two audited
-changes: flip `AFFECTED_SHARDS_MODE` to `enforce`, and add
-`PR Gate / Affected shards` to branch protection. Rollback is the inverse
-one-line flip.
-
-If the rate is above the bar, leaving the mode at `report` is a successful
-measurement, not a failed change.
+The verdict tool retains explicit `report` mode for historical replay. In that
+mode red or unavailable evidence can publish a successful check, but
+`test_pass` is always false. Reverting the workflow to that behavior permits
+selected failures to merge and requires an explicit policy decision.
 
 ## Guardrails
 

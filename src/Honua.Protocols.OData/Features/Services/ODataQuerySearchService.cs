@@ -33,6 +33,7 @@ internal sealed class ODataQuerySearchService
         string? compute = null,
         string? format = null,
         BoundingBox? bbox = null,
+        int? publicLayerId = null,
         CancellationToken cancellationToken = default)
     {
         return await _queryService.BuildFeatureQueryAsync(
@@ -47,6 +48,7 @@ internal sealed class ODataQuerySearchService
             compute,
             format,
             bbox,
+            publicLayerId,
             cancellationToken).ConfigureAwait(false);
     }
 

@@ -10,13 +10,6 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Tests.Features.Edit;
 
-/// <summary>
-/// Editing-parity conformance matrix (#2137): the closing acceptance artifact for epic #1270.
-/// Each supported row is executed against the shared edit-path engines so a regression of a
-/// previously-passing capability fails CI. The human-readable matrix (expected Esri behavior,
-/// Honua behavior, supported/partial/unsupported, and the non-Postgres / safe-Arcade caveats)
-/// is the docs receipt at <c>docs/internal/evidence/editing-parity-conformance.md</c>.
-/// </summary>
 public sealed class EditingParityConformanceMatrixTests
 {
     /// <summary>Supported / partial / unsupported parity status of a matrix row.</summary>
