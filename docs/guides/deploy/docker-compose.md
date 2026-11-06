@@ -38,7 +38,7 @@ compiler, or a registry credential.
 ## Production install from the shipped Compose file
 
 The release also ships a production Compose file,
-[`docker-compose.production.yml`](../../../docker-compose.production.yml), and its
+[`docker/compose/docker-compose.production.yml`](../../../docker/compose/docker-compose.production.yml), and its
 environment template, [`.env.production.example`](../../../.env.production.example).
 Use them instead of the quickstart project when you want the hardened
 single-host shape from the start: Production environment, Gate migration policy,
@@ -97,7 +97,7 @@ container or on another host, put its own address in `HONUA_PROXY_IP` instead.
 
 <!-- docs-validation:production.start mode=run -->
 ```bash
-dc() { docker compose -f docker-compose.production.yml --env-file .env.production "$@"; }
+dc() { docker compose --project-directory . -f docker/compose/docker-compose.production.yml --env-file .env.production "$@"; }
 HONUA_PROXY_IP=127.0.0.1 dc create
 HONUA_NETWORK_NAME="$(sed -n 's/^HONUA_NETWORK_NAME=//p' .env.production)"
 HONUA_PROXY_IP="$(docker network inspect "$HONUA_NETWORK_NAME" --format '{{(index .IPAM.Config 0).Gateway}}')"

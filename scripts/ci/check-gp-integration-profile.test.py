@@ -9,7 +9,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts/ci/check-gp-integration-profile.py"
-COMPOSE = ROOT / "docker-compose.gp-dev.yml"
+COMPOSE = ROOT / "docker/compose/docker-compose.gp-dev.yml"
 
 
 def load_checker():

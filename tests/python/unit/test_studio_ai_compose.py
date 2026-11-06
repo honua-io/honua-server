@@ -26,7 +26,7 @@ def compose(*, overlay=True, deployment=True, custom=False):
         environment["HONUA_AI_DEPLOYMENT_ID"] = "fixture-deployment"
     command = ["docker", "compose", "--profile", "console", "--env-file", "/dev/null", "-f", str(ROOT / "docker-compose.yml")]
     if overlay:
-        command += ["-f", str(ROOT / "docker-compose.studio-ai.yml")]
+        command += ["-f", str(ROOT / "docker/compose/docker-compose.studio-ai.yml")]
     return subprocess.run(command + ["config", "--format", "json"], env=environment,
                           cwd=ROOT, capture_output=True, text=True, check=False)
 

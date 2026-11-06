@@ -14,7 +14,7 @@ case "${1:-}" in
     chmod 0700 "$private_dir"
     # Render before the first mutation. A partial `up` must leave the same inputs
     # available to `down`, even after the startup step environment disappears.
-    docker compose --project-name "$project" -f docker-compose.soak.yml config > "$prepared.tmp"
+    docker compose --project-directory . --project-name "$project" -f docker/compose/docker-compose.soak.yml config > "$prepared.tmp"
     mv "$prepared.tmp" "$prepared"
     docker compose --project-name "$project" -f "$prepared" up -d
     ;;

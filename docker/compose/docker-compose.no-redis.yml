@@ -1,6 +1,6 @@
 # Redis-optional local install variant.
 #
-#   docker compose -f docker-compose.yml -f docker-compose.no-redis.yml up -d
+#   docker compose -f docker-compose.yml -f docker/compose/docker-compose.no-redis.yml up -d
 #
 # Composes the root quickstart stack WITHOUT Redis: the running services are
 # `postgres` (PostGIS) and `honua` only, and `ConnectionStrings__Redis` is
@@ -17,7 +17,7 @@
 #     submission is refused with a typed capability-unavailable error instead of
 #     being queued and silently never run.
 #
-# To re-add Redis later, drop the `-f docker-compose.no-redis.yml` argument and
+# To re-add Redis later, drop the `-f docker/compose/docker-compose.no-redis.yml` argument and
 # `docker compose up -d` again. PostGIS-backed metadata state is untouched by
 # the change; only the Redis-backed job/cache surface returns.
 services:

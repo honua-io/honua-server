@@ -1,6 +1,6 @@
 # Honua geoprocessing (GP) local dev quickstart.
 #
-#   docker compose -f docker-compose.gp-dev.yml up
+#   docker compose --project-directory . -f docker/compose/docker-compose.gp-dev.yml up
 #
 # Brings up the MINIMAL stack needed to submit a geoprocessing job, watch it
 # run, and fetch results locally — with NO AWS / Azure Batch / cloud creds and
@@ -33,7 +33,7 @@
 # sample below does NOT need it.
 #
 # The optional `integration` profile starts what this host file does not:
-#   docker compose -f docker-compose.gp-dev.yml --profile integration up --build -d
+#   docker compose --project-directory . -f docker/compose/docker-compose.gp-dev.yml --profile integration up --build -d
 # That selects `managed-worker` (a serving-image replica with no published
 # ports; managed jobs already run in-process on `honua`), `gdal-worker`, and
 # the shared `gp_artifacts` volume. Both workers bind-mount local process
