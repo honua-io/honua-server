@@ -7,6 +7,9 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Exceptions;
 using Honua.Protocols.GeoServices.FeatureServer;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.TestKit.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -18,7 +21,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
-public sealed class FeatureServerReplicationTests : IAsyncLifetime
+public sealed partial class FeatureServerReplicationTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro);
 

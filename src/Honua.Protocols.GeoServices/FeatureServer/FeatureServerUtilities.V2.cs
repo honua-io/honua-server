@@ -553,27 +553,32 @@ internal static partial class FeatureServerEndpoints
         };
     }
 
+    internal static (MetadataV2Publication Publication, MetadataV2Resource Resource)[] GetRoutableServicePublicationsV2(
+        MetadataV2Service service, MetadataV2GraphSnapshot snapshot, HttpContext context)
+        => snapshot.Index.PublicationsByService[service.Metadata.Id]
+            .Where(snapshot.IsRoutable)
+            .Where(publication => TenantScopeHelpers.IsPublicationVisible(
+                context, publication, snapshot.ResolveResource(publication), service))
+            .Select(publication => (publication, snapshot.ResolveResource(publication)!))
+            .ToArray();
+
+    internal readonly record struct ServiceLayerSelectionRequest(
+        MetadataV2Service Service,
+        MetadataV2GraphSnapshot Snapshot,
+        HttpContext Context,
+        IReadOnlyDictionary<string, StringValues> Values);
+
     internal static bool TryResolveRequestedServiceLayersV2(
-        MetadataV2Service service,
-        MetadataV2GraphSnapshot snapshot,
-        IReadOnlyDictionary<string, StringValues> values,
+        ServiceLayerSelectionRequest request,
         out (MetadataV2Publication Publication, MetadataV2Resource Resource)[] layers,
         out bool selectorSpecified,
         out string? error)
     {
+        var (service, snapshot, context, values) = request;
         ArgumentNullException.ThrowIfNull(service);
         ArgumentNullException.ThrowIfNull(snapshot);
 
-        // Materialize the full publication list once so we can both default-return and filter
-        // against it with stable layer-id resolution.
-        var allPairs = snapshot.Index.PublicationsByService[service.Metadata.Id]
-            .Where(pub => ServiceProtocols.IsPreferredPublicationType(
-                ServiceProtocols.FeatureServer,
-                pub.PublicationType))
-            .Select(pub => (Publication: pub, Resource: snapshot.ResolveResource(pub)))
-            .Where(pair => snapshot.IsRoutable(pair.Publication))
-            .Select(pair => (pair.Publication, Resource: pair.Resource!))
-            .ToArray();
+        var allPairs = GetRoutableFeaturePublicationsV2(service, snapshot, context);
 
         layers = allPairs;
         selectorSpecified = false;
