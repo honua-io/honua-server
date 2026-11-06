@@ -51,6 +51,7 @@
     <!-- Export writers: Shapefile (NTS Esri) + GeoPackage (SQLite). -->
     <PackageReference Include="NetTopologySuite.IO.Esri.Shapefile" />
     <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" />
     <!-- Export endpoints use WithApiVersionSet / HasApiVersion. -->
     <PackageReference Include="Asp.Versioning.Http" />
   </ItemGroup>
