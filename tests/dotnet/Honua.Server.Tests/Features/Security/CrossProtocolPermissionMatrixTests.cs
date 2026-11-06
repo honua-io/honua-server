@@ -59,7 +59,8 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     /// </summary>
     private static WebApplicationFactory<Program> CreateFactory(params PermissionGrant[] grants)
         => CreateFactory(
-            ServiceRbacTestFixture.CreateServiceMetadata(readRoles: [CoarseOnlyRole]),
+            new RbacTestLayerCatalog(alphaServiceMetadata:
+                ServiceRbacTestFixture.CreateServiceMetadata(readRoles: [CoarseOnlyRole])),
             grants);
 
     /// <summary>
@@ -71,13 +72,16 @@ public sealed partial class CrossProtocolPermissionMatrixTests
     /// intentionally absent here.
     /// </summary>
     private static WebApplicationFactory<Program> CreateWriteFactory(params PermissionGrant[] grants)
-        => CreateFactory(alphaServiceMetadata: null, grants);
+        => CreateFactory(new RbacTestLayerCatalog(), grants);
+
+    private static WebApplicationFactory<Program> CreateGrpcWriteFactory(PermissionGrant[] grants)
+        => CreateFactory(new GrpcWriteLayerCatalog(), grants);
 
     private static WebApplicationFactory<Program> CreateFactory(
-        AccessPolicy? alphaServiceMetadata,
+        ITestMetadataV2GraphSource catalog,
         PermissionGrant[] grants)
         => ServiceRbacTestFixture.CreateFactory(
-            layerCatalogFactory: () => new RbacTestLayerCatalog(alphaServiceMetadata: alphaServiceMetadata),
+            layerCatalogFactory: () => catalog,
             configureServices: services =>
             {
                 services.RemoveAll<ICrsDetectionService>();
@@ -118,7 +122,10 @@ public sealed partial class CrossProtocolPermissionMatrixTests
             operationNames.Remove(GetGrantToOmit(editKinds));
         }
 
-        using var factory = CreateWriteFactory(operationNames.Select(operation => Grant(operation)).ToArray());
+        var grants = operationNames.Select(operation => Grant(operation)).ToArray();
+        using var factory = string.Equals(surface, TestProtocols.Grpc, StringComparison.Ordinal)
+            ? CreateGrpcWriteFactory(grants)
+            : CreateWriteFactory(grants);
 
         if (string.Equals(surface, TestProtocols.FeatureServer, StringComparison.Ordinal))
         {
