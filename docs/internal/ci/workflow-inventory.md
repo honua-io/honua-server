@@ -28,8 +28,8 @@
 
 **Branch protection requires `PR Gate` and `Review Gate` together**: unprivileged
 verification plus trusted exact-head admission. `CI Gate` remains train-only and
-is deliberately not a per-PR required context. Nothing else in this inventory is
-a required context — the merge train selects on `mergeable`, not on
+is deliberately not a per-PR required context. Repository hygiene is also required; other advisory workflows are
+not required contexts — the merge train selects on `mergeable`, not on
 `mergeStateStatus`, so a red advisory check does not by itself block landing.
 PR-time CodeQL security analysis comes from `codeql.yml`'s own
 `pull_request` lane: code-scanning **default setup is `not-configured`** for this
@@ -128,6 +128,7 @@ The scoped `GP Alias Contract` check runs the real GeoServices alias tests and O
 | `compose-release-lifecycle.yml` | Compose Release Lifecycle | `pull_request` (base `trunk`, relevant executor, control-plane, and test paths) | Builds the Native AOT candidate and exercises the published rc.1 to approved MCP convergence and verified PostGIS restore journey, including negative controls. |
 | `close-external-prs.yml` | Close external pull requests | `pull_request_target` (`opened`, `reopened`) | Closes pull requests whose author association is not `OWNER`, `MEMBER` or `COLLABORATOR` (bots exempt) with a comment pointing to issues and `SECURITY.md`; this repository does not accept external contributions. Never checks out PR code; `pull-requests: write` only. Durable complement to the six-month repository interaction limits set 2026-10-23. |
 | `clean-code.yml` | Clean code | `pull_request` (`opened`, `synchronize`, `reopened`, `edited`) | Calls the shared honua-io/.github clean-code check, pinned by SHA: the Clean Code rules judged only on what the PR makes worse (comment, size, function, parameter and duplication ratchets), each finding titled with its smell code. `edited` re-runs it when a `quality-exception:` line is added to the PR body. Read-only `contents` permission. |
+| `repo-hygiene.yml` | Repository hygiene | `pull_request` (`opened`, `synchronize`, `reopened`, `edited`) | Required additions-only check. Calls the shared SHA-pinned workflow with read-only permissions; reads the repository-owned root allowlist and exact gate-input exceptions from the trusted base branch, rejecting new scratch, run output, dated history, samples and unexpected root entries. |
 | `gp-installed-authoring.yml` | GP Installed Authoring | path-filtered `pull_request`, `workflow_dispatch` | Packs the candidate devkit, then exercises Python and .NET authoring on Linux, Windows and macOS using only the installed package (no source checkout). Requires positive and negative goldens, four direct tests per language, exact-version payload restoration and missing-image-evidence release refusal. Uploads a three-OS host-debug handoff for honua-release#615. Does not publish packages or qualify a worker image. |
 | `gp-alias-contract.yml` | GP Alias Contract | `pull_request` (base `trunk`, relevant contract/test/judgment paths) | Runs the GeoServices alias contract and the OGC API process-list HTTP regression in their actual protocol assemblies. Uses the existing .NET setup and pinned PostGIS service conventions; requires all selected cases to execute and pass. |
 | `routing-utility-contract.yml` | Routing Utility Contract | `pull_request` (base `trunk`, GPServer/NAServer discovery and test paths) | Runs the provider-level routing descriptor, catalog collision/access guards, and existing routing utility, metadata, anonymous, SOAP and FindRoutes contracts in the GeoServices component assembly. Requires every new source method and every selected result to execute and pass; retains TRX proof. |
