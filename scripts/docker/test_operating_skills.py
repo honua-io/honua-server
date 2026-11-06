@@ -53,7 +53,7 @@ class OperatingSkillsTests(unittest.TestCase):
             result = subprocess.run(['sha256sum', '-c', 'agent-files.sha256'], cwd=destination,
                                     capture_output=True, text=True)
             self.assertEqual(0, result.returncode, result.stderr)
-            changed = destination / 'skills/honua-install/SKILL.md'
+            changed = destination / 'skills/honua-services/SKILL.md'
             changed.write_bytes(changed.read_bytes() + b'changed\n')
             result = subprocess.run(['sha256sum', '-c', 'agent-files.sha256'], cwd=destination,
                                     capture_output=True, text=True)
