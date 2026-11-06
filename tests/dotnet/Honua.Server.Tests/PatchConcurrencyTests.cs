@@ -7,6 +7,8 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Exceptions;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -53,7 +55,7 @@ public sealed class PatchConcurrencyTests
             Assert.DoesNotContain("population", await read.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
             if (stale)
             {
-                var current = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
+                var current = (await ReadBoundFeatureAsync(fixture, id))!.Value;
                 await fixture.GetService<IFeatureWriter>().UpdateAsync(
                     0, current with { Attributes = current.Attributes.SetItem("name", "changed name") });
             }
@@ -170,7 +172,9 @@ public sealed class PatchConcurrencyTests
             var original = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
             await fixture.GetService<IFeatureWriter>().UpdateAsync(0, original with { Attributes = original.Attributes.SetItem("population", 12345L) });
             mask.Fields = ImmutableArray.Create("POPULATION");
-            Assert.False((await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value.Attributes.ContainsKey("population"));
+            await Assert.ThrowsAsync<ResourceAccessDeniedException>(() =>
+                fixture.GetService<IFeatureReader>().GetAsync(0, id));
+            Assert.False((await ReadBoundFeatureAsync(fixture, id))!.Value.Attributes.ContainsKey("population"));
             if (!concurrent) barrier.Resume.TrySetResult();
             using var request = CreatePatch(protocol != "ogc", id, changeName: true, batch: protocol == "batch");
             var firstTask = fixture.Client.SendAsync(request);
@@ -441,14 +445,14 @@ public sealed class PatchConcurrencyTests
         try
         {
             var id = await fixture.InsertFeatureAsync(0, "original name");
-            var original = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
+            var original = (await ReadBoundFeatureAsync(fixture, id))!.Value;
             mask.Fields = ImmutableArray.Create("population");
             var readUrl = protocol == "ogc" ? $"/ogc/features/collections/0/items/{id}" : $"/odata/Features(LayerId=0,ObjectId={id})";
             async Task<string> ReadConditionEtagAsync()
             {
                 if (protocol == "ogc")
                 {
-                    var feature = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
+                    var feature = (await ReadBoundFeatureAsync(fixture, id))!.Value;
                     return Honua.Protocols.Ogc.Api.Features.Services.OgcFeatureEntityTag.Compute(
                         feature, fixture.GetService<Honua.Infrastructure.Caching.IETagService>());
                 }
@@ -489,7 +493,7 @@ public sealed class PatchConcurrencyTests
             using var response = await pending;
             Assert.Equal(conditionFailsAtConflict ? HttpStatusCode.PreconditionFailed : HttpStatusCode.Conflict,
                 await ReadStatusAsync(response, protocol == "batch"));
-            var stored = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
+            var stored = (await ReadBoundFeatureAsync(fixture, id))!.Value;
             Assert.Equal(later.Attributes["name"], stored.Attributes["name"]);
             Assert.Equal(later.Geometry, stored.Geometry);
         }
@@ -560,6 +564,21 @@ public sealed class PatchConcurrencyTests
             }
         }
         finally { await fixture.DisposeAsync(); }
+    }
+
+    private static async Task<Feature?> ReadBoundFeatureAsync(WebAppFixture fixture, long objectId)
+    {
+        var snapshot = fixture.GetCurrentV2GraphSnapshot();
+        var publication = snapshot.Index.PublicationsById["pub-layer-0"];
+        var resource = snapshot.ResolveResource(publication)!;
+        var reader = await fixture.GetService<FeatureProviderQueryRouter>().ResolveReaderAsync(
+            snapshot,
+            snapshot.Index.ServicesById[publication.ServiceId],
+            resource,
+            publication,
+            0,
+            FeatureProviderReadOperation.Query);
+        return await reader.GetAsync(0, objectId);
     }
 
     private static WebAppFixture CreateFixture(WriteBarrier barrier, MutableFieldMask? mask = null)

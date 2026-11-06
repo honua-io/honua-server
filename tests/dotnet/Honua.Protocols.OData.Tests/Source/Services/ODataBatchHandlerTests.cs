@@ -618,14 +618,12 @@ public sealed class ODataBatchHandlerTests
                     new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },
                     new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String, Length = 128 }
                 ])
-            .AddStorageBinding("binding-layer-1", "res-layer-1", "test.layers.1", storageLayerId: 1)
             .AddService("svc-cities", "cities", protocols: ["OData"])
             .AddPublication(
                 "svc-cities-layer-1",
                 "svc-cities",
                 "res-layer-1",
                 layerIndex: 1,
-                storageBindingId: "binding-layer-1",
                 publicationType: MetadataV2PublicationType.ODataEntitySet);
         if (ownerPolicy is not null)
         {

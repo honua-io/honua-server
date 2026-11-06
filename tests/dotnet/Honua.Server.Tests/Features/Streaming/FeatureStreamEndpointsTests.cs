@@ -146,6 +146,7 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
             .ReplaceService<IRlsPolicyStore>(rows)
             .ReplaceService<IFieldMaskPolicyStore>(fields);
         await fixture.InitializeAsync();
+        fixture.RemoveRasterResources();
         try
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));

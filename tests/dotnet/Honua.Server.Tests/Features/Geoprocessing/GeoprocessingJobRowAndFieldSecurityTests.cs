@@ -67,6 +67,7 @@ public sealed class GeoprocessingJobRowAndFieldSecurityTests(RedisFixture redis)
 
         var fixture = BuildFixture();
         await fixture.InitializeAsync();
+        fixture.RemoveRasterResources();
         Guid? rlsPolicyId = null;
         Guid? maskPolicyId = null;
 
@@ -132,6 +133,7 @@ public sealed class GeoprocessingJobRowAndFieldSecurityTests(RedisFixture redis)
 
         var fixture = BuildFixture();
         await fixture.InitializeAsync();
+        fixture.RemoveRasterResources();
         try
         {
             var jobId = await SubmitLayerSourceJobAsync(fixture, category: "test", extraRole: RestrictedRole);

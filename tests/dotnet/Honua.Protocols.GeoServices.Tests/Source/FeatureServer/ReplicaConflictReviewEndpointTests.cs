@@ -585,7 +585,12 @@ public sealed class ReplicaConflictReviewEndpointTests : IAsyncLifetime
             "server",
             "keeping the server after a last-write-wins sync must restore the captured pre-conflict state");
         var restoredAttributes = await ReadFeatureAttributesAsync(seeded.ObjectId);
-        restoredAttributes.TryGetProperty("description", out _).Should().BeFalse(
+        restoredAttributes.GetProperty("description").ValueKind.Should().Be(JsonValueKind.Null);
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT attributes ? 'description' FROM features WHERE layer_id = 0 AND objectid = @id";
+        command.Parameters.AddWithValue("id", seeded.ObjectId);
+        ((bool)(await command.ExecuteScalarAsync())!).Should().BeFalse(
             "a complete captured server snapshot must remove attributes introduced only by the client edit");
         restoredAttributes.GetProperty("objectid").GetInt64().Should().Be(seeded.ObjectId,
             "complete-state replacement must preserve the addressed row's non-editable identity");
