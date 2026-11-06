@@ -158,6 +158,8 @@ jobs:
           python3 scripts/ci/validate-tracked-file-encoding.py
           python3 scripts/ci/validate-tracked-file-encoding.test.py
 
+      - name: Verify boot smoke readiness controls
+        run: python3 scripts/ci/server-boot-smoke.test.py
       # Admission tier, seconds, and deliberately ahead of the documentation
       # exit: an agent-instruction or PR-body edit is exactly what these police.
       #   - No AI/agent attribution in the PR's commits or body (fleet rule 1;
