@@ -73,7 +73,7 @@ public sealed class ODataContractTests(ODataComponentFixture fixture) : IClassFi
             using var patch = new HttpRequestMessage(HttpMethod.Patch, path) { Content = ODataContent(new { Attributes = new { name, population = 54321 } }) };
             patch.Headers.TryAddWithoutValidation("If-Match", etag);
             using var updated = await fixture.Client.SendAsync(patch);
-            updated.IsSuccessStatusCode.Should().BeTrue();
+            updated.IsSuccessStatusCode.Should().BeTrue(await updated.Content.ReadAsStringAsync());
             using var stale = new HttpRequestMessage(HttpMethod.Patch, path) { Content = ODataContent(new { Attributes = new { population = 1 } }) };
             stale.Headers.TryAddWithoutValidation("If-Match", etag);
             using var rejected = await fixture.Client.SendAsync(stale);
