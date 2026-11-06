@@ -35,7 +35,9 @@ public sealed class FeatureServerPublicationTenantTests
         };
         var snapshot = new MetadataV2GraphSnapshot(new MetadataV2Graph
         {
-            Services = [service], Resources = [resource], Publications = [publication]
+            Services = [service],
+            Resources = [resource],
+            Publications = [publication]
         }, "test", DateTimeOffset.UtcNow);
 
         var visible = FeatureServerEndpoints.GetRoutableFeaturePublicationsV2(service, snapshot, context);
