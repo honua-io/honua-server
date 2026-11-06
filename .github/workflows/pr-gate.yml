@@ -482,7 +482,7 @@ jobs:
     name: PR Gate / Tests and runtime proofs
     needs: pr-gate
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 85
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -776,16 +776,11 @@ jobs:
             exit 1
           fi
 
-      # The proof below needs the GDAL CLI, its Python bindings, NumPy and SciPy.
-      # The shared provisioner installs a cached .deb set with --no-download.
-      # It downloads only when the package index is readable and that exact
-      # version is not cached. An unreadable index installs the newest saved
-      # .deb files with dpkg, because apt cannot resolve names without lists.
-      # scripts/ci/fixtures/validate-pr-gate-apt-provisioning.py holds that split.
+      # Each mirror gets a bounded download budget before the offline install.
       - name: Provision the GDAL CLI packages for the real-GDAL proof
         id: gdal-cli-packages
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'
-        timeout-minutes: 30
+        timeout-minutes: 40
         uses: ./.github/actions/provision-gdal-cli
 
       - name: Prove the real-GDAL CLI cases run on the required gate
