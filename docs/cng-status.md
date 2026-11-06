@@ -15,8 +15,8 @@ artifact generator under
 
 ## Additional bounded engineering receipts
 
-The [2026-10-28 PMTiles client replay](internal/evidence/cng-pmtiles-client-2026-10-28/README.md)
-and [multidimensional worker replay](internal/evidence/cng-multidim-diagnostic-2026-10-28/README.md)
+The [2026-10-28 PMTiles client replay](https://github.com/honua-io/honua-server/blob/213e7ef3bf243fddf30c06a4cdb4cac737b9bfc8/docs/internal/evidence/cng-pmtiles-client-2026-10-28/README.md)
+and [multidimensional worker replay](https://github.com/honua-io/honua-server/blob/213e7ef3bf243fddf30c06a4cdb4cac737b9bfc8/docs/internal/evidence/cng-multidim-diagnostic-2026-10-28/README.md)
 retain exact producer/serving sources, diagnostic image identities, canonical-client readbacks and
 small artifact bundles. These engineering receipts do not change the frozen campaign denominator
 or establish current-trunk, published-production, real-cloud or complete standards qualification.
