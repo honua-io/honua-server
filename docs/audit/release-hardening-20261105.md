@@ -14,14 +14,16 @@ Baseline: `800c0ec9277733433f90cd56e6e53f35bda1b11b` (`origin/trunk`, fetched 20
 | Publication tenant visibility omitted by protocol paths | P1 | Confirmed in discovery, search, render/tile, related-record, replication and service-wide selection paths across Records, OData, OGC Maps, WMS/WMTS, ImageServer, MapServer, VectorTileServer, PMTiles and FeatureServer. Existing resource/service access checks omit publication tenant scope. Filtering must precede primary selection/deduplication and cache access. OData regressions reproduce the defect; repair and finite call-site census in progress in #6989. |
 | Published forms accept writes forbidden by current field policy | P1 | Package-time editability can outlive current resource restrictions. Current schema enforcement is under remediation in #6991. |
 | OGC API PATCH removes protected attributes | P1 | Null-valued submitted properties can bypass field validation; unchanged protected attributes in the merged row must not be rejected as new writes. Regression and shared policy repair in #6996. The separate `properties: null` whole-properties behavior already has a mapping and remains a control case. |
-| SAML audience restrictions incorrectly flattened | P2 | Validator accepts any audience across groups instead of requiring each restriction to match. Requires an otherwise valid signed assertion. Issue #6987. |
-| SAML local replay claim not atomic | P2 | Memory-cache factory can execute concurrently for the same assertion; Redis NX path is unaffected. Issue #6987. |
-| Import progress read failure skips leadership check | P2 | Monitor catches failed progress reads before reaching heartbeat. Target advisory lock mitigates duplicate writes but does not stop stale execution. Fixed in draft PR #6995 (`3d3c8813f3`); regression failed on baseline, 13 focused tests pass after correction; primary independent review complete. Required gates pending. |
+| Existing-row RLS missing from canonical writes | P1 | Forms expose batch update/delete paths without original-row visibility checks; provider batch validation checks only the resulting row, and single-feature methods bypass the check. Same-transaction original-row and resulting-row enforcement under remediation in #6999. |
+| Vulnerable SQLite native runtime in production GeoPackage import | P1 | Resolved native package2.1.11 reports SQLite3.49.1; production opens uploaded databases despite a test-only suppression rationale. Independently reviewed source exposure to stored view SQL, without executing an exploit. Maintenance bundle2.1.12 and retirement of the suppression under remediation in #6998. |
+| SAML audience restrictions incorrectly flattened | P2 | Validator accepts any audience across groups instead of requiring each restriction to match. Requires an otherwise valid signed assertion. Two signed assertion negatives fail on baseline; reviewed repair applied in #6987, green verification pending. |
+| SAML local replay claim not atomic | P2 | Memory-cache factory can execute concurrently for the same assertion; Redis NX path is unaffected. Concurrent-miss regression yields two successful claims on baseline; reviewed repair applied in #6987, green verification pending. |
+| Import progress read failure skips leadership check | P2 | Monitor catches failed progress reads before reaching heartbeat. Target advisory lock mitigates duplicate writes but does not stop stale execution. Fixed in draft PR #6995 (`3d3c8813f3`); regression failed on baseline, 13 focused tests pass after correction; primary independent review complete. CI Build/tests, formatting, CodeQL and affected shards passed; aggregate runtime proof still running. Review Gate declines draft status as expected. |
 | Import replacement cascades into independent dependencies | P1 | Target ownership check does not authorize deleting dependent views/materialized views or foreign keys. Issue #6993 adds fail-closed replacement and database regressions. |
 | Version-job fallback loses newer state after Redis recovers | P2 | A stale existing Redis record wins over newer node-local fallback state. Tracked in #6997; remediation deferred. |
 | Reconciler renewal exception leaves reconciliation running | P2 | Renewal task faults without cancelling its linked token; awaiting the fault also skips release. Submission CAS mitigates duplicate submission. Tracked in #6990; remediation deferred. |
 
-No supported P0 finding so far. Finding counts are not evidence of complete coverage.
+Seven P1 finding families are tracked above; none is closed without verification. No supported P0 finding so far. Finding counts are not evidence of complete coverage.
 
 ## Coverage ledger
 
@@ -39,17 +41,21 @@ No supported P0 finding so far. Finding counts are not evidence of complete cove
 | SQL Server identifiers and filter construction | Sampled source review | Other provider/query combinations and runtime provider tests |
 | Migration runner compatibility/contract gates | Partial source review | Migration SQL completeness and upgrade execution |
 | Release security pipeline | Existing CI evidence inspected | Fresh evidence tied to final candidate and artifact digests |
-| SOLID/DRY cleanup | Existing work #6934 identified | Broader behavioral duplication and provider contract review |
+| SOLID/DRY cleanup | Existing work #6934 identified; supported duplicated OIDC token-policy construction added to campaign | Broader behavioral duplication and provider contract review |
+| Live subscriptions and fan-out | Source review: feature delivery checks publication tenant and refreshed row/field policies; STA compares tenant/schema scope; admin SignalR requires admin authorization; collaboration join checks draft and parent owner/tenant | Runtime adversarial transport tests; feature-stream discovery/initial selection remains a separately tracked lower-priority concern |
 
 ## Validation
 
+- WMS/WMTS publication regression: baseline **6 failed, 2 passed** on intended security assertions after correcting fixture registrations; reviewed repair **8 passed, 0 failed** in Release. ImageServer resolver/current-binding regression: **8 failed, 6 passed** on baseline; an initially non-discriminating tile fixture was corrected and is awaiting its separate baseline.
+- SAML baseline **3 failed, 20 passed**: two signed audience-restriction negatives and concurrent local replay claim. Reviewed repair verification pending.
 - Baseline `Honua.Architecture.SourceTests`: **121 passed, 0 failed, 0 skipped**, Release configuration, through required dotnet build-slot shim.
 - Existing Security Nightly run [41996766600](https://github.com/honua-io/honua-server/actions/runs/41996766600) passed NuGet, filesystem, notices, and AOT Alpine/JIT Debian container jobs on ancestor `f0b09c4cf765149810b0851d31b31c09f1327843`. This is not final-candidate verification.
 - Vulnerability-gate parser: **7 passed**; immutable-image receipt controls: **6 passed**. These validate gate logic, not the application dependency inventory.
 - GitHub open Dependabot inventory: two moderate action-tooling advisories, `GHSA-g3hv-75wg-m249` (minimatch) and `GHSA-3g3m-2fjr-6pw4` (glob), both in `.github/actions/managed-test-artifacts/package-lock.json`; the action passes fixed manifest/archive paths to the artifact client rather than caller-supplied glob patterns. No P0/P1 exploit path established; dependency remediation remains tracked by Dependabot.
 - Graph search timed out; findings were checked against source directly.
 - CSO helper failed snapshot capture with `SNAPSHOT_RACE`; CSO assessment/scanner assurance is **not assessed**. Conventional static security review is separately identified above.
-- Full matrix, deployment checks, cloud-provider integration, current dependency advisory inventory, and final integrated candidate review are outstanding.
+- SQLite exposure/update evidence: [upstream vulnerability model](https://www.sqlite.org/cves.html), [researcher advisory](https://github.com/google/security-research/security/advisories/GHSA-qj7j-3jp8-8ccv), and [maintenance update](https://github.com/ericsink/SQLitePCL.raw/releases/tag/v2.1.12). The obsolete suppression guard fails before its removal and all seven gate-parser tests pass afterward. Native .NET load and GeoPackage compatibility validation remain pending.
+- Full matrix, deployment checks, cloud-provider integration, final dependency inventory, and final integrated candidate review are outstanding.
 
 ## Exit criteria
 
