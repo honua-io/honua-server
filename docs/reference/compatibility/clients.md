@@ -103,6 +103,15 @@ Issuer-to-audience bindings also retain exact issuer identity. Deployments that
 previously relied on case-insensitive audience matching must align their issuer's
 token audience with the configured value before upgrading.
 
+## Read-policy metadata availability
+
+Service-scoped row-level security and field masks require metadata identifying the
+resource's publishing services. If resolving that metadata fails, the operation
+fails instead of returning a result constrained only by wildcard-service policies.
+Retry after metadata availability is restored. A successfully resolved resource
+without publications continues to use wildcard policies. Request cancellation
+remains cancellation.
+
 ## Realtime credentials and reconnects
 
 Protected FeatureServer and SensorThings SSE/WebSocket subscriptions revalidate

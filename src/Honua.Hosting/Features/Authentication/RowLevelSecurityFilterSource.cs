@@ -139,19 +139,13 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
     {
         try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var snapshot = ValidatedMetadataSnapshot.Find(_httpContextAccessor.HttpContext, resource)
-                ?? await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            return snapshot.Index.ServiceNamesByResource.TryGetValue(resource.Metadata.Id, out var names)
-                ? names
-                : Array.Empty<string>();
+            return await ReadPolicyServiceScope.ResolveAsync(resource,
+                new(_httpContextAccessor.HttpContext, _graphProvider), cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
+        catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
         {
-            // Intentional: metadata resolution is best-effort for service scoping;
-            // "*"-service policies still apply via the wildcard lookup. Never fail the query.
             RlsLog.ServiceResolutionFailed(_logger, resource.Metadata.Name, ex);
-            return Array.Empty<string>();
+            throw;
         }
     }
 
@@ -233,7 +227,7 @@ internal sealed partial class RowLevelSecurityFilterSource : IRowLevelSecurityFi
     private static partial class RlsLog
     {
         [LoggerMessage(EventId = 4560, Level = LogLevel.Warning,
-            Message = "RLS service-name resolution failed for layer '{Layer}'; only wildcard-service policies will apply")]
+            Message = "RLS service-name resolution failed for layer '{Layer}'; policy resolution was refused")]
         public static partial void ServiceResolutionFailed(ILogger logger, string layer, Exception exception);
     }
 
