@@ -13,7 +13,7 @@ public sealed partial class PostgresStorageMappedFeatureReaderVersionIntegration
     public async Task GetAsync_ManagedSnapshotTokenIncludesUnprojectedGeometryAndAttributes()
     {
         var full = await CreateReader().GetAsync(1, 1);
-        var reader = CreatePartitionReader(new FeatureStorageMapping("features", SchemaName: _schema,
+        var reader = CreatePartitionReader(new FeatureStorageMapping("features", SchemaName: _schema, GeometryColumn: null,
             AttributesColumn: "attributes", LayerDiscriminatorColumn: "layer_id", LayerDiscriminatorValue: 1), _schema);
 
         var projected = await reader.GetAsync(1, 1);
