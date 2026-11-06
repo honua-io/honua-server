@@ -19,7 +19,6 @@ inputs still fail. Generator implementation and serialization are unchanged.
 | `docs/gis/data/geoservices-rest-parity.json` | `scripts/generate-geoservices-parity.sh` → `GeoServicesParityEmitter` / `GeoServicesParityGenerator` | Nightly / on demand |
 | `docs/gis/data/capability-matrix.v1.json` | `scripts/ci/generate-capability-matrix.py` (after catalog and parity) | Nightly / on demand |
 | `docs/okf/capabilities` | `scripts/ci/generate-capability-concepts.py` (after the capability matrix) | Nightly / on demand |
-| `examples/manifest.json` | `scripts/examples/generate-manifest.py` | Nightly / on demand |
 | `src/Honua.Core/Features/Infrastructure/Crs/Resources/geoparquet-crs-projjson.json` | `scripts/geoparquet/generate-projjson-catalog.py` | Explicit CRS/PROJ dependency update; depends on external pyproj/PROJ data, not trunk evidence |
 | `docs/gis/gap-report.md`, `docs/internal/compatibility/cross-server-consume-gap-report.md` | `scripts/client-compat/diff-baselines.py`, `scripts/ci/generate-cross-server-gap-report.sh` | Evidence-run snapshots; require measured results, external checkouts or live servers |
 | `tests/fixtures/curated-edge-corpus/v1/sea-surface-temperature.zarr/temperature/0.0.0` | `scripts/test-data/generate-curated-corpus-zarr.py` | Explicit refresh of fixed sample values |
@@ -179,8 +178,8 @@ pre-PR build/test matrix was not run for this CI-only change.
 
 PR Gate can skip product build, test, format, affected-shard, conformance, and
 repeat normalization steps when the entire base-to-head diff is one commit whose
-only changes are regular files under four allowlisted outputs: the feature
-catalog, the capability matrix, `docs/okf/capabilities`, and `examples/manifest.json`.
+only changes are regular files under three allowlisted outputs: the feature
+catalog, the capability matrix, and `docs/okf/capabilities`.
 Those paths must still appear in the base copy of `scripts/ci/generated-files.sh`.
 Other allowlisted projections, including GeoServices parity and the admin
 exports, keep ordinary product checks. So do source, generator, workflow, and

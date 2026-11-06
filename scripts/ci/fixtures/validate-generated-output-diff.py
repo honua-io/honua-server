@@ -213,8 +213,8 @@ class GeneratedOutputAdmission(unittest.TestCase):
     def test_named_output_missing_from_base_allowlist_fails_closed(self):
         self.git('reset', '--hard', self.source)
         allowlist = self.repo / 'scripts/ci/generated-files.sh'
-        text = allowlist.read_text().replace('  examples/manifest.json\n', '')
-        self.assertNotIn('examples/manifest.json', text)
+        text = allowlist.read_text().replace('  docs/gis/data/feature-catalog.json\n', '')
+        self.assertNotIn('docs/gis/data/feature-catalog.json', text)
         allowlist.write_text(text)
         base = self.commit()
         self.git('apply', str(ROOT / 'scripts/ci/fixtures/generated-output-5725.patch'))
