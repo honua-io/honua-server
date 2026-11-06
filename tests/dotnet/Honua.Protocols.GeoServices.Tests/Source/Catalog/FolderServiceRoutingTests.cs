@@ -87,6 +87,48 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
     }
 
     [IntegrationTheory]
+    [InlineData("MapServer", "mapName")]
+    [InlineData("VectorTileServer", "name")]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{folderName}/{serviceId}/MapServer")]
+    [Endpoint("GET /rest/services/{folderName}/{serviceId}/VectorTileServer")]
+    public async Task ServiceMetadata_FolderPublicName_ProjectsPublicFacetIdentity(string serviceType, string nameProperty)
+    {
+        var original = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        SetGraph(OrganizeService(original));
+        try
+        {
+            using var metadata = await ReadJsonAsync($"/rest/services/Public/Parcels/{serviceType}?f=json");
+            metadata.RootElement.GetProperty(nameProperty).GetString().Should().Be("Parcels");
+        }
+        finally
+        {
+            SetGraph(original);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{folderName}/{serviceId}/GPServer")]
+    [Endpoint("GET /rest/services/{folderName}/{serviceId}/GPServer/{taskName}")]
+    public async Task ProcessMetadata_FolderPublicName_ResolvesServiceAndTask()
+    {
+        var original = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        SetGraph(OrganizeService(original));
+        try
+        {
+            using var metadata = await ReadJsonAsync("/rest/services/Public/Parcels/GPServer?f=json");
+            metadata.RootElement.GetProperty("serviceDescription").GetString().Should().Contain("Parcels");
+            using var task = await ReadJsonAsync("/rest/services/Public/Parcels/GPServer/Buffer?f=json");
+            task.RootElement.GetProperty("parameters").ValueKind.Should().Be(JsonValueKind.Array);
+        }
+        finally
+        {
+            SetGraph(original);
+        }
+    }
+
+    [IntegrationTheory]
     [InlineData("WMS", "1.3.0")]
     [InlineData("WMTS", "1.0.0")]
     [Operation(Operations.GetMetadata)]

@@ -30,8 +30,19 @@ internal static class GeoServicesServiceUrls
             return Requested(context, servicePath.PublicName, route.ServiceType) + '/' + protocol;
         }
         var path = context.Request.Path.Value ?? string.Empty;
-        var protocolOffset = path.LastIndexOf('/' + protocol, StringComparison.OrdinalIgnoreCase);
-        var endpointPath = protocolOffset < 0 ? path.TrimEnd('/') : path[..(protocolOffset + protocol.Length + 1)];
+        var segments = path.Split('/');
+        var protocolIndex = Array.FindLastIndex(segments, segment => string.Equals(segment, protocol, StringComparison.OrdinalIgnoreCase));
+        for (var index = 1; index < segments.Length; index++)
+        {
+            var followsServiceType = string.Equals(segments[index - 1], "MapServer", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(segments[index - 1], "ImageServer", StringComparison.OrdinalIgnoreCase);
+            if (followsServiceType && string.Equals(segments[index], protocol, StringComparison.OrdinalIgnoreCase))
+            {
+                protocolIndex = index;
+                break;
+            }
+        }
+        var endpointPath = protocolIndex < 0 ? path.TrimEnd('/') : string.Join('/', segments[..(protocolIndex + 1)]);
         return BaseUrlResolver.GetBaseUrl(context) + EscapeName(endpointPath);
     }
 
