@@ -41,8 +41,19 @@ public sealed class LayerPublishingExceptionMappingTests
         var resolver = Substitute.For<ISecureConnectionResolver>();
         resolver.ResolveConnectionStringAsync(connectionId, Arg.Any<CancellationToken>()).Returns("resolved-connection");
         var publisher = Substitute.For<ILayerPublishingService>();
-        publisher.ListPublishedLayersAsync("resolved-connection", "default", connectionId, Arg.Any<CancellationToken>())
-            .Returns(Array.Empty<PublishedLayerSummary>());
+        var listQuery = new PublishedLayerPageQuery(
+            "default", connectionId, CatalogListLimits.DefaultPage, CatalogListLimits.DefaultPageSize, null);
+        publisher.ListPublishedLayersPageAsync(
+                "resolved-connection",
+                listQuery,
+                Arg.Any<CancellationToken>())
+            .Returns(new PublishedLayerPage
+            {
+                Items = [],
+                Page = CatalogListLimits.DefaultPage,
+                PageSize = CatalogListLimits.DefaultPageSize,
+                Total = 0,
+            });
         var fixture = new WebAppFixture()
             .ReplaceService<ISecureConnectionRegistry>(registry)
             .ReplaceService<ISecureConnectionResolver>(resolver)
@@ -53,7 +64,10 @@ public sealed class LayerPublishingExceptionMappingTests
             var routeId = byName ? "catalog" : connectionId.ToString("D");
             var response = await fixture.CreateAdminClient().GetAsync($"/api/v1/admin/connections/{routeId}/layers");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
-            await publisher.Received(1).ListPublishedLayersAsync("resolved-connection", "default", connectionId, Arg.Any<CancellationToken>());
+            await publisher.Received(1).ListPublishedLayersPageAsync(
+                "resolved-connection",
+                listQuery,
+                Arg.Any<CancellationToken>());
             await resolver.Received(1).ResolveConnectionStringAsync(connectionId, Arg.Any<CancellationToken>());
             await resolver.DidNotReceive().ResolveConnectionStringAsync("catalog", Arg.Any<CancellationToken>());
         }

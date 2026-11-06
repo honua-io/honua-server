@@ -35,6 +35,12 @@ public interface ILayerPublishingService
         CancellationToken cancellationToken = default)
         => ListPublishedLayersAsync(connectionString, serviceName, cancellationToken);
 
+    Task<PublishedLayerPage> ListPublishedLayersPageAsync(
+        string connectionString,
+        PublishedLayerPageQuery query,
+        CancellationToken cancellationToken = default)
+        => throw new NotSupportedException();
+
     /// <summary>
     /// Publish a PostGIS table as a layer.
     /// </summary>
