@@ -584,7 +584,14 @@ public static class HonuaTelemetry
         /// </summary>
         public static readonly string[] NonServingPlane = [Health, Monitoring];
 
-        // The shared SLO denominator selector in eng/telemetry/slo-metric-contract.v1.json uses this set.
+        /// <summary>
+        /// The GeoServices/ArcGIS REST protocol family — the surfaces whose requests are counted by
+        /// the denominator that pairs with <see cref="GeoServicesErrors"/>. This is the single
+        /// definition of that set; <c>eng/telemetry/slo-metric-contract.v1.json</c> publishes it as a
+        /// PromQL selector for out-of-repo alert rules and the release gate, and a test asserts the
+        /// two stay identical. Omitting a member makes the denominator smaller and the measured
+        /// error rate higher, i.e. it fails closed.
+        /// </summary>
         public static readonly string[] GeoServicesFamily =
         [
             FeatureServer,
