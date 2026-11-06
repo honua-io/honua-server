@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -236,13 +237,8 @@ public sealed class LayerReadSecurityResolver
         int layerId,
         CancellationToken cancellationToken)
     {
-        if (_rlsFilterSource is null)
-        {
-            return null;
-        }
-
         var resource = await FindResourceAsync(layerId, cancellationToken).ConfigureAwait(false);
-        return resource is null
+        return resource is null || _rlsFilterSource is null
             ? null
             : await _rlsFilterSource.ResolveAsync(resource, cancellationToken).ConfigureAwait(false);
     }
@@ -353,10 +349,6 @@ public sealed class LayerReadSecurityResolver
         IFilterExpressionService? filterExpressionService)
         => PermanentFilterResolver.Resolve(resource, filterExpressionService);
 
-    /// <summary>
-    /// Best-effort storage-layer-id to resource lookup: a missing graph provider or a layer
-    /// id absent from the metadata index resolves to no resource (and therefore no policy).
-    /// </summary>
     private async Task<MetadataV2Resource?> FindResourceAsync(int layerId, CancellationToken cancellationToken)
     {
         if (_v2Provider is null)
@@ -365,6 +357,34 @@ public sealed class LayerReadSecurityResolver
         }
 
         var snapshot = await _v2Provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        return snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var resource) ? resource : null;
+        if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var resource))
+        {
+            return null;
+        }
+        var candidates = snapshot.Graph.StorageBindings
+            .Where(binding => binding.StorageLayerId == layerId)
+            .Select(binding => snapshot.Index.ResourcesById.GetValueOrDefault(binding.ResourceId))
+            .OfType<MetadataV2Resource>()
+            .DistinctBy(candidate => candidate.Metadata.Id, StringComparer.Ordinal)
+            .ToArray();
+        if (candidates.Length > 1)
+        {
+            await RejectAmbiguousPolicyAsync(candidates, cancellationToken).ConfigureAwait(false);
+        }
+        return resource;
     }
+    private async Task RejectAmbiguousPolicyAsync(
+        IReadOnlyList<MetadataV2Resource> resources, CancellationToken cancellationToken)
+    {
+        foreach (var resource in resources)
+        {
+            if (!string.IsNullOrWhiteSpace(resource.PermanentFilter?.Expression) ||
+                (_rlsFilterSource is not null && await _rlsFilterSource.ResolveAsync(resource, cancellationToken).ConfigureAwait(false) is not null) ||
+                !(await ResolveMaskedFieldsAsync(resource, cancellationToken).ConfigureAwait(false)).IsDefaultOrEmpty)
+            {
+                throw new ResourceAccessDeniedException();
+            }
+        }
+    }
+
 }

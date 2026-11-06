@@ -54,6 +54,25 @@ its identifier. Create operations must produce a visible row. Checks use the
 same transaction as the mutation, including named branch versions and published
 form submissions.
 
+## Policies on resources sharing managed storage
+
+Explicitly bound reads apply the selected resource's row and field policies,
+including OData publications backed by the managed shared feature table.
+
+A numeric-only primary-provider operation cannot select a resource policy when
+several resources bind the same actual storage layer identifier. Such operations
+fail closed when any applicable permanent filter, row policy or field mask
+exists. The numeric lookup conservatively considers metadata bindings sharing
+that identifier across connections; it does not guess which physical data source
+the caller intended. Policy-free duplicate bindings retain their previous
+compatibility.
+
+This restriction includes managed writes and mutation pre-reads/state-token
+reads until a resource-bound writer contract is available. Publishing the same
+canonical resource through multiple publications avoids a conflicting resource
+identity at that boundary. Distinct public layer indexes do not resolve an
+ambiguous actual storage layer identifier.
+
 ## Public URL and host validation
 
 Set `Public:BaseUrl` (or its `Public__BaseUrl` environment form) or

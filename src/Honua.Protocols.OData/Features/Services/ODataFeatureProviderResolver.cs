@@ -26,7 +26,7 @@ internal sealed class ODataFeatureProviderResolver(
         FeatureProviderReadOperation operation,
         CancellationToken cancellationToken)
     {
-        if (!RequiresProviderRouting(snapshot, publication))
+        if (!RequiresReadRouting(snapshot, publication))
         {
             return _fallbackReader;
         }
@@ -63,7 +63,7 @@ internal sealed class ODataFeatureProviderResolver(
         bool requireTextSearch,
         CancellationToken cancellationToken)
     {
-        if (!RequiresProviderRouting(snapshot, publication))
+        if (!RequiresReadRouting(snapshot, publication))
         {
             return _fallbackReader;
         }
@@ -106,7 +106,7 @@ internal sealed class ODataFeatureProviderResolver(
         int storageLayerId,
         CancellationToken cancellationToken)
     {
-        if (!RequiresProviderRouting(snapshot, publication))
+        if (!RequiresWriteRouting(snapshot, publication))
         {
             return (true, null);
         }
@@ -132,7 +132,13 @@ internal sealed class ODataFeatureProviderResolver(
         return (false, "OData writes through connection-bound or secondary data providers are not supported.");
     }
 
-    private static bool RequiresProviderRouting(
+    private static bool RequiresReadRouting(MetadataV2GraphSnapshot snapshot, MetadataV2Publication? publication)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        return publication is not null && !string.IsNullOrWhiteSpace(publication.StorageBindingId);
+    }
+
+    private static bool RequiresWriteRouting(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Publication? publication)
     {
@@ -144,8 +150,8 @@ internal sealed class ODataFeatureProviderResolver(
         }
 
         // A publication with an explicit but invalid binding must still fail closed in the
-        // router. Bindings without a connection describe the built-in provider's legacy
-        // layer-id partition and must keep using the primary reader/writer pipeline.
+        // router. Managed writes keep using the primary writer until binding-aware
+        // writes are available. Read routing independently binds the resource policy.
         return !snapshot.Index.StorageBindingsById.TryGetValue(publication.StorageBindingId, out var binding)
             || !string.IsNullOrWhiteSpace(binding.ConnectionId);
     }
