@@ -61,6 +61,36 @@ public sealed class SamlAssertionValidatorTests
         Assert.Contains("viewer", result.Subject.Roles);
     }
 
+    [UnitTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Validate_AudienceRestrictionExcludesServiceProvider_IsRejected(bool excludingGroupFirst)
+    {
+        using var cert = SamlTestAssertions.CreateSigningCertificate();
+        var validator = CreateValidator(SamlTestAssertions.ToBase64Der(cert));
+        string[] permitted = [SamlTestAssertions.Audience, "https://other.example.com/sp"];
+        string[] excluded = ["https://other.example.com/sp"];
+        var groups = excludingGroupFirst ? new[] { excluded, permitted } : new[] { permitted, excluded };
+
+        var result = validator.Validate(SamlTestAssertions.CreateSignedResponseWithAudienceGroups(cert, groups));
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("audience", result.FailureReason);
+    }
+
+    [UnitTest]
+    public void Validate_EveryAudienceRestrictionPermitsServiceProvider_Succeeds()
+    {
+        using var cert = SamlTestAssertions.CreateSigningCertificate();
+        var validator = CreateValidator(SamlTestAssertions.ToBase64Der(cert));
+        var response = SamlTestAssertions.CreateSignedResponseWithAudienceGroups(cert,
+            [["https://other.example.com/sp", SamlTestAssertions.Audience], [SamlTestAssertions.Audience]]);
+
+        var result = validator.Validate(response);
+
+        Assert.True(result.Succeeded, result.FailureReason);
+    }
+
     [UnitTest]
     public void Validate_UnsignedAssertion_IsRejected()
     {
@@ -327,6 +357,53 @@ public sealed class SamlAssertionValidatorTests
 
         Assert.True(cache.TryRemember("assertion-1", DateTimeOffset.UtcNow.AddMinutes(5)));
         Assert.False(cache.TryRemember("assertion-1", DateTimeOffset.UtcNow.AddMinutes(5)));
+    }
+
+    [UnitTest]
+    public async Task ReplayCache_ConcurrentLocalFirstUse_OnlyOneClaimSucceeds()
+    {
+        using var memory = new ConcurrentMissMemoryCache();
+        var firstCache = new SamlAssertionReplayCache(memory);
+        var secondCache = new SamlAssertionReplayCache(memory);
+        var expiry = DateTimeOffset.UtcNow.AddMinutes(5);
+        var first = Task.Factory.StartNew(() => firstCache.TryRemember("concurrent-assertion", expiry),
+            CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        Assert.True(memory.FirstMiss.Wait(TimeSpan.FromSeconds(5)));
+        var second = Task.Factory.StartNew(() => secondCache.TryRemember("concurrent-assertion", expiry),
+            CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+
+        var results = await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Single(results, accepted => accepted);
+        Assert.False(firstCache.TryRemember("concurrent-assertion", expiry));
+    }
+
+    private sealed class ConcurrentMissMemoryCache : IMemoryCache
+    {
+        private readonly MemoryCache _inner = new(new MemoryCacheOptions());
+        private readonly CountdownEvent _misses = new(2);
+        public ManualResetEventSlim FirstMiss { get; } = new();
+
+        public bool TryGetValue(object key, out object? value)
+        {
+            var found = _inner.TryGetValue(key, out value);
+            if (!found)
+            {
+                _misses.Signal();
+                FirstMiss.Set();
+                _misses.Wait(TimeSpan.FromSeconds(1));
+            }
+            return found;
+        }
+
+        public ICacheEntry CreateEntry(object key) => _inner.CreateEntry(key);
+        public void Remove(object key) => _inner.Remove(key);
+        public void Dispose()
+        {
+            _inner.Dispose();
+            _misses.Dispose();
+            FirstMiss.Dispose();
+        }
     }
 
     private static IConnectionMultiplexer ConnectedMultiplexer(IDatabase database)
