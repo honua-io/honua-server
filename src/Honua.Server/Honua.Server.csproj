@@ -203,7 +203,7 @@
     <EmbeddedResource Include="..\..\docs\gis\data\capability-manifest-crosswalk.v1.json"
                       Link="DeploymentProfiles\capability-manifest-crosswalk.v1.json"
                       LogicalName="Honua.Server.DeploymentProfiles.capability-manifest-crosswalk.v1.json" />
-    <!-- honua-server#5378: the release resolver's declaration, advertised at /api/v1/admin/capabilities. -->
+    <!-- Embed the same declaration the release resolver reads so capability versions cannot drift. -->
     <EmbeddedResource Include="..\..\eng\release\component-versions.v1.json"
                       Link="Release\component-versions.json"
                       LogicalName="Honua.Server.release.component-versions.json" />

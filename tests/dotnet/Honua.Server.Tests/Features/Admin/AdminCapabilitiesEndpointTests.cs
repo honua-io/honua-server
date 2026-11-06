@@ -69,7 +69,7 @@ public sealed class AdminCapabilitiesEndpointTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/capabilities")]
     public async Task GetCapabilities_AdvertisesEveryDeclaredContractVersion()
     {
-        // honua-server#5378 / release ruling R27: the contract-live gate reads
+        // The contract-live gate reads
         // data.compatibility.contractVersions as the whole advertised set and refuses a missing
         // key, an extra key, or a different value against eng/release/component-versions.v1.json.
         var declared = ReadDeclaredVersions("contractVersions");
@@ -98,7 +98,7 @@ public sealed class AdminCapabilitiesEndpointTests : IAsyncLifetime
     public async Task GetManifest_TransportContractVersionsMatchDeclaration()
     {
         // The per-transport contractVersion the manifest advertises is the same version
-        // eng/release/component-versions.v1.json declares for that surface (#5378).
+        // eng/release/component-versions.v1.json declares for that surface.
         var declared = ReadDeclaredVersions("contractVersions");
 
         var response = await _fixture.Client.GetAsync("/api/v1/capabilities/manifest");
