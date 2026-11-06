@@ -29,9 +29,7 @@ public sealed class ReadPolicyMetadataFailureTests
     [InlineData("job-mask")]
     public async Task ResolveAsync_MetadataServiceScopeFailure_RefusesRead(string path)
     {
-        var graph = Substitute.For<IMetadataV2GraphProvider>();
-        graph.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(_ =>
-            ValueTask.FromException<MetadataV2GraphSnapshot>(new InvalidOperationException("Graph unavailable")));
+        var graph = new ScopeGraphProvider();
         var context = new HttpContextAccessor { HttpContext = new DefaultHttpContext { User = Principal() } };
         using var job = path.StartsWith("job-", StringComparison.Ordinal)
             ? JobSecurityScope.Begin(new JobSecurityContext("submitter", "tenant-a",
@@ -56,7 +54,7 @@ public sealed class ReadPolicyMetadataFailureTests
         using var cancelled = new CancellationTokenSource();
         await cancelled.CancelAsync();
         var context = new HttpContextAccessor { HttpContext = new DefaultHttpContext { User = Principal() } };
-        var fixture = new PolicyFixture(Substitute.For<IMetadataV2GraphProvider>(), context);
+        var fixture = new PolicyFixture(new ScopeGraphProvider(), context);
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => ResolveAsync(path, fixture, cancelled.Token));
     }
@@ -67,24 +65,59 @@ public sealed class ReadPolicyMetadataFailureTests
     public async Task ResolveAsync_ValidServiceScope_PreservesScopedAndWildcardPolicies(bool unpublished)
     {
         var context = new HttpContextAccessor { HttpContext = new DefaultHttpContext { User = Principal() } };
-        var graph = Substitute.For<IMetadataV2GraphProvider>();
+        var graph = new ScopeGraphProvider();
         var fixture = new PolicyFixture(graph, context, unpublished ? "*" : "alpha");
-        var snapshot = new MetadataV2GraphSnapshot(new MetadataV2Graph
-        {
-            Resources = [fixture.Resource],
-            Services = unpublished ? [] : [new() { Metadata = new() { Id = "service", Name = "alpha" } }],
-            Publications = unpublished ? [] : [new()
-            {
-                Metadata = new() { Id = "publication" }, ServiceId = "service", ResourceId = "resource"
-            }]
-        }, "test", DateTimeOffset.UtcNow);
-        graph.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(_ => ValueTask.FromResult(snapshot));
+        graph.Snapshot = CreateSnapshot(fixture.Resource, unpublished ? 0 : 1);
 
         Assert.NotNull(await fixture.Rows.ResolveAsync(fixture.Resource));
         Assert.Equal("secret", Assert.Single(await fixture.Masks.ResolveAsync(fixture.Resource)));
         var combined = await fixture.Resolver.ApplyAsync(fixture.Resource, new FeatureQuery(), CancellationToken.None);
         Assert.NotNull(combined.EnforcedSqlFilter);
         Assert.Equal("secret", Assert.Single(combined.EnforcedMaskedFields!.Value));
+    }
+
+    [UnitTest]
+    public async Task ResolveAsync_ValidatedSnapshot_RetainsPoliciesWhenProviderIsUnavailable()
+    {
+        var context = new DefaultHttpContext { User = Principal() };
+        var graph = new ScopeGraphProvider();
+        var fixture = new PolicyFixture(graph, new HttpContextAccessor { HttpContext = context });
+        ValidatedMetadataSnapshot.Remember(context, fixture.Resource, CreateSnapshot(fixture.Resource, 1));
+
+        Assert.NotNull(await fixture.Rows.ResolveAsync(fixture.Resource));
+        Assert.Equal("secret", Assert.Single(await fixture.Masks.ResolveAsync(fixture.Resource)));
+        var combined = await fixture.Resolver.ApplyAsync(fixture.Resource, new FeatureQuery(), CancellationToken.None);
+        Assert.NotNull(combined.EnforcedSqlFilter);
+        Assert.Equal("secret", Assert.Single(combined.EnforcedMaskedFields!.Value));
+        Assert.Equal(0, graph.Calls);
+    }
+
+    private static MetadataV2GraphSnapshot CreateSnapshot(MetadataV2Resource resource, int serviceCount)
+        => new(new MetadataV2Graph
+        {
+            Resources = [resource],
+            Services = serviceCount == 0 ? [] : [new() { Metadata = new() { Id = "service", Name = "alpha" } }],
+            Publications = serviceCount == 0 ? [] : [new()
+            {
+                Metadata = new() { Id = "publication" }, ServiceId = "service", ResourceId = "resource"
+            }]
+        }, "test", DateTimeOffset.UtcNow);
+
+    private sealed class ScopeGraphProvider : IMetadataV2GraphProvider
+    {
+        internal MetadataV2GraphSnapshot? Snapshot { get; set; }
+        internal int Calls { get; private set; }
+
+        public ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Snapshot is null
+                ? ValueTask.FromException<MetadataV2GraphSnapshot>(new InvalidOperationException("Graph unavailable"))
+                : ValueTask.FromResult(Snapshot);
+        }
+
+        public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(long revision, CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<MetadataV2GraphSnapshot?>(null);
     }
 
     private static Task ResolveAsync(string path, PolicyFixture fixture, CancellationToken cancellationToken = default)
@@ -106,7 +139,7 @@ public sealed class ReadPolicyMetadataFailureTests
         internal FieldMaskSource Masks { get; }
         internal LayerReadSecurityResolver Resolver { get; }
 
-        internal PolicyFixture(IMetadataV2GraphProvider graph, IHttpContextAccessor context, string policyService = "alpha")
+        internal PolicyFixture(ScopeGraphProvider graph, HttpContextAccessor context, string policyService = "alpha")
         {
             var rows = Substitute.For<IRlsPolicyStore, ICombinedReadPolicyStore>();
             var fields = Substitute.For<IFieldMaskPolicyStore>();
