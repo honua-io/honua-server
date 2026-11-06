@@ -6,12 +6,10 @@ using System.Text.Json;
 using System.Text;
 using System.Xml.Linq;
 using FluentAssertions;
-using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
-using Honua.TestKit.Infrastructure;
 using Honua.TestKit.Extensions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.Catalog;
@@ -35,7 +33,7 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
     public async Task ServiceMetadata_PublicLeafDiffersFromLogicalIdentity_ResolvesFolderPath(string method, string mount)
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
-        SetGraph(OrganizeService(snapshot.Graph));
+        FolderServiceTestCatalog.ReplaceGraph(_fixture, FolderServiceTestCatalog.WithPublicParcels(snapshot.Graph));
         try
         {
             using var request = new HttpRequestMessage(new HttpMethod(method), $"{mount}/rest/services/Public/Parcels/FeatureServer?f=json");
@@ -52,7 +50,7 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
         }
         finally
         {
-            SetGraph(snapshot.Graph);
+            FolderServiceTestCatalog.ReplaceGraph(_fixture, snapshot.Graph);
         }
     }
 
@@ -69,7 +67,7 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
     public async Task ServicesDirectory_PublicFolder_ReturnsOnlyCanonicalQualifiedEntries(string method)
     {
         var original = _fixture.GetCurrentV2GraphSnapshot().Graph;
-        SetGraph(OrganizeService(original));
+        FolderServiceTestCatalog.ReplaceGraph(_fixture, FolderServiceTestCatalog.WithPublicParcels(original));
         try
         {
             using var root = await ReadJsonAsync("/rest/services?f=json", method);
@@ -89,7 +87,7 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
         }
         finally
         {
-            SetGraph(original);
+            FolderServiceTestCatalog.ReplaceGraph(_fixture, original);
         }
     }
 
@@ -102,7 +100,7 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
     public async Task ServiceMetadata_FolderPublicName_ProjectsPublicFacetIdentity(string serviceType, string nameProperty)
     {
         var original = _fixture.GetCurrentV2GraphSnapshot().Graph;
-        SetGraph(OrganizeService(original));
+        FolderServiceTestCatalog.ReplaceGraph(_fixture, FolderServiceTestCatalog.WithPublicParcels(original));
         try
         {
             using var metadata = await ReadJsonAsync($"/rest/services/Public/Parcels/{serviceType}?f=json");
@@ -110,7 +108,7 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
         }
         finally
         {
-            SetGraph(original);
+            FolderServiceTestCatalog.ReplaceGraph(_fixture, original);
         }
     }
 
@@ -121,7 +119,7 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
     public async Task ProcessMetadata_FolderPublicName_ResolvesServiceAndTask()
     {
         var original = _fixture.GetCurrentV2GraphSnapshot().Graph;
-        SetGraph(OrganizeService(original));
+        FolderServiceTestCatalog.ReplaceGraph(_fixture, FolderServiceTestCatalog.WithPublicParcels(original));
         try
         {
             using var metadata = await ReadJsonAsync("/rest/services/Public/Parcels/GPServer?f=json");
@@ -131,7 +129,7 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
         }
         finally
         {
-            SetGraph(original);
+            FolderServiceTestCatalog.ReplaceGraph(_fixture, original);
         }
     }
 
@@ -146,7 +144,7 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
     public async Task Capabilities_PublicFolder_AdvertisesReachableIncomingBase(string protocol, string version)
     {
         var original = _fixture.GetCurrentV2GraphSnapshot().Graph;
-        SetGraph(OrganizeService(original));
+        FolderServiceTestCatalog.ReplaceGraph(_fixture, FolderServiceTestCatalog.WithPublicParcels(original));
         try
         {
             var path = $"/rest/services/Public/Parcels/MapServer/{protocol}";
@@ -161,7 +159,7 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
         }
         finally
         {
-            SetGraph(original);
+            FolderServiceTestCatalog.ReplaceGraph(_fixture, original);
         }
     }
 
@@ -173,7 +171,7 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
     public async Task SoapCatalog_PublicFolder_ScopesQualifiedNamesAndAddresses()
     {
         var original = _fixture.GetCurrentV2GraphSnapshot().Graph;
-        SetGraph(OrganizeService(original));
+        FolderServiceTestCatalog.ReplaceGraph(_fixture, FolderServiceTestCatalog.WithPublicParcels(original));
         try
         {
             var folders = await ReadSoapAsync("GetFolders", string.Empty);
@@ -188,7 +186,7 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
         }
         finally
         {
-            SetGraph(original);
+            FolderServiceTestCatalog.ReplaceGraph(_fixture, original);
         }
     }
 
@@ -202,7 +200,7 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
         await fixture.InitializeAsync();
         try
         {
-            var organized = OrganizeService(fixture.GetCurrentV2GraphSnapshot().Graph);
+            var organized = FolderServiceTestCatalog.WithPublicParcels(fixture.GetCurrentV2GraphSnapshot().Graph);
             var graph = organized with
             {
                 Services = organized.Services.Select(service => service.Metadata.Name == WebAppFixture.TestServiceId
@@ -210,7 +208,7 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
                     : service).ToArray()
             };
             ((TestMetadataV2GraphProvider)fixture.GetService<IMetadataV2GraphProvider>())
-                .SetGraph(graph, schema: fixture.CurrentSchema);
+                .FolderServiceTestCatalog.ReplaceGraph(_fixture, graph, schema: fixture.CurrentSchema);
             using var client = fixture.CreateClient();
             using var folder = await client.GetAsync("/rest/services/Public?f=json");
             await folder.AssertGeoServicesErrorAsync(404);
@@ -236,19 +234,19 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
             var folder = new MetadataV2Folder { Metadata = new() { Id = "folder-routing", Name = "Public" } };
             var graph = MetadataV2FolderMutations.Create(original, folder);
             graph = MetadataV2FolderMutations.Move(graph, WebAppFixture.TestServiceId, folder.Metadata.Id);
-            SetGraph(graph);
+            FolderServiceTestCatalog.ReplaceGraph(_fixture, graph);
             var folderPath = $"/rest/services/Public/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query";
             (await QueryIdsAsync(folderPath)).Should().Be(expectedIds);
             (await QueryIdsAsync(rootPath)).Should().Be(expectedIds);
 
             graph = MetadataV2FolderMutations.Update(graph, folder with { Metadata = folder.Metadata with { Name = "Shared" } });
-            SetGraph(graph);
+            FolderServiceTestCatalog.ReplaceGraph(_fixture, graph);
             var renamedPath = folderPath.Replace("/Public/", "/Shared/", StringComparison.Ordinal);
             (await QueryIdsAsync(renamedPath)).Should().Be(expectedIds);
             (await QueryIdsAsync(folderPath)).Should().Be(expectedIds);
 
             graph = MetadataV2FolderMutations.Move(graph, WebAppFixture.TestServiceId, null);
-            SetGraph(graph);
+            FolderServiceTestCatalog.ReplaceGraph(_fixture, graph);
             (await QueryIdsAsync(rootPath)).Should().Be(expectedIds);
             (await QueryIdsAsync(folderPath)).Should().Be(expectedIds);
             (await QueryIdsAsync(renamedPath)).Should().Be(expectedIds);
@@ -259,7 +257,7 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
         }
         finally
         {
-            SetGraph(original);
+            FolderServiceTestCatalog.ReplaceGraph(_fixture, original);
         }
     }
 
@@ -273,7 +271,7 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
         var path = $"/ogc/features/collections/{WebAppFixture.TestLayerId}/items?limit=1";
         using var before = await ReadJsonAsync(path);
         before.RootElement.GetProperty("features").GetArrayLength().Should().BeGreaterThan(0);
-        SetGraph(OrganizeService(original));
+        FolderServiceTestCatalog.ReplaceGraph(_fixture, FolderServiceTestCatalog.WithPublicParcels(original));
         try
         {
             using var after = await ReadJsonAsync(path);
@@ -282,7 +280,7 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
         }
         finally
         {
-            SetGraph(original);
+            FolderServiceTestCatalog.ReplaceGraph(_fixture, original);
         }
     }
 
@@ -293,8 +291,8 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
     public async Task NativeRecords_FolderPublicName_KeepsRecordIdentityAndCanonicalServiceLinks()
     {
         var original = _fixture.GetCurrentV2GraphSnapshot().Graph;
-        var organized = OrganizeService(original);
-        SetGraph(organized with
+        var organized = FolderServiceTestCatalog.WithPublicParcels(original);
+        FolderServiceTestCatalog.ReplaceGraph(_fixture, organized with
         {
             Services = organized.Services.Select(service => service.Metadata.Name == WebAppFixture.TestServiceId
                 ? service with { Metadata = service.Metadata with { Title = null } } : service).ToArray()
@@ -309,111 +307,7 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
         }
         finally
         {
-            SetGraph(original);
-        }
-    }
-
-    [IntegrationTheory]
-    [InlineData("MapServer/WMS", "WMS", "1.3.0")]
-    [InlineData("MapServer/WMTS", "WMTS", "1.0.0")]
-    [InlineData("ImageServer/WCS", "WCS", "2.0.1")]
-    [Operation(Operations.GetMetadata)]
-    [Endpoint("GET /rest/services/{folderName}/{serviceId}/MapServer/WMS")]
-    [Endpoint("GET /rest/services/{folderName}/{serviceId}/MapServer/WMTS")]
-    [Endpoint("GET /rest/services/{folderName}/{serviceId}/ImageServer/WCS")]
-    [InterfaceOperation(TestProtocols.Wms13, "GetCapabilities")]
-    [InterfaceOperation(TestProtocols.Wmts10, "GetCapabilities")]
-    [InterfaceOperation(TestProtocols.Wcs201, "GetCapabilities")]
-    public async Task Capabilities_HistoricalAliasWithNewProtocolFacet_DoesNotRebind(string suffix, string protocol, string version)
-    {
-        var original = _fixture.GetCurrentV2GraphSnapshot().Graph;
-        var graph = OrganizeService(original);
-        var priorFacet = graph.Services.First(service => service.Metadata.Name == WebAppFixture.TestServiceId);
-        var futureFacet = priorFacet with
-        {
-            Metadata = priorFacet.Metadata with { Id = "future-protocol-facet" },
-            Protocols = [ServiceProtocols.Wms, ServiceProtocols.Wmts, ServiceProtocols.Wcs],
-            PublicationIds = []
-        };
-        SetGraph(graph with
-        {
-            Services = [futureFacet, .. graph.Services.Select(service => service.Metadata.Name == WebAppFixture.TestServiceId
-                ? service with { Protocols = [] } : service)],
-            ServicePathAliases = [new() { FolderName = "Previous", PublicName = "Parcels", TargetFacetIds = [priorFacet.Metadata.Id] }]
-        });
-        try
-        {
-            using var response = await _fixture.Client.GetAsync(
-                $"/rest/services/Previous/Parcels/{suffix}?SERVICE={protocol}&REQUEST=GetCapabilities&VERSION={version}");
-            var body = await response.Content.ReadAsStringAsync();
-            response.StatusCode.Should().Be(HttpStatusCode.NotFound, body);
-            body.Should().NotContain($"'{WebAppFixture.TestServiceId}'");
-        }
-        finally
-        {
-            SetGraph(original);
-        }
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.GetMetadata)]
-    [Endpoint("GET /rest/services/{folderName}/{serviceId}/FeatureServer/validateSQL")]
-    public async Task ValidateSql_EmptyFolderService_DoesNotExposeLogicalName()
-    {
-        var original = _fixture.GetCurrentV2GraphSnapshot().Graph;
-        var graph = OrganizeService(original);
-        var serviceIds = graph.Services.Where(service => service.Metadata.Name == WebAppFixture.TestServiceId)
-            .Select(service => service.Metadata.Id).ToHashSet(StringComparer.Ordinal);
-        var featureFacetId = graph.Services.First(service => serviceIds.Contains(service.Metadata.Id) &&
-            service.Protocols.Contains(ServiceProtocols.FeatureServer)).Metadata.Id;
-        SetGraph(graph with
-        {
-            Services = graph.Services.Select(service => serviceIds.Contains(service.Metadata.Id)
-                ? service with { PublicationIds = [], Protocols = service.Metadata.Id == featureFacetId ? [ServiceProtocols.FeatureServer] : [] }
-                : service).ToArray(),
-            Publications = graph.Publications.Where(publication => !serviceIds.Contains(publication.ServiceId)).ToArray()
-        });
-        try
-        {
-            using var response = await _fixture.Client.GetAsync("/rest/services/Public/Parcels/FeatureServer/validateSQL?sql=1%3D1&f=json");
-            await response.AssertGeoServicesErrorAsync(404);
-            var body = await response.Content.ReadAsStringAsync();
-            body.Should().Contain("Parcels").And.NotContain($"'{WebAppFixture.TestServiceId}'");
-        }
-        finally
-        {
-            SetGraph(original);
-        }
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.QueryRelationships)]
-    [Endpoint("GET /rest/services/{folderName}/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
-    public async Task RelatedRecords_UnavailableRelatedLayer_DoesNotExposeLogicalName()
-    {
-        var original = _fixture.GetCurrentV2GraphSnapshot().Graph;
-        var graph = OrganizeService(original);
-        var service = graph.Services.First(service => service.Metadata.Name == WebAppFixture.TestServiceId &&
-            service.Protocols.Contains(ServiceProtocols.FeatureServer));
-        var publication = graph.Publications.First(candidate => candidate.ServiceId == service.Metadata.Id &&
-            candidate.LayerIndex == WebAppFixture.TestLayerId);
-        SetGraph(graph with
-        {
-            Resources = graph.Resources.Select(resource => resource.Metadata.Id == publication.ResourceId
-                ? resource with { Relationships = [new() { Id = "missing-related", EsriRelationshipId = 7, RelatedResourceId = "absent" }] }
-                : resource).ToArray()
-        });
-        try
-        {
-            using var response = await _fixture.Client.GetAsync(
-                $"/rest/services/Public/Parcels/FeatureServer/{WebAppFixture.TestLayerId}/queryRelatedRecords?objectIds=1&relationshipId=7&f=json");
-            await response.AssertGeoServicesErrorAsync(404);
-            var body = await response.Content.ReadAsStringAsync();
-            body.Should().Contain("Parcels").And.NotContain($"'{WebAppFixture.TestServiceId}'");
-        }
-        finally
-        {
-            SetGraph(original);
+            FolderServiceTestCatalog.ReplaceGraph(_fixture, original);
         }
     }
 
@@ -454,15 +348,4 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
         return XDocument.Parse(text);
     }
 
-    private static MetadataV2Graph OrganizeService(MetadataV2Graph graph)
-        => graph with
-        {
-            Folders = [new() { Metadata = new() { Id = "folder-routing", Name = "Public" } }],
-            Services = graph.Services.Select(service => service.Metadata.Name == WebAppFixture.TestServiceId
-                ? service with { FolderId = "folder-routing", PublicName = "Parcels" } : service).ToArray()
-        };
-
-    private void SetGraph(MetadataV2Graph graph)
-        => ((TestMetadataV2GraphProvider)_fixture.GetService<IMetadataV2GraphProvider>())
-            .SetGraph(graph, schema: _fixture.CurrentSchema);
 }

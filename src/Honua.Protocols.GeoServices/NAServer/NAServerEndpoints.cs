@@ -179,9 +179,10 @@ internal static class NAServerEndpoints
             return formatError;
         }
 
-        var serviceId = context.Request.RouteValues["serviceId"]?.ToString() ?? string.Empty;
+        var publicName = GeoServicesServicePath.FromRequest(context)?.PublicName
+            ?? context.Request.RouteValues["serviceId"]?.ToString() ?? string.Empty;
         var capabilities = await routing.GetCapabilitiesAsync(ct).ConfigureAwait(false);
-        var document = NAServerMetadata.BuildServiceResource(serviceId, capabilities);
+        var document = NAServerMetadata.BuildServiceResource(publicName, capabilities);
         return Results.Text(
             NAServerMetadata.Serialize(document, IsPrettyJson(context, parameters)),
             JsonContentType);

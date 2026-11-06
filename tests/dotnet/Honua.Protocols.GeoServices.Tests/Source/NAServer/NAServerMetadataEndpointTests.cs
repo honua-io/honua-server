@@ -4,11 +4,10 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.Metadata.Abstractions;
-using Honua.TestKit.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.Server.Tests.Features.Protocols.GeoServices.Catalog;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.NAServer;
 
@@ -30,18 +29,12 @@ public sealed class NAServerMetadataEndpointTests : IClassFixture<NAServerEndpoi
     }
 
     [IntegrationTest]
-    [Operation(Operations.GetMetadata)]
+    [Operation(Operations.Metadata)]
     [Endpoint("GET /rest/services/{folderName}/{serviceId}/NAServer")]
     public async Task NetworkMetadata_FolderPublicName_UsesPublicDescription()
     {
         var original = _fixture.GetCurrentV2GraphSnapshot().Graph;
-        var provider = (TestMetadataV2GraphProvider)_fixture.GetService<IMetadataV2GraphProvider>();
-        provider.SetGraph(original with
-        {
-            Folders = [new() { Metadata = new() { Id = "folder-routing", Name = "Public" } }],
-            Services = original.Services.Select(service => service.Metadata.Name == WebAppFixture.TestServiceId
-                ? service with { FolderId = "folder-routing", PublicName = "Parcels" } : service).ToArray()
-        }, schema: _fixture.CurrentSchema);
+        FolderServiceTestCatalog.ReplaceGraph(_fixture, FolderServiceTestCatalog.WithPublicParcels(original));
         try
         {
             using var response = await _fixture.Client.GetAsync("/rest/services/Public/Parcels/NAServer?f=json");
@@ -54,7 +47,7 @@ public sealed class NAServerMetadataEndpointTests : IClassFixture<NAServerEndpoi
         }
         finally
         {
-            provider.SetGraph(original, schema: _fixture.CurrentSchema);
+            FolderServiceTestCatalog.ReplaceGraph(_fixture, original);
         }
     }
 

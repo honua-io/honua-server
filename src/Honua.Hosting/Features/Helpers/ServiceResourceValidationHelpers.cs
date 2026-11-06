@@ -30,7 +30,7 @@ internal static class ServiceResourceValidationHelpers
     public static ResourceValidationResult<MetadataV2Service> ValidateResolvedServicePath(
         HttpContext context, ResourceValidationResult<MetadataV2Service> result)
         => GeoServicesServicePath.FromRequest(context) is null ||
-           (result.IsValid && GeoServicesServicePath.TargetsService(context, result.Resource!))
+           (result.IsValid && result.Resource is { } service && GeoServicesServicePath.TargetsService(context, service))
             ? result
             : ResourceValidationResult.NotFound<MetadataV2Service>("Service was not found.");
 
