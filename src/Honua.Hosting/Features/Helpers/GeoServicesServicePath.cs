@@ -76,11 +76,16 @@ internal sealed record GeoServicesServicePath(
     }
 
     private static bool IsStandaloneRoute(GeoServicesServiceRoutes.ServiceRoute route, MetadataV2ServicePathAlias path, MetadataV2Graph graph)
-        => route.ServiceType is "GPServer" or "NAServer" &&
+    {
+        // The provider Routing namespace defers stable-ID collisions to the GPServer validator.
+        var isRoutingUtilityNamespace = route.ServiceType == "GPServer" &&
+            string.Equals(path.PublicName, "Routing", StringComparison.OrdinalIgnoreCase);
+        return route.ServiceType is "GPServer" or "NAServer" &&
             !graph.ServicePathAliases.Any(alias => MetadataV2ServicePaths.SamePath(alias, path) &&
                 MetadataV2TenantVisibility.IsVisibleToTenant(alias.Tenant, path.Tenant)) &&
-            ((route.ServiceType == "GPServer" && string.Equals(path.PublicName, "Routing", StringComparison.OrdinalIgnoreCase)) ||
-             !graph.Services.Any(service =>
-                 string.Equals(service.Metadata.Name, path.PublicName, StringComparison.OrdinalIgnoreCase) ||
-                 string.Equals(service.Metadata.Id, path.PublicName, StringComparison.Ordinal)));
+            !graph.Services.Any(service =>
+                string.Equals(service.Metadata.Name, path.PublicName, StringComparison.OrdinalIgnoreCase)) &&
+            (isRoutingUtilityNamespace || !graph.Services.Any(service =>
+                string.Equals(service.Metadata.Id, path.PublicName, StringComparison.Ordinal)));
+    }
 }
