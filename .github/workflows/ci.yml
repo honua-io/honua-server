@@ -1652,25 +1652,11 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Install GDAL CLI
-        # Same provisioning as python-integration-tests below. `gdal-bin` carries
-        # gdaldem / ogr2ogr / gdal_create / gdal_translate, which is the whole
-        # tool surface GdalCli.Available() probes. The production worker image
-        # (docker/worker-gdal/Dockerfile) pins a much richer GDAL base; this job
+        # The real-GDAL cases need gdal-bin plus the Python bindings, NumPy and
+        # SciPy. The production worker image pins a richer GDAL base; this job
         # asserts the CLI contract, not the driver universe, which stays owned by
         # worker-gdal-image.yml and gdal-driver-e2e.yml.
-        run: |
-          set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -yqq gdal-bin python3-gdal python3-numpy python3-scipy
-          # Match the allocation worker's GDAL + SciPy dependency path. Prefer
-          # the distro interpreter that owns the apt-installed Python bindings.
-          echo "/usr/bin" >> "${GITHUB_PATH}"
-          /usr/bin/python3 -c 'from osgeo import gdal; from scipy import ndimage; import numpy'
-          for tool in gdaldem ogr2ogr gdal_translate gdal_proximity.py; do
-            command -v "${tool}" >/dev/null \
-              || { echo "::error::${tool} is missing after installing gdal-bin"; exit 1; }
-          done
-          gdalinfo --version
+        uses: ./.github/actions/provision-gdal-cli
 
       - name: Restore
         run: scripts/ci/dotnet-restore-retry.sh tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj
