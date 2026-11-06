@@ -112,7 +112,7 @@ public sealed class ODataCloudNativeRegressionTests
         var handler = new ODataAggregationHandler(reader, stream, null!);
 
         await handler.ProcessAggregationAsync(41, Resource(), "aggregate($count as n)", null,
-            "https://example.test", CancellationToken.None);
+            "https://example.test", null, CancellationToken.None);
 
         observed.Should().NotBeNull();
         observed!.Value.Limit.Should().Be(10001);
@@ -129,7 +129,7 @@ public sealed class ODataCloudNativeRegressionTests
         var handler = new ODataAggregationHandler(Substitute.For<IFeatureReader>(), stream, null!);
 
         var act = () => handler.ProcessAggregationAsync(41, Resource(), apply, null,
-            "https://example.test", CancellationToken.None);
+            "https://example.test", null, CancellationToken.None);
 
         await act.Should().ThrowAsync<Honua.Core.Exceptions.ValidationException>().WithMessage("*10000*");
     }
@@ -146,7 +146,7 @@ public sealed class ODataCloudNativeRegressionTests
         var handler = new ODataAggregationHandler(reader, null, null!, maxInputRows: 2);
 
         var act = () => handler.ProcessAggregationAsync(41, Resource(), apply, null,
-            "https://example.test", CancellationToken.None);
+            "https://example.test", null, CancellationToken.None);
 
         await act.Should().ThrowAsync<Honua.Core.Exceptions.ValidationException>().WithMessage("*maximum input row count of 2*");
         await reader.Received().QueryAsync(41, Arg.Is<FeatureQuery>(query => query.Limit == 3),

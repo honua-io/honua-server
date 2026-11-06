@@ -8,11 +8,13 @@ using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Geoprocessing;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
+using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -153,10 +155,34 @@ public sealed class OgcProcessesLayerAccessAuthorizationTests
 
     private static Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> CreateFactory()
         => ServiceRbacTestFixture.CreateFactory(
-            layerCatalogFactory: static () => new RbacTestLayerCatalog(
-                alphaLayerMetadata: ServiceRbacTestFixture.CreateServiceMetadata(
-                    readRoles: [LayerReaderRole])),
+            layerCatalogFactory: static () => new ProcessLayerCatalog(),
             configureServices: SeedProcessExecuteOnlyRole);
+
+    private sealed class ProcessLayerCatalog : ITestMetadataV2GraphSource
+    {
+        public TestMetadataV2GraphProvider BuildProvider()
+        {
+            var graph = new RbacTestLayerCatalog(
+                alphaLayerMetadata: ServiceRbacTestFixture.CreateServiceMetadata(
+                    readRoles: [LayerReaderRole])).BuildGraph();
+            var bindings = graph.Resources.Select(resource => new MetadataV2StorageBinding
+            {
+                Metadata = new MetadataV2ObjectMetadata { Id = $"process-{resource.Metadata.Id}", Name = resource.Metadata.Name },
+                ResourceId = resource.Metadata.Id,
+                Locator = "features",
+                StorageLayerId = graph.Publications.Where(publication => publication.ResourceId == resource.Metadata.Id)
+                    .Select(publication => publication.LayerIndex).Distinct().Single()
+            }).ToArray();
+            return new TestMetadataV2GraphProvider(graph with
+            {
+                Resources = graph.Resources.Select(resource => resource with
+                {
+                    StorageBindingIds = [bindings.Single(binding => binding.ResourceId == resource.Metadata.Id).Metadata.Id]
+                }).ToArray(),
+                StorageBindings = bindings
+            });
+        }
+    }
 
     private static string BufferAggregatePlan(int layerId)
         => BuildPlan(

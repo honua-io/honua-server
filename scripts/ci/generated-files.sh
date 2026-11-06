@@ -8,5 +8,4 @@ GENERATED_FILES=(
   docs/gis/data/geoservices-rest-parity.json
   docs/gis/data/capability-matrix.v1.json
   docs/okf/capabilities
-  examples/manifest.json
 )

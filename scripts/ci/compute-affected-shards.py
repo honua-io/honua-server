@@ -84,15 +84,13 @@ ORDERING ("largest-impact first")
     select(). The class walk is FAIL-OPEN throughout: if the coverage module
     cannot be loaded or the walk throws, the receipt records
     `test_ownership: unavailable` and the ranking degrades to `path_hits`,
-    rather than failing a report-only lane.
+    while preserving the router's authoritative candidate set.
 
 FAIL-SAFE DIRECTION
-    Opposite to the required gate's. The lean gate force-FULLS when its diff
-    base is untrustworthy, because under-testing a required context is the
-    dangerous direction. This lane is report-only and bounded, so it SKIPS
-    instead: an untrustworthy base cannot produce a trustworthy shard
-    selection, and spending six runners on six arbitrary shards would publish a
-    verdict that means nothing. Every skip states its reason in the receipt.
+    An untrustworthy base cannot produce a trustworthy shard selection. The
+    selector emits an explicit untrustworthy_base skip without spending runners
+    on arbitrary shards. Enforcement treats that reason as unavailable and
+    fails closed; only skips proving no affected product code may succeed.
 """
 
 from __future__ import annotations
@@ -422,8 +420,7 @@ def count_test_class_hits(
     """Changed test files each shard's own `--filter` would actually select.
 
     Returns None when the inventory cannot be built -- the caller then ranks on
-    `path_hits` alone. A report-only detector must not fail because an optional
-    precision signal was unavailable.
+    `path_hits` alone while preserving the router's authoritative candidates.
     """
     test_files = [changed for changed in changed_files if changed.startswith("tests/")]
     if not test_files:

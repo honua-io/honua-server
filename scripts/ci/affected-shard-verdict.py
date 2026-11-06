@@ -1,29 +1,21 @@
 #!/usr/bin/env python3
-"""Publish the PR Gate affected-shard aggregate.
-
-`report` concludes success so a red shard does not mark the pull request
-UNSTABLE, but that success is not a test pass. `test_pass` is true only when
-`AFFECTED_SHARDS_MODE` is `enforce` and every selected shard passed. Promotion
-stays the two audited changes in pr-gate.yml; a required branch-protection
-entry does not promote this lane, and a green required check in report mode
-does not either.
-
-Missing evidence fails closed only in `enforce`. A partial receipt set is not
-green. A confirmed red is reported as a red even when some families produced
-no receipt. Annotation text is part of the promotion auditor's contract
-(`HONUA_AFFECTED_SHARD_RED` / `_GREEN` / `_UNAVAILABLE`).
-"""
+"""Publish and enforce the existing selected-shard execution receipts."""
 
 from __future__ import annotations
 
 import argparse
 import json
 import os
+import runpy
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 CONTRACT = "honua.pr-gate-affected-shard-verdict/v1"
+UNAFFECTED_SKIP_REASONS = {
+    "docs_only", "validated_generated_only", "no_product_code", "no_shards_selected",
+}
+observe_execution = runpy.run_path(str(Path(__file__).with_name("shard-execution-evidence.py")))["observe"]
 RED_ANNOTATION = (
     "HONUA_AFFECTED_SHARD_RED shard='{shard}' status='{status}' — "
     "this shard family is red on the pull-request head. The trailing matrix "
@@ -58,13 +50,18 @@ def _cell(value: object) -> str:
     return str(value)
 
 
+class Selection(NamedTuple):
+    result: str
+    skip: str
+    reason: str
+    count: str
+    shards: list[str]
+
+
 def decide(
     *,
     mode: str,
-    select_result: str,
-    select_skip: str,
-    select_reason: str,
-    select_count: str,
+    selection: Selection,
     shards_result: str,
     timings: list[dict[str, Any]],
 ) -> dict[str, Any]:
@@ -72,14 +69,14 @@ def decide(
     enforcing = mode == "enforce"
     lines = ["### PR Gate / Affected shards", ""]
     if enforcing:
-        lines.append(f"- Mode: `{mode}` (enforcing; see the promotion rule in pr-gate.yml)")
+        lines.append(f"- Mode: `{mode}` (enforcing; selected execution receipts gate merging)")
     else:
         lines.append(
             f"- Mode: `{mode or 'report'}` "
-            "(report-only until the promotion rule in pr-gate.yml is met)"
+            "(report-only; enforcement policy: docs/ci/affected-shards-promotion.md)"
         )
     lines.append(
-        f"- Selection: `{select_reason or 'unavailable'}` (`{select_count or '0'}` shard families)"
+        f"- Selection: `{selection.reason or 'unavailable'}` (`{selection.count or '0'}` shard families)"
     )
     annotations: list[tuple[str, str]] = []
     counts = {"received": 0, "expected": 0, "red": 0}
@@ -144,13 +141,19 @@ def decide(
         annotations.append(("warning", f"HONUA_AFFECTED_SHARD_UNAVAILABLE {annotation}"))
         return finish(verdict, exit_code=0, shards_passed=False, extra=extra)
 
-    if select_result != "success":
+    if selection.result != "success":
         return unavailable(
-            f"selection_{select_result}",
+            f"selection_{selection.result}",
             "no shard evidence for this head.",
-            f"selection concluded '{select_result}'.",
+            f"selection concluded '{selection.result}'.",
         )
-    if select_skip == "true":
+    if selection.skip == "true":
+        if enforcing and (selection.reason not in UNAFFECTED_SKIP_REASONS
+                          or _count(selection.count) != 0 or selection.shards):
+            return unavailable(
+                "untrusted_skip", "selection cannot prove that no shard is affected.",
+                f"selection skipped with reason '{selection.reason}'.",
+            )
         return finish(
             "skipped",
             exit_code=0,
@@ -158,7 +161,7 @@ def decide(
             extra=["- Verdict: `skipped` — nothing in this diff can move a server-test shard."],
         )
 
-    counts["expected"] = _count(select_count)
+    counts["expected"] = _count(selection.count)
     counts["received"] = len(timings)
     if counts["received"] == 0:
         return unavailable(
@@ -190,14 +193,15 @@ def decide(
     received = counts["received"]
     expected = counts["expected"]
     red = counts["red"]
-    if red == 0 and received < expected:
+    received_shards = [timing.get("shard") for timing in timings]
+    complete = expected == len(selection.shards) and sorted(received_shards) == sorted(selection.shards)
+    if red == 0 and not complete:
         return unavailable(
             "incomplete_receipts",
-            f"only {received} of {expected} selected shard families produced a timing receipt.",
+            f"receipts do not match the {expected} selected shard families ({received} received).",
             f"shard jobs concluded '{shards_result}' with {received}/{expected} timing receipts.",
-            "Every receipt received says `passed`, but the families that reported none are "
-            "exactly the ones this lane spent runners to learn about, so this head has no "
-            "complete shard evidence.",
+            "Require exactly one receipt for each selected family; duplicates and unrelated receipts "
+            "cannot substitute for missing evidence.",
         )
     if red == 0:
         annotations.append((
@@ -228,6 +232,21 @@ def decide(
     return finish("red", exit_code=0, shards_passed=False, extra=extra)
 
 
+def _verify_execution(timing: dict[str, Any], directory: Path) -> None:
+    if timing.get("status") != "passed":
+        return
+    execution = timing.get("execution") or {}
+    trx_name = f"{timing.get('log_name')}.trx"
+    if Path(trx_name).name != trx_name or execution.get("trxFile") != trx_name:
+        timing["status"] = "invalid_execution"
+        return
+    measured = observe_execution(directory / trx_name, timing.get("shard"), execution.get("project"))
+    if (execution.get("status") != "passed" or measured["status"] != "passed"
+            or execution.get("trxSha256") != measured["trxSha256"]
+            or execution.get("counts") != measured["counts"]):
+        timing["status"] = "invalid_execution"
+
+
 def _load_timings(directory: Path) -> list[dict[str, Any]]:
     if not directory.is_dir():
         return []
@@ -236,6 +255,7 @@ def _load_timings(directory: Path) -> list[dict[str, Any]]:
         value = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(value, dict):
             raise ValueError(f"{path.name} is not a timing object")
+        _verify_execution(value, directory)
         timings.append(value)
     return timings
 
@@ -247,10 +267,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     outcome = decide(
         mode=os.environ.get("MODE", ""),
-        select_result=os.environ.get("SELECT_RESULT", ""),
-        select_skip=os.environ.get("SELECT_SKIP", ""),
-        select_reason=os.environ.get("SELECT_REASON", ""),
-        select_count=os.environ.get("SELECT_COUNT", ""),
+        selection=Selection(
+            result=os.environ.get("SELECT_RESULT", ""),
+            skip=os.environ.get("SELECT_SKIP", ""),
+            reason=os.environ.get("SELECT_REASON", ""),
+            count=os.environ.get("SELECT_COUNT", ""),
+            shards=[entry["shard_name"] for entry in json.loads(os.environ.get("SELECT_MATRIX") or "[]")],
+        ),
         shards_result=os.environ.get("SHARDS_RESULT", ""),
         timings=_load_timings(args.timings),
     )
