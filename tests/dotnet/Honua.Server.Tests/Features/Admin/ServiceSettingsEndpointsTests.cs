@@ -67,9 +67,12 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
         var payload = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(payload);
         var data = document.RootElement.GetProperty("data");
+        var items = data.GetProperty("items");
 
-        data.GetArrayLength().Should().BeGreaterThan(0);
-        var first = data[0];
+        items.GetArrayLength().Should().BeGreaterThan(0);
+        data.GetProperty("total").GetInt32().Should().BeGreaterThan(0);
+        data.GetProperty("layerTotal").GetInt32().Should().BeGreaterThanOrEqualTo(0);
+        var first = items[0];
         first.TryGetProperty("layerCount", out _).Should().BeTrue();
         first.TryGetProperty("enabledProtocols", out _).Should().BeTrue();
     }

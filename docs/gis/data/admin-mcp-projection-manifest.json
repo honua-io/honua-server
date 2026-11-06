@@ -2273,7 +2273,11 @@
       "operationId": "admin.services.list",
       "toolName": "honua_admin_services_list",
       "title": "List services",
-      "inputFields": [],
+      "inputFields": [
+        "page",
+        "pageSize",
+        "q"
+      ],
       "outputFields": [
         "approvalLane",
         "auditId",

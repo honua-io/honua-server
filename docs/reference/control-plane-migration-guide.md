@@ -122,6 +122,18 @@ Regenerate admin clients from `docs/developer/api-specs/admin-api.json` after up
 
 Migration 144 rewrites stored source-kind values to `geoservices-rest`. An older server refuses that database. The refusal points at [Rollback boundaries](../guides/deploy/upgrade-and-rollback.md#rollback-boundaries). Restore the backup taken before that migration, then start the older image.
 
+## Service and layer lists
+
+Regenerate admin clients from `docs/developer/api-specs/admin-api.json` after upgrading an evaluation build. `GET /api/v1/admin/services` and `GET /api/v1/admin/connections/{id}/layers` return one page instead of a `data` array.
+
+| Query | Meaning |
+|---|---|
+| `page` | One-based page. Defaults to 1. Values below 1 return 400. |
+| `pageSize` | Defaults to 100. Values outside 1 to 100 return 400. |
+| `q` | Case-insensitive name contains. Longer than 200 characters returns 400. |
+
+The service page is `items`, `page`, `pageSize`, `total`, and `layerTotal`. `total` counts services matching `q`. `layerTotal` is the sum of those services' layer counts, including services on other pages. The layer page is `items`, `page`, `pageSize`, and `total`. `total` counts layers matching `q` for that connection and `serviceName`. `serviceName` is unchanged.
+
 ## Removed Contract Paths
 
 Endpoints removed from the published admin OpenAPI spec because they were already

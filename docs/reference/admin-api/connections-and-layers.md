@@ -103,7 +103,7 @@ Run `GET /api/v1/admin/connections/primary-db/tables` in the explorer.
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/v1/admin/connections/{id}/layers` | List published layers for a connection |
+| GET | `/api/v1/admin/connections/{id}/layers` | List one page of published layers (`page`, `pageSize` up to 100, `q`). The page includes `total`. |
 | POST | `/api/v1/admin/connections/{id}/layers` | Publish a layer from a table |
 | PUT | `/api/v1/admin/connections/{id}/layers/{layerId}/enabled` | Enable or disable one published layer |
 | PUT | `/api/v1/admin/connections/{id}/layers/enabled` | Enable or disable all layers on a connection (bulk) |
@@ -138,7 +138,7 @@ For example, publish `{"schema":"public","table":"parcels","layerName":"parcels-
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/v1/admin/services` | List services |
+| GET | `/api/v1/admin/services` | List one page of services (`page`, `pageSize` up to 100, `q`). The page includes `total` and `layerTotal`. |
 | GET | `/api/v1/admin/services/{serviceName}/settings` | Get protocol and MapServer settings for a service |
 | PUT | `/api/v1/admin/services/{serviceName}/protocols` | Update enabled protocols |
 | PUT | `/api/v1/admin/services/{serviceName}/mapserver` | Update MapServer defaults and limits |
