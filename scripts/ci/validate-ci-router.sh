@@ -461,6 +461,12 @@ assert_descriptor \
   "false" \
   "Server Features Packages and Temporal"
 assert_descriptor \
+  "forms-store-retains-field-workflow-owner" \
+  "src/Honua.Db/Postgres/Features/Forms/PostgresFormPackageStore.cs" \
+  "targeted" \
+  "false" \
+  "Server Features Miscellaneous"
+assert_descriptor \
   "headroom-split-ogc-tiles-endpoints-crs" \
   "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Tiles/OgcTilesEndpointTests.cs" \
   "targeted" \

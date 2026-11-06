@@ -180,6 +180,7 @@ class AffectedShardVerdictTests(unittest.TestCase):
     def test_selected_families_cannot_be_hidden_by_a_safe_skip_reason(self) -> None:
         outcome = decide(mode="enforce", select_skip="true", select_reason="docs_only", timings=[])
         self.assertEqual(outcome["exit_code"], 1)
+        self.assertEqual(outcome["receipt"]["verdict"], "untrusted_skip")
 
     def test_cli_writes_the_report_mode_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
