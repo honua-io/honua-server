@@ -782,7 +782,9 @@ internal sealed partial class StreamingFileImportService : IFileImportService
             // explanation and includes the SQL state code so operators can correlate
             // without leaking provider internals.
             ImportLog.ImportFailedWithException(_logger, ex, jobId, request.TableName);
-            errorMessage = ex.SqlState == "HN409"
+            errorMessage = ImportTargetDependencies.IsFailure(ex)
+                ? ImportTargetDependencies.Message
+                : ex.SqlState == "HN409"
                 ? $"IMPORT_TARGET_NOT_OWNED: Import target '{request.TableName}' or its staging table is not owned by the importer; it was not modified. Choose a new target or ask the database administrator to adopt a verified legacy import."
                 : $"Import failed: {DescribePostgresError(ex.SqlState)} (SQL state {ex.SqlState}).";
             result = ImportResult.CreateFailure(
@@ -791,7 +793,8 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                 errorMessage,
                 stopwatch.Elapsed,
                 warnings,
-                errorCode: ex.SqlState == "HN409" ? ImportTableOwnershipException.Code : null);
+                errorCode: ImportTargetDependencies.IsFailure(ex) ? ImportTargetDependencies.Code
+                    : ex.SqlState == "HN409" ? ImportTableOwnershipException.Code : null);
             return result;
         }
         // Intentionally broad: this is the top-level import job handler — any unexpected failure

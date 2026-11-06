@@ -30,6 +30,46 @@ public sealed class OgcWfsImportServiceTests(PostgresFixture fixture)
     private const string DefaultServiceUrl = "https://example.com/geoserver/wfs";
     private const string DefaultFeatureType = "demo:cities";
 
+    [Fact]
+    public async Task ImportFeaturesAsync_DependentMaterializedView_RefusesAndPreservesOriginal()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync("wfs_dependencies");
+        try
+        {
+            using var seedClient = new HttpClient(new FakeWfsHandler(BuildPointFeatureCollection(("Sentinel", 73, -157.85, 21.30))));
+            var request = new OgcWfsImportRequest
+            {
+                ServiceUrl = DefaultServiceUrl,
+                TargetSchema = schema,
+                ApplyMode = true,
+                AllowUnsafeLocalUrls = true,
+                OverwriteExisting = true
+            };
+            (await CreateService(seedClient, BuildPointInventory(), targetSchema: schema).ImportFeaturesAsync(request)).Success.Should().BeTrue();
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using (var create = new NpgsqlCommand($"CREATE MATERIALIZED VIEW \"{schema}\".dependent AS SELECT * FROM \"{schema}\".wfs_cities", connection))
+            {
+                await create.ExecuteNonQueryAsync();
+            }
+            using var replacement = new HttpClient(new FakeWfsHandler(BuildPointFeatureCollection(("Replacement", 99, -155, 19))));
+
+            var result = await CreateService(replacement, BuildPointInventory(), targetSchema: schema).ImportFeaturesAsync(request);
+
+            result.Success.Should().BeFalse();
+            result.ErrorCode.Should().Be("IMPORT_TARGET_HAS_DEPENDENCIES");
+            result.ErrorMessage.Should().Contain("Existing data and dependencies were retained").And.NotContain("DROP TABLE");
+            result.FeatureTypesImported.Should().Be(0);
+            (await ReadCityRowsAsync(schema, "wfs_cities")).Should().ContainSingle().Which.Name.Should().Be("Sentinel");
+            await using var verify = new NpgsqlCommand($"SELECT count(*) FROM \"{schema}\".dependent", connection);
+            (await verify.ExecuteScalarAsync()).Should().Be(1L);
+            (await FindTablesLikeAsync(schema, "__honua_wfs_stage_%")).Should().BeEmpty();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
     [Theory]
     [InlineData("wfs_cities")]
     [InlineData("__honua_wfs_stage_wfs_cities")]
