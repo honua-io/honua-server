@@ -80,7 +80,6 @@ public sealed class ODataContractTests(ODataComponentFixture fixture) : IClassFi
             rejected.StatusCode.Should().Be(HttpStatusCode.PreconditionFailed);
             using var final = await GetJsonAsync(path);
             Attributes(final.RootElement).GetProperty("population").GetInt64().Should().Be(54321);
-            await AssertConditionalBatchUpdateAsync(path);
         }
         finally
         {
@@ -88,6 +87,25 @@ public sealed class ODataContractTests(ODataComponentFixture fixture) : IClassFi
         }
         using var missing = await fixture.Client.GetAsync(path);
         missing.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task ConditionalBatchUpdate_UsesThePublicReadSnapshot()
+    {
+        using var payload = ODataContent(new { Attributes = new { name = "batch-" + Guid.NewGuid().ToString("N"), population = 12345 } });
+        using var created = await fixture.Client.PostAsync(Features, payload);
+        created.StatusCode.Should().Be(HttpStatusCode.Created, await created.Content.ReadAsStringAsync());
+        using var json = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
+        var id = json.RootElement.GetProperty("ObjectId").GetInt64();
+        var path = $"/odata/Features(LayerId=0,ObjectId={id})";
+        try
+        {
+            await AssertConditionalBatchUpdateAsync(path);
+        }
+        finally
+        {
+            await DeleteWithCurrentEtagAsync(path);
+        }
     }
 
     [Fact]
