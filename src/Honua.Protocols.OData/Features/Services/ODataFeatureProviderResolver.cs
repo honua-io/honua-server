@@ -149,12 +149,16 @@ internal sealed class ODataFeatureProviderResolver(
             return false;
         }
         if (!string.IsNullOrWhiteSpace(publication.StorageBindingId) &&
-            (!snapshot.Index.StorageBindingsById.TryGetValue(publication.StorageBindingId, out var explicitBinding) ||
-             explicitBinding.ResourceId != publication.ResourceId))
+            !snapshot.Index.StorageBindingsById.ContainsKey(publication.StorageBindingId))
         {
             throw new InvalidOperationException("The authorized publication references an invalid storage binding.");
         }
-        return snapshot.ResolveStorageBinding(publication) is not null;
+        var binding = snapshot.ResolveStorageBinding(publication);
+        if (binding is not null && binding.ResourceId != publication.ResourceId)
+        {
+            throw new InvalidOperationException("The authorized publication references an invalid storage binding.");
+        }
+        return binding is not null;
     }
 
     private FeatureProviderQueryRouter RequireProviderRouter(

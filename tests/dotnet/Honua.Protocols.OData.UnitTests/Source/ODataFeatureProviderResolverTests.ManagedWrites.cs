@@ -66,15 +66,16 @@ public sealed partial class ODataFeatureProviderResolverTests
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task ExplicitInvalidBinding_DoesNotFallBackToResourcePrimary(bool wrongResource)
+    [InlineData("missing")]
+    [InlineData("owner")]
+    [InlineData("implicit-owner")]
+    public async Task InvalidBinding_DoesNotFallBackToResourcePrimary(string scenario)
     {
         var reader = Substitute.For<IFeatureReader>();
         var writer = Substitute.For<IFeatureWriter>();
         var resolver = new ODataFeatureProviderResolver(reader, writer, providerQueryRouter: null);
         var (snapshot, service, resource, publication) = ODataProviderTestData.CreateSnapshot(null);
-        if (wrongResource)
+        if (scenario != "missing")
         {
             var binding = snapshot.Graph.StorageBindings.Single() with { ResourceId = "other-resource" };
             snapshot = new MetadataV2GraphSnapshot(snapshot.Graph with { StorageBindings = [binding] }, "test", DateTimeOffset.UtcNow);
@@ -82,6 +83,11 @@ public sealed partial class ODataFeatureProviderResolverTests
         else
         {
             publication = publication with { StorageBindingId = "missing-explicit-binding" };
+        }
+
+        if (scenario == "implicit-owner")
+        {
+            publication = publication with { StorageBindingId = null };
         }
 
         var read = () => resolver.ResolveQueryReaderAsync(
