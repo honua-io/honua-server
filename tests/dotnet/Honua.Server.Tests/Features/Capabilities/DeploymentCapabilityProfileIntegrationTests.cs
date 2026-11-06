@@ -28,12 +28,21 @@ public sealed class DeploymentCapabilityProfileIntegrationTests
     ];
 
     [IntegrationTheory]
-    [InlineData(true)]
-    [InlineData(false)]
+    [InlineData("/rest/services/Public/Parcels/FeatureServer", "serve.geoservices-featureserver", HttpStatusCode.OK)]
+    [InlineData("/rest/services/Public/Parcels/FeatureServer", "serve.geoservices-mapserver", HttpStatusCode.NotFound)]
+    [InlineData("/rest/services/Public/Parcels", "serve.geoservices-root", HttpStatusCode.OK)]
+    [InlineData("/rest/services/Public/Parcels", "serve.stac", HttpStatusCode.NotFound)]
+    [InlineData("/rest/admin/Public/Parcels.MapServer", "serve.geoservices-root", HttpStatusCode.OK)]
+    [InlineData("/rest/admin/Public/Parcels.MapServer", "serve.stac", HttpStatusCode.NotFound)]
+    [InlineData("/admin/services/Public/Parcels.MapServer", "serve.geoservices-root", HttpStatusCode.OK)]
+    [InlineData("/admin/services/Public/Parcels.MapServer", "serve.stac", HttpStatusCode.NotFound)]
     [Endpoint("GET /rest/services/{folderName}/{serviceId}/FeatureServer")]
-    public async Task FolderAlias_ConfiguredProfile_RequiresTheOriginalServiceCapability(bool enabled)
+    [Endpoint("GET /rest/services/{folderName}/{serviceId}")]
+    [Endpoint("GET /rest/admin/{folderName}/{serviceName}.{serviceType}")]
+    [Endpoint("GET /admin/services/{folderName}/{serviceName}.{serviceType}")]
+    public async Task FolderPath_ConfiguredProfile_EnforcesItsCapability(string path, string capability, HttpStatusCode expectedStatus)
     {
-        var fixture = CreateFixture([enabled ? "serve.geoservices-featureserver" : "serve.geoservices-mapserver"]);
+        var fixture = CreateFixture([capability]);
         await fixture.InitializeAsync();
         try
         {
@@ -45,10 +54,10 @@ public sealed class DeploymentCapabilityProfileIntegrationTests
                 Services = original.Services.Select(service => service.Metadata.Name == WebAppFixture.TestServiceId
                     ? service with { FolderId = "folder", PublicName = "Parcels" } : service).ToArray()
             }, schema: fixture.CurrentSchema);
-            using var response = await fixture.Client.GetAsync("/rest/services/Public/Parcels/FeatureServer?f=json");
+            using var response = await fixture.Client.GetAsync(path + "?f=json");
             var body = await response.Content.ReadAsStringAsync();
-            response.StatusCode.Should().Be(enabled ? HttpStatusCode.OK : HttpStatusCode.NotFound, body);
-            if (enabled)
+            response.StatusCode.Should().Be(expectedStatus, body);
+            if (expectedStatus == HttpStatusCode.OK && path.EndsWith("/FeatureServer", StringComparison.Ordinal))
             {
                 using var document = JsonDocument.Parse(body);
                 document.RootElement.GetProperty("serviceName").GetString().Should().Be("Parcels");

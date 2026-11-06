@@ -82,6 +82,10 @@ public sealed class ImageServerSoapParityTests : IAsyncLifetime
             var soap = await PostSoapAsync(_fixture, $"""<GetServiceInfo xmlns="{GeoServicesNamespace}" />""", $"Public/{publicName}");
             soap.Status.Should().Be(HttpStatusCode.OK, soap.Body);
             Child(Element(soap.Document, "Result"), "Name").Value.Should().Be(publicName);
+            var soapMetadata = await PostSoapAsync(_fixture, $"""<GetMetadata xmlns="{GeoServicesNamespace}" />""", $"Public/{publicName}");
+            soapMetadata.Status.Should().Be(HttpStatusCode.OK, soapMetadata.Body);
+            var itemMetadata = XDocument.Parse(Element(soapMetadata.Document, "Result").Value);
+            itemMetadata.Descendants("itemName").Single().Value.Should().Be(publicName);
         }
         finally
         {

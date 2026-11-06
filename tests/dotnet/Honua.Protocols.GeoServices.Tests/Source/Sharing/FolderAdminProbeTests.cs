@@ -121,7 +121,7 @@ public sealed class FolderAdminProbeTests(WebAppFixture fixture) : IClassFixture
 
     [IntegrationTest]
     [Endpoint("GET /rest/admin/{serviceName}.{serviceType}")]
-    public async Task ServiceProbe_MetadataIdentity_RemainsReadableAfterFolderMove()
+    public async Task ServiceProbe_LogicalAndMetadataIdentities_RemainReadableAfterFolderMove()
     {
         var original = fixture.GetCurrentV2GraphSnapshot().Graph;
         var metadataId = original.Services.First(service => service.Metadata.Name == WebAppFixture.TestServiceId).Metadata.Id;
@@ -129,6 +129,7 @@ public sealed class FolderAdminProbeTests(WebAppFixture fixture) : IClassFixture
         try
         {
             await AssertPublicServiceAsync($"/rest/admin/{Uri.EscapeDataString(metadataId)}.MapServer");
+            await AssertPublicServiceAsync($"/rest/admin/{WebAppFixture.TestServiceId}.MapServer");
         }
         finally
         {
