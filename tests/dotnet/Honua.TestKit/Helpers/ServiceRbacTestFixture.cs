@@ -366,7 +366,6 @@ public sealed class RbacTestLayerCatalog : ITestMetadataV2GraphSource
                     serviceId,
                     $"res-layer-{layerId.ToString(CultureInfo.InvariantCulture)}",
                     layerIndex: layerId,
-                    storageBindingId: $"binding-layer-{layerId.ToString(CultureInfo.InvariantCulture)}",
                     publicationType: MetadataV2PublicationType.ODataEntitySet,
                     isPrimary: isPrimary);
                 builder.AddPublication(
@@ -374,7 +373,6 @@ public sealed class RbacTestLayerCatalog : ITestMetadataV2GraphSource
                     serviceId,
                     $"res-layer-{layerId.ToString(CultureInfo.InvariantCulture)}",
                     layerIndex: layerId,
-                    storageBindingId: $"binding-layer-{layerId.ToString(CultureInfo.InvariantCulture)}",
                     publicationType: MetadataV2PublicationType.EsriFeatureLayer,
                     isPrimary: isPrimary);
             }
@@ -412,12 +410,7 @@ public sealed class RbacTestLayerCatalog : ITestMetadataV2GraphSource
                         IsGeographic = true
                     },
                     PrimaryGeometryField = "shape"
-                })
-            .AddStorageBinding(
-                $"binding-layer-{layerId.ToString(CultureInfo.InvariantCulture)}",
-                resourceId,
-                $"test.layers.{layerId.ToString(CultureInfo.InvariantCulture)}",
-                storageLayerId: layerId);
+                });
     }
 
     private static Dictionary<string, JsonElement> BuildServiceOptions()
