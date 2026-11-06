@@ -26,10 +26,11 @@ internal static class ODataV2Lookups
 
         var snapshot = await GetSnapshotAsync(context, cancellationToken).ConfigureAwait(false);
         var resolved = new List<ResolvedODataPublication>();
-        var primaryServices = LayerValidationHelpers.BuildPrimaryServiceMapV2(snapshot, ODataProtocolConstants.ProtocolName);
-        var selectedPublicationIds = SelectODataPublicationIds(snapshot, primaryServices);
+        var publications = TenantScopeHelpers.FilterVisiblePublications(context, snapshot, snapshot.Graph.Publications).ToArray();
+        var primaryServices = LayerValidationHelpers.BuildPrimaryServiceMapV2(snapshot, ODataProtocolConstants.ProtocolName, publications);
+        var selectedPublicationIds = SelectODataPublicationIds(snapshot, primaryServices, publications);
 
-        foreach (var pub in snapshot.Graph.Publications)
+        foreach (var pub in publications)
         {
             if (!selectedPublicationIds.Contains(pub.Metadata.Id))
             {
@@ -84,10 +85,11 @@ internal static class ODataV2Lookups
 
         var snapshot = await GetSnapshotAsync(context, cancellationToken).ConfigureAwait(false);
         var resolved = new List<ResolvedODataPublication>();
-        var primaryServices = LayerValidationHelpers.BuildPrimaryServiceMapV2(snapshot, ODataProtocolConstants.ProtocolName);
-        var selectedPublicationIds = SelectODataPublicationIds(snapshot, primaryServices);
+        var publications = TenantScopeHelpers.FilterVisiblePublications(context, snapshot, snapshot.Graph.Publications).ToArray();
+        var primaryServices = LayerValidationHelpers.BuildPrimaryServiceMapV2(snapshot, ODataProtocolConstants.ProtocolName, publications);
+        var selectedPublicationIds = SelectODataPublicationIds(snapshot, primaryServices, publications);
 
-        foreach (var pub in snapshot.Graph.Publications)
+        foreach (var pub in publications)
         {
             if (!selectedPublicationIds.Contains(pub.Metadata.Id))
             {
@@ -162,9 +164,10 @@ internal static class ODataV2Lookups
 
     private static HashSet<string> SelectODataPublicationIds(
         MetadataV2GraphSnapshot snapshot,
-        IReadOnlyDictionary<int, MetadataV2Service> primaryServices)
+        IReadOnlyDictionary<int, MetadataV2Service> primaryServices,
+        IEnumerable<MetadataV2Publication> publications)
     {
-        return snapshot.Graph.Publications
+        return publications
             .Where(publication => publication.LayerIndex.HasValue)
             .Where(publication => snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service) &&
                 IsPrimaryPublicationForLayer(publication, service, primaryServices) &&

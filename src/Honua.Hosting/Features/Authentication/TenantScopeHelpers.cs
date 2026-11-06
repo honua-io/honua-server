@@ -30,6 +30,15 @@ internal static class TenantScopeHelpers
         => MetadataV2TenantVisibility.IsVisibleToTenant(
             publication, resource, service, ResolveRequestTenantId(context));
 
+    internal static IEnumerable<MetadataV2Publication> FilterVisiblePublications(
+        HttpContext context,
+        MetadataV2GraphSnapshot snapshot,
+        IEnumerable<MetadataV2Publication> publications)
+        => publications.Where(publication =>
+            snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service) &&
+            snapshot.ResolveResource(publication) is { } resource &&
+            IsPublicationVisible(context, publication, resource, service));
+
     internal static bool IsPublicationVisible(
         HttpContext context,
         MetadataV2Publication publication,
