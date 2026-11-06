@@ -11,17 +11,8 @@ using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
 namespace Honua.Core.Features.FileImport.Services;
 
-/// <summary>
-/// Shared stream utilities for the import pipeline. Used by both
-/// database import services and format readers that require
-/// seekable streams (e.g. the FlatGeobuf format reader in Honua.Geometry).
-/// </summary>
 internal static class ImportStreamHelper
 {
-    /// <summary>
-    /// Copies a non-seekable stream into a seekable temporary file (DeleteOnClose).
-    /// Used for binary formats whose headers may exceed the fixed CRS-detection buffer.
-    /// </summary>
     internal static async Task<FileStream> SpillToSeekableTempAsync(Stream source, CancellationToken cancellationToken)
     {
         // Path.Combine's second argument is a server-generated file name built solely from a

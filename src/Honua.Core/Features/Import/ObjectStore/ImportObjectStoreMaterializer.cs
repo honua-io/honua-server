@@ -7,43 +7,22 @@ using Honua.Core.Features.Infrastructure.Domain;
 
 namespace Honua.Core.Features.Import.ObjectStore;
 
-/// <summary>
-/// Opens an object-store import at execution time. Streamable objects stay on the returned
-/// stream. Formats that need random access are staged on the worker (shared file storage when
-/// it is configured, otherwise a file in the worker temp directory), never on the API host
-/// that accepted the job.
-/// </summary>
+// Formats that need random access are staged on the worker, never on the API host that accepted the job.
 public static class ImportObjectStoreMaterializer
 {
-    /// <summary>The request produced for the streaming importer and how the caller cleans it up.</summary>
     public sealed record Result
     {
-        /// <summary>Request with exactly one of file stream, cloud file, or local path set.</summary>
         public required ImportRequest Request { get; init; }
 
-        /// <summary>The caller disposes <see cref="ImportRequest.FileStream"/> after the import.</summary>
         public bool DisposeStream { get; init; }
 
-        /// <summary>The caller deletes <see cref="ImportRequest.LocalFilePath"/> after the import.</summary>
         public bool DeleteLocalFile { get; init; }
 
-        /// <summary>
-        /// The caller deletes <see cref="ImportRequest.CloudFileId"/> after the import finishes,
-        /// fails, or is cancelled. The upload also carries <see cref="StagedCopyLifetime"/> so a
-        /// crashed worker does not keep the object forever.
-        /// </summary>
         public bool DeleteCloudFile { get; init; }
     }
 
-    /// <summary>
-    /// Lifetime of a worker-staged copy in shared file storage. Matches the staged file-import upload.
-    /// </summary>
     public static readonly TimeSpan StagedCopyLifetime = TimeSpan.FromDays(1);
 
-    /// <summary>
-    /// Reads <paramref name="request"/> with the pinned ETag and returns a request the
-    /// streaming importer can consume.
-    /// </summary>
     public static async Task<Result> MaterializeAsync(
         ImportRequest request,
         IImportObjectStoreReader reader,

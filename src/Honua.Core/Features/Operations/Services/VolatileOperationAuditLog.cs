@@ -5,16 +5,11 @@ using Honua.Core.Features.AuditLog.Abstractions;
 
 namespace Honua.Core.Features.Operations.Services;
 
-/// <summary>
-/// Non-persistent audit identity provider for explicit development and test composition.
-/// Production composition must use the registered durable <see cref="IAuditLog"/>.
-/// </summary>
+// Production composition must use the durable audit log.
 public sealed class VolatileOperationAuditLog : IAuditLog
 {
-    /// <inheritdoc />
     public bool IsPersisted => false;
 
-    /// <inheritdoc />
     public Task<string?> RecordAsync(
         AuditEvent auditEvent,
         CancellationToken cancellationToken = default)

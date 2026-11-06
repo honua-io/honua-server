@@ -6,17 +6,6 @@ using System.Collections.Generic;
 
 namespace Honua.Core.Features.Tiles;
 
-/// <summary>
-/// One entry in the tile-cache key index consulted by <see cref="TileCacheQuotaPolicy" /> (#1837):
-/// a cache key, the stored tile byte size, and the last time the entry was read. The evictor
-/// maintains these (e.g. in a Redis sorted set keyed by last-access) and asks the policy which
-/// least-recently-used keys to drop when a configured size quota is exceeded.
-/// </summary>
-/// <param name="Key">The tile cache key.</param>
-/// <param name="SizeBytes">The stored tile size in bytes.</param>
-/// <param name="LastAccessUtc">The last time the entry was read (UTC).</param>
-/// <param name="WriteVersion">Opaque version of the most recent successful cache write.</param>
-/// <param name="TenantScope">Explicit tenant/schema scope that owns the cached object.</param>
 public readonly record struct TileCacheEntry(
     string Key,
     long SizeBytes,
@@ -24,28 +13,11 @@ public readonly record struct TileCacheEntry(
     string? WriteVersion = null,
     string? TenantScope = null)
 {
-    /// <summary>Whether an operator already marked this write expired.</summary>
     public bool IsExplicitlyExpired { get; init; }
 }
 
-/// <summary>
-/// Pure size-quota / LRU eviction policy for the tile cache (#1837). Given the current cache
-/// footprint and the configured <see cref="TileCacheEvictionOptions" />, it returns the
-/// least-recently-used keys that must be evicted to bring the cache back within the entry-count and
-/// byte-size quotas. The policy performs no I/O and is a deterministic function of its inputs so it
-/// can be unit-tested in isolation and reused by any cache backend (Redis tile-key index, in-memory
-/// store, etc.).
-/// </summary>
 public static class TileCacheQuotaPolicy
 {
-    /// <summary>
-    /// Selects the least-recently-used cache keys to evict so the cache satisfies both the
-    /// entry-count and byte-size quotas in <paramref name="options" />. Returns an empty list when
-    /// eviction is disabled, no quota is configured, or the cache is already within quota.
-    /// </summary>
-    /// <param name="entries">The current cache key index.</param>
-    /// <param name="options">The eviction policy options.</param>
-    /// <returns>The keys to evict, ordered least-recently-used first.</returns>
     public static IReadOnlyList<string> SelectEvictions(
         IEnumerable<TileCacheEntry> entries,
         TileCacheEvictionOptions options)

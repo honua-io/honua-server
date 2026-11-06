@@ -7,31 +7,8 @@ using Honua.Core.Features.Validation.Contracts;
 
 namespace Honua.Core.Features.Publishing.Content.Services;
 
-/// <summary>
-/// Field-addressable body validation for report and dashboard content payloads published through the
-/// content publication registry. The console serializes the authored report/dashboard document into the
-/// request <c>contentPayload</c> (a <c>bindings[]</c> + <c>panels[]</c> graph with embedded Vega-Lite
-/// chart specs); this validator parses that document and surfaces the same business rules the console
-/// enforces client-side — required bindings (alias + contentRef), unique binding aliases, every panel's
-/// <c>bindingAlias</c> referencing a declared binding, every chart panel declaring a parseable
-/// Vega-Lite spec (a JSON object with a vega-lite <c>$schema</c>), and — the converse — no non-chart
-/// panel carrying a chart spec at all — as
-/// <see cref="FieldValidationError"/>s keyed by JSON Pointer so they bind back onto the offending input.
-/// <para>
-/// It is intentionally tolerant: a payload that is absent, not JSON, or not a recognised
-/// report/dashboard document is accepted opaquely (the server still hashes the blob), so this never
-/// rejects map/generated-app payloads or third-party documents — it only enforces the rules when the
-/// document clearly carries the bindings/panels graph.
-/// </para>
-/// </summary>
 internal static class ContentPublicationBodyValidator
 {
-    /// <summary>
-    /// Validates <paramref name="contentPayload"/> for a report/dashboard publish/republish and throws a
-    /// <see cref="ContentPublicationValidationException"/> carrying every field-addressable finding when
-    /// the document violates a binding/panel/vega-lite rule. No-ops for non-report/dashboard kinds, an
-    /// absent payload, or a payload that does not parse as a recognised document.
-    /// </summary>
     public static void Validate(ContentPublicationKind kind, string? contentPayload)
     {
         if (kind is not (ContentPublicationKind.Report or ContentPublicationKind.Dashboard))
@@ -220,12 +197,6 @@ internal static class ContentPublicationBodyValidator
         return string.Equals(kind, "chart", StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// True when the panel's chart spec is a JSON object declaring a vega-lite <c>$schema</c>. Mirrors the
-    /// console's <c>DeclaresVegaLiteSchema</c> helper. The chart spec is embedded either as a structured
-    /// object (the console parses valid JSON before publishing) or as a raw string (round-tripped when it
-    /// did not parse) — only a structured object with a vega-lite schema URL passes.
-    /// </summary>
     private static bool DeclaresVegaLiteSchema(JsonElement panel)
     {
         if (!panel.TryGetProperty("chartSpec", out var spec))
@@ -249,12 +220,6 @@ internal static class ContentPublicationBodyValidator
             && schemaUrl.Contains("vega-lite", StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// True when the panel carries a chart spec with any content at all, whatever shape it round-tripped
-    /// in. Mirrors the document validators' <c>HasNonEmptySpec</c> so the publish path and the document
-    /// path agree on what "carries a spec" means: an absent member, an explicit <c>null</c>, an empty
-    /// object, and an empty/whitespace string all read as no spec.
-    /// </summary>
     private static bool CarriesChartSpec(JsonElement panel)
     {
         if (panel.ValueKind != JsonValueKind.Object || !panel.TryGetProperty("chartSpec", out var spec))

@@ -10,57 +10,23 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Features.Edit;
 
-/// <summary>
-/// One row's owner as read for an edit-policy check. The value is not a response field.
-/// </summary>
-/// <param name="Visible">True when the row was returned under row security.</param>
-/// <param name="Owner">Owner text when <paramref name="Visible"/> is true. Never returned to the caller.</param>
+// The owner value is not a response field and is never returned to the caller.
 public readonly record struct OwnerFieldSnapshot(bool Visible, object? Owner)
 {
-    /// <summary>A row the policy read did not return.</summary>
     public static OwnerFieldSnapshot Hidden { get; } = new(false, null);
 }
 
-/// <summary>
-/// A feature-edit batch after the shared owner policy has accepted it, or the denial that
-/// must stop the write. Callers pass <see cref="Batch"/> to the writer only when
-/// <see cref="IsAllowed"/> is true.
-/// </summary>
-/// <param name="IsAllowed">True when <paramref name="Batch"/> may be written.</param>
-/// <param name="DenialReason">
-/// The existing owner-policy denial when <paramref name="IsAllowed"/> is false; otherwise null.
-/// The reason never includes the stored owner value.
-/// </param>
-/// <param name="Batch">
-/// The batch to write. The original batch when the policy is off or has nothing to stamp.
-/// Inserts are stamped and an omitted owner is preserved when the policy requires it.
-/// </param>
+// The denial reason never includes the stored owner value.
 public readonly record struct OwnerEditBatchPreparation(bool IsAllowed, string? DenialReason, FeatureEditBatch Batch)
 {
-    /// <summary>An accepted batch.</summary>
-    /// <param name="batch">The batch the writer may apply.</param>
-    /// <returns>An allowed preparation.</returns>
     public static OwnerEditBatchPreparation Allowed(FeatureEditBatch batch) => new(true, null, batch);
 
-    /// <summary>A refusal. The batch must not be written.</summary>
-    /// <param name="reason">The denial reason.</param>
-    /// <returns>A denied preparation.</returns>
     public static OwnerEditBatchPreparation Denied(string reason) => new(false, reason, default);
 }
 
-/// <summary>
-/// Authorizes an owner-edit policy against the stored owner field without publishing that
-/// field to the caller (honua-server#5426). Row visibility still applies. Field masks do not.
-/// </summary>
+// The owner-edit check reads the stored owner without publishing that field to the caller.
 public static class OwnerEditPolicyFieldAccess
 {
-    /// <summary>
-    /// True when an update or delete must read the stored owner. Inserts, anonymous callers,
-    /// and administrators do not.
-    /// </summary>
-    /// <param name="policy">Owner-edit policy, or <c>null</c> when the layer has none.</param>
-    /// <param name="principal">Principal performing the edit.</param>
-    /// <returns>True when the stored owner is required.</returns>
     public static bool RequiresStoredOwner(MetadataV2OwnerEditPolicy? policy, EditPrincipal principal)
         => policy is { Enabled: true }
             && principal.IsAuthenticated
@@ -68,14 +34,7 @@ public static class OwnerEditPolicyFieldAccess
             && !principal.IsAdmin
             && !string.IsNullOrWhiteSpace(policy.OwnerField);
 
-    /// <summary>
-    /// True when an update document does not contain the owner field, so the writer must keep
-    /// the stored value. The value stays out of the document the caller receives.
-    /// </summary>
-    /// <param name="policy">Owner-edit policy, or <c>null</c> when the layer has none.</param>
-    /// <param name="isPartialUpdate">True for an update that is not a complete attribute replacement.</param>
-    /// <param name="attributeNames">Names present on the update document.</param>
-    /// <returns>True when omitted masked attributes must be preserved.</returns>
+    // An update that omits the owner field must keep the stored value, and that value stays out of the document the caller receives.
     public static bool ShouldPreserveStoredOwner(
         MetadataV2OwnerEditPolicy? policy,
         bool isPartialUpdate,
@@ -98,15 +57,6 @@ public static class OwnerEditPolicyFieldAccess
         return true;
     }
 
-    /// <summary>
-    /// Decides an edit from a snapshot already loaded for the batch. A null snapshot is used
-    /// for inserts and for callers that do not consult the stored owner.
-    /// </summary>
-    /// <param name="policy">Owner-edit policy, or <c>null</c> when the layer has none.</param>
-    /// <param name="editEvent">Edit operation being authorized.</param>
-    /// <param name="principal">Principal performing the edit.</param>
-    /// <param name="snapshot">Stored owner, or <c>null</c> when no read applies.</param>
-    /// <returns>The authorization decision. The reason never includes the owner value.</returns>
     public static OwnerEditDecision Decide(
         MetadataV2OwnerEditPolicy? policy,
         AttributeRuleEditEvent editEvent,
@@ -126,18 +76,6 @@ public static class OwnerEditPolicyFieldAccess
         return OwnerEditPolicyEvaluator.Evaluate(policy, editEvent, visible.Owner, principal);
     }
 
-    /// <summary>
-    /// Reads owner values for every visible row in <paramref name="storageFeatureIds"/>.
-    /// One query covers the whole batch. The field mask is empty and row security is left
-    /// for the provider to apply.
-    /// </summary>
-    /// <param name="reader">Feature reader that enforces row security.</param>
-    /// <param name="layerId">Storage layer id.</param>
-    /// <param name="storageFeatureIds">Storage object ids to evaluate.</param>
-    /// <param name="ownerField">Attribute name that stores the owner.</param>
-    /// <param name="versionContext">Branch the edit targets. Null and DEFAULT read the base table.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Snapshots keyed by storage object id. A missing key means the row was not visible.</returns>
     public static async Task<IReadOnlyDictionary<long, OwnerFieldSnapshot>> ReadOwnersAsync(
         IFeatureReader reader,
         int layerId,
@@ -198,22 +136,6 @@ public static class OwnerEditPolicyFieldAccess
         return owners;
     }
 
-    /// <summary>
-    /// Decides whether <paramref name="principal"/> may perform <paramref name="editEvent"/>
-    /// under <paramref name="policy"/>. Update and delete read the owner through one policy
-    /// query. The owner scalar is not returned.
-    /// </summary>
-    /// <param name="reader">Feature reader that enforces row security.</param>
-    /// <param name="layerId">Storage layer id.</param>
-    /// <param name="storageFeatureId">
-    /// Storage object id of the existing row. Ignored for insert and for decisions that do not
-    /// consult the current owner.
-    /// </param>
-    /// <param name="policy">Owner-edit policy, or <c>null</c> when the layer has none.</param>
-    /// <param name="editEvent">Edit operation being authorized.</param>
-    /// <param name="principal">Principal performing the edit.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The authorization decision. The reason never includes the owner value.</returns>
     public static async Task<OwnerEditDecision> AuthorizeAsync(
         IFeatureReader reader,
         int layerId,
@@ -243,20 +165,9 @@ public static class OwnerEditPolicyFieldAccess
         return Decide(policy, editEvent, principal, snapshot);
     }
 
-    /// <summary>Denial returned when a non-administrator changes the stored owner.</summary>
     public const string OwnerReassignmentDeniedReason = "Only an administrator can change the feature owner.";
 
-    /// <summary>
-    /// True when a non-administrator update replaces the stored owner. A missing owner on a
-    /// partial update is not a reassignment. A full replacement that omits the owner is, which
-    /// is the FeatureServer rule; other protocols pass <paramref name="replacesAllAttributes"/>
-    /// as false and only deny when the owner field is present and differs.
-    /// </summary>
-    /// <param name="ownerFieldPresent">True when the update document contains the owner field.</param>
-    /// <param name="replacesAllAttributes">True when the update replaces every attribute.</param>
-    /// <param name="submittedOwner">The owner value on the update, ignored when the field is absent and the update is partial.</param>
-    /// <param name="storedOwner">The owner loaded for the policy check.</param>
-    /// <returns>True when the edit must be refused.</returns>
+    // A full replacement that omits the owner is a reassignment on FeatureServer; other protocols deny only when the owner field is present and differs.
     public static bool RejectsOwnerReassignment(
         bool ownerFieldPresent,
         bool replacesAllAttributes,
@@ -273,18 +184,6 @@ public static class OwnerEditPolicyFieldAccess
         return !string.Equals(submitted, stored, StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Authorizes every update and delete in <paramref name="batch"/> and stamps inserts.
-    /// A disabled or absent policy returns <paramref name="batch"/> and does not read.
-    /// The first denial refuses the whole batch. The owner scalar is not returned to the caller.
-    /// </summary>
-    /// <param name="reader">Feature reader that enforces row security.</param>
-    /// <param name="layerId">Storage layer id.</param>
-    /// <param name="policy">Owner-edit policy, or <c>null</c> when the layer has none.</param>
-    /// <param name="batch">The batch the protocol is about to write.</param>
-    /// <param name="principal">Principal performing the edit.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The batch to write, or a denial that must not be written.</returns>
     public static async Task<OwnerEditBatchPreparation> PrepareBatchAsync(
         IFeatureReader reader,
         int layerId,
@@ -327,13 +226,6 @@ public static class OwnerEditPolicyFieldAccess
         return OwnerEditBatchPreparation.Allowed(ApplyOwnerFields(batch, policy, principal, owners));
     }
 
-    /// <summary>
-    /// A rolled-back edit result whose per-operation failures keep <paramref name="reason"/>.
-    /// When <paramref name="batch"/> carries ordered operations, only those operations are reported.
-    /// </summary>
-    /// <param name="batch">The batch that was refused.</param>
-    /// <param name="reason">The owner-policy denial.</param>
-    /// <returns>A result that reports no committed rows.</returns>
     public static FeatureEditResult DeniedEditResult(FeatureEditBatch batch, string reason)
     {
         var creates = ImmutableArray.CreateBuilder<EditOperationResult>();
@@ -619,10 +511,6 @@ public static class OwnerEditPolicyFieldAccess
         };
     }
 
-    /// <summary>
-    /// One guard per existing row the non-administrator was authorized to change.
-    /// The expected text matches <see cref="RejectsOwnerReassignment"/>: a null owner is empty.
-    /// </summary>
     private static ImmutableArray<OwnerEditGuard> BuildOwnerGuards(
         FeatureEditBatch batch,
         string ownerField,

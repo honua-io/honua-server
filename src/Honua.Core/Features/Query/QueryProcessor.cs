@@ -15,9 +15,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Core.Features.Query;
 
-/// <summary>
-/// Default implementation of unified query processor with optimization and validation.
-/// </summary>
 public sealed class QueryProcessor : IQueryProcessor
 {
     private readonly IFilterExpressionTranslator _filterTranslator;
@@ -29,13 +26,6 @@ public sealed class QueryProcessor : IQueryProcessor
     private const int MaxReasonableLimit = 50000;
     private const int MaxReasonableOffset = 1000000;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="QueryProcessor"/> class.
-    /// </summary>
-    /// <param name="filterTranslator">The translator that converts filter expressions into provider predicates.</param>
-    /// <param name="featureReader">The feature reader used for estimates and streaming decisions.</param>
-    /// <param name="logger">The logger used to record query diagnostics.</param>
-    /// <param name="v2GraphProvider">The optional metadata graph provider used to resolve storage layer identifiers.</param>
     public QueryProcessor(
         IFilterExpressionTranslator filterTranslator,
         IFeatureReader featureReader,
@@ -345,7 +335,6 @@ public sealed class QueryProcessor : IQueryProcessor
 
     private static bool IsSystemField(string fieldName) => SystemFields.Contains(fieldName);
 
-    /// <inheritdoc />
     public QueryValidationResult ValidateQuery(UnifiedQuery query, MetadataV2Resource resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
@@ -470,7 +459,6 @@ public sealed class QueryProcessor : IQueryProcessor
         return QueryValidationResult.Success(warnings.Count > 0 ? warnings : null);
     }
 
-    /// <inheritdoc />
     public UnifiedQuery OptimizeQuery(UnifiedQuery query, MetadataV2Resource resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
@@ -526,7 +514,6 @@ public sealed class QueryProcessor : IQueryProcessor
         return query;
     }
 
-    /// <inheritdoc />
     public FeatureQuery ToFeatureQuery(UnifiedQuery query, MetadataV2Resource resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
@@ -611,7 +598,6 @@ public sealed class QueryProcessor : IQueryProcessor
         return featureQuery;
     }
 
-    /// <inheritdoc />
     public string BuildCacheKey(UnifiedQuery query, MetadataV2Resource resource, string protocol)
     {
         ArgumentNullException.ThrowIfNull(resource);
@@ -638,7 +624,6 @@ public sealed class QueryProcessor : IQueryProcessor
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
-    /// <inheritdoc />
     public bool ShouldUseStreaming(UnifiedQuery query, MetadataV2Resource resource, string outputFormat)
     {
         ArgumentNullException.ThrowIfNull(resource);
@@ -684,7 +669,6 @@ public sealed class QueryProcessor : IQueryProcessor
         "application/gml+xml"
     };
 
-    /// <inheritdoc />
     public async Task<long> EstimateResultCountAsync(
         UnifiedQuery query,
         MetadataV2Resource resource,

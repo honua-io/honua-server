@@ -3,17 +3,9 @@
 
 namespace Honua.Core.Features.Collaboration.Operations;
 
-/// <summary>
-/// MVP saved-map conflict policy based on documented operation families.
-/// </summary>
-/// <remarks>
-/// Safe families are metadata, viewport, layer visibility, layer ordering, and style patch operations.
-/// Whole WebMap document replacement is unsafe when either the proposed operation or a concurrent
-/// operation uses that family. The policy can be replaced once WebMapDoc field-level transforms land.
-/// </remarks>
+// Whole WebMap document replacement is unsafe when either side uses that family.
 public sealed class MvpSavedMapOperationConflictPolicy : ISavedMapOperationConflictPolicy
 {
-    /// <inheritdoc />
     public SavedMapOperationConflictResponse? DetectConflict(
         SavedMapOperationAppendRequest request,
         IReadOnlyList<SavedMapOperationEnvelope> concurrentOperations,

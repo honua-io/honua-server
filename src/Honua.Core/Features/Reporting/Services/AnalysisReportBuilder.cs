@@ -14,13 +14,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Reporting.Services;
 
-/// <summary>
-/// Composes the canonical <see cref="AnalysisReport"/> envelope. Always invokes
-/// the deterministic narrative provider first so every slot has factual text;
-/// the optional LLM provider may then enrich slots, but a failure or timeout
-/// falls back to the deterministic baseline and stamps
-/// <see cref="NarrativeMode.FallbackFromLlmError"/>.
-/// </summary>
+// The deterministic narrative is written first, and a model failure or timeout falls back to that text.
 internal sealed class AnalysisReportBuilder : IAnalysisReportBuilder
 {
     private readonly IAnalysisReportTemplateRegistry _templates;
@@ -30,10 +24,6 @@ internal sealed class AnalysisReportBuilder : IAnalysisReportBuilder
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<AnalysisReportBuilder> _logger;
 
-    /// <summary>
-    /// Builds an instance. <paramref name="llmProvider"/> is optional; when
-    /// not registered the builder runs entirely on the deterministic path.
-    /// </summary>
     public AnalysisReportBuilder(
         IAnalysisReportTemplateRegistry templates,
         DeterministicNarrativeProvider deterministic,
@@ -50,11 +40,9 @@ internal sealed class AnalysisReportBuilder : IAnalysisReportBuilder
         _logger = logger;
     }
 
-    /// <inheritdoc />
     public Task<AnalysisReport> BuildAsync(string jobId, AnalysisResultPackage package, CancellationToken cancellationToken)
         => BuildAsync(jobId, package, null, cancellationToken);
 
-    /// <inheritdoc />
     public async Task<AnalysisReport> BuildAsync(string jobId, AnalysisResultPackage package,
         AiExecutionContext? executionContext, CancellationToken cancellationToken)
     {
@@ -147,14 +135,6 @@ internal sealed class AnalysisReportBuilder : IAnalysisReportBuilder
         return merged;
     }
 
-    /// <summary>
-    /// Returns true when the merged slot fill carries non-blank text for at
-    /// least one declared <see cref="NarrativeSlot"/> that differs from the
-    /// slot's deterministic baseline. Mirrors the per-slot predicate inside
-    /// <see cref="ComposeSections"/> so the report-level
-    /// <see cref="NarrativeMode"/> can never claim LLM assistance the section
-    /// list does not actually expose.
-    /// </summary>
     private static bool HasLlmReplacement(
         IReadOnlyList<NarrativeSlot> slots,
         Dictionary<string, string> mergedFill)

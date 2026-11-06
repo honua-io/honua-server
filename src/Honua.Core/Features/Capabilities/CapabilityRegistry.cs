@@ -6,35 +6,14 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Features.Capabilities;
 
-/// <summary>
-/// The default <see cref="ICapabilityRegistry"/> — the single source of truth
-/// for the platform capability roster (ADR-0058, Decision B). B1 populates it to
-/// <b>faithfully mirror the live roster that exists today</b>: the <c>/mcp</c>
-/// tools and resources (from <c>McpDataAccessSurface</c> /
-/// <c>McpServiceCollectionExtensions</c>), the #1186 capability-manifest
-/// capabilities (from <c>CapabilityManifestService</c>), and the platform data
-/// formats (from <c>SupportedFileFormat</c> and the shared format readers/writers).
-/// It is a description-layer projection only — B1 disables nothing and changes no
-/// behaviour. B2 (#2334) composes <c>/mcp</c> from this registry and B3 (#2335)
-/// layers the #1186 per-environment resolver onto it.
-/// </summary>
-/// <remarks>
-/// A runtime registry↔catalog conformance check pins this roster to the live
-/// surface so it cannot silently drift (see the conformance test that mirrors the
-/// <c>McpTaxonomyAlignmentTests</c> / <c>FeatureCatalogDriftTests</c> style).
-/// </remarks>
 public sealed class CapabilityRegistry : ICapabilityRegistry
 {
-    /// <summary>Id prefix for <c>/mcp</c> tool capability descriptors.</summary>
     public const string McpToolIdPrefix = "protocol.mcp.tool.";
 
-    /// <summary>Id prefix for <c>/mcp</c> resource-family capability descriptors.</summary>
     public const string McpResourceIdPrefix = "protocol.mcp.resource.";
 
-    /// <summary>Id prefix for data-format capability descriptors.</summary>
     public const string DataFormatIdPrefix = "format.";
 
-    /// <summary>Reason code returned by <see cref="Resolve"/> for an unregistered id.</summary>
     public const string NotRegisteredReasonCode = CapabilityReasonCodes.NotRegistered;
 
     private static readonly Dictionary<string, HonuaEdition> EditionByEntitlementKey =
@@ -48,17 +27,14 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
     private static readonly Dictionary<string, CapabilityDescriptor> ById =
         AllDescriptors.ToDictionary(static d => d.Id, StringComparer.Ordinal);
 
-    /// <inheritdoc />
     public IReadOnlyList<CapabilityDescriptor> All => AllDescriptors;
 
-    /// <inheritdoc />
     public CapabilityDescriptor? Find(string id)
     {
         ArgumentNullException.ThrowIfNull(id);
         return ById.GetValueOrDefault(id);
     }
 
-    /// <inheritdoc />
     public CapabilityResolution Resolve(string id, CapabilityGateContext context)
     {
         ArgumentNullException.ThrowIfNull(id);
@@ -413,10 +389,8 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
         }
     }
 
-    /// <summary>The map-package family schema version advertised by the manifest wire.</summary>
     private const string MapPackageSchemaVersion = "honua_map_package.v1";
 
-    /// <summary>The app-package family schema version advertised by the manifest wire.</summary>
     private const string AppPackageSchemaVersion = "honua_app_package.v1";
 
     // -----------------------------------------------------------------------

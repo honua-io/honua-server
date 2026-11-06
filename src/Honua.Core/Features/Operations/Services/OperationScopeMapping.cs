@@ -7,13 +7,9 @@ using Honua.Core.Features.Operations.Domain;
 
 namespace Honua.Core.Features.Operations.Services;
 
-/// <summary>
-/// Maps canonical typed operation identities to the OAuth operation used to constrain replay.
-/// Unknown identities deliberately have no mapping: an approval cannot invent scope authority.
-/// </summary>
+// An unknown operation identity has no scope mapping, so an approval cannot invent scope authority.
 public static class OperationScopeMapping
 {
-    /// <summary>Resolves the canonical OAuth operation for an approved replay.</summary>
     public static bool TryResolve(OperationRequest request, out OperatorOperation operation)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -73,11 +69,7 @@ public static class OperationScopeMapping
         return operation != default;
     }
 
-    /// <summary>
-    /// Whether a scope-governed caller lacks the OAuth authority this operation requires.
-    /// An operation with no scope mapping is refused rather than allowed: a bearer cannot
-    /// invoke authority the scope catalog does not describe.
-    /// </summary>
+    // For a scope-governed caller, a missing catalog mapping is refused, because a missing entry cannot grant OAuth authority.
     public static bool ExceedsScopeAuthority(OperationRequest request, OperationPolicyContext context)
     {
         ArgumentNullException.ThrowIfNull(request);

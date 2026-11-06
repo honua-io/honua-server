@@ -10,31 +10,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Compliance.Services;
 
-/// <summary>
-/// Compliance-managed encryption posture / key-version timeline. Maintains an
-/// in-memory list of auditor-facing key-version entries and advances the posture
-/// counter on <see cref="RotateAsync"/>. The provider stores version metadata
-/// only — no cipher key material, no ciphertext re-encryption, no envelope
-/// rewrap. Real key-material rotation is the responsibility of the
-/// <c>Honua.Db.Postgres.Features.Security.IConnectionEncryptionService</c> path.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Scope: this provider is the source of truth for the encryption posture reported
-/// in compliance evidence (FedRAMP SC-13 / SC-28). It is intentionally decoupled
-/// from <c>IConnectionEncryptionService</c> — that service has its own version
-/// lifecycle persisted in <c>honua.encryption_keys</c>. The posture reflects which
-/// version events the operator has recorded for auditor traceability, not which
-/// key the connection envelope used.
-/// </para>
-/// <para>
-/// <see cref="RotateAsync"/> appends a new version, updates the active pointer with a
-/// single field assignment under a lock, and returns. The operation does not pause
-/// requests, invalidate caches, or schedule data migration — those concerns live in
-/// the connection-encryption code path. Operators wanting to rotate cipher material
-/// must also follow the runbook for <c>Security:ConnectionEncryption:MasterKey</c>.
-/// </para>
-/// </remarks>
+// This provider stores key-version metadata only and does not re-encrypt data.
 internal sealed partial class InMemoryEncryptionPostureProvider : IEncryptionPostureProvider
 {
     // Bounded timeout for the post-commit audit write. Kept short — the rotation has

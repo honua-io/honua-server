@@ -6,10 +6,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Core.Features.Publishing.Content.Services;
 
-/// <summary>
-/// Source-generated logging for the content publication service. Identifiers are
-/// stable so logs/traces can be joined on publication, version, route, and operation.
-/// </summary>
 internal static partial class ContentPublicationServiceLog
 {
     [LoggerMessage(EventId = 5300, Level = LogLevel.Information,

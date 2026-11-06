@@ -3,15 +3,9 @@
 
 namespace Honua.Core.Features.Operations.Abstractions;
 
-/// <summary>
-/// Re-reads the durable proposal authority before an approved replay may reach an actuator.
-/// </summary>
+// The supplied hash is only a lookup claim. Verification re-reads the durable proposal and recomputes the sealed-plan hash before actuation.
 public interface IOperationApprovalReplayVerifier
 {
-    /// <summary>
-    /// Verifies that the claimed approval is executing for the original operation instance and
-    /// that its supplied plan hash still matches the sealed plan in durable storage.
-    /// </summary>
     Task<bool> VerifyAsync(
         string proposalId,
         string operationInstanceId,

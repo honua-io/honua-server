@@ -12,19 +12,8 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.FileImport.Abstractions;
 
-/// <summary>
-/// Computes schema suggestions for imported data based on preview analysis.
-/// Suggestions are advisory and returned before final import commit.
-/// </summary>
 public interface IImportSchemaSuggestionService
 {
-    /// <summary>
-    /// Generates schema suggestions from a file preview result.
-    /// </summary>
-    /// <param name="preview">The file preview containing sample data and detected metadata.</param>
-    /// <param name="fileName">The original file name.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Advisory schema suggestions for the import.</returns>
     Task<SchemaSuggestion> SuggestAsync(
         FilePreview preview,
         string fileName,

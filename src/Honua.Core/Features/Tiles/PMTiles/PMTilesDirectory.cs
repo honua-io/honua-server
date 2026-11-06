@@ -5,18 +5,11 @@ using System.IO.Compression;
 
 namespace Honua.Core.Features.Tiles.PMTiles;
 
-/// <summary>
-/// A single entry in a PMTiles v3 directory.
-/// </summary>
 internal readonly record struct PMTilesEntry(ulong TileId, ulong Offset, uint Length, uint RunLength)
 {
-    /// <summary>Whether this entry points to a leaf directory rather than tile data.</summary>
     public bool IsLeaf => RunLength == 0;
 }
 
-/// <summary>
-/// Serializes and deserializes PMTiles v3 directories using varint encoding.
-/// </summary>
 internal static class PMTilesDirectory
 {
     // PMTiles v3 requires the header plus the compressed root directory to fit in the first
@@ -24,10 +17,6 @@ internal static class PMTilesDirectory
     private const int MaxRootDirectoryBytes = (16 * 1024) - PMTilesHeader.HeaderSize;
     private const int MaxRootDirectoryEntries = 16384;
 
-    /// <summary>
-    /// Builds root and leaf directory bytes from a sorted list of entries.
-    /// If entries fit within the root directory, leafBytes will be empty.
-    /// </summary>
     public static (byte[] RootBytes, byte[] LeafBytes) BuildDirectories(
         IReadOnlyList<PMTilesEntry> entries,
         PMTilesCompression internalCompression)
@@ -99,10 +88,6 @@ internal static class PMTilesDirectory
         return (rootBytes, leafStream.ToArray());
     }
 
-    /// <summary>
-    /// Serializes directory entries to bytes using varint encoding per PMTiles v3 spec.
-    /// Layout: num_entries varint, then four columns: tile_ids, run_lengths, lengths, offsets.
-    /// </summary>
     internal static byte[] SerializeEntries(IReadOnlyList<PMTilesEntry> entries)
     {
         using var stream = new MemoryStream();
@@ -150,10 +135,6 @@ internal static class PMTilesDirectory
         return stream.ToArray();
     }
 
-    /// <summary>
-    /// Deserializes directory entries from varint-encoded column data.
-    /// Reads the num_entries prefix, then four columns.
-    /// </summary>
     internal static PMTilesEntry[] DeserializeEntries(ReadOnlySpan<byte> data)
     {
         var pos = 0;

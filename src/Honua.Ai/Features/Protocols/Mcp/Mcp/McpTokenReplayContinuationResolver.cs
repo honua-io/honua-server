@@ -22,7 +22,7 @@ internal sealed class McpTokenReplayContinuationResolver : ITokenReplayContinuat
 
     public string? ResolveContinuationId(HttpContext context)
     {
-        if (!OwnsRequest(context))
+        if (!OwnsRequest(context) || McpModernProtocol.HasModernHeader(context.Request))
         {
             return null;
         }

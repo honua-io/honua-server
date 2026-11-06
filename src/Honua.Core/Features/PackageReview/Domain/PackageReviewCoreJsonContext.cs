@@ -6,9 +6,6 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.PackageReview.Domain;
 
-/// <summary>
-/// Source-generated JSON context used by the Core package-review service.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,

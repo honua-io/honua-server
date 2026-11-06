@@ -9,19 +9,9 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Core.Features.Federation;
 
-/// <summary>
-/// Service registration helpers for the federated-query planning and execution core (issue #341).
-/// </summary>
 public static class ServiceCollectionExtensions
 {
-    /// <summary>
-    /// Registers the federation query planner and the remote-execution layer (executor). The
-    /// planner is pure and stateless; the executor is a singleton because it caches per-source
-    /// circuit-breaker state across calls. Transport connectors
-    /// (<see cref="IFederatedSourceConnector"/>) are registered separately by the host.
-    /// </summary>
-    /// <param name="services">The service collection.</param>
-    /// <returns>The service collection for chaining.</returns>
+    // The executor is a singleton because it keeps per-source circuit-breaker state; the planner is stateless.
     public static IServiceCollection AddFederationCore(this IServiceCollection services)
     {
         services.TryAddSingleton<IFederationQueryPlanner, FederationQueryPlanner>();

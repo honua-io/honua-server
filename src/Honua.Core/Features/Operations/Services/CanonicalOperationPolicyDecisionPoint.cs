@@ -11,22 +11,11 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Operations.Services;
 
-/// <summary>
-/// The single production policy seam for typed descriptors and legacy compatibility requests.
-/// The legacy guardrail ladder is consulted only here and can no longer invoke an actuator.
-/// </summary>
 public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDecisionPoint
 {
     private readonly ConfigurableOperationPolicyDecisionPoint _typedPolicy;
     private readonly IGuardrailLadder _legacyGuardrails;
 
-    /// <summary>Initializes the canonical policy decision point.</summary>
-    /// <param name="options">The bound typed operation policy options.</param>
-    /// <param name="legacyGuardrails">The legacy guardrail ladder for compatibility requests.</param>
-    /// <param name="productionEnvironment">
-    /// Whether the host runs in the Production environment, which appends the built-in
-    /// administrator rules (<see cref="OperationPolicyBuiltInRules.Production"/>) to the typed policy.
-    /// </param>
     public CanonicalOperationPolicyDecisionPoint(
         IOptions<OperationPolicyOptions> options,
         IGuardrailLadder legacyGuardrails,
@@ -36,10 +25,8 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
         _legacyGuardrails = legacyGuardrails;
     }
 
-    /// <summary>The effective typed operation policy (operator rules, built-in rules, default).</summary>
     public OperationPolicyComposition TypedPolicy => _typedPolicy.Composition;
 
-    /// <inheritdoc />
     public Task<PolicyDecision> EvaluateAsync(
         IOperationDescriptor descriptor,
         OperationRequest request,

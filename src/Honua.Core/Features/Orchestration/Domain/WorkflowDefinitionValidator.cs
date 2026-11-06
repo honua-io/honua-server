@@ -3,14 +3,8 @@
 
 namespace Honua.Core.Features.Orchestration.Domain;
 
-/// <summary>
-/// Validates the structural integrity of a <see cref="WorkflowDefinition"/>.
-/// </summary>
 public static class WorkflowDefinitionValidator
 {
-    /// <summary>
-    /// Validates the definition and returns a list of failure messages. An empty list indicates success.
-    /// </summary>
     public static IReadOnlyList<string> Validate(WorkflowDefinition definition)
     {
         ArgumentNullException.ThrowIfNull(definition);

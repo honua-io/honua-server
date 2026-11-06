@@ -5,191 +5,60 @@ using Honua.Core.Configuration;
 
 namespace Honua.Core.Features.Import.Domain;
 
-/// <summary>
-/// Pipeline limits for file import, bound from <c>Import:Limits:*</c> by the hand parser in
-/// the Postgres composition root. Not the <c>Limits:Imports:*</c> size ceilings
-/// (<see cref="Honua.Core.Configuration.ImportSizeLimits"/>). Shared names such as <c>BatchSize</c>,
-/// <c>MaxPreviewFeatures</c>, and <c>MaxPreviewCountScan</c> are separate settings with
-/// separate defaults; the pipeline uses this record (#3346).
-/// </summary>
 public sealed record ImportLimits
 {
-    /// <summary>
-    /// Number of features to batch together for database insertion.
-    /// Default: 1000 features per batch.
-    /// </summary>
     public int BatchSize { get; init; } = 1000;
 
-    /// <summary>
-    /// Maximum memory usage target in bytes during import.
-    /// Default: 100MB (104857600 bytes).
-    /// </summary>
     public long MaxMemoryBytes { get; init; } = FileSizeConstants.OneHundredMB;
 
-    /// <summary>
-    /// File size threshold in bytes above which imports are queued for background processing.
-    /// Default: 100MB (104857600 bytes).
-    /// </summary>
     public long BackgroundJobThresholdBytes { get; init; } = FileSizeConstants.OneHundredMB;
 
-    /// <summary>
-    /// Maximum object size accepted from an allow-listed customer object store (<c>s3://</c>).
-    /// Independent of the in-request staging cap. An object above this limit is refused
-    /// before any byte is read. Default: 50 GiB.
-    /// </summary>
+    // An object above this limit is refused before any byte is read.
     public long MaxObjectStoreImportBytes { get; init; } = 50 * FileSizeConstants.OneGB;
 
-    /// <summary>
-    /// Maximum file size allowed for preview operations in bytes.
-    /// Default: 10MB (10485760 bytes).
-    /// </summary>
     public long MaxPreviewSizeBytes { get; init; } = FileSizeConstants.TenMB;
 
-    /// <summary>
-    /// Maximum number of features to include in a preview.
-    /// Default: 100 features.
-    /// </summary>
     public int MaxPreviewFeatures { get; init; } = 100;
 
-    /// <summary>
-    /// Maximum number of features to stream when counting features for preview
-    /// in formats whose header does not declare a feature count (e.g. FlatGeobuf
-    /// with FeaturesCount=0). Prevents unbounded scans of very large files.
-    /// Default: 100,000 features.
-    /// </summary>
     public int MaxPreviewCountScan { get; init; } = 100_000;
 
-    /// <summary>
-    /// Buffer size for streaming reads in bytes.
-    /// Default: 64KB (65536 bytes).
-    /// </summary>
     public int StreamBufferSize { get; init; } = 64 * (int)FileSizeConstants.OneKB;
 
-    /// <summary>
-    /// Whether to use transactions for batch inserts.
-    /// When true, each batch is wrapped in a transaction.
-    /// Default: true.
-    /// </summary>
     public bool UseTransactions { get; init; } = true;
 
-    /// <summary>
-    /// Whether to continue processing after encountering invalid features.
-    /// When true, invalid features are skipped; when false, the import fails on first error.
-    /// Default: true.
-    /// </summary>
     public bool ContinueOnError { get; init; } = true;
 
-    /// <summary>
-    /// Maximum number of features to import from a single file.
-    /// 0 means no limit.
-    /// Default: 0 (no limit).
-    /// </summary>
     public int MaxFeaturesPerFile { get; init; }
 
-    /// <summary>
-    /// Whether to validate geometry during import.
-    /// Default: true.
-    /// </summary>
     public bool ValidateGeometry { get; init; } = true;
 
-    /// <summary>
-    /// How topologically-invalid geometry (e.g. self-intersecting polygons) is handled
-    /// during import, mirroring the shared edit-path
-    /// <see cref="Honua.Core.Configuration.GeometryValidationOptions"/> semantics so every
-    /// import reader applies the same validity gate:
-    /// <list type="bullet">
-    /// <item><see cref="ValidationMode.Accept"/> — store geometry as-is (legacy behavior).</item>
-    /// <item><see cref="ValidationMode.Strict"/> — reject invalid geometry (skipped when
-    /// <see cref="SkipInvalidGeometry"/>, otherwise fails the import).</item>
-    /// <item><see cref="ValidationMode.Repair"/> — repair invalid geometry with the managed
-    /// NetTopologySuite <c>GeometryFixer</c> (the GEOS-free analogue of PostGIS
-    /// <c>ST_MakeValid</c>) and count the repair.</item>
-    /// </list>
-    /// Default: <see cref="ValidationMode.Repair"/> — matches the edit paths and prevents
-    /// later overlay queries from failing with GEOS topology exceptions.
-    /// </summary>
     public ValidationMode GeometryValidityMode { get; init; } = ValidationMode.Repair;
 
-    /// <summary>
-    /// Maximum number of vertices allowed per geometry.
-    /// Default: 10000 vertices.
-    /// </summary>
     public int MaxVertices { get; init; } = 10000;
 
-    /// <summary>
-    /// Maximum number of rings allowed per polygon geometry.
-    /// Default: 100 rings.
-    /// </summary>
     public int MaxRings { get; init; } = 100;
 
-    /// <summary>
-    /// Maximum WKB size in bytes per geometry.
-    /// Default: 1MB (1048576 bytes).
-    /// </summary>
     public long MaxWkbSize { get; init; } = FileSizeConstants.OneMB;
 
-    /// <summary>
-    /// Maximum number of bytes that may be buffered in memory for a single,
-    /// not-yet-closed feature (or any pre-feature leftover) while streaming a
-    /// feature collection. Caps unbounded in-memory accumulation when a reader
-    /// streams at feature granularity but receives one pathologically large
-    /// feature object (or an array-start that never closes); the reader fails
-    /// fast once the leftover buffer would exceed this budget.
-    /// Default: 64MB (67108864 bytes).
-    /// </summary>
+    // A single feature that would grow the leftover buffer past this cap fails the stream instead of accumulating without bound.
     public long MaxSingleFeatureBytes { get; init; } = 64 * FileSizeConstants.OneMB;
 
-    /// <summary>
-    /// Maximum uncompressed bytes extracted from a single archive entry during ZIP/KMZ import.
-    /// Default: 500MB (524288000 bytes).
-    /// </summary>
     public long MaxArchiveEntryBytes { get; init; } = FileSizeConstants.FiveHundredMB;
 
-    /// <summary>
-    /// Maximum total uncompressed bytes extracted from a ZIP/KMZ archive during import.
-    /// Default: 1GB (1073741824 bytes).
-    /// </summary>
     public long MaxArchiveExtractedBytes { get; init; } = FileSizeConstants.OneGB;
 
-    /// <summary>
-    /// Maximum allowed compression ratio for ZIP/KMZ entries (uncompressed/compressed).
-    /// Default: 200.
-    /// </summary>
     public double MaxArchiveCompressionRatio { get; init; } = 200;
 
-    /// <summary>
-    /// Maximum number of entries in a ZIP/KMZ/FileGDB archive. Includes directory
-    /// and zero-length entries. Default: 10000.
-    /// </summary>
     public int MaxArchiveEntries { get; init; } = 10_000;
 
-    /// <summary>
-    /// Maximum number of background import jobs executing at once. Default: 2.
-    /// </summary>
     public int MaxConcurrentBackgroundJobs { get; init; } = 2;
 
-    /// <summary>
-    /// Maximum number of background import jobs waiting for an execution slot.
-    /// Zero disables queuing beyond the running jobs. Default: 16.
-    /// </summary>
     public int MaxBackgroundJobQueueDepth { get; init; } = 16;
 
-    /// <summary>
-    /// Whether to skip invalid geometries or fail the import.
-    /// When true, invalid geometries are skipped; when false, import fails.
-    /// Default: true (skip invalid).
-    /// </summary>
     public bool SkipInvalidGeometry { get; init; } = true;
 
-    /// <summary>
-    /// Default configuration for standard import operations.
-    /// </summary>
     public static ImportLimits Default => new();
 
-    /// <summary>
-    /// Configuration for memory-constrained environments (serverless, containers).
-    /// Uses smaller batch sizes and stricter memory limits.
-    /// </summary>
     public static ImportLimits MemoryConstrained => new()
     {
         BatchSize = 500,
@@ -198,10 +67,6 @@ public sealed record ImportLimits
         StreamBufferSize = 32 * (int)FileSizeConstants.OneKB
     };
 
-    /// <summary>
-    /// Configuration for high-throughput environments with more resources.
-    /// Uses larger batch sizes for better performance.
-    /// </summary>
     public static ImportLimits HighThroughput => new()
     {
         BatchSize = 5000,

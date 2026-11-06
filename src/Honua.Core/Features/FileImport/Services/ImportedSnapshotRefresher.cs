@@ -10,19 +10,9 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Core.Features.FileImport.Services;
 
-/// <summary>
-/// Refreshes the canonical published-feature snapshot after a background import, shared by the
-/// in-process runner (<see cref="UniversalImportJobService"/>) and the durable
-/// <c>FileImport</c> execution-job executor so both paths keep tiles consistent with the
-/// imported data (#22, honua-server#1628).
-/// </summary>
 internal static class ImportedSnapshotRefresher
 {
-    /// <summary>
-    /// Refreshes every physical table name the importer may have used for
-    /// <paramref name="tableName"/>. Best-effort: failures are reported to
-    /// <paramref name="onError"/> and never thrown, except cancellation.
-    /// </summary>
+    // Snapshot refresh is best-effort: failures are reported and not thrown, except cancellation.
     public static async Task RefreshAsync(
         IServiceProvider services,
         string? targetSchema,
@@ -66,9 +56,6 @@ internal static class ImportedSnapshotRefresher
         }
     }
 
-    /// <summary>
-    /// The physical table names the importer stores a logical file-import target under.
-    /// </summary>
     internal static IReadOnlyList<string> ResolvePhysicalImportedTableNames(string tableName)
     {
         var sanitized = Regex.Replace(tableName, "[^a-zA-Z0-9_]", "_");

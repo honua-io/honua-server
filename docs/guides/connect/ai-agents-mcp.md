@@ -10,7 +10,7 @@ resources:
 ---
 # Connect AI agents to Honua over MCP
 
-Honua's agent endpoint is `POST /mcp`: JSON-RPC 2.0 over Streamable HTTP, MCP protocol revision `2025-03-26`. Any MCP-capable agent connects to it and gets the same tools, the same authorization checks, and the same approval rules as every other protocol. An agent can discover the catalog, query features, plan and run geoprocessing, observe operational health, compose Studio drafts, and *propose* control-plane changes. It never approves its own proposals, and no feature-edit tool is ever advertised.
+Honua's agent endpoint is `POST /mcp`: JSON-RPC 2.0 over Streamable HTTP. It supports per-request protocol revision `2026-07-28` and legacy initialize sessions on `2025-06-18` or `2025-03-26`. Any MCP-capable agent connects to it and gets the same tools, the same authorization checks, and the same approval rules as every other protocol. An agent can discover the catalog, query features, plan and run geoprocessing, observe operational health, compose Studio drafts, and *propose* control-plane changes. It never approves its own proposals, and no feature-edit tool is ever advertised.
 
 Which tool calls an agent may make is an edition boundary: reading is Community, changing anything is Pro, and organisational approval policy is Enterprise. See [What an agent can do in each edition](agent-capabilities-and-editions.md).
 
@@ -29,6 +29,14 @@ package ships as `AGENTS.md`.
 The handshake methods (`initialize`, `tools/list`, `resources/list`, `resources/templates/list`) are open; `tools/call` and `resources/read` require an authenticated principal plus the matching operator grant. Authentication accepts `X-API-Key` and OAuth bearer tokens (`Authorization: Bearer`); when both are present, the bearer token is evaluated first.
 
 Layer references also require tenant-visible publications and shared resource access for the requested operation. Entity resolution and grounding rank only readable publications and omit services without readable publications or service metadata access. A layer-specific grant preserves the layer candidate while service candidates require service metadata access. `honua_render_map` checks every requested layer before invoking the renderer; layer-specific style operations use the same checked resolver. Rendering checks query access, catalog and layer discovery check metadata access, and applying a style preset checks administrative resource access in addition to its operation authorization.
+
+## Protocol compatibility
+
+Modern clients can call `server/discover` without initializing a session. Each request supplies its protocol version and client capabilities in `params._meta`, with the matching `MCP-Protocol-Version` and `Mcp-Method` HTTP headers. Tool calls, resource reads and prompt retrieval also mirror the tool name, resource URI or prompt name in `Mcp-Name`. Discovery lists the revisions accepted through this per-request model; the initialize result describes the legacy revision selected for that session.
+
+Modern requests ignore protocol session and event-replay headers. They return complete result envelopes, and catalog/resource responses include private caching hints with a zero freshness lifetime. Legacy clients retain initialize, sessions, batching and the optional server notification stream.
+
+Bearer clients should use legacy initialize sessions: with default OIDC replay protection, reusing a bearer token on a modern sessionless request returns 401. Modern governed proposal calls also retain the existing session-bound evidence requirement. This transport upgrade does not establish multi-request bearer interoperability, MRTR approval support or Skills extension conformance. Use the file installation route for operating skills where available.
 
 ## API-key proposals
 
@@ -75,7 +83,7 @@ every tool call still requires its usual authorization.
 
 **Claude Desktop** launches MCP servers over stdio, so it reaches a deployment through the `honua-mcp-proxy` bridge shipped in `@honua/mcp-server`. The configuration is in [Drive Studio from Claude Desktop](../../studio/drive-from-claude-desktop.md).
 
-**Any other client** that speaks the MCP HTTP transport works the same way: send credentials as the `X-API-Key` header (or your deployment's bearer token) on every request. The initialize handshake is the standard one:
+**Other clients using legacy MCP HTTP** connect through initialize sessions: send credentials as the `X-API-Key` header (or your deployment's bearer token) on every request. The initialize handshake is the standard one:
 
 ```json
 {

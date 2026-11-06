@@ -8,7 +8,6 @@ using Honua.Core.Features.Operations.Domain;
 
 namespace Honua.Core.Features.Operations.Services;
 
-/// <summary>Default durable operation-envelope acceptance factory.</summary>
 public sealed class OperationEnvelopeFactory(
     IOperationInstanceStore instanceStore,
     IAuditLog auditLog,
@@ -24,7 +23,6 @@ public sealed class OperationEnvelopeFactory(
             : [binding, .. evidenceRefs];
     }
 
-    /// <inheritdoc />
     public async Task<OperationHandle> CreateAcceptedAsync(
         string operationId,
         OperationPolicyContext context,
@@ -145,7 +143,6 @@ public sealed class OperationEnvelopeFactory(
         }
     }
 
-    /// <inheritdoc />
     public async Task<OperationHandle> CompleteCacheHitAsync(
         string operationId,
         OperationPolicyContext context,

@@ -10,26 +10,17 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Validation;
 
-/// <summary>
-/// Implementation of common query validation patterns.
-/// </summary>
 public sealed class CommonQueryValidator : ICommonQueryValidator
 {
     private readonly LimitsOptions _limitsOptions;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="CommonQueryValidator"/> class.
-    /// </summary>
-    /// <param name="limitsOptions">Limits configuration</param>
     public CommonQueryValidator(IOptions<LimitsOptions> limitsOptions)
     {
         _limitsOptions = limitsOptions?.Value ?? throw new ArgumentNullException(nameof(limitsOptions));
     }
 
-    /// <inheritdoc/>
     public QueryLimits QueryLimits => _limitsOptions.Query;
 
-    /// <inheritdoc/>
     public ValidationResult ValidatePagination(int? offset, int? limit)
     {
         if (offset.HasValue)
@@ -65,7 +56,6 @@ public sealed class CommonQueryValidator : ICommonQueryValidator
         return ValidationResult.Success();
     }
 
-    /// <inheritdoc/>
     public ValidationResult<string> ValidateFormat(string? format, IReadOnlySet<string> allowedFormats)
     {
         if (string.IsNullOrWhiteSpace(format))
@@ -86,7 +76,6 @@ public sealed class CommonQueryValidator : ICommonQueryValidator
         return ValidationResult<string>.Success(normalizedFormat);
     }
 
-    /// <inheritdoc/>
     public ValidationResult<int?> ValidateSrid(string? srid, string parameterName)
     {
         if (string.IsNullOrWhiteSpace(srid))
@@ -107,7 +96,6 @@ public sealed class CommonQueryValidator : ICommonQueryValidator
         return ValidationResult<int?>.Success(sridValue);
     }
 
-    /// <inheritdoc/>
     public ValidationResult ValidateAllowedParameters(IReadOnlyCollection<string> queryParameterNames, IReadOnlySet<string> allowedParameters)
     {
         var unknownParameter = queryParameterNames.FirstOrDefault(parameterName =>
@@ -119,7 +107,6 @@ public sealed class CommonQueryValidator : ICommonQueryValidator
             : ValidationResult.Failure($"Unknown query parameter: {unknownParameter}");
     }
 
-    /// <inheritdoc/>
     public ValidationResult<BoundingBox> ValidateBbox(string? bboxValue, int targetSrid)
     {
         if (string.IsNullOrWhiteSpace(bboxValue))
@@ -167,13 +154,7 @@ public sealed class CommonQueryValidator : ICommonQueryValidator
         return ValidationResult<BoundingBox>.Success(bbox);
     }
 
-    /// <inheritdoc/>
-    /// <remarks>
-    /// Coarse, best-effort denylist pre-filter only. A "success" result is NOT a
-    /// guarantee that the clause is injection-safe — denylists cannot be complete.
-    /// The authoritative defenses are the SQL parser AST validation and parameter
-    /// binding; this method exists purely to reject the most blatant payloads early.
-    /// </remarks>
+    // A successful denylist result is not proof the clause is injection-safe.
     public ValidationResult ValidateWhereClause(string? whereClause)
     {
         if (string.IsNullOrWhiteSpace(whereClause))
@@ -221,11 +202,9 @@ public sealed class CommonQueryValidator : ICommonQueryValidator
             : ValidationResult.Success();
     }
 
-    /// <inheritdoc/>
     public ValidationResult<PaginationValues> ValidateAndNormalizePagination(int? offset, int? limit)
         => ValidateAndNormalizePagination(offset, limit, PaginationValidationOptions.Default);
 
-    /// <inheritdoc/>
     public ValidationResult<PaginationValues> ValidateAndNormalizePagination(
         int? offset,
         int? limit,
@@ -285,34 +264,16 @@ public sealed class CommonQueryValidator : ICommonQueryValidator
         => values.Any(candidate => string.Equals(candidate, value, StringComparison.OrdinalIgnoreCase));
 }
 
-/// <summary>
-/// Normalized pagination values with applied defaults and limits.
-/// </summary>
-/// <param name="Offset">The effective offset value (0 if not specified).</param>
-/// <param name="Limit">The effective limit value (default from configuration if not specified).</param>
 public sealed record PaginationValues(int Offset, int Limit);
 
-/// <summary>
-/// Generic validation result that can carry a typed value.
-/// </summary>
-/// <typeparam name="T">Type of the validation result value</typeparam>
 [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1000:Do not declare static members on generic types",
     Justification = "Factory methods keep validation call sites concise.")]
 public sealed class ValidationResult<T>
 {
-    /// <summary>
-    /// Whether the validation succeeded.
-    /// </summary>
     public bool IsValid { get; }
 
-    /// <summary>
-    /// The validated value when successful.
-    /// </summary>
     public T? Value { get; }
 
-    /// <summary>
-    /// Error message when validation fails.
-    /// </summary>
     public string? ErrorMessage { get; }
 
     private ValidationResult(bool isValid, T? value, string? errorMessage)
@@ -322,30 +283,15 @@ public sealed class ValidationResult<T>
         ErrorMessage = errorMessage;
     }
 
-    /// <summary>
-    /// Creates a success result.
-    /// </summary>
     public static ValidationResult<T> Success(T? value) => new(true, value, null);
 
-    /// <summary>
-    /// Creates a failure result.
-    /// </summary>
     public static ValidationResult<T> Failure(string errorMessage) => new(false, default, errorMessage);
 }
 
-/// <summary>
-/// Simple validation result without a typed value.
-/// </summary>
 public sealed class ValidationResult
 {
-    /// <summary>
-    /// Whether the validation succeeded.
-    /// </summary>
     public bool IsValid { get; }
 
-    /// <summary>
-    /// Error message when validation fails.
-    /// </summary>
     public string? ErrorMessage { get; }
 
     private ValidationResult(bool isValid, string? errorMessage)
@@ -354,22 +300,9 @@ public sealed class ValidationResult
         ErrorMessage = errorMessage;
     }
 
-    /// <summary>
-    /// Creates a success result.
-    /// </summary>
     public static ValidationResult Success() => new(true, null);
 
-    /// <summary>
-    /// Creates a failure result.
-    /// </summary>
     public static ValidationResult Failure(string errorMessage) => new(false, errorMessage);
 }
 
-/// <summary>
-/// Simple bounding box structure for validation results.
-/// </summary>
-/// <param name="MinX">Minimum X coordinate</param>
-/// <param name="MinY">Minimum Y coordinate</param>
-/// <param name="MaxX">Maximum X coordinate</param>
-/// <param name="MaxY">Maximum Y coordinate</param>
 public sealed record BoundingBox(double MinX, double MinY, double MaxX, double MaxY);
