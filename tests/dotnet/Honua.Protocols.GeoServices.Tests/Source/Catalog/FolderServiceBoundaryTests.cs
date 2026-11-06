@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Text.Json;
+using System.Xml.Linq;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit;
@@ -53,6 +54,9 @@ public sealed class FolderServiceBoundaryTests : IClassFixture<WebAppFixture>
                 $"/rest/services/Previous/Parcels/{suffix}?SERVICE={protocol}&REQUEST=GetCapabilities&VERSION={version}");
             var body = await response.Content.ReadAsStringAsync();
             response.StatusCode.Should().Be(HttpStatusCode.NotFound, body);
+            var document = XDocument.Parse(body);
+            document.Root!.Name.LocalName.Should().BeOneOf("ServiceExceptionReport", "ExceptionReport");
+            body.Should().Contain("Service was not found.");
             body.Should().NotContain($"'{WebAppFixture.TestServiceId}'");
         }
         finally

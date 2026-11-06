@@ -212,7 +212,7 @@ public sealed class FolderServiceRoutingTests : IClassFixture<WebAppFixture>
             using var folder = await client.GetAsync("/rest/services/Public?f=json");
             await folder.AssertGeoServicesErrorAsync(404);
             using var service = await client.GetAsync("/rest/services/Public/Parcels/FeatureServer?f=json");
-            await service.AssertGeoServicesErrorAsync(401);
+            await service.AssertGeoServicesErrorAsync(499);
         }
         finally
         {
