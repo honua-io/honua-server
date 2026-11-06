@@ -289,6 +289,13 @@ GeoServices REST spec: Map Service.
 | WMTS | Partial | GetCapabilities/GetTile/GetFeatureInfo (KVP + RESTful) at `.../MapServer/WMTS` and `/ogc/services/{serviceId}/wmts`. GetTile and GetFeatureInfo both resolve the requested tile matrix set through the shared `ITileMatrixSetRegistry`, so the built-in WebMercatorQuad and WorldCRS84Quad (CRS84/EPSG:4326) gridsets and operator-defined custom gridsets are served end-to-end; GetFeatureInfo computes the clicked pixel from the gridset's own origin, cell size and matrix dimensions rather than Web Mercator constants, and unsupported gridsets are rejected with `InvalidParameterValue`. WebMercatorQuad behaviour is byte-identical to the prior implementation. WMTS 1.0 is CITE-certified (60/60). |
 | queryAnalytic, image/KML-image child resources, `exts/*` | Not implemented | |
 
+Asynchronous MapServer exports select publications visible to the submitting tenant both
+at submission and from the pinned metadata revision during rendering. Jobs created before
+the publication policy update require resubmission: their source checks refuse execution
+and result retrieval refuses to issue a new download URL. New jobs use a distinct artifact
+identity, so they do not reuse packages rendered under the previous policy. Previously
+issued storage URLs remain subject to their existing storage expiry.
+
 ## ImageServer
 
 **2026.1 lifecycle: GA (Implemented)** for the ImageServer REST and SOAP surface, by the

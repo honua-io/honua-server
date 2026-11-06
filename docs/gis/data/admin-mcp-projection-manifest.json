@@ -2276,7 +2276,10 @@
       "toolName": "honua_admin_services_list",
       "title": "List services",
       "inputFields": [
-        "folderId"
+        "folderId",
+        "page",
+        "pageSize",
+        "q"
       ],
       "outputFields": [
         "approvalLane",

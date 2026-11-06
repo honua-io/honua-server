@@ -116,7 +116,7 @@ internal static partial class MapServerEndpoints
         var service = serviceResult.Service!;
         var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var legendLayerDescriptors = ResolveLegendLayers(snapshot, service);
+        var legendLayerDescriptors = ResolveLegendLayers(snapshot, service, context);
 
         var access = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
             context,
@@ -241,10 +241,11 @@ internal static partial class MapServerEndpoints
 
     private static LegendLayerDescriptor[] ResolveLegendLayers(
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Service service)
+        MetadataV2Service service,
+        HttpContext context)
     {
         var descriptors = new List<LegendLayerDescriptor>();
-        foreach (var publication in MapServerPublicationResolver.ResolveLayerPublications(snapshot, service))
+        foreach (var publication in MapServerPublicationResolver.ResolveLayerPublications(snapshot, service, TenantScopeHelpers.ResolveRequestTenantId(context)))
         {
             if (publication.LayerIndex is not int layerId)
             {

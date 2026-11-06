@@ -73,7 +73,7 @@ internal sealed class ImageServerTileHandler
             var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             var resolved = publicationId is null
                 ? ImageServerV2Lookups.FindByStorageLayerId(snapshot, layerId, context)
-                : ImageServerV2Lookups.FindByPublicationId(snapshot, publicationId);
+                : ImageServerV2Lookups.FindByPublicationId(snapshot, publicationId, context);
             if (resolved is null)
             {
                 ImageServerLog.LayerNotFound(_logger, layerId);
@@ -310,7 +310,7 @@ internal sealed class ImageServerTileHandler
             var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             var resolved = publicationId is null
                 ? ImageServerV2Lookups.FindByStorageLayerId(snapshot, layerId, context)
-                : ImageServerV2Lookups.FindByPublicationId(snapshot, publicationId);
+                : ImageServerV2Lookups.FindByPublicationId(snapshot, publicationId, context);
             if (resolved is null)
             {
                 ImageServerLog.LayerNotFound(_logger, layerId);

@@ -107,7 +107,7 @@ internal sealed partial class FeatureDataAccess
                     foreach (var objectId in editBatch.Deletes)
                     {
                         cancellationToken.ThrowIfCancellationRequested();
-                        if (!await TryVersionedDeleteAsync(layerId, versionId, objectId, OwnerEditGuard.Find(editBatch.OwnerGuards, objectId), connection, transaction, deleteResults, cancellationToken).ConfigureAwait(false))
+                        if (!await TryVersionedDeleteAsync(new(new(connection, transaction, new(VersionEditsTableName, layerId, (versionId, objectId))), editBatch.RowSecurityWriteCheck, OwnerEditGuard.Find(editBatch.OwnerGuards, objectId)), deleteResults, cancellationToken).ConfigureAwait(false))
                         {
                             failed = true;
                             if (editBatch.RollbackOnFailure) break;
@@ -186,10 +186,10 @@ internal sealed partial class FeatureDataAccess
                 OwnerEditGuard.Find(ownerGuards, operation.Feature.Value.Id),
                 connection, transaction, updateResults, cancellationToken).ConfigureAwait(false),
             FeatureEditOperationKind.Delete => await TryVersionedDeleteAsync(
-                layerId, versionId,
-                operation.ObjectId ?? throw new InvalidOperationException("Ordered delete is missing the target object id."),
-                OwnerEditGuard.Find(ownerGuards, operation.ObjectId.Value),
-                connection, transaction, deleteResults, cancellationToken).ConfigureAwait(false),
+                new(new(connection, transaction, new(VersionEditsTableName, layerId,
+                    (versionId, operation.ObjectId ?? throw new InvalidOperationException("Ordered delete is missing the target object id.")))),
+                    writeCheck, OwnerEditGuard.Find(ownerGuards, operation.ObjectId.Value)),
+                deleteResults, cancellationToken).ConfigureAwait(false),
             _ => throw new InvalidOperationException($"Unsupported ordered edit operation kind '{operation.Kind}'.")
         };
 
@@ -296,8 +296,9 @@ internal sealed partial class FeatureDataAccess
             var layerSrid = await _cacheManager.GetLayerSridAsync(layerId, cancellationToken).ConfigureAwait(false);
             ValidateGeometrySrid(feature.Geometry, layerSrid);
 
-            // A no-op upsert (no DEFAULT row and no overlay row) means the feature does not exist
-            // for the version; it surfaces as not-found before any row-level security re-select.
+            var update = await PrepareVersionedUpdateAsync(feature, new(
+                new(connection, transaction, new(VersionEditsTableName, layerId, (versionId, feature.Id))), writeCheck), cancellationToken).ConfigureAwait(false);
+
             await RunRowSecurityCheckedWriteAsync(
                 writeCheck,
                 connection,
@@ -308,7 +309,7 @@ internal sealed partial class FeatureDataAccess
                 async () =>
                 {
                     var affected = await UpsertOverlayRowAsync(
-                        layerId, versionId, feature.Id, operation: 2, feature.Geometry, feature.Attributes,
+                        layerId, versionId, feature.Id, operation: 2, update.Geometry, update.Attributes,
                         geometryStorageType, layerSrid, isDelete: false, ownerGuard, connection, transaction, cancellationToken).ConfigureAwait(false);
                     if (affected == 0)
                     {
@@ -341,20 +342,49 @@ internal sealed partial class FeatureDataAccess
         }
     }
 
+    private sealed record VersionUpdatePreparation(RowSecurityContext Row, SqlFragment? WriteCheck);
+
+    private async Task<Feature> PrepareVersionedUpdateAsync(
+        Feature feature, VersionUpdatePreparation preparation, CancellationToken cancellationToken)
+    {
+        var (row, writeCheck) = preparation;
+        var current = await ReadEffectiveVersionRowForUpdateAsync(row, cancellationToken).ConfigureAwait(false);
+        await EnsureExistingRowVisibleAsync(writeCheck, new(row.Connection, row.Transaction,
+            new(current.TableName, row.Target.LayerId, (current.VersionId, feature.Id))), cancellationToken).ConfigureAwait(false);
+        if (!current.Feature.HasValue)
+        {
+            throw new ResourceNotFoundException($"Feature {feature.Id} not found");
+        }
+        return PreserveOmittedAttributes(feature, current.Feature.Value);
+    }
+
+    private sealed record VersionDeleteOperation(RowSecurityContext Context, SqlFragment? WriteCheck, OwnerEditGuard? OwnerGuard);
+
     private async Task<bool> TryVersionedDeleteAsync(
-        int layerId,
-        Guid versionId,
-        long objectId,
-        OwnerEditGuard? ownerGuard,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
+        VersionDeleteOperation operation,
         ImmutableArray<EditOperationResult>.Builder deleteResults,
         CancellationToken cancellationToken)
     {
+        var (context, writeCheck, ownerGuard) = operation;
+        var connection = context.Connection;
+        var transaction = context.Transaction!;
+        var layerId = context.Target.LayerId;
+        var versionId = context.Target.Row.VersionId!.Value;
+        var objectId = context.Target.Row.ObjectId;
         try
         {
             var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
             var layerSrid = await _cacheManager.GetLayerSridAsync(layerId, cancellationToken).ConfigureAwait(false);
+
+            var current = await ReadEffectiveVersionRowForUpdateAsync(new RowSecurityContext(connection, transaction,
+                new(VersionEditsTableName, layerId, (versionId, objectId))), cancellationToken).ConfigureAwait(false);
+            await EnsureExistingRowVisibleAsync(writeCheck, new RowSecurityContext(connection, transaction,
+                new(current.TableName, layerId, (current.VersionId, objectId))), cancellationToken).ConfigureAwait(false);
+            if (!current.Feature.HasValue)
+            {
+                deleteResults.Add(EditOperationResult.Failure($"Feature {objectId} not found", objectId: objectId));
+                return false;
+            }
 
             var rowsAffected = await UpsertOverlayRowAsync(
                 layerId, versionId, objectId, operation: 3, geometry: null, attributes: null,
@@ -369,6 +399,11 @@ internal sealed partial class FeatureDataAccess
             deleteResults.Add(EditOperationResult.Success(objectId));
             return true;
         }
+        catch (RowSecurityWriteCheckFailedException ex)
+        {
+            deleteResults.Add(CreateFailedOperationResult(ex, "Delete", objectId));
+            return false;
+        }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally broad: a per-operation failure in a versioned batch must be sanitized
@@ -376,6 +411,35 @@ internal sealed partial class FeatureDataAccess
             deleteResults.Add(EditOperationResult.Failure(GetSafeEditOperationError(ex, "Delete"), objectId: objectId));
             return false;
         }
+    }
+
+    private async Task<(Feature? Feature, string TableName, Guid? VersionId)> ReadEffectiveVersionRowForUpdateAsync(
+        RowSecurityContext context, CancellationToken cancellationToken)
+    {
+        var (connection, transaction, target) = context;
+        var layerId = target.LayerId;
+        var versionId = target.Row.VersionId!.Value;
+        var objectId = target.Row.ObjectId;
+        // Lock DEFAULT first to serialize a version's first overlay write with other writers.
+        var baseRow = await ReadFeatureForUpdateAsync(layerId, objectId, connection, transaction!, cancellationToken).ConfigureAwait(false);
+        var storage = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+        var geometry = _geometryProcessor.GetGeometrySelectExpression(storage, new FeatureQuery());
+        var sql = $"SELECT objectid, {geometry}, attributes, operation FROM {VersionEditsTableName} " +
+            "WHERE version_id = $1 AND layer_id = $2 AND objectid = $3 FOR UPDATE";
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        ApplyCommandTimeout(command, _queryTimeoutSeconds);
+        command.Parameters.AddWithValue(versionId);
+        command.Parameters.AddWithValue(layerId);
+        command.Parameters.AddWithValue(objectId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return (baseRow, _tableName, null);
+        }
+        var effective = reader.GetInt16(3) == 3
+            ? (Feature?)null
+            : await ReadFeatureAsync(reader, cancellationToken).ConfigureAwait(false);
+        return (effective, VersionEditsTableName, versionId);
     }
 
     /// <summary>

@@ -4,6 +4,7 @@
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Raster;
 
 namespace Honua.Protocols.GeoServices.ImageServer.Services;
@@ -62,21 +63,35 @@ internal static class ImageServerV2Lookups
     public static ResolvedImageLayer? FindByStorageLayerId(
         MetadataV2GraphSnapshot snapshot,
         int storageLayerId,
-        HttpContext? context = null)
+        HttpContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        return FindStorageLayer(snapshot, storageLayerId, context);
+    }
+
+    public static ResolvedImageLayer? FindPinnedStorageLayer(MetadataV2GraphSnapshot snapshot, int storageLayerId)
+        => FindStorageLayer(snapshot, storageLayerId, null);
+
+    private static ResolvedImageLayer? FindStorageLayer(
+        MetadataV2GraphSnapshot snapshot,
+        int storageLayerId,
+        HttpContext? context)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
 
         if (context?.Items.TryGetValue(RouteBindingItemKey, out var value) == true
             && value is RouteBinding { Resolution.PublicationId: { } routePublicationId } binding
-            && binding.StorageLayerId == storageLayerId
-            && snapshot.Index.PublicationsById.TryGetValue(routePublicationId, out var routePublication)
-            && snapshot.IsRoutable(routePublication)
-            && snapshot.ResolveStorageLayerId(routePublication) == storageLayerId)
+            && binding.StorageLayerId == storageLayerId)
         {
-            return Project(routePublication, snapshot.ResolveResource(routePublication));
+            return snapshot.Index.PublicationsById.TryGetValue(routePublicationId, out var routePublication)
+                && IsVisibleForRequest(snapshot, routePublication, context)
+                && snapshot.ResolveStorageLayerId(routePublication) == storageLayerId
+                    ? Project(routePublication, snapshot.ResolveResource(routePublication))
+                    : null;
         }
 
         var bound = snapshot.PublicationsForStorageLayer(storageLayerId)
+            .Where(publication => IsVisibleForRequest(snapshot, publication, context))
             .Select(publication => (
                 Publication: publication,
                 Service: snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service) ? service : null))
@@ -95,25 +110,37 @@ internal static class ImageServerV2Lookups
 
         var unbound = snapshot.Graph.Publications.FirstOrDefault(publication =>
             publication.LayerIndex == storageLayerId
-            && snapshot.IsRoutable(publication)
+            && IsVisibleForRequest(snapshot, publication, context)
             && snapshot.ResolveStorageLayerId(publication) is null);
         return unbound is null ? null : Project(unbound, snapshot.ResolveResource(unbound));
     }
 
     public static ResolvedImageLayer? FindByPublicationId(
         MetadataV2GraphSnapshot snapshot,
-        string publicationId)
+        string publicationId,
+        HttpContext context)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(context);
         ArgumentException.ThrowIfNullOrWhiteSpace(publicationId);
 
-        if (!snapshot.Index.PublicationsById.TryGetValue(publicationId, out var publication))
+        if (!snapshot.Index.PublicationsById.TryGetValue(publicationId, out var publication)
+            || !IsVisibleForRequest(snapshot, publication, context))
         {
             return null;
         }
 
         return Project(publication, snapshot.ResolveResource(publication));
     }
+
+    private static bool IsVisibleForRequest(
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Publication publication,
+        HttpContext? context)
+        => snapshot.IsRoutable(publication)
+            && (context is null || TenantScopeHelpers.IsPublicationVisible(
+                context, publication, snapshot.ResolveResource(publication),
+                snapshot.Index.ServicesById.GetValueOrDefault(publication.ServiceId)));
 
     private static ResolvedImageLayer Project(MetadataV2Publication publication, MetadataV2Resource? resource)
     {

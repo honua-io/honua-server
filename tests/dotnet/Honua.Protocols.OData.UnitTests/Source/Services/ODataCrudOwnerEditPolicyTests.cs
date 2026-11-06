@@ -45,6 +45,37 @@ public sealed partial class ODataCrudOwnerEditPolicyTests
     };
 
     [UnitTest]
+    public async Task Update_ReplacementWithMaskedProtectedFields_UsesPreservingWriterContract()
+    {
+        var reader = new OwnerReader();
+        var writer = new CapturingWriter();
+        var service = CreateService(reader, writer, Principal("alice", admin: false));
+        var resource = Resource(null) with
+        {
+            Editing = new MetadataV2ResourceEditing { GlobalIdField = "globalid" },
+            SchemaFields =
+            [
+                new() { Name = "name", Type = MetadataV2FieldType.String, Editable = true },
+                new() { Name = "description", Type = MetadataV2FieldType.String, Editable = true },
+                new() { Name = "code", Type = MetadataV2FieldType.String, Editable = false },
+                new() { Name = "globalid", Type = MetadataV2FieldType.String, Editable = true }
+            ]
+        };
+
+        var result = await service.UpdateFeatureAsync(
+            RouteLayerId, 42, Payload("After"), "https://example.test", null, null,
+            StorageLayerId, true, resource, CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        var update = writer.LastBatch.Updates.Should().ContainSingle().Which;
+        update.PreserveOmittedMaskedAttributes.Should().BeFalse();
+        update.PreservedAttributeNames.Should().BeEquivalentTo(["code", "globalid"]);
+        update.ExplicitAttributeRemovals.Should().BeEmpty();
+        update.Attributes.Should().NotContainKey("code").And.NotContainKey("globalid");
+        update.PreserveOmittedGeometry.Should().BeFalse();
+    }
+
+    [UnitTest]
     public async Task UpdateAndDelete_NonOwner_AreDeniedBeforeTheWrite()
     {
         var reader = new OwnerReader();

@@ -12,12 +12,10 @@ namespace Honua.Protocols.GeoServices.FeatureServer;
 internal static partial class FeatureServerEndpoints
 {
     internal static (MetadataV2Publication Publication, MetadataV2Resource Resource)[] GetRoutableFeaturePublicationsV2(
-        MetadataV2Service service, MetadataV2GraphSnapshot snapshot)
-        => snapshot.Index.PublicationsByService[service.Metadata.Id]
-            .Where(publication => ServiceProtocols.IsPreferredPublicationType(
-                ServiceProtocols.FeatureServer, publication.PublicationType))
-            .Where(snapshot.IsRoutable)
-            .Select(publication => (publication, snapshot.ResolveResource(publication)!))
+        MetadataV2Service service, MetadataV2GraphSnapshot snapshot, HttpContext context)
+        => GetRoutableServicePublicationsV2(service, snapshot, context)
+            .Where(pair => ServiceProtocols.IsPreferredPublicationType(
+                ServiceProtocols.FeatureServer, pair.Publication.PublicationType))
             .ToArray();
 
     internal static async Task<bool> HasAccessibleBranchVersionedPublicationsAsync(
@@ -25,7 +23,7 @@ internal static partial class FeatureServerEndpoints
         CancellationToken cancellationToken)
     {
         var (publications, error) = await AccessPolicyHelpers.FilterAccessibleResourcesAsync(
-            context, GetRoutableFeaturePublicationsV2(service, snapshot), static pair => pair.Resource,
+            context, GetRoutableFeaturePublicationsV2(service, snapshot, context), static pair => pair.Resource,
             service, AuthorizationOperation.Metadata, cancellationToken).ConfigureAwait(false);
         return error == null && await HasBranchVersionedPublicationsAsync(
             context, service, publications, snapshot, cancellationToken).ConfigureAwait(false);

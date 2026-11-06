@@ -223,69 +223,14 @@ internal static partial class MapServerEndpoints
             return (null, StandardErrorHelpers.CreateBadRequest(context, maxTilesError ?? "Invalid maxTiles parameter."));
         }
 
-        if (!TryParseExportTilesExtent(
-                GetValue(values, "exportExtent") ?? GetValue(values, "bbox"),
-                GetValue(values, "exportExtentSR") ?? GetValue(values, "bboxSR"),
-                out var sourceExtent,
-                out var sourceSrid,
-                out var extentError))
+        var (mapExport, exportError) = await ResolveAuthorizedMapServerExportAsync(
+            context, new(serviceId, values), cancellationToken).ConfigureAwait(false);
+        if (exportError is not null)
         {
-            return (null, StandardErrorHelpers.CreateBadRequest(context, extentError ?? "Invalid exportExtent parameter."));
+            return (null, exportError);
         }
-
-        var extentTransform = await TryTransformExtentAsync(
-            context,
-            sourceExtent,
-            sourceSrid,
-            SpatialReference.WGS84.Wkid,
-            cancellationToken).ConfigureAwait(false);
-        if (!extentTransform.IsSuccess)
-        {
-            return (null, StandardErrorHelpers.CreateBadRequest(
-                context,
-                extentTransform.Error ?? "Invalid exportExtent spatial reference."));
-        }
-
-        var bounds = NormalizeExportTilesBounds(extentTransform.Extent);
-
-        var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-        var serviceResult = await ServiceResourceValidationHelpers.ValidateServiceV2Async(
-            resourceValidator,
-            serviceId,
-            ServiceProtocols.MapServer,
-            context,
-            cancellationToken: cancellationToken);
-        if (!serviceResult.IsValid)
-        {
-            return (null, serviceResult.ErrorResult!);
-        }
-
-        var service = serviceResult.Service!;
-        var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
-        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var publishedLayers = ResolveMapServerMetadataLayers(snapshot, service);
-
-        var access = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
-            context,
-            publishedLayers.Select(static layer => layer.Resource),
-            service,
-            AuthorizationOperation.Export,
-            cancellationToken).ConfigureAwait(false);
-        var accessError = access.RequireAny(publishedLayers.Select(static layer => layer.Resource));
-        if (accessError is not null)
-        {
-            return (null, accessError);
-        }
-
-        // Pin exactly the accessible, requested layers the synchronous render path would draw: resolve
-        // through ResolveRenderLayers so the `layers` filter and per-layer IsResourceAccessible gate
-        // apply. Pinning every published layer here would let a caller who can read one layer receive
-        // inaccessible or default-hidden layers in the queued TPKX (the worker renders without an
-        // HttpContext and cannot re-check access).
-        if (!MetadataV2MapServerDrawing.UsesCachedDrawing(service))
-        {
-            return (null, StandardErrorHelpers.CreateBadRequest(context, "Dynamic MapServer drawing does not provide tile exports."));
-        }
+        var (selection, access, bounds) = mapExport!;
+        var (service, snapshot, publishedLayers) = selection;
 
         var renderSelection = ResolveRenderLayers(
             publishedLayers,
@@ -317,7 +262,7 @@ internal static partial class MapServerEndpoints
         var descriptor = new TileExportMapSourceDescriptor(
             snapshot.Revision,
             layers,
-            DataWatermark: string.Create(CultureInfo.InvariantCulture, $"metadata-{snapshot.Revision}"),
+            DataWatermark: TileExportMapPublicationPolicy.Watermark(snapshot.Revision),
             SubmissionReuseScope: null);
 
         var plan = new TileExportJobPlan

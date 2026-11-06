@@ -65,22 +65,14 @@ internal static partial class MapServerEndpoints
 
         try
         {
-            var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-            var serviceResult = await ServiceResourceValidationHelpers.ValidateServiceV2Async(
-                resourceValidator,
-                serviceId,
-                ServiceProtocols.MapServer,
-                context,
-                cancellationToken: cancellationToken);
-            if (!serviceResult.IsValid)
+            var (selection, publicationSelectionError) = await ResolveMapServerPublicationSelectionAsync(
+                context, serviceId, cancellationToken).ConfigureAwait(false);
+            if (publicationSelectionError is not null)
             {
-                return serviceResult.ErrorResult!;
+                return publicationSelectionError;
             }
-
-            var service = serviceResult.Service!;
-            var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
-            var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            var publishedLayers = ResolveMapServerMetadataLayers(snapshot, service);
+            var (service, snapshot, publishedLayers) = selection!;
+            var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
 
             var (visibleLayers, accessError) = await AccessPolicyHelpers.FilterAccessibleResourcesAsync(
                 context,
@@ -363,7 +355,7 @@ internal static partial class MapServerEndpoints
         // FeatureServer itself remains available for external/non-versioned readers. The
         // companion VMS requires the exact bound publication capability and its own gate.
         var (publications, error) = await AccessPolicyHelpers.FilterAccessibleResourcesAsync(
-            context, FeatureServerEndpoints.GetRoutableFeaturePublicationsV2(service, snapshot),
+            context, FeatureServerEndpoints.GetRoutableFeaturePublicationsV2(service, snapshot, context),
             static pair => pair.Resource, service, AuthorizationOperation.Metadata, cancellationToken).ConfigureAwait(false);
         if (error != null || publications.Length == 0)
         {
@@ -595,10 +587,11 @@ internal static partial class MapServerEndpoints
 
     private static MapServerMetadataLayerDescriptor[] ResolveMapServerMetadataLayers(
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Service service)
+        MetadataV2Service service,
+        HttpContext context)
     {
         var descriptors = new List<MapServerMetadataLayerDescriptor>();
-        foreach (var publication in MapServerPublicationResolver.ResolveLayerPublications(snapshot, service))
+        foreach (var publication in MapServerPublicationResolver.ResolveLayerPublications(snapshot, service, TenantScopeHelpers.ResolveRequestTenantId(context)))
         {
             var publicLayerId = publication.LayerIndex!.Value;
 

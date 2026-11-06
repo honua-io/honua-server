@@ -112,7 +112,7 @@ public sealed class RbacRoleClaimEntitlementTests
         var source = new RowLevelSecurityFilterSource(
             new HttpContextAccessor { HttpContext = context },
             policyStore,
-            new ThrowingGraphProvider(),
+            new EmptyGraphProvider(),
             Substitute.For<Honua.Core.Queries.Filters.IFilterExpressionService>(),
             provider.GetRequiredService<IOptions<RbacOptions>>(),
             NullLogger<RowLevelSecurityFilterSource>.Instance);
@@ -154,7 +154,7 @@ public sealed class RbacRoleClaimEntitlementTests
         using var provider = BuildServices(entitlements, services =>
         {
             services.AddSingleton<IHttpContextAccessor>(new HttpContextAccessor());
-            services.AddSingleton<IMetadataV2GraphProvider>(new ThrowingGraphProvider());
+            services.AddSingleton<IMetadataV2GraphProvider>(new EmptyGraphProvider());
             services.AddSingleton(Substitute.For<Honua.Core.Queries.Filters.IFilterExpressionService>());
             services.AddSingleton<IRlsPolicyStore>(rowPolicies);
             services.AddSingleton(maskPolicies);
@@ -324,10 +324,10 @@ public sealed class RbacRoleClaimEntitlementTests
             => Task.FromResult(false);
     }
 
-    private sealed class ThrowingGraphProvider : IMetadataV2GraphProvider
+    private sealed class EmptyGraphProvider : IMetadataV2GraphProvider
     {
         public ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
-            => ValueTask.FromException<MetadataV2GraphSnapshot>(new InvalidOperationException("No graph needed."));
+            => ValueTask.FromResult(new MetadataV2GraphSnapshot(new MetadataV2Graph(), "test", DateTimeOffset.UtcNow));
 
         public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(
             long revision,

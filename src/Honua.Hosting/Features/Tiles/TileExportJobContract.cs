@@ -59,6 +59,14 @@ internal sealed record TileExportJobPlan
     public required int RetentionSeconds { get; init; }
 }
 
+internal static class TileExportMapPublicationPolicy
+{
+    internal static string Watermark(long revision) => string.Create(CultureInfo.InvariantCulture, $"metadata-v2-publication-tenant-{revision}");
+
+    internal static bool IsCurrent(TileExportMapSourceDescriptor descriptor)
+        => string.Equals(descriptor.DataWatermark, Watermark(descriptor.MetadataRevision), StringComparison.Ordinal);
+}
+
 internal static class TileExportJobParameterKeys
 {
     internal const string Prefix = "honua.tile_export.";
