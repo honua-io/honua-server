@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import importlib.util
+import itertools
 import json
 import os
 import subprocess
@@ -365,14 +366,18 @@ class AffectedShardVerdictTests(unittest.TestCase):
     def test_missing_execution_keeps_the_measured_failure_cause(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            for status in ("timed_out", "killed", "failed"):
-                with self.subTest(status=status):
-                    (root / "control.timing.json").write_text(json.dumps(timing("Reporting", status)))
+            executions = (None, {"trxFile": "other.trx", "counts": {
+                "passed": 9, "failed": 0, "skipped": 0, "executed": 9}})
+            for status, execution in itertools.product(("timed_out", "killed", "failed"), executions):
+                with self.subTest(status=status, execution=execution):
+                    receipt = {**timing("Reporting", status), "log_name": "control", "execution": execution}
+                    (root / "control.timing.json").write_text(json.dumps(receipt))
                     measured = verdict._load_timings(root)
                     self.assertEqual(measured[0]["status"], status)
                     outcome = decide(mode="enforce", timings=measured)
                     self.assertEqual(outcome["exit_code"], 1)
                     self.assertIn("| n/a | n/a | n/a | n/a |", outcome["summary"])
+                    self.assertNotIn("| 9 |", outcome["summary"])
 
     def test_required_gate_propagates_aggregate_failure(self) -> None:
         import yaml
