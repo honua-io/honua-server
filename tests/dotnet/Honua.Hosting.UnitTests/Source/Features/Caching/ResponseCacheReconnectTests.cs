@@ -213,9 +213,10 @@ public sealed class ResponseCacheReconnectTests
         try
         {
             await writeStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
-            backend.WriteUnavailable = true;
-            await service.SetAsync("partition-marker", "unavailable", Lifetime);
-            backend.WriteUnavailable = false;
+            backend.ReadUnavailable = true;
+            await service.GetAsync<string>("partition-marker");
+            backend.ReadUnavailable = false;
+            Assert.True(service.IsUsingFallback);
             backend.AfterWrite = async key =>
             {
                 if (key.EndsWith("response-version:recovery", StringComparison.Ordinal)
@@ -262,14 +263,16 @@ public sealed class ResponseCacheReconnectTests
     {
         public IDistributedCache Cache { get; } = Substitute.For<IDistributedCache>();
         public bool WriteUnavailable { get; set; }
+        public bool ReadUnavailable { get; set; }
         public Func<string, Task>? BeforeWrite { get; set; }
         public Func<string, Task>? AfterWrite { get; set; }
 
         public FaultyCache(ConcurrentDictionary<string, byte[]> shared)
         {
             Cache.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-                .Returns(call => Task.FromResult(shared.TryGetValue(call.ArgAt<string>(0), out var bytes)
-                    ? bytes.ToArray() : null));
+                .Returns(call => ReadUnavailable
+                    ? Task.FromException<byte[]?>(new RedisConnectionException(ConnectionFailureType.UnableToConnect, "Injected Redis read failure"))
+                    : Task.FromResult(shared.TryGetValue(call.ArgAt<string>(0), out var bytes) ? bytes.ToArray() : null));
             Cache.SetAsync(Arg.Any<string>(), Arg.Any<byte[]>(), Arg.Any<DistributedCacheEntryOptions>(),
                 Arg.Any<CancellationToken>()).Returns(async call =>
                 {
