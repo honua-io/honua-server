@@ -34,13 +34,15 @@ public sealed class McpAuthenticationGuidanceTests : IAsyncLifetime
     [InlineData("configure", false)]
     [InlineData("setup", false)]
     [InlineData("review", false)]
+    [InlineData(null, false)]
     [InlineData("default", true)]
     [InlineData("configure", true)]
     [InlineData("setup", true)]
     [InlineData("review", true)]
+    [InlineData(null, true)]
     [Endpoint("POST /mcp")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
-    public async Task ToolsList_AnonymousView_DoesNotAdvertiseProtectedTools(string view, bool modern)
+    public async Task ToolsList_AnonymousView_DoesNotAdvertiseProtectedTools(string? view, bool modern)
     {
         using var anonymous = _fixture.CreateClient();
         using var request = BuildRequest("tools/list", "{}", view, modern);
@@ -50,6 +52,14 @@ public sealed class McpAuthenticationGuidanceTests : IAsyncLifetime
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var result = document.RootElement.GetProperty("result");
         result.GetProperty("tools").GetArrayLength().Should().Be(0);
+        var metadata = result.GetProperty("_meta");
+        metadata.GetProperty("view").GetString().Should().Be(view ?? "default");
+        metadata.GetProperty("toolCount").GetInt32().Should().Be(0);
+        metadata.GetProperty("stages").GetArrayLength().Should().BeGreaterThan(0);
+        foreach (var stage in metadata.GetProperty("stages").EnumerateArray())
+        {
+            stage.GetProperty("tools").GetArrayLength().Should().Be(0);
+        }
 
         using var authenticated = _fixture.CreateAdminClient();
         using var allowed = BuildRequest("tools/list", "{}", view, modern);
@@ -58,6 +68,26 @@ public sealed class McpAuthenticationGuidanceTests : IAsyncLifetime
         using var allowedDocument = JsonDocument.Parse(await allowedResponse.Content.ReadAsStringAsync());
         allowedDocument.RootElement.GetProperty("result").GetProperty("tools")
             .GetArrayLength().Should().BeGreaterThan(0);
+        var authenticatedMetadata = allowedDocument.RootElement.GetProperty("result").GetProperty("_meta");
+        authenticatedMetadata.GetProperty("title").GetString().Should().Be(metadata.GetProperty("title").GetString());
+        authenticatedMetadata.GetProperty("revisionDigest").GetString().Should().Be(metadata.GetProperty("revisionDigest").GetString());
+    }
+
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
+    public async Task ToolsList_AnonymousFullExport_ReturnsPermissionDenied(bool modern)
+    {
+        using var client = _fixture.CreateClient();
+        using var request = BuildRequest("tools/list", "{}", "full", modern);
+        using var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(modern ? HttpStatusCode.Forbidden : HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("error").GetProperty("data").GetProperty("code")
+            .GetString().Should().Be("permission_denied");
     }
 
     [IntegrationTheory]
@@ -86,13 +116,13 @@ public sealed class McpAuthenticationGuidanceTests : IAsyncLifetime
         }
     }
 
-    private static HttpRequestMessage BuildRequest(string method, string parameters, string view, bool modern)
+    private static HttpRequestMessage BuildRequest(string method, string parameters, string? view, bool modern)
     {
         var metadata = modern
             ? "\"_meta\":{\"io.modelcontextprotocol/protocolVersion\":\"2026-07-28\",\"io.modelcontextprotocol/clientCapabilities\":{}}"
             : string.Empty;
         var separator = modern && parameters.Length > 2 ? "," : string.Empty;
-        var request = new HttpRequestMessage(HttpMethod.Post, "/mcp?view=" + view)
+        var request = new HttpRequestMessage(HttpMethod.Post, view is null ? "/mcp" : "/mcp?view=" + view)
         {
             Content = new StringContent(
                 "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"" + method

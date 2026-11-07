@@ -129,15 +129,15 @@ public sealed class McpWorkflowViewTests
     }
 
     [UnitTest]
-    public async Task SetupView_ListsPackageCompositionToAnonymousCallersWithoutGrantingIt()
+    public async Task SetupView_AnonymousCatalogIsEmptyAndPackageCallsRequireAuthentication()
     {
-        // Listing is discovery only: an installed client that resolves tools from the listing
-        // (MCP Inspector) can now send the call, and the server still refuses it anonymously.
         var surface = BuildFullSurface();
         var anonymous = await ListToolsAsync(surface, McpWorkflowViewCatalog.SetupViewName, McpTestFactory.AnonymousHttpContext());
+        var authenticated = await ListToolsAsync(surface, McpWorkflowViewCatalog.SetupViewName);
 
-        anonymous.Names.Should().Contain(["honua_create_map_package", "honua_create_app_package"]);
-        anonymous.Names.Should().NotContain(["honua_validate_package", "honua_preview_package"]);
+        anonymous.Names.Should().BeEmpty();
+        authenticated.Names.Should().Contain(["honua_create_map_package", "honua_create_app_package"]);
+        authenticated.Names.Should().NotContain(["honua_validate_package", "honua_preview_package"]);
         McpWorkflowViewCatalog.Setup.Revision.Should().Be("setup.v6");
 
         foreach (var name in new[] { "honua_create_map_package", "honua_create_app_package" })
@@ -155,14 +155,14 @@ public sealed class McpWorkflowViewTests
     }
 
     [UnitTest]
-    public async Task ReviewView_ListsPackageReviewToAnonymousCallersWithoutGrantingIt()
+    public async Task ReviewView_AnonymousCatalogIsEmptyAndPackageCallsRequireAuthentication()
     {
-        // The two review descriptors do not fit on setup (128 KiB aggregate). Inspector
-        // resolves --tool-name against tools/list, so they need a view it can negotiate.
         var surface = BuildFullSurface();
         var anonymous = await ListToolsAsync(surface, McpWorkflowViewCatalog.ReviewViewName, McpTestFactory.AnonymousHttpContext());
+        var authenticated = await ListToolsAsync(surface, McpWorkflowViewCatalog.ReviewViewName);
 
-        anonymous.Names.Should().Equal("honua_preview_package", "honua_validate_package");
+        anonymous.Names.Should().BeEmpty();
+        authenticated.Names.Should().Equal("honua_preview_package", "honua_validate_package");
         McpWorkflowViewCatalog.Review.Revision.Should().Be("review.v1");
 
         var projection = McpWorkflowViewProjector.Project(McpWorkflowViewCatalog.Review, BuildCatalogEntries());
@@ -957,11 +957,9 @@ public sealed class McpWorkflowViewTests
         var anonymous = McpTestFactory.AnonymousHttpContext();
         anonymous.Items[McpWorkflowViewNegotiation.HttpContextItemKey] = McpWorkflowViewCatalog.SetupViewName;
 
-        // Anonymous discovery of the view is allowed where policy documents it...
         var view = await ListToolsAsync(surface, McpWorkflowViewCatalog.SetupViewName, anonymous);
-        view.Names.Should().Contain("honua_list_capabilities");
+        view.Names.Should().BeEmpty();
 
-        // ...but membership caches no allow decision: the call reauthenticates.
         var response = await DispatchAsync(
             surface,
             """{"jsonrpc":"2.0","id":"c","method":"tools/call","params":{"name":"honua_list_capabilities","arguments":{}}}""",

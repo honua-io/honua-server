@@ -12,6 +12,10 @@ namespace Honua.Ai.Protocols.Mcp;
 
 internal static class McpErrorMapper
 {
+    private const string AuthenticationGuidance = "Use a scoped API key in X-API-Key, obtained from your Honua administrator, "
+        + "or an OAuth access token in Authorization: Bearer from your configured identity provider. "
+        + "Discover OAuth authorization servers at /.well-known/oauth-protected-resource/mcp.";
+
     public static class Codes
     {
         public const string Unauthenticated = "unauthenticated";
@@ -58,7 +62,7 @@ internal static class McpErrorMapper
         GeoprocessingAuthorizationException authEx when authEx.RequiresAuthentication => new McpJsonRpcError
         {
             Code = JsonRpcServerError,
-            Message = authEx.Message,
+            Message = $"{authEx.Message} {AuthenticationGuidance}",
             Data = new McpErrorData
             {
                 Code = Codes.Unauthenticated,
@@ -283,7 +287,7 @@ internal static class McpErrorMapper
     public static McpJsonRpcError Unauthenticated() => new()
     {
         Code = JsonRpcServerError,
-        Message = "Authentication is required to use the MCP operator surface.",
+        Message = $"Authentication is required to use the MCP operator surface. {AuthenticationGuidance}",
         Data = new McpErrorData
         {
             Code = Codes.Unauthenticated,
