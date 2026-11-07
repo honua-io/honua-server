@@ -143,7 +143,7 @@ public sealed class OperationProposerApiKeyAuthorityTests
         var scopes = services.GetRequiredService<IServiceScopeFactory>();
         var gateway = new OperationGateway(Substitute.For<IGuardrailLadder>(), store, [], scopes,
             Substitute.For<IProposalNotifier>(), NullLogger<OperationGateway>.Instance);
-        var act = () => gateway.ApplyApprovedProposalAsync("synthetic", "distinct-approver");
+        var act = () => gateway.ApplyApprovedProposalAsync("synthetic", new OperationProposalApprovalContext { ApprovedBy = "distinct-approver", TenantId = string.Empty });
         var error = (await act.Should().ThrowAsync<InvalidOperationException>()).Which;
         error.Message.Should().Be(OperationProposerApiKeyAuthority.Refusal);
         error.InnerException.Should().BeNull();

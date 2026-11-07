@@ -211,7 +211,7 @@ public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsync
         // The real route created the proposal above; direct gateway cancellation lets the
         // test retain an observer after the caller's cancellation, rather than assert on a closed socket.
         var gateway = _fixture.Services.GetRequiredService<IOperationGateway>();
-        var act = () => gateway.ApplyApprovedProposalAsync(proposal.ProposalId, "separate-cancellation-test-approver", cancellation.Token);
+        var act = () => gateway.ApplyApprovedProposalAsync(proposal.ProposalId, new OperationProposalApprovalContext { ApprovedBy = "separate-cancellation-test-approver", TenantId = string.Empty }, cancellation.Token);
         await act.Should().ThrowAsync<OperationCanceledException>();
         _executor.Calls.Should().Be(0);
         (await _proposals.GetAsync(proposal.ProposalId, CancellationToken.None))!.Status

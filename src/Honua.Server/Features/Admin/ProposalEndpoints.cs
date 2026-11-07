@@ -204,15 +204,6 @@ internal static class ProposalEndpoints
             return ControlPlaneUnavailable(context);
         }
 
-        try
-        {
-            OperationHumanApprovalAuthority.RefuseNonHumanTransport(context);
-        }
-        catch (HumanApprovalRequiredException exception)
-        {
-            return Results.Problem(detail: exception.Message, statusCode: StatusCodes.Status403Forbidden);
-        }
-
         var actor = ConsolePrincipal.ResolveActorId(context.User);
         var denied = await EnsureApproverAsync(permissionResolver, proposalStore, id, actor, context)
             .ConfigureAwait(false);
@@ -222,6 +213,19 @@ internal static class ProposalEndpoints
         }
 
         var proposal = await proposalStore.GetAsync(id, context.RequestAborted).ConfigureAwait(false);
+        if (proposal is null) return Results.NotFound();
+        try
+        {
+            OperationHumanApprovalAuthority.RefuseNonHumanTransport(context);
+        }
+        catch (HumanApprovalRequiredException exception)
+        {
+            await OperationApprovalDenialRecorder.RecordAsync(
+                context.RequestServices.GetRequiredService<IServiceScopeFactory>(), proposal, actor!,
+                OperationApprovalDenialReason.HumanSessionRequired, context.RequestAborted).ConfigureAwait(false);
+            return Results.Problem(detail: exception.Message, statusCode: StatusCodes.Status403Forbidden);
+        }
+
         var operationId = proposal?.OperationId ?? (proposal is null ? null : LegacyOperationIds.For(proposal.Kind));
         if (proposal != null &&
             (operationExecutors is null || !operationExecutors.Any(executor =>

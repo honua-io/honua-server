@@ -45,6 +45,7 @@ public sealed record OperationHumanApprovalEvidence
     public required string CapabilityReference { get; init; }
     public required string PlanHash { get; init; }
     public required string InitiationDigest { get; init; }
+    public required string BindingDigest { get; init; }
     public required long ProposalVersion { get; init; }
     public required DateTimeOffset ApprovedAt { get; init; }
 }

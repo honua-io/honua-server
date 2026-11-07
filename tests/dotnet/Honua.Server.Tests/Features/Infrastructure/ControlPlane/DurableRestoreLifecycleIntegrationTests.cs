@@ -221,9 +221,9 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             });
             Assert.Equal(OperationGatewayOutcome.ProposalCreated, routed.Outcome);
             Assert.NotNull(routed.ProposalId);
-            await Assert.ThrowsAsync<InvalidOperationException>(() => gateway.ApplyApprovedProposalAsync(routed.ProposalId, "proposer"));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => gateway.ApplyApprovedProposalAsync(routed.ProposalId, new OperationProposalApprovalContext { ApprovedBy = "proposer", TenantId = string.Empty }));
             await snapshots.DidNotReceive().BeginAsync(Arg.Any<RdsRestoreRequest>(), Arg.Any<CancellationToken>());
-            var approved = await gateway.ApplyApprovedProposalAsync(routed.ProposalId, "approver");
+            var approved = await gateway.ApplyApprovedProposalAsync(routed.ProposalId, new OperationProposalApprovalContext { ApprovedBy = "approver", TenantId = string.Empty });
             Assert.NotNull(approved);
             Assert.Equal(OperationProposalStatus.Submitted, approved.Status);
             Assert.NotNull(approved.ExecutionOperationId);
@@ -236,7 +236,7 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
                 Plan = new OperationProposalPlan { Summary = "Restore prior image", ExecutionPayload = payload }
             });
             Assert.NotNull(secondRoute.ProposalId);
-            var second = await gateway.ApplyApprovedProposalAsync(secondRoute.ProposalId, "approver");
+            var second = await gateway.ApplyApprovedProposalAsync(secondRoute.ProposalId, new OperationProposalApprovalContext { ApprovedBy = "approver", TenantId = string.Empty });
             Assert.NotNull(second);
             Assert.NotNull(second.ExecutionOperationId);
             // Simulate a crash after the durable enqueue but before the gateway's final resolution write.

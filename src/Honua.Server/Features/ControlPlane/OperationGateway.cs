@@ -235,29 +235,8 @@ internal sealed partial class OperationGateway : IOperationGateway
 
     public async Task<OperationProposal?> ApplyApprovedProposalAsync(
         string proposalId,
-        string approvedBy,
-        CancellationToken cancellationToken = default)
-        => await ApplyApprovedProposalCoreAsync(
-            proposalId,
-            new OperationProposalApprovalContext { ApprovedBy = approvedBy, TenantId = string.Empty },
-            hasApprovalContext: false,
-            cancellationToken).ConfigureAwait(false);
-
-    public async Task<OperationProposal?> ApplyApprovedProposalAsync(
-        string proposalId,
         OperationProposalApprovalContext approval,
         CancellationToken cancellationToken = default)
-        => await ApplyApprovedProposalCoreAsync(
-            proposalId,
-            approval,
-            hasApprovalContext: true,
-            cancellationToken).ConfigureAwait(false);
-
-    private async Task<OperationProposal?> ApplyApprovedProposalCoreAsync(
-        string proposalId,
-        OperationProposalApprovalContext approval,
-        bool hasApprovalContext,
-        CancellationToken cancellationToken)
     {
         var approvedBy = approval.ApprovedBy;
         var proposal = await _proposalStore.GetAsync(proposalId, cancellationToken).ConfigureAwait(false);
@@ -273,13 +252,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                 $"Proposal '{proposalId}' is '{proposal.Status}' and cannot be approved.");
         }
 
-        if (_humanApprovalVerifier is null)
-        {
-            throw new InvalidOperationException(
-                "A verified human session from Console or an MCP human review is required to approve an operation.");
-        }
-
-        await _humanApprovalVerifier.VerifyAsync(proposal, approval, cancellationToken).ConfigureAwait(false);
+        await VerifyHumanApprovalAsync(proposal, approval, cancellationToken).ConfigureAwait(false);
 
         try
         {
@@ -297,7 +270,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         {
             if (proposal.Evidence is not null)
             {
-                if (!hasApprovalContext || _evidenceValidator is null)
+                if (_evidenceValidator is null)
                 {
                     throw new InvalidOperationException(
                         "Evidence-bound proposals require the authenticated approval validation boundary.");
@@ -935,6 +908,22 @@ internal sealed partial class OperationGateway : IOperationGateway
             $"Failed to persist resolution for proposal '{proposal.ProposalId}' after repeated version conflicts.");
     }
 
+    private async Task<OperationHumanApprovalEvidence> VerifyHumanApprovalAsync(
+        OperationProposal proposal, OperationProposalApprovalContext approval, CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (_humanApprovalVerifier is null) throw new HumanApprovalRequiredException();
+            return await _humanApprovalVerifier.VerifyAsync(proposal, approval, cancellationToken).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException exception) when (exception is not ServiceUnavailableException)
+        {
+            await OperationApprovalDenialRecorder.RecordAsync(_scopeFactory, proposal, approval.ApprovedBy,
+                OperationApprovalDenialReason.HumanSessionRequired, cancellationToken).ConfigureAwait(false);
+            throw;
+        }
+    }
+
     // The claim is a compare-and-swap, and a lost claim throws instead of double-applying the proposal.
     private async Task<OperationProposal> ClaimForExecutionAsync(
         OperationProposal proposal,
@@ -944,7 +933,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         for (var attempt = 0; attempt < 3; attempt++)
         {
             // The session or capability may expire while proposer evidence is revalidated.
-            var humanApproval = await _humanApprovalVerifier!.VerifyAsync(proposal, approval, cancellationToken)
+            var humanApproval = await VerifyHumanApprovalAsync(proposal, approval, cancellationToken)
                 .ConfigureAwait(false);
             var payload = proposal.Kind == OperationClass.Deploy
                 ? Honua.ControlPlane.Executors.DeployExecutionPayload.Parse(proposal.Plan.ExecutionPayload)

@@ -38,8 +38,8 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
     private const string TestOperatorBearerSigningKey = "operator-bearer-signing-key-at-least-32-bytes-long";
     private const string OperatorBearerIssuer = "honua-operator-bearer";
     private const string OperatorBearerAudience = "honua-admin-api";
-    private const string TestOidcIssuer = "https://auth.example.com";
-    private const string TestOidcAudience = "generic-client-id";
+    internal const string TestOidcIssuer = "https://auth.example.com";
+    internal const string TestOidcAudience = "generic-client-id";
     private static readonly RsaSecurityKey _oidcSigningKey = CreateOidcSigningKey();
     private static readonly SigningCredentials _oidcSigningCredentials = new(_oidcSigningKey, SecurityAlgorithms.RsaSha256);
 
@@ -1350,7 +1350,11 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
     private static string CreateIdToken(string name, params string[] roles) =>
         CreateIdTokenForSubject("admin-user", name, roles);
 
-    internal static string CreateIdTokenForSubject(string subject, string name, params string[] roles)
+    internal static string CreateIdTokenForSubject(string subject, string name, params string[] roles) =>
+        CreateIdTokenForSubject(subject, name, roles, tenantId: null);
+
+    internal static string CreateIdTokenForSubject(
+        string subject, string name, IReadOnlyList<string> roles, string? tenantId)
     {
         var claims = new List<Claim>
         {
@@ -1358,6 +1362,7 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
             new("name", name)
         };
 
+        if (tenantId is not null) claims.Add(new Claim("tenant_id", tenantId));
         claims.AddRange(roles.Select(static role => new Claim("roles", role)));
 
         var token = new JwtSecurityToken(

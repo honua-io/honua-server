@@ -90,6 +90,7 @@ public sealed class OperationHumanApprovalAuthorityTests
     [InlineData("tenant")]
     [InlineData("requester")]
     [InlineData("scope")]
+    [InlineData("operation-instance")]
     [InlineData("plan")]
     [InlineData("policy")]
     public async Task VerifyAsync_ReviewBindingChanged_RefusesDecision(string change)
@@ -236,6 +237,7 @@ public sealed class OperationHumanApprovalAuthorityTests
             "proposal" => proposal with { ProposalId = "other-proposal" },
             "tenant" => proposal with { TenantId = "tenant-b", Initiation = proposal.Initiation! with { TenantId = "tenant-b" } },
             "requester" => proposal with { RequestedBy = "another-agent", Initiation = proposal.Initiation! with { PrincipalId = "another-agent" } },
+            "operation-instance" => proposal with { Audit = proposal.Audit with { OperationInstanceId = "another-instance" } },
             "scope" => proposal with { ScopeGoverned = true, RecognizedScopes = ["honua.mcp.operate"] },
             "plan" => proposal with { Plan = plan, SealedPlanHash = hash, Initiation = proposal.Initiation! with { PlanHash = hash } },
             _ => proposal with { GuardrailDecision = policy, Initiation = proposal.Initiation! with { PolicyRevision = OperationGateway.ComputePolicyRevision(policy) } },

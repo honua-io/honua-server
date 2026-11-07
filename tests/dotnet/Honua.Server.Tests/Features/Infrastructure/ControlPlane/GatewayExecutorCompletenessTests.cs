@@ -183,7 +183,7 @@ public sealed class GatewayExecutorCompletenessTests
         proposeResult.Outcome.Should().Be(OperationGatewayOutcome.ProposalCreated);
         proposeResult.ProposalId.Should().NotBeNullOrEmpty();
 
-        var approved = await gateway.ApplyApprovedProposalAsync(proposeResult.ProposalId!, "admin");
+        var approved = await gateway.ApplyApprovedProposalAsync(proposeResult.ProposalId!, new OperationProposalApprovalContext { ApprovedBy = "admin", TenantId = string.Empty });
 
         approved.Should().NotBeNull();
         approved!.Status.Should().Be(OperationProposalStatus.Submitted);

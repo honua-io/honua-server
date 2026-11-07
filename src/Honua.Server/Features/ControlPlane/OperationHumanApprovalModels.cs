@@ -38,6 +38,7 @@ internal sealed class OperationHumanApprovalBinding
     public required string ProposalId { get; init; }
     public required string? TenantId { get; init; }
     public required string? OperationId { get; init; }
+    public required string? OperationInstanceId { get; init; }
     public required OperationClass Kind { get; init; }
     public required string? ActionDiscriminator { get; init; }
     public required string? RequestedBy { get; init; }
@@ -53,6 +54,7 @@ internal sealed class OperationHumanApprovalBinding
         ProposalId = proposal.ProposalId,
         TenantId = proposal.TenantId,
         OperationId = proposal.OperationId,
+        OperationInstanceId = proposal.Audit.OperationInstanceId,
         Kind = proposal.Kind,
         ActionDiscriminator = proposal.ActionDiscriminator,
         RequestedBy = proposal.RequestedBy,

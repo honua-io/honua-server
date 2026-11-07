@@ -135,8 +135,8 @@ internal sealed class OperationHumanApprovalAuthority(
             SessionReference = human.SessionReference,
             CapabilityReference = Hash(Encoding.UTF8.GetBytes(capability.Nonce)),
             PlanHash = proposal.SealedPlanHash!,
-            InitiationDigest = Hash(JsonSerializer.SerializeToUtf8Bytes(
-                proposal.Initiation!, OperationProposalJsonContext.Default.OperationInitiationEvidence)),
+            InitiationDigest = ComputeInitiationDigest(proposal.Initiation!),
+            BindingDigest = ComputeBindingDigest(proposal),
             ProposalVersion = proposal.Version,
             ApprovedAt = now,
         };
@@ -219,8 +219,11 @@ internal sealed class OperationHumanApprovalAuthority(
         ? audience
         : throw new ServiceUnavailableException("Configure Public:BaseUrl to enable human approval.");
 
-    private static string ComputeBindingDigest(OperationProposal proposal) => Hash(JsonSerializer.SerializeToUtf8Bytes(
+    internal static string ComputeBindingDigest(OperationProposal proposal) => Hash(JsonSerializer.SerializeToUtf8Bytes(
         OperationHumanApprovalBinding.From(proposal), OperationHumanApprovalJsonContext.Default.OperationHumanApprovalBinding));
+
+    internal static string ComputeInitiationDigest(OperationInitiationEvidence initiation) => Hash(
+        JsonSerializer.SerializeToUtf8Bytes(initiation, OperationProposalJsonContext.Default.OperationInitiationEvidence));
 
     private static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
 
@@ -228,4 +231,4 @@ internal sealed class OperationHumanApprovalAuthority(
 }
 
 internal sealed class HumanApprovalRequiredException() : InvalidOperationException(
-    "Human approval requires a live interactive session and a valid review capability. Open the proposal in Console or follow the MCP human-review link.");
+    "Human approval requires a live interactive OIDC session and a valid review capability. Open the proposal in Console; MCP tokens and API keys cannot approve it.");

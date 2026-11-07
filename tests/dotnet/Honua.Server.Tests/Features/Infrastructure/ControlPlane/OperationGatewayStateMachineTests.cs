@@ -107,7 +107,7 @@ public sealed class OperationGatewayStateMachineTests
         var sut = BuildGateway(store: store, executor: new DeployExecutor());
 
         // Act
-        var result = await sut.ApplyApprovedProposalAsync("p-no-executor", "admin");
+        var result = await sut.ApplyApprovedProposalAsync("p-no-executor", new OperationProposalApprovalContext { ApprovedBy = "admin", TenantId = string.Empty });
 
         // Assert BH6-033: must transition to terminal Failed, not stay Submitted
         result.Should().NotBeNull();
@@ -129,7 +129,7 @@ public sealed class OperationGatewayStateMachineTests
         var store = new InMemoryProposalStore(proposal);
         var sut = BuildGateway(store: store, executor: new DeployExecutor());
 
-        var result = await sut.ApplyApprovedProposalAsync("p-deploy", "admin");
+        var result = await sut.ApplyApprovedProposalAsync("p-deploy", new OperationProposalApprovalContext { ApprovedBy = "admin", TenantId = string.Empty });
 
         result.Should().NotBeNull();
         result!.Status.Should().Be(OperationProposalStatus.Submitted);
@@ -158,7 +158,7 @@ public sealed class OperationGatewayStateMachineTests
         persisted!.ScopeGoverned.Should().BeTrue();
         persisted.RecognizedScopes.Should().Equal("honua.mcp.publish", "honua.mcp.read");
 
-        var replayed = await sut.ApplyApprovedProposalAsync(routed.ProposalId!, "approver-with-broader-authority");
+        var replayed = await sut.ApplyApprovedProposalAsync(routed.ProposalId!, new OperationProposalApprovalContext { ApprovedBy = "approver-with-broader-authority", TenantId = string.Empty });
         replayed!.Status.Should().Be(OperationProposalStatus.Submitted);
         replayed.ScopeGoverned.Should().BeTrue();
         replayed.RecognizedScopes.Should().Equal("honua.mcp.publish", "honua.mcp.read");
@@ -171,7 +171,7 @@ public sealed class OperationGatewayStateMachineTests
         var store = new InMemoryProposalStore(proposal);
         var sut = BuildGateway(store: store, executor: new SynchronousExecutor());
 
-        var result = await sut.ApplyApprovedProposalAsync("p-seed", "admin");
+        var result = await sut.ApplyApprovedProposalAsync("p-seed", new OperationProposalApprovalContext { ApprovedBy = "admin", TenantId = string.Empty });
 
         result.Should().NotBeNull();
         result!.Status.Should().Be(OperationProposalStatus.Succeeded);
@@ -187,7 +187,7 @@ public sealed class OperationGatewayStateMachineTests
         var store = new InMemoryProposalStore(proposal);
         var sut = BuildGateway(store: store, executor: new ThrowingExecutor());
 
-        var result = await sut.ApplyApprovedProposalAsync("p-throws", "admin");
+        var result = await sut.ApplyApprovedProposalAsync("p-throws", new OperationProposalApprovalContext { ApprovedBy = "admin", TenantId = string.Empty });
 
         result.Should().NotBeNull();
         result!.Status.Should().Be(OperationProposalStatus.Failed);
@@ -235,7 +235,7 @@ public sealed class OperationGatewayStateMachineTests
         var store = new InMemoryProposalStore(proposal);
         var gateway = BuildGateway(store, executor);
 
-        var result = await gateway.ApplyApprovedProposalAsync(proposal.ProposalId, "admin", caller.Token);
+        var result = await gateway.ApplyApprovedProposalAsync(proposal.ProposalId, new OperationProposalApprovalContext { ApprovedBy = "admin", TenantId = string.Empty }, caller.Token);
 
         result!.Status.Should().Be(OperationProposalStatus.Failed);
         result.ResolutionReason.Should().Be(code);
@@ -309,7 +309,7 @@ public sealed class OperationGatewayStateMachineTests
                 Honua.Core.Features.Operations.Abstractions.IOperationApprovalRequestMapper>(
                 new CancelingReplayMapper()));
 
-        var apply = () => sut.ApplyApprovedProposalAsync("p-cancel", "admin");
+        var apply = () => sut.ApplyApprovedProposalAsync("p-cancel", new OperationProposalApprovalContext { ApprovedBy = "admin", TenantId = string.Empty });
 
         await apply.Should().ThrowAsync<OperationCanceledException>();
         var persisted = await store.GetAsync("p-cancel");
@@ -329,7 +329,7 @@ public sealed class OperationGatewayStateMachineTests
             executor: new ThrowingExecutor(),
             configure: services => services.AddSingleton<IAuditLog>(audit));
 
-        var result = await sut.ApplyApprovedProposalAsync("p-failed-audit", "admin");
+        var result = await sut.ApplyApprovedProposalAsync("p-failed-audit", new OperationProposalApprovalContext { ApprovedBy = "admin", TenantId = string.Empty });
 
         result!.Status.Should().Be(OperationProposalStatus.Failed);
         audit.Events.Should().Contain(item =>
@@ -350,7 +350,7 @@ public sealed class OperationGatewayStateMachineTests
         var executor = new RecordingExecutor();
         var sut = BuildGateway(store: store, executor: executor);
 
-        var result = await sut.ApplyApprovedProposalAsync("p-tampered", "admin");
+        var result = await sut.ApplyApprovedProposalAsync("p-tampered", new OperationProposalApprovalContext { ApprovedBy = "admin", TenantId = string.Empty });
 
         result!.Status.Should().Be(OperationProposalStatus.Failed);
         result.Plan.BlockingReasons.Should().ContainMatch("*proof did not match*");
@@ -366,7 +366,7 @@ public sealed class OperationGatewayStateMachineTests
     {
         var now = DateTimeOffset.UtcNow;
         var plan = new OperationProposalPlan { Summary = "test proposal" };
-        return new OperationProposal
+        return CanonicalOperationGatewayTestComposition.WithVersionedInitiation(new OperationProposal
         {
             ProposalId = proposalId,
             Kind = kind,
@@ -381,7 +381,7 @@ public sealed class OperationGatewayStateMachineTests
             },
             CreatedAt = now,
             UpdatedAt = now,
-        };
+        });
     }
 
     private static OperationGateway BuildGateway(

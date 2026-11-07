@@ -1653,7 +1653,7 @@ public sealed class McpPlatformOpsReaderTests
 
         public Task<OperationProposal?> ApplyApprovedProposalAsync(
             string proposalId,
-            string approvedBy,
+            OperationProposalApprovalContext approval,
             CancellationToken cancellationToken = default)
             => Task.FromResult<OperationProposal?>(null);
 

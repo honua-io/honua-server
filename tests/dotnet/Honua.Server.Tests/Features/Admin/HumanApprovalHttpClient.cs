@@ -35,9 +35,9 @@ internal sealed class HumanApprovalHttpClient(HttpClient client) : IDisposable
             });
 
     public static async Task<HumanApprovalHttpClient> AuthenticateAsync(
-        WebAppFixture fixture, AdminAuthEndpointsTests.StubHttpClientFactory provider, string subject = "human-approver")
+        WebAppFixture fixture, AdminAuthEndpointsTests.StubHttpClientFactory provider, string subject = "human-approver", string? tenantId = null)
     {
-        provider.IdTokenOverride = AdminAuthEndpointsTests.CreateIdTokenForSubject(subject, subject, "admin");
+        provider.IdTokenOverride = AdminAuthEndpointsTests.CreateIdTokenForSubject(subject, subject, ["admin"], tenantId);
         var client = fixture.CreateClient();
         try
         {

@@ -101,11 +101,6 @@ public sealed record OperationGatewayRequest
     /// </summary>
     public string? RequestedBy { get; init; }
 
-    /// <summary>
-    /// Principal that approved the proposal this request replays. Set only on the approval path,
-    /// and never equal to <see cref="RequestedBy"/> when the gateway accepted the approval.
-    /// Executors that start a separately approved deploy read this so approval actually submits.
-    /// </summary>
     public string? ApprovedBy { get; init; }
 
     /// <summary>Proposal identity assigned by the gateway on approved replay.</summary>
@@ -249,50 +244,15 @@ public interface IOperationGateway
         OperationGatewayRequest request,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Persists an <see cref="OperationProposalStatus.AwaitingApproval"/> proposal for
-    /// an operation whose approval requirement was already decided by an upstream,
-    /// domain-specific gate (for example the geoprocessing destructive-plan gate),
-    /// bypassing the edition guardrail ladder. Reuses the same durable proposal store,
-    /// <c>operation.proposed</c> audit, pending notification, and idempotency handling
-    /// as the ladder-routed approval path, so the resulting proposal is surfaced and
-    /// resolved through the same <c>honua://proposals/{id}</c> resource and
-    /// <see cref="ApplyApprovedProposalAsync(string,string,CancellationToken)"/> / <see cref="RejectProposalAsync"/>
-    /// path. Used when the caller has already determined the operation must be gated
-    /// and only needs it persisted for human resolution (ADR-0064, #2814).
-    /// </summary>
-    /// <param name="operationInstanceId">Existing canonical invocation identity accepted before this call.</param>
-    /// <param name="request">Neutral operation request carrying the execution payload.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>
-    /// A <see cref="OperationGatewayOutcome.ProposalCreated"/> result carrying the
-    /// proposal identifier.
-    /// </returns>
     Task<OperationGatewayResult> CreateApprovalProposalAsync(
         string operationInstanceId,
         OperationGatewayRequest request,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Applies a previously created proposal once a human approves it, handing the
-    /// stored execution payload to the registered executor. The proposal must be
-    /// in <see cref="OperationProposalStatus.AwaitingApproval"/>.
-    /// </summary>
-    /// <param name="proposalId">Proposal identifier.</param>
-    /// <param name="approvedBy">Principal that approved the proposal.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The updated proposal, or null when the proposal is not found.</returns>
-    Task<OperationProposal?> ApplyApprovedProposalAsync(
-        string proposalId,
-        string approvedBy,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>Applies a proposal with the current request tenant and principal authority context.</summary>
     Task<OperationProposal?> ApplyApprovedProposalAsync(
         string proposalId,
         OperationProposalApprovalContext approval,
-        CancellationToken cancellationToken = default)
-        => ApplyApprovedProposalAsync(proposalId, approval.ApprovedBy, cancellationToken);
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Rejects a previously created proposal with a required reason.
@@ -309,13 +269,10 @@ public interface IOperationGateway
         CancellationToken cancellationToken = default);
 }
 
-/// <summary>Current, independently authenticated approval context.</summary>
 public sealed record OperationProposalApprovalContext
 {
     public required string ApprovedBy { get; init; }
     public required string TenantId { get; init; }
-
-    public IReadOnlyCollection<string> ApproverIdentities { get; init; } = [];
 
 }
 
