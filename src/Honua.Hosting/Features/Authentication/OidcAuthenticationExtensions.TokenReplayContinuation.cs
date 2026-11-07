@@ -102,10 +102,14 @@ public static partial class OidcAuthenticationExtensions
                 return false;
             }
 
-            memoryCache.Set(admission.TokenKey, marker, new MemoryCacheEntryOptions
+            if (current is RegisteredTokenReplayValue)
             {
-                AbsoluteExpiration = new DateTimeOffset(admission.ExpiresOn)
-            });
+                memoryCache.Set(admission.TokenKey, marker, new MemoryCacheEntryOptions
+                {
+                    AbsoluteExpiration = new DateTimeOffset(admission.ExpiresOn)
+                });
+            }
+
             return true;
         }, cancellationToken).ConfigureAwait(false);
     }
