@@ -7,6 +7,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,6 +16,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace Honua.Server.Tests.Features.Catalog;
 
 [Collection("Database")]
+[Protocol(TestProtocols.Admin)]
+[Operation(Operations.GetMetadata)]
 public sealed class PublicCatalogCredentialTests
 {
     [IntegrationTest]

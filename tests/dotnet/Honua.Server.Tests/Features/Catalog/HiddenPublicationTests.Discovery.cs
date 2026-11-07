@@ -5,12 +5,15 @@ using System.Net;
 using System.Text.Json;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Catalog;
 
 public sealed partial class HiddenPublicationTests
 {
     [IntegrationTheory]
+    [Protocol(TestProtocols.ODataV4, TestProtocols.MapServer)]
+    [Operation(Operations.GetMetadata)]
     [InlineData("/odata/Layers", "value")]
     [InlineData("/rest/services/{service}/MapServer", "layers")]
     [InlineData("/rest/services/{service}/MapServer/layers", "layers")]

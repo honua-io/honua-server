@@ -5,6 +5,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Caching;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.Extensions.DependencyInjection;
@@ -12,6 +13,8 @@ using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Caching;
 
+[Protocol(TestProtocols.Infrastructure)]
+[Operation(Operations.Cache)]
 public sealed class MetadataGraphOutputCachePolicyTests
 {
     [UnitTest]

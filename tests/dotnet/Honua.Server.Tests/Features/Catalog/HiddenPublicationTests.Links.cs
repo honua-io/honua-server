@@ -4,12 +4,15 @@
 using System.Net;
 using System.Text.Json;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 
 namespace Honua.Server.Tests.Features.Catalog;
 
 public sealed partial class HiddenPublicationTests
 {
     [IntegrationTest]
+    [Protocol(TestProtocols.Admin)]
+    [Operation(Operations.GetMetadata)]
     [Endpoint("GET /api/v1/catalog")]
     public async Task GetCatalog_ProtocolEndpointLinks_ResolveForPublishedGraph()
     {
@@ -28,6 +31,8 @@ public sealed partial class HiddenPublicationTests
     }
 
     [IntegrationTest]
+    [Protocol(TestProtocols.Stac)]
+    [Operation(Operations.Query)]
     [Endpoint("GET /stac/search")]
     public async Task StacSearch_HiddenCollection_ResolvesExplicitCollectionButOmitsUnqualifiedSearch()
     {
