@@ -14,7 +14,7 @@ internal static class McpErrorMapper
 {
     private const string AuthenticationGuidance = "Use a scoped API key in X-API-Key, obtained from your Honua administrator, "
         + "or an OAuth access token in Authorization: Bearer from your configured identity provider. "
-        + "Discover OAuth authorization servers at /.well-known/oauth-protected-resource/mcp.";
+        + "Discover OAuth authorization servers at " + McpProtectedResourceMetadata.RoutePath + ".";
 
     public static class Codes
     {
@@ -287,7 +287,7 @@ internal static class McpErrorMapper
     public static McpJsonRpcError Unauthenticated() => new()
     {
         Code = JsonRpcServerError,
-        Message = "Authentication is required to use the MCP operator surface.",
+        Message = $"Authentication is required to use the MCP operator surface. {AuthenticationGuidance}",
         Data = new McpErrorData
         {
             Code = Codes.Unauthenticated,
