@@ -376,28 +376,27 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("operate.status", "operate", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
         ];
 
-        foreach (var (id, category, entitlementKey, kind, packageSchemaVersion, maturity) in capabilities)
+        foreach (var capability in capabilities)
         {
-            yield return new CapabilityDescriptor
-            {
-                Id = id,
-                Category = category,
-                Kind = kind,
-                Maturity = maturity,
-                // A roster entry declared Planned is a declared implementation gap, not a
-                // served capability: the gate resolver must refuse it with
-                // capability-not-implemented and the manifest must publish supported=false.
-                // Same pairing FileFormatDirection uses for an unimplemented codec direction.
-                ImplementationStatus = maturity == CapabilityMaturity.Planned
-                    ? CapabilityImplementationStatus.KnownGap
-                    : CapabilityImplementationStatus.Served,
-                RequiresOptIn = id is not ("serve.geoservices-imageserver" or "serve.wmts" or "serve.ogc-api-coverages"),
-                EntitlementKey = entitlementKey,
-                MinimumEdition = ResolveMinimumEdition(entitlementKey),
-                PackageSchemaVersion = packageSchemaVersion,
-            };
+            yield return ManifestDescriptor(capability);
         }
     }
+
+    private static CapabilityDescriptor ManifestDescriptor(
+        (string Id, string Category, string? EntitlementKey, CapabilityKind Kind, string? PackageSchemaVersion, CapabilityMaturity Maturity) capability) => new()
+        {
+            Id = capability.Id,
+            Category = capability.Category,
+            Kind = capability.Kind,
+            Maturity = capability.Maturity,
+            ImplementationStatus = capability.Maturity == CapabilityMaturity.Planned
+                ? CapabilityImplementationStatus.KnownGap
+                : CapabilityImplementationStatus.Served,
+            RequiresOptIn = capability.Id is not ("serve.geoservices-imageserver" or "serve.wmts" or "serve.ogc-api-coverages"),
+            EntitlementKey = capability.EntitlementKey,
+            MinimumEdition = ResolveMinimumEdition(capability.EntitlementKey),
+            PackageSchemaVersion = capability.PackageSchemaVersion,
+        };
 
     private const string MapPackageSchemaVersion = "honua_map_package.v1";
 
