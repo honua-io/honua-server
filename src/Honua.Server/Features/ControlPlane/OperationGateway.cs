@@ -15,6 +15,8 @@ using Honua.Core.Features.Observability.Domain;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Server.Features.Operations;
+using Honua.Server.Features.Admin;
+using Honua.Server.Features.Infrastructure.Authentication;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.MultiTenancy;
 using Honua.Core.Features.MultiTenancy.Abstractions;
@@ -574,12 +576,49 @@ internal sealed partial class OperationGateway : IOperationGateway
         };
     }
 
+    private static OperationGatewayResult FolderProposalResult(OperationProposal existing, OperationGatewayRequest request,
+        OperationProposalPlan plan, GuardrailDecision decision)
+        => FolderOperationCredential.IsFolderMutation(request.OperationId ?? string.Empty) &&
+            !FolderApprovalAuthorization.MatchesExisting(existing, request.RequestedBy, plan)
+            ? new OperationGatewayResult
+            {
+                Outcome = OperationGatewayOutcome.Blocked, Decision = decision,
+                Message = FolderApprovalAuthorization.FreshProposalRequired
+            }
+            : ExistingProposalResult(existing, decision, request.IdempotencyKey!);
+
     private async Task<OperationGatewayResult> CreateProposalAsync(
         OperationGatewayRequest request,
         GuardrailDecision decision,
         CancellationToken cancellationToken)
     {
         request = request with { TenantId = ResolveTenantId(request.TenantId) };
+        var plan = request.Plan ?? new OperationProposalPlan { Summary = $"{request.Kind} operation" };
+        if (request.ExecutionPayload != null && plan.ExecutionPayload == null)
+            plan = plan with { ExecutionPayload = request.ExecutionPayload };
+        if (FolderOperationCredential.IsFolderMutation(request.OperationId ?? string.Empty))
+        {
+            await using var authorizationScope = _scopeFactory.CreateAsyncScope();
+            var context = authorizationScope.ServiceProvider.GetService<IHttpContextAccessor>()?.HttpContext;
+            try
+            {
+                plan = await FolderApprovalAuthorization.PrepareAsync(request.OperationId!, request.RequestedBy,
+                    request.TenantId, plan, context, cancellationToken).ConfigureAwait(false);
+            }
+            catch (FolderProposalRefusal refusal)
+            {
+                return new OperationGatewayResult { Outcome = refusal.Outcome, Decision = decision, Message = refusal.Message };
+            }
+            catch (Exception exception) when (exception is System.Text.Json.JsonException or ArgumentException or KeyNotFoundException or InvalidOperationException)
+            {
+                return new OperationGatewayResult
+                {
+                    Outcome = OperationGatewayOutcome.Failed, Decision = decision,
+                    Message = "Folder proposal input is invalid or unavailable. Refresh the catalog and submit a fresh proposal."
+                };
+            }
+        }
+        else plan = plan with { FolderAuthorization = null };
         var hasIdempotencyKey = !string.IsNullOrWhiteSpace(request.IdempotencyKey);
         if (hasIdempotencyKey)
         {
@@ -587,7 +626,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                 .ConfigureAwait(false);
             if (existing != null)
             {
-                return ExistingProposalResult(existing, decision, request.IdempotencyKey!);
+                return FolderProposalResult(existing, request, plan, decision);
             }
         }
 
@@ -625,12 +664,6 @@ internal sealed partial class OperationGateway : IOperationGateway
                 OperationInstanceId = envelope.OperationInstanceId,
                 CorrelationId = envelope.CorrelationId,
             };
-        }
-
-        var plan = request.Plan ?? new OperationProposalPlan { Summary = $"{request.Kind} operation" };
-        if (request.ExecutionPayload != null && plan.ExecutionPayload == null)
-        {
-            plan = plan with { ExecutionPayload = request.ExecutionPayload };
         }
 
         // Honor the idempotency key on the approval path: a repeated proposal (e.g.
@@ -693,7 +726,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                 var winner = await _proposalStore.GetAsync(proposal.ProposalId, cancellationToken).ConfigureAwait(false);
                 if (winner != null)
                 {
-                    return ExistingProposalResult(winner, decision, request.IdempotencyKey!);
+                    return FolderProposalResult(winner, request, plan, decision);
                 }
             }
 

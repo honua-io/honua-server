@@ -42,54 +42,16 @@ internal static class FolderEndpoints
     }
 
     private static Task<IResult> Create(FolderRequest request, HttpContext context)
-        => Mutate(context, graph =>
-        {
-            var folder = new MetadataV2Folder
-            {
-                Metadata = new MetadataV2ObjectMetadata
-                {
-                    Id = Guid.NewGuid().ToString("N"),
-                    Name = request.Name ?? string.Empty,
-                    Title = request.Title,
-                    Tenant = Tenant(context)
-                }
-            };
-            return new(MetadataV2FolderMutations.Create(graph, folder), folder, StatusCodes.Status201Created);
-        });
+        => Mutate(context, graph => FolderMutation.Create(graph, request, Tenant(context)));
 
     private static Task<IResult> Update(string id, FolderRequest request, HttpContext context)
-        => Mutate(context, graph =>
-        {
-            var folder = FindFolder(graph, id, Tenant(context));
-            var updated = folder with
-            {
-                Metadata = folder.Metadata with
-                {
-                    Name = request.Name ?? folder.Metadata.Name,
-                    Title = request.TitleSpecified ? request.Title : folder.Metadata.Title
-                }
-            };
-            return new(MetadataV2FolderMutations.Update(graph, updated), updated);
-        });
+        => Mutate(context, graph => FolderMutation.Update(graph, id, request, Tenant(context)));
 
     private static Task<IResult> Delete(string id, HttpContext context)
-        => Mutate(context, graph =>
-        {
-            var folder = FindFolder(graph, id, Tenant(context));
-            return new(MetadataV2FolderMutations.Delete(graph, id), folder, StatusCodes.Status204NoContent);
-        });
+        => Mutate(context, graph => FolderMutation.Delete(graph, id, Tenant(context)));
 
     private static Task<IResult> Move(string serviceName, MoveServiceRequest request, HttpContext context)
-        => Mutate(context, graph =>
-        {
-            var services = graph.Services.Where(s => string.Equals(s.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase)).ToArray();
-            if (services.Length == 0 || services.Any(s =>
-                !MetadataV2ServicePaths.SameTenant(s.Metadata.Tenant, Tenant(context)))) throw new KeyNotFoundException();
-            if (!request.FolderId.IsSpecified) throw new ArgumentException("folderId is required; null selects root.");
-            if (request.FolderId.Value is not null) FindFolder(graph, request.FolderId.Value, Tenant(context));
-            var changed = MetadataV2FolderMutations.Move(graph, serviceName, request.FolderId.Value);
-            return new(changed, null, StatusCodes.Status204NoContent) { ServiceIds = services.Select(s => s.Metadata.Id).ToArray() };
-        });
+        => Mutate(context, graph => FolderMutation.Move(graph, serviceName, request.FolderId, Tenant(context)));
 
     private static async Task<IResult> Mutate(HttpContext context, Func<MetadataV2Graph, FolderMutation> mutation)
     {
@@ -119,6 +81,9 @@ internal static class FolderEndpoints
     private static async Task<IResult> CommitMutationAsync(
         HttpContext context, Func<MetadataV2Graph, FolderMutation> mutation, IMetadataV2GraphStore store)
     {
+        if (context.Features.Get<FolderReplayServicePrincipal>() is { } replay &&
+            !await FolderApprovalAuthorization.IsCurrentAsync(replay.Proposal, context, context.RequestAborted).ConfigureAwait(false))
+            return Results.Problem(statusCode: StatusCodes.Status403Forbidden, detail: FolderApprovalAuthorization.FreshProposalRequired);
         var snapshot = await store.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
         if (snapshot.Etag != context.Request.Headers.IfMatch.ToString())
             return Results.Problem(statusCode: 412, detail: "The metadata snapshot has changed. Refresh and retry.");
@@ -143,12 +108,9 @@ internal static class FolderEndpoints
         return denied ?? gate.EvaluateApproval(context, OperatorResourceType.Catalog, OperatorOperation.Publish);
     }
 
-    private static async Task<IResult?> AuthorizeAffectedServices(HttpContext context, MetadataV2Graph original, FolderMutation mutation)
+    internal static async Task<IResult?> AuthorizeAffectedServices(HttpContext context, MetadataV2Graph original, FolderMutation mutation)
     {
-        var changedFolders = original.Folders.Where(folder => !mutation.Graph.Folders.Any(candidate => SameFolder(folder, candidate)))
-            .Select(folder => folder.Metadata.Id).ToHashSet(StringComparer.Ordinal);
-        var affected = original.Services.Where(service => mutation.ServiceIds.Contains(service.Metadata.Id) ||
-            !mutation.Graph.Services.Contains(service) || (service.FolderId is not null && changedFolders.Contains(service.FolderId)))
+        var affected = mutation.AffectedServices(original)
             .GroupBy(service => service.Metadata.Name, StringComparer.OrdinalIgnoreCase);
         foreach (var services in affected)
         {
@@ -157,11 +119,6 @@ internal static class FolderEndpoints
         }
         return null;
     }
-
-    private static bool SameFolder(MetadataV2Folder first, MetadataV2Folder second)
-        => first.Metadata.Id == second.Metadata.Id && first.Metadata.Name == second.Metadata.Name &&
-           first.Metadata.Title == second.Metadata.Title && MetadataV2ServicePaths.SameTenant(first.Metadata.Tenant, second.Metadata.Tenant) &&
-           first.Deleted == second.Deleted && first.PreviousNames.ToHashSet(StringComparer.OrdinalIgnoreCase).SetEquals(second.PreviousNames);
 
     private static async Task<IResult?> AuthorizeLogicalService(HttpContext context, IGrouping<string, MetadataV2Service> services)
     {
@@ -193,10 +150,6 @@ internal static class FolderEndpoints
         }
     }
 
-    private static MetadataV2Folder FindFolder(MetadataV2Graph graph, string id, string? tenant)
-        => graph.Folders.FirstOrDefault(f => !f.Deleted && f.Metadata.Id == id &&
-            MetadataV2ServicePaths.SameTenant(f.Metadata.Tenant, tenant)) ?? throw new KeyNotFoundException();
-
     private static IResult? ValidateScope(HttpContext context)
     {
         var selection = context.Request.Query["namespace"];
@@ -211,11 +164,6 @@ internal static class FolderEndpoints
         => context.Request.Query.ContainsKey("namespace")
             ? MetadataV2ServicePaths.NormalizeTenant(context.RequestServices.GetService<ITenantContext>()?.TenantId)
             : null;
-
-    private sealed record FolderMutation(MetadataV2Graph Graph, MetadataV2Folder? Folder, int Status = 200)
-    {
-        public IReadOnlyList<string> ServiceIds { get; init; } = [];
-    }
 }
 
 internal sealed class FolderRequest
