@@ -227,14 +227,10 @@ internal sealed partial class ExecutionJobReconciler(
         CancellationTokenSource reconciliationCancellation,
         Task renewalTask)
     {
-        using var stopping = new CancellationTokenSource(LeaseCleanupTimeout);
         try
         {
             reconciliationCancellation.Cancel();
-            await renewalTask.WaitAsync(stopping.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested && !stopping.IsCancellationRequested)
-        {
+            await renewalTask.WaitAsync(LeaseCleanupTimeout).ConfigureAwait(false);
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
