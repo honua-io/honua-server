@@ -100,8 +100,12 @@ public sealed partial class OperationGatewayStateMachineTests
         var result = await gateway.ApplyApprovedProposalAsync(proposal.ProposalId, "human-approver");
 
         Assert.Equal(OperationProposalStatus.Failed, result!.Status);
-        Assert.Equal(OperationProposalStatus.Failed, (await store.GetAsync(proposal.ProposalId))!.Status);
+        var persisted = await store.GetAsync(proposal.ProposalId);
+        Assert.Equal(OperationProposalStatus.Failed, persisted!.Status);
         Assert.False(executor.Entered.Task.IsCompleted);
+        Assert.Contains("actuation did not begin", result.ResolutionReason, StringComparison.Ordinal);
+        Assert.Equal(result.ResolutionReason, persisted.ResolutionReason);
+        Assert.Contains(result.ResolutionReason!, result.Plan.BlockingReasons);
     }
 
     private static LocalOperateEventFeed ApprovalEventFeed(RecordingAuditLog audit)
