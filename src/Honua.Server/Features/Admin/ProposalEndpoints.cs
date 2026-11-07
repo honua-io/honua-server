@@ -31,9 +31,6 @@ namespace Honua.Server.Features.Admin;
 
 internal static class ProposalEndpoints
 {
-    // Reserved RBAC scope for operation-approval decisions.
-    private const string ApprovalScope = "__operations__";
-
     public static void MapProposalEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin/proposals")
@@ -359,40 +356,12 @@ internal static class ProposalEndpoints
         return null;
     }
 
-    private static IResult? EnsureProposalScope(HttpContext context, OperationProposal proposal)
-    {
-        if (!OperatorScopeCatalog.IsScopeGoverned(context.User))
-        {
-            return null;
-        }
-
-        // A decision may release the proposer's authority into an actuator. Require
-        // the deciding bearer to possess the same canonical operation-family scope;
-        // read-only approval must not bypass the original submission's scope ceiling.
-        var legacyId = proposal.Kind is OperationClass.Deploy or OperationClass.Seed
-            or OperationClass.AdminConfigChange or OperationClass.MetadataRelease
-            or OperationClass.Geoprocess or OperationClass.ServicePublish
-            ? LegacyOperationIds.For(proposal.Kind)
-            : null;
-        var operationId = proposal.OperationId ?? legacyId ?? string.Empty;
-        var request = new OperationRequest
-        {
-            OperationId = operationId,
-            GatewayRequest = legacyId is not null && string.Equals(operationId, legacyId, StringComparison.Ordinal)
-                ? new OperationGatewayRequest
-                {
-                    Kind = proposal.Kind,
-                    ActionDiscriminator = proposal.ActionDiscriminator ?? proposal.AutonomyMetadata?.ActionDiscriminator,
-                }
-                : null,
-        };
-        return OperationScopeMapping.TryResolve(request, out var operation) &&
-            OperatorScopeCatalog.PermitsOperation(OperatorScopeCatalog.CollectRecognizedScopes(context.User), operation)
+    private static IResult? EnsureProposalScope(HttpContext context, OperationProposal proposal) =>
+        OperationApprovalAuthorization.PermitsOperationScope(context.User, proposal)
             ? null
             : Results.Problem(
                 detail: "The bearer scope does not authorize a decision on this operation proposal.",
                 statusCode: StatusCodes.Status403Forbidden);
-    }
 
     private static HashSet<string> ResolveApproverIdentities(HttpContext context, string? actor)
     {
@@ -427,27 +396,10 @@ internal static class ProposalEndpoints
             return Results.Problem(detail: "Unauthenticated.", statusCode: StatusCodes.Status401Unauthorized);
         }
 
-        var roles = context.User.FindAll(System.Security.Claims.ClaimTypes.Role)
-            .Select(claim => claim.Value)
-            .ToArray();
-
-        var decision = await permissionResolver.AuthorizeAsync(
-                actor,
-                roles,
-                ApprovalScope,
-                layer: null,
-                AuthorizationOperation.Approve,
-                isAuthenticated: true,
-                context.RequestAborted)
-            .ConfigureAwait(false);
-
-        // Allow when an explicit 'approve' grant matches. When no per-operation
-        // grant is configured for the principal's roles the resolver reports
-        // NoMatchingGrant; per the shared RBAC seam's documented fallback, defer
-        // to the coarse admin-policy gate already enforced on this route group
-        // (RequireAdminAuthorization) rather than hard-denying. Only an explicitly
-        // denied/anonymous principal is forbidden here.
-        return decision.IsAllowed || decision.HasNoMatchingGrant
+        var authorization = new OperationApprovalAuthorization(
+            permissionResolver,
+            context.RequestServices.GetRequiredService<Microsoft.AspNetCore.Authorization.IAuthorizationService>());
+        return await authorization.CanDecideAsync(context.User, context.RequestAborted).ConfigureAwait(false)
             ? null
             : Results.Problem(
                 detail: "Approving an operation proposal requires the 'approve' permission.",

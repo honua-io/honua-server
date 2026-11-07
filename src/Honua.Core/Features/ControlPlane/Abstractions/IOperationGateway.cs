@@ -3,7 +3,6 @@
 
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
-using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.ControlPlane.Abstractions;
 
@@ -316,13 +315,8 @@ public sealed record OperationProposalApprovalContext
     public required string ApprovedBy { get; init; }
     public required string TenantId { get; init; }
 
-    [JsonIgnore]
-    public string? HumanSessionId { get; init; }
-
-    [JsonIgnore]
-    public string? ApprovalCapability { get; init; }
-
     public IReadOnlyCollection<string> ApproverIdentities { get; init; } = [];
+
 }
 
 /// <summary>Revalidates a durable evidence seal immediately before the execution claim.</summary>
