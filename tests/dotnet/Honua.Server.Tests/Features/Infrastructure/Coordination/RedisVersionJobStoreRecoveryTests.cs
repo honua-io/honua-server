@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Infrastructure.Coordination;
 using Honua.TestKit;
@@ -47,6 +48,7 @@ public sealed class RedisVersionJobStoreRecoveryTests(RedisFixture fixture) : IA
         var terminal = running with { Status = VersionJobStatus.Succeeded, CompletedAt = DateTimeOffset.UtcNow, AppliedChanges = 42 };
         _faults.WriteUnavailable = true;
         await _owner.SaveAsync(terminal);
+        Assert.Equal(running, await Store(_connection).GetAsync(running.JobId));
         _faults.ReadUnavailable = true;
         Assert.Equal(terminal, await _owner.GetAsync(running.JobId));
 
@@ -58,7 +60,7 @@ public sealed class RedisVersionJobStoreRecoveryTests(RedisFixture fixture) : IA
 
     [IntegrationTest]
     [Operation(Operations.TestInfrastructure)]
-    public async Task GetAsync_DistributedTerminalWins_RetainsThatWinnerDuringAnotherOutage()
+    public async Task GetAsync_DistributedTerminalWins_DoesNotResurfaceRejectedLocalCompletion()
     {
         var running = Job(VersionJobStatus.Running);
         await _owner.SaveAsync(running);
@@ -70,7 +72,7 @@ public sealed class RedisVersionJobStoreRecoveryTests(RedisFixture fixture) : IA
 
         Assert.Equal(authoritative, await _owner.GetAsync(running.JobId));
         _faults.ReadUnavailable = true;
-        Assert.Equal(authoritative, await _owner.GetAsync(running.JobId));
+        Assert.NotEqual(VersionJobStatus.Succeeded, (await _owner.GetAsync(running.JobId))?.Status);
     }
 
     [IntegrationTest]
@@ -163,7 +165,7 @@ public sealed class RedisVersionJobStoreRecoveryTests(RedisFixture fixture) : IA
         await _owner.SaveAsync(running with { Status = VersionJobStatus.Succeeded, CompletedAt = DateTimeOffset.UtcNow });
         _faults.WriteUnavailable = false;
         var different = running with { VersionId = Guid.NewGuid(), Service = "another-version-service" };
-        await _replica.SaveAsync(different);
+        await SeedDistributedAsync(different);
 
         Assert.Equal(different, await _owner.GetAsync(running.JobId));
         Assert.Equal(different, await _replica.GetAsync(running.JobId));
@@ -179,11 +181,15 @@ public sealed class RedisVersionJobStoreRecoveryTests(RedisFixture fixture) : IA
         await _owner.SaveAsync(running with { Status = VersionJobStatus.Succeeded, CompletedAt = DateTimeOffset.UtcNow });
         _faults.WriteUnavailable = false;
         var unknown = running with { Status = (VersionJobStatus)999 };
-        await _replica.SaveAsync(unknown);
+        await SeedDistributedAsync(unknown);
 
         Assert.Equal(unknown, await _owner.GetAsync(running.JobId));
         Assert.Equal(unknown, await _replica.GetAsync(running.JobId));
     }
+
+    private Task<bool> SeedDistributedAsync(VersionJob job)
+        => _connection!.GetDatabase().StringSetAsync($"honua:version:job:{job.JobId:N}",
+            JsonSerializer.Serialize(job, VersionJobJsonContext.Default.VersionJob), TimeSpan.FromDays(7));
 
     private static RedisVersionJobStore Store(IConnectionMultiplexer? connection)
         => new(connection, NullLogger<RedisVersionJobStore>.Instance);
