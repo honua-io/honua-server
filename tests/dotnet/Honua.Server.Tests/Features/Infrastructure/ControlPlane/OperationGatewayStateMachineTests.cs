@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.ControlPlane;
+using Honua.ControlPlane.Executors;
 using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -190,6 +191,76 @@ public sealed class OperationGatewayStateMachineTests
         result.Should().NotBeNull();
         result!.Status.Should().Be(OperationProposalStatus.Failed);
         result.ExecutionOperationId.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("connected")]
+    [InlineData("cancelled")]
+    public async Task ApplyApprovedProposal_ComposeReadbackFails_PersistsFailureAfterCallerCancellation(string callerState)
+    {
+        using var caller = new CancellationTokenSource();
+        var client = Substitute.For<IComposeExecutorClient>();
+        client.ExecuteAsync(Arg.Any<ComposeExecutorRequest>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                if (callerState == "cancelled") caller.Cancel();
+                return Task.FromResult(new ComposeExecutorResponse
+                {
+                    Ok = false,
+                    ReadbackComplete = false,
+                    Code = ComposeExecutorCodes.ReadbackIncomplete,
+                });
+            });
+        using var services = new ServiceCollection().AddSingleton(client).BuildServiceProvider();
+        var applier = new OpsActionAdminConfigChangeApplier(
+            services.GetRequiredService<IServiceScopeFactory>(), TimeProvider.System,
+            NullLogger<OpsActionAdminConfigChangeApplier>.Instance);
+        var executor = new AdminConfigOperationExecutor(applier);
+        var plan = new OperationProposalPlan
+        {
+            Summary = "Restart Compose service",
+            ExecutionPayload = "{\"action\":\"compose.restart_service\"}",
+        };
+        var proposal = CreateProposal("p-restart", OperationClass.AdminConfigChange, OperationProposalStatus.AwaitingApproval) with
+        {
+            Plan = plan,
+            SealedPlanHash = OperationApprovalPlanSeal.Compute(plan),
+        };
+        var store = new InMemoryProposalStore(proposal);
+        var gateway = BuildGateway(store, executor);
+
+        var result = await gateway.ApplyApprovedProposalAsync(proposal.ProposalId, "admin", caller.Token);
+
+        result!.Status.Should().Be(OperationProposalStatus.Failed);
+        result.ResolutionReason.Should().Be(ComposeExecutorCodes.ReadbackIncomplete);
+        var persisted = await store.GetAsync(proposal.ProposalId);
+        persisted!.Status.Should().Be(OperationProposalStatus.Failed);
+        persisted.ResolutionReason.Should().Be(ComposeExecutorCodes.ReadbackIncomplete);
+    }
+
+    [Fact]
+    public async Task SubmitAsync_ComposeReadbackFails_ReturnsFailedHandleWithExecutorCode()
+    {
+        var executor = Substitute.For<IOperationExecutor>();
+        executor.OperationClass.Returns(OperationClass.AdminConfigChange);
+        executor.ExecuteAsync(Arg.Any<OperationGatewayRequest>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<string?>(new OpsActionException(ComposeExecutorCodes.ReadbackIncomplete)));
+        var adapter = new LegacyGatewayOperationAdapter(executor);
+
+        var handle = await adapter.SubmitAsync(
+            new Honua.Core.Features.Operations.Domain.OperationRequest
+            {
+                OperationId = adapter.OperationId,
+                GatewayRequest = new OperationGatewayRequest { Kind = OperationClass.AdminConfigChange },
+            },
+            new Honua.Core.Features.Operations.Domain.OperationPolicyContext
+            {
+                OperationInstanceId = "opinst-restart",
+                CorrelationId = "corr-restart",
+            });
+
+        handle.Status.Should().Be(Honua.Core.Features.Operations.Domain.OperationHandleStatus.Failed);
+        handle.Reason.Should().Be(ComposeExecutorCodes.ReadbackIncomplete);
     }
 
     [Fact]
@@ -442,6 +513,7 @@ public sealed class OperationGatewayStateMachineTests
             TimeSpan? ttl = null,
             CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             lock (_lock)
             {
                 if (_proposal?.ProposalId != proposal.ProposalId || _proposal?.Version != proposal.Version)

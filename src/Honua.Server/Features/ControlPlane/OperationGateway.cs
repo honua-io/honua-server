@@ -426,25 +426,27 @@ internal sealed partial class OperationGateway : IOperationGateway
             ResolvedBy = approvedBy,
             ResolvedAt = now,
             ExecutionOperationId = executionOperationId,
+            ResolutionReason = failureMessage,
             Plan = failureMessage == null
                 ? proposal.Plan
                 : proposal.Plan with { BlockingReasons = [.. proposal.Plan.BlockingReasons, failureMessage] }
         };
 
-        await PersistResolutionAsync(resolved, OperationProposalStatus.Executing, cancellationToken).ConfigureAwait(false);
+        using var completionTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await PersistResolutionAsync(resolved, OperationProposalStatus.Executing, completionTimeout.Token).ConfigureAwait(false);
         await RecordAutonomyProposalResolutionAsync(
                 resolved,
                 OpsAutonomyProposalResolution.Approved,
-                cancellationToken)
+                completionTimeout.Token)
             .ConfigureAwait(false);
         await WriteAuditAsync(
                 resolved,
                 status == OperationProposalStatus.Failed ? "operation.apply_failed" : "operation.applied",
                 approvedBy,
                 status == OperationProposalStatus.Failed ? AuditOutcome.Failure : AuditOutcome.Success,
-                cancellationToken)
+                completionTimeout.Token)
             .ConfigureAwait(false);
-        await _notifier.NotifyResolvedAsync(resolved, cancellationToken).ConfigureAwait(false);
+        await _notifier.NotifyResolvedAsync(resolved, completionTimeout.Token).ConfigureAwait(false);
         return resolved;
     }
 
