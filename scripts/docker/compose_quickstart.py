@@ -19,7 +19,7 @@ AUDIT_KEYS = ('HONUA_AUDIT_CHAIN_KEY', 'HONUA_MANAGER_AUDIT_CHAIN_KEY')
 # /run/secrets; none is a Compose interpolation variable, so `docker compose config` cannot print one.
 ALL_SECRET_KEYS = SECRET_KEYS + AUDIT_KEYS
 IMMUTABLE = re.compile(r'(?:[a-z0-9./:_-]+@)?sha256:[a-f0-9]{64}')
-COMPOSE_FILES = ('compose.yaml', 'compose.executor.yaml')
+COMPOSE_FILES = ('compose.yaml', 'compose.executor.yaml', 'compose.console.yaml')
 
 
 def secret_path(directory, key):
@@ -68,7 +68,62 @@ def write_secret(path, value):
         pending.unlink(missing_ok=True)
 
 
-def initialize(directory):
+def parse_environment(lines):
+    return dict(line.split('=', 1) for line in lines if line and not line.startswith('#'))
+
+
+def update_environment(path, updates, removed=()):
+    existing_group = path.stat().st_gid if path.exists() else None
+    existing = path.read_text() if path.exists() else ''
+    source_lines = existing.splitlines()
+    values = parse_environment(source_lines)
+    values.update(updates)
+    for key in removed:
+        values.pop(key, None)
+    lines, written = [], set()
+    for line in source_lines:
+        if not line or line.startswith('#'):
+            lines.append(line)
+            continue
+        key = line.split('=', 1)[0]
+        if key in values and key not in written:
+            lines.append(f'{key}={values[key]}')
+            written.add(key)
+    lines.extend(f'{key}={value}' for key, value in values.items() if key not in written)
+    updated = ''.join(line + '\n' for line in lines)
+    if updated == existing:
+        return
+    pending = path.with_name('.env.pending')
+    pending.unlink(missing_ok=True)
+    fd = os.open(pending, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o640)
+    with os.fdopen(fd, 'w') as stream:
+        if existing_group is not None:
+            os.fchown(stream.fileno(), -1, existing_group)
+        os.fchmod(stream.fileno(), 0o640)
+        stream.write(updated)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(pending, path)
+    path.chmod(0o640)
+
+
+def console_profile_settings(lock, values):
+    image = lock.get('console', '')
+    if not isinstance(image, str) or not IMMUTABLE.fullmatch(image):
+        raise ValueError('The package must include an immutable Console image from its release lock')
+    separator = values.get('COMPOSE_PATH_SEPARATOR', ':')
+    files = [name for name in values['COMPOSE_FILE'].split(separator) if name != 'compose.console.yaml']
+    managed_image = 'compose.executor.image.yaml'
+    files.insert(files.index(managed_image) if managed_image in files else len(files), 'compose.console.yaml')
+    profiles = [name for name in values.get('COMPOSE_PROFILES', '').split(',') if name]
+    if 'console' not in profiles:
+        profiles.append('console')
+    settings = dict(COMPOSE_FILE=separator.join(files), COMPOSE_PROFILES=','.join(profiles),
+                    HONUA_CONSOLE_IMAGE=image, HONUA_CONSOLE_PORT=values.get('HONUA_CONSOLE_PORT', '18083'))
+    return {key: value for key, value in settings.items() if values.get(key) != value}
+
+
+def initialize(directory, profiles=()):
     """Creates or migrates the install. Returns only non-secret settings."""
     directory = Path(directory).resolve()
     lock = json.loads((directory / 'images.json').read_text())
@@ -77,7 +132,7 @@ def initialize(directory):
     env_file = directory / '.env'
     existing = env_file.read_text() if env_file.exists() else ''
     lines = existing.splitlines()
-    values = dict(line.split('=', 1) for line in lines if line and not line.startswith('#'))
+    values = parse_environment(lines)
     defaults = {
         'COMPOSE_FILE': 'compose.yaml:compose.executor.yaml:compose.executor.image.yaml',
         'COMPOSE_PROJECT_NAME': 'honua-' + secrets.token_hex(6),
@@ -92,7 +147,7 @@ def initialize(directory):
         'HONUA_COMPOSE_CUSTOMER_PROBE': 'http://honua:8080/healthz/ready',
     }
     for key in ('HONUA_IMAGE', 'HONUA_EXECUTOR_IMAGE', 'HONUA_RELEASE_IMAGE',
-                'HONUA_RELEASE_WORKER_IMAGE', 'HONUA_PRIOR_IMAGE'):
+                'HONUA_RELEASE_WORKER_IMAGE', 'HONUA_PRIOR_IMAGE', 'HONUA_CONSOLE_IMAGE'):
         if key in values and not IMMUTABLE.fullmatch(values[key]):
             raise ValueError(f'{key} must be an immutable sha256 reference')
     if any(char in str(directory) for char in '\n\r$#\'"'):
@@ -120,13 +175,10 @@ def initialize(directory):
                 raise ValueError(f'{name} still reads secrets from .env; extract the new package files first')
 
     additions = {key: value for key, value in defaults.items() if key not in values}
-    if additions:
-        fd = os.open(env_file, os.O_WRONLY | os.O_CREAT | (os.O_APPEND if env_file.exists() else os.O_EXCL), 0o600)
-        with os.fdopen(fd, 'a') as stream:
-            if existing and not existing.endswith('\n'):
-                stream.write('\n')
-            stream.writelines(f'{key}={value}\n' for key, value in additions.items())
+    if 'console' in profiles:
+        additions.update(console_profile_settings(lock, dict(defaults, **values)))
     values.update(additions)
+    update_environment(env_file, additions)
     # Only this install directory and its private group are writable by the executor.
     directory.chmod(0o770)
     env_file.chmod(0o640)
@@ -144,20 +196,9 @@ def initialize(directory):
         resolved[key] = legacy.get(key) or generate_secret(key)
         write_secret(secret_path(directory, key), resolved[key])
     if legacy:
-        # The files are durable now; drop the migrated lines and keep every other setting.
-        kept = [line for line in env_file.read_text().splitlines()
-                if not (line and not line.startswith('#') and line.split('=', 1)[0] in legacy)]
-        pending = directory / '.env.pending'
-        pending.unlink(missing_ok=True)
-        fd = os.open(pending, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o640)
-        with os.fdopen(fd, 'w') as stream:
-            stream.write(''.join(line + '\n' for line in kept))
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(pending, env_file)
-        env_file.chmod(0o640)
         for key in legacy:
             values.pop(key)
+        update_environment(env_file, {}, legacy)
 
     image_override = directory / 'compose.executor.image.yaml'
     if not image_override.exists():
@@ -190,9 +231,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--directory', type=Path, default=Path(__file__).resolve().parent)
     parser.add_argument('--init-only', action='store_true')
+    parser.add_argument('--profile', action='append', choices=('console',), default=[])
     args = parser.parse_args()
     try:
-        values = initialize(args.directory)
+        values = initialize(args.directory, args.profile)
         if args.init_only:
             return 0
         # Secrets stay in their files; never hand them to Compose as environment.
