@@ -31,8 +31,9 @@ the canonical passed/total counts and pass rate per suite, including the WFS
   to release 2026.2 and is not a GA conformance claim.
 - **WFS 1.0 / 1.1 / 2.0** — the `basic` profile: capabilities, DescribeFeatureType,
   GetFeature, spatial/temporal filters, paging, and managed stored queries. The
-  separate WFS 2.0 Transactional leg covers Transaction and LockFeature. Feature
-  versioning and spatial joins are not advertised and not in scope. WFS 1.0/1.1
+  separate WFS 2.0 Transactional leg covers Transaction. LockFeature is not
+  advertised (`ImplementsLockingWFS=false`) and is outside that profile, as are
+  feature versioning and spatial joins. WFS 1.0/1.1
   are read-only compatibility surfaces.
 - **WMS 1.1.1 / WMS 1.3 / WMTS 1.0 / WCS 2.0** — the official ETS default/core profiles:
   GetCapabilities, GetMap/GetTile/GetCoverage, and GetFeatureInfo behave as legacy

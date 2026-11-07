@@ -4,9 +4,9 @@
 using System.Security.Claims;
 using Honua.Core.Features.Console.Abstractions;
 using Honua.Core.Features.Console.Domain;
-using Honua.Server.Features.Console.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Honua.Server.Features.Console.Services;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 
@@ -31,7 +31,7 @@ internal static class ConsoleSessionEndpoints
     }
 
     private static async Task<Results<Ok<ApiResponse<ConsoleSessionContext>>, ProblemHttpResult>> HandleGetSession(
-        [FromServices] IConsoleContentStore store,
+        [FromServices] ProjectedConsoleContentStore store,
         [FromServices] IConsoleActionEvaluator evaluator,
         [FromServices] ConsolePersistenceNotice persistence,
         [FromServices] ILogger<ConsoleSessionEndpointLog> logger,

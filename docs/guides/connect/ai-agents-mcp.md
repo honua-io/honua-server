@@ -36,7 +36,11 @@ Modern clients can call `server/discover` without initializing a session. Each r
 
 Modern requests ignore protocol session and event-replay headers. They return complete result envelopes, and catalog/resource responses include private caching hints with a zero freshness lifetime. Legacy clients retain initialize, sessions, batching and the optional server notification stream.
 
-Bearer clients should use legacy initialize sessions: with default OIDC replay protection, reusing a bearer token on a modern sessionless request returns 401. Modern governed proposal calls also retain the existing session-bound evidence requirement. This transport upgrade does not establish multi-request bearer interoperability, MRTR approval support or Skills extension conformance. Use the file installation route for operating skills where available.
+With OIDC replay protection enabled, a validated OIDC bearer token is reusable across modern requests on `/mcp`. Its registration binds the exact validated token. Use separate access tokens for modern MCP, legacy MCP sessions and ordinary HTTP: reuse across those surfaces returns 401. Legacy bearer tokens remain bound to their issued session, and ordinary HTTP tokens remain reusable on that API. Token expiry, audience, scopes, tenant and operator grants are checked for every request.
+
+Replay registrations retain their original expiration through the token's expiry plus configured clock skew. The configured retention maximum can refuse longer-lived tokens; see [bearer replay retention](../secure/authentication.md#bearer-replay-retention) for settings and shared-store behavior.
+
+Modern governed proposal calls retain the existing session-bound evidence requirement. Real-client interoperability, MRTR approval support and Skills extension conformance require their own verification. Use the file installation route for operating skills where available.
 
 ## API-key proposals
 

@@ -11,6 +11,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import compose_quickstart
 from package_quickstart import package
 from compose_quickstart import ALL_SECRET_KEYS, initialize, read_secret
 
@@ -19,19 +20,228 @@ ROOT = Path(__file__).resolve().parents[2]
 SERVER = 'ghcr.io/honua-io/honua-server@sha256:' + '1' * 64
 EXECUTOR = 'ghcr.io/honua-io/honua-server@sha256:' + '2' * 64
 WORKER = 'ghcr.io/honua-io/honua-worker@sha256:' + '3' * 64
+CONSOLE = 'ghcr.io/honua-io/honua-console@sha256:' + '4' * 64
+PACKAGE_IMAGES = dict(server=SERVER, executor=EXECUTOR, worker=WORKER)
 
 
 class ComposeQuickstartTests(unittest.TestCase):
+    def test_materialization_timeout_is_forwarded_from_dotenv(self):
+        for selected, expected in (('', '300'), ('900', '900')):
+            with self.subTest(selected=selected), tempfile.TemporaryDirectory() as directory:
+                path = self.prepare(directory)
+                if selected:
+                    env_file = path / '.env'
+                    env_file.write_text(env_file.read_text() + f'LayerPublishing__MaterializationTimeoutSeconds={selected}\n')
+                result = subprocess.run(['docker', 'compose', 'config', '--format', 'json'],
+                                        cwd=path, env=self.compose_env(path), capture_output=True, text=True)
+                self.assertEqual(0, result.returncode, 'Packaged Compose must render materialization settings')
+                serving = json.loads(result.stdout)['services']['honua']
+                self.assertEqual(expected, serving['environment'].get('LayerPublishing__MaterializationTimeoutSeconds'))
+
+    def test_console_profile_uses_packaged_pin_and_preserves_executor_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            package_result = subprocess.run([
+                sys.executable, str(ROOT / 'scripts/docker/package_quickstart.py'),
+                '--server-image', SERVER, '--executor-image', EXECUTOR, '--worker-image', WORKER,
+                '--console-image', CONSOLE, '--version', 'test', '--output', str(path)],
+                capture_output=True, text=True)
+            self.assertEqual(0, package_result.returncode, 'Package must accept an immutable Console pin')
+            self.assertTrue((path / 'compose.console.yaml').is_file())
+            self.assertEqual(CONSOLE, json.loads((path / 'images.json').read_text())['console'])
+            (path / '.env').write_text('COMPOSE_FILE=compose.yaml:compose.executor.yaml:customer.yaml:compose.executor.image.yaml\n')
+            (path / 'customer.yaml').write_text('services:\n  honua:\n    environment:\n      CUSTOMER_SETTING: preserved\n')
+            initialized = subprocess.run([sys.executable, str(path / 'quickstart.py'),
+                                          '--profile', 'console', '--init-only'], capture_output=True, text=True)
+            self.assertEqual(0, initialized.returncode, 'Console profile must initialize without a customer override')
+            result = subprocess.run(['docker', 'compose', 'config', '--format', 'json'],
+                                    cwd=path, env=self.compose_env(path), capture_output=True, text=True)
+            self.assertEqual(0, result.returncode, 'Packaged Console profile must render')
+            services = json.loads(result.stdout)['services']
+            self.assertEqual(CONSOLE, services['console']['image'])
+            self.assertEqual('true', services['console']['environment']['Studio__EmbedJsStudio'])
+            self.assertIn('1001', services['console']['group_add'])
+            self.assertEqual('/run/secrets/honua_admin_password', services['console']['environment'][
+                'HONUA_SECRET_FILE__HONUA_ADMIN_API_KEY'])
+            self.assertIn('compose-executor', services)
+            self.assertIn('compose-manager', services)
+            self.assertEqual(SERVER, services['honua']['image'])
+            self.assertEqual('preserved', services['honua']['environment']['CUSTOMER_SETTING'])
+            self.assertEqual('true', services['honua']['environment']['Studio__EndUserAuthorization__Enabled'])
+            files = self.compose_env(path)['COMPOSE_FILE']
+            self.assertEqual('compose.yaml:compose.executor.yaml:customer.yaml:compose.console.yaml:compose.executor.image.yaml', files)
+            self.assertEqual(files, services['compose-executor']['environment']['ControlPlane__ComposeExecutor__ComposeFileList'])
+            self.assertEqual(0o640, (path / 'compose.console.yaml').stat().st_mode & 0o777)
+            self.assertEqual(1, sum(line.startswith('COMPOSE_FILE=') for line in (path / '.env').read_text().splitlines()))
+            self.assertNotIn(read_secret(path, 'HONUA_ADMIN_PASSWORD'), result.stdout)
+            saved = (path / '.env').read_bytes()
+            initialize(path, ('console',))
+            self.assertEqual(saved, (path / '.env').read_bytes(), 'Enabling Console twice must preserve the install')
+
+    def test_console_compose_file_edit_survives_restart(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            package(path, dict(PACKAGE_IMAGES, console=CONSOLE), 'test')
+            initialize(path)
+            files = initialize(path, ('console',))['COMPOSE_FILE']
+            env_file = path / '.env'
+            self.assertEqual(1, sum(line.startswith('COMPOSE_FILE=') for line in env_file.read_text().splitlines()))
+            edited = files.replace(':compose.executor.image.yaml', ':extra.yaml:compose.executor.image.yaml')
+            env_file.write_text(env_file.read_text().replace(f'COMPOSE_FILE={files}', f'COMPOSE_FILE={edited}'))
+            (path / 'extra.yaml').write_text('services:\n  honua:\n    environment:\n      EXTRA_SETTING: retained\n')
+
+            self.assertEqual(edited, initialize(path)['COMPOSE_FILE'])
+            rendered = subprocess.run(['docker', 'compose', 'config', '--format', 'json'],
+                                     cwd=path, env=self.compose_env(path), capture_output=True, text=True)
+
+            self.assertEqual(0, rendered.returncode)
+            self.assertEqual('retained', json.loads(rendered.stdout)['services']['honua']['environment']['EXTRA_SETTING'])
+
+    def test_duplicate_environment_keys_normalize_without_losing_custom_settings(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.prepare(directory)
+            env_file = path / '.env'
+            files = self.compose_env(path)['COMPOSE_FILE']
+            env_file.write_text(env_file.read_text() + f'COMPOSE_FILE={files}\nCUSTOM_SETTING=first\n# keep this note\nCUSTOM_SETTING=last\n')
+
+            values = initialize(path)
+
+            self.assertEqual('last', values['CUSTOM_SETTING'])
+            self.assertIn('# keep this note\n', env_file.read_text())
+            for key in ('COMPOSE_FILE', 'CUSTOM_SETTING'):
+                self.assertEqual(1, sum(line.startswith(key + '=') for line in env_file.read_text().splitlines()))
+
+    def test_environment_callers_share_duplicate_and_value_parsing(self):
+        for caller in ('initialize', 'update_environment'):
+            with self.subTest(caller=caller), tempfile.TemporaryDirectory() as directory:
+                path = self.prepare(directory)
+                env_file = path / '.env'
+                source = env_file.read_text() + '\n# customer settings\nCUSTOM_SETTING=first\nCUSTOM_SETTING=last=kept\nEMPTY_SETTING=\n'
+                env_file.write_text(source)
+
+                with patch('compose_quickstart.parse_environment',
+                           wraps=compose_quickstart.parse_environment) as parser:
+                    if caller == 'initialize':
+                        values = initialize(path)
+                        self.assertEqual('last=kept', values['CUSTOM_SETTING'])
+                        self.assertEqual('', values['EMPTY_SETTING'])
+                    else:
+                        compose_quickstart.update_environment(env_file, {'NEW_SETTING': 'added'})
+                    parser.assert_any_call(source.splitlines())
+                    self.assertEqual(2 if caller == 'initialize' else 1, parser.call_count)
+
+                rewritten = env_file.read_text()
+                self.assertIn('\n# customer settings\n', rewritten)
+                self.assertIn('CUSTOM_SETTING=last=kept\n', rewritten)
+                self.assertIn('EMPTY_SETTING=\n', rewritten)
+                self.assertEqual(1, sum(line.startswith('CUSTOM_SETTING=') for line in rewritten.splitlines()))
+
+    def test_console_activation_preserves_private_project_group(self):
+        groups = [group for group in os.getgroups() if group != os.getegid()]
+        if not groups:
+            self.skipTest('A supplementary group is needed to test group preservation')
+        project_group = groups[0]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            package(path, dict(PACKAGE_IMAGES, console=CONSOLE), 'test')
+            initialize(path)
+            os.chown(path, -1, project_group)
+            env_file = path / '.env'
+            os.chown(env_file, -1, project_group)
+            saved = env_file.read_text()
+            env_file.write_text(saved.replace(f'HONUA_PROJECT_GID={os.getegid()}', f'HONUA_PROJECT_GID={project_group}'))
+
+            values = initialize(path, ('console',))
+
+            self.assertEqual(str(project_group), values['HONUA_PROJECT_GID'])
+            self.assertEqual(project_group, env_file.stat().st_gid)
+
+    def test_console_without_release_pin_fails_before_changing_install(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.prepare(directory)
+            saved = (path / '.env').read_bytes()
+
+            with self.assertRaisesRegex(ValueError, 'immutable Console image'):
+                initialize(path, ('console',))
+
+            self.assertEqual(saved, (path / '.env').read_bytes())
+
+    def test_invalid_console_lock_pin_fails_before_changing_install(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.prepare(directory)
+            saved = (path / '.env').read_bytes()
+            lock_file = path / 'images.json'
+            lock = json.loads(lock_file.read_text())
+            for pin in (None, 42, 'ghcr.io/honua-io/honua-console:latest'):
+                with self.subTest(pin=pin):
+                    lock_file.write_text(json.dumps(dict(lock, console=pin)))
+                    with self.assertRaisesRegex(ValueError, 'immutable Console image'):
+                        initialize(path, ('console',))
+                    self.assertEqual(saved, (path / '.env').read_bytes())
+
+    def test_mutable_console_pin_is_rejected_before_writing_package(self):
+        with tempfile.TemporaryDirectory() as directory:
+            images = dict(PACKAGE_IMAGES, console='ghcr.io/honua-io/honua-console:latest')
+
+            with self.assertRaises(ValueError):
+                package(Path(directory), images, 'test')
+
+            self.assertEqual([], list(Path(directory).iterdir()))
+
+    def test_missing_required_image_pin_is_rejected_before_writing_package(self):
+        for missing in PACKAGE_IMAGES:
+            with self.subTest(missing=missing), tempfile.TemporaryDirectory() as directory:
+                images = {name: image for name, image in PACKAGE_IMAGES.items() if name != missing}
+                with self.assertRaisesRegex(ValueError, 'requires server, executor and worker'):
+                    package(Path(directory), images, 'test')
+                self.assertEqual([], list(Path(directory).iterdir()))
+
+    def test_saved_mutable_console_pin_is_rejected_on_restart(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.prepare(directory)
+            env_file = path / '.env'
+            env_file.write_text(env_file.read_text() + 'HONUA_CONSOLE_IMAGE=ghcr.io/honua-io/honua-console:latest\n')
+            saved = env_file.read_bytes()
+
+            with self.assertRaisesRegex(ValueError, 'HONUA_CONSOLE_IMAGE must be an immutable'):
+                initialize(path)
+
+            self.assertEqual(saved, env_file.read_bytes())
+
+    def test_executor_receives_the_customer_compose_file_list(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.prepare(directory)
+            (path / 'customer.yaml').write_text('services:\n  honua:\n    environment:\n      CUSTOMER_SETTING: preserved\n')
+            files = 'compose.yaml:compose.executor.yaml:customer.yaml:compose.executor.image.yaml'
+            env = dict(self.compose_env(path), COMPOSE_FILE=files)
+            result = subprocess.run(['docker', 'compose', 'config', '--format', 'json'],
+                                    cwd=path, env=env, capture_output=True, text=True)
+            self.assertEqual(0, result.returncode, 'Customer overrides must render')
+            services = json.loads(result.stdout)['services']
+            self.assertEqual('preserved', services['honua']['environment']['CUSTOMER_SETTING'])
+            self.assertEqual(files, services['compose-executor']['environment'].get(
+                'ControlPlane__ComposeExecutor__ComposeFileList'))
+
+    def test_manager_request_budget_covers_compose_restart_readback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.prepare(directory)
+            result = subprocess.run(['docker', 'compose', 'config', '--format', 'json'],
+                                    cwd=path, env=self.compose_env(path), capture_output=True, text=True)
+            self.assertEqual(0, result.returncode, 'Packaged Compose must render')
+            manager = json.loads(result.stdout)['services']['compose-manager']
+            self.assertEqual('00:10:00', manager['environment'].get('Limits__Connections__RequestTimeout'))
+
     def prepare(self, directory):
         path = Path(directory)
-        package(path, SERVER, EXECUTOR, WORKER, '2026.1-rc.2')
+        package(path, PACKAGE_IMAGES, '2026.1-rc.2')
         initialize(path)
         return path
 
     def compose_env(self, path):
         values = dict(line.split('=', 1) for line in (path / '.env').read_text().splitlines())
         # The disposable project must win over ambient Compose flags, including cleanup.
-        return dict({k: v for k, v in os.environ.items() if k not in ALL_SECRET_KEYS}, **values)
+        excluded = (*ALL_SECRET_KEYS, 'LayerPublishing__MaterializationTimeoutSeconds')
+        return dict({k: v for k, v in os.environ.items() if k not in excluded}, **values)
 
     def secrets_of(self, path):
         return {key: read_secret(path, key) for key in ALL_SECRET_KEYS}
@@ -308,8 +518,8 @@ class ComposeQuickstartTests(unittest.TestCase):
             serving = {entry['source'] for entry in services['honua']['secrets']}
             self.assertFalse(serving & {entry['source'] for entry in services['compose-manager']['secrets']}
                              - {'honua_keyring_password'}, 'The serving container must not mount manager secrets')
-            self.assertEqual({'compose.yaml', 'compose.executor.yaml'},
-                             {executor['environment'][f'ControlPlane__ComposeExecutor__ComposeFiles__{i}'] for i in (0, 1)})
+            self.assertEqual(self.compose_env(path)['COMPOSE_FILE'],
+                             executor['environment']['ControlPlane__ComposeExecutor__ComposeFileList'])
 
     def test_credentials_are_local_distinct_and_stable_on_restart(self):
         with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second:
@@ -331,7 +541,7 @@ class ComposeQuickstartTests(unittest.TestCase):
     def test_failed_certificate_export_can_be_retried(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)
-            package(path, SERVER, EXECUTOR, WORKER, '2026.1-rc.2')
+            package(path, PACKAGE_IMAGES, '2026.1-rc.2')
             run_openssl = subprocess.run
 
             def fail_export(command, **kwargs):
@@ -351,7 +561,7 @@ class ComposeQuickstartTests(unittest.TestCase):
     def test_package_ships_the_agent_guide_from_its_docs_page(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)
-            package(path, SERVER, EXECUTOR, WORKER, '2026.1-rc.2')
+            package(path, PACKAGE_IMAGES, '2026.1-rc.2')
             guide = (path / 'AGENTS.md').read_text()
             page = (Path(__file__).resolve().parents[2]
                     / 'docs/guides/connect/working-with-ai-agents.md').read_text()
@@ -371,7 +581,7 @@ class ComposeQuickstartTests(unittest.TestCase):
                        (SERVER, EXECUTOR, 'ghcr.io/honua-io/honua-worker:nightly')):
             with tempfile.TemporaryDirectory() as directory:
                 with self.assertRaises(ValueError):
-                    package(Path(directory), *images, '2026.1-rc.2')
+                    package(Path(directory), dict(zip(('server', 'executor', 'worker'), images, strict=True)), '2026.1-rc.2')
                 self.assertEqual([], list(Path(directory).iterdir()))
 
 

@@ -93,7 +93,9 @@ public sealed partial class LayerReadSecurityResolverTests
     [InlineData("honua.features")]
     [InlineData("features")]
     [InlineData("\"honua\".\"features\"")]
-    public async Task ApplyAsync_RasterSharesFeatureTable_FailsClosed(string rasterLocator)
+    [InlineData("https://example.invalid/raster")]
+    [InlineData("file:/raster.tif")]
+    public async Task ApplyAsync_RasterTableIsSharedOrUnreadable_FailsClosed(string rasterLocator)
     {
         var (resolver, _) = CreateCollisionResolver("row-mask", MetadataV2ResourceType.RasterDataset, rasterLocator);
 
@@ -101,6 +103,20 @@ public sealed partial class LayerReadSecurityResolverTests
             resolver.ApplyAsync(LayerId, new FeatureQuery(), CancellationToken.None));
         await Assert.ThrowsAsync<ResourceAccessDeniedException>(() =>
             resolver.ResolveRowLevelSecurityFilterAsync(LayerId, CancellationToken.None));
+    }
+
+    [Fact]
+    [Trait("Tier", "Fast")]
+    public async Task ApplyAsync_UnreadableRasterTableWithoutPolicies_PreservesReadAndWriteCompatibility()
+    {
+        var (resolver, _) = CreateCollisionResolver("none", MetadataV2ResourceType.RasterDataset, "https://example.invalid/raster");
+
+        var read = await resolver.ApplyAsync(LayerId, new FeatureQuery(), CancellationToken.None);
+        var write = await resolver.ResolveRowLevelSecurityFilterAsync(LayerId, CancellationToken.None);
+
+        read.EnforcedSqlFilter.Should().BeNull();
+        read.EnforcedMaskedFields.Should().BeNull();
+        write.Should().BeNull();
     }
 
     [Fact]

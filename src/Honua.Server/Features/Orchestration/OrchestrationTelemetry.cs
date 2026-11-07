@@ -37,7 +37,7 @@ internal static class OrchestrationTelemetry
     // out from under every dashboard and alert rule without breaking a single build. A PromQL query
     // against the absent name returns an empty vector, so the panel is blank and the alert never
     // fires, silently. Units are documented in the instrument name and description instead. See the
-    // SLO-contract comment block in HonuaTelemetry.cs, observability/metric-name-contract.json, and
+    // SLO-contract comment block in HonuaTelemetry.cs, eng/telemetry/metric-name-contract.v1.json, and
     // MetricNameContractTests, which scrapes the real /metrics exposition and fails on drift.
 
     public static readonly Counter<long> RunsCreated = HonuaTelemetry.Meter.CreateCounter<long>(

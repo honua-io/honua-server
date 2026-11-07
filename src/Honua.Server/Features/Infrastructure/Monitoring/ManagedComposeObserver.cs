@@ -24,6 +24,9 @@ internal sealed class ManagedComposeObserver(
 
     private readonly object _collectionGate = new();
     private Task<IReadOnlyList<OpsManagedTargetHealthView>>? _inFlight;
+    // ReadAsync coalesces callers, so this history has a single collection writer.
+    private readonly Dictionary<(string TargetId, string Backend),
+        (DateTimeOffset? Collection, DateTimeOffset? Release)> _lastSuccessfulObservations = [];
 
     public async Task<IReadOnlyList<OpsManagedTargetHealthView>> ReadAsync(CancellationToken cancellationToken)
     {
@@ -44,6 +47,11 @@ internal sealed class ManagedComposeObserver(
     {
         var targets = controlPlaneOptions.CurrentValue.DeployTargets
             .Where(target => target.TargetKind == DeployTargetKind.LocalCompose).ToArray();
+        var currentKeys = targets.Select(target => (target.TargetId, target.Backend)).ToHashSet();
+        foreach (var removed in _lastSuccessfulObservations.Keys.Where(key => !currentKeys.Contains(key)).ToArray())
+        {
+            _lastSuccessfulObservations.Remove(removed);
+        }
         var observations = new List<OpsManagedTargetHealthView>();
         foreach (var target in targets)
         {
@@ -61,7 +69,7 @@ internal sealed class ManagedComposeObserver(
                 }
             }
             var available = response is { Ok: true, Services.Count: > 0 };
-            observations.Add(new()
+            var observation = new OpsManagedTargetHealthView
             {
                 TargetId = target.TargetId,
                 Available = available,
@@ -81,20 +89,55 @@ internal sealed class ManagedComposeObserver(
                     Description = row.Description,
                     DurationMs = 0
                 }).ToArray() : []
-            });
+            };
+            AttachSuccessfulObservation((target.TargetId, target.Backend), observation);
+            observations.Add(observation);
         }
         return observations;
     }
 
+    private void AttachSuccessfulObservation((string TargetId, string Backend) key, OpsManagedTargetHealthView target)
+    {
+        var previous = _lastSuccessfulObservations.GetValueOrDefault(key);
+        var collection = IsCompleteCollection(target) ? target.ObservedAt : previous.Collection;
+        var release = HasObservedRelease(target) ? target.ObservedAt : previous.Release;
+        _lastSuccessfulObservations[key] = (collection, release);
+        target.LastSuccessfulCollectionAt = collection;
+        target.LastSuccessfulReleaseAt = release;
+    }
+
+    private static bool IsCompleteCollection(OpsManagedTargetHealthView target)
+        => target.Available && target.Status != "Unknown"
+           && target.Services.All(service => service.Status is "Healthy" or "Unhealthy");
+
+    private static bool HasObservedRelease(OpsManagedTargetHealthView target)
+        => target is { Available: true, RunningImage: not null, ServerVersion: not null };
+
+    private static DateTimeOffset? LastCommonSuccess(IEnumerable<DateTimeOffset?> successTimes)
+    {
+        var times = successTimes.ToArray();
+        return times.Length > 0 && times.All(time => time.HasValue) ? times.Min() : null;
+    }
+
     internal static EvidenceSourceEnvelope Source(IReadOnlyList<OpsManagedTargetHealthView> targets)
-        => targets.Count == 0
-            ? EvidencePostureFactory.NotConfigured(SourceId, EvidencePostureVocabulary.BackendKinds.Composite, "compose-executor")
-            : targets.All(target => target.Available && target.Status != "Unknown"
-                && target.Services.All(service => service.Status is "Healthy" or "Unhealthy"))
-                ? EvidencePostureFactory.Complete(SourceId, EvidencePostureVocabulary.BackendKinds.Composite, "compose-executor",
-                    targets.Min(target => target.ObservedAt), TimeSpan.FromMinutes(2))
-                : EvidencePostureFactory.Unavailable(SourceId, EvidencePostureVocabulary.BackendKinds.Composite, "compose-executor",
-                    EvidencePostureVocabulary.ReasonCodes.SourceUnavailable, maximumAge: TimeSpan.FromMinutes(2));
+    {
+        if (targets.Count == 0)
+        {
+            return EvidencePostureFactory.NotConfigured(SourceId, EvidencePostureVocabulary.BackendKinds.Composite, "compose-executor");
+        }
+        if (targets.All(IsCompleteCollection))
+        {
+            return EvidencePostureFactory.Complete(SourceId, EvidencePostureVocabulary.BackendKinds.Composite, "compose-executor",
+                targets.Min(target => target.ObservedAt), TimeSpan.FromMinutes(2));
+        }
+
+        var successful = LastCommonSuccess(targets.Select(target => target.LastSuccessfulCollectionAt));
+        var reason = targets.All(target => target.Available)
+            ? EvidencePostureVocabulary.ReasonCodes.ReadbackIncomplete
+            : EvidencePostureVocabulary.ReasonCodes.SourceUnavailable;
+        return WithReadbackDeadline(EvidencePostureFactory.Unavailable(SourceId, EvidencePostureVocabulary.BackendKinds.Composite, "compose-executor",
+            reason, observedAt: successful, lastSuccessfulAt: successful, maximumAge: TimeSpan.FromMinutes(2)));
+    }
 
     internal static DeployPreflightPlatformRelease ProjectRelease(
         ControlPlaneOptions options, IReadOnlyList<OpsManagedTargetHealthView> targets,
@@ -106,7 +149,7 @@ internal sealed class ManagedComposeObserver(
         var serving = skew.Serving.Select(projection =>
         {
             var live = targets.SingleOrDefault(target => target.TargetId == projection.Id);
-            var known = live is { Available: true, RunningImage: not null, ServerVersion: not null };
+            var known = live is not null && HasObservedRelease(live);
             return new DeployPreflightPlaneProjection
             {
                 Id = projection.Id,
@@ -130,6 +173,9 @@ internal sealed class ManagedComposeObserver(
             ExpectedComponentIds = applicable.Select(target => target.Id).ToArray(),
             IncludedComponentIds = observed.Select(target => target.Id).ToArray()
         };
+        var successful = LastCommonSuccess(applicable.Select(projection =>
+            targets.SingleOrDefault(target => target.TargetId == projection.Id)?.LastSuccessfulReleaseAt));
+        var failureReason = ReleaseReadbackFailureReason(applicable, targets);
         var source = applicable.Length == 0
             ? EvidencePostureFactory.Complete(sourceId, EvidencePostureVocabulary.BackendKinds.ConfigProjection,
                 "control-plane-options", now, TimeSpan.FromMinutes(5), coverage)
@@ -140,9 +186,9 @@ internal sealed class ManagedComposeObserver(
                     ? EvidencePostureFactory.Partial(sourceId, EvidencePostureVocabulary.BackendKinds.Composite,
                         "compose-executor", observed.Min(target => target.ObservedAt!.Value), TimeSpan.FromMinutes(2),
                         EvidencePostureVocabulary.ReasonCodes.IncompleteCoverage, coverage)
-                    : EvidencePostureFactory.Unavailable(sourceId, EvidencePostureVocabulary.BackendKinds.Composite,
-                        "compose-executor", EvidencePostureVocabulary.ReasonCodes.SourceUnavailable,
-                        maximumAge: TimeSpan.FromMinutes(2), coverage: coverage);
+                    : WithReadbackDeadline(EvidencePostureFactory.Unavailable(sourceId, EvidencePostureVocabulary.BackendKinds.Composite,
+                        "compose-executor", failureReason, observedAt: successful, lastSuccessfulAt: successful,
+                        maximumAge: TimeSpan.FromMinutes(2), coverage: coverage));
         return new()
         {
             EvidencePosture = EvidencePostureFactory.Build(now, source),
@@ -161,5 +207,36 @@ internal sealed class ManagedComposeObserver(
             SkewedIds = serving.Where(target => target.Skewed).Select(target => target.Id)
                 .Concat(skew.Execution.Where(target => target.Skewed).Select(target => target.Id)).ToArray()
         };
+    }
+
+    private static EvidenceSourceEnvelope WithReadbackDeadline(EvidenceSourceEnvelope readback)
+        => new()
+        {
+            SourceId = readback.SourceId,
+            BackendKind = readback.BackendKind,
+            BackendId = readback.BackendId,
+            ObservedAt = readback.ObservedAt,
+            LastSuccessfulAt = readback.LastSuccessfulAt,
+            Completeness = readback.Completeness,
+            ReasonCodes = readback.ReasonCodes,
+            Coverage = readback.Coverage,
+            MaximumAgeSeconds = readback.MaximumAgeSeconds,
+            ValidUntil = readback.ObservedAt is { } observed && readback.MaximumAgeSeconds is { } maximumAge
+                ? observed.AddSeconds(maximumAge)
+                : null
+        };
+
+    private static string ReleaseReadbackFailureReason(DeployPreflightPlaneProjection[] applicable,
+        IReadOnlyList<OpsManagedTargetHealthView> targets)
+    {
+        var unobserved = applicable.Where(projection => projection.ObservationStatus != "observed")
+            .Select(projection => targets.SingleOrDefault(target => target.TargetId == projection.Id)).ToArray();
+        if (unobserved.Any(target => target is not { Available: true }))
+        {
+            return EvidencePostureVocabulary.ReasonCodes.SourceUnavailable;
+        }
+        return unobserved.Any(target => target is { Status: "Unhealthy" })
+            ? EvidencePostureVocabulary.ReasonCodes.TargetUnready
+            : EvidencePostureVocabulary.ReasonCodes.ReadbackIncomplete;
     }
 }

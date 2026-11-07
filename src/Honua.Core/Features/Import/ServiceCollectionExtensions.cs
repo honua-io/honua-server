@@ -16,7 +16,7 @@ public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddImportSuggestionsCore(this IServiceCollection services)
     {
-        services.TryAddSingleton<IEsriConstructCapabilityRegistry>(
+        services.TryAddSingleton<IGeoServicesConstructCapabilityRegistry>(
             _ => new GeoServicesConstructCapabilityRegistry(GeoServicesConstructCapabilityRegistry.BuiltInDescriptors));
         services.TryAddScoped<IFileFormatDetectionService, FileFormatDetectionService>();
         services.TryAddSingleton<IImportSchemaSuggestionService, ImportSchemaSuggestionService>();

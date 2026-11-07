@@ -108,7 +108,7 @@ public sealed class FolderServiceBoundaryTests : IClassFixture<WebAppFixture>
         FolderServiceTestCatalog.ReplaceGraph(_fixture, graph with
         {
             Resources = graph.Resources.Select(resource => resource.Metadata.Id == publication.ResourceId
-                ? resource with { Relationships = [new() { Id = "missing-related", EsriRelationshipId = 7, RelatedResourceId = "absent" }] }
+                ? resource with { Relationships = [new() { Id = "missing-related", GeoServicesRelationshipId = 7, RelatedResourceId = "absent" }] }
                 : resource).ToArray()
         });
         try

@@ -4,7 +4,7 @@
 # (ogc-features, wfs, wms, wmts) into /output for the baseline-diff step.
 #
 # Compose (docker/client-compat/compose.yml, `owslib` service) must mount
-# ../../tests:/workspace/tests:ro and ./output/owslib:/output.
+# ../../tests:/workspace/tests:ro and ../../artifacts/client-interop/owslib:/output.
 #
 # NOTE: this script deliberately never aborts before pytest has finished.
 # tests/python/owslib_client/conftest.py writes the envelopes at session

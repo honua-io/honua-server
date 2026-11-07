@@ -403,9 +403,16 @@ public sealed class LayerReadSecurityResolver
         bool UsesDistinctTables(MetadataV2Resource resource)
         {
             var resourceBindings = bindings[resource.Metadata.Id].ToArray();
-            return resourceBindings.Length > 0 && resourceBindings.All(binding =>
-                binding.StorageType == MetadataV2StorageType.RelationalTable &&
-                !featureTableNames.Contains(FeatureStorageMapping.FromMetadata(resource, binding).TableName));
+            try
+            {
+                return resourceBindings.Length > 0 && resourceBindings.All(binding =>
+                    binding.StorageType == MetadataV2StorageType.RelationalTable &&
+                    !featureTableNames.Contains(FeatureStorageMapping.FromMetadata(resource, binding).TableName));
+            }
+            catch (InvalidOperationException)
+            {
+                return false;
+            }
         }
     }
 

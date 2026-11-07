@@ -80,7 +80,7 @@ public sealed class SloMetricContractTests : IClassFixture<TestWebApplicationFac
         {
             exported.Should().Contain(
                 expected.Series,
-                "honua-helm / honua-devops / honua-release alert on '{0}'; observability/slo-metric-contract.json "
+                "honua-helm / honua-devops / honua-release alert on '{0}'; eng/telemetry/slo-metric-contract.v1.json "
                 + "declares the server emits it. If this name changed, EVERY SLO ratio using it silently "
                 + "evaluates to an empty vector and stops firing. Update the consumers and the contract "
                 + "together, or restore the name.",
@@ -222,7 +222,7 @@ public sealed class SloMetricContractTests : IClassFixture<TestWebApplicationFac
 
     private static SloMetricContract LoadContract()
     {
-        var path = RepositoryPaths.Resolve("observability", "slo-metric-contract.json");
+        var path = RepositoryPaths.Resolve("eng", "telemetry", "slo-metric-contract.v1.json");
         File.Exists(path).Should().BeTrue("the SLO metric contract is the shared source of truth for {0}", path);
 
         using var document = JsonDocument.Parse(File.ReadAllText(path));
@@ -261,7 +261,7 @@ public sealed class SloMetricContractTests : IClassFixture<TestWebApplicationFac
 
     private static string ContractSelector(string name)
     {
-        var path = RepositoryPaths.Resolve("observability", "slo-metric-contract.json");
+        var path = RepositoryPaths.Resolve("eng", "telemetry", "slo-metric-contract.v1.json");
         using var document = JsonDocument.Parse(File.ReadAllText(path));
         return document.RootElement.GetProperty("selectors").GetProperty(name).GetString()
             ?? string.Empty;
