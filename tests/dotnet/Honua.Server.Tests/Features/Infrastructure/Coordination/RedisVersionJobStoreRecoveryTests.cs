@@ -43,6 +43,7 @@ public sealed class RedisVersionJobStoreRecoveryTests(RedisFixture fixture) : IA
     {
         var running = Job(VersionJobStatus.Running);
         await _owner.SaveAsync(running);
+        Assert.Equal(running, await _replica.GetAsync(running.JobId));
         var terminal = running with { Status = VersionJobStatus.Succeeded, CompletedAt = DateTimeOffset.UtcNow, AppliedChanges = 42 };
         _faults.WriteUnavailable = true;
         await _owner.SaveAsync(terminal);
@@ -207,10 +208,12 @@ public sealed class RedisVersionJobStoreRecoveryTests(RedisFixture fixture) : IA
             Connection.GetDatabase(Arg.Any<int>(), Arg.Any<object>()).Returns(database);
             database.StringSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan?>(),
                     Arg.Any<bool>(), Arg.Any<When>(), Arg.Any<CommandFlags>())
-                .Returns(call => WriteUnavailable
-                    ? Task.FromException<bool>(Unavailable())
-                    : realDatabase.StringSetAsync(call.ArgAt<RedisKey>(0), call.ArgAt<RedisValue>(1),
-                        call.ArgAt<TimeSpan?>(2), call.ArgAt<bool>(3), call.ArgAt<When>(4), call.ArgAt<CommandFlags>(5)));
+                .Returns(call => WriteAsync(() => realDatabase.StringSetAsync(call.ArgAt<RedisKey>(0), call.ArgAt<RedisValue>(1),
+                    call.ArgAt<TimeSpan?>(2), call.ArgAt<bool>(3), call.ArgAt<When>(4), call.ArgAt<CommandFlags>(5))));
+            database.StringSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<Expiration>(),
+                    Arg.Any<ValueCondition>(), Arg.Any<CommandFlags>())
+                .Returns(call => WriteAsync(() => realDatabase.StringSetAsync(call.ArgAt<RedisKey>(0), call.ArgAt<RedisValue>(1),
+                    call.ArgAt<Expiration>(2), call.ArgAt<ValueCondition>(3), call.ArgAt<CommandFlags>(4))));
             database.StringGetAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
                 .Returns(call => ReadUnavailable
                     ? Task.FromException<RedisValue>(Unavailable())
@@ -231,6 +234,9 @@ public sealed class RedisVersionJobStoreRecoveryTests(RedisFixture fixture) : IA
                         call.ArgAt<RedisValue[]>(2), call.ArgAt<CommandFlags>(3));
                 });
         }
+
+        private Task<bool> WriteAsync(Func<Task<bool>> write)
+            => WriteUnavailable ? Task.FromException<bool>(Unavailable()) : write();
 
         private static RedisConnectionException Unavailable()
             => new(ConnectionFailureType.UnableToConnect, "Injected Redis unavailability");
