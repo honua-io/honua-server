@@ -56,7 +56,8 @@ internal sealed partial class Wfs20Handler
 
         try
         {
-            var featureTypes = await GetPublishedFeatureTypesAsync(context, cancellationToken);
+            var publishedTypes = await GetPublishedFeatureTypesAsync(context, cancellationToken);
+            var featureTypes = publishedTypes.Where(type => type.Publication?.Advertised != false).ToImmutableArray();
             var wfsUrl = BaseUrlResolver.PreserveToken(context.Request, $"{baseUrl}/wfs");
 
             var capabilities = new WfsCapabilities

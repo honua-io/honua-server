@@ -152,7 +152,8 @@ internal sealed class CapabilityManifestService(
             Limits = BuildLimits(batchCapabilities),
             Policies = BuildPolicies(snapshot, callerCapabilities),
             DeploymentProfile = options.DeploymentProfile,
-            Links = BuildLinks()
+            Links = BuildLinks(),
+            ProtocolEndpoints = CapabilityManifestProtocolEndpoints.Build(capabilities, options.DeploymentProfile, runtimeInventory.RoutedCapabilities)
         };
 
         activity?.SetTag("honua.license.edition", snapshot.Edition.ToString());
@@ -435,6 +436,7 @@ internal sealed class CapabilityManifestService(
             Capability("temporal.time-series-tiles", "temporal", context, entitlementKey: "temporal.time-series-tiles"),
             Capability("temporal.animation-api", "temporal", context, entitlementKey: "temporal.animation-api"),
 
+            Capability("discovery.public-catalog", "discovery", context),
             Capability("serve.3d-tiles-scene", "scene", context,
                 maturity: CapabilityMaturity.Experimental,
                 configured: IsExperimentalEnabled("serve.3d-tiles-scene")),

@@ -27,7 +27,7 @@ public sealed class PublishedMetadataProjection(
         }
 
         var publications = snapshot.PublicationsForService(service.Metadata.Id);
-        var visible = publications.Where(snapshot.IsRoutable)
+        var visible = publications.Where(snapshot.IsDiscoverable)
             .Where(publication => ReferenceEquals(publication, snapshot.Index.PublicationsById[publication.Metadata.Id]))
             .Where(publication => readAuthorizer.Evaluate(
                 request.Principal, snapshot.ResolveResource(publication), service, publication).IsAllowed)

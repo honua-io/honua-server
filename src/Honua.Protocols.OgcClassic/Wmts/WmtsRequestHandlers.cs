@@ -329,6 +329,7 @@ internal static class WmtsRequestHandlers
             // is allowed to read. V2 carries geometry on Spatial.GeometryType OR via a
             // Geometry/Geography schema field (matches the resolution used by the renderer).
             var visibleLayers = accessibleLayers
+                .Where(layer => layer.Publication.Advertised)
                 .Where(l => ResourceHasGeometry(l.Resource))
                 .ToArray();
             var xml = await BuildWmtsCapabilitiesAsync(

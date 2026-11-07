@@ -1058,6 +1058,8 @@ builder.Services.AddSingleton<Honua.Server.Features.Console.Services.InMemoryCon
         sp.GetService<TimeProvider>() ?? TimeProvider.System));
 builder.Services.AddSingleton<Honua.Core.Features.Console.Abstractions.IConsoleContentStore>(sp =>
     sp.GetRequiredService<Honua.Server.Features.Console.Services.InMemoryConsoleContentStore>());
+builder.Services.AddScoped<Honua.Core.Features.Catalog.PublishedCatalogProjection>();
+builder.Services.AddScoped<Honua.Server.Features.Catalog.PublicCatalogReader>();
 builder.Services.AddScoped<Honua.Server.Features.Console.Services.PublishedConsoleContent>();
 builder.Services.AddScoped<Honua.Server.Features.Console.Services.ProjectedConsoleContentStore>();
 builder.Services.AddScoped<Honua.Core.Features.Console.Abstractions.IConsoleActionEvaluator,
@@ -2084,6 +2086,7 @@ app.MapSamlEndpoints();
 app.MapConsoleSessionEndpoints();
 app.MapConsoleAccessEndpoints();
 app.MapConsoleContentEndpoints();
+Honua.Server.Features.Catalog.PublicCatalogEndpoints.MapPublicCatalogEndpoints(app);
 app.MapConsoleActionEndpoints();
 // Console Share access public-link + embed API (#1215)
 app.MapConsoleShareEndpoints();

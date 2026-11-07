@@ -381,7 +381,7 @@ public static class OgcStylesEndpoints
 
         var publication = snapshot.Graph.Publications
             .Where(candidate => snapshot.ResolveResource(candidate)?.Metadata.Id == resource.Metadata.Id)
-            .Where(snapshot.IsRoutable)
+            .Where(snapshot.IsDiscoverable)
             .OrderByDescending(candidate => candidate.IsPrimary)
             .FirstOrDefault();
         var service = publication is not null && snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var resolvedService)

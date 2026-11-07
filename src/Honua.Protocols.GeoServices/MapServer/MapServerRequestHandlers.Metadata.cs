@@ -86,6 +86,8 @@ internal static partial class MapServerEndpoints
                 return accessError;
             }
 
+            visibleLayers = visibleLayers.Where(layer => layer.Publication.Advertised).ToArray();
+
             var limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value;
             var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
             var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()

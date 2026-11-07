@@ -15,7 +15,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Honua.Server.Tests.Features.Catalog;
 
 [Collection("Database")]
-public sealed class PublicCatalogEndpointsTestsHiddenPublication : IAsyncLifetime
+public sealed class HiddenPublicationTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
     private MetadataV2Graph _original = null!;

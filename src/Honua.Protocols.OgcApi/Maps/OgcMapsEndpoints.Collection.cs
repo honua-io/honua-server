@@ -97,7 +97,7 @@ public static partial class OgcMapsEndpoints
                          ServiceProtocols.OgcApiMaps, publication.PublicationType))
                      .ThenByDescending(publication => publication.IsPrimary))
         {
-            if (!snapshot.IsRoutable(publication) ||
+            if (!snapshot.IsDiscoverable(publication) ||
                 !snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service) ||
                 !ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.OgcApiMaps))
             {

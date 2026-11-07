@@ -73,7 +73,7 @@ internal static partial class MapServerEndpoints
 
             var layerResponses = new List<MapServerLayerResponse>();
             var tableResponses = new List<MapServerLayerResponse>();
-            foreach (var layer in visibleLayers)
+            foreach (var layer in visibleLayers.Where(layer => layer.Publication.Advertised))
             {
                 var drawingInfo = ResolveMapServerDrawingInfo(layer.Resource, snapshot);
                 var mapExtent = await ResolveCachedExtentAsync(

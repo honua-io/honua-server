@@ -243,6 +243,7 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
         // versioning.branch (VMS) is now gated here via its own descriptor (added below).
         (string Id, string Category, string? EntitlementKey, CapabilityKind Kind, string? PackageSchemaVersion, CapabilityMaturity Maturity)[] capabilities =
         [
+            ("discovery.public-catalog", "discovery", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("package.metadata-v2", "packages", null, CapabilityKind.Feature, MetadataV2Constants.SchemaVersion, CapabilityMaturity.Implemented),
             ("package.release-package", "packages", null, CapabilityKind.Feature, MetadataV2Constants.ApiVersion, CapabilityMaturity.Implemented),
             ("package.gitops-manifest", "packages", null, CapabilityKind.Feature, MetadataV2Constants.ApiVersion, CapabilityMaturity.Implemented),

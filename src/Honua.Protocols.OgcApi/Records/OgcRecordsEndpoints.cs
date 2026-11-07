@@ -388,7 +388,7 @@ internal static class OgcRecordsEndpoints
                 .SelectMany(service => TenantScopeHelpers.FilterVisiblePublications(
                         context, snapshot, snapshot.Index.PublicationsByService[service.Metadata.Id])
                     .Select(p => (Service: service, Publication: p, Resource: snapshot.ResolveResource(p))))
-                .Where(t => snapshot.IsRoutable(t.Publication))
+                .Where(t => snapshot.IsDiscoverable(t.Publication))
                 .Where(t => AccessPolicyHelpers.IsResourceAccessible(context, t.Resource!, t.Service))
                 .OrderBy(t => snapshot.ResolveStorageLayerId(t.Publication) ?? int.MaxValue)
                 .ToArray();
@@ -435,7 +435,7 @@ internal static class OgcRecordsEndpoints
             {
                 var publications = TenantScopeHelpers.FilterVisiblePublications(
                         context, snapshot, snapshot.Index.PublicationsByResource[resource.Metadata.Id])
-                    .Where(snapshot.IsRoutable)
+                    .Where(snapshot.IsDiscoverable)
                     .ToArray();
                 var primary = publications.FirstOrDefault(p => p.IsPrimary) ?? publications.FirstOrDefault();
                 var storageLayerId = primary is not null ? snapshot.ResolveStorageLayerId(primary) : null;

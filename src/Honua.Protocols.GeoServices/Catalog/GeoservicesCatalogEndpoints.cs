@@ -735,7 +735,7 @@ internal static class GeoservicesCatalogEndpoints
 
             var visibleResources = new List<MetadataV2Resource>();
             foreach (var resource in snapshot.PublicationsForService(service.Metadata.Id)
-                .Where(snapshot.IsRoutable)
+                .Where(snapshot.IsDiscoverable)
                 .Where(publication => TenantScopeHelpers.IsPublicationVisible(
                     context, publication, snapshot.ResolveResource(publication), service))
                 .Select(snapshot.ResolveResource)
@@ -1228,7 +1228,7 @@ internal static class GeoservicesCatalogEndpoints
         var failedLookups = 0;
         foreach (var publication in snapshot.PublicationsForService(service.Metadata.Id))
         {
-            if (!snapshot.IsRoutable(publication)
+            if (!snapshot.IsDiscoverable(publication)
                 || !MetadataV2TenantVisibility.IsVisibleToTenant(publication, snapshot.ResolveResource(publication), service, tenantId)
                 || !visibleResourceIds.Contains(publication.ResourceId)
                 || publication.LayerIndex is not { } layerIndex

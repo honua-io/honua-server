@@ -101,7 +101,7 @@ internal static partial class FeatureServerEndpoints
         return await GetServiceMetadataAsync(
             context,
             service,
-            visiblePairs,
+            visiblePairs.Where(pair => pair.Publication.Advertised).ToArray(),
             snapshot,
             limitsOptions.Value.Query,
             logger,

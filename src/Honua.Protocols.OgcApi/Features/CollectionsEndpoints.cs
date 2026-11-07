@@ -168,7 +168,7 @@ internal static class CollectionsEndpoints
                     continue;
                 }
                 var resource = snapshot.ResolveResource(publication);
-                if (!snapshot.IsRoutable(publication))
+                if (!snapshot.IsDiscoverable(publication))
                 {
                     continue;
                 }

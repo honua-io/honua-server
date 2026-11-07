@@ -36,6 +36,8 @@ internal sealed record CapabilityManifestDocument
     public required CapabilityManifestDeploymentProfile DeploymentProfile { get; init; }
 
     public required CapabilityManifestLink[] Links { get; init; }
+
+    public Honua.Core.Features.Catalog.Domain.PublishedCatalogProtocol[] ProtocolEndpoints { get; init; } = [];
 }
 
 internal sealed record CapabilityManifestDeploymentProfile

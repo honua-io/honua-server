@@ -63,7 +63,7 @@ internal static class StacV2Lookups
             {
                 continue;
             }
-            if (!snapshot.IsRoutable(pub))
+            if (!snapshot.IsDiscoverable(pub))
             {
                 continue;
             }

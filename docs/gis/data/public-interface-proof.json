@@ -3,6 +3,36 @@
   "updatedUtc": "2026-06-23T00:00:00Z",
   "surfaces": [
     {
+      "surfaceId": "public-catalog",
+      "displayName": "Public published catalog",
+      "surfaceKind": "http-route-family",
+      "protocol": "Public Catalog HTTP",
+      "canonicalIdentifier": "/api/v1/catalog",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/api/v1/catalog/"
+      ],
+      "endpointExactMatches": [
+        "/api/v1/catalog"
+      ],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "HTTP integration tests exercise caller authorization, facet counts, paging, filters, hidden publications, folder identity and manifest protocol links.",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/Features/Catalog/PublicCatalogEndpoints.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Catalog/PublicCatalogEndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#7091"
+        }
+      ]
+    },
+    {
       "surfaceId": "capability-manifest",
       "displayName": "Server capability manifest",
       "surfaceKind": "http-route",

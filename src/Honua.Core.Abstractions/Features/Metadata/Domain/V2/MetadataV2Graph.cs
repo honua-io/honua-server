@@ -468,6 +468,9 @@ public sealed record MetadataV2Publication
     [JsonPropertyName("titleOverride")]
     public string? TitleOverride { get; init; }
 
+    [JsonPropertyName("advertised")]
+    public bool Advertised { get; init; } = true;
+
     // One protocol-facing identifier replaces the separate layer index, service-local id, and path so the three cannot diverge.
     [JsonPropertyName("identifier")]
     public MetadataV2PublicationIdentifier Identifier { get; init; } = new();

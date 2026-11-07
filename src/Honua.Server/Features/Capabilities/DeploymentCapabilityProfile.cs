@@ -158,13 +158,18 @@ internal sealed class DeploymentCapabilityRouteCatalog
         var method = HttpMethods.IsHead(context.Request.Method)
             ? HttpMethods.Get
             : context.Request.Method.ToUpperInvariant();
+        return ResolvePath(method, GeoServicesServiceRoutes.RoutingPath(context));
+    }
+
+    public RouteResolution ResolvePath(string method, PathString path)
+    {
         if (!_routesByMethod.TryGetValue(method, out var candidates))
         {
             return RouteResolution.Unmapped;
         }
 
         var match = candidates.FirstOrDefault(candidate =>
-            candidate.Matcher.TryMatch(GeoServicesServiceRoutes.RoutingPath(context), new RouteValueDictionary()));
+            candidate.Matcher.TryMatch(path, new RouteValueDictionary()));
         return match is null
             ? RouteResolution.Unmapped
             : new RouteResolution(true, match.Capability);
@@ -191,15 +196,19 @@ internal sealed class ManifestRoutedCapabilityIndex
 {
     private const string CrosswalkResourceName = "Honua.Server.DeploymentProfiles.capability-manifest-crosswalk.v1.json";
 
+    private readonly DeploymentCapabilityRouteCatalog _routes;
     private readonly IReadOnlySet<string> _routed;
     private readonly Dictionary<string, string?> _byManifestId;
 
     public ManifestRoutedCapabilityIndex(DeploymentCapabilityRouteCatalog routes)
     {
         ArgumentNullException.ThrowIfNull(routes);
+        _routes = routes;
         _routed = routes.RoutedCapabilities;
         _byManifestId = LoadCrosswalk();
     }
+
+    public string? CapabilityForPath(string path) => _routes.ResolvePath(HttpMethods.Get, path).Capability;
 
     public bool TryGetRoutedCapability(string manifestId, out string capability)
     {
