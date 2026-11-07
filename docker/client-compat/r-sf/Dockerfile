@@ -16,7 +16,7 @@
 # The image is a runner only: the suite itself is bind-mounted by
 # docker/client-compat/compose.yml, which must provide
 #   ../../tests:/workspace/tests:ro     (the R suite + seed/config digest inputs)
-#   ./output/r-sf:/output               (where the .cert.json envelopes land)
+#   ../../artifacts/client-interop/r-sf:/output               (where the .cert.json envelopes land)
 
 FROM rocker/geospatial:4.6.1@sha256:4cee92a576e26c31546860eb252290f8f259e8236d49600d6bee695dfb96cae5
 

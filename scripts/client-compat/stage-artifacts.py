@@ -68,8 +68,8 @@ def stage(artifact_root: Path, output_root: Path, selection: str = "") -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("artifact_root", nargs="?", type=Path, default=Path("artifacts"))
-    parser.add_argument("output_root", nargs="?", type=Path, default=Path("docker/client-compat/output"))
+    parser.add_argument("artifact_root", nargs="?", type=Path, default=Path("artifacts/client-interop-downloads"))
+    parser.add_argument("output_root", nargs="?", type=Path, default=Path("artifacts/client-interop"))
     parser.add_argument("expected_lanes", nargs="?", default="")
     args = parser.parse_args()
     try:
