@@ -69,16 +69,8 @@ COPY src/Honua.Core.Abstractions/*.csproj src/Honua.Core.Abstractions/
 COPY src/Honua.Routing/*.csproj src/Honua.Routing/
 COPY src/Honua.Plugins/*.csproj src/Honua.Plugins/
 COPY src/Honua.Plugins.Abstractions/*.csproj src/Honua.Plugins.Abstractions/
-# StacOpsDemo is in samples/ and is conditional on HonuaIncludeStacOpsDemo != false;
-# when PublishAot=true and RuntimeIdentifier is set it is excluded, but its .csproj
-# must be present for the solution-wide restore to succeed without NETSDK1004.
-COPY samples/Honua.StacOpsDemo/*.csproj samples/Honua.StacOpsDemo/
 
 ARG TARGETARCH
-# Slim by default: set HONUA_INCLUDE_STAC_OPS_DEMO=true to keep the hosted STAC ops
-# demo assets (samples/stac-ops) so the live demo image builds from this repo instead
-# of an out-of-repo patch (#1650). Mirrors the root Dockerfile.
-ARG HONUA_INCLUDE_STAC_OPS_DEMO=false
 
 RUN --mount=type=cache,target=/root/.nuget/packages \
     --mount=type=secret,id=github_actor \
@@ -91,10 +83,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj \
       --runtime "$RUNTIME_ID" \
       -p:RuntimeIdentifier="$RUNTIME_ID" \
-      -p:HonuaUseSkiaNoDependencies=true && \
-    if [ "$HONUA_INCLUDE_STAC_OPS_DEMO" = "true" ]; then \
-      sh scripts/docker/restore-dotnet-with-github-packages.sh samples/Honua.StacOpsDemo/Honua.StacOpsDemo.csproj; \
-    fi
+      -p:HonuaUseSkiaNoDependencies=true
 
 FROM restore AS build
 
@@ -104,8 +93,6 @@ ARG CONFIGURATION=Release
 # Empty VERSION preserves Directory.Build.props for local container builds.
 ARG VERSION=
 ARG HONUA_GIT_SHA=
-# Re-declared so the build stage sees the build-arg for the conditional STAC ops publish.
-ARG HONUA_INCLUDE_STAC_OPS_DEMO=false
 # ILC (the native compiler) is single-threaded on BOTH arches and the publish is
 # retried with backoff — mirroring the hardening already in docker/Dockerfile.aot
 # (#1360). The Native AOT link peaks well above the hosted runner's memory ceiling,
@@ -165,14 +152,8 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
         sleep $((attempt * 15)) ; \
         attempt=$((attempt + 1)) ; \
     done && \
-    if [ "$HONUA_INCLUDE_STAC_OPS_DEMO" = "true" ]; then \
-      dotnet publish samples/Honua.StacOpsDemo/Honua.StacOpsDemo.csproj \
-        --configuration "$CONFIGURATION" --no-restore --output /tmp/stac-ops-demo && \
-      mkdir -p /app/wwwroot/samples && \
-      cp -a /tmp/stac-ops-demo/wwwroot/samples/stac-ops /app/wwwroot/samples/; \
-    fi && \
-    rm -rf /tmp/stac-ops-demo /app/BlazorDebugProxy && \
-    if [ "$HONUA_INCLUDE_STAC_OPS_DEMO" != "true" ]; then rm -rf /app/wwwroot; else rm -rf /app/wwwroot/admin; fi && \
+    rm -rf /app/BlazorDebugProxy && \
+    rm -rf /app/wwwroot && \
     find /app -type f \( -name '*.pdb' -o -name '*.dbg' \) -delete
 
 FROM ${LAMBDA_ADAPTER_IMAGE} AS lambda-adapter

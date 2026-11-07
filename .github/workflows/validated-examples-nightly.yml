@@ -38,11 +38,19 @@ jobs:
         scenario: [stac-ops, mobile-offline, gp-local-dev]
     env:
       SCENARIO: ${{ matrix.scenario }}
+      HONUA_SAMPLES_ROOT: ${{ github.workspace }}/artifacts/honua-samples
       CANDIDATE_IMAGE_INPUT: ${{ inputs.candidate_image || '' }}
       # The rc.2 release manifest certifies honua-sdk 0.1.19; the schedule uses the same pin.
       PYTHON_SDK_VERSION: ${{ inputs.python_sdk_version || '0.1.19' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Checkout maintained samples
+        if: matrix.scenario == 'gp-local-dev'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: honua-io/honua-samples
+          ref: 4efc272e58789ec17ebec2125cec06304b2ce4e4
+          path: artifacts/honua-samples
       - name: Select candidate image
         run: |
           if [[ -z "${CANDIDATE_IMAGE_INPUT}" ]]; then
@@ -72,11 +80,13 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -o pipefail
+          mkdir -p artifacts/validated-examples
           bash scripts/examples/validate-customer-paths.sh "${SCENARIO}" 2>&1 \
-            | tee "validated-examples-${SCENARIO}.txt"
+            | tee "artifacts/validated-examples/validated-examples-${SCENARIO}.txt"
       - name: Record candidate evidence
         if: always()
         run: |
+          mkdir -p artifacts/validated-examples
           # What actually ran: the pulled candidate's repo digests, and whether any local
           # server image was built (a candidate run must not build one).
           built=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^honua-server:' || true)
@@ -106,18 +116,18 @@ jobs:
               locallyBuiltServerImages: ($locallyBuiltServerImages | split("\n") | map(select(. != ""))),
               pythonSdkVersion: (if $pythonSdkVersion == "" then null else $pythonSdkVersion end),
               jobStatus: $outcome}' \
-            > "validated-examples-${SCENARIO}.json"
-          cat "validated-examples-${SCENARIO}.json"
+            > "artifacts/validated-examples/validated-examples-${SCENARIO}.json"
+          cat "artifacts/validated-examples/validated-examples-${SCENARIO}.json"
       - name: Capture Compose evidence
         if: always()
         run: |
-          docker ps -a >> "validated-examples-${SCENARIO}.txt"
-          docker compose ls >> "validated-examples-${SCENARIO}.txt"
+          docker ps -a >> "artifacts/validated-examples/validated-examples-${SCENARIO}.txt"
+          docker compose ls >> "artifacts/validated-examples/validated-examples-${SCENARIO}.txt"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: validated-examples-${{ matrix.scenario }}
           path: |
-            validated-examples-${{ matrix.scenario }}.txt
-            validated-examples-${{ matrix.scenario }}.json
+            artifacts/validated-examples/validated-examples-${{ matrix.scenario }}.txt
+            artifacts/validated-examples/validated-examples-${{ matrix.scenario }}.json
           retention-days: 14

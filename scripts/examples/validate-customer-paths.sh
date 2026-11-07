@@ -51,9 +51,16 @@ run_gp_local_dev() {
     [[ "$(curl -fsS http://127.0.0.1:18084/healthz/ready 2>/dev/null || true)" == "Ready" ]] && break
     sleep 2
   done
-  BASE=http://127.0.0.1:18084 bash "${ROOT_DIR}/samples/gp-local-dev/submit-buffer.sh" \
-    | tee /tmp/honua-examples-gp-result.txt
-  grep -q 'successful' /tmp/honua-examples-gp-result.txt
+  local sample_root="${HONUA_SAMPLES_ROOT:-${ROOT_DIR}/../honua-samples}"
+  local output="${ROOT_DIR}/artifacts/validated-examples/gp-result.json"
+  if [[ ! -f "${sample_root}/samples/gp-local-dev/submit-buffer.sh" ]]; then
+    echo "Set HONUA_SAMPLES_ROOT to a honua-samples checkout." >&2
+    return 2
+  fi
+  mkdir -p "$(dirname "${output}")"
+  BASE=http://127.0.0.1:18084 bash "${sample_root}/samples/gp-local-dev/submit-buffer.sh" \
+    | tee "${output}"
+  grep -q 'successful' "${output}"
 }
 
 case "${SCENARIO}" in

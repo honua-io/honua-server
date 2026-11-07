@@ -58,7 +58,6 @@ COPY src/Honua.Scene/*.csproj src/Honua.Scene/
 COPY src/Honua.Routing/*.csproj src/Honua.Routing/
 COPY src/Honua.Plugins/*.csproj src/Honua.Plugins/
 COPY src/Honua.Plugins.Abstractions/*.csproj src/Honua.Plugins.Abstractions/
-COPY samples/Honua.StacOpsDemo/*.csproj samples/Honua.StacOpsDemo/
 
 ARG TARGETARCH
 

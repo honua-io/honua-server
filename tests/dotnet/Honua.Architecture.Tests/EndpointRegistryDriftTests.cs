@@ -108,7 +108,6 @@ public sealed class EndpointRegistryDriftTests
     private static readonly HashSet<(string Method, string Path)> KnownNonFeatureRegistryEntries = new()
     {
         // Hosted sample redirect wired in Program.cs.
-        ("GET", "/samples/stac-ops"),
         // Prometheus exporter mounted by ServiceDefaults.
         ("GET", "/metrics"),
         // Scalar interactive API explorer wired in Program.cs.

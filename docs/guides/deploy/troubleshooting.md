@@ -210,8 +210,8 @@ then execute the failing function with the same parameters and input CRS.
 Use `--real-worker` for native worker fidelity. The doctor image probe alone
 does not execute GDAL or qualify a Kubernetes/AWS target.
 
-For custom code, use the Python/.NET
-[local debugging sample](../../../samples/gp-custom-local/README.md).
+For custom code, use the
+[Python](https://github.com/honua-io/honua-samples/tree/trunk/templates/gp-python/README.md) and [.NET](https://github.com/honua-io/honua-samples/tree/trunk/templates/gp-dotnet/README.md) templates.
 Inspect `receipt.json` for the failed phase and `eventsTruncated`, and inspect
 `events.jsonl` and the retained work directory. Missing input is a setup error;
 an exception in the tool is an execution failure. Local files are unsanitized

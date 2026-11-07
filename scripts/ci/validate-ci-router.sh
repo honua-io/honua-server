@@ -1689,10 +1689,6 @@ echo "Checking shard filter/test-class coverage in both directions..."
     "Honua.Server.Tests.Comprehensive.TestQualityValidationTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "STAC and API Governance" \
-  `# #3204 STAC capacity split: the two heaviest classes of the serialized STAC` \
-  `# timeline move to their own shard. StacOpsDemoEndpointTests no longer needs the` \
-  `# cache-writer shard: since #4453 the payload carries its hosted Blazor content` \
-  `# roots, which validate-server-test-binary-artifacts.sh above enforces.` \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Stac.StacItemsTests" \
     "tests/dotnet/Honua.Protocols.Stac.Tests/Honua.Protocols.Stac.Tests.csproj" \
@@ -1706,7 +1702,7 @@ echo "Checking shard filter/test-class coverage in both directions..."
     "tests/dotnet/Honua.Protocols.Stac.Tests/Honua.Protocols.Stac.Tests.csproj" \
     "STAC Protocol" \
   --assert-owner \
-    "Honua.Server.Tests.Features.Protocols.Stac.StacOpsDemoEndpointTests" \
+    "Honua.Server.Tests.Features.Protocols.Stac.RetiredHostedSampleTests" \
     "tests/dotnet/Honua.Protocols.Stac.Tests/Honua.Protocols.Stac.Tests.csproj" \
     "STAC Protocol" \
   `# #3204 September 2026 shard-headroom rebalance: pin one class on each side of` \

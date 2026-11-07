@@ -666,8 +666,6 @@ none GET /rest/services/{serviceId}/MapServer/{layerId:int}/{featureId:long}
 none GET /rest/services/{serviceId}/NAServer/{taskName}/jobs/{jobId}
 none GET /rest/services/{serviceId}/NAServer/{taskName}/jobs/{jobId}/results/{paramName}
 none GET /rest/services/{serviceId}/NAServer/{taskName}/submitJob
-none GET /samples/stac-ops
-none GET /samples/stac-ops/{*path:nonfile}
 none GET /scenes/{sceneId}/SceneServer
 none GET /scenes/{sceneId}/SceneServer/layers/{layerId:int}
 none GET /scenes/{sceneId}/SceneServer/layers/{layerId:int}/nodepages/{pageId:int}
@@ -769,7 +767,6 @@ none GET /tiles/{layerId:int}/{z:int}/{x:int}/{y:int}.mvt
 none GET /wfs
 none HEAD /api/v1/rasters/cog/{*artifactId}
 none HEAD /api/v1/tiles/pmtiles/{*artifactId}
-none HEAD /samples/stac-ops/{*path:nonfile}
 none HEAD /scenes/{sceneId}/tileset.json
 none HEAD /scenes/{sceneId}/{*assetPath}
 none PATCH /healthz/live

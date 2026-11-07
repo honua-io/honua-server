@@ -49,8 +49,6 @@ COPY eng/protocol-profiles.v1.json eng/
 COPY scripts/docker/restore-dotnet-with-github-packages.sh scripts/docker/
 
 ARG TARGETARCH
-# Slim by default: set HONUA_INCLUDE_STAC_OPS_DEMO=true to keep the hosted STAC ops demo assets.
-ARG HONUA_INCLUDE_STAC_OPS_DEMO=false
 ARG HONUA_BUILD_PROFILE=full
 ARG HONUA_PROTOCOL_PROFILE=all
 ARG HONUA_INCLUDE_AWS=
@@ -75,13 +73,10 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     if [ -n "${HONUA_INCLUDE_AZURE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeAzure=$HONUA_INCLUDE_AZURE"; fi && \
     if [ -n "${HONUA_INCLUDE_ORACLE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeOracle=$HONUA_INCLUDE_ORACLE"; fi && \
     if [ -n "${HONUA_INCLUDE_SNOWFLAKE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeSnowflake=$HONUA_INCLUDE_SNOWFLAKE"; fi && \
-    EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaIncludeStacOpsDemo=false -p:HonuaSkipRepoAnalyzers=true -p:RunAnalyzersDuringBuild=false $MODULE_MSBUILD_ARGS" && \
+    EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaSkipRepoAnalyzers=true -p:RunAnalyzersDuringBuild=false $MODULE_MSBUILD_ARGS" && \
     sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj \
       --runtime "$RUNTIME_ID" \
-      $EXTRA_MSBUILD_ARGS && \
-    if [ "$HONUA_INCLUDE_STAC_OPS_DEMO" = "true" ]; then \
-      sh scripts/docker/restore-dotnet-with-github-packages.sh samples/Honua.StacOpsDemo/Honua.StacOpsDemo.csproj; \
-    fi
+      $EXTRA_MSBUILD_ARGS
 
 # Copy source code
 COPY . .
@@ -107,7 +102,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     if [ -n "${HONUA_INCLUDE_AZURE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeAzure=$HONUA_INCLUDE_AZURE"; fi && \
     if [ -n "${HONUA_INCLUDE_ORACLE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeOracle=$HONUA_INCLUDE_ORACLE"; fi && \
     if [ -n "${HONUA_INCLUDE_SNOWFLAKE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeSnowflake=$HONUA_INCLUDE_SNOWFLAKE"; fi && \
-    EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaIncludeStacOpsDemo=false -p:HonuaSkipRepoAnalyzers=true -p:RunAnalyzersDuringBuild=false $MODULE_MSBUILD_ARGS" && \
+    EXTRA_MSBUILD_ARGS="-p:RuntimeIdentifier=$RUNTIME_ID -p:HonuaSkipRepoAnalyzers=true -p:RunAnalyzersDuringBuild=false $MODULE_MSBUILD_ARGS" && \
     sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj \
       --runtime "$RUNTIME_ID" \
       $EXTRA_MSBUILD_ARGS && \
@@ -125,17 +120,8 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
       -p:DebugSymbols=false \
       -p:HonuaNobleRuntimePublish=true \
       $EXTRA_MSBUILD_ARGS && \
-    if [ "$HONUA_INCLUDE_STAC_OPS_DEMO" = "true" ]; then \
-      dotnet publish samples/Honua.StacOpsDemo/Honua.StacOpsDemo.csproj \
-        --configuration "$CONFIGURATION" \
-        --no-restore \
-        --output /tmp/stac-ops-demo && \
-      mkdir -p /app/wwwroot/samples && \
-      cp -a /tmp/stac-ops-demo/wwwroot/samples/stac-ops /app/wwwroot/samples/; \
-    fi && \
-    rm -rf /tmp/stac-ops-demo && \
     rm -rf /app/BlazorDebugProxy /app/wwwroot/admin && \
-    if [ "$HONUA_INCLUDE_STAC_OPS_DEMO" != "true" ]; then rm -rf /app/wwwroot/samples/stac-ops; fi && \
+    rm -rf /app/wwwroot/samples && \
     find /app -type f \( -name '*.pdb' -o -name '*.dbg' \) -delete
 
 # Runtime stage
