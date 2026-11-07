@@ -100,10 +100,16 @@ public sealed class McpAuthenticationGuidanceTests : IAsyncLifetime
                 Encoding.UTF8, "application/json")
         };
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
         if (modern)
         {
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
             request.Headers.Add("MCP-Protocol-Version", "2026-07-28");
+            request.Headers.Add("Mcp-Method", method);
+            using var arguments = JsonDocument.Parse(parameters);
+            if (arguments.RootElement.TryGetProperty("name", out var name))
+            {
+                request.Headers.Add("Mcp-Name", name.GetString());
+            }
         }
 
         return request;
