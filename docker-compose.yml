@@ -86,6 +86,7 @@ services:
       - "${HONUA_BIND_ADDRESS:-127.0.0.1}:${HONUA_GRPC_PORT:-8081}:8081"
     environment:
       ASPNETCORE_ENVIRONMENT: Development
+      LayerPublishing__MaterializationTimeoutSeconds: ${LayerPublishing__MaterializationTimeoutSeconds:-300}
       Mcp__WorkflowViews__DefaultView: ${HONUA_MCP_DEFAULT_VIEW:-default}
       ConnectionStrings__DefaultConnection: "Host=postgres;Database=honua_dev;Username=honua_user;Password=${POSTGRES_PASSWORD:?Initialize quickstart credentials first}"
       ConnectionStrings__Redis: "${HONUA_REDIS_URL:-redis:6379}"

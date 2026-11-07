@@ -108,9 +108,9 @@ internal static class PublishedMetadataCatalogProjection
         MetadataV2GraphSnapshot snapshot,
         CancellationToken cancellationToken)
     {
-        snapshot = new MetadataV2GraphSnapshot(snapshot.Graph with
+        var discovery = new MetadataV2GraphSnapshot(snapshot.Graph with
         {
-            Publications = snapshot.Graph.Publications.Where(snapshot.IsDiscoverable).ToArray()
+            Publications = snapshot.Index.PublicationsById.Values.Where(snapshot.IsDiscoverable).ToArray()
         }, snapshot.Etag, snapshot.LoadedAt);
         var results = new List<ServiceView>();
         // The canonical graph index resolves service names without case, so a
@@ -131,7 +131,9 @@ internal static class PublishedMetadataCatalogProjection
                     $"Published service identity '{projected.ServiceName}' is ambiguous in the metadata catalog.");
             }
 
-            results.Add(projected);
+            var discoverable = await ProjectAsync(context, discovery, service, refuseDenied: false, cancellationToken)
+                .ConfigureAwait(false);
+            results.Add(discoverable ?? projected with { Serving = false });
         }
 
         return results;

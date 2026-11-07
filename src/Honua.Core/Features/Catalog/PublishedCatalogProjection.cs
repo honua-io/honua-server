@@ -29,23 +29,27 @@ public sealed class PublishedCatalogProjection(PublishedMetadataProjection metad
             {
                 var publication = group.FirstOrDefault(candidate => candidate.IsPrimary) ?? group.First();
                 var resource = snapshot.ResolveResource(publication)!;
+                var layerEndpoints = Links(request, service, group.ToArray(), protocols);
                 layers.Add(ProjectMetadata(resource.Metadata) with
                 {
                     Id = publication.Metadata.Id, Type = "layer", Title = publication.TitleOverride ?? resource.Metadata.Title ?? resource.Metadata.Name,
                     ServiceId = service.Metadata.Id, Folder = MetadataV2ServicePaths.FolderName(snapshot.Graph, service),
                     Access = metadataProjection.DeriveAccessTier(resource.AccessPolicy, service.AccessPolicy),
-                    Url = PublishedMetadataProjection.PublicationUrl(request, service, publication),
+                    Url = layerEndpoints.Any(endpoint => endpoint.Protocol == service.PrimaryProtocol)
+                        ? PublishedMetadataProjection.PublicationUrl(request, service, publication) : null,
                     Extent = await ProjectExtentAsync(resource, cancellationToken).ConfigureAwait(false),
                     TemporalExtent = resource.Temporal?.Extent,
-                    Endpoints = Links(request, service, group.ToArray(), protocols)
+                    Endpoints = layerEndpoints
                 });
             }
+            var serviceEndpoints = Links(request, service, published.Publications, protocols);
             var serviceItem = ProjectMetadata(service.Metadata) with
             {
                 Type = "service", Title = service.Metadata.Title ?? service.EffectivePublicName,
-                Folder = MetadataV2ServicePaths.FolderName(snapshot.Graph, service), Access = published.Access, Url = published.Url,
+                Folder = MetadataV2ServicePaths.FolderName(snapshot.Graph, service), Access = published.Access,
+                Url = serviceEndpoints.Any(endpoint => endpoint.Protocol == service.PrimaryProtocol) ? published.Url : null,
                 Layers = layers.Select(layer => layer.Id).ToArray(),
-                Endpoints = Links(request, service, published.Publications, protocols),
+                Endpoints = serviceEndpoints,
                 Extent = UnionExtent(layers), TemporalExtent = UnionTime(layers)
             };
             items.Add(serviceItem);

@@ -67,14 +67,16 @@ public sealed class PublicCatalogCredentialTests
         Assert.Equal(HttpStatusCode.NotFound, denied.StatusCode);
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData("serve.geoservices-featureserver", "FeatureServer")]
+    [InlineData("serve.wms", "Wms")]
     [Endpoint("GET /api/v1/catalog")]
-    public async Task GetCatalog_ConfiguredDeploymentProfile_ServesOnlyEnabledProtocolLinks()
+    public async Task GetCatalog_ConfiguredDeploymentProfile_ServesOnlyEnabledProtocolLinks(string capability, string protocol)
     {
         await using var fixture = new WebAppFixture().ConfigureWebHost(builder =>
         {
             builder.UseSetting("DeploymentProfile:SchemaVersion", "1.0.0");
-            builder.UseSetting("DeploymentProfile:EnabledCapabilities", "discovery.public-catalog,serve.geoservices-featureserver");
+            builder.UseSetting("DeploymentProfile:EnabledCapabilities", "discovery.public-catalog," + capability);
         });
         await fixture.InitializeAsync();
         using var response = await fixture.Client.GetAsync("/api/v1/catalog?type=service");
@@ -84,6 +86,10 @@ public sealed class PublicCatalogCredentialTests
         Assert.NotEmpty(items);
         var links = items.SelectMany(item => item.GetProperty("endpoints").EnumerateArray()).ToArray();
         Assert.NotEmpty(links);
-        Assert.All(links, link => Assert.Equal("FeatureServer", link.GetProperty("protocol").GetString()));
+        Assert.All(links, link => Assert.Equal(protocol, link.GetProperty("protocol").GetString()));
+        if (protocol != "FeatureServer")
+        {
+            Assert.All(items, item => Assert.Equal(JsonValueKind.Null, item.GetProperty("url").ValueKind));
+        }
     }
 }
