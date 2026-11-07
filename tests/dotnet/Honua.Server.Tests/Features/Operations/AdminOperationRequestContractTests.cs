@@ -15,7 +15,7 @@ using NSubstitute;
 namespace Honua.Server.Tests.Features.OperationsToolset;
 
 [Trait("Tier", "Fast")]
-public sealed class AdminOperationRequestContractTests
+public sealed partial class AdminOperationRequestContractTests
 {
     [Fact]
     public async Task ReleasePackageList_Pagination_RemainsInQuery()
@@ -40,12 +40,7 @@ public sealed class AdminOperationRequestContractTests
     {
         using var capture = new CaptureHandler();
         using var client = new HttpClient(capture);
-        var factory = Substitute.For<IHttpClientFactory>();
-        factory.CreateClient(AdminApiOperationExecutor.HttpClientName).Returns(client);
-        var executor = new AdminApiOperationExecutor(
-            AdminApiOperationCatalog.Definitions.Single(d => d.OperationId == "admin.layer.set-enabled"),
-            factory, Context(), new InMemoryAdminApiKeyStore(TimeProvider.System), TimeProvider.System,
-            new OperationLineageAttestationStore(TimeProvider.System));
+        var executor = CreateApi("admin.layer.set-enabled", client);
         await executor.SubmitAsync(new OperationRequest
         {
             OperationId = executor.OperationId,
@@ -67,12 +62,7 @@ public sealed class AdminOperationRequestContractTests
     {
         using var capture = new CaptureHandler();
         using var client = new HttpClient(capture);
-        var factory = Substitute.For<IHttpClientFactory>();
-        factory.CreateClient(AdminApiOperationExecutor.HttpClientName).Returns(client);
-        var executor = new AdminApiOperationExecutor(
-            AdminApiOperationCatalog.Definitions.Single(d => d.OperationId == "admin.layer.set-enabled"),
-            factory, Context(), new InMemoryAdminApiKeyStore(TimeProvider.System), TimeProvider.System,
-            new OperationLineageAttestationStore(TimeProvider.System));
+        var executor = CreateApi("admin.layer.set-enabled", client);
 
         await executor.SubmitAsync(new OperationRequest
         {
@@ -332,6 +322,16 @@ public sealed class AdminOperationRequestContractTests
             => Task.FromResult<IReadOnlyList<IOperationDescriptor>>(AdminOperateOperationCatalog.Descriptors);
     }
 
+    private static AdminApiOperationExecutor CreateApi(string id, HttpClient client)
+    {
+        var factory = Substitute.For<IHttpClientFactory>();
+        factory.CreateClient(AdminApiOperationExecutor.HttpClientName).Returns(client);
+        return new AdminApiOperationExecutor(
+            AdminApiOperationCatalog.Definitions.Single(definition => definition.OperationId == id),
+            factory, Context(), new InMemoryAdminApiKeyStore(TimeProvider.System), TimeProvider.System,
+            new OperationLineageAttestationStore(TimeProvider.System));
+    }
+
     private static AdminOperateOperationExecutor CreateOperate(string id, HttpClient client)
     {
         var factory = Substitute.For<IHttpClientFactory>();
@@ -352,7 +352,7 @@ public sealed class AdminOperationRequestContractTests
         return new HttpContextAccessor { HttpContext = context };
     }
 
-    private sealed class CaptureHandler : HttpMessageHandler
+    private sealed class CaptureHandler(string responseBody = "{}", HttpStatusCode statusCode = HttpStatusCode.OK) : HttpMessageHandler
     {
         public Uri? Uri { get; private set; }
         public string? Body { get; private set; }
@@ -363,7 +363,7 @@ public sealed class AdminOperationRequestContractTests
             Uri = request.RequestUri;
             Host = request.Headers.Host;
             Body = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
-            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") };
+            return new HttpResponseMessage(statusCode) { Content = new StringContent(responseBody) };
         }
     }
 }
