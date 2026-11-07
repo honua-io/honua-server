@@ -19,7 +19,7 @@ using NSubstitute.ExceptionExtensions;
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
 [Collection("ControlPlaneTransitionTelemetry")]
-public sealed class ExecutionJobReconcilerTests
+public sealed partial class ExecutionJobReconcilerTests
 {
     [Fact]
     [Trait("Tier", "Fast")]
