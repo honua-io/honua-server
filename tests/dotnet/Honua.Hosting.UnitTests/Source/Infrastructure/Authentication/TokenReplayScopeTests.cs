@@ -69,6 +69,28 @@ public sealed class TokenReplayScopeTests
     }
 
     [UnitTest]
+    public async Task Memory_RepeatedBindingWithLaterAdmissionExpiration_KeepsOriginalExpiration()
+    {
+        var time = new TransitionClock();
+        var cacheClock = Substitute.For<ISystemClock>();
+        cacheClock.UtcNow.Returns(_ => time.GetUtcNow());
+        using var cache = new MemoryCache(new MemoryCacheOptions { Clock = cacheClock });
+        var key = Guid.NewGuid().ToString();
+        var originalExpiration = time.GetUtcNow().UtcDateTime.AddMinutes(10);
+        var laterExpiration = time.GetUtcNow().UtcDateTime.AddMinutes(65);
+        var initialScope = TokenReplayScope.ContinuationSurface(null);
+        Assert.Equal(TokenReplayRegistrationResult.Registered, (await RegisterAsync(cache, key, initialScope, originalExpiration)).Result);
+        var originalAdmission = new TokenReplayAdmissionFeature(key, originalExpiration, TokenReplayStore.Memory);
+        Assert.True(await TryBindTokenReplayContinuationAsync(originalAdmission, "session-a", null, cache, NullLogger.Instance, default));
+        var continuedScope = TokenReplayScope.ContinuationSurface(BuildTokenReplayContinuationMarker("session-a"));
+        Assert.Equal(TokenReplayRegistrationResult.Continued, (await RegisterAsync(cache, key, continuedScope, laterExpiration)).Result);
+        var laterAdmission = new TokenReplayAdmissionFeature(key, laterExpiration, TokenReplayStore.Memory);
+        Assert.True(await TryBindTokenReplayContinuationAsync(laterAdmission, "session-a", null, cache, NullLogger.Instance, default));
+        time.Advance(TimeSpan.FromMinutes(11));
+        Assert.False(cache.TryGetValue(key, out _));
+    }
+
+    [UnitTest]
     public async Task Memory_ConcurrentModernFirstUse_RegistersOnceAndRefusesAnotherValidatedToken()
     {
         using var cache = new MemoryCache(new MemoryCacheOptions());
