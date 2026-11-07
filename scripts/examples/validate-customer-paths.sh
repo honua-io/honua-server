@@ -39,7 +39,7 @@ run_gp_local_dev() {
   local project=honua-examples-gp
   compose() {
     COMPOSE_PROJECT_NAME="${project}" HONUA_HTTP_PORT=18084 HONUA_GRPC_PORT=18085 POSTGRES_PORT=55434 REDIS_PORT=56379 \
-      docker compose -f "${ROOT_DIR}/docker-compose.gp-dev.yml" --project-directory "${ROOT_DIR}" "$@"
+      docker compose -f "${ROOT_DIR}/docker/compose/docker-compose.gp-dev.yml" --project-directory "${ROOT_DIR}" "$@"
   }
   trap 'compose down --remove-orphans --volumes >/dev/null 2>&1 || true' RETURN
   if [[ -n "${CANDIDATE_IMAGE}" ]]; then

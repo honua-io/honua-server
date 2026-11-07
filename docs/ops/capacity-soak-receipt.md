@@ -69,7 +69,7 @@ until actual hosted/dedicated parity passes on the same immutable candidate and 
 
 ## Collection
 
-The substrate is [local Docker](../../docker-compose.soak.yml): one server
+The substrate is [local Docker](../../docker/compose/docker-compose.soak.yml): one server
 replica, PostGIS, Redis and local file storage. All share one host failure domain.
 The server boots its Production policy with a real per-run Pro license and a
 throwaway password-protected key-ring certificate. Schema migrations run before

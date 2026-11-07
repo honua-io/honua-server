@@ -6,7 +6,7 @@
 Since #5077 the Production startup policy refuses every credential literal this repository
 ships (ConfigurationValidationService.KnownPlaceholderSecrets), and the soak boots candidates
 under that policy. ``SOAK_DB_PASSWORD: soak-candidate-db-password`` reached the server through
-``ConnectionStrings__DefaultConnection`` in docker-compose.soak.yml, so honua-release nightly
+``ConnectionStrings__DefaultConnection`` in docker/compose/docker-compose.soak.yml, so honua-release nightly
 40354887147's capacity producer (honua-server run 40355678030, candidate 8cb074f7) exited before
 readiness: "'ConnectionStrings__DefaultConnection' is set to a placeholder value that ships in
 this repository's example and harness files". No receipt was published and the night refused.

@@ -331,10 +331,10 @@ public static class GpCli
             }
         }
 
-        // Ports are the defaults published by docker-compose.gp-dev.yml
+        // Ports are the defaults published by docker/compose/docker-compose.gp-dev.yml
         // (POSTGRES_PORT, REDIS_PORT, HONUA_HTTP_PORT, HONUA_GRPC_PORT).
         const string integrationProfile =
-            "integration profile: Docker Compose v2; free host ports 5432 (PostGIS), 6379 (Redis), 8080 (HTTP) and 8081 (gRPC), then run docker compose -f docker-compose.gp-dev.yml --profile integration up --build -d.";
+            "integration profile: Docker Compose v2; free host ports 5432 (PostGIS), 6379 (Redis), 8080 (HTTP) and 8081 (gRPC), then run docker compose --project-directory . -f docker/compose/docker-compose.gp-dev.yml --profile integration up --build -d.";
         var report = new JsonObject
         {
             ["schemaVersion"] = "1.0",

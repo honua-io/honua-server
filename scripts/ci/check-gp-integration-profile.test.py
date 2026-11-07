@@ -9,7 +9,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts/ci/check-gp-integration-profile.py"
-COMPOSE = ROOT / "docker-compose.gp-dev.yml"
+COMPOSE = ROOT / "docker/compose/docker-compose.gp-dev.yml"
 
 
 def load_checker():
@@ -32,6 +32,12 @@ class IntegrationProfileTests(unittest.TestCase):
             self.skipTest("docker is not installed")
         problems = CHECKER.check(COMPOSE, use_docker=True)
         self.assertEqual([], problems)
+        services = CHECKER.compose_config(COMPOSE, CHECKER.PROFILE)["services"]
+        for name in ("honua", *CHECKER.WORKERS):
+            self.assertEqual(str(ROOT), services[name]["build"]["context"])
+        database_mount = next(mount for mount in services["postgres"]["volumes"]
+                              if mount["target"] == "/docker-entrypoint-initdb.d/init-db.sql")
+        self.assertEqual(str(ROOT / "docker/init-db.sql"), database_mount["source"])
 
     def test_missing_profile_worker_volume_or_mount_fails(self):
         document = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))

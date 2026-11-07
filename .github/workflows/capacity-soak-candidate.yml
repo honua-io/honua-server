@@ -341,7 +341,7 @@ jobs:
           PYTHON
           digest="$(sha256sum lock.json | cut -d' ' -f1)"
           # The started server's GP admission comes from the lock, never from a workflow literal.
-          # Every later `docker compose` call re-reads docker-compose.soak.yml, so it goes to the
+          # Every later `docker compose` call re-reads docker/compose/docker-compose.soak.yml, so it goes to the
           # job environment.
           gp_active_jobs="$(PYTHONPATH=producer/scripts/soak python -c 'import json, envelope_config; print(envelope_config.admission_active_job_limit(json.load(open("lock.json"))["supportedEnvelope"]))')"
           echo "SOAK_GP_ACTIVE_JOBS=$gp_active_jobs" >> "$GITHUB_ENV"
@@ -462,7 +462,7 @@ jobs:
           # Bind-mounted read-only; the image's non-root user reads it by mode, not by host uid.
           chmod 0644 "$keyring/operation-keyring.pfx"
           # Every later `docker compose` call (boot, republish restart, the driver's recovery drill,
-          # teardown) re-reads docker-compose.soak.yml, so the pair goes to the job environment.
+          # teardown) re-reads docker/compose/docker-compose.soak.yml, so the pair goes to the job environment.
           echo "SOAK_KEYRING_CERTIFICATE=$keyring/operation-keyring.pfx" >> "$GITHUB_ENV"
           echo "SOAK_KEYRING_PASSWORD=$SOAK_KEYRING_PASSWORD" >> "$GITHUB_ENV"
 
@@ -540,7 +540,7 @@ jobs:
             -c "DELETE FROM honua.metadata_v2_current; DELETE FROM honua.metadata_v2_snapshots;"
           docker exec honua-capacity-soak-redis-1 redis-cli FLUSHALL
           SOAK_LICENSE_CONTENT="$(cat "$RUNNER_TEMP/license/license.json")" \
-            docker compose -f docker-compose.soak.yml restart honua
+            docker compose --project-directory . -f docker/compose/docker-compose.soak.yml restart honua
           for _ in $(seq 1 120); do
             if curl -fsS --max-time 5 "$BASE_URL/healthz/ready" >/dev/null; then break; fi
             sleep 5
