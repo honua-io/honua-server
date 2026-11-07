@@ -7,6 +7,7 @@ using System.Data.Common;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
+using System.Runtime.ExceptionServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -513,23 +514,25 @@ public sealed class MigrationAdminSdkLifecycleTests : IClassFixture<MigrationAdm
         {
             await Web.InitializeAsync();
 
+            var assembly = typeof(Program).Assembly;
             var batchMigrations = new[]
             {
                 "045_CreateMigrationBatchRuns.sql",
                 "117_AddMigrationBatchFidelityVerdict.sql",
                 "146_AddMigrationBatchPublicationTarget.sql"
-            };
+            }.Select(script => assembly.GetManifestResourceNames()
+                .Single(name => name.EndsWith(script, StringComparison.Ordinal))).ToArray();
             await Web.Postgres.RunUnderSchemaMutationLockAsync(() =>
             {
                 var upgrade = DeployChanges.To
                     .PostgresqlDatabase(Web.Postgres.ConnectionString)
-                    .WithScriptsEmbeddedInAssembly(typeof(Program).Assembly,
-                        name => batchMigrations.Any(script => name.EndsWith(script, StringComparison.Ordinal)))
+                    .WithScriptsEmbeddedInAssembly(assembly, name => batchMigrations.Contains(name))
                     .JournalTo(new NullJournal())
                     .WithTransaction()
                     .Build()
                     .PerformUpgrade();
-                upgrade.Successful.Should().BeTrue();
+                if (!upgrade.Successful) ExceptionDispatchInfo.Throw(upgrade.Error);
+                upgrade.Scripts.Select(script => script.Name).Should().BeEquivalentTo(batchMigrations);
                 return Task.CompletedTask;
             });
         }
