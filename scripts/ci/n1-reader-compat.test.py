@@ -153,7 +153,7 @@ class Applies(unittest.TestCase):
                      "src/Honua.Db/Postgres/Migrations/008_AddRaster.sql",
                      "src/Honua.Db/Postgres/Features/Infrastructure/Migrations/PostgresCoreSchemaGuard.cs",
                      "src/Honua.Core/Features/Infrastructure/Migrations/MigrationReaderCompatibility.cs",
-                     "certification/schema-migration-hashes.json",
+                     "eng/schema/schema-migration-hashes.v1.json",
                      "scripts/ci/n1-reader-compat.py"):
             self.assertTrue(n1.path_applies(path), path)
         for path in ("src/Honua.Server/Program.cs", "docs/guides/deploy/upgrade-and-rollback.md",
