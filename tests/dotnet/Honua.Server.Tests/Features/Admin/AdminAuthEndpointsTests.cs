@@ -1119,7 +1119,7 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
         }
     }
 
-    private static StubHttpClientFactory CreateStubFactory()
+    internal static StubHttpClientFactory CreateStubFactory()
         => new(
             "https://auth.example.com/.well-known/openid-configuration",
             new StubOidcEndpoints(
@@ -1186,9 +1186,12 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
             });
     }
 
-    private static WebAppFixture CreateGenericOidcFixture(IHttpClientFactory httpClientFactory)
+    private static WebAppFixture CreateGenericOidcFixture(IHttpClientFactory httpClientFactory) =>
+        ConfigureGenericOidcFixture(CreateBaseFixture(), httpClientFactory);
+
+    internal static WebAppFixture ConfigureGenericOidcFixture(WebAppFixture fixture, IHttpClientFactory httpClientFactory)
     {
-        return CreateBaseFixture()
+        return fixture
             .ConfigureWebHost(builder =>
             {
                 builder.UseSetting("Oidc:Enabled", "true");
@@ -1209,13 +1212,13 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
             });
     }
 
-    private sealed record StubOidcEndpoints(
+    internal sealed record StubOidcEndpoints(
         string AuthorizationEndpoint,
         string TokenEndpoint,
         string LogoutEndpoint,
         string? JwksEndpoint = null);
 
-    private sealed class StubHttpClientFactory : IHttpClientFactory, IDisposable
+    internal sealed class StubHttpClientFactory : IHttpClientFactory, IDisposable
     {
         private readonly HttpClient _client;
         private readonly string _expectedDiscoveryUrl;
@@ -1236,15 +1239,17 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
                 ?? new Uri(new Uri(expectedDiscoveryUrl), "/keys").ToString();
             _accessToken = accessToken ?? CreateAccessToken();
             _idToken = idToken ?? CreateIdToken("Test Admin", "admin");
-            _client = new HttpClient(new StubHttpMessageHandler(this))
+            _client = new HttpClient(CreateMessageHandler())
             {
                 BaseAddress = new Uri("https://stub.local")
             };
         }
 
         public Dictionary<string, string> LastTokenFormValues { get; } = new(StringComparer.Ordinal);
+        public string? IdTokenOverride { get; set; }
 
         public HttpClient CreateClient(string name) => _client;
+        public HttpMessageHandler CreateMessageHandler() => new StubHttpMessageHandler(this);
 
         public void Dispose()
         {
@@ -1295,7 +1300,8 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
                         owner.LastTokenFormValues[pair.Key] = pair.Value.ToString();
                     }
 
-                    var idTokenJson = owner._idToken is null ? "null" : $"\"{owner._idToken}\"";
+                    var idToken = owner.IdTokenOverride ?? owner._idToken;
+                    var idTokenJson = idToken is null ? "null" : $"\"{idToken}\"";
                     var tokenJson = $$"""
                         {
                           "access_token": "{{owner._accessToken}}",
@@ -1341,11 +1347,14 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
-    private static string CreateIdToken(string name, params string[] roles)
+    private static string CreateIdToken(string name, params string[] roles) =>
+        CreateIdTokenForSubject("admin-user", name, roles);
+
+    internal static string CreateIdTokenForSubject(string subject, string name, params string[] roles)
     {
         var claims = new List<Claim>
         {
-            new("sub", "admin-user"),
+            new("sub", subject),
             new("name", name)
         };
 

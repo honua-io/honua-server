@@ -55,6 +55,7 @@ internal static class ProposalEndpoints
 
         group.MapPost("/{id}/approve", HandleApproveProposal)
             .RequireAdminApproveAuthorization()
+            .WithMetadata(AdminHumanApprovalEndpointMetadata.Approve)
             .WithDisplayName("Approve Operation Proposal")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<ProposalDetailResponse>()
@@ -62,6 +63,17 @@ internal static class ProposalEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
+
+        group.MapGet("/{id}/approval-review", HandleOpenApprovalReview)
+            .RequireAdminApproveAuthorization()
+            .WithMetadata(AdminHumanApprovalEndpointMetadata.Review)
+            .WithDisplayName("Open Human Approval Review")
+            .ExcludeFromDescription()
+            .Produces<ProposalHumanReviewResponse>()
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         group.MapPost("/{id}/reject", HandleRejectProposal)
@@ -195,6 +207,15 @@ internal static class ProposalEndpoints
             return ControlPlaneUnavailable(context);
         }
 
+        try
+        {
+            OperationHumanApprovalAuthority.RefuseNonHumanTransport(context);
+        }
+        catch (HumanApprovalRequiredException exception)
+        {
+            return Results.Problem(detail: exception.Message, statusCode: StatusCodes.Status403Forbidden);
+        }
+
         var actor = ConsolePrincipal.ResolveActorId(context.User);
         var approverIdentities = ResolveApproverIdentities(context, actor);
         var denied = await EnsureApproverAsync(permissionResolver, proposalStore, id, actor, approverIdentities, context)
@@ -233,12 +254,8 @@ internal static class ProposalEndpoints
                     statusCode: StatusCodes.Status403Forbidden);
             }
 
-            // Preserve the established actor identity for legacy proposals. Evidence-bound
-            // proposals use the same scheme-qualified actor stamped at the MCP boundary so
-            // separation-of-duties and credential revocation revalidation compare like-for-like.
-            var approvalActor = proposal?.Evidence is null
-                ? actor!
-                : AuditContextResolver.ResolveActor(context, out _);
+            var approvalActor = CanonicalSecurityActor.Resolve(context.User)?.ActorId;
+            if (approvalActor is null) throw new HumanApprovalRequiredException();
             var resolved = await gateway.ApplyApprovedProposalAsync(
                 id,
                 new OperationProposalApprovalContext
@@ -253,9 +270,39 @@ internal static class ProposalEndpoints
                 ? Results.NotFound()
                 : Results.Json(ToDetail(resolved), ProposalJsonContext.Default.ProposalDetailResponse);
         }
+        catch (HumanApprovalRequiredException exception)
+        {
+            return Results.Problem(detail: exception.Message, statusCode: StatusCodes.Status403Forbidden);
+        }
         catch (InvalidOperationException ex) when (ex is not ServiceUnavailableException)
         {
             return Results.Problem(detail: ex.Message, statusCode: StatusCodes.Status409Conflict);
+        }
+    }
+
+    private static async Task<IResult> HandleOpenApprovalReview(
+        string id, HttpContext context,
+        [FromServices] OperationHumanApprovalAuthority authority,
+        [FromServices] IOperationProposalStore? proposalStore = null)
+    {
+        context.Response.Headers.CacheControl = "no-store";
+        if (!UnavailableOperationProposalStore.IsDurable(proposalStore)) return ControlPlaneUnavailable(context);
+        try
+        {
+            OperationHumanApprovalAuthority.RefuseNonHumanTransport(context);
+            var proposal = await proposalStore.GetAsync(id, context.RequestAborted).ConfigureAwait(false);
+            if (proposal is null || !OperationTenantAuthorization.CanAccess(context, proposal.TenantId)) return Results.NotFound();
+            var review = await authority.OpenReviewAsync(proposal, context).ConfigureAwait(false);
+            return Results.Json(new ProposalHumanReviewResponse { Proposal = ToDetail(proposal), Review = review },
+                ProposalHumanReviewJsonContext.Default.ProposalHumanReviewResponse);
+        }
+        catch (HumanApprovalRequiredException exception)
+        {
+            return Results.Problem(detail: exception.Message, statusCode: StatusCodes.Status403Forbidden);
+        }
+        catch (InvalidOperationException exception) when (exception is not ServiceUnavailableException)
+        {
+            return Results.Problem(detail: exception.Message, statusCode: StatusCodes.Status409Conflict);
         }
     }
 
@@ -339,20 +386,6 @@ internal static class ProposalEndpoints
             return scopeDenied;
         }
 
-        // Separation of duties: the proposer cannot approve their own proposal, whichever
-        // identity encoding the proposal's writer recorded (#4901).
-        if (!string.IsNullOrWhiteSpace(proposal.RequestedBy) &&
-            approverIdentities.Contains(proposal.RequestedBy, StringComparer.OrdinalIgnoreCase))
-        {
-            await OperationApprovalDenialRecorder.RecordAsync(
-                context.RequestServices.GetRequiredService<IServiceScopeFactory>(),
-                proposal, actor!, OperationApprovalDenialReason.SelfApproval, context.RequestAborted)
-                .ConfigureAwait(false);
-            return Results.Problem(
-                detail: "Separation of duties: the requester of a proposal cannot approve it.",
-                statusCode: StatusCodes.Status403Forbidden);
-        }
-
         return null;
     }
 
@@ -423,9 +456,21 @@ internal static class ProposalEndpoints
         UpdatedAt = proposal.UpdatedAt,
     };
 
+    private static bool RequiresFreshProposal(OperationProposal proposal) =>
+        proposal.Status is OperationProposalStatus.Planned or OperationProposalStatus.AwaitingApproval
+        && proposal.Initiation is not { Version: OperationInitiationEvidence.CurrentVersion };
+
     private static ProposalDetailResponse ToDetail(OperationProposal proposal, OperationProposalExecutionView? execution = null) => new()
     {
         ProposalId = proposal.ProposalId,
+        Version = proposal.Version,
+        PlanHash = proposal.SealedPlanHash,
+        Initiation = proposal.Initiation?.Kind.ToString() ?? "Unknown",
+        ApprovalChannel = proposal.HumanApproval?.Channel,
+        RequiresReproposal = RequiresFreshProposal(proposal),
+        ApprovalRemediation = RequiresFreshProposal(proposal)
+            ? "Create a fresh proposal with a new idempotency key, then reopen it in Console for human approval."
+            : null,
         Kind = proposal.Kind.ToString(),
         Status = execution?.Status ?? proposal.Status.ToString(),
         RequestedBy = proposal.RequestedBy,

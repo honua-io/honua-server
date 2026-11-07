@@ -116,6 +116,7 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/admin/platform-release/converge"),
         new("GET", "/api/v1/admin/proposals"),
         new("GET", "/api/v1/admin/proposals/{id}"),
+        new("GET", "/api/v1/admin/proposals/{id}/approval-review"),
         new("POST", "/api/v1/admin/proposals/{id}/approve"),
         new("POST", "/api/v1/admin/proposals/{id}/reject"),
         new("GET", "/api/v1/admin/services"),

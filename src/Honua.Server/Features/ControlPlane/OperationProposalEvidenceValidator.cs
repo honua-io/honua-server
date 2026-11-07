@@ -31,11 +31,6 @@ internal sealed class OperationProposalEvidenceValidator(
     {
         var evidence = proposal.Evidence
             ?? throw new InvalidOperationException("The proposal has no evidence seal.");
-        if (string.Equals(proposal.RequestedBy, approval.ApprovedBy, StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException("Separation of duties: the requester cannot approve this proposal.");
-        }
-
         if (!string.Equals(evidence.TenantId, approval.TenantId, StringComparison.Ordinal))
         {
             throw new InvalidOperationException("The proposal tenant does not match the approval tenant.");
