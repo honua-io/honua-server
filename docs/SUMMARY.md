@@ -229,5 +229,3 @@
 ## Internal
 - [Internal engineering docs](internal/README.md)
 - [Demo runbooks (moved to honua-demo)](internal/demo/README.md)
-## Archive
-- [Historical archive](archive/README.md)

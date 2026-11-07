@@ -2188,7 +2188,7 @@
           "proofMechanism": "WMS 1.1.1 Basic CITE Team Engine run",
           "executionLane": "release:manual-follow-through",
           "evidenceLocations": [
-            "docs/archive/contributor/cite-legacy-ogc-conformance-testing.md"
+            "docs/internal/protocol-coverage/cite-legacy-ogc-conformance-testing.md"
           ],
           "ownerRepo": "honua-server",
           "status": "planned",
@@ -2417,7 +2417,7 @@
           "proofMechanism": "WCS coverage docs and ImageServer parity matrix describe the supported KVP operations, formats, CRS handling and CRS-advertisement caveats, cache posture, error behavior, and deferred extensions.",
           "executionLane": "release:docs-review",
           "evidenceLocations": [
-            "docs/archive/specifications/wcs-2.0.1-coverage.md",
+            "docs/internal/protocol-coverage/wcs-2.0.1-coverage.md",
             "docs/reference/compatibility/geoservices-parity.md",
             "docs/gis/data/geoservices-rest-parity.json"
           ],
@@ -2645,7 +2645,7 @@
           "executionLane": "nightly:cite-conformance",
           "evidenceLocations": [
             ".github/workflows/cite-conformance.yml",
-            "docs/archive/specifications/ogc-api-features-coverage.md"
+            "docs/internal/protocol-coverage/ogc-api-features-coverage.md"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented"
@@ -2798,7 +2798,7 @@
           "proofMechanism": "Supported OGC API Records subset is documented and validated by targeted endpoint coverage",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
-            "docs/archive/specifications/ogc-api-records-coverage.md",
+            "docs/internal/protocol-coverage/ogc-api-records-coverage.md",
             "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Records/OgcRecordsEndpointTests.cs"
           ],
           "ownerRepo": "honua-server",
@@ -2891,7 +2891,7 @@
           "executionLane": "nightly:cite-tiles-conformance",
           "evidenceLocations": [
             ".github/workflows/cite-tiles-conformance.yml",
-            "docs/archive/specifications/ogc-api-tiles-coverage.md"
+            "docs/internal/protocol-coverage/ogc-api-tiles-coverage.md"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented"
@@ -3016,7 +3016,7 @@
           "proofMechanism": "OGC API Coverages route contract and implemented support matrix are documented with targeted endpoint coverage",
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
-            "docs/archive/specifications/ogc-api-coverages-coverage.md",
+            "docs/internal/protocol-coverage/ogc-api-coverages-coverage.md",
             "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Coverages/OgcCoveragesEndpointsTests.cs"
           ],
           "ownerRepo": "honua-server",
@@ -3608,7 +3608,7 @@
           "proofMechanism": "WFS 1.1.0 Basic CITE Team Engine run",
           "executionLane": "release:manual-follow-through",
           "evidenceLocations": [
-            "docs/archive/contributor/cite-legacy-ogc-conformance-testing.md"
+            "docs/internal/protocol-coverage/cite-legacy-ogc-conformance-testing.md"
           ],
           "ownerRepo": "honua-server",
           "status": "planned",
@@ -3668,7 +3668,7 @@
           "proofMechanism": "WFS 1.0.0 Basic CITE Team Engine run",
           "executionLane": "release:manual-follow-through",
           "evidenceLocations": [
-            "docs/archive/contributor/cite-legacy-ogc-conformance-testing.md"
+            "docs/internal/protocol-coverage/cite-legacy-ogc-conformance-testing.md"
           ],
           "ownerRepo": "honua-server",
           "status": "planned",

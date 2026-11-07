@@ -23,10 +23,6 @@
       "why": "Contributor notes, ADRs, spikes and evidence, flattened together. Reachable from its own README, not from SUMMARY.md. Needs its own curation pass before path-as-identity means anything here."
     },
     {
-      "path": "docs/archive",
-      "why": "Superseded pages kept for history. Publishing them as concepts would put retired claims back into the graph."
-    },
-    {
       "path": "docs/gis",
       "why": "Capability data and client-certification evidence. The JSON under docs/gis/data is the generated spine other gates read; the markdown beside it is evidence, not prose documentation."
     },
@@ -76,15 +72,11 @@
     },
     {
       "path": "docs/internal/README.md",
-      "why": "The doorway into docs/internal. The tree stays out of the bundle; its entry point is listed in SUMMARY.md and so must be a concept — OKF's `index` is exactly this role."
+      "why": "The doorway into docs/internal. The tree stays out of the bundle; its entry point is listed in SUMMARY.md and so must be a concept \u2014 OKF's `index` is exactly this role."
     },
     {
       "path": "docs/internal/demo/README.md",
       "why": "Doorway into the demo runbooks, listed in SUMMARY.md."
-    },
-    {
-      "path": "docs/archive/README.md",
-      "why": "Doorway into the historical archive, listed in SUMMARY.md."
     }
   ],
   "summaryIsInBundle": "Every SUMMARY.md link target under docs/ must be inside the bundle. If a page is in the table of contents it is published documentation, and published documentation is a concept."

@@ -4,11 +4,10 @@
   "issue": "https://github.com/honua-io/honua-server/issues/3592",
   "inventoriedOn": "2026-08-28",
   "totals": {
-    "entries": 12,
+    "entries": 9,
     "missingFiles": 0,
-    "brokenAnchors": 12,
+    "brokenAnchors": 9,
     "byArea": {
-      "docs/archive": 3,
       "docs/internal": 7,
       "docs/developer": 1,
       "docs/gis": 1,
@@ -16,21 +15,6 @@
     }
   },
   "entries": [
-    {
-      "source": "docs/archive/developer/AI_OPERATOR_CONTRACT.md",
-      "target": "../../guides/connect/ai-agents-mcp.md#operator-surface",
-      "reason": "Archived contract; the heading it names never existed in the rewritten MCP guide. docs/guides/connect/ai-agents-mcp.md is owned by open PR #3591."
-    },
-    {
-      "source": "docs/archive/developer/AI_OPERATOR_CONTRACT.md",
-      "target": "../../guides/connect/ai-agents-mcp.md#resources-1",
-      "reason": "Archived contract; duplicate-heading suffix from the pre-restructure page. docs/guides/connect/ai-agents-mcp.md is owned by open PR #3591."
-    },
-    {
-      "source": "docs/archive/developer/AI_OPERATOR_CONTRACT.md",
-      "target": "../../guides/connect/ai-agents-mcp.md#tools-1",
-      "reason": "Archived contract; duplicate-heading suffix from the pre-restructure page. docs/guides/connect/ai-agents-mcp.md is owned by open PR #3591."
-    },
     {
       "source": "docs/developer/api-specs/README.md",
       "target": "../../guides/query-analyze/query-features.md#vector-tiles-mvt",
