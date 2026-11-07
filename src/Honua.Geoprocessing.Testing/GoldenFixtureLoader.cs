@@ -6,6 +6,26 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Geoprocessing.Testing;
 
+/// <summary>
+/// Discovers and loads golden GP fixtures from on-disk JSON manifests (GP Devkit P6, issue
+/// #2127). A fixture directory holds a <c>fixture.json</c> manifest next to its input + golden
+/// files; <c>honua gp test</c> walks <c>tests/fixtures/gp/</c> (or any root) to find them. The
+/// manifests double as copy-paste authoring examples.
+///
+/// <para>Manifest shape (<c>fixture.json</c>):</para>
+/// <code>
+/// {
+///   "id": "geometry-buffer-point",
+///   "process": "geometry.buffer",
+///   "description": "Buffer a point by 10 units.",
+///   "mode": "geometry",          // "auto" | "geometry" | "scalarStructural"
+///   "tolerance": { "coordinate": 1e-6, "numeric": 1e-6 },
+///   "inputs": { "wkb": "...base64...", "srid": "4326", "distance": "10" },
+///   "inputFiles": { "wkb": "input.wkb" },   // file contents are base64-encoded into the input
+///   "golden": "golden.geojson"
+/// }
+/// </code>
+/// </summary>
 public static class GoldenFixtureLoader
 {
     /// <summary>The conventional manifest file name within a fixture directory.</summary>
@@ -18,6 +38,13 @@ public static class GoldenFixtureLoader
         AllowTrailingCommas = true,
     };
 
+    /// <summary>
+    /// Recursively discovers every fixture under <paramref name="rootDirectory"/> (each
+    /// directory containing a <see cref="ManifestFileName"/>), ordered by id.
+    /// </summary>
+    /// <param name="rootDirectory">The root to search (e.g. <c>tests/fixtures/gp</c>).</param>
+    /// <returns>The loaded fixtures, ordered by id.</returns>
+    /// <exception cref="DirectoryNotFoundException">The root does not exist.</exception>
     public static IReadOnlyList<GoldenFixture> Discover(string rootDirectory)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(rootDirectory);
