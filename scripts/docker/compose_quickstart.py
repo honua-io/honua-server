@@ -69,6 +69,7 @@ def write_secret(path, value):
 
 
 def update_environment(path, updates, removed=()):
+    existing_group = path.stat().st_gid if path.exists() else None
     existing = path.read_text() if path.exists() else ''
     source_lines = existing.splitlines()
     values = dict(line.split('=', 1) for line in source_lines if line and not line.startswith('#'))
@@ -92,6 +93,8 @@ def update_environment(path, updates, removed=()):
     pending.unlink(missing_ok=True)
     fd = os.open(pending, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o640)
     with os.fdopen(fd, 'w') as stream:
+        if existing_group is not None:
+            os.fchown(stream.fileno(), -1, existing_group)
         os.fchmod(stream.fileno(), 0o640)
         stream.write(updated)
         stream.flush()

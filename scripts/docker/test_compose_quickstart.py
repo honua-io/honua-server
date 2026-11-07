@@ -110,6 +110,26 @@ class ComposeQuickstartTests(unittest.TestCase):
             for key in ('COMPOSE_FILE', 'CUSTOM_SETTING'):
                 self.assertEqual(1, sum(line.startswith(key + '=') for line in env_file.read_text().splitlines()))
 
+    def test_console_activation_preserves_private_project_group(self):
+        groups = [group for group in os.getgroups() if group != os.getegid()]
+        if not groups:
+            self.skipTest('A supplementary group is needed to test group preservation')
+        project_group = groups[0]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            package(path, dict(PACKAGE_IMAGES, console=CONSOLE), 'test')
+            initialize(path)
+            os.chown(path, -1, project_group)
+            env_file = path / '.env'
+            os.chown(env_file, -1, project_group)
+            saved = env_file.read_text()
+            env_file.write_text(saved.replace(f'HONUA_PROJECT_GID={os.getegid()}', f'HONUA_PROJECT_GID={project_group}'))
+
+            values = initialize(path, ('console',))
+
+            self.assertEqual(str(project_group), values['HONUA_PROJECT_GID'])
+            self.assertEqual(project_group, env_file.stat().st_gid)
+
     def test_console_without_release_pin_fails_before_changing_install(self):
         with tempfile.TemporaryDirectory() as directory:
             path = self.prepare(directory)
