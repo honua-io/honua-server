@@ -2008,7 +2008,6 @@
       "_comment": "Selects the Eval and Geoprocessing namespaces. Capacity split 2026-09-14 (trunk red at 8e62f71, run 34816748596): the shard passed at 1196s of its 20m cap at 0c6c424 (99.7%) and then exhausted it at 1201s with no failing test. The Protocols.Grpc namespace (~580s, SceneGrpcIntegrationTests alone ~550s) moved to gRPC Protocol and Scene; this shard keeps ~610s (51%). Budgets are unchanged; see docs/internal/ci/shard-timeout-budgets.md.",
       "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Eval|FullyQualifiedName~Honua.Server.Tests.Features.Geoprocessing",
       "paths": [
-        "tests/fixtures/gp/",
         "src/Honua.Ai/Features/Protocols/Mcp/",
         "src/Honua.Core/Features/Geoprocessing/",
         "src/Honua.Core/Features/Validation/",
@@ -2082,6 +2081,7 @@
       "csproj": "tests/dotnet/Honua.Geoprocessing.Cli.Tests/Honua.Geoprocessing.Cli.Tests.csproj",
       "filter": "FullyQualifiedName~Honua.Geoprocessing.Cli.Tests",
       "paths": [
+        "tests/fixtures/gp/",
         "src/Honua.Geoprocessing.Cli/",
         "tests/dotnet/Honua.Geoprocessing.Cli.Tests/"
       ]

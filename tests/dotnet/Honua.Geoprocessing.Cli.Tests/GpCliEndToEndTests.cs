@@ -509,7 +509,7 @@ public sealed class GpCliEndToEndTests
     [Fact]
     public async Task RunAsync_Test_ManagedGoldenFixture_Passes()
     {
-        var root = ResolveSamplesGpRoot();
+        var root = ResolveGpFixtureRoot();
 
         var (exit, stdout, _) = await InvokeAsync(
             "test", "geometry-buffer-point", "--root", root);
@@ -521,9 +521,26 @@ public sealed class GpCliEndToEndTests
     }
 
     [Fact]
+    public async Task RunAsync_Test_WithoutRootOverride_FindsRepositoryFixture()
+    {
+        var previousDirectory = Directory.GetCurrentDirectory();
+        try
+        {
+            Directory.SetCurrentDirectory(ResolveGpFixtureRoot());
+            var (exit, stdout, _) = await InvokeAsync("test", "geometry-buffer-point");
+            exit.Should().Be(0);
+            stdout.Should().Contain("PASS").And.Contain("geometry-buffer-point").And.Contain("0 failed");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousDirectory);
+        }
+    }
+
+    [Fact]
     public async Task RunAsync_Test_UnknownFixture_ReturnsUsageExit()
     {
-        var root = ResolveSamplesGpRoot();
+        var root = ResolveGpFixtureRoot();
 
         var (exit, _, stderr) = await InvokeAsync(
             "test", "no-such-fixture", "--root", root);
@@ -540,7 +557,7 @@ public sealed class GpCliEndToEndTests
     [Fact]
     public async Task RunAsync_FullDevkitLoop_ListDescribePlanRunTest_AllSucceed()
     {
-        var root = ResolveSamplesGpRoot();
+        var root = ResolveGpFixtureRoot();
         var bufferParams = new[]
         {
             "--param", $"wkb={PointWkbBase64}",
@@ -589,7 +606,7 @@ public sealed class GpCliEndToEndTests
         }
     }
 
-    private static string ResolveSamplesGpRoot()
+    private static string ResolveGpFixtureRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir is not null)

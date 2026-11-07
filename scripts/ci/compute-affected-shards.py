@@ -485,15 +485,10 @@ def product_code_prefixes(config: dict[str, Any]) -> tuple[str, ...]:
     """`PRODUCT_CODE_PREFIXES` plus every root the shard map itself routes on.
 
     `src/` and `tests/dotnet/` hold nearly all of the routable tree, but not
-    all of it: `.github/ci-shards.json` also routes `eng/telemetry/`,
-    `tests/fixtures/gp/` and `tests/fixtures/toolbox-translation/` -- shard INPUTS
-    that live outside both. `SloMetricContractTests` reads
-    `eng/telemetry/slo-metric-contract.v1.json` and `ToolboxTranslationEndpointTests`
-    consumes the toolbox fixtures, so a diff that edits only one of those can
-    turn the owning shard red on trunk while this admission test answers
-    `no_product_code` and the lane runs nothing. Deriving the set from the same
-    config the router reads is what stops the two drifting again the next time
-    a shard claims a new root.
+    all of it: the shard map also routes telemetry contracts and GP, plugin
+    and toolbox fixtures outside both trees. Those consumers must run when
+    their input is the only changed file. Deriving admission from the live
+    map keeps the selector from silently skipping them.
 
     `infrastructure_paths` is deliberately NOT unioned in. Those are the
     router's run_all short-circuit (`.github/`, `Directory.*.props`,

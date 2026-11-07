@@ -30,8 +30,7 @@ internal sealed record GpPublishOptions
 
     public string? Namespace { get; init; }
 
-    // Both segments are compile-time literals, so Path.Combine cannot drop either here.
-    public string FixtureRoot { get; init; } = Path.Join("tests", "fixtures", "gp");
+    public string FixtureRoot { get; init; } = GpScaffolder.FixtureRoot;
 }
 
 internal static class GpPublishCommand

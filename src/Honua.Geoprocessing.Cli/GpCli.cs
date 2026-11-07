@@ -1490,7 +1490,7 @@ public static class GpCli
         var dir = new DirectoryInfo(Directory.GetCurrentDirectory());
         while (dir is not null)
         {
-            var candidate = Path.Join(dir.FullName, "tests", "fixtures", "gp");
+            var candidate = Path.Join(dir.FullName, GpScaffolder.FixtureRoot);
             if (Directory.Exists(candidate))
             {
                 return candidate;

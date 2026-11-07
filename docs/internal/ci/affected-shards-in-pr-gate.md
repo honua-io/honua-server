@@ -27,10 +27,9 @@ delegated to machinery that already gates trunk.
 1. **Skip when nothing can move a shard.** A diff touching no product-code path
    selects nothing and costs no runners (`no_product_code`). Product code is
    `src/` and `tests/dotnet/` **unioned with every root the shard map itself
-   routes on** — `.github/ci-shards.json` also claims `eng/telemetry/`,
-   `tests/fixtures/gp/` and `tests/fixtures/toolbox-translation/`, which are shard
-   inputs (`SloMetricContractTests` reads `eng/telemetry/slo-metric-contract.v1.json`)
-   that would otherwise be skipped while the trailing matrix went red on them.
+   routes on**. This includes telemetry contracts and GP, plugin and toolbox
+   fixtures outside those trees. Their consumers must run when an input is
+   the only changed file.
    `infrastructure_paths` is deliberately excluded, so a workflow-only diff
    still costs nothing. `tests/dotnet/` is included deliberately: shard filters
    select test classes by fully-qualified name, so a test-only change is
