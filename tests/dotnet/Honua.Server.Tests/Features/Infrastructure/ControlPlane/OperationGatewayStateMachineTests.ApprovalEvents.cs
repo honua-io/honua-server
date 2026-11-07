@@ -67,11 +67,31 @@ public sealed partial class OperationGatewayStateMachineTests
     [Operation(Operations.TestInfrastructure)]
     public async Task ApplyApprovedProposal_ApprovalAuditFails_FailsWithoutActuating()
     {
-        var proposal = CreateProposal("p-approval-audit-failed", OperationClass.Deploy, OperationProposalStatus.AwaitingApproval);
-        var store = new InMemoryProposalStore(proposal);
         var audit = Substitute.For<IAuditLog>();
         audit.RecordAsync(Arg.Is<AuditEvent>(item => item.Action == "operation.approved"), Arg.Any<CancellationToken>())
             .Returns(Task.FromException<string?>(new IOException("Audit unavailable")));
+
+        await AssertApprovalAuditFailureAsync(audit);
+    }
+
+    [UnitTheory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" ")]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ApplyApprovedProposal_ApprovalAuditHasNoIdentity_FailsWithoutActuating(string? auditId)
+    {
+        var audit = Substitute.For<IAuditLog>();
+        audit.RecordAsync(Arg.Is<AuditEvent>(item => item.Action == "operation.approved"), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(auditId));
+
+        await AssertApprovalAuditFailureAsync(audit);
+    }
+
+    private static async Task AssertApprovalAuditFailureAsync(IAuditLog audit)
+    {
+        var proposal = CreateProposal("p-approval-audit-failed", OperationClass.Deploy, OperationProposalStatus.AwaitingApproval);
+        var store = new InMemoryProposalStore(proposal);
         var executor = new PendingApprovalExecutor();
         executor.Completion.SetResult("execution-id");
         var gateway = BuildGateway(store, executor,
