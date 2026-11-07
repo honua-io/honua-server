@@ -131,6 +131,10 @@ public sealed class MigrationScannerEndpointTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/import/geoservices/start")]
     public async Task Scan_GeoservicesFolderPlan_StartPreservesPreviewIdentity(bool explicitRoot)
     {
+        await using var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Enterprise)
+            .ReplaceService<IGeoservicesImportService>(_geoservicesService);
+        await fixture.InitializeAsync();
+        var client = fixture.Client;
         const string sourceUrl = "https://example.com/arcgis/rest/services/Survey/Parcels/FeatureServer";
         var request = new Dictionary<string, object?>
         {
@@ -139,7 +143,7 @@ public sealed class MigrationScannerEndpointTests : IAsyncLifetime
             ["artifactSet"] = "all"
         };
         if (explicitRoot) request["folderId"] = null;
-        var response = await _client.PostAsJsonAsync("/api/v1/admin/import/scan", request);
+        var response = await client.PostAsJsonAsync("/api/v1/admin/import/scan", request);
         response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
         var artifacts = await response.Content.ReadFromJsonAsync<JsonElement>();
         var identity = artifacts.GetProperty("manifest").GetProperty("targetResources")[0].GetProperty("identity");
@@ -149,7 +153,7 @@ public sealed class MigrationScannerEndpointTests : IAsyncLifetime
         folder.Should().Be(explicitRoot ? null : "Survey");
         var plan = identity.GetProperty("importPlan");
         plan.TryGetProperty("tenantId", out _).Should().BeFalse();
-        var start = await _client.PostAsJsonAsync("/api/v1/admin/import/geoservices/start", new
+        var start = await client.PostAsJsonAsync("/api/v1/admin/import/geoservices/start", new
         {
             serviceUrl = sourceUrl,
             layerId = 0,
