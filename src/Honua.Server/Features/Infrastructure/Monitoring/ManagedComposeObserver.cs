@@ -135,8 +135,8 @@ internal sealed class ManagedComposeObserver(
         var reason = targets.All(target => target.Available)
             ? EvidencePostureVocabulary.ReasonCodes.ReadbackIncomplete
             : EvidencePostureVocabulary.ReasonCodes.SourceUnavailable;
-        return EvidencePostureFactory.Unavailable(SourceId, EvidencePostureVocabulary.BackendKinds.Composite, "compose-executor",
-            reason, observedAt: successful, lastSuccessfulAt: successful, maximumAge: TimeSpan.FromMinutes(2));
+        return WithReadbackDeadline(EvidencePostureFactory.Unavailable(SourceId, EvidencePostureVocabulary.BackendKinds.Composite, "compose-executor",
+            reason, observedAt: successful, lastSuccessfulAt: successful, maximumAge: TimeSpan.FromMinutes(2)));
     }
 
     internal static DeployPreflightPlatformRelease ProjectRelease(
@@ -186,9 +186,9 @@ internal sealed class ManagedComposeObserver(
                     ? EvidencePostureFactory.Partial(sourceId, EvidencePostureVocabulary.BackendKinds.Composite,
                         "compose-executor", observed.Min(target => target.ObservedAt!.Value), TimeSpan.FromMinutes(2),
                         EvidencePostureVocabulary.ReasonCodes.IncompleteCoverage, coverage)
-                    : EvidencePostureFactory.Unavailable(sourceId, EvidencePostureVocabulary.BackendKinds.Composite,
+                    : WithReadbackDeadline(EvidencePostureFactory.Unavailable(sourceId, EvidencePostureVocabulary.BackendKinds.Composite,
                         "compose-executor", failureReason, observedAt: successful, lastSuccessfulAt: successful,
-                        maximumAge: TimeSpan.FromMinutes(2), coverage: coverage);
+                        maximumAge: TimeSpan.FromMinutes(2), coverage: coverage));
         return new()
         {
             EvidencePosture = EvidencePostureFactory.Build(now, source),
@@ -208,6 +208,14 @@ internal sealed class ManagedComposeObserver(
                 .Concat(skew.Execution.Where(target => target.Skewed).Select(target => target.Id)).ToArray()
         };
     }
+
+    private static EvidenceSourceEnvelope WithReadbackDeadline(EvidenceSourceEnvelope readback)
+        => readback with
+        {
+            ValidUntil = readback.ObservedAt is { } observed && readback.MaximumAgeSeconds is { } maximumAge
+                ? observed.AddSeconds(maximumAge)
+                : null
+        };
 
     private static string ReleaseReadbackFailureReason(DeployPreflightPlaneProjection[] applicable,
         IReadOnlyList<OpsManagedTargetHealthView> targets)
