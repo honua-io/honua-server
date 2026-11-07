@@ -723,14 +723,21 @@ public static partial class OidcAuthenticationExtensions
                         var tokenKey = TryGetTokenReplayKey(context.SecurityToken);
                         if (!string.IsNullOrWhiteSpace(tokenKey))
                         {
-                            var expiresOn = GetReplayCacheExpiration(context.SecurityToken, oidcOptions.TokenValidation);
+                            var expiresOn = GetReplayCacheExpiration(context.SecurityToken, oidcOptions.TokenValidation, DateTime.UtcNow);
+                            if (expiresOn is not { } expiration)
+                            {
+                                context.Fail("Token exceeds the replay protection retention limit");
+                                return;
+                            }
+
+                            var scope = ResolveTokenReplayScope(context.HttpContext, context.SecurityToken);
                             var registration = await TryRegisterTokenReplayAsync(
                                 tokenKey,
-                                expiresOn,
+                                expiration,
                                 redis,
                                 memoryCache,
                                 oidcOptions.TokenValidation.ReplayProtectionFailClosed,
-                                ResolveTokenReplayScope(context.HttpContext),
+                                scope,
                                 logger,
                                 context.HttpContext.RequestAborted).ConfigureAwait(false);
 
@@ -755,11 +762,8 @@ public static partial class OidcAuthenticationExtensions
 
                             if (registration.Store is { } store)
                             {
-                                // Lets a server-issued continuation (an MCP session) bind the
-                                // admitted token so its holder may reuse it on that
-                                // continuation only (honua-server#4909).
                                 context.HttpContext.Features.Set(
-                                    new TokenReplayAdmissionFeature(tokenKey, expiresOn, store));
+                                    new TokenReplayAdmissionFeature(tokenKey, expiration, store, scope));
                             }
                         }
                     }
@@ -781,7 +785,7 @@ public static partial class OidcAuthenticationExtensions
         var expiresIn = expiresOn - DateTime.UtcNow;
         if (expiresIn <= TimeSpan.Zero)
         {
-            expiresIn = TimeSpan.FromMinutes(5);
+            return new(TokenReplayRegistrationResult.Unavailable, null);
         }
 
         if (redis is not null)
@@ -971,41 +975,30 @@ public static partial class OidcAuthenticationExtensions
 
     private static string? TryGetTokenReplayKey(SecurityToken token)
     {
-        if (token is JwtSecurityToken jwtToken)
+        if (token is not (JwtSecurityToken or JsonWebToken))
         {
-            if (!string.IsNullOrWhiteSpace(jwtToken.Id))
-            {
-                // jti is only unique per-issuer. The single Bearer scheme accepts tokens
-                // from multiple issuers simultaneously, so scope the replay key by the
-                // token's (already validated) issuer to avoid cross-issuer jti collisions
-                // rejecting a legitimate token as a replay.
-                return $"jti:{NormalizeReplayIssuer(jwtToken.Issuer)}:{jwtToken.Id}";
-            }
-
-            if (!string.IsNullOrWhiteSpace(jwtToken.RawData))
-            {
-                var hash = System.Security.Cryptography.SHA256.HashData(
-                    System.Text.Encoding.UTF8.GetBytes(jwtToken.RawData));
-                return $"raw:{Convert.ToHexStringLower(hash)}";
-            }
-        }
-        else if (token is JsonWebToken jsonWebToken)
-        {
-            if (!string.IsNullOrWhiteSpace(jsonWebToken.Id))
-            {
-                // See note above: scope the jti by the validated issuer.
-                return $"jti:{NormalizeReplayIssuer(jsonWebToken.Issuer)}:{jsonWebToken.Id}";
-            }
-
-            if (!string.IsNullOrWhiteSpace(jsonWebToken.EncodedToken))
-            {
-                var hash = System.Security.Cryptography.SHA256.HashData(
-                    System.Text.Encoding.UTF8.GetBytes(jsonWebToken.EncodedToken));
-                return $"raw:{Convert.ToHexStringLower(hash)}";
-            }
+            return null;
         }
 
-        return null;
+        if (!string.IsNullOrWhiteSpace(token.Id))
+        {
+            return $"jti:{NormalizeReplayIssuer(token.Issuer)}:{token.Id}";
+        }
+
+        return EncodedTokenFingerprint(token) is { } fingerprint ? $"raw:{fingerprint}" : null;
+    }
+
+    private static string? EncodedTokenFingerprint(SecurityToken token)
+    {
+        var encoded = token switch
+        {
+            JwtSecurityToken jwt => jwt.RawData,
+            JsonWebToken jwt => jwt.EncodedToken,
+            _ => null
+        };
+        return string.IsNullOrWhiteSpace(encoded) ? null
+            : Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes(encoded)));
     }
 
     private static string NormalizeReplayIssuer(string? issuer)
@@ -1020,31 +1013,22 @@ public static partial class OidcAuthenticationExtensions
         return Convert.ToHexStringLower(hash);
     }
 
-    private static DateTime GetReplayCacheExpiration(SecurityToken token, TokenValidationOptions options)
+    internal static DateTime? GetReplayCacheExpiration(SecurityToken token, TokenValidationOptions options, DateTime now)
     {
-        var now = DateTime.UtcNow;
-        var expires = token switch
+        if (token.ValidTo == DateTime.MinValue)
         {
-            JwtSecurityToken jwtToken when jwtToken.ValidTo != DateTime.MinValue => jwtToken.ValidTo.ToUniversalTime(),
-            JsonWebToken jsonWebToken when jsonWebToken.ValidTo != DateTime.MinValue => jsonWebToken.ValidTo.ToUniversalTime(),
-            _ => now
-        };
-
-        if (options.TokenReplayCacheDuration > TimeSpan.Zero)
-        {
-            var maxExpiration = now.Add(options.TokenReplayCacheDuration);
-            if (expires == DateTime.MinValue || expires > maxExpiration)
-            {
-                expires = maxExpiration;
-            }
+            return null;
         }
 
-        if (expires <= now)
+        var remainingLifetime = token.ValidTo.ToUniversalTime() - now;
+        var maximumRetention = options.TokenReplayCacheDuration > TimeSpan.Zero
+            ? options.TokenReplayCacheDuration : TimeSpan.FromHours(24);
+        if (remainingLifetime <= -options.ClockSkew || remainingLifetime > maximumRetention - options.ClockSkew)
         {
-            expires = now.AddMinutes(5);
+            return null;
         }
 
-        return expires;
+        return token.ValidTo.ToUniversalTime().Add(options.ClockSkew);
     }
 
     internal enum TokenReplayRegistrationResult

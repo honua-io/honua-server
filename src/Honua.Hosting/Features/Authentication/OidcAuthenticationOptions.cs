@@ -160,7 +160,7 @@ public sealed class TokenValidationOptions
 
     public bool EnableTokenReplayProtection { get; set; } = true;
 
-    public TimeSpan TokenReplayCacheDuration { get; set; } = TimeSpan.Zero;
+    public TimeSpan TokenReplayCacheDuration { get; set; } = TimeSpan.FromHours(24);
 
     // Replay protection fails open to per-node memory when Redis is unreachable; enable the fail-closed option when single-use must hold during a cache outage.
     public bool ReplayProtectionFailClosed { get; set; }
