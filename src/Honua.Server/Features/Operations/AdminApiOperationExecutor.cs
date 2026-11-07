@@ -196,7 +196,7 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
         });
     }
 
-    private IReadOnlyDictionary<string, string> BuildPublishedResourceIds(
+    private Dictionary<string, string> BuildPublishedResourceIds(
         OperationRequest request, HttpStatusCode statusCode, string payload)
     {
         var resources = new Dictionary<string, string>(StringComparer.Ordinal);
