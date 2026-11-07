@@ -49,7 +49,7 @@ class ManagedWorkflowTests(unittest.TestCase):
         self.assertIn('managed-test-build.py fallback --projects-file', shard)
         self.assertIn('actions/cache/restore@', shard)
         self.assertIn('matrix.advisory != true', shard)
-        self.assertIn("continue-on-error: ${{ matrix.advisory == true }}", shard)
+        self.assertNotIn("continue-on-error: ${{ matrix.advisory == true }}", shard)
 
     def test_package_prerequisites_precede_both_materializers(self):
         for name, lane in [('dotnet-foundation-family-tests', 'foundation'), ('server-tests', 'shard')]:

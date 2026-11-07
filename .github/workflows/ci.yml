@@ -1186,7 +1186,6 @@ jobs:
     # protocol-split projects (not just Honua.Server.Tests), so this
     # exclusion is safe for every shard's csproj, not only the legacy
     # Honua.Server.Tests.csproj default.
-    #
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
     runs-on: ubuntu-latest
     # Explicit producer dependency; only unmaterialized projects compile here.

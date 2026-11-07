@@ -142,7 +142,7 @@ class AffectedShardVerdictTests(unittest.TestCase):
         self.assertEqual(red["exit_code"], 1)
         self.assertFalse(red["receipt"]["test_pass"])
         self.assertEqual(red["receipt"]["mode"], "enforce")
-        self.assertTrue(any(message.startswith("PR Gate / Affected shards:") for message in messages(red)))
+        self.assertTrue(any(message.startswith("Server test shards:") for message in messages(red)))
         missing = decide(mode="enforce", select_count="1", shards_result="failure", timings=[])
         self.assertEqual(missing["exit_code"], 1)
         self.assertFalse(missing["receipt"]["test_pass"])
@@ -361,6 +361,18 @@ class AffectedShardVerdictTests(unittest.TestCase):
             root = Path(directory)
             (root / "control.timing.json").write_text(json.dumps(timing("Reporting")))
             self.assertEqual(verdict._load_timings(root)[0]["status"], "invalid_execution")
+
+    def test_missing_execution_keeps_the_measured_failure_cause(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for status in ("timed_out", "killed", "failed"):
+                with self.subTest(status=status):
+                    (root / "control.timing.json").write_text(json.dumps(timing("Reporting", status)))
+                    measured = verdict._load_timings(root)
+                    self.assertEqual(measured[0]["status"], status)
+                    outcome = decide(mode="enforce", timings=measured)
+                    self.assertEqual(outcome["exit_code"], 1)
+                    self.assertIn("| n/a | n/a | n/a | n/a |", outcome["summary"])
 
     def test_required_gate_propagates_aggregate_failure(self) -> None:
         import yaml

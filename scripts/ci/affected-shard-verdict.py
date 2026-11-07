@@ -18,8 +18,7 @@ UNAFFECTED_SKIP_REASONS = {
 observe_execution = runpy.run_path(str(Path(__file__).with_name("shard-execution-evidence.py")))["observe"]
 RED_ANNOTATION = (
     "HONUA_AFFECTED_SHARD_RED shard='{shard}' status='{status}' — "
-    "this shard family is red on the pull-request head. The trailing matrix "
-    "will report the same failure on trunk after this merges."
+    "this shard family has failing execution evidence for this run."
 )
 
 
@@ -67,7 +66,7 @@ def decide(
 ) -> dict[str, Any]:
     """Return the aggregate verdict. Exit 0 in report mode is not a test pass."""
     enforcing = mode == "enforce"
-    lines = ["### PR Gate / Affected shards", ""]
+    lines = ["### Server test shards", ""]
     if enforcing:
         lines.append(f"- Mode: `{mode}` (enforcing; selected execution receipts gate merging)")
     else:
@@ -229,7 +228,7 @@ def decide(
     if enforcing:
         annotations.append((
             "error",
-            f"PR Gate / Affected shards: {red} shard families are red on this head.",
+            f"Server test shards: {red} shard families are red on this head.",
         ))
         return finish("red", exit_code=1, shards_passed=False, extra=extra)
     extra.extend([
@@ -244,7 +243,9 @@ def _verify_execution(timing: dict[str, Any], directory: Path) -> None:
     execution = timing.get("execution") or {}
     trx_name = f"{timing.get('log_name')}.trx"
     if Path(trx_name).name != trx_name or execution.get("trxFile") != trx_name:
-        timing["status"] = "invalid_execution"
+        if timing.get("status") == "passed":
+            timing["status"] = "invalid_execution"
+        timing["execution"] = {}
         return
     measured = observe_execution(directory / trx_name, timing.get("shard"), execution.get("project"))
     if (execution.get("status") != "passed" or measured["status"] != "passed"
