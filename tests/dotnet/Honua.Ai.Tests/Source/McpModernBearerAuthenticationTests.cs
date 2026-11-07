@@ -93,7 +93,7 @@ public sealed class McpModernBearerAuthenticationTests
         _ => BuildModernDiscovery(bearer)
     };
 
-    private static HttpRequestMessage BuildModernDiscovery(string bearer)
+    internal static HttpRequestMessage BuildModernDiscovery(string bearer)
     {
         var request = BuildRpc(
             """{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}""",
