@@ -36,5 +36,5 @@ public sealed record MetadataV2Relationship
     public string DestinationField { get; init; } = string.Empty;
 
     [JsonPropertyName("esriRelationshipId")]
-    public int? EsriRelationshipId { get; init; }
+    public int? GeoServicesRelationshipId { get; init; }
 }

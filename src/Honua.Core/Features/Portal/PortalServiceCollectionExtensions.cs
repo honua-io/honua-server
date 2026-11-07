@@ -15,7 +15,7 @@ public static class PortalServiceCollectionExtensions
     public static IServiceCollection AddPortalItemProjection(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
-        services.TryAddSingleton<IEsriConstructCapabilityRegistry>(
+        services.TryAddSingleton<IGeoServicesConstructCapabilityRegistry>(
             _ => new GeoServicesConstructCapabilityRegistry(GeoServicesConstructCapabilityRegistry.BuiltInDescriptors));
         services.TryAddSingleton<IPortalItemProjector, PortalItemProjector>();
         return services;

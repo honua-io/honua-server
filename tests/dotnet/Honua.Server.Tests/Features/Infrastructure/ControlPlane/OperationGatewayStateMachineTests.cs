@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.ControlPlane;
+using Honua.ControlPlane.Executors;
 using Honua.Core.Features.AuditLog;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -11,6 +12,7 @@ using Honua.Core.Features.Guardrails.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Server.Features.Operations;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -190,6 +192,108 @@ public sealed partial class OperationGatewayStateMachineTests
         result.Should().NotBeNull();
         result!.Status.Should().Be(OperationProposalStatus.Failed);
         result.ExecutionOperationId.Should().BeNull();
+    }
+
+    [UnitTheory]
+    [InlineData(ComposeExecutorCodes.ReadbackIncomplete, false)]
+    [InlineData(ComposeExecutorCodes.ReadbackIncomplete, true)]
+    [InlineData(ComposeExecutorCodes.AuditUnrecorded, false)]
+    [InlineData(ComposeExecutorCodes.AuditUnrecorded, true)]
+    [InlineData(ComposeExecutorCodes.ImageNotImmutable, false)]
+    [InlineData(ComposeExecutorCodes.ImageNotImmutable, true)]
+    public async Task ApplyApprovedProposal_ComposeRestartFails_PersistsFailureAfterCallerCancellation(
+        string code, bool callerCancelsDuringActuation)
+    {
+        using var caller = new CancellationTokenSource();
+        var client = Substitute.For<IComposeExecutorClient>();
+        client.ExecuteAsync(Arg.Any<ComposeExecutorRequest>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                if (callerCancelsDuringActuation) caller.Cancel();
+                return Task.FromResult(new ComposeExecutorResponse
+                {
+                    Ok = false,
+                    ReadbackComplete = false,
+                    Code = code,
+                });
+            });
+        using var services = new ServiceCollection().AddSingleton(client).BuildServiceProvider();
+        var applier = new OpsActionAdminConfigChangeApplier(
+            services.GetRequiredService<IServiceScopeFactory>(), TimeProvider.System,
+            NullLogger<OpsActionAdminConfigChangeApplier>.Instance);
+        var executor = new AdminConfigOperationExecutor(applier);
+        var plan = new OperationProposalPlan
+        {
+            Summary = "Restart Compose service",
+            ExecutionPayload = "{\"action\":\"compose.restart_service\"}",
+        };
+        var proposal = CreateProposal("p-restart", OperationClass.AdminConfigChange, OperationProposalStatus.AwaitingApproval) with
+        {
+            Plan = plan,
+            SealedPlanHash = OperationApprovalPlanSeal.Compute(plan),
+        };
+        var store = new InMemoryProposalStore(proposal);
+        var gateway = BuildGateway(store, executor);
+
+        var result = await gateway.ApplyApprovedProposalAsync(proposal.ProposalId, "admin", caller.Token);
+
+        result!.Status.Should().Be(OperationProposalStatus.Failed);
+        result.ResolutionReason.Should().Be(code);
+        var persisted = await store.GetAsync(proposal.ProposalId);
+        persisted!.Status.Should().Be(OperationProposalStatus.Failed);
+        persisted.ResolutionReason.Should().Be(code);
+    }
+
+    [UnitTest]
+    public async Task SubmitAsync_ComposeReadbackFails_ReturnsFailedHandleWithExecutorCode()
+    {
+        var executor = Substitute.For<IOperationExecutor>();
+        executor.OperationClass.Returns(OperationClass.AdminConfigChange);
+        executor.ExecuteAsync(Arg.Any<OperationGatewayRequest>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<string?>(new OpsActionException(ComposeExecutorCodes.ReadbackIncomplete)));
+        var adapter = new LegacyGatewayOperationAdapter(executor);
+
+        var handle = await adapter.SubmitAsync(
+            new Honua.Core.Features.Operations.Domain.OperationRequest
+            {
+                OperationId = adapter.OperationId,
+                GatewayRequest = new OperationGatewayRequest { Kind = OperationClass.AdminConfigChange },
+            },
+            new Honua.Core.Features.Operations.Domain.OperationPolicyContext
+            {
+                OperationInstanceId = "opinst-restart",
+                CorrelationId = "corr-restart",
+            });
+
+        handle.Status.Should().Be(Honua.Core.Features.Operations.Domain.OperationHandleStatus.Failed);
+        handle.Reason.Should().Be(ComposeExecutorCodes.ReadbackIncomplete);
+    }
+
+    [UnitTheory]
+    [InlineData(OperationClass.AdminConfigChange, "Unknown ops action 'private-value'.")]
+    [InlineData(OperationClass.Deploy, ComposeExecutorCodes.ReadbackIncomplete)]
+    public async Task SubmitAsync_UnreportableOpsFailure_LeavesSanitizationToDispatcher(OperationClass kind, string reason)
+    {
+        var executor = Substitute.For<IOperationExecutor>();
+        executor.OperationClass.Returns(kind);
+        var failure = new OpsActionException(reason);
+        executor.ExecuteAsync(Arg.Any<OperationGatewayRequest>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<string?>(failure));
+        var adapter = new LegacyGatewayOperationAdapter(executor);
+
+        var submit = () => adapter.SubmitAsync(
+            new Honua.Core.Features.Operations.Domain.OperationRequest
+            {
+                OperationId = adapter.OperationId,
+                GatewayRequest = new OperationGatewayRequest { Kind = kind },
+            },
+            new Honua.Core.Features.Operations.Domain.OperationPolicyContext
+            {
+                OperationInstanceId = "opinst-refusal",
+                CorrelationId = "corr-refusal",
+            });
+
+        (await Assert.ThrowsAsync<OpsActionException>(submit)).Should().BeSameAs(failure);
     }
 
     [Fact]
@@ -442,6 +546,7 @@ public sealed partial class OperationGatewayStateMachineTests
             TimeSpan? ttl = null,
             CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             lock (_lock)
             {
                 if (_proposal?.ProposalId != proposal.ProposalId || _proposal?.Version != proposal.Version)
