@@ -394,7 +394,7 @@ internal sealed class FeatureServerRelatedRecordsHandler(
     }
 
     private static int ResolveRelationshipId(MetadataV2Relationship relationship)
-        => relationship.EsriRelationshipId ?? FeatureServerEndpoints.StableStringHash(relationship.Id);
+        => relationship.GeoServicesRelationshipId ?? FeatureServerEndpoints.StableStringHash(relationship.Id);
 
     private readonly record struct RelatedResourceLookup(
         MetadataV2GraphSnapshot Snapshot,

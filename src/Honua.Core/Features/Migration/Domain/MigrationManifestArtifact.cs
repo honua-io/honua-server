@@ -220,7 +220,8 @@ public sealed record MigrationManifestRelationshipRecord
 
     public string? DestinationKeyField { get; init; }
 
-    public int? EsriRelationshipId { get; init; }
+    [System.Text.Json.Serialization.JsonPropertyName("esriRelationshipId")]
+    public int? GeoServicesRelationshipId { get; init; }
 
     public required string Classification { get; init; }
 

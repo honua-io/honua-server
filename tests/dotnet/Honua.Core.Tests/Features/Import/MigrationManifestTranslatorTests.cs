@@ -744,7 +744,7 @@ public sealed class MigrationManifestTranslatorTests
         record.OriginKeyField.Should().Be("INSPECTION_ID");
         record.DestinationKeyField.Should().Be("INSPECTION_ID");
         record.Role.Should().Be("esriRelRoleOrigin");
-        record.EsriRelationshipId.Should().Be(3);
+        record.GeoServicesRelationshipId.Should().Be(3);
     }
 
     [Trait("Tier", "Fast")]

@@ -23,12 +23,12 @@ public sealed class PortalItemProjector : IPortalItemProjector
         new(new ClaimsIdentity(authenticationType: "PortalAccessProbe"));
 
     private readonly IAccessPolicyEvaluator _accessPolicyEvaluator;
-    private readonly IEsriConstructCapabilityRegistry _capabilityRegistry;
+    private readonly IGeoServicesConstructCapabilityRegistry _capabilityRegistry;
     private readonly IPortalResourceReadAuthorizer _readAuthorizer;
 
     public PortalItemProjector(
         IAccessPolicyEvaluator accessPolicyEvaluator,
-        IEsriConstructCapabilityRegistry capabilityRegistry,
+        IGeoServicesConstructCapabilityRegistry capabilityRegistry,
         IPortalResourceReadAuthorizer readAuthorizer)
     {
         ArgumentNullException.ThrowIfNull(accessPolicyEvaluator);

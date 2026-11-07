@@ -5,7 +5,7 @@ using Honua.Core.Features.Migration.Domain;
 
 namespace Honua.Core.Features.Migration.Abstractions;
 
-public interface IEsriConstructCapabilityRegistry
+public interface IGeoServicesConstructCapabilityRegistry
 {
     GeoServicesConstructCapabilityDescriptor ResolveOrUnknown(string constructKey);
 

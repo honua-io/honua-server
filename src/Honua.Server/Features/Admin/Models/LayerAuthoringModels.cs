@@ -43,7 +43,8 @@ public sealed class LayerRelationshipUpdateItem
 
     public required string DestinationField { get; init; }
 
-    public int? EsriRelationshipId { get; init; }
+    [System.Text.Json.Serialization.JsonPropertyName("esriRelationshipId")]
+    public int? GeoServicesRelationshipId { get; init; }
 
     // A composite relationship keeps both ends declared and read-only.
     public bool Composite { get; init; }
@@ -74,7 +75,8 @@ public sealed class LayerRelationshipItem
 
     public required string DestinationField { get; init; }
 
-    public int? EsriRelationshipId { get; init; }
+    [System.Text.Json.Serialization.JsonPropertyName("esriRelationshipId")]
+    public int? GeoServicesRelationshipId { get; init; }
 
     public bool Composite { get; init; }
 }

@@ -643,7 +643,7 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
         // relationship_type ∈ {esriRelRoleOrigin, esriRelRoleDestination,
         // esriRelRoleAny}. Stable-hash the source identifier when the source did
         // not advertise an integer id so the row still satisfies the schema.
-        var relationshipId = request.EsriRelationshipId ?? DeriveStableRelationshipId(request.SourceRelationshipId);
+        var relationshipId = request.GeoServicesRelationshipId ?? DeriveStableRelationshipId(request.SourceRelationshipId);
         var relationshipType = NormalizeRelationshipRole(request.Role);
         var name = string.IsNullOrWhiteSpace(request.Name)
             ? $"rel-{relationshipId.ToString(System.Globalization.CultureInfo.InvariantCulture)}"
@@ -674,7 +674,7 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
             FROM honua.relationships
             WHERE layer_id = @layerId AND relationship_id = @relationshipId;
             """;
-        var relationshipId = request.EsriRelationshipId ?? DeriveStableRelationshipId(request.SourceRelationshipId);
+        var relationshipId = request.GeoServicesRelationshipId ?? DeriveStableRelationshipId(request.SourceRelationshipId);
         var expectedName = string.IsNullOrWhiteSpace(request.Name)
             ? $"rel-{relationshipId.ToString(System.Globalization.CultureInfo.InvariantCulture)}"
             : request.Name!;
@@ -735,7 +735,7 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
             Cardinality = MapCardinalityToV2(request.Cardinality),
             OriginField = request.OriginKeyField,
             DestinationField = request.DestinationKeyField,
-            EsriRelationshipId = request.EsriRelationshipId,
+            GeoServicesRelationshipId = request.GeoServicesRelationshipId,
             Composite = request.Composite
         };
     }
@@ -963,13 +963,13 @@ internal sealed partial class PostgresMigrationCatalogWriter : IMigrationCatalog
             return false;
         }
 
-        return !request.EsriRelationshipId.HasValue || existing.EsriRelationshipId == request.EsriRelationshipId;
+        return !request.GeoServicesRelationshipId.HasValue || existing.GeoServicesRelationshipId == request.GeoServicesRelationshipId;
     }
 
     private static string BuildRelationshipId(MigrationRelationshipApplyRequest request)
     {
-        var idPart = request.EsriRelationshipId.HasValue
-            ? request.EsriRelationshipId.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)
+        var idPart = request.GeoServicesRelationshipId.HasValue
+            ? request.GeoServicesRelationshipId.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)
             : SanitizeRelationshipIdSuffix(request.SourceRelationshipId);
         return $"rel-{request.OriginLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture)}-{idPart}";
     }

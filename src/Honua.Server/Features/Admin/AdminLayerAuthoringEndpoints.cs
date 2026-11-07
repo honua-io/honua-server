@@ -268,7 +268,7 @@ internal static partial class AdminLayerAuthoringEndpoints
                 Cardinality = item.Cardinality,
                 OriginField = item.OriginField,
                 DestinationField = item.DestinationField,
-                EsriRelationshipId = item.EsriRelationshipId,
+                GeoServicesRelationshipId = item.GeoServicesRelationshipId,
                 Composite = item.Composite,
             });
         }
@@ -289,7 +289,7 @@ internal static partial class AdminLayerAuthoringEndpoints
             Cardinality = rel.Cardinality,
             OriginField = rel.OriginField,
             DestinationField = rel.DestinationField,
-            EsriRelationshipId = rel.EsriRelationshipId,
+            GeoServicesRelationshipId = rel.GeoServicesRelationshipId,
             Composite = rel.Composite,
         }).ToArray();
 
