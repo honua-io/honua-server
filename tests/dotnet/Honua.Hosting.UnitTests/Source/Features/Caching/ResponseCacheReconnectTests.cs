@@ -157,6 +157,37 @@ public sealed class ResponseCacheReconnectTests
         Assert.Null(await replica.GetAsync<CachedResponse>(QueryKey));
     }
 
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task GetAsync_RecoveryFencesExhausted_WaitsBeforeTryingAgain()
+    {
+        var shared = new ConcurrentDictionary<string, byte[]>(StringComparer.Ordinal);
+        var backend = new FaultyCache(shared);
+        await using var service = CacheNode(backend.Cache);
+        backend.WriteUnavailable = true;
+        await service.SetAsync("partition-marker", "unavailable", Lifetime);
+        backend.WriteUnavailable = false;
+        typeof(RedisCacheService).GetField("_lastRedisFailureTicks", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .SetValue(service, DateTime.UtcNow.AddHours(-1).Ticks);
+        var fences = 0;
+        backend.AfterWrite = async key =>
+        {
+            if (key.EndsWith("response-version:recovery", StringComparison.Ordinal))
+            {
+                Interlocked.Increment(ref fences);
+                await service.SetAsync("response-version:query:featureserver", Guid.NewGuid().ToString("N"), Lifetime);
+            }
+        };
+
+        Assert.False(await RestoreAsync(service));
+        var exhaustedFences = fences;
+        Assert.True(exhaustedFences > 0);
+        await service.GetAsync<string>("probe");
+
+        Assert.Equal(exhaustedFences, fences);
+        Assert.True(service.IsUsingFallback);
+    }
+
     private static CacheOptions Settings() => new()
     {
         Enabled = true,

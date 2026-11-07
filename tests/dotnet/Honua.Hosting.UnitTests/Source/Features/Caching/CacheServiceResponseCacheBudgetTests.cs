@@ -113,6 +113,24 @@ public sealed class CacheServiceResponseCacheBudgetTests
         Assert.True(backend.Responses.ContainsKey("response:shared"));
     }
 
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task BindKeyAsync_RecoveryEpochChanges_ReleasesInvalidatedReservations()
+    {
+        var backend = new RecordingCache();
+        var cache = ResponseCache(backend, maxEntries: 1);
+        const string first = "query:featureserver:service:alpha:layer:1:first";
+        const string second = "query:featureserver:service:alpha:layer:1:second";
+        var payload = new CachedResponse(new byte[32], "application/json");
+        await cache.SetAsync(await cache.BindKeyAsync(first), payload, Lifetime);
+        await backend.Service.SetAsync("response-version:recovery", "new-epoch", Lifetime);
+
+        await cache.SetAsync(await cache.BindKeyAsync(second), payload, Lifetime);
+
+        Assert.Equal(2, backend.ResponseWrites);
+        Assert.Same(payload, await cache.GetAsync<CachedResponse>(second));
+    }
+
     private static CacheServiceResponseCache ResponseCache(RecordingCache backend,
         int maxEntries = 20, int maxBytes = 65_536)
         => new(backend.Service, new CacheOptions
