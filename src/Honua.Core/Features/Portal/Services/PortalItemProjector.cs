@@ -105,8 +105,7 @@ public sealed class PortalItemProjector : IPortalItemProjector
         {
             return null;
         }
-        var firstResource = projected.Publications.Select(snapshot.ResolveResource).FirstOrDefault();
-        return BuildItem(service, firstResource, itemType, projected.Access, projected.Url!);
+        return BuildItem(service, projected.FirstResource, itemType, projected.Access, projected.Url!);
     }
 
     private static PortalItem BuildItem(
@@ -118,7 +117,7 @@ public sealed class PortalItemProjector : IPortalItemProjector
     {
         var metadata = service.Metadata;
         var title = FirstNonEmpty(metadata.Title, service.EffectivePublicName, metadata.Id);
-        var owner = FirstNonEmpty(metadata.Publisher, "honua");
+        var owner = PublishedMetadataProjection.ResolveOwner(metadata);
         var created = ToEpochMilliseconds(metadata.CreatedAt);
         var modified = ToEpochMilliseconds(metadata.UpdatedAt ?? metadata.CreatedAt);
 

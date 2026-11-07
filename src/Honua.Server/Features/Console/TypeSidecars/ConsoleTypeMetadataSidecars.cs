@@ -8,6 +8,18 @@ namespace Honua.Server.Features.Console.TypeSidecars;
 
 public sealed record ConsoleServiceTypeMetadata
 {
+    [JsonPropertyName("serviceId")]
+    public string? ServiceId { get; init; }
+
+    [JsonPropertyName("url")]
+    public string? Url { get; init; }
+
+    [JsonPropertyName("access")]
+    public string? Access { get; init; }
+
+    [JsonPropertyName("folderPath")]
+    public string? FolderPath { get; init; }
+
     [JsonPropertyName("serviceType")]
     public required MetadataV2ServiceType ServiceType { get; init; }
 
@@ -21,6 +33,18 @@ public sealed record ConsoleServiceTypeMetadata
 
 public sealed record ConsoleLayerTypeMetadata
 {
+    [JsonPropertyName("serviceId")]
+    public string? ServiceId { get; init; }
+
+    [JsonPropertyName("url")]
+    public string? Url { get; init; }
+
+    [JsonPropertyName("access")]
+    public string? Access { get; init; }
+
+    [JsonPropertyName("folderPath")]
+    public string? FolderPath { get; init; }
+
     [JsonPropertyName("resourceId")]
     public required string ResourceId { get; init; }
 

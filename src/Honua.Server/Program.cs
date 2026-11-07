@@ -1056,9 +1056,10 @@ builder.Services.AddSingleton<Honua.Core.Features.EmbedGovernance.Abstractions.I
 builder.Services.AddSingleton<Honua.Server.Features.Console.Services.InMemoryConsoleContentStore>(sp =>
     new Honua.Server.Features.Console.Services.InMemoryConsoleContentStore(
         sp.GetService<TimeProvider>() ?? TimeProvider.System));
+builder.Services.AddSingleton<Honua.Core.Features.Console.Abstractions.IConsoleContentStore>(sp =>
+    sp.GetRequiredService<Honua.Server.Features.Console.Services.InMemoryConsoleContentStore>());
 builder.Services.AddScoped<Honua.Server.Features.Console.Services.PublishedConsoleContent>();
-builder.Services.AddScoped<Honua.Core.Features.Console.Abstractions.IConsoleContentStore,
-    Honua.Server.Features.Console.Services.ProjectedConsoleContentStore>();
+builder.Services.AddScoped<Honua.Server.Features.Console.Services.ProjectedConsoleContentStore>();
 builder.Services.AddScoped<Honua.Core.Features.Console.Abstractions.IConsoleActionEvaluator,
     Honua.Server.Features.Console.Services.ConsoleActionEvaluator>();
 // Console Share access: public-link + embed state (#1215). In-memory store

@@ -3,8 +3,8 @@
 
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Console.Domain;
-using Honua.Infrastructure.Models;
 using Honua.Server.Features.Console.TypeSidecars;
+using Honua.Infrastructure.Models;
 
 namespace Honua.Server.Features.Console.Models;
 
@@ -102,7 +102,6 @@ namespace Honua.Server.Features.Console.Models;
 [JsonSerializable(typeof(ConsoleContentPage))]
 // Per-itemType sidecar shapes, sourced for AOT-safe writes via SerializeToElement.
 [JsonSerializable(typeof(ConsoleServiceTypeMetadata))]
-[JsonSerializable(typeof(PublishedContentMetadata))]
 [JsonSerializable(typeof(ConsoleLayerTypeMetadata))]
 [JsonSerializable(typeof(ConsoleSavedMapTypeMetadata))]
 [JsonSerializable(typeof(ConsoleDashboardTypeMetadata))]

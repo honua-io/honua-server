@@ -9,6 +9,7 @@ using Honua.Core.Features.Metadata.Services;
 using Honua.Core.Features.Portal.Domain;
 using Honua.Infrastructure.Helpers;
 using Honua.Server.Features.Console.Models;
+using Honua.Server.Features.Console.TypeSidecars;
 
 namespace Honua.Server.Features.Console.Services;
 
@@ -35,17 +36,18 @@ internal sealed class PublishedConsoleContent(
         }
 
         var request = new PublishedMetadataRequest(snapshot, context.User, BaseUrlResolver.GetBaseUrl(context));
-        foreach (var service in snapshot.Graph.Services)
+        foreach (var service in snapshot.Index.ServicesById.Values)
         {
             var published = projection.ProjectService(request, service);
             if (published is null)
             {
                 continue;
             }
-            items.Add(service.Metadata.Id, ProjectService(published, request));
-            foreach (var publication in published.Publications)
+            items.TryAdd(service.Metadata.Id, ProjectService(published, request));
+            foreach (var resourcePublications in published.Publications.GroupBy(publication => publication.ResourceId))
             {
-                items.Add(publication.Metadata.Id, ProjectLayer(publication, published, request));
+                var publication = resourcePublications.FirstOrDefault(candidate => candidate.IsPrimary) ?? resourcePublications.First();
+                items.TryAdd(publication.Metadata.Id, ProjectLayer(publication, published, request));
             }
         }
         return new(ownedIds, items);
@@ -54,15 +56,20 @@ internal sealed class PublishedConsoleContent(
     private static ConsoleContentItem ProjectService(PublishedMetadataService published, PublishedMetadataRequest request)
     {
         var service = published.Service;
-        var sidecar = new PublishedContentMetadata
+        var sidecar = new ConsoleServiceTypeMetadata
         {
+            ServiceType = service.ServiceType,
+            RouteBase = published.Url,
+            Publications = published.Publications.Select(publication => publication.PublicationType).Distinct().ToArray(),
             ServiceId = service.Metadata.Id,
             Url = published.Url,
             Access = published.Access,
             FolderPath = MetadataV2ServicePaths.FolderName(request.Snapshot.Graph, service)
         };
-        return ProjectItem(service.Metadata, ConsoleContentItemType.Service, sidecar) with
+        return ProjectItem(service.Metadata, ConsoleContentItemType.Service) with
         {
+            TypeMetadata = JsonSerializer.SerializeToElement(sidecar, ConsoleJsonContext.Default.ConsoleServiceTypeMetadata),
+            Visibility = ProjectVisibility(published.Access),
             Title = string.IsNullOrWhiteSpace(service.Metadata.Title) ? service.EffectivePublicName : service.Metadata.Title,
             Lifecycle = service.Status?.Lifecycle ?? MetadataV2LifecycleStatus.Active,
             OperationalState = service.Status?.State ?? MetadataV2OperationalState.Unknown
@@ -73,17 +80,21 @@ internal sealed class PublishedConsoleContent(
         MetadataV2Publication publication, PublishedMetadataService published, PublishedMetadataRequest request)
     {
         var resource = request.Snapshot.ResolveResource(publication)!;
-        var sidecar = new PublishedContentMetadata
+        var sidecar = new ConsoleLayerTypeMetadata
         {
             ServiceId = published.Service.Metadata.Id,
             ResourceId = resource.Metadata.Id,
-            Url = PublishedMetadataProjection.PublicationUrl(request, publication),
+            FieldCount = resource.SchemaFields.Count,
+            GeometryType = resource.Spatial?.GeometryType.ToString(),
+            Url = PublishedMetadataProjection.PublicationUrl(request, published.Service, publication),
             Access = projection.DeriveAccessTier(resource.AccessPolicy, published.Service.AccessPolicy),
             FolderPath = MetadataV2ServicePaths.FolderName(request.Snapshot.Graph, published.Service)
         };
-        return ProjectItem(resource.Metadata, ConsoleContentItemType.Layer, sidecar) with
+        return ProjectItem(resource.Metadata, ConsoleContentItemType.Layer) with
         {
             Id = publication.Metadata.Id,
+            TypeMetadata = JsonSerializer.SerializeToElement(sidecar, ConsoleJsonContext.Default.ConsoleLayerTypeMetadata),
+            Visibility = ProjectVisibility(sidecar.Access!),
             Title = publication.TitleOverride ?? resource.Metadata.Title ?? resource.Metadata.Name,
             Lifecycle = resource.Status?.Lifecycle ?? MetadataV2LifecycleStatus.Active,
             OperationalState = resource.Status?.State ?? MetadataV2OperationalState.Unknown
@@ -91,28 +102,27 @@ internal sealed class PublishedConsoleContent(
     }
 
     private static ConsoleContentItem ProjectItem(
-        MetadataV2ObjectMetadata metadata, ConsoleContentItemType itemType, PublishedContentMetadata sidecar) => new()
+        MetadataV2ObjectMetadata metadata, ConsoleContentItemType itemType) => new()
     {
         Id = metadata.Id,
         Name = metadata.Name,
         Namespace = metadata.Namespace,
-        Title = metadata.Title ?? metadata.Name,
         Description = metadata.Description,
         ItemType = itemType,
         Tags = metadata.Keywords.Count > 0 ? metadata.Keywords : metadata.Tags,
         Labels = metadata.Labels,
-        OwnerId = string.IsNullOrWhiteSpace(metadata.Publisher) ? "honua" : metadata.Publisher,
+        OwnerId = PublishedMetadataProjection.ResolveOwner(metadata),
         CreatedAt = metadata.CreatedAt,
         UpdatedAt = metadata.UpdatedAt ?? metadata.CreatedAt,
         Generation = metadata.Generation,
-        Visibility = sidecar.Access switch
-        {
-            PortalAccessLevels.Public => ConsoleVisibility.Public,
-            PortalAccessLevels.Org => ConsoleVisibility.Organization,
-            _ => ConsoleVisibility.Personal
-        },
-        IsReadOnly = true,
-        TypeMetadata = JsonSerializer.SerializeToElement(sidecar, ConsoleJsonContext.Default.PublishedContentMetadata)
+        IsReadOnly = true
+    };
+
+    private static ConsoleVisibility ProjectVisibility(string access) => access switch
+    {
+        PortalAccessLevels.Public => ConsoleVisibility.Public,
+        PortalAccessLevels.Org => ConsoleVisibility.Organization,
+        _ => ConsoleVisibility.Personal
     };
 }
 

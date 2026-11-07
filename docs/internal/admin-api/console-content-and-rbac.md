@@ -111,8 +111,8 @@ table below.
 
 | `itemType` | Sidecar fields |
 | --- | --- |
-| `service` | `serviceType`, `routeBase?`, `publications[]` |
-| `layer` | `resourceId`, `geometryType?`, `fieldCount?`, `extent?` (EPSG:4326 lon/lat bbox) |
+| `service` | `serviceType`, `routeBase?`, `publications[]`, `serviceId?`, `url?`, `access?`, `folderPath?` |
+| `layer` | `resourceId`, `geometryType?`, `fieldCount?`, `extent?` (EPSG:4326 lon/lat bbox), `serviceId?`, `url?`, `access?`, `folderPath?` |
 | `saved-map` | `layerCount`, `extent?`, `projection?` |
 | `dashboard` | `widgetCount`, `dataSourceIds[]` |
 | `report` | `templateId?`, `lastRunAt?` |
@@ -121,6 +121,17 @@ table below.
 
 `actions` is always **server-computed** for the requesting principal and never
 stored. Clients should not send it on create/update; the server overwrites it.
+
+Content list, search, detail, session bootstrap and action checks also project
+published services and layers from the current metadata graph. Service IDs and
+the representative publication IDs identify these rows; `resourceId` identifies
+the underlying layer resource. Multiple protocol publications of a resource on
+one service produce one layer row, preferring its primary publication. Metadata
+rows are authorized before filtering, counting and paging with authored items.
+They expose only the `view` action and cannot be edited through content CRUD.
+Their `access` sidecar reuses the Portal `public`, `org`, and `private` policy
+projection; `url` uses the canonical public service path, including its folder.
+These rows do not create authored share or open-data state.
 
 ## Update semantics
 

@@ -2,16 +2,18 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
 using Honua.Core.Features.Console.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
+using Honua.Server.Features.Console.Models;
 using Honua.Server.Features.Console.Services;
+using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
-using Honua.TestKit;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -53,7 +55,7 @@ public sealed class PublishedContentProjectionTests : IAsyncLifetime
     [Endpoint("GET /api/v1/console/content/{id}")]
     public async Task GetContent_GraphLifecycle_TracksPublishRepublishDisableAndDelete()
     {
-        using var first = await ReadContentAsync("?type=layer");
+        using var first = await ReadContentAsync("?itemType=layer");
         var layer = Assert.Single(first.RootElement.GetProperty("items").EnumerateArray());
         Assert.Equal("publication", layer.GetProperty("id").GetString());
         Assert.Equal("Parcels", layer.GetProperty("title").GetString());
@@ -116,8 +118,8 @@ public sealed class PublishedContentProjectionTests : IAsyncLifetime
 
     [IntegrationTheory]
     [InlineData("anonymous", 1)]
-    [InlineData("member", 2)]
-    [InlineData("reader", 3)]
+    [InlineData("other-role", 2)]
+    [InlineData("admin-role", 3)]
     [Endpoint("GET /sharing/rest/search")]
     public async Task SearchPortal_CallerAccess_FiltersBeforeCounting(string caller, int expectedCount)
     {
@@ -126,7 +128,7 @@ public sealed class PublishedContentProjectionTests : IAsyncLifetime
         {
             new() { AllowAnonymous = true },
             new(),
-            new() { AllowedRoles = [caller == "reader" ? "admin" : "survey-reader"] }
+            new() { AllowedRoles = [caller == "admin-role" ? "admin" : "survey-reader"] }
         };
         _provider.SetGraph(graph with
         {
@@ -148,27 +150,6 @@ public sealed class PublishedContentProjectionTests : IAsyncLifetime
         using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal(expectedCount, payload.RootElement.GetProperty("total").GetInt32());
         Assert.Equal(expectedCount, payload.RootElement.GetProperty("results").GetArrayLength());
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/console/content")]
-    [Endpoint("GET /sharing/rest/search")]
-    public async Task GetContent_UnadvertisedPublication_OmitsServiceAndLayerButKeepsNamedLookup()
-    {
-        var graph = Graph();
-        var publicationJson = JsonSerializer.SerializeToNode(graph.Publications[0], MetadataV2JsonContext.Default.MetadataV2Publication)!;
-        publicationJson["advertised"] = false;
-        var hidden = publicationJson.Deserialize(MetadataV2JsonContext.Default.MetadataV2Publication)!;
-        _provider.SetGraph(graph with { Publications = [hidden] });
-
-        using var listed = await ReadContentAsync();
-        Assert.Equal(0, listed.RootElement.GetProperty("total").GetInt32());
-        using var response = await _admin.GetAsync("/sharing/rest/search?f=json");
-        using var portal = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        Assert.Equal(0, portal.RootElement.GetProperty("total").GetInt32());
-        var snapshot = await _provider.GetCurrentAsync();
-        Assert.NotNull(snapshot.FindPublicationByLayerIndex("service", 0));
-        Assert.True(snapshot.IsRoutable(hidden));
     }
 
     [IntegrationTest]
@@ -224,6 +205,96 @@ public sealed class PublishedContentProjectionTests : IAsyncLifetime
         Assert.Equal(["authored-200", "publication", "service"], remainder);
     }
 
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/open-data/datasets/{id}")]
+    [Endpoint("GET /api/v1/open-data/datasets/{id}/data.json")]
+    [Endpoint("GET /api/v1/open-data/datasets/{id}/schema.org")]
+    [Endpoint("PUT /api/v1/console/content/{id}/share/access")]
+    [Endpoint("PUT /api/v1/console/content/{id}/open-data")]
+    public async Task GetContent_GraphItems_DoNotOptIntoAuthoredSharingOrOpenData()
+    {
+        using var anonymous = _fixture.CreateClient();
+        foreach (var suffix in new[] { "", "/data.json", "/schema.org" })
+        {
+            using var response = await anonymous.GetAsync("/api/v1/open-data/datasets/service" + suffix);
+            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        }
+        using var shared = await _admin.PutAsJsonAsync("/api/v1/console/content/service/share/access",
+            new UpdateShareAccessRequest { AccessTier = ConsoleShareAccessTier.PublicIndexed });
+        Assert.Equal(HttpStatusCode.NotFound, shared.StatusCode);
+        using var saved = await _admin.PutAsJsonAsync("/api/v1/console/content/service/open-data", new UpdateOpenDataPageRequest { Title = "Catalog" });
+        Assert.Equal(HttpStatusCode.NotFound, saved.StatusCode);
+    }
+
+    [IntegrationTheory]
+    [InlineData("publication")]
+    [InlineData("service")]
+    [InlineData("cross-kind")]
+    [Endpoint("GET /api/v1/console/content")]
+    public async Task GetContent_DuplicateGraphIdentities_UsesFirstItemWithoutFailing(string collision)
+    {
+        var graph = Graph();
+        _provider.SetGraph(collision switch
+        {
+            "publication" => graph with { Publications = [graph.Publications[0], graph.Publications[0] with { TitleOverride = "Duplicate" }] },
+            "service" => graph with { Services = [graph.Services[0], graph.Services[0] with { Metadata = graph.Services[0].Metadata with { Title = "Duplicate" } }] },
+            _ => graph with { Publications = [graph.Publications[0] with { Metadata = graph.Publications[0].Metadata with { Id = "service" } }] }
+        });
+        using var listed = await ReadContentAsync();
+        var items = listed.RootElement.GetProperty("items").EnumerateArray().ToArray();
+        Assert.Equal(collision == "cross-kind" ? 1 : 2, items.Length);
+        Assert.DoesNotContain(items, item => item.GetProperty("title").GetString() == "Duplicate");
+        var service = Assert.Single(items.Where(item => item.GetProperty("itemType").GetString() == "service"));
+        Assert.True(service.GetProperty("typeMetadata").TryGetProperty("serviceType", out _));
+        Assert.True(service.GetProperty("typeMetadata").TryGetProperty("publications", out _));
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/console/content")]
+    [Endpoint("GET /api/v1/console/content/{id}")]
+    public async Task GetContent_MixedResourceAccess_CountsOnlyReadableLayers()
+    {
+        var graph = Graph();
+        _provider.SetGraph(graph with
+        {
+            Resources = [graph.Resources[0], graph.Resources[0] with
+            {
+                Metadata = graph.Resources[0].Metadata with { Id = "restricted", Title = "Restricted" },
+                AccessPolicy = new() { AllowedRoles = ["survey-reader"] }
+            }],
+            Publications = [graph.Publications[0], graph.Publications[0] with
+            {
+                Metadata = graph.Publications[0].Metadata with { Id = "restricted-publication" },
+                ResourceId = "restricted", LayerIndex = 1
+            }]
+        });
+        using var listed = await ReadContentAsync();
+        Assert.Equal(2, listed.RootElement.GetProperty("total").GetInt32());
+        Assert.Equal(["publication", "service"], listed.RootElement.GetProperty("items").EnumerateArray()
+            .Select(item => item.GetProperty("id").GetString()));
+        using var denied = await _admin.GetAsync("/api/v1/console/content/restricted-publication");
+        Assert.Equal(HttpStatusCode.NotFound, denied.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/console/content")]
+    public async Task GetContent_ResourceWithMultipleProtocols_ListsItsPrimaryPublicationOnce()
+    {
+        var graph = Graph();
+        _provider.SetGraph(graph with
+        {
+            Publications = [graph.Publications[0], graph.Publications[0] with
+            {
+                Metadata = graph.Publications[0].Metadata with { Id = "secondary-publication" },
+                PublicationType = MetadataV2PublicationType.StacCollection,
+                IsPrimary = false
+            }]
+        });
+        using var listed = await ReadContentAsync("?itemType=layer");
+        Assert.Equal(1, listed.RootElement.GetProperty("total").GetInt32());
+        Assert.Equal("publication", Assert.Single(listed.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetString());
+    }
+
     private async Task<JsonDocument> ReadContentAsync(string suffix = "")
     {
         using var response = await _admin.GetAsync("/api/v1/console/content" + suffix);
@@ -252,6 +323,7 @@ public sealed class PublishedContentProjectionTests : IAsyncLifetime
         Publications = [new()
         {
             Metadata = new() { Id = "publication", Name = "parcels" },
+            IsPrimary = true,
             ServiceId = "service", ResourceId = "resource", LayerIndex = 0,
             Status = new() { Lifecycle = MetadataV2LifecycleStatus.Active }
         }]

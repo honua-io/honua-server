@@ -20,14 +20,15 @@ public sealed class PublishedMetadataProjection(
 
     public PublishedMetadataService? ProjectService(PublishedMetadataRequest request, MetadataV2Service service)
     {
-        if (!service.IsRoutable())
+        var snapshot = request.Snapshot;
+        if (!service.IsRoutable() || !ReferenceEquals(service, snapshot.Index.ServicesById.GetValueOrDefault(service.Metadata.Id)))
         {
             return null;
         }
 
-        var snapshot = request.Snapshot;
         var publications = snapshot.PublicationsForService(service.Metadata.Id);
-        var visible = publications.Where(snapshot.IsDiscoverable)
+        var visible = publications.Where(snapshot.IsRoutable)
+            .Where(publication => ReferenceEquals(publication, snapshot.Index.PublicationsById[publication.Metadata.Id]))
             .Where(publication => readAuthorizer.Evaluate(
                 request.Principal, snapshot.ResolveResource(publication), service, publication).IsAllowed)
             .ToArray();
@@ -46,6 +47,7 @@ public sealed class PublishedMetadataProjection(
             Service = service,
             Publications = visible,
             Access = DeriveAccessTier(firstResource?.AccessPolicy, service.AccessPolicy),
+            FirstResource = firstResource,
             Url = ServiceUrl(request, service)
         };
     }
@@ -73,9 +75,9 @@ public sealed class PublishedMetadataProjection(
             : null;
     }
 
-    public static string? PublicationUrl(PublishedMetadataRequest request, MetadataV2Publication publication)
+    public static string? PublicationUrl(
+        PublishedMetadataRequest request, MetadataV2Service service, MetadataV2Publication publication)
     {
-        var service = request.Snapshot.Index.ServicesById[publication.ServiceId];
         var serviceUrl = ServiceUrl(request, service);
         if (publication.LayerIndex is { } index && service.PrimaryProtocol is { } protocol
             && MetadataV2ServicePaths.ServiceTypes.Contains(protocol))
@@ -86,6 +88,9 @@ public sealed class PublishedMetadataProjection(
             ? request.BaseUrl.TrimEnd('/') + path
             : serviceUrl;
     }
+
+    public static string ResolveOwner(MetadataV2ObjectMetadata metadata)
+        => string.IsNullOrWhiteSpace(metadata.Publisher) ? "honua" : metadata.Publisher;
 }
 
 public sealed record PublishedMetadataRequest(MetadataV2GraphSnapshot Snapshot, ClaimsPrincipal Principal, string BaseUrl);
@@ -95,5 +100,6 @@ public sealed record PublishedMetadataService
     public required MetadataV2Service Service { get; init; }
     public required IReadOnlyList<MetadataV2Publication> Publications { get; init; }
     public required string Access { get; init; }
+    public MetadataV2Resource? FirstResource { get; init; }
     public string? Url { get; init; }
 }
