@@ -669,10 +669,10 @@ internal static partial class FeatureServerEndpoints
         var result = new List<LayerRelationshipInfo>(resource.Relationships.Count);
         foreach (var relationship in resource.Relationships)
         {
-            // Esri clients expect a numeric relationship id; prefer the explicit Esri id on
+            // GeoServices REST clients expect a numeric relationship id; prefer the explicit protocol id on
             // the V2 relationship, else derive a stable integer from the relationship's
             // string id hash so it round-trips across requests.
-            var relationshipId = relationship.EsriRelationshipId
+            var relationshipId = relationship.GeoServicesRelationshipId
                 ?? StableStringHash(relationship.Id);
 
             var relatedResource = snapshot.Index.ResourcesById.TryGetValue(relationship.RelatedResourceId, out var found)

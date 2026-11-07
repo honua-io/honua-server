@@ -34,7 +34,7 @@ import envelope_config  # noqa: E402
 LOCK = json.loads((ROOT / "tests/python/fixtures/capacity/lock.json").read_bytes())
 ENVELOPE = LOCK["supportedEnvelope"]
 WORKFLOW = ROOT / ".github/workflows/capacity-soak-candidate.yml"
-COMPOSE = ROOT / "docker-compose.soak.yml"
+COMPOSE = ROOT / "docker/compose/docker-compose.soak.yml"
 
 # The catalogue root the candidate served in run 40542363841: one seeded service published by
 # several adapters, plus two built-ins.

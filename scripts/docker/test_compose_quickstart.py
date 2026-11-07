@@ -196,6 +196,15 @@ class ComposeQuickstartTests(unittest.TestCase):
             self.assertEqual(files, services['compose-executor']['environment'].get(
                 'ControlPlane__ComposeExecutor__ComposeFileList'))
 
+    def test_manager_request_budget_covers_compose_restart_readback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.prepare(directory)
+            result = subprocess.run(['docker', 'compose', 'config', '--format', 'json'],
+                                    cwd=path, env=self.compose_env(path), capture_output=True, text=True)
+            self.assertEqual(0, result.returncode, 'Packaged Compose must render')
+            manager = json.loads(result.stdout)['services']['compose-manager']
+            self.assertEqual('00:10:00', manager['environment'].get('Limits__Connections__RequestTimeout'))
+
     def prepare(self, directory):
         path = Path(directory)
         package(path, PACKAGE_IMAGES, '2026.1-rc.2')

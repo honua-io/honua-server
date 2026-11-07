@@ -25,7 +25,7 @@ class QuickstartTests(unittest.TestCase):
             self.assertEqual('900', services['honua']['environment'].get('LayerPublishing__MaterializationTimeoutSeconds'))
 
     def test_issue_5419_no_redis_keeps_storage_initialization_dependency(self):
-        override = (ROOT / "docker-compose.no-redis.yml").read_text()
+        override = (ROOT / "docker/compose/docker-compose.no-redis.yml").read_text()
         depends_on = override.split("depends_on: !override", 1)[1].split("environment:", 1)[0]
 
         self.assertIn("storage-init:", depends_on)
@@ -115,7 +115,7 @@ class QuickstartTests(unittest.TestCase):
         self.assertNotIn("AiExecutionAdmission__DeploymentId", services["honua"]["environment"])
 
     def test_studio_ai_overlay_only_adds_assistant_settings(self):
-        overlay = (ROOT / "docker-compose.studio-ai.yml").read_text()
+        overlay = (ROOT / "docker/compose/docker-compose.studio-ai.yml").read_text()
         self.assertNotIn("Studio__EmbedJsStudio", overlay)
         self.assertNotIn("Studio__EndUserAuthorization__Enabled", overlay)
         self.assertIn('StudioAiProxy__Enabled: "true"', overlay)

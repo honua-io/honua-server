@@ -4,6 +4,8 @@
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Operations.Domain;
+using Honua.ControlPlane;
+using Honua.ControlPlane.Executors;
 using Microsoft.Extensions.DependencyInjection;
 using LegacyExecutor = Honua.Core.Features.ControlPlane.Abstractions.IOperationExecutor;
 using TypedExecutor = Honua.Core.Features.Operations.Abstractions.IOperationExecutor;
@@ -66,9 +68,18 @@ internal sealed class LegacyGatewayOperationAdapter : TypedExecutor
             CorrelationId = context.CorrelationId,
             ApprovedProposalId = context.ApprovedProposalId,
         };
-        var executionId = await Actuator
-            .ExecuteAsync(gatewayRequest, gatewayRequest.ExecutionPayload, cancellationToken)
-            .ConfigureAwait(false);
+        string? executionId = null;
+        string? failureReason = null;
+        try
+        {
+            executionId = await Actuator.ExecuteAsync(gatewayRequest, gatewayRequest.ExecutionPayload, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OpsActionException ex) when (_operationClass == OperationClass.AdminConfigChange &&
+            ComposeExecutorCodes.IsReportable(ex.Message))
+        {
+            failureReason = ex.Message;
+        }
         var now = DateTimeOffset.UtcNow;
         return new OperationHandle
         {
@@ -77,25 +88,29 @@ internal sealed class LegacyGatewayOperationAdapter : TypedExecutor
             OperationId = OperationId,
             CorrelationId = context.CorrelationId
                 ?? throw new InvalidOperationException("Canonical correlation identity is unavailable."),
-            Status = executionId is not null && _operationClass is
-                OperationClass.Deploy or OperationClass.MetadataRelease or OperationClass.Geoprocess
-                    ? OperationHandleStatus.Queued
-                    : OperationHandleStatus.Completed,
+            Status = (failureReason, executionId, _operationClass) switch
+            {
+                (not null, _, _) => OperationHandleStatus.Failed,
+                (_, not null, OperationClass.Deploy or OperationClass.MetadataRelease or OperationClass.Geoprocess)
+                    => OperationHandleStatus.Queued,
+                _ => OperationHandleStatus.Completed,
+            },
             CreatedAt = now,
             UpdatedAt = now,
             JobId = executionId,
+            Reason = failureReason,
             ResourceIds = executionId is null
                 ? new Dictionary<string, string>(StringComparer.Ordinal)
                 : new Dictionary<string, string>(StringComparer.Ordinal)
                 {
                     ["executionOperationId"] = executionId,
                 },
-            Result = new OperationResultSummary
+            Result = failureReason is null ? new OperationResultSummary
             {
                 Summary = executionId is null
                     ? $"Executed {gatewayRequest.Kind}."
                     : $"Executed {gatewayRequest.Kind} as '{executionId}'.",
-            },
+            } : null,
         };
     }
 

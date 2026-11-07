@@ -16,7 +16,8 @@ case "$1" in
   exec)
     if [[ "$3" == pg_isready ]]; then
       count=$(cat "$MOCK_ROOT/probes" 2>/dev/null || echo 0)
-      count=$((count + 1)); echo "$count" > "$MOCK_ROOT/probes"
+      count=$((count + 1)); echo "$count" > "$MOCK_ROOT/probes.next"
+      mv "$MOCK_ROOT/probes.next" "$MOCK_ROOT/probes"
       [[ "$READY_AFTER" != never && "$count" -ge "$READY_AFTER" ]]
       exit $?
     fi
@@ -52,6 +53,22 @@ class BootSmokeReadinessTests(unittest.TestCase):
             result = subprocess.run(["bash", str(SCRIPT)], env=environment,
                                     capture_output=True, text=True, timeout=5)
             return result, int((root / "probes").read_text()), (root / "server-started").exists()
+
+    def test_interrupted_probe_preserves_last_completed_count(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "probes").write_text("1\n")
+            interrupted_docker = DOCKER.replace(
+                'case "$1" in',
+                'echo() { kill -TERM "$$"; }\ncase "$1" in',
+            )
+            result = subprocess.run(
+                ["bash", "-c", interrupted_docker, "docker", "exec", "db", "pg_isready"],
+                env=dict(os.environ, MOCK_ROOT=str(root), READY_AFTER="never"),
+                capture_output=True, text=True, timeout=5,
+            )
+            self.assertNotEqual(0, result.returncode)
+            self.assertEqual("1\n", (root / "probes").read_text())
 
     def test_delayed_readiness_retries_before_starting_server(self):
         result, probes, started = self.run_smoke(3)
