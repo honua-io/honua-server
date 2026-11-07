@@ -28,6 +28,7 @@ namespace Honua.ControlPlane;
 
 internal sealed partial class OperationGateway : IOperationGateway
 {
+    private static readonly TimeSpan CompletionPersistenceTimeout = TimeSpan.FromSeconds(10);
     private readonly IGuardrailLadder _ladder;
     private readonly IOperationProposalStore _proposalStore;
     private readonly IServiceScopeFactory _scopeFactory;
@@ -432,7 +433,7 @@ internal sealed partial class OperationGateway : IOperationGateway
                 : proposal.Plan with { BlockingReasons = [.. proposal.Plan.BlockingReasons, failureMessage] }
         };
 
-        using var completionTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var completionTimeout = new CancellationTokenSource(CompletionPersistenceTimeout);
         await PersistResolutionAsync(resolved, OperationProposalStatus.Executing, completionTimeout.Token).ConfigureAwait(false);
         await RecordAutonomyProposalResolutionAsync(
                 resolved,

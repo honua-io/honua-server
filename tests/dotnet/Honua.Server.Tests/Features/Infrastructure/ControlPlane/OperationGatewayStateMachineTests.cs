@@ -194,21 +194,26 @@ public sealed class OperationGatewayStateMachineTests
     }
 
     [Theory]
-    [InlineData("connected")]
-    [InlineData("cancelled")]
-    public async Task ApplyApprovedProposal_ComposeReadbackFails_PersistsFailureAfterCallerCancellation(string callerState)
+    [InlineData(ComposeExecutorCodes.ReadbackIncomplete, false)]
+    [InlineData(ComposeExecutorCodes.ReadbackIncomplete, true)]
+    [InlineData(ComposeExecutorCodes.AuditUnrecorded, false)]
+    [InlineData(ComposeExecutorCodes.AuditUnrecorded, true)]
+    [InlineData(ComposeExecutorCodes.ImageNotImmutable, false)]
+    [InlineData(ComposeExecutorCodes.ImageNotImmutable, true)]
+    public async Task ApplyApprovedProposal_ComposeRestartFails_PersistsFailureAfterCallerCancellation(
+        string code, bool callerCancelsDuringActuation)
     {
         using var caller = new CancellationTokenSource();
         var client = Substitute.For<IComposeExecutorClient>();
         client.ExecuteAsync(Arg.Any<ComposeExecutorRequest>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
-                if (callerState == "cancelled") caller.Cancel();
+                if (callerCancelsDuringActuation) caller.Cancel();
                 return Task.FromResult(new ComposeExecutorResponse
                 {
                     Ok = false,
                     ReadbackComplete = false,
-                    Code = ComposeExecutorCodes.ReadbackIncomplete,
+                    Code = code,
                 });
             });
         using var services = new ServiceCollection().AddSingleton(client).BuildServiceProvider();
@@ -232,10 +237,10 @@ public sealed class OperationGatewayStateMachineTests
         var result = await gateway.ApplyApprovedProposalAsync(proposal.ProposalId, "admin", caller.Token);
 
         result!.Status.Should().Be(OperationProposalStatus.Failed);
-        result.ResolutionReason.Should().Be(ComposeExecutorCodes.ReadbackIncomplete);
+        result.ResolutionReason.Should().Be(code);
         var persisted = await store.GetAsync(proposal.ProposalId);
         persisted!.Status.Should().Be(OperationProposalStatus.Failed);
-        persisted.ResolutionReason.Should().Be(ComposeExecutorCodes.ReadbackIncomplete);
+        persisted.ResolutionReason.Should().Be(code);
     }
 
     [Fact]
@@ -261,6 +266,33 @@ public sealed class OperationGatewayStateMachineTests
 
         handle.Status.Should().Be(Honua.Core.Features.Operations.Domain.OperationHandleStatus.Failed);
         handle.Reason.Should().Be(ComposeExecutorCodes.ReadbackIncomplete);
+    }
+
+    [Theory]
+    [InlineData(OperationClass.AdminConfigChange, "Unknown ops action 'private-value'.")]
+    [InlineData(OperationClass.Deploy, ComposeExecutorCodes.ReadbackIncomplete)]
+    public async Task SubmitAsync_UnreportableOpsFailure_LeavesSanitizationToDispatcher(OperationClass kind, string reason)
+    {
+        var executor = Substitute.For<IOperationExecutor>();
+        executor.OperationClass.Returns(kind);
+        var failure = new OpsActionException(reason);
+        executor.ExecuteAsync(Arg.Any<OperationGatewayRequest>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<string?>(failure));
+        var adapter = new LegacyGatewayOperationAdapter(executor);
+
+        var submit = () => adapter.SubmitAsync(
+            new Honua.Core.Features.Operations.Domain.OperationRequest
+            {
+                OperationId = adapter.OperationId,
+                GatewayRequest = new OperationGatewayRequest { Kind = kind },
+            },
+            new Honua.Core.Features.Operations.Domain.OperationPolicyContext
+            {
+                OperationInstanceId = "opinst-refusal",
+                CorrelationId = "corr-refusal",
+            });
+
+        (await Assert.ThrowsAsync<OpsActionException>(submit)).Should().BeSameAs(failure);
     }
 
     [Fact]

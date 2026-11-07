@@ -32,4 +32,9 @@ internal static class ComposeExecutorCodes
     public const string AuditUnrecorded = "compose-audit-unrecorded";
 
     public const string BackupFailed = "compose-backup-failed";
+
+    internal static bool IsReportable(string code)
+        => code is ScopeViolation or ConfigUnsupported or ImageNotImmutable or ExecutorUnconfigured
+            or ApprovalRequired or BackupChecksumMismatch or BackupImageMismatch or BackupSchemaAhead
+            or RestoreIncomplete or ReadbackIncomplete or AuditUnrecorded or BackupFailed;
 }

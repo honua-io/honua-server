@@ -76,8 +76,7 @@ internal sealed class LegacyGatewayOperationAdapter : TypedExecutor
                 .ConfigureAwait(false);
         }
         catch (OpsActionException ex) when (_operationClass == OperationClass.AdminConfigChange &&
-            ex.Message is ComposeExecutorCodes.ReadbackIncomplete or ComposeExecutorCodes.ExecutorUnconfigured
-                or ComposeExecutorCodes.ScopeViolation or ComposeExecutorCodes.ConfigUnsupported)
+            ComposeExecutorCodes.IsReportable(ex.Message))
         {
             failureReason = ex.Message;
         }
@@ -89,10 +88,13 @@ internal sealed class LegacyGatewayOperationAdapter : TypedExecutor
             OperationId = OperationId,
             CorrelationId = context.CorrelationId
                 ?? throw new InvalidOperationException("Canonical correlation identity is unavailable."),
-            Status = failureReason is not null ? OperationHandleStatus.Failed : executionId is not null && _operationClass is
-                OperationClass.Deploy or OperationClass.MetadataRelease or OperationClass.Geoprocess
-                    ? OperationHandleStatus.Queued
-                    : OperationHandleStatus.Completed,
+            Status = (failureReason, executionId, _operationClass) switch
+            {
+                (not null, _, _) => OperationHandleStatus.Failed,
+                (_, not null, OperationClass.Deploy or OperationClass.MetadataRelease or OperationClass.Geoprocess)
+                    => OperationHandleStatus.Queued,
+                _ => OperationHandleStatus.Completed,
+            },
             CreatedAt = now,
             UpdatedAt = now,
             JobId = executionId,
