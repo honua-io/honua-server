@@ -22,7 +22,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
 /// <summary>Live target readback must never substitute desired configuration for observed state.</summary>
 [Protocol(TestProtocols.TestQuality)]
-public sealed class ManagedComposeObserverTests
+public sealed partial class ManagedComposeObserverTests
 {
     [UnitTheory]
     [InlineData(false)]
