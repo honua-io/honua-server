@@ -128,6 +128,7 @@ class ComposeQuickstartTests(unittest.TestCase):
                     else:
                         compose_quickstart.update_environment(env_file, {'NEW_SETTING': 'added'})
                     parser.assert_any_call(source.splitlines())
+                    self.assertEqual(2 if caller == 'initialize' else 1, parser.call_count)
 
                 rewritten = env_file.read_text()
                 self.assertIn('\n# customer settings\n', rewritten)
