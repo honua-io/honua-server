@@ -486,7 +486,7 @@ def product_code_prefixes(config: dict[str, Any]) -> tuple[str, ...]:
 
     `src/` and `tests/dotnet/` hold nearly all of the routable tree, but not
     all of it: `.github/ci-shards.json` also routes `eng/telemetry/`,
-    `samples/gp/` and `tests/fixtures/toolbox-translation/` -- shard INPUTS
+    `tests/fixtures/gp/` and `tests/fixtures/toolbox-translation/` -- shard INPUTS
     that live outside both. `SloMetricContractTests` reads
     `eng/telemetry/slo-metric-contract.v1.json` and `ToolboxTranslationEndpointTests`
     consumes the toolbox fixtures, so a diff that edits only one of those can

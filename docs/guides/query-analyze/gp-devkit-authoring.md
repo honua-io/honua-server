@@ -235,7 +235,7 @@ dotnet run --project src/Honua.Geoprocessing.Cli -- test geometry-recenter
 ```
 
 The scaffold writes an executor, adds its registration and catalog entry, and
-creates a fixture under `samples/gp/geometry-recenter/`. Its initial body returns
+creates a fixture under `tests/fixtures/gp/geometry-recenter/`. Its initial body returns
 a deterministic Point feature with an echoed `value`; it does not yet recenter
 an input geometry. Edit the TODO body and parameter schema to implement that
 behavior, then update the fixture to describe it.

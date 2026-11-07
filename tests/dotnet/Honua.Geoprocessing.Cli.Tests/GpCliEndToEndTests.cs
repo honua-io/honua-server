@@ -26,7 +26,7 @@ public sealed class GpCliEndToEndTests
 {
     internal const string CollectionName = "GpCli console capture";
 
-    // The geometry.buffer inputs mirror samples/gp/geometry-buffer-point/fixture.json:
+    // The geometry.buffer inputs mirror tests/fixtures/gp/geometry-buffer-point/fixture.json:
     // buffer POINT(0 0) by 10 units in EPSG:4326. WKB is the base64 of a 2D point at the origin.
     private const string PointWkbBase64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA";
 
@@ -589,17 +589,12 @@ public sealed class GpCliEndToEndTests
         }
     }
 
-    /// <summary>
-    /// Locates the repo's <c>samples/gp</c> fixtures directory by walking up from the test
-    /// assembly's base directory, so the <c>test</c> verb is exercised against the real fixtures
-    /// regardless of the runner's working directory.
-    /// </summary>
     private static string ResolveSamplesGpRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir is not null)
         {
-            var candidate = Path.Join(dir.FullName, "samples", "gp");
+            var candidate = Path.Join(dir.FullName, "tests", "fixtures", "gp");
             if (Directory.Exists(candidate))
             {
                 return candidate;
@@ -609,7 +604,7 @@ public sealed class GpCliEndToEndTests
         }
 
         throw new DirectoryNotFoundException(
-            "Could not locate the samples/gp fixtures directory above " + AppContext.BaseDirectory);
+            "Could not locate the tests/fixtures/gp fixtures directory above " + AppContext.BaseDirectory);
     }
 
     private static string ExtractJson(string output)

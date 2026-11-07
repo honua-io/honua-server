@@ -5,13 +5,6 @@ using System.Collections.ObjectModel;
 
 namespace Honua.Geoprocessing.Testing;
 
-/// <summary>
-/// A single golden GP test case (GP Devkit P6, issue #2127): the process to run, the
-/// step-0 inputs to feed it, the comparator + tolerance to apply, and the on-disk golden
-/// file its published artifact is asserted against. Authored as a JSON manifest under
-/// <c>samples/gp/</c> (see <see cref="GoldenFixtureLoader"/>) or constructed directly in a
-/// hand-written xUnit test.
-/// </summary>
 public sealed class GoldenFixture
 {
     /// <summary>
