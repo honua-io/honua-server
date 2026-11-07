@@ -85,7 +85,7 @@ Every published layer is reachable through every protocol its service enables. T
 | OGC SensorThings v1.1 | `/sta/v1.1` | IoT / observations clients |
 | WMS 1.3 / 1.1.1 | `/ogc/services/{id}/wms`, `/rest/services/{id}/MapServer/WMS` | QGIS, legacy OGC clients |
 | WFS 2.0 / 1.1.0 / 1.0.0 | `/wfs` | QGIS, GDAL/OGR, legacy stacks |
-| WCS 2.0.1 | `/ogc/services/{id}/wcs`, `/ogc/wcs/{id}` (client-specific alias; see the compatibility contract), `/rest/services/{id}/ImageServer/WCS` | Science, elevation, coverage clients |
+| WCS 2.0.1 | `/ogc/services/{id}/wcs`, `/ogc/wcs/{id}` ([client-specific alias](docs/reference/compatibility/clients.md)), `/rest/services/{id}/ImageServer/WCS` | Science, elevation, coverage clients |
 | WMTS 1.0 **(Preview)** | `/ogc/services/{id}/wmts`, `/rest/services/{id}/MapServer/WMTS` | QGIS, legacy tile clients |
 | WPS 2.0 | `/wps` | Classic OGC processing clients |
 | OData v4 | `/odata` | Excel, Power BI, Tableau, SAP |
@@ -250,6 +250,6 @@ See [SECURITY.md](SECURITY.md) for how to report a vulnerability privately, resp
 
 [Fair Core License, Version 1.0, ALv2 Future License](LICENSE) (FCL-1.0-ALv2) — source-available. You may use, copy, modify and redistribute Honua Server for any purpose except a Competing Use: making it available to others in a commercial product or service that substitutes for Honua or offers substantially similar functionality. Internal use, non-commercial education and research, and professional services delivered to a licensee are expressly permitted. You may not circumvent or remove the license-key functionality, which includes edition entitlements and capacity metering (see [NOTICE](NOTICE)). Each version is additionally licensed under the Apache License 2.0 two years after Honua Geo Inc. makes it available.
 
-Esri, ArcGIS, and the Esri product names used here are trademarks, registered trademarks, or service
-marks of Esri in the United States and other countries. They identify the products Honua is compatible
-with; Honua is not affiliated with, sponsored by, or endorsed by Esri.
+Esri, ArcGIS, and other Esri product names are trademarks, registered trademarks, or service marks of
+Esri in the United States and other countries. Honua is not affiliated with, sponsored by, or endorsed
+by Esri. Compatibility is limited to the operation-scoped workflows in the linked matrices.
