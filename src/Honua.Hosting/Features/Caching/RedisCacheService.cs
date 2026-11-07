@@ -292,6 +292,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         if (!_options.Enabled)
             return;
 
+        TrackResponseInvalidation(key);
         string prefixedKey = GetPrefixedKey(key);
         if (!TrySerialize(value, prefixedKey, out var data))
         {
@@ -315,24 +316,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             {
                 try
                 {
-                    if (_redis != null)
-                    {
-                        await _redisPolicy.ExecuteAsync(
-                            _ => SetRedisEntryWithIndexAsync(prefixedKey, data, ttl, cancellationToken),
-                            cancellationToken).ConfigureAwait(false);
-                    }
-                    else
-                    {
-                        var options = new DistributedCacheEntryOptions
-                        {
-                            AbsoluteExpirationRelativeToNow = ttl
-                        };
-
-                        await _redisPolicy.ExecuteAsync(
-                            ct => _distributedCache.SetAsync(prefixedKey, data, options, ct),
-                            cancellationToken).ConfigureAwait(false);
-                        await TrackIndexedKeyAsync(prefixedKey, ttl, cancellationToken).ConfigureAwait(false);
-                    }
+                    await SetDistributedEntryAsync(prefixedKey, data, ttl, cancellationToken).ConfigureAwait(false);
 
                     _writeMetadata[prefixedKey] = new CacheWriteInfo(DateTime.UtcNow.Ticks, ttl.Ticks);
                     return;
@@ -857,45 +841,6 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         return _isUsingFallback && _distributedCache != null && now - lastFailure > _options.RetryInterval;
     }
 
-    private async Task<bool> TryRestoreRedisAsync(CancellationToken cancellationToken)
-    {
-        if (_distributedCache == null)
-        {
-            return false;
-        }
-
-        try
-        {
-            await _redisGetPolicy.ExecuteAsync(
-                ct => _distributedCache.GetAsync(HealthCheckKey, ct),
-                cancellationToken).ConfigureAwait(false);
-
-            // Replay any invalidation keys that failed to reach Redis during the outage
-            // BEFORE clearing the fallback cache and marking Redis as live.  This ensures
-            // stale entries are removed from Redis before we start serving from it again.
-            await ReplayPendingInvalidationsAsync(cancellationToken).ConfigureAwait(false);
-
-            if (_isUsingFallback)
-            {
-                _fallbackCache.Clear();
-                _writeMetadata.Clear();
-            }
-
-            _isUsingFallback = false;
-            RedisCacheServiceLog.RedisConnectionRestored(_logger);
-            return true;
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            // Debug level: this runs on every retry interval while Redis is down, so a
-            // higher level would be noisy; HandleRedisFailure already logged the initial
-            // transition into fallback mode at Warning.
-            RedisCacheServiceLog.RedisRestoreAttemptFailed(_logger, ex);
-            Volatile.Write(ref _lastRedisFailureTicks, DateTime.UtcNow.Ticks);
-            return false;
-        }
-    }
-
     private void EnqueuePendingInvalidation(string prefixedKey)
     {
         // Bounded FIFO queue: when full, drop the oldest entry to make room.
@@ -1108,15 +1053,24 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
 
     private string GetPrefixedKey(string key)
     {
-        var scopedKey = CacheScopeKeys.EnsureScoped(key, SchemaContext.AmbientCurrentSchema);
+        // Recovery changes every schema's response generation through one shared token.
+        var scopedKey = key == ResponseCacheVersionKeys.RecoveryEpoch
+            ? key
+            : CacheScopeKeys.EnsureScoped(key, SchemaContext.AmbientCurrentSchema);
         return $"{_options.KeyPrefix}{scopedKey}";
     }
 
     private void HandleRedisFailure(Exception ex)
     {
-        if (!_isUsingFallback)
+        bool transitioned;
+        lock (_redisRecoveryLock)
         {
+            _responseInvalidationRevision++;
+            transitioned = !_isUsingFallback;
             _isUsingFallback = true;
+        }
+        if (transitioned)
+        {
             Volatile.Write(ref _lastRedisFailureTicks, DateTime.UtcNow.Ticks);
             RedisCacheServiceLog.RedisConnectionFailed(_logger, ex);
         }

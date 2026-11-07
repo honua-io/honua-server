@@ -14,8 +14,6 @@ internal sealed class CacheServiceResponseCache : IResponseCache
     private const int ReservationOverheadBytes = 128;
     private const string KeyPrefix = "response:";
     private const string BoundKeyPrefix = "response-bound:";
-    private const string VersionPrefix = "response-version:";
-    private static readonly TimeSpan VersionTtl = TimeSpan.FromDays(30);
 
     // Standalone writes retain the local-version optimization. Read/compute/fill
     // callers bind their key before querying, so other requests cannot change the
@@ -141,8 +139,9 @@ internal sealed class CacheServiceResponseCache : IResponseCache
             return NormalizeKey(key);
         }
 
+        var recoveryEpoch = await _cacheService.GetAsync<string>(ResponseCacheVersionKeys.RecoveryEpoch, cancellationToken).ConfigureAwait(false) ?? "0";
         var versionSuffix = string.Join(':', namespaceVersions);
-        return NormalizeKey($"{key}:v:{versionSuffix}");
+        return NormalizeKey($"{key}:v:{recoveryEpoch}:{versionSuffix}");
     }
 
     private async Task<IReadOnlyList<string>> ResolveNamespaceVersionsAsync(string key, bool allowLocalVersionCache, CancellationToken cancellationToken)
@@ -177,7 +176,7 @@ internal sealed class CacheServiceResponseCache : IResponseCache
             var fetchTasks = new Task<string?>[missIndices.Count];
             for (var j = 0; j < missIndices.Count; j++)
             {
-                fetchTasks[j] = _cacheService.GetAsync<string>(VersionPrefix + namespaces[missIndices[j]], cancellationToken);
+                fetchTasks[j] = _cacheService.GetAsync<string>(ResponseCacheVersionKeys.Prefix + namespaces[missIndices[j]], cancellationToken);
             }
 
             var versions = await Task.WhenAll(fetchTasks).ConfigureAwait(false);
@@ -206,9 +205,9 @@ internal sealed class CacheServiceResponseCache : IResponseCache
         // no ordering dependency on one another; issue them concurrently instead of
         // one round trip at a time.
         await Task.WhenAll(namespaces.Select(ns => _cacheService.SetAsync(
-                VersionPrefix + ns,
+                ResponseCacheVersionKeys.Prefix + ns,
                 Guid.NewGuid().ToString("N"),
-                VersionTtl,
+                ResponseCacheVersionKeys.Lifetime,
                 cancellationToken)))
             .ConfigureAwait(false);
 
