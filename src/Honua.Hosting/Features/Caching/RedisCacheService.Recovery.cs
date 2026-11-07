@@ -2,7 +2,6 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Microsoft.Extensions.Caching.Distributed;
-using Polly;
 
 namespace Honua.Infrastructure.Caching;
 
@@ -67,6 +66,8 @@ internal sealed partial class RedisCacheService
                     return true;
                 }
             }
+            Volatile.Write(ref _lastRedisFailureTicks, DateTime.UtcNow.Ticks);
+            RedisCacheServiceLog.RedisRecoveryFencesExhausted(_logger);
             return false;
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)

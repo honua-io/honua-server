@@ -6,6 +6,7 @@ namespace Honua.Infrastructure.Caching;
 internal static class ResponseCacheVersionKeys
 {
     internal const string Prefix = "response-version:";
-    internal const string RecoveryEpoch = Prefix + "recovery";
+    internal const string RecoveryNamespace = "recovery";
+    internal const string RecoveryEpoch = Prefix + RecoveryNamespace;
     internal static readonly TimeSpan Lifetime = TimeSpan.FromDays(30);
 }

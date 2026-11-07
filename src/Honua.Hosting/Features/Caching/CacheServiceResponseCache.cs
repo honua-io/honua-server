@@ -38,6 +38,8 @@ internal sealed class CacheServiceResponseCache : IResponseCache
     private readonly int _maxBytes;
     private readonly int _maxEntries;
     private long _reservedBytes;
+    private long _reservationSequence;
+    private string? _observedRecoveryEpoch;
     private readonly SortedSet<ResponseReservation> _expirationOrder = new(Comparer<ResponseReservation>.Create((left, right) =>
     {
         var expiration = left.ExpiresAt.CompareTo(right.ExpiresAt);
@@ -139,9 +141,8 @@ internal sealed class CacheServiceResponseCache : IResponseCache
             return NormalizeKey(key);
         }
 
-        var recoveryEpoch = await _cacheService.GetAsync<string>(ResponseCacheVersionKeys.RecoveryEpoch, cancellationToken).ConfigureAwait(false) ?? "0";
         var versionSuffix = string.Join(':', namespaceVersions);
-        return NormalizeKey($"{key}:v:{recoveryEpoch}:{versionSuffix}");
+        return NormalizeKey($"{key}:v:{versionSuffix}");
     }
 
     private async Task<IReadOnlyList<string>> ResolveNamespaceVersionsAsync(string key, bool allowLocalVersionCache, CancellationToken cancellationToken)
@@ -151,6 +152,7 @@ internal sealed class CacheServiceResponseCache : IResponseCache
         {
             return [];
         }
+        namespaces.Insert(0, ResponseCacheVersionKeys.RecoveryNamespace);
 
         var now = DateTimeOffset.UtcNow;
         var resolved = new string[namespaces.Count];
@@ -171,6 +173,7 @@ internal sealed class CacheServiceResponseCache : IResponseCache
 
         if (missIndices is { Count: > 0 })
         {
+            var reservationsBeforeRead = Volatile.Read(ref _reservationSequence);
             // Batch-fetch all missing namespace versions concurrently so that N misses
             // result in a single Redis pipeline round-trip rather than N sequential ones.
             var fetchTasks = new Task<string?>[missIndices.Count];
@@ -188,9 +191,34 @@ internal sealed class CacheServiceResponseCache : IResponseCache
                 resolved[i] = version;
                 _localVersionCache[namespaces[i]] = (version, now.Add(VersionLocalCacheTtl));
             }
+            if (missIndices[0] == 0)
+            {
+                ReleaseObsoleteEpochReservations(resolved[0], reservationsBeforeRead);
+            }
         }
 
         return resolved;
+    }
+
+    private void ReleaseObsoleteEpochReservations(string epoch, long reservationsBeforeRead)
+    {
+        lock (_budgetLock)
+        {
+            if (_observedRecoveryEpoch == epoch)
+            {
+                return;
+            }
+            _observedRecoveryEpoch = epoch;
+            var epochMarker = $":v:{epoch}:";
+            var invalidated = _reservations.Values.Where(reservation =>
+                reservation.Sequence <= reservationsBeforeRead &&
+                GetNamespaceKeysForCacheKey(reservation.Key).Count > 0 &&
+                !reservation.Key.Contains(epochMarker, StringComparison.Ordinal)).ToArray();
+            foreach (var reservation in invalidated)
+            {
+                RemoveReservation(reservation);
+            }
+        }
     }
 
     private async Task<bool> TryInvalidateNamespaceAsync(string pattern, CancellationToken cancellationToken)
@@ -342,7 +370,7 @@ internal sealed class CacheServiceResponseCache : IResponseCache
             {
                 RemoveReservation(current);
             }
-            var reservation = new ResponseReservation(key, bytes, now.Add(expiration));
+            var reservation = new ResponseReservation(key, bytes, now.Add(expiration), Interlocked.Increment(ref _reservationSequence));
             _reservations[key] = reservation;
             _expirationOrder.Add(reservation);
             _reservedBytes += bytes;
@@ -376,7 +404,7 @@ internal sealed class CacheServiceResponseCache : IResponseCache
         _reservedBytes -= reservation.Bytes;
     }
 
-    private sealed record ResponseReservation(string Key, long Bytes, DateTimeOffset ExpiresAt);
+    private sealed record ResponseReservation(string Key, long Bytes, DateTimeOffset ExpiresAt, long Sequence);
 
     private static string NormalizeKey(string key)
     {

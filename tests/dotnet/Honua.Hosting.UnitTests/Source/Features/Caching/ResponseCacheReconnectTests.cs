@@ -188,6 +188,57 @@ public sealed class ResponseCacheReconnectTests
         Assert.True(service.IsUsingFallback);
     }
 
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task GetAsync_PendingLiveWriteFailsDuringRecovery_RepeatsFenceBeforeGoingLive()
+    {
+        var shared = new ConcurrentDictionary<string, byte[]>(StringComparer.Ordinal);
+        var backend = new FaultyCache(shared);
+        await using var service = CacheNode(backend.Cache);
+        await using var replicaService = CacheNode(new FaultyCache(shared).Cache);
+        var replica = new CacheServiceResponseCache(replicaService, Settings());
+        var writeStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var failWrite = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        backend.BeforeWrite = async key =>
+        {
+            if (key.EndsWith("pending-live", StringComparison.Ordinal))
+            {
+                writeStarted.TrySetResult();
+                await failWrite.Task;
+                throw new RedisConnectionException(ConnectionFailureType.UnableToConnect, "Injected pending write failure");
+            }
+        };
+        var pendingWrite = service.SetAsync("pending-live", "pending", Lifetime);
+        var fences = 0;
+        try
+        {
+            await writeStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            backend.WriteUnavailable = true;
+            await service.SetAsync("partition-marker", "unavailable", Lifetime);
+            backend.WriteUnavailable = false;
+            backend.AfterWrite = async key =>
+            {
+                if (key.EndsWith("response-version:recovery", StringComparison.Ordinal)
+                    && Interlocked.Increment(ref fences) == 1)
+                {
+                    var intermediate = await replica.BindKeyAsync(QueryKey);
+                    await replica.SetAsync(intermediate, new CachedResponse(new byte[32], "application/json"), Lifetime);
+                    failWrite.TrySetResult();
+                    await pendingWrite;
+                }
+            };
+
+            Assert.True(await RestoreAsync(service).WaitAsync(TimeSpan.FromSeconds(10)));
+            Assert.Equal(2, fences);
+            Assert.Null(await replica.GetAsync<CachedResponse>(QueryKey));
+        }
+        finally
+        {
+            failWrite.TrySetResult();
+            await pendingWrite;
+        }
+    }
+
     private static CacheOptions Settings() => new()
     {
         Enabled = true,

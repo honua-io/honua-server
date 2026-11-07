@@ -1511,5 +1511,8 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
 
         [LoggerMessage(1013, LogLevel.Debug, "Failed to resolve remaining TTL for cache key {KeyFamily} {KeyHash} from Redis")]
         public static partial void TtlLookupFailed(ILogger logger, string keyFamily, string keyHash, Exception exception);
+
+        [LoggerMessage(1014, LogLevel.Debug, "Redis recovery fences exhausted; waiting before another restore attempt")]
+        public static partial void RedisRecoveryFencesExhausted(ILogger logger);
     }
 }

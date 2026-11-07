@@ -34,7 +34,7 @@ public sealed class CacheServiceResponseCacheLocalCacheTests
         var cache = new CountingCacheService(versions);
         var responseCache = new CacheServiceResponseCache(cache);
 
-        // First call — 4 namespace version lookups expected.
+        // Fetch the recovery epoch alongside the four namespace versions.
         await responseCache.SetAsync("query:featureserver:service:alpha:layer:3:keyA", "payload", TimeSpan.FromMinutes(1));
         var getCountAfterFirst = cache.GetCallCount;
 
@@ -42,7 +42,7 @@ public sealed class CacheServiceResponseCacheLocalCacheTests
         await responseCache.SetAsync("query:featureserver:service:alpha:layer:3:keyB", "payload", TimeSpan.FromMinutes(1));
         var getCountAfterSecond = cache.GetCallCount;
 
-        Assert.Equal(4, getCountAfterFirst);
+        Assert.Equal(5, getCountAfterFirst);
         // No additional GetAsync calls for namespace versions on the second call.
         Assert.Equal(getCountAfterFirst, getCountAfterSecond);
     }
@@ -91,7 +91,7 @@ public sealed class CacheServiceResponseCacheLocalCacheTests
         // to start before any returns. If the implementation issued tasks sequentially,
         // the gate would never open (task 2 can't start until task 1 returns) and the
         // test would time out. Completion without timeout proves concurrency.
-        const int expectedNamespaces = 4;
+        const int expectedNamespaces = 5;
         var gate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         var versions = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -110,7 +110,7 @@ public sealed class CacheServiceResponseCacheLocalCacheTests
             .SetAsync("query:featureserver:service:svc:layer:7:key1", "payload", TimeSpan.FromMinutes(1), cts.Token)
             .WaitAsync(cts.Token);
 
-        // All 4 namespace-version lookups started before any returned.
+        // The epoch and namespace lookups all start before any returns.
         Assert.Equal(expectedNamespaces, cache.StartedCount);
     }
 
@@ -126,9 +126,9 @@ public sealed class CacheServiceResponseCacheLocalCacheTests
 
         await responseCache.SetAsync("query:featureserver:service:alpha:layer:3:keyA", "payload", TimeSpan.FromMinutes(1));
 
-        // Storage key must contain :v:0:0:0:0 (four namespaces all defaulting to "0").
+        // The epoch and four namespaces all default to zero.
         Assert.Single(cache.ValueWrites);
-        Assert.Contains(":v:0:0:0:0", cache.ValueWrites[0], StringComparison.Ordinal);
+        Assert.Contains(":v:0:0:0:0:0", cache.ValueWrites[0], StringComparison.Ordinal);
     }
 
     // ─── Helpers ───────────────────────────────────────────────────────────────
