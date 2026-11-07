@@ -10,7 +10,7 @@ your process. This stack needs no cloud account. For direct function development
 without a server or Redis, start with [the authoring guide](gp-devkit-authoring.md).
 
 For Python or .NET custom-code breakpoints, start with the
-[Python](https://github.com/honua-io/honua-samples/tree/trunk/templates/gp-python/README.md) and [.NET](https://github.com/honua-io/honua-samples/tree/trunk/templates/gp-dotnet/README.md) templates, then return here
+[Python](https://github.com/honua-io/honua-samples/tree/4efc272e58789ec17ebec2125cec06304b2ce4e4/templates/gp-python/README.md) and [.NET](https://github.com/honua-io/honua-samples/tree/4efc272e58789ec17ebec2125cec06304b2ce4e4/templates/gp-dotnet/README.md) templates, then return here
 to verify server authorization, queues, worker dispatch, and result retrieval.
 A local function run does not exercise those integration boundaries.
 
@@ -264,7 +264,7 @@ execute through the canonical `honua-geoprocessing` plan process. See
 For AI clients, connect to this server's `/mcp` endpoint and follow
 [geoprocessing with AI](geoprocessing-with-ai.md). For GeoServices REST clients, the
 [GPServer adapter](run-geoprocessing.md) exposes service-scoped tasks over the
-same runtime. The [sample README](https://github.com/honua-io/honua-samples/tree/trunk/samples/gp-local-dev/README.md)
+same runtime. The [sample README](https://github.com/honua-io/honua-samples/tree/4efc272e58789ec17ebec2125cec06304b2ce4e4/samples/gp-local-dev/README.md)
 links the SDK, native, and MCP examples.
 
 ## Stop or diagnose the stack

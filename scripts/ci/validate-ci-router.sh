@@ -170,6 +170,9 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   echo "Validating GitHub Actions baseline measurement contract..."
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-actions-baseline.py
 
+  echo "Validating external sample inputs..."
+  "${PYTHON_BIN}" tests/python/unit/test_validated_sample_inputs.py
+
   echo "Validating server-test archive entry checks..."
   "${PYTHON_BIN}" scripts/ci/validate-server-test-archive.test.py
 

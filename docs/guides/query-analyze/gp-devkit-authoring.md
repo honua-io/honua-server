@@ -126,7 +126,7 @@ means registration alone has not established that the function can run here.
 
 ## Debug custom Python and .NET tools
 
-Use the [Python](https://github.com/honua-io/honua-samples/tree/trunk/templates/gp-python/README.md) and [.NET](https://github.com/honua-io/honua-samples/tree/trunk/templates/gp-dotnet/README.md) templates
+Use the [Python](https://github.com/honua-io/honua-samples/tree/4efc272e58789ec17ebec2125cec06304b2ce4e4/templates/gp-python/README.md) and [.NET](https://github.com/honua-io/honua-samples/tree/4efc272e58789ec17ebec2125cec06304b2ce4e4/templates/gp-dotnet/README.md) templates
 for filesystem inputs, fresh output directories, and VS Code breakpoints in both
 languages. This uses the production `execute(context)` / `IGeoprocessingTool`
 contracts with no cloud credentials for pure functions. The .NET harness is JIT
@@ -275,7 +275,7 @@ dotnet run --project src/Honua.Geoprocessing.Cli -- run gdal.ogr2ogr \
 
 Expect two Point features preserving XYZ coordinates `[12.25, -4.5, 7.75]` and
 `[-2, 8, 3]`, names `alpha` and `beta`, and values `17` and `42`. CSV attributes
-may remain strings. The checked-in [sample](https://github.com/honua-io/honua-samples/tree/trunk/samples/gp-local-dev/README.md)
+may remain strings. The maintained [sample](https://github.com/honua-io/honua-samples/tree/4efc272e58789ec17ebec2125cec06304b2ce4e4/samples/gp-local-dev/README.md)
 describes both the native conversion and server-side buffer paths.
 
 Inspect the saved coordinates as well as the job status. Some GDAL builds emit

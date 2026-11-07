@@ -117,7 +117,7 @@ STAC landing page: ${BASE_URL}/stac
 STAC collections: ${BASE_URL}/stac/collections
 
 Run the standalone operator dashboard from:
-https://github.com/honua-io/honua-samples/tree/trunk/samples/stac-ops
+https://github.com/honua-io/honua-samples/tree/4efc272e58789ec17ebec2125cec06304b2ce4e4/samples/stac-ops
 Point it at ${BASE_URL}.
 
 Expected signals:

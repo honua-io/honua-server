@@ -96,7 +96,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
       -p:OptimizationPreference=Speed \
       -p:IlcOptimizationPreference=Speed \
       -p:IlcSingleThreaded="$ILC_SINGLE_THREADED" && \
-    rm -rf /app/BlazorDebugProxy /app/wwwroot && \
+    rm -rf /app/wwwroot && \
     find /app -type f \( -name '*.pdb' -o -name '*.dbg' \) -delete
 
 # Runtime stage - Use Amazon Linux 2 runtime

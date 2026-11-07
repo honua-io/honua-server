@@ -101,8 +101,8 @@ public sealed class GpPublishCommandTests : IDisposable
 
             Assert.Equal(0, exit);
             Assert.Empty(error);
-            Assert.Contains("dry-run", output, StringComparison.Ordinal);
-            Assert.NotNull(handler);
+            Assert.Contains("dry-run   :", output, StringComparison.Ordinal);
+            Assert.Contains("package   : my-flow", output, StringComparison.Ordinal);
         }
         finally
         {

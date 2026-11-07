@@ -19,7 +19,7 @@ For an agent working directly in a developer checkout, the
 are installed. A doctor result verifies only its reported checks; a successful
 `run` and inspected output are execution evidence.
 
-Custom Python/.NET tools can use the [Python](https://github.com/honua-io/honua-samples/tree/trunk/templates/gp-python/README.md) and [.NET](https://github.com/honua-io/honua-samples/tree/trunk/templates/gp-dotnet/README.md) templates.
+Custom Python/.NET tools can use the [Python](https://github.com/honua-io/honua-samples/tree/4efc272e58789ec17ebec2125cec06304b2ce4e4/templates/gp-python/README.md) and [.NET](https://github.com/honua-io/honua-samples/tree/4efc272e58789ec17ebec2125cec06304b2ce4e4/templates/gp-dotnet/README.md) templates.
 Its receipts and progress events remain local and unsanitized. These local tools
 do not add MCP capabilities or authorize a remote deployment. Discover the live
 MCP surface before proposing remote inspection, retries, or deployment actions.
@@ -64,8 +64,8 @@ it. A successful planning call is not evidence that GP has executed.
 
 ## 2. Validate a concrete plan
 
-Pass the following **tool arguments** to `honua_validate_plan`. A copy is checked
-in as [buffer-plan.json](https://github.com/honua-io/honua-samples/tree/trunk/samples/gp-local-dev/buffer-plan.json).
+Pass the following **tool arguments** to `honua_validate_plan`. The maintained plan is in
+honua-samples as [buffer-plan.json](https://github.com/honua-io/honua-samples/tree/4efc272e58789ec17ebec2125cec06304b2ce4e4/samples/gp-local-dev/buffer-plan.json).
 
 ```json
 {

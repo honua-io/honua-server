@@ -88,7 +88,6 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
         "GET /monitoring/metrics/database-resilience",
         "GET /monitoring/metrics/resources",
         "GET /monitoring/metrics/upload-queue",
-        "GET /samples/stac-ops",
         "GET /static/{serviceId}/{center}/{dimensions}.{format}",
         "GET /static/{serviceId}/bbox/{bbox}/{dimensions}.{format}",
         "POST /v1/grounding/spec/mutate",

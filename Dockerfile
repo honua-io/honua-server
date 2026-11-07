@@ -120,8 +120,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
       -p:DebugSymbols=false \
       -p:HonuaNobleRuntimePublish=true \
       $EXTRA_MSBUILD_ARGS && \
-    rm -rf /app/BlazorDebugProxy /app/wwwroot/admin && \
-    rm -rf /app/wwwroot/samples && \
+    rm -rf /app/wwwroot/admin && \
     find /app -type f \( -name '*.pdb' -o -name '*.dbg' \) -delete
 
 # Runtime stage

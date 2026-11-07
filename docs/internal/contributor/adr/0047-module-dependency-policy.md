@@ -60,8 +60,8 @@ reference `Honua.Server` (so the worker image does not pull in the whole
 host); it depends on `Honua.Core.Abstractions`, `Honua.Core`, `Honua.Jobs`,
 and the AWS/Azure satellites for configured license secret resolution.
 These three sit outside the main stack and are matrix entries in their own
-right but do not participate in the tier topology. Runnable sample applications live in `honua-samples` and build independently
-of the server.
+right but do not participate in the tier topology. Runnable sample applications live
+in `honua-samples` and build independently of the server.
 
 ### Dependency direction matrix
 

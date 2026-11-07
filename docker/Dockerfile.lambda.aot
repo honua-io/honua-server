@@ -152,7 +152,6 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
         sleep $((attempt * 15)) ; \
         attempt=$((attempt + 1)) ; \
     done && \
-    rm -rf /app/BlazorDebugProxy && \
     rm -rf /app/wwwroot && \
     find /app -type f \( -name '*.pdb' -o -name '*.dbg' \) -delete
 

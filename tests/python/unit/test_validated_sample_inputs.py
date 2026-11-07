@@ -46,7 +46,17 @@ class ValidatedSampleInputTests(unittest.TestCase):
             calls = (root / "docker-calls.txt").read_text()
             self.assertIn("up -d --no-build", calls)
             self.assertNotIn("--build", calls)
-            self.assertIn('"successful"', (root / "artifacts/validated-examples/gp-result.json").read_text())
+            self.assertIn('"successful"', (root / "artifacts/validated-examples/gp-result.txt").read_text())
+
+    def test_external_sample_reader_and_tests_select_pr_validation(self):
+        selector = SCRIPT.parent.parent / "ci/pr-touches-ci-surface.sh"
+        for path in ("scripts/examples/validate-customer-paths.sh", "tests/python/unit/test_validated_sample_inputs.py"):
+            with self.subTest(path=path):
+                result = subprocess.run(
+                    ["bash", str(selector), "--paths"], input=path + "\n", capture_output=True, text=True
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("ci_surface=true", result.stdout)
 
     def test_missing_external_sample_fails_with_configuration_guidance(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -56,6 +66,8 @@ class ValidatedSampleInputTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 2)
             self.assertIn("Set HONUA_SAMPLES_ROOT", result.stderr)
+            calls = Path(directory) / "docker-calls.txt"
+            self.assertFalse(calls.exists(), "missing samples must fail before starting Compose")
 
 
 if __name__ == "__main__":

@@ -41,7 +41,6 @@ public sealed class GatedBootExitTests
         "HONUA_REGISTER_TEST_INFRASTRUCTURE",
         "HONUA_TEST_SCHEMA_HEADERS",
         "HONUA_DB_DEGRADED_START",
-        "HONUA_TEST_HOSTED_BLAZOR_ASSETS",
         "ConnectionStrings__redis",
         "ConnectionStrings__Redis"
     ];

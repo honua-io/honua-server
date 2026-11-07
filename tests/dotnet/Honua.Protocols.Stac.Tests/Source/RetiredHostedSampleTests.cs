@@ -14,7 +14,7 @@ namespace Honua.Server.Tests.Features.Protocols.Stac;
 public sealed class RetiredHostedSampleTests(WebAppFixture fixture) : IClassFixture<WebAppFixture>
 {
     [IntegrationTest]
-    [Operation(Operations.StacCatalog)]
+    [Operation(Operations.Infrastructure)]
     public async Task GetHostedSamplePaths_ReturnsNotFound()
     {
         using var client = fixture.CreateClient(allowAutoRedirect: false);
