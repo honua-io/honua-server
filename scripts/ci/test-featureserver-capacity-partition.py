@@ -5,6 +5,8 @@ import importlib.util
 import json
 from pathlib import Path
 
+from shard_capacity_partition import check_partition
+
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("coverage", ROOT / "scripts/ci/check-server-test-shard-coverage.py")
 MODULE = importlib.util.module_from_spec(SPEC)
@@ -34,22 +36,9 @@ assert EVIDENCE["historicalSizing"]["sourceDirty"] is True, "Do not relabel hist
 
 
 def check(children):
-    parsed = [MODULE._FilterParser(child["filter"]).parse() for child in children]
-    selected = [{method for method in METHODS if MODULE._eval(expr, method)} for expr in parsed]
-    assert all(selected), "Empty child."
-    assert set.union(*selected) == EXPECTED, "Lost original or leaked foreign methods."
-    assert sum(map(len, selected)) == len(EXPECTED), "Duplicate method ownership."
+    selected = check_partition(MODULE, CLASSES, ORIGINAL, children)
     assert selected[0] == EDITING, "The measured editing class families changed ownership."
-    for entry in CLASSES.values():
-        if entry["csproj"] != ORIGINAL["csproj"]:
-            continue
-        fqn = entry["fqn"]
-        assert sum(MODULE._eval(expr, fqn) for expr in parsed) == int(MODULE._eval(PARENT, fqn)), \
-            f"Class ownership changed: {fqn}"
-    for child in children:
-        for field in ("paths", "csproj", "max_cpu_count", "test_timeout_minutes", "timeout_minutes",
-                      "upload_operator_eval_report", "upload_odata_evidence"):
-            assert child[field] == ORIGINAL[field], f"Original {field} changed."
+    parsed = [MODULE._FilterParser(child["filter"]).parse() for child in children]
     # A future method name cannot move an unrelated whole class into the cut.
     probes = {
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FutureEndpointTests.FeatureServerApplyEdits": 1,

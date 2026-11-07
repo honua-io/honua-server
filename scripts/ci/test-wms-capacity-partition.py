@@ -5,6 +5,8 @@ import importlib.util
 import json
 from pathlib import Path
 
+from shard_capacity_partition import check_partition
+
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("coverage", ROOT / "scripts/ci/check-server-test-shard-coverage.py")
 MODULE = importlib.util.module_from_spec(SPEC)
@@ -16,7 +18,8 @@ NAMES = ("OGC Classic Maps Core", "OGC Classic Maps Supporting")
 CHILDREN = [next(s for s in CONFIG["shards"] if s["name"] == name) for name in NAMES]
 PROJECT = "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj"
 CLASS = "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests"
-METHODS = MODULE.selection_pool(MODULE.enumerate_test_classes(), PROJECT)
+CLASSES = MODULE.enumerate_test_classes()
+METHODS = MODULE.selection_pool(CLASSES, PROJECT)
 PARENT = MODULE._FilterParser(ORIGINAL["filter"]).parse()
 EXPECTED = {method for method in METHODS if MODULE._eval(PARENT, method)}
 MAIN = {method for method in EXPECTED if method.startswith(CLASS + ".")}
@@ -25,17 +28,8 @@ assert EVIDENCE["trxPresent"] is False and EVIDENCE["qualification"] == "not-eva
 
 
 def check(children):
-    selected = [{method for method in METHODS
-                 if MODULE._eval(MODULE._FilterParser(child["filter"]).parse(), method)}
-                for child in children]
-    assert all(selected), "Empty child."
-    assert set.union(*selected) == EXPECTED, "Lost original or leaked foreign methods."
-    assert sum(map(len, selected)) == len(EXPECTED), "Duplicate method ownership."
+    selected = check_partition(MODULE, CLASSES, ORIGINAL, children)
     assert selected[0] == MAIN, "The measured main class changed ownership."
-    for child in children:
-        for field in ("paths", "csproj", "max_cpu_count", "test_timeout_minutes", "timeout_minutes",
-                      "upload_operator_eval_report", "upload_odata_evidence"):
-            assert child[field] == ORIGINAL[field], f"Original {field} changed."
     return list(map(len, selected))
 
 
