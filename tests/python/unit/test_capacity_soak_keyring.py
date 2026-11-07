@@ -25,7 +25,7 @@ import yaml
 
 REPOSITORY_ROOT = Path(__file__).parents[3]
 WORKFLOW = REPOSITORY_ROOT / ".github" / "workflows" / "capacity-soak-candidate.yml"
-COMPOSE = REPOSITORY_ROOT / "docker-compose.soak.yml"
+COMPOSE = REPOSITORY_ROOT / "docker/compose/docker-compose.soak.yml"
 KEY_RING_RESOLVER = (
     REPOSITORY_ROOT / "src" / "Honua.Server" / "Features" / "Operations" / "OperationSecretKeyRingProtection.cs"
 )

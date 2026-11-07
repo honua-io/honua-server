@@ -29,11 +29,15 @@ args = sys.argv[1:]
 with open(os.environ["CALLS"], "a") as log:
     log.write(json.dumps(args) + "\\n")
 if args[0] == "compose":
+    original_args = args
+    if args[-1] == "config":
+        assert args[1:3] == ["--project-directory", "."]
+        args = args[:1] + args[3:]
     assert args[1:3] == ["--project-name", "honua-capacity-soak"]
     path = pathlib.Path(args[4])
     if args[5] == "config":
         if os.environ.get("REAL_DOCKER"):
-            sys.exit(subprocess.run([os.environ["REAL_DOCKER"], *args]).returncode)
+            sys.exit(subprocess.run([os.environ["REAL_DOCKER"], *original_args]).returncode)
         if os.environ.get("CONFIG_FAIL"): sys.exit(11)
         print("name: honua-capacity-soak\\nservices: {}\\n# " + os.environ["SOAK_LICENSE_CONTENT"])
     else:
@@ -174,6 +178,9 @@ def test_actual_compose_render_retains_required_inputs_for_later_cleanup(substra
     document = json.loads(reparsed.stdout)
     assert document["name"] == PROJECT
     services = document["services"]
+    database_mount = next(mount for mount in services["postgres"]["volumes"]
+                          if mount["target"] == "/docker-entrypoint-initdb.d/20_soak.sql")
+    assert database_mount["source"] == str(ROOT / "scripts/soak/init-db.sql")
     assert services["honua"]["image"] == "ghcr.io/honua-io/honua-server@sha256:" + "a" * 64
     # `config` emits reusable Compose data: its serializer escapes every literal
     # dollar as $$, including in JSON. The second parse must serialize exactly

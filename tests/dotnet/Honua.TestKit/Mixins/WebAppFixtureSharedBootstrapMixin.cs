@@ -63,6 +63,8 @@ internal static class WebAppFixtureSharedBootstrapMixin
                 await _sharedPostgres.InitializeAsync();
 
                 _sharedFactory = BuildSharedFactory(_sharedPostgres.ConnectionString, sharedAdminPassword);
+                // Start the lazy host under the lock so parallel fixtures share one service provider.
+                _ = _sharedFactory.Services;
 
                 _sharedInitialized = true;
             }

@@ -42,7 +42,7 @@ runs:
         printf 'DOTNET_INSTALL_DIR=%s/honua-managed-sdk/%s\n' "${RUNNER_TEMP}" "${EXPECTED_DOTNET_SDK}" >> "${GITHUB_ENV}"
 
     - name: Setup .NET
-      uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+      uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
       with:
         dotnet-version: ${{ inputs.artifact-sdk-version || inputs.dotnet-version }}
 
@@ -111,7 +111,7 @@ runs:
 
     - name: Restore NuGet packages (non-trunk read-only)
       if: github.ref != 'refs/heads/trunk' || inputs.nuget-cache-read-only == 'true'
-      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.nuget/packages
         key: ${{ github.repository }}-${{ runner.os }}-nuget-${{ hashFiles('Directory.Packages.props', 'NuGet.config', 'global.json') }}-${{ hashFiles('**/*.csproj') }}
