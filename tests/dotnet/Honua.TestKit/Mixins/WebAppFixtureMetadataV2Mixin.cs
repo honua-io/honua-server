@@ -265,7 +265,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                         Role = "esriRelRoleOrigin",
                         OriginField = "objectid",
                         DestinationField = "related_id",
-                        EsriRelationshipId = 1
+                        GeoServicesRelationshipId = 1
                     },
                     new MetadataV2Relationship
                     {
@@ -276,7 +276,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                         Role = "esriRelRoleOrigin",
                         OriginField = "objectid",
                         DestinationField = "secondary_id",
-                        EsriRelationshipId = 2
+                        GeoServicesRelationshipId = 2
                     }
                 ]
             };
@@ -352,7 +352,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                         Role = "esriRelRoleOrigin",
                         OriginField = "objectid",
                         DestinationField = "city_id",
-                        EsriRelationshipId = 1
+                        GeoServicesRelationshipId = 1
                     }
                 ]
             };

@@ -16,11 +16,11 @@ namespace Honua.Core.Features.Portal.Services;
 public sealed class PortalItemProjector : IPortalItemProjector
 {
     private readonly PublishedMetadataProjection _catalogProjection;
-    private readonly IEsriConstructCapabilityRegistry _capabilityRegistry;
+    private readonly IGeoServicesConstructCapabilityRegistry _capabilityRegistry;
 
     public PortalItemProjector(
         IAccessPolicyEvaluator accessPolicyEvaluator,
-        IEsriConstructCapabilityRegistry capabilityRegistry,
+        IGeoServicesConstructCapabilityRegistry capabilityRegistry,
         IPortalResourceReadAuthorizer readAuthorizer)
     {
         ArgumentNullException.ThrowIfNull(accessPolicyEvaluator);

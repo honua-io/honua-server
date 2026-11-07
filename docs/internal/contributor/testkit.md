@@ -185,11 +185,8 @@ two-minute timeout return `504 Gateway Timeout`. Invalid URLs return
 `400 Bad Request`.
 
 The nightly `cross-server-consume-nightly.yml` workflow runs the same
-suite, refreshes [`docs/compatibility/cross-server-consume-gap-report.md`](../compatibility/cross-server-consume-gap-report.md)
-from the TRX, and uploads both the TRX and gap report as workflow
-artifacts. The auto-commit step is best-effort — if the push is blocked
-(branch protection, missing token), the workflow logs a warning instead
-of failing. Known interop quirks are recorded as `[Skip = "gap: ..."]`
+suite, generates the gap report from the TRX and uploads both as workflow
+artifacts. Known interop quirks are recorded as `[Skip = "gap: ..."]`
 on the test method so they surface in the gap report rather than
 failing the run.
 

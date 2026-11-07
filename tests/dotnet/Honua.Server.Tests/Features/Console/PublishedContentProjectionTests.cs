@@ -22,7 +22,7 @@ namespace Honua.Server.Tests.Features.Console;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.GetMetadata)]
-public sealed class PublishedContentProjectionTests : IAsyncLifetime
+public sealed partial class PublishedContentProjectionTests : IAsyncLifetime
 {
     private const string AdminKey = "published-content-test-key";
     private readonly TestMetadataV2GraphProvider _provider = new(Graph());
@@ -381,27 +381,6 @@ public sealed class PublishedContentProjectionTests : IAsyncLifetime
         Assert.False(item.GetProperty("typeMetadata").TryGetProperty("url", out _));
     }
 
-    [IntegrationTest]
-    [Endpoint("GET /api/v1/console/content")]
-    [Endpoint("GET /api/v1/console/content/{id}")]
-    [Endpoint("GET /sharing/rest/search")]
-    public async Task GetContent_HiddenPublication_RemainsReadOnlyInManagementAndAbsentFromPortal()
-    {
-        var graph = Graph();
-        _provider.SetGraph(graph with { Publications = [graph.Publications[0] with { Advertised = false }] });
-        using var management = await ReadContentAsync("?itemType=layer");
-        var layer = Assert.Single(management.RootElement.GetProperty("items").EnumerateArray());
-        Assert.Equal("publication", layer.GetProperty("id").GetString());
-        Assert.Equal(["view"], layer.GetProperty("actions").EnumerateArray().Select(action => action.GetString()));
-        using var detail = await _admin.GetAsync("/api/v1/console/content/publication");
-        Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
-        using var anonymous = _fixture.CreateClient();
-        using var response = await anonymous.GetAsync("/sharing/rest/search?f=json");
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        using var portal = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        Assert.Equal(0, portal.RootElement.GetProperty("total").GetInt32());
-    }
-
     private async Task<JsonDocument> ReadContentAsync(string suffix = "")
     {
         using var response = await _admin.GetAsync("/api/v1/console/content" + suffix);
@@ -409,30 +388,4 @@ public sealed class PublishedContentProjectionTests : IAsyncLifetime
         using var envelope = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         return JsonDocument.Parse(envelope.RootElement.GetProperty("data").GetRawText());
     }
-
-    private static MetadataV2Graph Graph() => new()
-    {
-        Revision = 1,
-        Folders = [new() { Metadata = new() { Id = "folder", Name = "Survey" } }],
-        Services = [new()
-        {
-            Metadata = new() { Id = "service", Name = "internal", Title = "Parcels" },
-            PublicName = "Parcels", FolderId = "folder", Protocols = [ServiceProtocols.FeatureServer],
-            Status = new() { Lifecycle = MetadataV2LifecycleStatus.Active },
-            AccessPolicy = new() { AllowAnonymous = true }
-        }],
-        Resources = [new()
-        {
-            Metadata = new() { Id = "resource", Name = "parcels", Title = "Parcels" },
-            Status = new() { Lifecycle = MetadataV2LifecycleStatus.Active },
-            AccessPolicy = new() { AllowAnonymous = true }
-        }],
-        Publications = [new()
-        {
-            Metadata = new() { Id = "publication", Name = "parcels" },
-            IsPrimary = true,
-            ServiceId = "service", ResourceId = "resource", LayerIndex = 0,
-            Status = new() { Lifecycle = MetadataV2LifecycleStatus.Active }
-        }]
-    };
 }

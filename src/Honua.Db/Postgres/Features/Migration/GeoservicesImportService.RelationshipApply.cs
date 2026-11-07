@@ -139,7 +139,7 @@ internal sealed partial class GeoservicesImportService
                 requests.Add(new MigrationRelationshipApplyRequest
                 {
                     SourceRelationshipId = relationship.SourceRelationshipId,
-                    EsriRelationshipId = relationship.EsriRelationshipId,
+                    GeoServicesRelationshipId = relationship.GeoServicesRelationshipId,
                     Name = relationship.Name,
                     OriginLayerId = originLayerId,
                     RelatedLayerId = relatedLayerId,
@@ -287,7 +287,7 @@ internal sealed partial class GeoservicesImportService
         // parity probe can report missing origin-side persistence as a manual
         // review record rather than a zero-coverage hole.
         var refValue = originLayerId.HasValue
-            ? $"rel-{originLayerId.Value}-{(relationship.EsriRelationshipId?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "deferred")}"
+            ? $"rel-{originLayerId.Value}-{(relationship.GeoServicesRelationshipId?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "deferred")}"
             : relationship.TargetRelationshipRef ?? sourceRelationshipId;
         return new MigrationRelationshipApplyOutcome
         {

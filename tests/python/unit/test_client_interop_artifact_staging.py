@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import os
 import re
 import subprocess
 import tempfile
@@ -20,6 +21,52 @@ def run_staging(artifacts: Path, output: Path, selection: str = "") -> subproces
 
 
 class ClientInteropArtifactStagingTests(unittest.TestCase):
+    def test_baseline_refresh_preserves_smoke_receipts(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            script = root / "scripts/client-compat/refresh-baselines.sh"
+            script.parent.mkdir(parents=True)
+            script.write_text((ROOT / "scripts/client-compat/refresh-baselines.sh").read_text())
+            receipt = root / "artifacts/client-compat/smoke/receipt.cert.json"
+            receipt.parent.mkdir(parents=True)
+            receipt.write_text('{"smoke":"preserved"}')
+            tools = root / "tools"
+            tools.mkdir()
+            for name, source in {"git": "printf '%040d\\n' 0", "docker": "exit 0"}.items():
+                executable = tools / name
+                executable.write_text("#!/bin/sh\n" + source + "\n")
+                executable.chmod(0o755)
+
+            result = subprocess.run(
+                ["bash", str(script), "gdal"], env=os.environ | {"PATH": str(tools) + os.pathsep + os.environ["PATH"]},
+                capture_output=True, text=True,
+            )
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertTrue(receipt.exists(), "refresh must preserve independent smoke receipts")
+            self.assertEqual('{"smoke":"preserved"}', receipt.read_text())
+
+    def test_default_comparator_does_not_read_smoke_receipts(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            passing = {"client_lane": "cli", "protocol": "wfs", "results": [{"test_case_id": "query", "status": "pass"}]}
+            for path, envelope in (
+                ("tests/baselines/client-compat/gdal/receipt.cert.json", passing),
+                ("artifacts/client-interop/gdal/receipt.cert.json", passing),
+                ("artifacts/client-compat/smoke/receipt.cert.json", passing | {"results": [{"test_case_id": "query", "status": "fail"}]}),
+            ):
+                receipt = root / path
+                receipt.parent.mkdir(parents=True, exist_ok=True)
+                receipt.write_text(json.dumps(envelope))
+
+            result = subprocess.run(
+                ["python3", str(ROOT / "scripts/client-compat/diff-baselines.py"), "--strict"],
+                cwd=root, capture_output=True, text=True,
+            )
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertTrue((root / "artifacts/client-interop/gap-report.md").is_file())
+
     def test_compose_readiness_probe_uses_get_not_head(self) -> None:
         compose = (ROOT / "docker/client-compat/compose.yml").read_text(
             encoding="utf-8"
@@ -190,7 +237,7 @@ class SingleArtifactLayoutTests(unittest.TestCase):
         mappings = dict(re.findall(r'\[([\w-]+)\]="([\w-]+)"', workflow))
         self.assertEqual(mappings, module.LANES)
         self.assertIn('EXPECTED_LANES: ${{ join(fromJSON(needs.prepare.outputs.lanes), \',\') }}', workflow)
-        self.assertIn('output "$EXPECTED_LANES"', workflow)
+        self.assertIn('artifacts/client-interop "$EXPECTED_LANES"', workflow)
 
 
 if __name__ == "__main__":
