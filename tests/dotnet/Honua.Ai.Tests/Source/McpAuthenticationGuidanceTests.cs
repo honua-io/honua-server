@@ -84,7 +84,7 @@ public sealed class McpAuthenticationGuidanceTests : IAsyncLifetime
         using var request = BuildRequest("tools/list", "{}", "full", modern);
         using var response = await client.SendAsync(request);
 
-        response.StatusCode.Should().Be(modern ? HttpStatusCode.Forbidden : HttpStatusCode.OK);
+        response.StatusCode.Should().Be(modern ? HttpStatusCode.BadRequest : HttpStatusCode.OK);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         document.RootElement.GetProperty("error").GetProperty("data").GetProperty("code")
             .GetString().Should().Be("permission_denied");
