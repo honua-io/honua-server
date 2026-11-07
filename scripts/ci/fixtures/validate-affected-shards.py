@@ -518,9 +518,9 @@ def check_skip_paths() -> None:
 def check_shard_owned_roots_are_product_code(config: dict[str, Any]) -> int:
     """A diff limited to a shard INPUT outside `src/`/`tests/dotnet/` must run.
 
-    `.github/ci-shards.json` routes `observability/`, `samples/gp/` and
+    `.github/ci-shards.json` routes `eng/telemetry/`, `samples/gp/` and
     `tests/fixtures/toolbox-translation/` -- `SloMetricContractTests` reads
-    `observability/slo-metric-contract.json`, `ToolboxTranslationEndpointTests`
+    `eng/telemetry/slo-metric-contract.v1.json`, `ToolboxTranslationEndpointTests`
     consumes the toolbox fixtures. A static `src/` + `tests/dotnet/` admission
     test answered `no_product_code` for exactly those diffs, so the detector
     ran nothing while the trailing matrix could still go red on them.

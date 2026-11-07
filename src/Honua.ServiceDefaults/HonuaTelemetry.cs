@@ -36,7 +36,7 @@ public static class HonuaTelemetry
     /// </summary>
     public static readonly Meter Meter = new(ServiceName, ServiceVersion);
 
-    // ── SLO metric contract (observability/slo-metric-contract.json) ──────────────────────────────
+    // ── SLO metric contract (eng/telemetry/slo-metric-contract.v1.json) ──────────────────────────────
     //
     // The three instruments below are the platform SLO contract: alert rules (honua-helm
     // PrometheusRule, honua-devops recording rules) and the honua-release observability gate
@@ -587,7 +587,7 @@ public static class HonuaTelemetry
         /// <summary>
         /// The GeoServices/ArcGIS REST protocol family — the surfaces whose requests are counted by
         /// the denominator that pairs with <see cref="GeoServicesErrors"/>. This is the single
-        /// definition of that set; <c>observability/slo-metric-contract.json</c> publishes it as a
+        /// definition of that set; <c>eng/telemetry/slo-metric-contract.v1.json</c> publishes it as a
         /// PromQL selector for out-of-repo alert rules and the release gate, and a test asserts the
         /// two stay identical. Omitting a member makes the denominator smaller and the measured
         /// error rate higher, i.e. it fails closed.

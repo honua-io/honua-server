@@ -96,7 +96,7 @@ groups:
       # These use honua_database_query_duration_ms_bucket. An earlier revision asked for
       # honua_query_duration_ms_bucket, which the server has never exported: in PromQL that is not
       # an error, histogram_quantile over an empty vector is empty, and the alert simply never
-      # fired. See observability/metric-name-contract.json (honua-server#3323).
+      # fired. See eng/telemetry/metric-name-contract.v1.json (honua-server#3323).
       - alert: HonuaQueryLatencyHigh
         expr: histogram_quantile(0.95, sum(rate(honua_database_query_duration_ms_bucket[5m])) by (le)) > 1000
         for: 5m
@@ -121,7 +121,7 @@ groups:
 
       # Error Rate Alerts
       #
-      # Numerator and denominator are the pair named by observability/slo-metric-contract.json
+      # Numerator and denominator are the pair named by eng/telemetry/slo-metric-contract.v1.json
       # (all_surface_error_rate). Neither honua_errors_total nor honua_queries_total, which an
       # earlier revision divided, has ever been exported by any Honua component, so this ratio was
       # empty/empty and the alert could not fire (honua-release#5, honua-server#3323).
@@ -155,7 +155,7 @@ groups:
       #
       # INERT: no Honua component emits honua_rate_limit_violations_total today, so this rule
       # evaluates to nothing. Kept as the intended shape of the alert and recorded under
-      # `not_emitted` in observability/metric-name-contract.json so the metric-name guard treats it
+      # `not_emitted` in eng/telemetry/metric-name-contract.v1.json so the metric-name guard treats it
       # as a known gap rather than silently accepting any name. It starts working the moment the
       # rate limiter grows a counter under this name.
       - alert: HonuaRateLimitViolationsHigh
@@ -207,7 +207,7 @@ groups:
       # Circuit Breaker Alerts (based on log analysis or custom metrics)
       #
       # INERT: no Honua component emits honua_circuit_breaker_state_changes_total today. Recorded
-      # under `not_emitted` in observability/metric-name-contract.json; see the note on
+      # under `not_emitted` in eng/telemetry/metric-name-contract.v1.json; see the note on
       # HonuaRateLimitViolationsHigh above.
       - alert: HonuaCircuitBreakerOpen
         expr: increase(honua_circuit_breaker_state_changes_total{state="open"}[5m]) > 0
