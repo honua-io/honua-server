@@ -118,16 +118,20 @@ public sealed class CacheServiceResponseCacheBudgetTests
     public async Task BindKeyAsync_RecoveryEpochChanges_ReleasesInvalidatedReservations()
     {
         var backend = new RecordingCache();
-        var cache = ResponseCache(backend, maxEntries: 1);
+        var cache = ResponseCache(backend, maxEntries: 2);
         const string first = "query:featureserver:service:alpha:layer:1:first";
         const string second = "query:featureserver:service:alpha:layer:1:second";
         var payload = new CachedResponse(new byte[32], "application/json");
+        await cache.SetAsync("raw", payload, Lifetime);
         await cache.SetAsync(await cache.BindKeyAsync(first), payload, Lifetime);
         await backend.Service.SetAsync("response-version:recovery", "new-epoch", Lifetime);
 
         await cache.SetAsync(await cache.BindKeyAsync(second), payload, Lifetime);
+        await cache.SetAsync("another-raw", payload, Lifetime);
 
-        Assert.Equal(2, backend.ResponseWrites);
+        Assert.Equal(3, backend.ResponseWrites);
+        Assert.Same(payload, await cache.GetAsync<CachedResponse>("raw"));
+        Assert.False(backend.Responses.ContainsKey("response:another-raw"));
         Assert.Same(payload, await cache.GetAsync<CachedResponse>(second));
     }
 
