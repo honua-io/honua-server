@@ -198,7 +198,7 @@ public sealed partial class AdminLayerAuthoringEndpointsTests
                 {
                     Id = "reviewed-parent", Name = "Reviewed summary", RelatedLayerId = 1,
                     OriginField = "objectid", DestinationField = "related_id", Role = "origin",
-                    Composite = true, EsriRelationshipId = 7,
+                    Composite = true, GeoServicesRelationshipId = 7,
                 }],
             },
             new LayerRelationshipBatchUpdateItem
@@ -208,7 +208,7 @@ public sealed partial class AdminLayerAuthoringEndpointsTests
                 {
                     Id = "reviewed-child", Name = "Reviewed parent", RelatedLayerId = 0,
                     OriginField = invalidChildField ? "missing_field" : "related_id", DestinationField = "objectid",
-                    Role = "destination", Composite = true, EsriRelationshipId = 7,
+                    Role = "destination", Composite = true, GeoServicesRelationshipId = 7,
                 }],
             },
         ],

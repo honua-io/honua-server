@@ -309,7 +309,7 @@ public sealed class FeatureServerRelationshipResourceTests
             => new()
             {
                 Id = "relationship",
-                EsriRelationshipId = fallbackId ? null : relationshipId,
+                GeoServicesRelationshipId = fallbackId ? null : relationshipId,
                 Name = related == "origin" ? destinationName : "Origin to destination",
                 RelatedResourceId = related,
                 Role = role,

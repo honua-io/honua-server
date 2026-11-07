@@ -24,7 +24,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly PostgresSessionLockConnections _sessionLockConnections;
     private readonly ICrsRegistry _crsRegistry;
-    private readonly IEsriConstructCapabilityRegistry _constructCapabilityRegistry;
+    private readonly IGeoServicesConstructCapabilityRegistry _constructCapabilityRegistry;
     private readonly IAttachmentStore? _attachmentStore;
     private readonly IMigrationCatalogWriter? _catalogWriter;
     private readonly GeoservicesLayerPublicationService _layerPublicationService;
@@ -35,7 +35,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         GeoServicesRestClient restClient,
         IAdoNetDatabaseConnectionProvider connectionProvider,
         ICrsRegistry crsRegistry,
-        IEsriConstructCapabilityRegistry constructCapabilityRegistry,
+        IGeoServicesConstructCapabilityRegistry constructCapabilityRegistry,
         ILogger<GeoservicesImportService> logger,
         GeoservicesLayerPublicationService layerPublicationService,
         IAttachmentStore? attachmentStore = null,

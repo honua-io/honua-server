@@ -173,7 +173,7 @@ public sealed partial class AdminLayerAuthoringEndpointsTests : IAsyncLifetime
                     Cardinality = "one-to-many",
                     OriginField = "objectid",
                     DestinationField = "related_id",
-                    EsriRelationshipId = 7,
+                    GeoServicesRelationshipId = 7,
                 },
             ],
         };

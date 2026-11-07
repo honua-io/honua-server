@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json.Serialization;
+
 namespace Honua.Server.Features.Admin.Models;
 
 public sealed class LayerRelationshipBatchUpdateRequest
@@ -43,7 +45,8 @@ public sealed class LayerRelationshipUpdateItem
 
     public required string DestinationField { get; init; }
 
-    public int? EsriRelationshipId { get; init; }
+    [JsonPropertyName("esriRelationshipId")]
+    public int? GeoServicesRelationshipId { get; init; }
 
     // A composite relationship keeps both ends declared and read-only.
     public bool Composite { get; init; }
@@ -74,7 +77,8 @@ public sealed class LayerRelationshipItem
 
     public required string DestinationField { get; init; }
 
-    public int? EsriRelationshipId { get; init; }
+    [JsonPropertyName("esriRelationshipId")]
+    public int? GeoServicesRelationshipId { get; init; }
 
     public bool Composite { get; init; }
 }
