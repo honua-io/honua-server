@@ -12,6 +12,7 @@ using Honua.Core.Features.Guardrails.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Server.Features.Operations;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -193,7 +194,7 @@ public sealed class OperationGatewayStateMachineTests
         result.ExecutionOperationId.Should().BeNull();
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(ComposeExecutorCodes.ReadbackIncomplete, false)]
     [InlineData(ComposeExecutorCodes.ReadbackIncomplete, true)]
     [InlineData(ComposeExecutorCodes.AuditUnrecorded, false)]
@@ -243,7 +244,7 @@ public sealed class OperationGatewayStateMachineTests
         persisted.ResolutionReason.Should().Be(code);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task SubmitAsync_ComposeReadbackFails_ReturnsFailedHandleWithExecutorCode()
     {
         var executor = Substitute.For<IOperationExecutor>();
@@ -268,7 +269,7 @@ public sealed class OperationGatewayStateMachineTests
         handle.Reason.Should().Be(ComposeExecutorCodes.ReadbackIncomplete);
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(OperationClass.AdminConfigChange, "Unknown ops action 'private-value'.")]
     [InlineData(OperationClass.Deploy, ComposeExecutorCodes.ReadbackIncomplete)]
     public async Task SubmitAsync_UnreportableOpsFailure_LeavesSanitizationToDispatcher(OperationClass kind, string reason)
