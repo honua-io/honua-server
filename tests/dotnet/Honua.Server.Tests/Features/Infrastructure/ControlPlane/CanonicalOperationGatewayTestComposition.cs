@@ -29,7 +29,8 @@ internal static class CanonicalOperationGatewayTestComposition
         IGuardrailLadder ladder,
         IEnumerable<LegacyExecutor> actuators,
         Action<IServiceCollection>? configure = null,
-        IProposalNotifier? notifier = null)
+        IProposalNotifier? notifier = null,
+        IOperationInstanceStore? operationInstanceStore = null)
     {
         var actuatorArray = actuators.ToArray();
         var services = new ServiceCollection();
@@ -42,7 +43,7 @@ internal static class CanonicalOperationGatewayTestComposition
         // test-only store supplies the migrated acceptance envelope so those tests can
         // continue exercising gateway state transitions; production replay remains
         // fail-closed when the original durable instance is absent.
-        var instanceStore = new LegacyProposalTestOperationInstanceStore();
+        var instanceStore = operationInstanceStore ?? new LegacyProposalTestOperationInstanceStore();
         services.AddSingleton<IOperationInstanceStore>(instanceStore);
         var typedActuators = actuatorArray
             .Select(actuator => (TypedExecutor)new LegacyGatewayOperationAdapter(actuator))

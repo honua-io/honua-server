@@ -6,7 +6,10 @@ using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Guardrails.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.Operations.Domain;
+using Honua.Core.Features.Operations.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Monitoring;
 using Honua.TestKit.Attributes;
@@ -94,10 +97,22 @@ public sealed partial class OperationGatewayStateMachineTests
     {
         var proposal = CreateProposal("p-approval-audit-failed", OperationClass.Deploy, OperationProposalStatus.AwaitingApproval);
         var store = new InMemoryProposalStore(proposal);
+        var instances = new VolatileOperationInstanceStore();
+        var accepted = new OperationHandle
+        {
+            OperationInstanceId = proposal.Audit.OperationInstanceId!,
+            OperationId = "test.legacy-approved-proposal",
+            CorrelationId = proposal.Audit.CorrelationId,
+            ProposalId = proposal.ProposalId,
+            Status = OperationHandleStatus.RequiresApproval,
+            CreatedAt = proposal.CreatedAt,
+            UpdatedAt = proposal.UpdatedAt,
+        };
+        Assert.True(await instances.TryCreateAsync(accepted));
         var executor = new PendingApprovalExecutor();
         executor.Completion.SetResult("execution-id");
-        var gateway = BuildGateway(store, executor,
-            configure: services => services.AddSingleton(audit));
+        var gateway = CanonicalOperationGatewayTestComposition.Build(store, Substitute.For<IGuardrailLadder>(), [executor],
+            configure: services => services.AddSingleton(audit), operationInstanceStore: instances);
 
         var result = await gateway.ApplyApprovedProposalAsync(proposal.ProposalId, "human-approver");
 
@@ -108,6 +123,11 @@ public sealed partial class OperationGatewayStateMachineTests
         Assert.Contains("actuation did not begin", result.ResolutionReason, StringComparison.Ordinal);
         Assert.Equal(result.ResolutionReason, persisted.ResolutionReason);
         Assert.Contains(result.ResolutionReason!, result.Plan.BlockingReasons);
+        var handle = await instances.GetAsync(accepted.OperationInstanceId);
+        Assert.Equal(OperationHandleStatus.Failed, handle!.Status);
+        Assert.Equal(result.ResolutionReason, handle.Reason);
+        Assert.Equal(accepted.OperationInstanceId, handle.OperationInstanceId);
+        Assert.Equal(proposal.ProposalId, handle.ProposalId);
     }
 
     private static LocalOperateEventFeed ApprovalEventFeed(RecordingAuditLog audit)
