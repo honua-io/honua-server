@@ -7,6 +7,7 @@ using Honua.Core.Features.Caching;
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Middleware;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Caching.Distributed;
@@ -25,31 +26,44 @@ public sealed class ResponseCacheReconnectTests
     private const string LayerPattern = "query:featureserver:service:alpha:layer:1:*";
     private static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(5);
 
-    [UnitTest]
+    [UnitTheory]
+    [InlineData("affected")]
+    [InlineData("another")]
     [Operation(Operations.Cache)]
-    public async Task GetAsync_NamespaceInvalidatedDuringOutage_RejectsSharedAndLateOfflineEntriesAfterRecovery()
+    public async Task GetAsync_NamespaceInvalidatedDuringOutage_RejectsSharedAndLateOfflineEntriesAfterRecovery(string recoverySchema)
     {
-        var shared = new ConcurrentDictionary<string, byte[]>(StringComparer.Ordinal);
-        var ownerBackend = new FaultyCache(shared);
-        await using var ownerService = CacheNode(ownerBackend.Cache);
-        await using var replicaService = CacheNode(new FaultyCache(shared).Cache);
-        var owner = new CacheServiceResponseCache(ownerService, Settings());
-        var replica = new CacheServiceResponseCache(replicaService, Settings());
-        var oldPayload = new CachedResponse(new byte[32], "application/json");
-        await owner.SetAsync(QueryKey, oldPayload, Lifetime);
-        Assert.NotNull(await replica.GetAsync<CachedResponse>(QueryKey));
-        ownerBackend.WriteUnavailable = true;
-        await ownerService.SetAsync("partition-marker", "unavailable", Lifetime);
-        Assert.True(ownerService.IsUsingFallback);
-        await owner.RemoveByPatternAsync(LayerPattern);
-        var offlineKey = await owner.BindKeyAsync(QueryKey);
+        var schema = new SchemaContext();
+        try
+        {
+            schema.CurrentSchema = "affected";
+            var shared = new ConcurrentDictionary<string, byte[]>(StringComparer.Ordinal);
+            var ownerBackend = new FaultyCache(shared);
+            await using var ownerService = CacheNode(ownerBackend.Cache);
+            await using var replicaService = CacheNode(new FaultyCache(shared).Cache);
+            var owner = new CacheServiceResponseCache(ownerService, Settings());
+            var replica = new CacheServiceResponseCache(replicaService, Settings());
+            var oldPayload = new CachedResponse(new byte[32], "application/json");
+            await owner.SetAsync(QueryKey, oldPayload, Lifetime);
+            Assert.NotNull(await replica.GetAsync<CachedResponse>(QueryKey));
+            ownerBackend.WriteUnavailable = true;
+            await ownerService.SetAsync("partition-marker", "unavailable", Lifetime);
+            Assert.True(ownerService.IsUsingFallback);
+            await owner.RemoveByPatternAsync(LayerPattern);
+            var offlineKey = await owner.BindKeyAsync(QueryKey);
 
-        ownerBackend.WriteUnavailable = false;
-        Assert.True(await RestoreAsync(ownerService));
+            ownerBackend.WriteUnavailable = false;
+            schema.CurrentSchema = recoverySchema;
+            Assert.True(await RestoreAsync(ownerService));
+            schema.CurrentSchema = "affected";
 
-        Assert.Null(await replica.GetAsync<CachedResponse>(QueryKey));
-        await owner.SetAsync(offlineKey, oldPayload, Lifetime);
-        Assert.Null(await replica.GetAsync<CachedResponse>(QueryKey));
+            Assert.Null(await replica.GetAsync<CachedResponse>(QueryKey));
+            await owner.SetAsync(offlineKey, oldPayload, Lifetime);
+            Assert.Null(await replica.GetAsync<CachedResponse>(QueryKey));
+        }
+        finally
+        {
+            schema.CurrentSchema = null;
+        }
     }
 
     [UnitTest]
@@ -72,7 +86,7 @@ public sealed class ResponseCacheReconnectTests
         var namespaceWrites = 0;
         ownerBackend.AfterWrite = async key =>
         {
-            if (key.Contains("response-version:query:featureserver", StringComparison.Ordinal)
+            if (key.Contains("response-version:", StringComparison.Ordinal)
                 && Interlocked.Increment(ref namespaceWrites) == 1)
             {
                 generationPublished.SetResult();
@@ -98,7 +112,7 @@ public sealed class ResponseCacheReconnectTests
 
     [UnitTest]
     [Operation(Operations.Cache)]
-    public async Task GetAsync_NamespaceWriteIsPending_DeclinesRecoveryUntilTheWriteFinishes()
+    public async Task GetAsync_NamespaceWriteIsPending_RecoveryHidesOldAndLateResponses()
     {
         var shared = new ConcurrentDictionary<string, byte[]>(StringComparer.Ordinal);
         var ownerBackend = new FaultyCache(shared);
@@ -118,6 +132,9 @@ public sealed class ResponseCacheReconnectTests
                 await finishNamespace.Task;
             }
         };
+        var oldPayload = new CachedResponse(new byte[32], "application/json");
+        var oldKey = await owner.BindKeyAsync(QueryKey);
+        await owner.SetAsync(oldKey, oldPayload, Lifetime);
         var invalidating = owner.RemoveByPatternAsync("query:featureserver:service:*");
         try
         {
@@ -126,8 +143,10 @@ public sealed class ResponseCacheReconnectTests
             await ownerService.SetAsync("partition-marker", "unavailable", Lifetime);
             ownerBackend.WriteUnavailable = false;
 
-            Assert.False(await RestoreAsync(ownerService).WaitAsync(TimeSpan.FromSeconds(5)));
-            Assert.True(ownerService.IsUsingFallback);
+            Assert.True(await RestoreAsync(ownerService).WaitAsync(TimeSpan.FromSeconds(5)));
+            Assert.Null(await replica.GetAsync<CachedResponse>(QueryKey));
+            await owner.SetAsync(oldKey, oldPayload, Lifetime);
+            Assert.Null(await replica.GetAsync<CachedResponse>(QueryKey));
         }
         finally
         {
@@ -135,9 +154,6 @@ public sealed class ResponseCacheReconnectTests
             await invalidating;
         }
 
-        var keyBeforeRecovery = await replica.BindKeyAsync(QueryKey);
-        await replica.SetAsync(keyBeforeRecovery, new CachedResponse(new byte[32], "application/json"), Lifetime);
-        Assert.True(await RestoreAsync(ownerService));
         Assert.Null(await replica.GetAsync<CachedResponse>(QueryKey));
     }
 
