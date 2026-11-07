@@ -75,7 +75,7 @@ public sealed partial class ManagedComposeObserverTests
         Assert.Equal(first.LastSuccessfulAt, release.LastSuccessfulAt);
         Assert.DoesNotContain(EvidencePostureVocabulary.ReasonCodes.NeverSucceeded, release.ReasonCodes);
         Assert.DoesNotContain(EvidencePostureVocabulary.ReasonCodes.SourceUnavailable, release.ReasonCodes);
-        Assert.Contains("targetUnready", release.ReasonCodes);
+        Assert.Contains(EvidencePostureVocabulary.ReasonCodes.TargetUnready, release.ReasonCodes);
         Assert.False(EvidencePostureFactory.IsActionable(release));
         Assert.Null(targets[0].ServerVersion);
     }
@@ -165,7 +165,7 @@ public sealed partial class ManagedComposeObserverTests
 
         Assert.Equal(EvidencePostureVocabulary.Completeness.Unavailable, incomplete.Completeness);
         Assert.Equal(first.LastSuccessfulAt, incomplete.LastSuccessfulAt);
-        Assert.Contains("readbackIncomplete", incomplete.ReasonCodes);
+        Assert.Contains(EvidencePostureVocabulary.ReasonCodes.ReadbackIncomplete, incomplete.ReasonCodes);
         Assert.NotNull(incomplete.ValidUntil);
         Assert.False(EvidencePostureFactory.IsActionable(incomplete));
         var expired = EvidencePostureFactory.Validate(incomplete, first.LastSuccessfulAt!.Value.AddMinutes(3));

@@ -24,6 +24,7 @@ internal sealed class ManagedComposeObserver(
 
     private readonly object _collectionGate = new();
     private Task<IReadOnlyList<OpsManagedTargetHealthView>>? _inFlight;
+    // ReadAsync coalesces callers, so this history has a single collection writer.
     private readonly Dictionary<(string TargetId, string Backend),
         (DateTimeOffset? Collection, DateTimeOffset? Release)> _lastSuccessfulObservations = [];
 
@@ -112,10 +113,10 @@ internal sealed class ManagedComposeObserver(
     private static bool HasObservedRelease(OpsManagedTargetHealthView target)
         => target is { Available: true, RunningImage: not null, ServerVersion: not null };
 
-    private static DateTimeOffset? LastCommonSuccess(IEnumerable<DateTimeOffset?> observations)
+    private static DateTimeOffset? LastCommonSuccess(IEnumerable<DateTimeOffset?> successTimes)
     {
-        var successes = observations.ToArray();
-        return successes.Length > 0 && successes.All(time => time.HasValue) ? successes.Min() : null;
+        var times = successTimes.ToArray();
+        return times.Length > 0 && times.All(time => time.HasValue) ? times.Min() : null;
     }
 
     internal static EvidenceSourceEnvelope Source(IReadOnlyList<OpsManagedTargetHealthView> targets)
@@ -132,7 +133,7 @@ internal sealed class ManagedComposeObserver(
 
         var successful = LastCommonSuccess(targets.Select(target => target.LastSuccessfulCollectionAt));
         var reason = targets.All(target => target.Available)
-            ? EvidencePostureVocabulary.ReasonCodes.IncompleteCoverage
+            ? EvidencePostureVocabulary.ReasonCodes.ReadbackIncomplete
             : EvidencePostureVocabulary.ReasonCodes.SourceUnavailable;
         return EvidencePostureFactory.Unavailable(SourceId, EvidencePostureVocabulary.BackendKinds.Composite, "compose-executor",
             reason, observedAt: successful, lastSuccessfulAt: successful, maximumAge: TimeSpan.FromMinutes(2));
@@ -184,7 +185,7 @@ internal sealed class ManagedComposeObserver(
                 : observed.Length > 0
                     ? EvidencePostureFactory.Partial(sourceId, EvidencePostureVocabulary.BackendKinds.Composite,
                         "compose-executor", observed.Min(target => target.ObservedAt!.Value), TimeSpan.FromMinutes(2),
-                        failureReason, coverage)
+                        EvidencePostureVocabulary.ReasonCodes.IncompleteCoverage, coverage)
                     : EvidencePostureFactory.Unavailable(sourceId, EvidencePostureVocabulary.BackendKinds.Composite,
                         "compose-executor", failureReason, observedAt: successful, lastSuccessfulAt: successful,
                         maximumAge: TimeSpan.FromMinutes(2), coverage: coverage);
@@ -219,6 +220,6 @@ internal sealed class ManagedComposeObserver(
         }
         return unobserved.Any(target => target is { Status: "Unhealthy" })
             ? EvidencePostureVocabulary.ReasonCodes.TargetUnready
-            : EvidencePostureVocabulary.ReasonCodes.IncompleteCoverage;
+            : EvidencePostureVocabulary.ReasonCodes.ReadbackIncomplete;
     }
 }

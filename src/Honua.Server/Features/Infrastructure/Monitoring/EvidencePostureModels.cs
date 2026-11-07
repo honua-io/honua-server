@@ -114,6 +114,7 @@ public static class EvidencePostureVocabulary
     {
         public const string SourceUnavailable = "sourceUnavailable";
         public const string TargetUnready = "targetUnready";
+        public const string ReadbackIncomplete = "readbackIncomplete";
         public const string NeverSucceeded = "neverSucceeded";
         public const string Stale = "stale";
         public const string MissingObservationTime = "missingObservationTime";
@@ -201,6 +202,9 @@ internal static class EvidencePostureFactory
             ReasonCodes = [reasonCode],
             Coverage = coverage,
             MaximumAgeSeconds = maximumAge is { } age ? (long)age.TotalSeconds : null,
+            ValidUntil = observedAt is { } observation && maximumAge is { } maximum
+                ? observation.ToUniversalTime().Add(maximum)
+                : null,
         };
 
     public static EvidenceSourceEnvelope Partial(
