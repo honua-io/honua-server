@@ -16,8 +16,8 @@ internal static class AdminInfoEndpoints
 {
     public static void MapAdminInfoEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        // honua-server#5378: the capabilities handshake advertises the embedded
-        // release/component-versions.json, so refuse to start when that declaration differs from
+        // The capabilities handshake advertises the embedded
+        // eng/release/component-versions.v1.json, so refuse to start when that declaration differs from
         // the contract versions this server actually serves.
         ContractVersionsStartupCheck.Validate(
             ComponentVersionsDeclaration.Embedded.ContractVersions,
@@ -118,8 +118,8 @@ internal static class AdminInfoEndpoints
                 AdminApiMajor = AdminApiMajor,
                 MetadataApiVersion = MetadataV2Constants.ApiVersion,
                 MetadataSchemaVersion = MetadataV2Constants.SchemaVersion,
-                // The release-train contract-live gate (ruling R27) reads this map as the whole
-                // advertised contract set, keyed like release/component-versions.json (#5378).
+                // The release-train contract-live gate reads this map as the whole
+                // advertised contract set, keyed like eng/release/component-versions.v1.json.
                 ContractVersions = declaration.ContractVersions,
                 SchemaVersions = declaration.SchemaVersions
             }

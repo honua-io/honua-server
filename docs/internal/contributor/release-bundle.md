@@ -10,7 +10,7 @@ release-train scoreboard.
 Foundation-first: it composes the building blocks that already exist and is
 honest about coverage — suites not yet wired to the prebuilt image are reported
 as *not-yet-gated*, never silently skipped. Widen coverage by editing the
-registry (`release/bundle-suites.json`).
+registry (`eng/release/bundle-suites.v1.json`).
 
 ## Pieces
 
@@ -48,10 +48,10 @@ this fresh-install check does not claim upgrade qualification.
 | File | Role |
 | --- | --- |
 | `.github/workflows/release-bundle.yml` | Orchestrator: build RC image → integration evidence → SDK cut → aggregate → gated promote |
-| `release/bundle-suites.json` | Data-driven registry of integration suites, SDKs, and lanes (mode + how each pins to the RC image) |
+| `eng/release/bundle-suites.v1.json` | Data-driven registry of integration suites, SDKs, and lanes (mode + how each pins to the RC image) |
 | `scripts/release/dispatch-and-wait.sh` | Dispatch a workflow (cross-repo), wait, emit a one-line evidence JSON |
 | `scripts/release/collect-evidence.sh` | Merge per-suite results + registry → the generator's `evidence.json` |
-| `scripts/release/build-release-manifest.sh` | Assemble/refresh `release/<id>.json` from evidence (replaces hand-editing) |
+| `scripts/release/build-release-manifest.sh` | Assemble/refresh `artifacts/release/<id>.json` from evidence (replaces hand-editing) |
 | honua-devops `compat-train-release-validation.sh` | Consumes the manifest → release-train scoreboard bundle (verdict + owning follow-ups) |
 
 The generator (`build-release-manifest.sh`) is the **producer**; the honua-devops
@@ -67,9 +67,9 @@ Actions → Release Bundle (Compatibility Train) → Run workflow
   promote:     false   # evidence-first: build, test, generate manifest, validate — publish nothing
 ```
 
-The run produces the `release-train-evidence` artifact: the refreshed
-`release/<id>.json` manifest and the `release-validation-bundle.json` scoreboard
-(per-surface pass/fail + the owning follow-up issue for every gap). Promotion
+The run produces the `release-train-evidence` artifact containing `<id>.json`,
+`release-validation-bundle.json`, `evidence.json` and `downloads/*.ndjson`.
+The scoreboard records per-surface pass/fail and the owning follow-up issue for every gap. Promotion
 (`promote: true`) is a separate, protected-environment step that only proceeds
 when the validator verdict is `pass`: it publishes the SDKs for real and retags
 the immutable RC native-AOT image to the selected unsuffixed channel, with a

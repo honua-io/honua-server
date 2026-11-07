@@ -67,7 +67,7 @@ Example response fragment:
 ### Contract versions
 
 `contractVersions` maps each contract the server serves to its exact version. It uses the
-same keys as `release/component-versions.json`:
+same keys as `eng/release/component-versions.v1.json`:
 
 | key | contract | served from |
 |---|---|---|
@@ -78,7 +78,7 @@ same keys as `release/component-versions.json`:
 | `stac` | rolled-up STAC wire contract | `StacContract.Version` (also the manifest's `stac` transport `contractVersion`) |
 | `grpc` | gRPC proto package major | the `geospatial.vN` package of every mapped gRPC service |
 
-The map is `release/component-versions.json`, embedded in the server assembly at build. The
+The map is `eng/release/component-versions.v1.json`, embedded in the server assembly at build. The
 honua-release resolver reads that same file to fill the release lock, and the release-train
 contract-live gate (ruling R27) boots the candidate image and compares this map with the lock.
 The gate treats the map as the whole advertised set: a missing key, an extra key or a different

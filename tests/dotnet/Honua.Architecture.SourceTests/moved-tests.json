@@ -337,15 +337,6 @@
       "testAttributes": 2
     },
     {
-      "original": "tests/dotnet/Honua.Architecture.Tests/ReleaseTrainManifestTests.cs",
-      "current": "tests/dotnet/Honua.Architecture.SourceTests/ReleaseTrainManifestTests.cs",
-      "namespace": "Honua.Architecture.Tests",
-      "classes": [
-        "ReleaseTrainManifestTests"
-      ],
-      "testAttributes": 5
-    },
-    {
       "original": "tests/dotnet/Honua.Architecture.Tests/GeoprocessingIsolationTests.cs",
       "current": "tests/dotnet/Honua.Architecture.SourceTests/GeoprocessingIsolationTests.cs",
       "namespace": "Honua.Architecture.Tests",
