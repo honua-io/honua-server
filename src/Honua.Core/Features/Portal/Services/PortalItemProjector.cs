@@ -87,11 +87,6 @@ public sealed class PortalItemProjector : IPortalItemProjector
         ClaimsPrincipal principal,
         string baseUrl)
     {
-        if (!service.IsRoutable())
-        {
-            return null;
-        }
-
         if (!TryMapItemType(service.PrimaryProtocol, out var itemType, out var constructKey))
         {
             return null;

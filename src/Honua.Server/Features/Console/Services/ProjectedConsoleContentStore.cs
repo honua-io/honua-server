@@ -13,14 +13,8 @@ internal sealed class ProjectedConsoleContentStore(
     public async Task<ConsoleContentListResult> ListAsync(ConsoleContentQuery query, CancellationToken cancellationToken = default)
     {
         var published = await publishedContent.ReadAsync(cancellationToken).ConfigureAwait(false);
-        var items = new List<ConsoleContentItem>(published.Items.Values);
-        string? cursor = null;
-        do
-        {
-            var page = await authoredContent.ListAsync(new() { Limit = 200, Cursor = cursor }, cancellationToken).ConfigureAwait(false);
-            items.AddRange(page.Items.Where(item => !published.OwnedIds.Contains(item.Id)));
-            cursor = page.NextCursor;
-        } while (cursor is not null);
+        var items = published.Items.Values.Concat(authoredContent.SnapshotItems()
+            .Where(item => !published.OwnedIds.Contains(item.Id)));
         return ConsoleContentSelection.Page(items, query);
     }
 

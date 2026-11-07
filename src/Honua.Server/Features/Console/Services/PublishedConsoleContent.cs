@@ -63,7 +63,7 @@ internal sealed class PublishedConsoleContent(
         };
         return ProjectItem(service.Metadata, ConsoleContentItemType.Service, sidecar) with
         {
-            Title = service.Metadata.Title ?? service.EffectivePublicName,
+            Title = string.IsNullOrWhiteSpace(service.Metadata.Title) ? service.EffectivePublicName : service.Metadata.Title,
             Lifecycle = service.Status?.Lifecycle ?? MetadataV2LifecycleStatus.Active,
             OperationalState = service.Status?.State ?? MetadataV2OperationalState.Unknown
         };
@@ -101,7 +101,7 @@ internal sealed class PublishedConsoleContent(
         ItemType = itemType,
         Tags = metadata.Keywords.Count > 0 ? metadata.Keywords : metadata.Tags,
         Labels = metadata.Labels,
-        OwnerId = metadata.Publisher ?? "honua",
+        OwnerId = string.IsNullOrWhiteSpace(metadata.Publisher) ? "honua" : metadata.Publisher,
         CreatedAt = metadata.CreatedAt,
         UpdatedAt = metadata.UpdatedAt ?? metadata.CreatedAt,
         Generation = metadata.Generation,

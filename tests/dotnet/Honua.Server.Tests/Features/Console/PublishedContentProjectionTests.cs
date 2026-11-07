@@ -53,7 +53,7 @@ public sealed class PublishedContentProjectionTests : IAsyncLifetime
     [Endpoint("GET /api/v1/console/content/{id}")]
     public async Task GetContent_GraphLifecycle_TracksPublishRepublishDisableAndDelete()
     {
-        using var first = await ReadContentAsync("?itemType=layer");
+        using var first = await ReadContentAsync("?type=layer");
         var layer = Assert.Single(first.RootElement.GetProperty("items").EnumerateArray());
         Assert.Equal("publication", layer.GetProperty("id").GetString());
         Assert.Equal("Parcels", layer.GetProperty("title").GetString());

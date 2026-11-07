@@ -20,6 +20,8 @@ internal sealed class InMemoryConsoleContentStore : IConsoleContentStore
     public Task<ConsoleContentListResult> ListAsync(ConsoleContentQuery query, CancellationToken cancellationToken = default)
         => Task.FromResult(ConsoleContentSelection.Page(_items.Values, query));
 
+    internal IReadOnlyList<ConsoleContentItem> SnapshotItems() => _items.Values.ToArray();
+
     public Task<ConsoleContentItem?> GetAsync(string id, CancellationToken cancellationToken = default)
     {
         _items.TryGetValue(id, out var item);

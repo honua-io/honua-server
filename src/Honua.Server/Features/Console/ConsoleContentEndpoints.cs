@@ -84,7 +84,7 @@ internal static class ConsoleContentEndpoints
     {
         try
         {
-            if (!TryParseItemTypeList(itemType, out var itemTypes, out var itemTypeError))
+            if (!TryParseItemTypeList(itemType ?? context.Request.Query["type"].FirstOrDefault(), out var itemTypes, out var itemTypeError))
             {
                 return TypedResults.BadRequest(ApiResponse<object>.Failure($"Invalid itemType filter: {itemTypeError}"));
             }
