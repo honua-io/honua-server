@@ -4,27 +4,19 @@
 using System.Globalization;
 using System.Security.Claims;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Metadata.Services;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.Portal.Abstractions;
 using Honua.Core.Features.Portal.Domain;
 using Honua.Core.Features.Security.Abstractions;
-using Honua.Core.Features.Security.Domain;
 
 namespace Honua.Core.Features.Portal.Services;
 
 public sealed class PortalItemProjector : IPortalItemProjector
 {
-    // A throwaway authenticated principal used purely to probe the access tier:
-    // if an authenticated-but-role-less principal is allowed, the item is "org";
-    // otherwise it is "private" (role-restricted).
-    private static readonly ClaimsPrincipal AnonymousPrincipal = new(new ClaimsIdentity());
-    private static readonly ClaimsPrincipal AuthenticatedNoRolePrincipal =
-        new(new ClaimsIdentity(authenticationType: "PortalAccessProbe"));
-
-    private readonly IAccessPolicyEvaluator _accessPolicyEvaluator;
+    private readonly PublishedMetadataProjection _catalogProjection;
     private readonly IGeoServicesConstructCapabilityRegistry _capabilityRegistry;
-    private readonly IPortalResourceReadAuthorizer _readAuthorizer;
 
     public PortalItemProjector(
         IAccessPolicyEvaluator accessPolicyEvaluator,
@@ -33,10 +25,9 @@ public sealed class PortalItemProjector : IPortalItemProjector
     {
         ArgumentNullException.ThrowIfNull(accessPolicyEvaluator);
         ArgumentNullException.ThrowIfNull(capabilityRegistry);
-        _accessPolicyEvaluator = accessPolicyEvaluator;
         _capabilityRegistry = capabilityRegistry;
         ArgumentNullException.ThrowIfNull(readAuthorizer);
-        _readAuthorizer = readAuthorizer;
+        _catalogProjection = new PublishedMetadataProjection(accessPolicyEvaluator, readAuthorizer);
     }
 
     public IReadOnlyList<PortalItem> ProjectVisibleItems(
@@ -96,12 +87,7 @@ public sealed class PortalItemProjector : IPortalItemProjector
         ClaimsPrincipal principal,
         string baseUrl)
     {
-        if (!service.IsRoutable())
-        {
-            return null;
-        }
-
-        if (!TryMapItemType(service.PrimaryProtocol, out var itemType, out var urlType, out var constructKey))
+        if (!TryMapItemType(service.PrimaryProtocol, out var itemType, out var constructKey))
         {
             return null;
         }
@@ -114,70 +100,12 @@ public sealed class PortalItemProjector : IPortalItemProjector
             return null;
         }
 
-        // Collect the resources published through this service so RBAC and extent
-        // can be computed from the resource + service policy composition.
-        var publications = snapshot.PublicationsForService(service.Metadata.Id);
-        MetadataV2Resource? firstVisibleResource = null;
-        var anyResource = false;
-        var anyVisible = false;
-
-        // Not rewritten as a LINQ Select/Where pipeline: the loop body accumulates
-        // three independent pieces of state (anyResource, anyVisible, and the first
-        // visible resource) per iteration, so it is not a pure 1:1 filter/map.
-        foreach (var publication in publications)
-        {
-            var resource = snapshot.ResolveResource(publication);
-            if (!snapshot.IsRoutable(publication))
-            {
-                continue;
-            }
-
-            anyResource = true;
-            if (_readAuthorizer.Evaluate(principal, resource, service, publication).IsAllowed)
-            {
-                anyVisible = true;
-                firstVisibleResource ??= resource;
-            }
-        }
-
-        // A service whose graph still contains only retired or otherwise unroutable
-        // publications is not layerless; it has no serving surface and must disappear
-        // from Portal discovery. Truly layerless service constructs remain policy-gated.
-        if (publications.Count > 0 && !anyResource)
+        var projected = _catalogProjection.ProjectService(new(snapshot, principal, baseUrl), service);
+        if (projected is null)
         {
             return null;
         }
-
-        // A service with no resolvable publications is gated on the service policy
-        // alone; one with publications must have at least one the principal can read.
-        if (anyResource)
-        {
-            if (!anyVisible)
-            {
-                return null;
-            }
-        }
-        else if (!_readAuthorizer.Evaluate(principal, resource: null, service).IsAllowed)
-        {
-            return null;
-        }
-
-        var access = DeriveAccessTier(firstVisibleResource?.AccessPolicy, service.AccessPolicy);
-        var url = $"{baseUrl.TrimEnd('/')}{MetadataV2ServicePaths.GeoServicesPath(snapshot.Graph, service)}/{urlType}";
-        return BuildItem(service, firstVisibleResource, itemType, access, url);
-    }
-
-    private string DeriveAccessTier(AccessPolicy? layerPolicy, AccessPolicy? servicePolicy)
-    {
-        if (_accessPolicyEvaluator.Evaluate(AnonymousPrincipal, layerPolicy, servicePolicy, scope: null).IsAllowed)
-        {
-            return PortalAccessLevels.Public;
-        }
-
-        return _accessPolicyEvaluator
-            .Evaluate(AuthenticatedNoRolePrincipal, layerPolicy, servicePolicy, scope: null).IsAllowed
-            ? PortalAccessLevels.Org
-            : PortalAccessLevels.Private;
+        return BuildItem(service, projected.FirstResource, itemType, projected.Access, projected.Url!);
     }
 
     private static PortalItem BuildItem(
@@ -189,7 +117,7 @@ public sealed class PortalItemProjector : IPortalItemProjector
     {
         var metadata = service.Metadata;
         var title = FirstNonEmpty(metadata.Title, service.EffectivePublicName, metadata.Id);
-        var owner = FirstNonEmpty(metadata.Publisher, "honua");
+        var owner = PublishedMetadataProjection.ResolveOwner(metadata);
         var created = ToEpochMilliseconds(metadata.CreatedAt);
         var modified = ToEpochMilliseconds(metadata.UpdatedAt ?? metadata.CreatedAt);
 
@@ -218,29 +146,24 @@ public sealed class PortalItemProjector : IPortalItemProjector
     private static bool TryMapItemType(
         string? primaryProtocol,
         out string itemType,
-        out string urlType,
         out string constructKey)
     {
         switch (primaryProtocol)
         {
             case ServiceProtocols.FeatureServer:
                 itemType = PortalItemTypes.FeatureService;
-                urlType = ServiceProtocols.FeatureServer;
                 constructKey = GeoServicesConstructCapabilityRegistry.Keys.FacadeFeatureService;
                 return true;
             case ServiceProtocols.MapServer:
                 itemType = PortalItemTypes.MapService;
-                urlType = ServiceProtocols.MapServer;
                 constructKey = GeoServicesConstructCapabilityRegistry.Keys.FacadeMapService;
                 return true;
             case ServiceProtocols.ImageServer:
                 itemType = PortalItemTypes.ImageService;
-                urlType = ServiceProtocols.ImageServer;
                 constructKey = GeoServicesConstructCapabilityRegistry.Keys.FacadeImageService;
                 return true;
             default:
                 itemType = string.Empty;
-                urlType = string.Empty;
                 constructKey = string.Empty;
                 return false;
         }
