@@ -139,6 +139,61 @@ public sealed partial class ManagedComposeObserverTests
         Assert.False(EvidencePostureFactory.IsActionable(retained));
     }
 
+    [UnitTheory]
+    [InlineData(ManagedComposeObserver.SourceId)]
+    [InlineData(EvidencePostureVocabulary.SourceIds.PlatformReleaseStatus)]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ReadAsync_IncompleteReachableReadback_DoesNotPromoteHistoryToPartial(string sourceId)
+    {
+        var options = Configuration();
+        var ready = ReadyResponse(options);
+        var client = Substitute.For<IComposeExecutorClient>();
+        client.ExecuteAsync(Arg.Any<ComposeExecutorRequest>(), Arg.Any<CancellationToken>()).Returns(
+            ready,
+            new ComposeExecutorResponse
+            {
+                Ok = true,
+                RunningImage = ready.RunningImage,
+                ImageId = ready.ImageId,
+                Services = [new() { Service = "honua", Status = "Unknown", Description = "Incomplete" }]
+            });
+        var observer = CreateObserver(client, options);
+        var first = SourceSnapshot(sourceId, options, await observer.ReadAsync(CancellationToken.None));
+        Assert.True(EvidencePostureFactory.IsActionable(first));
+
+        var incomplete = SourceSnapshot(sourceId, options, await observer.ReadAsync(CancellationToken.None));
+
+        Assert.Equal(EvidencePostureVocabulary.Completeness.Unavailable, incomplete.Completeness);
+        Assert.Equal(first.LastSuccessfulAt, incomplete.LastSuccessfulAt);
+        Assert.Contains("readbackIncomplete", incomplete.ReasonCodes);
+        Assert.NotNull(incomplete.ValidUntil);
+        Assert.False(EvidencePostureFactory.IsActionable(incomplete));
+        var expired = EvidencePostureFactory.Validate(incomplete, first.LastSuccessfulAt!.Value.AddMinutes(3));
+        Assert.Contains(EvidencePostureVocabulary.ReasonCodes.Stale, expired.ReasonCodes);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public void ProjectRelease_SomeTargetsObserved_PreservesPartialCoverageSemantics()
+    {
+        var options = Configuration();
+        options.DeployTargets.Add(new()
+        {
+            TargetId = "another-target",
+            TargetKind = DeployTargetKind.LocalCompose,
+            Backend = ComposeDeployBackend.AdapterBackendName
+        });
+
+        var source = Assert.Single(ManagedComposeObserver.ProjectRelease(options,
+            [Target(options.PlatformRelease.ServingArtifactReference!)]).EvidencePosture!.Sources);
+
+        Assert.Equal(EvidencePostureVocabulary.Completeness.Partial, source.Completeness);
+        Assert.Contains(EvidencePostureVocabulary.ReasonCodes.IncompleteCoverage, source.ReasonCodes);
+        Assert.DoesNotContain(EvidencePostureVocabulary.ReasonCodes.SourceUnavailable, source.ReasonCodes);
+        Assert.NotNull(source.ValidUntil);
+        Assert.False(EvidencePostureFactory.IsActionable(source));
+    }
+
     private static ComposeExecutorResponse ReadyResponse(ControlPlaneOptions options) => new()
     {
         Ok = true,
