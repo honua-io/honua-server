@@ -58,7 +58,13 @@ internal sealed partial class RedisVersionJobStore : IVersionJobStore
         _pending.AddOrUpdate(job.JobId, job, (_, current) => CanAdvance(current, job) ? job : current);
         try
         {
-            await ReconcilePendingAsync(job.JobId, createWhenMissing: true, cancellationToken).ConfigureAwait(false);
+            if (_pending.TryGetValue(job.JobId, out var pending) &&
+                await TryPersistPendingAsync(pending, RedisValue.Null, cancellationToken).ConfigureAwait(false))
+            {
+                _pending.TryRemove(new KeyValuePair<Guid, VersionJob>(job.JobId, pending));
+                return;
+            }
+            await ReconcilePendingAsync(job.JobId, cancellationToken).ConfigureAwait(false);
         }
         catch (RedisException ex)
         {
@@ -75,7 +81,7 @@ internal sealed partial class RedisVersionJobStore : IVersionJobStore
 
         try
         {
-            return await ReconcilePendingAsync(jobId, createWhenMissing: false, cancellationToken).ConfigureAwait(false);
+            return await ReconcilePendingAsync(jobId, cancellationToken).ConfigureAwait(false);
         }
         catch (RedisException ex)
         {
@@ -84,7 +90,7 @@ internal sealed partial class RedisVersionJobStore : IVersionJobStore
         }
     }
 
-    private async Task<VersionJob?> ReconcilePendingAsync(Guid jobId, bool createWhenMissing, CancellationToken cancellationToken)
+    private async Task<VersionJob?> ReconcilePendingAsync(Guid jobId, CancellationToken cancellationToken)
     {
         var key = $"{KeyPrefix}{jobId:N}";
         for (var attempt = 0; ; attempt++)
@@ -98,7 +104,7 @@ internal sealed partial class RedisVersionJobStore : IVersionJobStore
             {
                 return current;
             }
-            if (current is null && !createWhenMissing)
+            if (current is null)
             {
                 return pending;
             }
@@ -109,19 +115,24 @@ internal sealed partial class RedisVersionJobStore : IVersionJobStore
             }
             if (attempt >= MaximumRecoveryWrites)
             {
-                return current ?? pending;
+                return current;
             }
 
-            cancellationToken.ThrowIfCancellationRequested();
-            var payload = JsonSerializer.Serialize(pending, VersionJobJsonContext.Default.VersionJob);
-            var acknowledged = await _database.ScriptEvaluateAsync(CompareExchangeScript, [key],
-                [snapshot.IsNullOrEmpty ? "" : snapshot, payload, (long)Retention.TotalMilliseconds]).ConfigureAwait(false);
-            if ((long)acknowledged == 1)
+            if (await TryPersistPendingAsync(pending, snapshot, cancellationToken).ConfigureAwait(false))
             {
                 _pending.TryRemove(new KeyValuePair<Guid, VersionJob>(jobId, pending));
                 return pending;
             }
         }
+    }
+
+    private async Task<bool> TryPersistPendingAsync(VersionJob pending, RedisValue snapshot, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var payload = JsonSerializer.Serialize(pending, VersionJobJsonContext.Default.VersionJob);
+        var acknowledged = await _database!.ScriptEvaluateAsync(CompareExchangeScript, [$"{KeyPrefix}{pending.JobId:N}"],
+            [snapshot.IsNullOrEmpty ? "" : snapshot, payload, (long)Retention.TotalMilliseconds]).ConfigureAwait(false);
+        return (long)acknowledged == 1;
     }
 
     private static bool CanAdvance(VersionJob current, VersionJob next)
