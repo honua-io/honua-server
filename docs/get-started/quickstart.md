@@ -21,7 +21,7 @@ extract it into a dedicated local directory, and run `python3 quickstart.py` the
 Docker Compose, Python 3.11+, and OpenSSL 3 are required; use WSL on Windows.
 No compiler or host Docker CLI bind mounts are needed.
 
-The archive contains `compose.yaml`, `compose.executor.yaml`, `quickstart.py`,
+The archive contains `compose.yaml`, `compose.executor.yaml`, `compose.console.yaml`, `quickstart.py`,
 `images.json`, a README, and `AGENTS.md`, the operating rules for AI coding agents
 working in the install directory (also published as
 [Work with AI coding agents](../guides/connect/working-with-ai-agents.md)). `images.json` pins the serving and executor images as
@@ -62,6 +62,23 @@ Rollback across an incompatible migration requires the verified pre-migration
 backup; unknown schemas and unsupported configuration changes fail closed. The
 executor retains backups under `backups/`; file storage needs its own backup.
 See [upgrade and rollback](../guides/deploy/upgrade-and-rollback.md).
+
+### Add Console and embedded Studio
+
+Run `python3 quickstart.py --profile console` in the extracted install directory.
+The package must contain a `console` image digest in `images.json` from the same
+release lock as the server. Release packaging supplies it with
+`package_quickstart.py --console-image <immutable-reference>`; initialization
+refuses Console activation when that pin is missing or mutable.
+
+The command adds the shipped `compose.console.yaml` overlay to the saved
+`COMPOSE_FILE`, preserving customer files, the executor, and its serving-image
+override. It enables the Console profile for subsequent quickstart runs. Console
+is available at `http://localhost:18083`; set `HONUA_CONSOLE_PORT` in `.env` before
+activation to choose another local port. Console reads the serving admin key from
+`secrets/honua_admin_password` through its entrypoint; the key remains outside
+Compose interpolation and rendered configuration. The overlay enables embedded
+Studio and the server's Studio end-user authorization.
 
 ### Install operating skills
 

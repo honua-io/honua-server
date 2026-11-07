@@ -1,0 +1,50 @@
+services:
+  honua:
+    environment:
+      Studio__EndUserAuthorization__Enabled: "true"
+  console:
+    image: ${HONUA_CONSOLE_IMAGE:?The package image lock must include an immutable Console image}
+    profiles: [console]
+    ports:
+      - "127.0.0.1:${HONUA_CONSOLE_PORT:-18083}:8080"
+    entrypoint:
+      - bash
+      - +x
+      - -euc
+      - |
+        { set +x; } 2>/dev/null
+        for ref in $${!HONUA_SECRET_FILE__@}; do
+          value=$$(< "$${!ref}")
+          [ -n "$$value" ] || { echo "empty secret file for $${ref#HONUA_SECRET_FILE__}" >&2; exit 1; }
+          export "$${ref#HONUA_SECRET_FILE__}=$$value"
+          unset "$$ref"
+        done
+        unset value ref
+        exec "$$@"
+      - console-secrets
+      - dotnet
+      - Honua.Console.Web.dll
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      HONUA_SERVER_BASE_URL: http://honua:8080
+      Honua__Server__BaseUrl: http://honua:8080
+      HONUA_SECRET_FILE__HONUA_ADMIN_API_KEY: /run/secrets/honua_admin_password
+      HONUA_SECRET_FILE__Honua__Server__AdminApiKey: /run/secrets/honua_admin_password
+      Studio__EmbedJsStudio: "true"
+    depends_on:
+      honua:
+        condition: service_healthy
+    secrets: [honua_admin_password]
+    healthcheck:
+      test: ["CMD-SHELL", "test -s /app/version.json || test -s /app/wwwroot/version.json"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m

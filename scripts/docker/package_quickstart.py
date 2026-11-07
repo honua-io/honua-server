@@ -12,8 +12,8 @@ ROOT = Path(__file__).resolve().parents[2]
 IMMUTABLE = re.compile(r'(?:[a-z0-9./:_-]+@)?sha256:[a-f0-9]{64}')
 
 
-def package(destination, server, executor, worker, version):
-    for image in (server, executor, worker):
+def package(destination, images, version):
+    for image in images.values():
         if not IMMUTABLE.fullmatch(image):
             raise ValueError('All quickstart images must be immutable sha256 references')
     destination = Path(destination)
@@ -23,7 +23,8 @@ def package(destination, server, executor, worker, version):
     source = (ROOT / 'docs/get-started/quickstart.md').read_text()
     compose = re.search(r'<!-- docs-validation:install.compose mode=run -->\s*```yaml\n(.*?)\n```', source, re.S).group(1)
     (destination / 'compose.yaml').write_text(compose + '\n')
-    shutil.copyfile(ROOT / 'docs/get-started/compose.executor.yaml', destination / 'compose.executor.yaml')
+    for name in ('compose.executor.yaml', 'compose.console.yaml'):
+        shutil.copyfile(ROOT / 'docs/get-started' / name, destination / name)
     shutil.copyfile(Path(__file__).with_name('compose_quickstart.py'), destination / 'quickstart.py')
     # The agent guide is published once, in the docs; the package carries that exact text.
     guide = (ROOT / 'docs/guides/connect/working-with-ai-agents.md').read_text()
@@ -32,8 +33,7 @@ def package(destination, server, executor, worker, version):
     package_agent_skills(destination)
     max_schema = max(int(path.name.split('_', 1)[0]) for path in
                      (ROOT / 'src/Honua.Server/Migrations').glob('[0-9]*_*.sql'))
-    (destination / 'images.json').write_text(json.dumps(dict(server=server, executor=executor, worker=worker,
-                                                           version=version, maxSchema=max_schema), indent=2) + '\n')
+    (destination / 'images.json').write_text(json.dumps(dict(images, version=version, maxSchema=max_schema), indent=2) + '\n')
     (destination / 'README.md').write_text(
         '# Honua local Compose quickstart\n\n'
         'Run `python3 quickstart.py` with Docker Compose and OpenSSL installed. '
@@ -80,10 +80,14 @@ def main():
     parser.add_argument('--server-image', required=True)
     parser.add_argument('--executor-image', required=True)
     parser.add_argument('--worker-image', required=True)
+    parser.add_argument('--console-image')
     parser.add_argument('--version', required=True)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
-    package(args.output, args.server_image, args.executor_image, args.worker_image, args.version)
+    images = dict(server=args.server_image, executor=args.executor_image, worker=args.worker_image)
+    if args.console_image is not None:
+        images['console'] = args.console_image
+    package(args.output, images, args.version)
     with tarfile.open(args.output.with_suffix('.tar.gz'), 'w:gz') as archive:
         for file in sorted(args.output.iterdir()):
             archive.add(file, arcname=file.name)

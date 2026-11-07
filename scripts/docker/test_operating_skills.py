@@ -36,7 +36,7 @@ class OperatingSkillsTests(unittest.TestCase):
     def test_package_preserves_every_skill_file_and_pins_agent_bytes(self):
         with tempfile.TemporaryDirectory() as directory:
             destination = Path(directory)
-            package(destination, IMAGE, IMAGE, IMAGE, 'test')
+            package(destination, dict(server=IMAGE, executor=IMAGE, worker=IMAGE), 'test')
             source_files = sorted(path for path in (ROOT / 'skills').rglob('*') if path.is_file())
             expected = {'AGENTS.md'}
             for source in source_files:
@@ -65,7 +65,7 @@ class OperatingSkillsTests(unittest.TestCase):
                          'docs/guides/connect/working-with-ai-agents.md'):
             with self.subTest(document=document), tempfile.TemporaryDirectory() as directory:
                 destination = Path(directory)
-                package(destination, IMAGE, IMAGE, IMAGE, 'test')
+                package(destination, dict(server=IMAGE, executor=IMAGE, worker=IMAGE), 'test')
                 commands = re.search(
                     r'```bash\n(mkdir -p \.claude/skills.*?)\n```',
                     (ROOT / document).read_text(), re.S).group(1)

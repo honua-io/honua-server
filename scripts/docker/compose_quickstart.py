@@ -68,7 +68,23 @@ def write_secret(path, value):
         pending.unlink(missing_ok=True)
 
 
-def initialize(directory):
+def console_profile_settings(lock, values):
+    image = lock.get('console', '')
+    if not isinstance(image, str) or not IMMUTABLE.fullmatch(image):
+        raise ValueError('The package must include an immutable Console image from its release lock')
+    separator = values.get('COMPOSE_PATH_SEPARATOR', ':')
+    files = [name for name in values['COMPOSE_FILE'].split(separator) if name != 'compose.console.yaml']
+    managed_image = 'compose.executor.image.yaml'
+    files.insert(files.index(managed_image) if managed_image in files else len(files), 'compose.console.yaml')
+    profiles = [name for name in values.get('COMPOSE_PROFILES', '').split(',') if name]
+    if 'console' not in profiles:
+        profiles.append('console')
+    settings = dict(COMPOSE_FILE=separator.join(files), COMPOSE_PROFILES=','.join(profiles),
+                    HONUA_CONSOLE_IMAGE=image, HONUA_CONSOLE_PORT=values.get('HONUA_CONSOLE_PORT', '18083'))
+    return {key: value for key, value in settings.items() if values.get(key) != value}
+
+
+def initialize(directory, profiles=()):
     """Creates or migrates the install. Returns only non-secret settings."""
     directory = Path(directory).resolve()
     lock = json.loads((directory / 'images.json').read_text())
@@ -120,6 +136,8 @@ def initialize(directory):
                 raise ValueError(f'{name} still reads secrets from .env; extract the new package files first')
 
     additions = {key: value for key, value in defaults.items() if key not in values}
+    if 'console' in profiles:
+        additions.update(console_profile_settings(lock, dict(defaults, **values)))
     if additions:
         fd = os.open(env_file, os.O_WRONLY | os.O_CREAT | (os.O_APPEND if env_file.exists() else os.O_EXCL), 0o600)
         with os.fdopen(fd, 'a') as stream:
@@ -190,9 +208,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--directory', type=Path, default=Path(__file__).resolve().parent)
     parser.add_argument('--init-only', action='store_true')
+    parser.add_argument('--profile', action='append', choices=('console',), default=[])
     args = parser.parse_args()
     try:
-        values = initialize(args.directory)
+        values = initialize(args.directory, args.profile)
         if args.init_only:
             return 0
         # Secrets stay in their files; never hand them to Compose as environment.

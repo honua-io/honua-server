@@ -19,12 +19,77 @@ ROOT = Path(__file__).resolve().parents[2]
 SERVER = 'ghcr.io/honua-io/honua-server@sha256:' + '1' * 64
 EXECUTOR = 'ghcr.io/honua-io/honua-server@sha256:' + '2' * 64
 WORKER = 'ghcr.io/honua-io/honua-worker@sha256:' + '3' * 64
+CONSOLE = 'ghcr.io/honua-io/honua-console@sha256:' + '4' * 64
+PACKAGE_IMAGES = dict(server=SERVER, executor=EXECUTOR, worker=WORKER)
 
 
 class ComposeQuickstartTests(unittest.TestCase):
+    def test_console_profile_uses_packaged_pin_and_preserves_executor_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            package_result = subprocess.run([
+                sys.executable, str(ROOT / 'scripts/docker/package_quickstart.py'),
+                '--server-image', SERVER, '--executor-image', EXECUTOR, '--worker-image', WORKER,
+                '--console-image', CONSOLE, '--version', 'test', '--output', str(path)],
+                capture_output=True, text=True)
+            self.assertEqual(0, package_result.returncode, 'Package must accept an immutable Console pin')
+            self.assertTrue((path / 'compose.console.yaml').is_file())
+            self.assertEqual(CONSOLE, json.loads((path / 'images.json').read_text())['console'])
+            (path / '.env').write_text('COMPOSE_FILE=compose.yaml:compose.executor.yaml:customer.yaml:compose.executor.image.yaml\n')
+            (path / 'customer.yaml').write_text('services:\n  honua:\n    environment:\n      CUSTOMER_SETTING: preserved\n')
+            initialized = subprocess.run([sys.executable, str(path / 'quickstart.py'),
+                                          '--profile', 'console', '--init-only'], capture_output=True, text=True)
+            self.assertEqual(0, initialized.returncode, 'Console profile must initialize without a customer override')
+            result = subprocess.run(['docker', 'compose', 'config', '--format', 'json'],
+                                    cwd=path, env=self.compose_env(path), capture_output=True, text=True)
+            self.assertEqual(0, result.returncode, 'Packaged Console profile must render')
+            services = json.loads(result.stdout)['services']
+            self.assertEqual(CONSOLE, services['console']['image'])
+            self.assertEqual('true', services['console']['environment']['Studio__EmbedJsStudio'])
+            self.assertIn('compose-executor', services)
+            self.assertIn('compose-manager', services)
+            self.assertEqual(SERVER, services['honua']['image'])
+            self.assertEqual('preserved', services['honua']['environment']['CUSTOMER_SETTING'])
+            self.assertNotIn(read_secret(path, 'HONUA_ADMIN_PASSWORD'), result.stdout)
+            saved = (path / '.env').read_bytes()
+            initialize(path, ('console',))
+            self.assertEqual(saved, (path / '.env').read_bytes(), 'Enabling Console twice must preserve the install')
+
+    def test_console_without_release_pin_fails_before_changing_install(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.prepare(directory)
+            saved = (path / '.env').read_bytes()
+
+            with self.assertRaisesRegex(ValueError, 'immutable Console image'):
+                initialize(path, ('console',))
+
+            self.assertEqual(saved, (path / '.env').read_bytes())
+
+    def test_invalid_console_lock_pin_fails_before_changing_install(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.prepare(directory)
+            saved = (path / '.env').read_bytes()
+            lock_file = path / 'images.json'
+            lock = json.loads(lock_file.read_text())
+            for pin in (None, 42, 'ghcr.io/honua-io/honua-console:latest'):
+                with self.subTest(pin=pin):
+                    lock_file.write_text(json.dumps(dict(lock, console=pin)))
+                    with self.assertRaisesRegex(ValueError, 'immutable Console image'):
+                        initialize(path, ('console',))
+                    self.assertEqual(saved, (path / '.env').read_bytes())
+
+    def test_mutable_console_pin_is_rejected_before_writing_package(self):
+        with tempfile.TemporaryDirectory() as directory:
+            images = dict(PACKAGE_IMAGES, console='ghcr.io/honua-io/honua-console:latest')
+
+            with self.assertRaises(ValueError):
+                package(Path(directory), images, 'test')
+
+            self.assertEqual([], list(Path(directory).iterdir()))
+
     def prepare(self, directory):
         path = Path(directory)
-        package(path, SERVER, EXECUTOR, WORKER, '2026.1-rc.2')
+        package(path, PACKAGE_IMAGES, '2026.1-rc.2')
         initialize(path)
         return path
 
@@ -331,7 +396,7 @@ class ComposeQuickstartTests(unittest.TestCase):
     def test_failed_certificate_export_can_be_retried(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)
-            package(path, SERVER, EXECUTOR, WORKER, '2026.1-rc.2')
+            package(path, PACKAGE_IMAGES, '2026.1-rc.2')
             run_openssl = subprocess.run
 
             def fail_export(command, **kwargs):
@@ -351,7 +416,7 @@ class ComposeQuickstartTests(unittest.TestCase):
     def test_package_ships_the_agent_guide_from_its_docs_page(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)
-            package(path, SERVER, EXECUTOR, WORKER, '2026.1-rc.2')
+            package(path, PACKAGE_IMAGES, '2026.1-rc.2')
             guide = (path / 'AGENTS.md').read_text()
             page = (Path(__file__).resolve().parents[2]
                     / 'docs/guides/connect/working-with-ai-agents.md').read_text()
@@ -371,7 +436,7 @@ class ComposeQuickstartTests(unittest.TestCase):
                        (SERVER, EXECUTOR, 'ghcr.io/honua-io/honua-worker:nightly')):
             with tempfile.TemporaryDirectory() as directory:
                 with self.assertRaises(ValueError):
-                    package(Path(directory), *images, '2026.1-rc.2')
+                    package(Path(directory), dict(zip(('server', 'executor', 'worker'), images, strict=True)), '2026.1-rc.2')
                 self.assertEqual([], list(Path(directory).iterdir()))
 
 
