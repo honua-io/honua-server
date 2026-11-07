@@ -23,11 +23,11 @@ public sealed class MetadataGraphOutputCachePolicyTests
         var provider = Substitute.For<IMetadataV2GraphProvider>();
         using var services = new ServiceCollection().AddSingleton(provider).BuildServiceProvider();
         var graph = new MetadataV2Graph { Revision = 1 };
-        provider.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(new MetadataV2GraphSnapshot(graph, "before", DateTimeOffset.UtcNow));
+        provider.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(new ValueTask<MetadataV2GraphSnapshot>(new MetadataV2GraphSnapshot(graph, "before", DateTimeOffset.UtcNow)));
         var policy = new MetadataGraphOutputCachePolicy();
         var before = new OutputCacheContext { HttpContext = new DefaultHttpContext { RequestServices = services } };
         await policy.CacheRequestAsync(before, CancellationToken.None);
-        provider.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(new MetadataV2GraphSnapshot(graph with { Revision = 2 }, "after", DateTimeOffset.UtcNow));
+        provider.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(new ValueTask<MetadataV2GraphSnapshot>(new MetadataV2GraphSnapshot(graph with { Revision = 2 }, "after", DateTimeOffset.UtcNow)));
         var after = new OutputCacheContext { HttpContext = new DefaultHttpContext { RequestServices = services } };
         await policy.CacheRequestAsync(after, CancellationToken.None);
         Assert.Equal("before", before.CacheVaryByRules.VaryByValues["metadata-graph"]);

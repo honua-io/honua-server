@@ -23,8 +23,7 @@ internal static class ODataV2Lookups
         CancellationToken cancellationToken)
     {
         var publications = await ResolveAllODataPublicationsAsync(context, cancellationToken).ConfigureAwait(false);
-        var snapshot = await GetSnapshotAsync(context, cancellationToken).ConfigureAwait(false);
-        return publications.Where(publication => snapshot.IsDiscoverable(publication.Publication) &&
+        return publications.Where(publication =>
             AccessPolicyHelpers.IsResourceAccessible(context, publication.Resource, publication.Service)).ToArray();
     }
 
@@ -36,7 +35,7 @@ internal static class ODataV2Lookups
 
         var snapshot = await GetSnapshotAsync(context, cancellationToken).ConfigureAwait(false);
         var resolved = new List<ResolvedODataPublication>();
-        var publications = TenantScopeHelpers.FilterVisiblePublications(context, snapshot, snapshot.Graph.Publications).ToArray();
+        var publications = TenantScopeHelpers.FilterVisiblePublications(context, snapshot, snapshot.Graph.Publications.Where(snapshot.IsDiscoverable)).ToArray();
         var primaryServices = LayerValidationHelpers.BuildPrimaryServiceMapV2(snapshot, ODataProtocolConstants.ProtocolName, publications);
         var selectedPublicationIds = SelectODataPublicationIds(snapshot, primaryServices, publications);
 
