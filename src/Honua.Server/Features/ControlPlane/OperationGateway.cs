@@ -327,10 +327,12 @@ internal sealed partial class OperationGateway : IOperationGateway
         string? executionOperationId = null;
         var status = OperationProposalStatus.Failed;
         string? failureMessage = null;
+        var approvalAuditRecorded = false;
 
         try
         {
             await RecordApprovalAsync(proposal, approvedBy, cancellationToken).ConfigureAwait(false);
+            approvalAuditRecorded = true;
             await using var scope = _scopeFactory.CreateAsyncScope();
             var invoker = scope.ServiceProvider.GetRequiredService<ICanonicalOperationInvoker>();
             var operationId = proposal.OperationId ?? LegacyOperationIds.For(proposal.Kind);
@@ -410,6 +412,11 @@ internal sealed partial class OperationGateway : IOperationGateway
                     AuditOutcome.Failure)
                 .ConfigureAwait(false);
             throw;
+        }
+        catch (Exception ex) when (!approvalAuditRecorded && ex is not OutOfMemoryException)
+        {
+            Log.ProposalApprovalAuditFailed(_logger, proposalId, ex);
+            failureMessage = "The approval could not be durably audited; actuation did not begin.";
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -1719,6 +1726,9 @@ internal sealed partial class OperationGateway : IOperationGateway
 
         [LoggerMessage(9201, LogLevel.Error, "Execution of approved proposal {ProposalId} failed")]
         public static partial void ProposalExecutionFailed(ILogger logger, string proposalId, Exception exception);
+
+        [LoggerMessage(9206, LogLevel.Error, "Approval audit for proposal {ProposalId} failed before actuation")]
+        public static partial void ProposalApprovalAuditFailed(ILogger logger, string proposalId, Exception exception);
 
         [LoggerMessage(9202, LogLevel.Warning, "No executor registered for direct-execute of operation kind {Kind}; returning NotSupported")]
         public static partial void NoExecutorRegisteredForDirect(ILogger logger, string kind);
