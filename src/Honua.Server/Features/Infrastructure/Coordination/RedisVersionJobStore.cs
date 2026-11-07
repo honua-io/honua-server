@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
 using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -13,10 +14,20 @@ namespace Honua.Infrastructure.Coordination;
 internal sealed partial class RedisVersionJobStore : IVersionJobStore
 {
     private static readonly TimeSpan Retention = TimeSpan.FromDays(7);
+    private const int MaximumRecoveryWrites = 3;
+    private const string CompareExchangeScript = """
+        local current = redis.call('GET', KEYS[1])
+        if (not current and ARGV[1] == '') or current == ARGV[1] then
+            redis.call('SET', KEYS[1], ARGV[2], 'PX', ARGV[3])
+            return 1
+        end
+        return 0
+        """;
     private const string KeyPrefix = "honua:version:job:";
 
     private readonly IDatabase? _database;
     private readonly InMemoryVersionJobStore _fallback = new();
+    private readonly ConcurrentDictionary<Guid, VersionJob> _pending = new();
     private readonly ILogger<RedisVersionJobStore> _logger;
 
     public RedisVersionJobStore(IConnectionMultiplexer? redis, ILogger<RedisVersionJobStore> logger)
@@ -43,18 +54,15 @@ internal sealed partial class RedisVersionJobStore : IVersionJobStore
             return;
         }
 
-        var payload = JsonSerializer.Serialize(job, VersionJobJsonContext.Default.VersionJob);
+        cancellationToken.ThrowIfCancellationRequested();
+        _pending.AddOrUpdate(job.JobId, job, (_, current) => CanAdvance(current, job) ? job : current);
         try
         {
-            await _database.StringSetAsync($"{KeyPrefix}{job.JobId:N}", payload, Retention).ConfigureAwait(false);
+            await ReconcilePendingAsync(job.JobId, createWhenMissing: true, cancellationToken).ConfigureAwait(false);
         }
         catch (RedisException ex)
         {
-            // Keep the job surface available during a Redis outage: the record stays pollable on
-            // this node (only) and the degradation is logged so operators can see durability is
-            // reduced until Redis recovers.
             Log.VersionJobStoreRedisError(_logger, job.JobId, ex);
-            await _fallback.SaveAsync(job, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -65,26 +73,71 @@ internal sealed partial class RedisVersionJobStore : IVersionJobStore
             return await _fallback.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
         }
 
-        RedisValue value;
         try
         {
-            value = await _database.StringGetAsync($"{KeyPrefix}{jobId:N}").ConfigureAwait(false);
+            return await ReconcilePendingAsync(jobId, createWhenMissing: false, cancellationToken).ConfigureAwait(false);
         }
         catch (RedisException ex)
         {
             Log.VersionJobStoreRedisError(_logger, jobId, ex);
-            return await _fallback.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
+            return _pending.GetValueOrDefault(jobId);
         }
-
-        if (value.IsNullOrEmpty)
-        {
-            // A record saved to the in-memory fallback during a Redis outage is not in Redis;
-            // consult the fallback before reporting the job as unknown.
-            return await _fallback.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
-        }
-
-        return JsonSerializer.Deserialize((string)value!, VersionJobJsonContext.Default.VersionJob);
     }
+
+    private async Task<VersionJob?> ReconcilePendingAsync(Guid jobId, bool createWhenMissing, CancellationToken cancellationToken)
+    {
+        var key = $"{KeyPrefix}{jobId:N}";
+        for (var attempt = 0; ; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var snapshot = await _database!.StringGetAsync(key).ConfigureAwait(false);
+            var current = snapshot.IsNullOrEmpty
+                ? null
+                : JsonSerializer.Deserialize((string)snapshot!, VersionJobJsonContext.Default.VersionJob);
+            if (!_pending.TryGetValue(jobId, out var pending))
+            {
+                return current;
+            }
+            if (current is null && !createWhenMissing)
+            {
+                return pending;
+            }
+            if (current is not null && !CanAdvance(current, pending))
+            {
+                _pending.TryRemove(new KeyValuePair<Guid, VersionJob>(jobId, pending));
+                return current;
+            }
+            if (attempt >= MaximumRecoveryWrites)
+            {
+                return current ?? pending;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            var payload = JsonSerializer.Serialize(pending, VersionJobJsonContext.Default.VersionJob);
+            var acknowledged = await _database.ScriptEvaluateAsync(CompareExchangeScript, [key],
+                [snapshot.IsNullOrEmpty ? "" : snapshot, payload, (long)Retention.TotalMilliseconds]).ConfigureAwait(false);
+            if ((long)acknowledged == 1)
+            {
+                _pending.TryRemove(new KeyValuePair<Guid, VersionJob>(jobId, pending));
+                return pending;
+            }
+        }
+    }
+
+    private static bool CanAdvance(VersionJob current, VersionJob next)
+        => HasSameIdentity(current, next) && (current.Status switch
+        {
+            VersionJobStatus.Pending => next.Status is VersionJobStatus.Running or VersionJobStatus.Succeeded
+                or VersionJobStatus.Failed or VersionJobStatus.LockContended,
+            VersionJobStatus.Running => next.Status is VersionJobStatus.Succeeded
+                or VersionJobStatus.Failed or VersionJobStatus.LockContended,
+            _ => false
+        });
+
+    private static bool HasSameIdentity(VersionJob current, VersionJob next)
+        => current.JobId == next.JobId && current.Service == next.Service && current.VersionId == next.VersionId
+            && current.Kind == next.Kind && current.Policy == next.Policy && current.CreatedAt == next.CreatedAt
+            && current.ConflictDetection == next.ConflictDetection;
 
     private static partial class Log
     {
