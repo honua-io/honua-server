@@ -3,8 +3,12 @@
 
 using System.Net;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using FluentAssertions;
+using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Operations.Domain;
+using Honua.Infrastructure.Models;
+using Honua.Server.Features.Admin.Models;
 using Honua.TestKit.Attributes;
 using Xunit;
 
@@ -17,7 +21,7 @@ public sealed partial class AdminOperationRequestContractTests
     [InlineData(42)]
     public async Task SubmitAsync_PublishedLayer_ReportsCreatedResourceIdentity(int layerId)
     {
-        var payload = JsonSerializer.Serialize(new { success = true, data = new { layerId, serviceName = "published-roads" } });
+        var payload = SerializePublishedLayer(layerId);
         using var capture = new CaptureHandler(payload, HttpStatusCode.Created);
         using var client = new HttpClient(capture);
         var executor = CreateApi("admin.layer.publish", client);
@@ -46,15 +50,40 @@ public sealed partial class AdminOperationRequestContractTests
     [InlineData("{}")]
     [InlineData("{\"data\":[]}")]
     [InlineData("{\"data\":null}")]
-    [InlineData("{\"data\":{\"layerId\":1}}")]
-    [InlineData("{\"data\":{\"layerId\":1,\"serviceName\":\" \"}}")]
-    [InlineData("{\"data\":{\"layerId\":\"1\",\"serviceName\":\"roads\"}}")]
-    [InlineData("{\"data\":{\"layerId\":-1,\"serviceName\":\"roads\"}}")]
-    [InlineData("{\"data\":{\"layerId\":1.5,\"serviceName\":\"roads\"}}")]
-    [InlineData("{\"data\":{\"layerId\":2147483648,\"serviceName\":\"roads\"}}")]
-    [InlineData("{\"data\":{\"layerId\":1,\"serviceName\":7}}")]
     public async Task SubmitAsync_UnusablePublishResponse_PreservesCompletionWithoutResourceIds(string payload)
     {
+        using var capture = new CaptureHandler(payload, HttpStatusCode.Created);
+        using var client = new HttpClient(capture);
+        var executor = CreateApi("admin.layer.publish", client);
+
+        var handle = await executor.SubmitAsync(new OperationRequest
+        {
+            OperationId = executor.OperationId,
+            ConnectionId = "11111111-1111-1111-1111-111111111111",
+            ServiceName = "requested-service",
+        }, new OperationPolicyContext());
+
+        handle.Status.Should().Be(OperationHandleStatus.Completed);
+        handle.ResourceIds.Should().BeEmpty();
+        handle.Result!.Details["response"].Should().Be(payload);
+    }
+
+    [UnitTheory]
+    [InlineData("layerId", "-1")]
+    [InlineData("layerId", "1.5")]
+    [InlineData("layerId", "2147483648")]
+    [InlineData("layerId", "\"1\"")]
+    [InlineData("layerId", "null")]
+    [InlineData("serviceName", "\" \"")]
+    [InlineData("serviceName", "null")]
+    [InlineData("serviceName", "7")]
+    [InlineData("success", "false")]
+    public async Task SubmitAsync_InvalidPublishedIdentity_DoesNotInventResourceIds(string field, string value)
+    {
+        var envelope = JsonNode.Parse(SerializePublishedLayer(42))!;
+        var target = field == "success" ? envelope : envelope["data"]!;
+        target[field] = JsonNode.Parse(value);
+        var payload = envelope.ToJsonString();
         using var capture = new CaptureHandler(payload, HttpStatusCode.Created);
         using var client = new HttpClient(capture);
         var executor = CreateApi("admin.layer.publish", client);
@@ -97,4 +126,15 @@ public sealed partial class AdminOperationRequestContractTests
             : OperationHandleStatus.Completed);
         handle.ResourceIds.Should().BeEmpty();
     }
+    private static string SerializePublishedLayer(int layerId)
+        => JsonSerializer.Serialize(ApiResponse<PublishedLayerSummary>.CreateSuccess(new PublishedLayerSummary
+        {
+            LayerId = layerId,
+            LayerName = "Roads",
+            Schema = "public",
+            Table = "roads",
+            GeometryType = "Point",
+            ServiceName = "published-roads",
+        }), LayerPublishingJsonContext.Default.ApiResponsePublishedLayerSummary);
+
 }
