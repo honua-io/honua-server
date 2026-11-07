@@ -45,8 +45,15 @@ public sealed partial class ExecutionJobReconcilerTests
         backend.ObserveAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>()).Returns(async call =>
         {
             var token = call.Arg<CancellationToken>();
-            using var registration = token.Register(() => observationCancelled.TrySetResult());
-            await Task.Delay(Timeout.InfiniteTimeSpan, token);
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, token);
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                observationCancelled.TrySetResult();
+                throw;
+            }
             return new BatchComputeObservation { Status = ExecutionJobStatus.Running };
         });
         using var shutdown = new CancellationTokenSource();
