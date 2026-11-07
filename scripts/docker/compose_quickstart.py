@@ -68,11 +68,15 @@ def write_secret(path, value):
         pending.unlink(missing_ok=True)
 
 
+def parse_environment(lines):
+    return dict(line.split('=', 1) for line in lines if line and not line.startswith('#'))
+
+
 def update_environment(path, updates, removed=()):
     existing_group = path.stat().st_gid if path.exists() else None
     existing = path.read_text() if path.exists() else ''
     source_lines = existing.splitlines()
-    values = dict(line.split('=', 1) for line in source_lines if line and not line.startswith('#'))
+    values = parse_environment(source_lines)
     values.update(updates)
     for key in removed:
         values.pop(key, None)
@@ -128,7 +132,7 @@ def initialize(directory, profiles=()):
     env_file = directory / '.env'
     existing = env_file.read_text() if env_file.exists() else ''
     lines = existing.splitlines()
-    values = dict(line.split('=', 1) for line in lines if line and not line.startswith('#'))
+    values = parse_environment(lines)
     defaults = {
         'COMPOSE_FILE': 'compose.yaml:compose.executor.yaml:compose.executor.image.yaml',
         'COMPOSE_PROJECT_NAME': 'honua-' + secrets.token_hex(6),

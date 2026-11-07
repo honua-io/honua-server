@@ -11,6 +11,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import compose_quickstart
 from package_quickstart import package
 from compose_quickstart import ALL_SECRET_KEYS, initialize, read_secret
 
@@ -109,6 +110,30 @@ class ComposeQuickstartTests(unittest.TestCase):
             self.assertIn('# keep this note\n', env_file.read_text())
             for key in ('COMPOSE_FILE', 'CUSTOM_SETTING'):
                 self.assertEqual(1, sum(line.startswith(key + '=') for line in env_file.read_text().splitlines()))
+
+    def test_environment_callers_share_duplicate_and_value_parsing(self):
+        for caller in ('initialize', 'update_environment'):
+            with self.subTest(caller=caller), tempfile.TemporaryDirectory() as directory:
+                path = self.prepare(directory)
+                env_file = path / '.env'
+                source = env_file.read_text() + '\n# customer settings\nCUSTOM_SETTING=first\nCUSTOM_SETTING=last=kept\nEMPTY_SETTING=\n'
+                env_file.write_text(source)
+
+                with patch('compose_quickstart.parse_environment',
+                           wraps=compose_quickstart.parse_environment) as parser:
+                    if caller == 'initialize':
+                        values = initialize(path)
+                        self.assertEqual('last=kept', values['CUSTOM_SETTING'])
+                        self.assertEqual('', values['EMPTY_SETTING'])
+                    else:
+                        compose_quickstart.update_environment(env_file, {'NEW_SETTING': 'added'})
+                    parser.assert_any_call(source.splitlines())
+
+                rewritten = env_file.read_text()
+                self.assertIn('\n# customer settings\n', rewritten)
+                self.assertIn('CUSTOM_SETTING=last=kept\n', rewritten)
+                self.assertIn('EMPTY_SETTING=\n', rewritten)
+                self.assertEqual(1, sum(line.startswith('CUSTOM_SETTING=') for line in rewritten.splitlines()))
 
     def test_console_activation_preserves_private_project_group(self):
         groups = [group for group in os.getgroups() if group != os.getegid()]
