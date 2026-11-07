@@ -146,6 +146,38 @@ public sealed class RedisVersionJobStoreRecoveryTests(RedisFixture fixture) : IA
         Assert.Equal(terminal, await _replica.GetAsync(terminal.JobId));
     }
 
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task GetAsync_DifferentDistributedJobIdentity_PreservesDistributedRecord()
+    {
+        var running = Job(VersionJobStatus.Running);
+        await _owner.SaveAsync(running);
+        _faults.WriteUnavailable = true;
+        await _owner.SaveAsync(running with { Status = VersionJobStatus.Succeeded, CompletedAt = DateTimeOffset.UtcNow });
+        _faults.WriteUnavailable = false;
+        var different = running with { VersionId = Guid.NewGuid(), Service = "another-version-service" };
+        await _replica.SaveAsync(different);
+
+        Assert.Equal(different, await _owner.GetAsync(running.JobId));
+        Assert.Equal(different, await _replica.GetAsync(running.JobId));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task GetAsync_UnknownDistributedStatus_PreservesDistributedRecord()
+    {
+        var running = Job(VersionJobStatus.Running);
+        await _owner.SaveAsync(running);
+        _faults.WriteUnavailable = true;
+        await _owner.SaveAsync(running with { Status = VersionJobStatus.Succeeded, CompletedAt = DateTimeOffset.UtcNow });
+        _faults.WriteUnavailable = false;
+        var unknown = running with { Status = (VersionJobStatus)999 };
+        await _replica.SaveAsync(unknown);
+
+        Assert.Equal(unknown, await _owner.GetAsync(running.JobId));
+        Assert.Equal(unknown, await _replica.GetAsync(running.JobId));
+    }
+
     private static RedisVersionJobStore Store(IConnectionMultiplexer? connection)
         => new(connection, NullLogger<RedisVersionJobStore>.Instance);
 
