@@ -16,7 +16,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.Coordination;
 [Protocol(TestProtocols.TestQuality)]
 public sealed class RedisVersionJobStoreRecoveryTests(RedisFixture fixture) : IAsyncLifetime
 {
-    private IConnectionMultiplexer _connection = null!;
+    private ConnectionMultiplexer? _connection;
     private RedisFaults _faults = null!;
     private RedisVersionJobStore _owner = null!;
     private RedisVersionJobStore _replica = null!;
@@ -29,7 +29,13 @@ public sealed class RedisVersionJobStoreRecoveryTests(RedisFixture fixture) : IA
         _replica = Store(_connection);
     }
 
-    public async Task DisposeAsync() => await _connection.DisposeAsync();
+    public async Task DisposeAsync()
+    {
+        if (_connection is not null)
+        {
+            await _connection.DisposeAsync();
+        }
+    }
 
     [IntegrationTest]
     [Operation(Operations.TestInfrastructure)]
