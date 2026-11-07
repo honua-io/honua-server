@@ -8,7 +8,7 @@
 #                                       tests/config, whose digests become the
 #                                       envelope's fixture_revision /
 #                                       server_config_revision receipts
-#   ../../artifacts/client-compat/r-sf:/output               envelope output directory
+#   ../../artifacts/client-interop/r-sf:/output               envelope output directory
 set -uo pipefail
 
 : "${HONUA_BASE_URL:=http://honua:5000}"

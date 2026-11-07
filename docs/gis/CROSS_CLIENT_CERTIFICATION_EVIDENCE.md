@@ -192,10 +192,10 @@ Manual lanes (desktop-arcgis, desktop-qgis, bi-powerbi, bi-excel) still require 
 
 ## Real-Client Interop Matrix Workflow Output
 
-The `client-interop-nightly.yml` workflow (added by ticket [`#806`](https://github.com/honua-io/honua-server/issues/806) and restored as release evidence by ticket [`#938`](https://github.com/honua-io/honua-server/issues/938)) runs the docker/client-compat matrix once per night and emits one `.cert.json` envelope per `(lane, protocol)` pair. Lane services are defined in `docker/client-compat/compose.yml` and write their envelopes into `artifacts/client-compat/<lane>/`:
+The `client-interop-nightly.yml` workflow (added by ticket [`#806`](https://github.com/honua-io/honua-server/issues/806) and restored as release evidence by ticket [`#938`](https://github.com/honua-io/honua-server/issues/938)) runs the docker/client-compat matrix once per night and emits one `.cert.json` envelope per `(lane, protocol)` pair. Lane services are defined in `docker/client-compat/compose.yml` and write their envelopes into `artifacts/client-interop/<lane>/`:
 
 ```
-artifacts/client-compat/
+artifacts/client-interop/
   cesium/        <run-id>-js-cesium-{wms,wmts,ogc-tiles,ogc-maps}.cert.json
   openlayers/    <run-id>-js-{ogc-features,ogc-maps,mvt,wfs,wms,wmts}.cert.json
   pyqgis/        <run-id>-desktop-qgis-{ogc-features,wfs}.cert.json

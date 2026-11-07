@@ -5,7 +5,7 @@
 #
 # docker/client-compat/compose.yml must mount:
 #     ../../tests:/workspace/tests:ro
-#     ../../artifacts/client-compat/geopandas:/output
+#     ../../artifacts/client-interop/geopandas:/output
 set -euo pipefail
 
 : "${HONUA_BASE_URL:=http://honua:5000}"

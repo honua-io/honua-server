@@ -141,7 +141,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set +e
-          mkdir -p artifacts/client-compat/${{ matrix.lane }}
+          mkdir -p artifacts/client-interop/${{ matrix.lane }}
 
           DOCKER_BUILDKIT=1 docker build \
             --secret id=github_actor,env=GITHUB_ACTOR \
@@ -196,7 +196,7 @@ jobs:
           if [[ "$build_exit" -ne 0 ]]; then
             exit_code="$build_exit"
           else
-            lane_log="artifacts/client-compat/${{ matrix.lane }}/lane.log"
+            lane_log="artifacts/client-interop/${{ matrix.lane }}/lane.log"
             # NOTE: do not pass --no-build to `docker compose run`. The flag was
             # rejected by the docker compose plugin shipped on ubuntu-24.04
             # runners ("unknown flag: --no-build"), causing every lane to exit
@@ -220,12 +220,12 @@ jobs:
               echo "lane=${{ matrix.lane }}"
               echo "exit_code=${exit_code}"
               echo "run_url=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-            } > artifacts/client-compat/${{ matrix.lane }}/lane-exit-code.txt
+            } > artifacts/client-interop/${{ matrix.lane }}/lane-exit-code.txt
             docker compose -f docker/client-compat/compose.yml \
               --profile ${{ matrix.lane }} \
               logs --no-color \
               postgres seed honua ${{ matrix.lane }} \
-              > artifacts/client-compat/${{ matrix.lane }}/compose.log 2>&1 || true
+              > artifacts/client-interop/${{ matrix.lane }}/compose.log 2>&1 || true
           fi
 
           docker compose -f docker/client-compat/compose.yml down --remove-orphans || true
@@ -239,7 +239,7 @@ jobs:
         with:
           kind: evidence
           suffix: client-compat-${{ matrix.lane }}
-          path: artifacts/client-compat/${{ matrix.lane }}
+          path: artifacts/client-interop/${{ matrix.lane }}
           tier: nightly
 
       - name: Fail failed lane after preserving evidence
@@ -269,7 +269,7 @@ jobs:
       - name: Download all lane artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          path: artifacts/client-compat-downloads
+          path: artifacts/client-interop-downloads
           # Match only the per-lane evidence artifacts (suffix
           # `evidence-client-compat-<lane>`). The earlier `*-client-compat-*`
           # pattern also captured the SBOM artifacts
@@ -285,8 +285,8 @@ jobs:
         env:
           EXPECTED_LANES: ${{ join(fromJSON(needs.prepare.outputs.lanes), ',') }}
         run: |
-          scripts/client-compat/stage-artifacts.sh artifacts/client-compat-downloads artifacts/client-compat "$EXPECTED_LANES"
-          python3 scripts/client-compat/validate-envelope-source.py artifacts/client-compat "${{ github.sha }}"
+          scripts/client-compat/stage-artifacts.sh artifacts/client-interop-downloads artifacts/client-interop "$EXPECTED_LANES"
+          python3 scripts/client-compat/validate-envelope-source.py artifacts/client-interop "${{ github.sha }}"
 
       - name: Compare against baselines and refresh gap report
         id: diff
@@ -304,8 +304,8 @@ jobs:
           # failure.
           python3 scripts/client-compat/diff-baselines.py \
             --baselines tests/baselines/client-compat \
-            --current artifacts/client-compat \
-            --gap-report artifacts/client-compat/gap-report.md \
+            --current artifacts/client-interop \
+            --gap-report artifacts/client-interop/gap-report.md \
             --client-lanes "$CLIENT_LANES" \
             --strict
           echo "exit_code=$?" >> "$GITHUB_OUTPUT"
@@ -317,12 +317,12 @@ jobs:
         with:
           kind: evidence
           suffix: gap-report
-          path: artifacts/client-compat/gap-report.md
+          path: artifacts/client-interop/gap-report.md
           tier: nightly
-          summary-file: artifacts/client-compat/gap-report.md
+          summary-file: artifacts/client-interop/gap-report.md
 
       - name: Fail on regressions
         if: steps.diff.outputs.exit_code != '0'
         run: |
-          echo "::error::Client-interop matrix detected regressions; see artifacts/client-compat/gap-report.md"
+          echo "::error::Client-interop matrix detected regressions; see artifacts/client-interop/gap-report.md"
           exit 1
