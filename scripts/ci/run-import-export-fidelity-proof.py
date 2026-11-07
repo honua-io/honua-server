@@ -80,7 +80,7 @@ def main():
     parser.add_argument("--no-build", action="store_true", help="Reuse verified current-checkout managed outputs")
     args = parser.parse_args()
     run_id = str(uuid.uuid4())
-    output = ROOT / "tests/TestResults/import-export-fidelity" / run_id
+    output = ROOT / "artifacts/import-export-fidelity" / run_id
     output.mkdir(parents=True, exist_ok=False)
     environment = dict(os.environ, HONUA_VECTOR_PROOF_DIR=str(output))
     common = ["-c", "Release", "-maxcpucount:4", "--results-directory", str(output)]
