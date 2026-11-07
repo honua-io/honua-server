@@ -191,6 +191,49 @@ public sealed class RedisVersionJobStoreRecoveryTests(RedisFixture fixture) : IA
         => _connection!.GetDatabase().StringSetAsync($"honua:version:job:{job.JobId:N}",
             JsonSerializer.Serialize(job, VersionJobJsonContext.Default.VersionJob), TimeSpan.FromDays(7));
 
+    [IntegrationTheory]
+    [InlineData("not-json")]
+    [InlineData("null")]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task SaveAsync_UnreadableDistributedRecord_PreservesItAndDiscardsLocalTransition(string payload)
+    {
+        var running = Job(VersionJobStatus.Running);
+        await _owner.SaveAsync(running);
+        var key = $"honua:version:job:{running.JobId:N}";
+        await _connection!.GetDatabase().StringSetAsync(key, payload);
+
+        await _owner.SaveAsync(running with { Status = VersionJobStatus.Succeeded });
+
+        Assert.Null(await _owner.GetAsync(running.JobId));
+        Assert.Null(await _replica.GetAsync(running.JobId));
+        Assert.Equal(payload, (string?)await _connection.GetDatabase().StringGetAsync(key));
+        _faults.ReadUnavailable = true;
+        Assert.Null(await _owner.GetAsync(running.JobId));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task GetAsync_PendingTransitionChangesDuringRecovery_PreservesNewerLocalCompletion()
+    {
+        var pending = Job(VersionJobStatus.Pending);
+        await _owner.SaveAsync(pending);
+        _faults.WriteUnavailable = true;
+        await _owner.SaveAsync(pending with { Status = VersionJobStatus.Running });
+        var completed = pending with { Status = VersionJobStatus.Succeeded, CompletedAt = DateTimeOffset.UtcNow };
+        _faults.WriteUnavailable = false;
+        _faults.BeforeCompareExchange = async () =>
+        {
+            _faults.WriteUnavailable = true;
+            await _owner.SaveAsync(completed);
+            _faults.WriteUnavailable = false;
+        };
+
+        await _owner.GetAsync(pending.JobId);
+
+        Assert.Equal(completed, await _owner.GetAsync(pending.JobId));
+        Assert.Equal(completed, await _replica.GetAsync(pending.JobId));
+    }
+
     private static RedisVersionJobStore Store(IConnectionMultiplexer? connection)
         => new(connection, NullLogger<RedisVersionJobStore>.Instance);
 

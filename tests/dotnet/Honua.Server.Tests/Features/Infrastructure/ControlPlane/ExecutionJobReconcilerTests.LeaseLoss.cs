@@ -110,6 +110,43 @@ public sealed partial class ExecutionJobReconcilerTests
         }
     }
 
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ReconcileExecutionJob_LeaseRenewalIgnoresCancellation_StillReleasesLease()
+    {
+        var job = CreateJobRecord("renewal-stalled", ExecutionJobStatus.Running, "lease-test", BatchComputeTargetKind.AwsBatch);
+        var store = LeaseStore(job);
+        var renewalStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var renewal = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        store.RenewLeaseAsync(job.OperationId, Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                renewalStarted.TrySetResult();
+                return renewal.Task;
+            });
+        var backend = Substitute.For<IBatchComputeBackend>();
+        backend.BackendName.Returns("lease-test");
+        backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        backend.ObserveAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>()).Returns(async _ =>
+        {
+            await renewalStarted.Task.WaitAsync(TimeSpan.FromSeconds(15));
+            throw LeaseUnavailable();
+        });
+        var reconciliation = LeaseReconciler(store, backend).ReconcileExecutionJobAsync(job.OperationId);
+        try
+        {
+            var exception = await Assert.ThrowsAsync<RedisConnectionException>(
+                () => reconciliation.WaitAsync(TimeSpan.FromSeconds(22)));
+            Assert.Equal("Lease store unavailable", exception.Message);
+            await store.Received(1).ReleaseLeaseAsync(job.OperationId, Arg.Any<string>(), Arg.Any<CancellationToken>());
+            await store.DidNotReceive().TrySetAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            renewal.TrySetResult(false);
+        }
+    }
+
     private static IExecutionJobStore LeaseStore(ExecutionJobRecord job)
     {
         var store = Substitute.For<IExecutionJobStore>();
