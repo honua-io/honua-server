@@ -194,6 +194,8 @@ public sealed class RedisVersionJobStoreRecoveryTests(RedisFixture fixture) : IA
     [IntegrationTheory]
     [InlineData("not-json")]
     [InlineData("null")]
+    [InlineData("")]
+    [InlineData(" ")]
     [Operation(Operations.TestInfrastructure)]
     public async Task SaveAsync_UnreadableDistributedRecord_PreservesItAndDiscardsLocalTransition(string payload)
     {

@@ -127,11 +127,13 @@ public sealed partial class ExecutionJobReconcilerTests
         var backend = Substitute.For<IBatchComputeBackend>();
         backend.BackendName.Returns("lease-test");
         backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
-        backend.ObserveAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>()).Returns(async _ =>
+        async Task<BatchComputeObservation> FailAfterLeaseRenewalStartsAsync()
         {
             await renewalStarted.Task.WaitAsync(TimeSpan.FromSeconds(15));
             throw LeaseUnavailable();
-        });
+        }
+        backend.ObserveAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
+            .Returns(_ => FailAfterLeaseRenewalStartsAsync());
         var reconciliation = LeaseReconciler(store, backend).ReconcileExecutionJobAsync(job.OperationId);
         try
         {
