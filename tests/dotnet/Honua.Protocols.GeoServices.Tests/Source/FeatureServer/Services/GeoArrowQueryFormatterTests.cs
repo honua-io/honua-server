@@ -895,7 +895,7 @@ public sealed class GeoArrowQueryFormatterTests
         var outputDirectory = Environment.GetEnvironmentVariable("HONUA_GEOARROW_FIXTURE_OUTPUT_DIR");
         if (string.IsNullOrWhiteSpace(outputDirectory))
         {
-            outputDirectory = Path.GetFullPath(Path.Join("tests", "TestResults", "geoarrow-interop"));
+            outputDirectory = Path.GetFullPath(Path.Join("artifacts", "test-results", "geoarrow-interop"));
         }
 
         Directory.CreateDirectory(outputDirectory);

@@ -93,7 +93,7 @@ def main():
     parser.add_argument('--output', type=Path, help='new uniquely owned evidence directory')
     args = parser.parse_args()
     root, tool = args.root.resolve(), args.tool.resolve()
-    output = (args.output or root / 'tests/TestResults/source-inventory-pilot' /
+    output = (args.output or root / 'artifacts/test-results/source-inventory-pilot' /
               (datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ') + '-' + uuid.uuid4().hex)).resolve()
     if not tool.is_file():
         parser.error('--tool must name an already-built tool')

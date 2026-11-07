@@ -35,7 +35,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
-RESULTS_DIR="${FOUNDATION_RESULTS_DIR:-./tests/TestResults}"
+RESULTS_DIR="${FOUNDATION_RESULTS_DIR:-./artifacts/test-results}"
 CONFIGURATION="${FOUNDATION_CONFIGURATION:-Release}"
 
 foundation_family_specs() {
