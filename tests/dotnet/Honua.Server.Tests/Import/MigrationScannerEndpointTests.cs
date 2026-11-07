@@ -151,7 +151,10 @@ public sealed class MigrationScannerEndpointTests : IAsyncLifetime
         plan.TryGetProperty("tenantId", out _).Should().BeFalse();
         var start = await _client.PostAsJsonAsync("/api/v1/admin/import/geoservices/start", new
         {
-            serviceUrl = sourceUrl, layerId = 0, tableName = "preview_parcels", plan
+            serviceUrl = sourceUrl,
+            layerId = 0,
+            tableName = "preview_parcels",
+            plan
         });
         start.StatusCode.Should().Be(HttpStatusCode.Accepted, await start.Content.ReadAsStringAsync());
         var acceptedPlan = (await start.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("plan");

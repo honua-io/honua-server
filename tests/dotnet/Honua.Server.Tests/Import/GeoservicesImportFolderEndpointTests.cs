@@ -59,7 +59,10 @@ public sealed class GeoservicesImportFolderEndpointTests
         plan.TryGetProperty("tenantId", out _).Should().BeFalse();
         var replay = await fixture.Client.PostAsJsonAsync("/api/v1/admin/import/geoservices/start", new
         {
-            serviceUrl = body["serviceUrl"], layerId = 0, tableName = "planned_parcels_retry", plan
+            serviceUrl = body["serviceUrl"],
+            layerId = 0,
+            tableName = "planned_parcels_retry",
+            plan
         });
         replay.StatusCode.Should().Be(HttpStatusCode.Accepted, await replay.Content.ReadAsStringAsync());
         var replayed = (await replay.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("plan");

@@ -16,8 +16,13 @@ public sealed record GeoservicesImportPlan
 
     public GeoservicesImportTarget BindTenant(string? tenant) => new()
     {
-        ServiceName = ServiceName, ServiceId = ServiceId, PublicName = PublicName,
-        ExistingService = ExistingService, FolderId = FolderId, FolderName = FolderName,
-        Namespace = Namespace, TenantId = tenant
+        ServiceName = ServiceName,
+        ServiceId = ServiceId,
+        PublicName = PublicName,
+        ExistingService = ExistingService,
+        FolderId = FolderId,
+        FolderName = FolderName,
+        Namespace = Namespace,
+        TenantId = tenant
     };
 }

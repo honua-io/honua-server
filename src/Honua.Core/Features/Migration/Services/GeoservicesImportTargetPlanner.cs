@@ -2,6 +2,8 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Migration.Domain;
@@ -10,6 +12,8 @@ namespace Honua.Core.Features.Migration.Services;
 
 public static class GeoservicesImportTargetPlanner
 {
+    private const string ServiceIdPrefix = "svc-import-";
+
     public static GeoservicesImportTarget Plan(MetadataV2Graph graph, GeoservicesImportSelection selection, string? trustedTenant)
     {
         if (selection.Plan is not null) return UsePlan(graph, selection, trustedTenant);
@@ -32,7 +36,7 @@ public static class GeoservicesImportTargetPlanner
         var target = new GeoservicesImportTarget
         {
             ServiceName = serviceName,
-            ServiceId = $"svc-import-{Guid.NewGuid():N}",
+            ServiceId = $"{ServiceIdPrefix}{Guid.NewGuid():N}",
             PublicName = publicName,
             FolderId = folder?.Metadata.Id,
             FolderName = folder?.Metadata.Name,
@@ -58,6 +62,11 @@ public static class GeoservicesImportTargetPlanner
             throw InvalidMapping("The import request does not match its selected plan.");
 
         var bound = plan.BindTenant(LayerPublicationNamespace.ResolveTenant(plan.Namespace, trustedTenant));
+        if ((!plan.ExistingService && !IsAllocatedServiceId(plan.ServiceId) &&
+             !graph.Services.Any(service => service.Metadata.Id == plan.ServiceId)) ||
+            (plan.FolderId is not null && !graph.Folders.Any(folder => folder.Metadata.Id == plan.FolderId) &&
+             plan.FolderId != SourceFolderId(plan.FolderName!, bound.TenantId)))
+            throw InvalidMapping("The import plan has an invalid target identity. Request a new plan.");
         bound.ValidateServiceIdentity(graph);
         if (plan.FolderId is not null && !graph.Folders.Any(folder => folder.Metadata.Id == plan.FolderId) &&
             !string.Equals(GeoservicesSourceService.FromUrl(selection.ServiceUrl)?.FolderPath, plan.FolderName, StringComparison.OrdinalIgnoreCase))
@@ -66,8 +75,11 @@ public static class GeoservicesImportTargetPlanner
 
         var target = Plan(graph, selection with
         {
-            Plan = null, ServiceName = plan.ServiceName, PublicName = plan.PublicName,
-            FolderId = new(plan.FolderId), Namespace = plan.Namespace
+            Plan = null,
+            ServiceName = plan.ServiceName,
+            PublicName = plan.PublicName,
+            FolderId = new(plan.FolderId),
+            Namespace = plan.Namespace
         }, trustedTenant);
         if (target.ExistingService && target.ServiceId != plan.ServiceId)
             throw new LayerPublishingException(LayerPublishingErrorKind.Conflict,
@@ -115,9 +127,19 @@ public static class GeoservicesImportTargetPlanner
             string.Equals(folder.Metadata.Name, sourceFolder, StringComparison.OrdinalIgnoreCase) &&
             MetadataV2ServicePaths.SameTenant(folder.Metadata.Tenant, tenant)) ?? new MetadataV2Folder
             {
-                Metadata = new() { Id = $"folder-import-{Guid.NewGuid():N}", Name = sourceFolder, Title = sourceFolder, Tenant = tenant }
+                Metadata = new() { Id = SourceFolderId(sourceFolder, tenant), Name = sourceFolder, Title = sourceFolder, Tenant = tenant }
             };
     }
+
+    private static string SourceFolderId(string folderName, string? tenant)
+    {
+        var identity = MetadataV2ServicePaths.NormalizeTenant(tenant) + "\0" + folderName.ToLowerInvariant();
+        return "folder-import-" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(identity)))[..32];
+    }
+
+    private static bool IsAllocatedServiceId(string serviceId)
+        => serviceId.Length == ServiceIdPrefix.Length + 32 && serviceId.StartsWith(ServiceIdPrefix, StringComparison.Ordinal) &&
+           serviceId.AsSpan(ServiceIdPrefix.Length).IndexOfAnyExcept("0123456789abcdef") < 0;
 
     private static string AllocateServiceName(MetadataV2Graph graph, string publicName, string? folderName)
     {
@@ -138,6 +160,7 @@ public static class GeoservicesImportTargetPlanner
     public static IReadOnlyList<GeoservicesImportTarget> PlanBatch(MetadataV2Graph graph,
         IReadOnlyList<GeoservicesImportSelection> selections, string? trustedTenant)
     {
+        var persistedServiceIds = graph.Services.Select(service => service.Metadata.Id).ToHashSet(StringComparer.Ordinal);
         var plans = new Dictionary<GeoservicesImportSelection, GeoservicesImportTarget>();
         var targets = new List<GeoservicesImportTarget>(selections.Count);
         foreach (var selection in selections)
@@ -145,6 +168,7 @@ public static class GeoservicesImportTargetPlanner
             if (!plans.TryGetValue(selection, out var target))
             {
                 target = Plan(graph, selection, trustedTenant);
+                target = target with { ExistingService = persistedServiceIds.Contains(target.ServiceId!) };
                 plans.Add(selection, target);
                 graph = AddPlannedTarget(graph, target);
             }

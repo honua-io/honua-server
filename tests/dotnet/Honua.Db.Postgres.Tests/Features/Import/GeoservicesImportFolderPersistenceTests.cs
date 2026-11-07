@@ -15,6 +15,71 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 
 public sealed partial class GeoservicesImportSubtypePersistenceTests
 {
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ImportLayerAsync_TargetsAdmittedBeforePublication_ReuseFolderAndAllowReorderedSharedService(bool sharedService)
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync("ImportAdmittedTargets");
+        await EnsureCatalogSchemaAsync();
+        await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, "honua");
+        var store = new PostgresMetadataV2GraphStore(new FixtureConnectionProvider(fixture), $"Admitted-{Guid.NewGuid():N}",
+            FixtureBypassDatabaseSchemaGuard.Instance);
+        var initial = await store.GetCurrentAsync();
+        var serviceName = $"admitted_{Guid.NewGuid():N}";
+        var selections = new[]
+        {
+            new GeoservicesImportSelection
+            {
+                ServiceUrl = "https://example.com/rest/services/Survey/First/FeatureServer",
+                ServiceName = serviceName, PublicName = sharedService ? "Combined" : "First"
+            },
+            new GeoservicesImportSelection
+            {
+                ServiceUrl = "https://example.com/rest/services/Survey/Second/FeatureServer",
+                ServiceName = sharedService ? serviceName : serviceName + "_second",
+                PublicName = sharedService ? "Combined" : "Second"
+            }
+        };
+        var targets = sharedService
+            ? GeoservicesImportTargetPlanner.PlanBatch(initial.Graph, selections, null)
+            : selections.Select(selection => GeoservicesImportTargetPlanner.Plan(initial.Graph, selection, null)).ToArray();
+        try
+        {
+            foreach (var index in sharedService ? new[] { 1, 0 } : new[] { 0, 1 })
+            {
+                var importer = CreateService(store, schema, false,
+                    handler: new SubtypeFeatureServerHandler(false, false, false, false, false,
+                        new Uri(selections[index].ServiceUrl).AbsolutePath));
+                var result = await importer.ImportLayerAsync(new()
+                {
+                    ServiceUrl = selections[index].ServiceUrl,
+                    LayerId = 0,
+                    TableName = $"admitted_{index}",
+                    TargetSchema = schema,
+                    BatchSize = 10,
+                    MaxRetries = 0,
+                    ServiceName = targets[index].ServiceName,
+                    Target = targets[index]
+                });
+                result.DataCommitted.Should().BeTrue(result.ErrorMessage);
+                result.PublishedLayerId.Should().NotBeNull(string.Join("; ", result.Warnings));
+            }
+
+            var after = await store.GetCurrentAsync();
+            after.Graph.Folders.Should().ContainSingle(folder => !folder.Deleted && folder.Metadata.Name == "Survey");
+            foreach (var target in targets)
+                after.Graph.Services.Single(service => service.Metadata.Id == target.ServiceId).FolderId.Should().Be(target.FolderId);
+            after.Graph.Publications.Where(publication => targets.Any(target => target.ServiceId == publication.ServiceId))
+                .Select(publication => publication.ResourceId).Distinct().Should().HaveCount(2);
+        }
+        finally
+        {
+            foreach (var name in targets.Select(target => target.ServiceName).Distinct()) await CleanupCatalogAsync(name);
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
     [IntegrationTest]
     public async Task ImportLayerAsync_ReplacementTargetsAnotherService_DoesNotRebindTheExistingPublication()
     {
@@ -31,25 +96,38 @@ public sealed partial class GeoservicesImportSubtypePersistenceTests
             var initial = await store.GetCurrentAsync();
             var target = GeoservicesImportTargetPlanner.Plan(initial.Graph, new()
             {
-                ServiceUrl = url, ServiceName = originalName, PublicName = "Parcels"
+                ServiceUrl = url,
+                ServiceName = originalName,
+                PublicName = "Parcels"
             }, null);
             var importer = CreateService(store, schema, false,
                 handler: new SubtypeFeatureServerHandler(false, false, false, false, false,
                     "/arcgis/rest/services/Survey/Parcels/FeatureServer"));
             var request = new GeoservicesImportRequest
             {
-                ServiceUrl = url, LayerId = 0, TableName = "existing_parcels", TargetSchema = schema,
-                BatchSize = 10, MaxRetries = 0, ServiceName = target.ServiceName, Target = target
+                ServiceUrl = url,
+                LayerId = 0,
+                TableName = "existing_parcels",
+                TargetSchema = schema,
+                BatchSize = 10,
+                MaxRetries = 0,
+                ServiceName = target.ServiceName,
+                Target = target
             };
             (await importer.ImportLayerAsync(request)).PublishedLayerId.Should().NotBeNull();
             var before = await store.GetCurrentAsync();
             var replacement = GeoservicesImportTargetPlanner.Plan(before.Graph, new()
             {
-                ServiceUrl = url, ServiceName = replacementName, PublicName = "Different", FolderId = new(target.FolderId)
+                ServiceUrl = url,
+                ServiceName = replacementName,
+                PublicName = "Different",
+                FolderId = new(target.FolderId)
             }, null);
             var result = await importer.ImportLayerAsync(request with
             {
-                OverwriteExisting = true, ServiceName = replacement.ServiceName, Target = replacement
+                OverwriteExisting = true,
+                ServiceName = replacement.ServiceName,
+                Target = replacement
             });
             result.DataCommitted.Should().BeTrue(result.ErrorMessage);
             result.PublishedLayerId.Should().BeNull();
@@ -197,12 +275,15 @@ public sealed partial class GeoservicesImportSubtypePersistenceTests
 
             var existingTarget = GeoservicesImportTargetPlanner.Plan(afterRetry.Graph, new()
             {
-                ServiceUrl = request.ServiceUrl, ServiceName = serviceName, Namespace = target.Namespace
+                ServiceUrl = request.ServiceUrl,
+                ServiceName = serviceName,
+                Namespace = target.Namespace
             }, "owner");
             existingTarget.ExistingService.Should().BeTrue();
             var additional = await importer.ImportLayerAsync(request with
             {
-                TableName = "additional_parcels", Target = existingTarget
+                TableName = "additional_parcels",
+                Target = existingTarget
             });
             additional.PublishedLayerId.Should().NotBeNull(string.Join("; ", additional.Warnings));
             additional.PublishedLayerId.Should().NotBe(result.PublishedLayerId);

@@ -17,15 +17,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Db.Postgres.Features.Migration;
 
-/// <summary>
-/// Owns the post-commit, published-layer lifecycle for ArcGIS GeoServices imports: AutoPublish of the
-/// imported table, MapLibre style attachment, and the post-publish data/catalog reconciliation gate.
-/// <see cref="GeoservicesImportService"/> commits the imported data and then delegates this ordered
-/// publish -> style -> reconcile work here so its own constructor stays within the collaborator ceiling.
-/// All behavior (warning text, ordered progress phases, reconciliation verdicts) is identical to the
-/// pre-extraction inline implementation; this type is pure delegation that bundles the publishing,
-/// style-conversion, style-catalog, reconciliation, and metadata-graph collaborators.
-/// </summary>
 internal sealed partial class GeoservicesLayerPublicationService
 {
     private readonly ILayerPublishingService? _layerPublishingService;
@@ -191,7 +182,8 @@ internal sealed partial class GeoservicesLayerPublicationService
             catch (Exception rewriteException) when (rewriteException is not OperationCanceledException)
             {
                 Log.PublishedFieldRewriteFailed(_logger, ex.LayerId.Value, request.TableName, rewriteException);
-                warnings.Add("Published field metadata could not be rewritten for the replaced table.");
+                warnings.Add(PublicationFailureReason(request, rewriteException,
+                    "Published field metadata could not be rewritten for the replaced table."));
                 if (request.Target is not null) return null;
             }
 
@@ -253,13 +245,14 @@ internal sealed partial class GeoservicesLayerPublicationService
             catch (Exception recoveryException) when (recoveryException is not OperationCanceledException)
             {
                 Log.AutoPublishFailed(_logger, request.TableName, request.ServiceName!, recoveryException);
-                warnings.Add("AutoPublish was requested, but publishing did not complete.");
+                warnings.Add(PublicationFailureReason(request, recoveryException,
+                    "AutoPublish was requested, but publishing did not complete."));
                 return null;
             }
         }
-        catch (LayerPublishingException)
+        catch (LayerPublishingException ex)
         {
-            warnings.Add("AutoPublish was requested, but publishing did not complete.");
+            warnings.Add(PublicationFailureReason(request, ex, "AutoPublish was requested, but publishing did not complete."));
             return null;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -269,6 +262,12 @@ internal sealed partial class GeoservicesLayerPublicationService
             return null;
         }
     }
+
+    private static string PublicationFailureReason(GeoservicesImportRequest request, Exception exception, string fallback)
+        => request.Target is not null && exception is LayerPublishingException
+        {
+            ErrorKind: LayerPublishingErrorKind.Conflict or LayerPublishingErrorKind.Validation or LayerPublishingErrorKind.NotFound
+        } ? exception.Message : fallback;
 
     private static string? ResolveImportedGlobalIdField(GeoservicesLayerInfo layerInfo, GeoservicesImportColumnMap columnMap)
     {

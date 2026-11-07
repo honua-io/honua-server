@@ -15,6 +15,73 @@ public sealed class GeoservicesImportTargetPlannerTests
     [UnitTheory]
     [InlineData(false)]
     [InlineData(true)]
+    public void Plan_LiveCatalogIdentitiesRemainOpaque_AcceptsExistingNonImportIds(bool existingService)
+    {
+        var folder = Folder("catalog-folder", "Target", null);
+        var service = new MetadataV2Service
+        {
+            Metadata = new() { Id = "svc-publish-Parcels", Name = "Parcels" },
+            FolderId = folder.Metadata.Id
+        };
+        var graph = new MetadataV2Graph { Folders = [folder], Services = [service] };
+        var selection = Selection("Survey") with { ServiceName = "Parcels" };
+        var plan = GeoservicesImportTargetPlanner.Plan(graph, selection, null).ToPlan(selection.ServiceUrl)
+            with
+        { ExistingService = existingService };
+
+        var target = GeoservicesImportTargetPlanner.Plan(graph, selection with { Plan = plan }, null);
+
+        target.ServiceId.Should().Be(service.Metadata.Id);
+        target.FolderId.Should().Be(folder.Metadata.Id);
+    }
+
+    [UnitTheory]
+    [InlineData(null, null)]
+    [InlineData("published", "owner")]
+    public void Plan_IndependentSourceFolderAdmissions_ConvergeOnScopedFolderIdentity(string? publicationNamespace, string? tenant)
+    {
+        var first = GeoservicesImportTargetPlanner.Plan(new(), Selection("Survey") with { Namespace = publicationNamespace }, tenant);
+        var second = GeoservicesImportTargetPlanner.Plan(new(), Selection("survey") with { Namespace = publicationNamespace }, tenant);
+
+        first.FolderId.Should().Be(second.FolderId);
+        var foreign = GeoservicesImportTargetPlanner.Plan(new(), Selection("Survey") with { Namespace = "published" }, "different-owner");
+        foreign.FolderId.Should().NotBe(first.FolderId);
+    }
+
+    [UnitTest]
+    public void PlanBatch_SharedNewService_DoesNotRequireVirtualServiceToExistAtExecution()
+    {
+        var first = Selection("Survey") with { ServiceName = "combined" };
+        var second = first with { ServiceUrl = "https://example.com/rest/services/Survey/Other/FeatureServer" };
+        var targets = GeoservicesImportTargetPlanner.PlanBatch(new(), [first, second], null);
+
+        targets[1].ServiceId.Should().Be(targets[0].ServiceId);
+        targets.Should().OnlyContain(target => !target.ExistingService);
+        var executeSecondFirst = () => targets[1].ValidateServiceIdentity(new());
+        executeSecondFirst.Should().NotThrow();
+    }
+
+    [UnitTheory]
+    [InlineData(false, "svc-publish-Roads")]
+    [InlineData(false, "svc-import-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")]
+    [InlineData(false, "arbitrary-service")]
+    [InlineData(true, "arbitrary-folder")]
+    [InlineData(true, "folder-import-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")]
+    [InlineData(true, "folder-import-00000000000000000000000000000000")]
+    public void Plan_SuppliedPreviewUsesUnallocatedInternalIdentity_Refuses(bool changeFolder, string identity)
+    {
+        var selection = Selection("Survey");
+        var plan = GeoservicesImportTargetPlanner.Plan(new(), selection, null).ToPlan(selection.ServiceUrl);
+        plan = changeFolder ? plan with { FolderId = identity } : plan with { ServiceId = identity };
+
+        var admit = () => GeoservicesImportTargetPlanner.Plan(new(), selection with { Plan = plan }, null);
+
+        admit.Should().Throw<LayerPublishingException>().Which.ErrorKind.Should().Be(LayerPublishingErrorKind.Validation);
+    }
+
+    [UnitTheory]
+    [InlineData(false)]
+    [InlineData(true)]
     public void Plan_ExistingPreviewSelectsDifferentFacet_RefusesRatherThanRebinding(bool reorderedCatalog)
     {
         var first = new MetadataV2Service { Metadata = new() { Id = "first-facet", Name = "logical" }, PublicName = "Parcels" };
@@ -157,7 +224,9 @@ public sealed class GeoservicesImportTargetPlannerTests
     {
         var existing = new MetadataV2Service
         {
-            Metadata = new() { Id = "existing", Name = "logical" }, FolderId = "target", PublicName = "Original"
+            Metadata = new() { Id = "existing", Name = "logical" },
+            FolderId = "target",
+            PublicName = "Original"
         };
         var graph = new MetadataV2Graph { Folders = [Folder("target", "Target", null)], Services = [existing] };
         var target = GeoservicesImportTargetPlanner.Plan(graph, Selection("Survey") with { ServiceName = "logical" }, null);

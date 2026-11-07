@@ -29,8 +29,13 @@ public sealed class MigrationBatchOrchestratorTests
         var request = NewRequest();
         var target = new GeoservicesImportTarget
         {
-            ServiceName = "allocated-parcels", ServiceId = "planned-service", PublicName = "Parcels",
-            FolderId = "planned-folder", FolderName = "Survey", Namespace = "published", TenantId = "resolved-owner"
+            ServiceName = "allocated-parcels",
+            ServiceId = "planned-service",
+            PublicName = "Parcels",
+            FolderId = "planned-folder",
+            FolderName = "Survey",
+            Namespace = "published",
+            TenantId = "resolved-owner"
         };
         var batch = await orchestrator.StartAsync(request with
         {

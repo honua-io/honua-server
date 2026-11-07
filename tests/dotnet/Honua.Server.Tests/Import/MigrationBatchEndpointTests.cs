@@ -116,6 +116,42 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
+    [IntegrationTheory]
+    [InlineData("invalid", HttpStatusCode.BadRequest)]
+    [InlineData("nested", HttpStatusCode.BadRequest)]
+    [InlineData("missing", HttpStatusCode.NotFound)]
+    [InlineData("stale", HttpStatusCode.Conflict)]
+    [Endpoint("POST /api/v1/admin/import/migrations")]
+    public async Task StartBatch_InvalidTargetMapping_RefusesBeforeStartingOrCreatingRun(string mapping, HttpStatusCode expected)
+    {
+        var sourceFolder = mapping switch { "invalid" => "Bad.Folder", "nested" => "Outer/Inner", _ => "Survey" };
+        var url = $"https://example.com/rest/services/{sourceFolder}/Parcels/FeatureServer";
+        var layer = new Dictionary<string, object?>
+        {
+            ["sourceResourceId"] = "resource:parcels:0",
+            ["serviceUrl"] = url,
+            ["layerId"] = 0,
+            ["tableName"] = "refused_target"
+        };
+        if (mapping == "missing") layer["folderId"] = "missing-folder";
+        if (mapping == "stale")
+        {
+            layer["plan"] = GeoservicesImportTargetPlanner.Plan(new(), new() { ServiceUrl = url }, null)
+                .ToPlan(url) with
+            { ExistingService = true };
+        }
+
+        using var response = await _client.PostAsJsonAsync("/api/v1/admin/import/migrations", new
+        {
+            sourceKind = "geoservices-rest",
+            layers = new[] { layer }
+        });
+
+        response.StatusCode.Should().Be(expected, await response.Content.ReadAsStringAsync());
+        _orchestrator.LastRequest.Should().BeNull();
+        _catalog.BatchCount.Should().Be(0);
+    }
+
     /// <summary>
     /// #4600 (AC1): a caller that requires full fidelity gets 422 with the construct accounting that
     /// refused the selection, and no run is created. The manifest discovers layers 0 and 1; only layer 0 is

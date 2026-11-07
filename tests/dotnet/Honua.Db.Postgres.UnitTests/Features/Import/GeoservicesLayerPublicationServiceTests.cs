@@ -16,6 +16,46 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class GeoservicesLayerPublicationServiceTests
 {
+    [Theory]
+    [InlineData(false, LayerPublishingErrorKind.Conflict)]
+    [InlineData(false, LayerPublishingErrorKind.Validation)]
+    [InlineData(false, LayerPublishingErrorKind.NotFound)]
+    [InlineData(true, LayerPublishingErrorKind.Conflict)]
+    [InlineData(true, LayerPublishingErrorKind.Validation)]
+    [InlineData(true, LayerPublishingErrorKind.NotFound)]
+    [InlineData(false, LayerPublishingErrorKind.Unknown)]
+    [InlineData(true, LayerPublishingErrorKind.Unknown)]
+    public async Task TryPublishImportedLayerAsync_PlannedTargetRefused_PreservesMappingReason(bool replacing, LayerPublishingErrorKind errorKind)
+    {
+        const string reason = "The planned import folder changed. Select a new target mapping.";
+        var refusal = new LayerPublishingException(errorKind, reason);
+        var publishing = new Mock<ILayerPublishingService>(MockBehavior.Strict);
+        publishing.Setup(service => service.PublishLayerAsync("Host=unused", It.IsAny<LayerPublishRequest>(), CancellationToken.None))
+            .ThrowsAsync(replacing ? new LayerPublishingException(LayerPublishingErrorKind.Conflict, "Already published.", 27) : refusal);
+        if (replacing)
+            publishing.Setup(service => service.RewritePublishedLayerFieldsAsync("Host=unused", 27, It.IsAny<LayerPublishRequest>(), CancellationToken.None))
+                .ThrowsAsync(refusal);
+        var publication = new GeoservicesLayerPublicationService(NullLogger<GeoservicesLayerPublicationService>.Instance, publishing.Object);
+        var warnings = new List<string>();
+
+        var result = await publication.TryPublishImportedLayerAsync(new()
+        {
+            ServiceUrl = "https://example.com/rest/services/Survey/Parcels/FeatureServer",
+            LayerId = 0,
+            TableName = "parcels",
+            ServiceName = "planned",
+            Target = new() { ServiceId = "planned-id", ServiceName = "planned", PublicName = "Parcels" }
+        }, "honua_data", new() { Id = 0, Name = "Parcels", Fields = [] }, warnings, null, "job", DateTimeOffset.UtcNow,
+            1, "Host=unused", CancellationToken.None, replacingExistingTarget: replacing);
+
+        result.Should().BeNull();
+        var warning = warnings.Should().ContainSingle().Which;
+        if (errorKind == LayerPublishingErrorKind.Unknown) warning.Should().NotContain(reason);
+        else warning.Should().Be(reason);
+        publishing.Verify(service => service.RefreshMaterializedFeaturesForSourceTableAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     [Fact]
     public async Task TryPublishImportedLayerAsync_PlannedReplacementReturnsAnotherService_RefusesWithoutRefreshing()
     {
@@ -28,7 +68,10 @@ public sealed class GeoservicesLayerPublicationServiceTests
         var warnings = new List<string>();
         var result = await publication.TryPublishImportedLayerAsync(new()
         {
-            ServiceUrl = "https://example.com/rest/services/Planning/FeatureServer", LayerId = 0, TableName = "parcels", ServiceName = "different",
+            ServiceUrl = "https://example.com/rest/services/Planning/FeatureServer",
+            LayerId = 0,
+            TableName = "parcels",
+            ServiceName = "different",
             Target = new() { ServiceId = "different-id", ServiceName = "different", PublicName = "Parcels" }
         }, "honua_data", new() { Id = 0, Name = "Parcels", Fields = [] }, warnings, null, "job", DateTimeOffset.UtcNow,
             1, "Host=unused", CancellationToken.None, replacingExistingTarget: true);

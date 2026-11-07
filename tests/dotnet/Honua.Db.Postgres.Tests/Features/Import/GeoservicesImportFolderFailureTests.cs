@@ -32,7 +32,9 @@ public sealed partial class GeoservicesImportSubtypePersistenceTests
         const string sourceUrl = "https://example.com/arcgis/rest/services/Survey/Parcels/FeatureServer";
         var target = GeoservicesImportTargetPlanner.Plan(initial.Graph, new()
         {
-            ServiceUrl = sourceUrl, ServiceName = $"failed_{Guid.NewGuid():N}", PublicName = "Parcels"
+            ServiceUrl = sourceUrl,
+            ServiceName = $"failed_{Guid.NewGuid():N}",
+            PublicName = "Parcels"
         }, null);
         var concurrentFolder = new MetadataV2Folder { Metadata = new() { Id = "concurrent-folder", Name = "Concurrent" } };
         var firstGraphSaved = false;
@@ -77,8 +79,14 @@ public sealed partial class GeoservicesImportSubtypePersistenceTests
                 publicationLogger: loggerFactory.Object.CreateLogger<GeoservicesLayerPublicationService>());
             var result = await importer.ImportLayerAsync(new GeoservicesImportRequest
             {
-                ServiceUrl = sourceUrl, LayerId = 0, TableName = "failed_parcels", TargetSchema = schema,
-                BatchSize = 10, MaxRetries = 0, ServiceName = target.ServiceName, Target = target
+                ServiceUrl = sourceUrl,
+                LayerId = 0,
+                TableName = "failed_parcels",
+                TargetSchema = schema,
+                BatchSize = 10,
+                MaxRetries = 0,
+                ServiceName = target.ServiceName,
+                Target = target
             });
             result.DataCommitted.Should().BeTrue(result.ErrorMessage);
             result.PublishedLayerId.Should().BeNull();

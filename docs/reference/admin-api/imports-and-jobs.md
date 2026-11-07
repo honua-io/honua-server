@@ -101,7 +101,8 @@ the request supplies the same values; changing membership requires the service m
 
 A scan with `artifactSet: "all"` records `identity.importPlan` on the service and resource
 identities, alongside `targetFolderPath` and `targetPublicName`. Supply that object as `plan`
-when starting the import. The accepted response also returns its `plan`. Admission revalidates
+when starting the import, keeping the returned identity values unchanged. The accepted response
+also returns its `plan`. Admission revalidates
 the chosen identities and refuses a changed or occupied target instead of allocating another
 name. Queued execution and retries retain the admitted target. The same per-layer inputs apply
 to batch migration requests; layers from the same source share one target plan.

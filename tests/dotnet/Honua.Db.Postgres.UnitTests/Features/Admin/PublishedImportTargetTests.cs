@@ -23,7 +23,9 @@ public sealed class PublishedImportTargetTests
         var planned = new MetadataV2Service
         {
             Metadata = new() { Id = target.ServiceId!, Name = target.ServiceName, Title = "Operator title" },
-            FolderId = target.FolderId, PublicName = target.PublicName, Route = "/operator/configured/FeatureServer"
+            FolderId = target.FolderId,
+            PublicName = target.PublicName,
+            Route = "/operator/configured/FeatureServer"
         };
         var other = planned with { Metadata = planned.Metadata with { Id = "other-facet" }, ServiceType = MetadataV2ServiceType.EsriMapService };
         var graph = new MetadataV2Graph { Folders = [target.CreateFolderDefinition()!], Services = [other, planned] };
@@ -71,8 +73,11 @@ public sealed class PublishedImportTargetTests
 
     private static MetadataV2Publication PublicationCollections(string[]? values) => new()
     {
-        Metadata = new() { Id = "publication" }, ResourceId = "resource", ServiceId = "service",
-        SupportedFormats = values!, Capabilities = values!,
+        Metadata = new() { Id = "publication" },
+        ResourceId = "resource",
+        ServiceId = "service",
+        SupportedFormats = values!,
+        Capabilities = values!,
         FieldAliases = values?.ToDictionary(value => value, value => value)!,
         Options = values?.ToDictionary(value => value, value => JsonSerializer.SerializeToElement(value))!,
         Extensions = values?.ToDictionary(value => value, value => JsonSerializer.SerializeToElement(value))!
@@ -167,9 +172,14 @@ public sealed class PublishedImportTargetTests
         };
         return new()
         {
-            Schema = "public", Table = "parcels", LayerName = "Parcels",
-            ServiceName = target.ServiceName, PublicName = target.PublicName,
-            FolderId = new(target.FolderId), ImportTarget = target, Namespace = target.Namespace
+            Schema = "public",
+            Table = "parcels",
+            LayerName = "Parcels",
+            ServiceName = target.ServiceName,
+            PublicName = target.PublicName,
+            FolderId = new(target.FolderId),
+            ImportTarget = target,
+            Namespace = target.Namespace
         };
     }
 }

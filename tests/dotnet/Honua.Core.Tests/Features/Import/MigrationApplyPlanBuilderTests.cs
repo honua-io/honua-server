@@ -23,8 +23,11 @@ public sealed class MigrationApplyPlanBuilderTests
         var importPlan = new GeoservicesImportPlan
         {
             ServiceUrl = "https://example.com/rest/services/Survey/Parcels/FeatureServer",
-            ServiceName = "logical-parcels", ServiceId = "planned-service", PublicName = "Parcels",
-            FolderId = "planned-folder", FolderName = "Survey"
+            ServiceName = "logical-parcels",
+            ServiceId = "planned-service",
+            PublicName = "Parcels",
+            FolderId = "planned-folder",
+            FolderName = "Survey"
         };
         var manifest = MigrationManifestTranslator.Translate(CreateInventory([CreateResource("parcels", "Parcels", "compatible", "Queryable resource.")]));
         var resource = manifest.TargetResources[0] with
@@ -32,7 +35,9 @@ public sealed class MigrationApplyPlanBuilderTests
             Identity = new()
             {
                 IdentityStability = MigrationManifestIdentityStabilities.Preserved,
-                ImportPlan = importPlan, TargetPublicName = importPlan.PublicName, TargetFolderPath = importPlan.FolderName
+                ImportPlan = importPlan,
+                TargetPublicName = importPlan.PublicName,
+                TargetFolderPath = importPlan.FolderName
             }
         };
         manifest = manifest with
