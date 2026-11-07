@@ -24,6 +24,10 @@ public sealed record StudioPackageEnvelope
     [JsonPropertyName("format")]
     public string? Format { get; init; }
 
+    [JsonPropertyName("display")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public StudioPackageDisplay? Display { get; init; }
+
     /// <summary>Data, service, content, field, CRS, unit, or permission bindings.</summary>
     [JsonPropertyName("bindings")]
     public IReadOnlyList<StudioPackageBinding> Bindings { get; init; } = Array.Empty<StudioPackageBinding>();

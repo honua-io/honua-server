@@ -11,7 +11,7 @@ namespace Honua.Core.Features.Studio.Services;
 /// <summary>
 /// In-memory Studio package store for tests and local fallback scenarios.
 /// </summary>
-public sealed class InMemoryStudioPackageStore : IStudioPackageStore
+public sealed partial class InMemoryStudioPackageStore : IStudioPackageStore
 {
     private const int DefaultListLimit = 25;
     private const int MaxListLimit = 200;
@@ -619,7 +619,8 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
         // Each item is governed by its newest accepted request. A route has one governing
         // item; CreatePublicationRequestAsync rejects a different item's claim.
         return _publicationRequests.Values
-            .Where(static request => request.Status == StudioPublicationRequestStatus.Accepted)
+            .Where(request => request.Status == StudioPublicationRequestStatus.Accepted &&
+                _items.TryGetValue(request.ItemId, out var item) && item.PublishedVersionId is not null)
             .GroupBy(static request => request.ItemId)
             .Select(static requests => requests
                 .OrderByDescending(static request => request.CreatedAt)
