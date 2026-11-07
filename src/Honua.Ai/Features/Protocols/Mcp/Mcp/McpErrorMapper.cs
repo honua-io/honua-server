@@ -287,7 +287,7 @@ internal static class McpErrorMapper
     public static McpJsonRpcError Unauthenticated() => new()
     {
         Code = JsonRpcServerError,
-        Message = $"Authentication is required to use the MCP operator surface. {AuthenticationGuidance}",
+        Message = "Authentication is required to use the MCP operator surface.",
         Data = new McpErrorData
         {
             Code = Codes.Unauthenticated,

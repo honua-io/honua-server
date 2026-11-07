@@ -116,6 +116,31 @@ public sealed class McpAuthenticationGuidanceTests : IAsyncLifetime
         }
     }
 
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "resources/read")]
+    public async Task ResourcesRead_AnonymousKnownOrUnknownUri_ReturnsSameCredentialGuidance(bool modern)
+    {
+        using var client = _fixture.CreateClient();
+        string? first = null;
+        foreach (var uri in new[] { "honua://catalog/processes", "honua://unknown/thing" })
+        {
+            using var request = BuildRequest("resources/read", "{\"uri\":\"" + uri + "\"}", "default", modern);
+            using var response = await client.SendAsync(request);
+            response.StatusCode.Should().Be(modern ? HttpStatusCode.Unauthorized : HttpStatusCode.OK);
+            var responseBody = await response.Content.ReadAsStringAsync();
+            using var document = JsonDocument.Parse(responseBody);
+            var message = document.RootElement.GetProperty("error").GetProperty("message").GetString()!;
+            message.Should().Contain("X-API-Key").And.Contain("administrator")
+                .And.Contain("Authorization: Bearer").And.Contain("identity provider");
+            message.Should().NotContain(uri);
+            first ??= responseBody;
+            responseBody.Should().Be(first);
+        }
+    }
+
     private static HttpRequestMessage BuildRequest(string method, string parameters, string? view, bool modern)
     {
         var metadata = modern
@@ -136,7 +161,7 @@ public sealed class McpAuthenticationGuidanceTests : IAsyncLifetime
             request.Headers.Add("MCP-Protocol-Version", "2026-07-28");
             request.Headers.Add("Mcp-Method", method);
             using var arguments = JsonDocument.Parse(parameters);
-            if (arguments.RootElement.TryGetProperty("name", out var name))
+            if (arguments.RootElement.TryGetProperty(method == "resources/read" ? "uri" : "name", out var name))
             {
                 request.Headers.Add("Mcp-Name", name.GetString());
             }
