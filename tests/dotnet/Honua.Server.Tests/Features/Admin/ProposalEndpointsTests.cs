@@ -568,6 +568,37 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         _executor.Executed.Should().BeTrue();
     }
 
+    public static IEnumerable<object[]> NonHumanApprovalCases =>
+        Enum.GetValues<OperationClass>().SelectMany(kind => new[]
+        {
+            new object[] { kind, "admin:write" },
+            new object[] { kind, "admin:approve" }
+        });
+
+    [IntegrationTheory]
+    [MemberData(nameof(NonHumanApprovalCases))]
+    [Endpoint("POST /api/v1/admin/api-keys")]
+    [Endpoint("GET /api/v1/admin/proposals/{id}")]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    public async Task ApproveProposal_ApiKeyWithDecisionGrant_RequiresHumanSession(
+        OperationClass kind, string grant)
+    {
+        var key = await CreateApiKeyAsync("noninteractive-decision", ["admin:read", grant]);
+        var proposal = await SeedProposalAsync(requestedBy: "agent:proposer", kind: kind);
+        using var client = CreateApiKeyClient(key.Key);
+        using var read = await client.GetAsync($"/api/v1/admin/proposals/{proposal.ProposalId}");
+        read.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var response = await client.PostAsync($"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("human").And.Contain("Console").And.Contain("MCP");
+        (await _proposalStore.GetAsync(proposal.ProposalId)).Should().BeEquivalentTo(proposal);
+        _executor.ExecutionCount.Should().Be(0);
+        _notifier.ResolvedCount.Should().Be(0);
+    }
+
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
     public async Task Gateway_BlockedTier_ReturnsBlocked()
