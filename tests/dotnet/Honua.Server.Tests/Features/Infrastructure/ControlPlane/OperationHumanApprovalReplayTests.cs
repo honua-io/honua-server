@@ -8,10 +8,14 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Infrastructure.Security;
 using Honua.Server.Features.Operations;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Infrastructure.ControlPlane;
 
+[SecurityTest]
+[Protocol(TestProtocols.Admin)]
+[Operation(Operations.ApprovalManagement)]
 public sealed class OperationHumanApprovalReplayTests
 {
     [UnitTheory]
