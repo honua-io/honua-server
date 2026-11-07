@@ -73,6 +73,9 @@ the unit their clients actually fetch.
 | `GetFeatureInfo` | `GetMap` parameters plus `QUERY_LAYERS`, `I`/`J` (1.3.0) or `X`/`Y` (1.1.1), `INFO_FORMAT`, `FEATURE_COUNT`. |
 | `GetLegendGraphic` | `LAYER`, optional `STYLE` (`default`), `FORMAT` (`image/png`), `WIDTH`/`HEIGHT` (swatch size hint, default 20x20), `SCALE`. |
 
+WMS `GetMap` paints fill, line, and circle symbology. It does not paint feature
+labels or MapLibre `symbol` layers; see [Feature labeling is not served](../../guides/style/style-maps.md#feature-labeling-is-not-served).
+
 Axis-order quirk: WMS 1.3.0 `BBOX` follows the CRS-defined axis order (lat,lon for EPSG:4326); WMS 1.1.1 always uses lon,lat. Honua applies the correct order per negotiated version.
 
 > Open `https://server.example.com/ogc/services/roads/wms?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=0&STYLES=&CRS=EPSG:4326&BBOX=37.7,-122.5,37.9,-122.3&WIDTH=800&HEIGHT=600&FORMAT=image/png` in a browser.
