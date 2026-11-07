@@ -109,12 +109,12 @@ public sealed class PublicCatalogEndpointsTestsHiddenPublication : IAsyncLifetim
         using var before = await _fixture.Client.GetAsync(path);
         Assert.Equal(HttpStatusCode.OK, before.StatusCode);
         var visible = XDocument.Parse(await before.Content.ReadAsStringAsync());
-        Assert.NotEmpty(visible.Descendants().Where(element => element.Name.LocalName == "FeatureType"));
+        Assert.Contains(visible.Descendants(), element => element.Name.LocalName == "FeatureType");
         SetAdvertising(false);
         using var after = await _fixture.Client.GetAsync(path);
         Assert.Equal(HttpStatusCode.OK, after.StatusCode);
         var hidden = XDocument.Parse(await after.Content.ReadAsStringAsync());
-        Assert.Empty(hidden.Descendants().Where(element => element.Name.LocalName == "FeatureType"));
+        Assert.DoesNotContain(hidden.Descendants(), element => element.Name.LocalName == "FeatureType");
     }
 
     [IntegrationTest]
@@ -128,12 +128,12 @@ public sealed class PublicCatalogEndpointsTestsHiddenPublication : IAsyncLifetim
         using var before = await _fixture.Client.GetAsync(path);
         Assert.Equal(HttpStatusCode.OK, before.StatusCode);
         var visible = XDocument.Parse(await before.Content.ReadAsStringAsync());
-        Assert.NotEmpty(visible.Descendants().Where(element => element.Name.LocalName == "Layer"));
+        Assert.Contains(visible.Descendants(), element => element.Name.LocalName == "Layer");
         SetAdvertising(false);
         using var after = await _fixture.Client.GetAsync(path);
         Assert.Equal(HttpStatusCode.OK, after.StatusCode);
         var hidden = XDocument.Parse(await after.Content.ReadAsStringAsync());
-        Assert.Empty(hidden.Descendants().Where(element => element.Name.LocalName == "Layer"));
+        Assert.DoesNotContain(hidden.Descendants(), element => element.Name.LocalName == "Layer");
     }
 
     private void SetAdvertising(bool advertised)
