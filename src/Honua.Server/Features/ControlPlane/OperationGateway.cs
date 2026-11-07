@@ -330,6 +330,7 @@ internal sealed partial class OperationGateway : IOperationGateway
 
         try
         {
+            await RecordApprovalAsync(proposal, approvedBy, cancellationToken).ConfigureAwait(false);
             await using var scope = _scopeFactory.CreateAsyncScope();
             var invoker = scope.ServiceProvider.GetRequiredService<ICanonicalOperationInvoker>();
             var operationId = proposal.OperationId ?? LegacyOperationIds.For(proposal.Kind);
@@ -504,6 +505,19 @@ internal sealed partial class OperationGateway : IOperationGateway
             .ConfigureAwait(false);
         await _notifier.NotifyResolvedAsync(resolved, cancellationToken).ConfigureAwait(false);
         return resolved;
+    }
+
+    private async Task RecordApprovalAsync(
+        OperationProposal proposal,
+        string approvedBy,
+        CancellationToken cancellationToken)
+    {
+        var auditId = await WriteAuditAsync(
+            proposal, "operation.approved", approvedBy, AuditOutcome.Success, cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(auditId))
+        {
+            throw new InvalidOperationException("Approval audit persistence did not return an identity.");
+        }
     }
 
     private async Task PersistCanonicalRejectionAsync(
