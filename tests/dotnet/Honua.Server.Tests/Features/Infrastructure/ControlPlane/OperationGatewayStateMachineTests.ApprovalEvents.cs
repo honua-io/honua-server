@@ -38,7 +38,7 @@ public sealed partial class OperationGatewayStateMachineTests
             await Assert.ThrowsAsync<InvalidOperationException>(() =>
                 gateway.ApplyApprovedProposalAsync(proposal.ProposalId, "another-approver"));
             var principal = new ClaimsPrincipal(new ClaimsIdentity(
-                [new Claim(ClaimTypes.NameIdentifier, proposal.RequestedBy)], "test"));
+                [new Claim(ClaimTypes.NameIdentifier, proposal.RequestedBy!)], "test"));
             var authorization = Substitute.For<IAuthorizationService>();
             authorization.AuthorizeAsync(principal, Arg.Any<object>(), AuthenticationExtensions.OpsReadPolicy)
                 .Returns(AuthorizationResult.Success());
