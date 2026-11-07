@@ -96,6 +96,51 @@ public sealed class ResponseCacheReconnectTests
         Assert.Null(await replica.GetAsync<CachedResponse>(QueryKey));
     }
 
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task GetAsync_NamespaceWriteIsPending_DeclinesRecoveryUntilTheWriteFinishes()
+    {
+        var shared = new ConcurrentDictionary<string, byte[]>(StringComparer.Ordinal);
+        var ownerBackend = new FaultyCache(shared);
+        await using var ownerService = CacheNode(ownerBackend.Cache);
+        await using var replicaService = CacheNode(new FaultyCache(shared).Cache);
+        var owner = new CacheServiceResponseCache(ownerService, Settings());
+        var replica = new CacheServiceResponseCache(replicaService, Settings());
+        var namespaceEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finishNamespace = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var namespaceWrites = 0;
+        ownerBackend.BeforeWrite = async key =>
+        {
+            if (key.Contains("response-version:query:featureserver", StringComparison.Ordinal)
+                && Interlocked.Increment(ref namespaceWrites) == 1)
+            {
+                namespaceEntered.SetResult();
+                await finishNamespace.Task;
+            }
+        };
+        var invalidating = owner.RemoveByPatternAsync("query:featureserver:service:*");
+        try
+        {
+            await namespaceEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            ownerBackend.WriteUnavailable = true;
+            await ownerService.SetAsync("partition-marker", "unavailable", Lifetime);
+            ownerBackend.WriteUnavailable = false;
+
+            Assert.False(await RestoreAsync(ownerService).WaitAsync(TimeSpan.FromSeconds(5)));
+            Assert.True(ownerService.IsUsingFallback);
+        }
+        finally
+        {
+            finishNamespace.TrySetResult();
+            await invalidating;
+        }
+
+        var keyBeforeRecovery = await replica.BindKeyAsync(QueryKey);
+        await replica.SetAsync(keyBeforeRecovery, new CachedResponse(new byte[32], "application/json"), Lifetime);
+        Assert.True(await RestoreAsync(ownerService));
+        Assert.Null(await replica.GetAsync<CachedResponse>(QueryKey));
+    }
+
     private static CacheOptions Settings() => new()
     {
         Enabled = true,
@@ -119,6 +164,7 @@ public sealed class ResponseCacheReconnectTests
     {
         public IDistributedCache Cache { get; } = Substitute.For<IDistributedCache>();
         public bool WriteUnavailable { get; set; }
+        public Func<string, Task>? BeforeWrite { get; set; }
         public Func<string, Task>? AfterWrite { get; set; }
 
         public FaultyCache(ConcurrentDictionary<string, byte[]> shared)
@@ -134,6 +180,10 @@ public sealed class ResponseCacheReconnectTests
                         throw new RedisConnectionException(ConnectionFailureType.UnableToConnect, "Injected Redis write failure");
                     }
                     var key = call.ArgAt<string>(0);
+                    if (BeforeWrite is { } beforeWrite)
+                    {
+                        await beforeWrite(key);
+                    }
                     shared[key] = call.ArgAt<byte[]>(1).ToArray();
                     if (AfterWrite is { } afterWrite)
                     {
