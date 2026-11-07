@@ -188,7 +188,7 @@ internal sealed partial class RedisVersionJobStore : IVersionJobStore
             Message = "Version job store Redis operation failed for job {JobId}; retaining the unacknowledged transition locally.")]
         public static partial void VersionJobStoreRedisError(ILogger logger, Guid jobId, Exception exception);
 
-        [LoggerMessage(7114, LogLevel.Warning, "Version job store has unreadable distributed state for job {JobId}; discarding the local transition.")]
+        [LoggerMessage(7114, LogLevel.Warning, "Version job store has unreadable distributed state for job {JobId}; treating it as unknown.")]
         public static partial void VersionJobStoreUnreadableRecord(ILogger logger, Guid jobId);
     }
 }
