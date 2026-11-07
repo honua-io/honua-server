@@ -71,7 +71,7 @@ public sealed class McpAuthenticationGuidanceTests : IAsyncLifetime
         string? first = null;
         foreach (var tool in new[] { "honua_ingest_dataset", "unknown_auth_probe" })
         {
-            using var request = BuildRequest("tools/call", $$"""{"name":"{{tool}}","arguments":{}}""", "configure", modern);
+            using var request = BuildRequest("tools/call", "{\"name\":\"" + tool + "\",\"arguments\":{}}", "configure", modern);
             using var response = await client.SendAsync(request);
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -95,7 +95,8 @@ public sealed class McpAuthenticationGuidanceTests : IAsyncLifetime
         var request = new HttpRequestMessage(HttpMethod.Post, "/mcp?view=" + view)
         {
             Content = new StringContent(
-                $$"""{"jsonrpc":"2.0","id":1,"method":"{{method}}","params":{ {{parameters[1..^1]}}{{separator}}{{metadata}} }}""",
+                "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"" + method
+                    + "\",\"params\":{" + parameters[1..^1] + separator + metadata + "}}",
                 Encoding.UTF8, "application/json")
         };
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
