@@ -571,6 +571,12 @@ public sealed class OpsAutonomySettingsUpdateRequest
 
 public sealed class OpsManagedTargetHealthView
 {
+    [JsonIgnore]
+    internal DateTimeOffset? LastSuccessfulCollectionAt { get; set; }
+
+    [JsonIgnore]
+    internal DateTimeOffset? LastSuccessfulReleaseAt { get; set; }
+
     // Internal correlation only; the public health view does not expose container identities.
     [JsonIgnore]
     internal string? ServingIncarnation { get; init; }
