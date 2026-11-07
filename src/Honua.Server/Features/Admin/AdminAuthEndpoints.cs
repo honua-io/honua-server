@@ -441,7 +441,10 @@ internal static class AdminAuthEndpoints
                 tokenResponse.IdToken,
                 sessionClaims,
                 sessionExpiresAt,
-                context.RequestAborted).ConfigureAwait(false);
+                context.RequestAborted,
+                pendingSessionId is not null && codeVerifier is not null
+                    ? AdminAuthSessionOrigin.InteractiveOidc
+                    : AdminAuthSessionOrigin.Unknown).ConfigureAwait(false);
 
             SetCookie(
                 context.Response,
