@@ -551,7 +551,9 @@ public sealed class MigrationAcceptanceEvidenceBuilderTests
             Source = new MigrationSourceIdentity
             {
                 DisplayName = $"{sourceKind} fixture",
-                BaseUrl = $"https://example.test/{sourceKind}",
+                BaseUrl = MigrationSourceKinds.IsGeoServicesRest(sourceKind)
+                    ? "https://example.test/rest/services/Source/FeatureServer"
+                    : $"https://example.test/{sourceKind}",
                 Product = sourceKind,
                 Version = "1.0"
             },

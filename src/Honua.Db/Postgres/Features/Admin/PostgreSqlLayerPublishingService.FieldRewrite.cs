@@ -268,8 +268,12 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var resource = FindPublishedResource(graph, layerId);
         if (resource is null)
         {
+            if (request.ImportTarget is not null)
+                throw new LayerPublishingException(LayerPublishingErrorKind.Conflict, "The planned import publication is no longer available.");
             return null;
         }
+        PublishedImportTarget.RequireReplacement(graph, resource.Metadata.Id, request,
+            LayerPublicationNamespace.ResolveTenant(request.Namespace, _tenantContext?.TenantId));
 
         var now = DateTimeOffset.UtcNow;
         var updatedResource = ApplyReplacementFieldMetadata(

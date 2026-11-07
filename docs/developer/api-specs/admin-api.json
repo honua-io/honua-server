@@ -3231,7 +3231,7 @@
           "Import"
         ],
         "summary": "Scan Migration Source",
-        "description": "Scan a supported GeoServer REST or ArcGIS GeoServices REST source and return a deterministic migration inventory artifact. The response body is the artifact itself and is not wrapped in a success/data admin envelope. A 200 response can still carry scanCompleteness.status = failed when the scanner produced an artifact but could not complete discovery cleanly. GeoServer uses that failed-artifact path for transport, timeout, auth-related, and other discovery failures; GeoServices also uses it for auth-related and source-reported ArcGIS discovery errors, while transport and timeout failures still surface as 502/504. Pass the export=json query parameter to receive the artifact as an indented JSON attachment suitable for committing to a migration project repository.",
+        "description": "Scan a supported GeoServer REST or ArcGIS GeoServices REST source and return a deterministic migration inventory artifact. The response body is the artifact itself and is not wrapped in a success/data admin envelope. A 200 response can still carry scanCompleteness.status = failed when the scanner produced an artifact but could not complete discovery cleanly. GeoServer uses that failed-artifact path for transport, timeout, auth-related, and other discovery failures; GeoServices also uses it for auth-related and source-reported ArcGIS discovery errors, while transport and timeout failures still surface as 502/504. Pass the export=json query parameter to receive the artifact as an indented JSON attachment suitable for committing to a migration project repository. With artifactSet=all, returns inventory, manifest and parityEvidence; GeoServices manifest identities include the selected importPlan and public target folder/name.",
         "operationId": "scanMigrationSource",
         "parameters": [
           {
@@ -3263,7 +3263,14 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MigrationSourceInventoryArtifact"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/MigrationSourceInventoryArtifact"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ImportMigrationScanArtifactSet"
+                    }
+                  ]
                 }
               }
             }
@@ -3289,6 +3296,26 @@
           },
           "504": {
             "description": "Source scan timed out. This is currently surfaced primarily for GeoServices timeout failures; GeoServer timeout failures return a failed inventory artifact with HTTP 200.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The selected target folder was not found in the publication scope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The selected target identity, scope or public path conflicts with the current catalog. Select a new mapping.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6968,6 +6995,26 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "The selected target folder was not found in the publication scope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The selected target identity, scope or public path conflicts with the current catalog. Select a new mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -7140,6 +7187,26 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "The selected target folder was not found in the publication scope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The selected target identity, scope or public path conflicts with the current catalog. Select a new mapping.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -25271,6 +25338,34 @@
             "type": "boolean",
             "description": "GeoServer-only. Fetches SLD documents for deeper classification and external graphic detection without returning raw style documents in the artifact.",
             "default": false
+          },
+          "publicName": {
+            "type": "string",
+            "nullable": true,
+            "description": "Immutable public service leaf for auto-publication. Defaults to the selected service name or source leaf; existing services retain their public name."
+          },
+          "folderId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Omit to preserve one source folder for a new service; explicit null selects root; a supplied ID selects an existing folder in the resolved publication scope. Existing services retain their membership."
+          },
+          "namespace": {
+            "type": "string",
+            "nullable": true,
+            "description": "Optional publication namespace. Omitted means unscoped. A supplied namespace uses the authenticated request's resolved tenant; tenant IDs are not accepted as target authority."
+          },
+          "plan": {
+            "$ref": "#/components/schemas/ImportGeoservicesPlan"
+          },
+          "artifactSet": {
+            "type": "string",
+            "nullable": true,
+            "description": "Use all to return inventory, manifest and parityEvidence together. Otherwise the response is the inventory artifact."
+          },
+          "targetServiceName": {
+            "type": "string",
+            "nullable": true,
+            "description": "Optional logical target service identity for manifest planning. Existing-service plans retain current public name and folder."
           }
         }
       },
@@ -31733,7 +31828,12 @@
             "description": "Target resources that can be published or staged from the source inventory.",
             "items": {
               "type": "object",
-              "additionalProperties": true
+              "additionalProperties": true,
+              "properties": {
+                "identity": {
+                  "$ref": "#/components/schemas/ImportMigrationTargetIdentity"
+                }
+              }
             }
           },
           "styleActions": {
@@ -31749,7 +31849,12 @@
             "description": "Service-level migration plans for protocol surfaces that require operator review.",
             "items": {
               "type": "object",
-              "additionalProperties": true
+              "additionalProperties": true,
+              "properties": {
+                "identity": {
+                  "$ref": "#/components/schemas/ImportMigrationTargetIdentity"
+                }
+              }
             }
           },
           "identityRemaps": {
@@ -32807,6 +32912,24 @@
           },
           "credentials": {
             "$ref": "#/components/schemas/ImportGeoservicesCredentialRequest"
+          },
+          "publicName": {
+            "type": "string",
+            "nullable": true,
+            "description": "Immutable public service leaf for auto-publication. Defaults to the selected service name or source leaf; existing services retain their public name."
+          },
+          "folderId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Omit to preserve one source folder for a new service; explicit null selects root; a supplied ID selects an existing folder in the resolved publication scope. Existing services retain their membership."
+          },
+          "namespace": {
+            "type": "string",
+            "nullable": true,
+            "description": "Optional publication namespace. Omitted means unscoped. A supplied namespace uses the authenticated request's resolved tenant; tenant IDs are not accepted as target authority."
+          },
+          "plan": {
+            "$ref": "#/components/schemas/ImportGeoservicesPlan"
           }
         }
       },
@@ -32834,6 +32957,9 @@
           "cancelUrl": {
             "type": "string",
             "example": "jobs/ab12cd34ef56/cancel"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/ImportGeoservicesPlan"
           }
         }
       },
@@ -33072,6 +33198,24 @@
               "type": "string"
             },
             "description": "Source resource ids imported before this layer."
+          },
+          "publicName": {
+            "type": "string",
+            "nullable": true,
+            "description": "Immutable public service leaf for auto-publication. Defaults to the selected service name or source leaf; existing services retain their public name."
+          },
+          "folderId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Omit to preserve one source folder for a new service; explicit null selects root; a supplied ID selects an existing folder in the resolved publication scope. Existing services retain their membership."
+          },
+          "namespace": {
+            "type": "string",
+            "nullable": true,
+            "description": "Optional publication namespace. Omitted means unscoped. A supplied namespace uses the authenticated request's resolved tenant; tenant IDs are not accepted as target authority."
+          },
+          "plan": {
+            "$ref": "#/components/schemas/ImportGeoservicesPlan"
           }
         }
       },
@@ -51321,6 +51465,99 @@
           },
           "data": {
             "$ref": "#/components/schemas/DiscoveryMetadataResponse"
+          }
+        }
+      },
+      "ImportGeoservicesPlan": {
+        "type": "object",
+        "description": "Selected GeoServices publication mapping returned by artifact-set scan or auto-publish admission. Resubmit unchanged with the same source URL to preserve selected IDs. Every supplied mapping is revalidated against the current catalog and resolved publication scope; it grants no authority.",
+        "required": [
+          "serviceUrl",
+          "serviceName",
+          "serviceId",
+          "publicName"
+        ],
+        "properties": {
+          "serviceUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "serviceName": {
+            "type": "string",
+            "description": "Logical Admin service identity; collision allocation does not change the public leaf."
+          },
+          "serviceId": {
+            "type": "string",
+            "description": "Selected stable service facet identity, retained across retry."
+          },
+          "publicName": {
+            "type": "string",
+            "description": "Immutable public URL leaf."
+          },
+          "existingService": {
+            "type": "boolean",
+            "default": false,
+            "description": "Whether this mapping targets an existing logical service."
+          },
+          "folderId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Selected folder identity; omitted or null in the plan means root."
+          },
+          "folderName": {
+            "type": "string",
+            "nullable": true,
+            "description": "Selected folder path segment; omitted or null for root."
+          },
+          "namespace": {
+            "type": "string",
+            "nullable": true,
+            "description": "Optional publication namespace. Omitted means unscoped. A supplied namespace uses the authenticated request's resolved tenant; tenant IDs are not accepted as target authority."
+          }
+        }
+      },
+      "ImportMigrationTargetIdentity": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "sourceFolderPath": {
+            "type": "string",
+            "nullable": true,
+            "description": "Original source folder provenance, independent of target mapping."
+          },
+          "targetFolderPath": {
+            "type": "string",
+            "nullable": true,
+            "description": "Effective selected public folder path; omitted or null for root."
+          },
+          "targetPublicName": {
+            "type": "string",
+            "nullable": true,
+            "description": "Selected public service leaf."
+          },
+          "importPlan": {
+            "$ref": "#/components/schemas/ImportGeoservicesPlan"
+          }
+        }
+      },
+      "ImportMigrationScanArtifactSet": {
+        "type": "object",
+        "required": [
+          "inventory",
+          "manifest",
+          "parityEvidence"
+        ],
+        "properties": {
+          "inventory": {
+            "$ref": "#/components/schemas/MigrationSourceInventoryArtifact"
+          },
+          "manifest": {
+            "$ref": "#/components/schemas/ImportMigrationManifestArtifact"
+          },
+          "parityEvidence": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Parity evidence generated from the inventory and planned manifest."
           }
         }
       }

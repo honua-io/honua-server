@@ -449,6 +449,7 @@ public sealed record MetadataV2Publication
     private int? _layerIndex;
     private string? _path;
     private string? _serviceLocalId;
+    private MetadataV2PublicationIdentifier _identifier = new();
 
     [JsonPropertyName("metadata")]
     public MetadataV2ObjectMetadata Metadata { get; init; } = new();
@@ -470,17 +471,16 @@ public sealed record MetadataV2Publication
 
     // One protocol-facing identifier replaces the separate layer index, service-local id, and path so the three cannot diverge.
     [JsonPropertyName("identifier")]
-    public MetadataV2PublicationIdentifier Identifier { get; init; } = new();
+    public MetadataV2PublicationIdentifier Identifier
+    {
+        get => _identifier;
+        init => _identifier = value ?? new();
+    }
 
     [JsonPropertyName("layerIndex")]
     public int? LayerIndex
     {
-        // Identifier is declared non-nullable, but a graph snapshot written before the
-        // identifier object existed omits the member entirely and deserializes with it
-        // unset, so every read of LayerIndex on such a snapshot threw
-        // NullReferenceException. That is the legacy shape this property exists to
-        // support, so it must tolerate it rather than fault on it.
-        get => _layerIndex ?? (Identifier?.IsNumeric == true
+        get => _layerIndex ?? (Identifier.IsNumeric
             && int.TryParse(Identifier.Value, System.Globalization.NumberStyles.Integer,
                 System.Globalization.CultureInfo.InvariantCulture, out var parsed)
                 ? parsed

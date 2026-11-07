@@ -88,6 +88,34 @@ Authenticated sources send credentials in the request `credentials` object, neve
 
 Run `POST /api/v1/admin/import/geoservices/discover` with `{"serviceUrl":"https://example.com/arcgis/rest/services/Parcels/FeatureServer"}`.
 
+Auto-publishing preserves a single source folder by default. A root source stays at root.
+The optional `folderId` field selects an existing destination folder; explicit `null` selects
+root. Omit it to preserve the source folder. Invalid, reserved or nested source folders require
+an explicit root or folder mapping. Folder access is managed through each service's policy.
+
+For a new service, the source leaf becomes its public name. Honua allocates a different logical
+service name only when the leaf collides with an existing identity; the public folder path stays
+unchanged. `serviceName` explicitly selects a logical service. For a new explicitly named service,
+`publicName` defaults to that name. An existing service keeps its public name and folder unless
+the request supplies the same values; changing membership requires the service move operation.
+
+A scan with `artifactSet: "all"` records `identity.importPlan` on the service and resource
+identities, alongside `targetFolderPath` and `targetPublicName`. Supply that object as `plan`
+when starting the import. The accepted response also returns its `plan`. Admission revalidates
+the chosen identities and refuses a changed or occupied target instead of allocating another
+name. Queued execution and retries retain the admitted target. The same per-layer inputs apply
+to batch migration requests; layers from the same source share one target plan.
+
+An omitted `namespace` creates an unscoped publication. A supplied namespace uses the resolved
+request tenant, which is retained for queued execution. Namespace text does not select a tenant.
+Folders must belong to that same scope. The import plan contains mapping choices, not tenant
+credentials.
+
+Folder creation and service membership share the publisher's metadata mutation and compensation.
+A failed publication can leave imported rows committed, while its new live service and unused
+live folder are removed. Permanent path reservations remain; a retired attempted path requires
+a new mapping. Unrelated concurrent catalog changes survive compensation.
+
 ## Raster import and cloud raster registration
 
 | Method | Path | Purpose |

@@ -49,5 +49,7 @@ public sealed record MigrationBatchLayerSpec
 
     public string? ServiceName { get; init; }
 
+    public GeoservicesImportTarget? Target { get; init; }
+
     public IReadOnlyList<string> DependsOn { get; init; } = [];
 }

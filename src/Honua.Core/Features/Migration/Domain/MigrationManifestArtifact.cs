@@ -337,6 +337,10 @@ public static class MigrationManifestIdentityStabilities
 
 public sealed record MigrationManifestResourceIdentity
 {
+    public string? TargetPublicName { get; init; }
+
+    public GeoservicesImportPlan? ImportPlan { get; init; }
+
     public string? SourceServiceId { get; init; }
 
     public string? SourceLayerId { get; init; }
@@ -360,6 +364,10 @@ public sealed record MigrationManifestResourceIdentity
 
 public sealed record MigrationManifestServiceIdentity
 {
+    public string? TargetPublicName { get; init; }
+
+    public GeoservicesImportPlan? ImportPlan { get; init; }
+
     public string? SourceServiceId { get; init; }
 
     public string? SourceQualifiedName { get; init; }
@@ -397,4 +405,6 @@ public sealed record MigrationManifestReviewItem
 public sealed record MigrationManifestTranslationOptions
 {
     public string? TargetServiceName { get; init; }
+
+    public GeoservicesImportTarget? ImportTarget { get; init; }
 }

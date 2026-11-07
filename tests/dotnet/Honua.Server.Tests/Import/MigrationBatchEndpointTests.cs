@@ -77,6 +77,31 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
         doc.RootElement.GetProperty("totalChildren").GetInt32().Should().Be(2);
         _orchestrator.LastRequest.Should().NotBeNull();
         _orchestrator.LastRequest!.Layers.Should().HaveCount(2);
+        _orchestrator.LastRequest.Layers[0].Target.Should().NotBeNull();
+        _orchestrator.LastRequest.Layers[1].Target.Should().BeEquivalentTo(_orchestrator.LastRequest.Layers[0].Target);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/migrations")]
+    public async Task StartBatch_DuplicatePublicLeavesInDifferentFolders_RecordsOneTargetPerSource()
+    {
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/import/migrations", new
+        {
+            sourceKind = "geoservices-rest",
+            layers = new[]
+            {
+                new { sourceResourceId = "internal:0", serviceUrl = "https://example.com/rest/services/Internal/Parcels/FeatureServer", layerId = 0, tableName = "internal_parcels" },
+                new { sourceResourceId = "internal:1", serviceUrl = "https://example.com/rest/services/Internal/Parcels/FeatureServer", layerId = 1, tableName = "internal_photos" },
+                new { sourceResourceId = "public:0", serviceUrl = "https://example.com/rest/services/Public/Parcels/FeatureServer", layerId = 0, tableName = "public_parcels" }
+            }
+        });
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted, await response.Content.ReadAsStringAsync());
+        var layers = _orchestrator.LastRequest!.Layers;
+        layers[0].Target.Should().BeEquivalentTo(layers[1].Target);
+        layers[0].Target!.ServiceName.Should().NotBe(layers[2].Target!.ServiceName);
+        layers[0].Target!.FolderName.Should().Be("Internal");
+        layers[2].Target!.FolderName.Should().Be("Public");
+        layers.Should().OnlyContain(layer => layer.Target!.PublicName == "Parcels" && layer.Target.TenantId == null);
     }
 
     [IntegrationTest]

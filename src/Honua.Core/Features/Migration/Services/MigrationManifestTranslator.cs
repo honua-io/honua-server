@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.RegularExpressions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Migration.Abstractions;
@@ -21,7 +22,7 @@ public static partial class MigrationManifestTranslator
     {
         ArgumentNullException.ThrowIfNull(inventory);
 
-        var targetServiceName = NormalizeName(
+        var targetServiceName = options?.ImportTarget?.ServiceName ?? NormalizeName(
             options?.TargetServiceName ?? inventory.Source.DisplayName,
             fallback: "migration-service");
         var targetResources = new List<MigrationManifestTargetResource>();
@@ -32,7 +33,7 @@ public static partial class MigrationManifestTranslator
         var unsupportedItems = new List<MigrationManifestReviewItem>();
         var sourceProtocol = GetSourceProtocol(inventory);
 
-        var serviceIdentity = BuildServiceIdentity(inventory, targetServiceName);
+        var serviceIdentity = BuildServiceIdentity(inventory, targetServiceName, options?.ImportTarget);
 
         foreach (var resource in inventory.Resources.OrderBy(static item => item.Id, StringComparer.Ordinal))
         {
@@ -332,9 +333,15 @@ public static partial class MigrationManifestTranslator
 
     private static MigrationManifestServiceIdentity BuildServiceIdentity(
         MigrationSourceInventoryArtifact inventory,
-        string targetServiceName)
+        string targetServiceName,
+        GeoservicesImportTarget? target)
     {
         var (sourceServiceId, sourceQualifiedName, sourceFolderPath) = ExtractServiceSourceIdentity(inventory);
+        var source = GeoservicesSourceService.FromUrl(inventory.Source.BaseUrl ?? string.Empty);
+        if (MigrationSourceKinds.IsGeoServicesRest(inventory.SourceKind) && target is null &&
+            (source is null || (sourceFolderPath is not null && !MetadataV2ServicePaths.IsFolderName(sourceFolderPath)) ||
+             !MetadataV2ServicePaths.IsPublicName(source.PublicName, sourceFolderPath)))
+            throw new ArgumentException("The source service path requires an explicit target folder/root and public-name mapping.", nameof(inventory));
 
         var stability = string.IsNullOrEmpty(sourceServiceId)
             ? MigrationManifestIdentityStabilities.Synthesized
@@ -343,8 +350,12 @@ public static partial class MigrationManifestTranslator
                 : MigrationManifestIdentityStabilities.Remapped;
         var reason = stability switch
         {
+            MigrationManifestIdentityStabilities.Synthesized when target is not null =>
+                "Source did not advertise a stable service identifier; the import plan assigns a target logical identity.",
             MigrationManifestIdentityStabilities.Synthesized =>
                 "Source did not advertise a stable service identifier; Honua synthesized one from the source display name.",
+            MigrationManifestIdentityStabilities.Remapped when target is not null =>
+                "The import plan assigns a distinct target logical identity while preserving source provenance.",
             MigrationManifestIdentityStabilities.Remapped =>
                 "Source service name contained characters that are not allowed in Honua service identifiers and was normalized.",
             _ => null
@@ -357,6 +368,9 @@ public static partial class MigrationManifestTranslator
             SourceFolderPath = sourceFolderPath,
             TargetServiceId = targetServiceName,
             TargetName = targetServiceName,
+            TargetPublicName = target?.PublicName ?? source?.PublicName,
+            ImportPlan = target?.ToPlan(inventory.Source.BaseUrl ?? string.Empty),
+            TargetFolderPath = target is null ? sourceFolderPath : target.FolderName,
             IdentityStability = stability,
             IdentityRemapReason = reason
         };
@@ -402,6 +416,8 @@ public static partial class MigrationManifestTranslator
             TargetLayerId = targetResourceId,
             TargetName = targetResourceName,
             TargetFolderPath = serviceIdentity.TargetFolderPath,
+            TargetPublicName = serviceIdentity.TargetPublicName,
+            ImportPlan = serviceIdentity.ImportPlan,
             IdentityStability = stability,
             IdentityRemapReason = reason
         };
@@ -476,54 +492,7 @@ public static partial class MigrationManifestTranslator
     }
 
     private static string? ExtractGeoServicesFolderPath(string baseUrl)
-    {
-        // ArcGIS REST URLs follow .../rest/services/{folder?}/{service}/{serviceType}.
-        // Capture an optional folder segment that sits between "services" and the service name.
-        var segments = baseUrl.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        var servicesIndex = -1;
-        for (var i = 0; i < segments.Length; i++)
-        {
-            if (segments[i].Equals("services", StringComparison.OrdinalIgnoreCase))
-            {
-                servicesIndex = i;
-                break;
-            }
-        }
-
-        if (servicesIndex < 0)
-        {
-            return null;
-        }
-
-        var serviceTypeIndex = -1;
-        for (var i = segments.Length - 1; i > servicesIndex; i--)
-        {
-            if (segments[i].Equals("FeatureServer", StringComparison.OrdinalIgnoreCase) ||
-                segments[i].Equals("MapServer", StringComparison.OrdinalIgnoreCase) ||
-                segments[i].Equals("ImageServer", StringComparison.OrdinalIgnoreCase))
-            {
-                serviceTypeIndex = i;
-                break;
-            }
-        }
-
-        if (serviceTypeIndex < 0)
-        {
-            return null;
-        }
-
-        // Folder segments sit between "services" (exclusive) and the service name (which precedes the service type).
-        var folderStart = servicesIndex + 1;
-        var folderEnd = serviceTypeIndex - 1; // exclusive of the service name itself
-        if (folderEnd <= folderStart)
-        {
-            return null;
-        }
-
-        var folderSegments = new ArraySegment<string>(segments, folderStart, folderEnd - folderStart);
-        return folderSegments.Count == 0 ? null : string.Join('/', folderSegments.ToArray());
-    }
-
+        => GeoservicesSourceService.FromUrl(baseUrl)?.FolderPath;
 
     // Attachments at or below this size are small enough for the automated migration lane.
     // Above this size we capture the metadata but require an operator-supervised follow-up so the

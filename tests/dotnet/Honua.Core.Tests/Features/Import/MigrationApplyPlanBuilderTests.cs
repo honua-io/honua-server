@@ -13,6 +13,44 @@ namespace Honua.Core.Tests.Features.Import;
 
 public sealed class MigrationApplyPlanBuilderTests
 {
+    [Trait("Tier", "Fast")]
+    [Theory]
+    [InlineData("folder")]
+    [InlineData("publicName")]
+    [InlineData("serviceId")]
+    public void Build_ChangedImportTarget_ChangesThePlanFingerprint(string changedField)
+    {
+        var importPlan = new GeoservicesImportPlan
+        {
+            ServiceUrl = "https://example.com/rest/services/Survey/Parcels/FeatureServer",
+            ServiceName = "logical-parcels", ServiceId = "planned-service", PublicName = "Parcels",
+            FolderId = "planned-folder", FolderName = "Survey"
+        };
+        var manifest = MigrationManifestTranslator.Translate(CreateInventory([CreateResource("parcels", "Parcels", "compatible", "Queryable resource.")]));
+        var resource = manifest.TargetResources[0] with
+        {
+            Identity = new()
+            {
+                IdentityStability = MigrationManifestIdentityStabilities.Preserved,
+                ImportPlan = importPlan, TargetPublicName = importPlan.PublicName, TargetFolderPath = importPlan.FolderName
+            }
+        };
+        manifest = manifest with
+        {
+            SourceKind = MigrationSourceKinds.GeoServicesRest,
+            Source = manifest.Source with { BaseUrl = importPlan.ServiceUrl },
+            TargetResources = [resource]
+        };
+        var changed = changedField switch
+        {
+            "folder" => importPlan with { FolderId = "other-folder", FolderName = "Other" },
+            "publicName" => importPlan with { PublicName = "Other" },
+            _ => importPlan with { ServiceId = "other-service" }
+        };
+        var altered = manifest with { TargetResources = [resource with { Identity = resource.Identity! with { ImportPlan = changed } }] };
+        MigrationApplyPlanBuilder.Build(altered).PlanFingerprint.Should().NotBe(MigrationApplyPlanBuilder.Build(manifest).PlanFingerprint);
+    }
+
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,

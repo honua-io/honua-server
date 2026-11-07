@@ -122,6 +122,10 @@ internal sealed partial class GeoservicesLayerPublicationService
             SupportsAttachments = supportsAttachments,
             Fields = [],
             ServiceName = request.ServiceName,
+            PublicName = request.Target?.PublicName,
+            FolderId = request.Target is { } target ? new(target.FolderId) : default,
+            Namespace = request.Target?.Namespace,
+            ImportTarget = request.Target,
             Enabled = true,
             FieldDomains = GeoservicesImportColumns.BuildFieldDomainMap(layerInfo),
             // Physical column names, including reserved-name disambiguation, so publish
@@ -188,6 +192,14 @@ internal sealed partial class GeoservicesLayerPublicationService
             {
                 Log.PublishedFieldRewriteFailed(_logger, ex.LayerId.Value, request.TableName, rewriteException);
                 warnings.Add("Published field metadata could not be rewritten for the replaced table.");
+                if (request.Target is not null) return null;
+            }
+
+            if (request.Target is not null && rewritten is not null &&
+                !string.Equals(rewritten.ServiceName, request.Target.ServiceName, StringComparison.OrdinalIgnoreCase))
+            {
+                warnings.Add("The existing publication does not match the planned import service.");
+                return null;
             }
 
             try

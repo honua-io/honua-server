@@ -413,11 +413,14 @@ public sealed class MigrationManifestTranslatorTests
     }
 
     [Trait("Tier", "Fast")]
-    [Fact]
-    public void Translate_WithGeoServicesFolderUrl_CapturesSourceFolderPath()
+    [Theory]
+    [InlineData("Survey", false)]
+    [InlineData("Survey", true)]
+    [InlineData("Utilities", true)]
+    public void Translate_WithGeoServicesFolderUrl_CapturesSourceFolderPath(string folder, bool targetRoot)
     {
         var inventory = CreateGeoServicesInventory(
-            serviceUrl: "https://example.com/arcgis/rest/services/Utilities/Water/FeatureServer",
+            serviceUrl: $"https://example.com/arcgis/rest/services/{folder}/Water/FeatureServer",
             containers:
             [
                 new MigrationInventoryContainer
@@ -443,12 +446,17 @@ public sealed class MigrationManifestTranslatorTests
                 }
             ]);
 
-        var manifest = MigrationManifestTranslator.Translate(inventory);
+        var manifest = MigrationManifestTranslator.Translate(inventory, new MigrationManifestTranslationOptions
+        {
+            ImportTarget = targetRoot ? new GeoservicesImportTarget { ServiceName = "water", ServiceId = "planned-water", PublicName = "Water" } : null
+        });
 
         var resource = manifest.TargetResources.Should().ContainSingle().Subject;
         resource.Identity.Should().NotBeNull();
-        resource.Identity!.SourceFolderPath.Should().Be("Utilities");
-        resource.Identity.SourceQualifiedName.Should().Be("Utilities/Water/2");
+        resource.Identity!.SourceFolderPath.Should().Be(folder);
+        resource.Identity.SourceQualifiedName.Should().Be($"{folder}/Water/2");
+        resource.Identity.TargetFolderPath.Should().Be(targetRoot ? null : folder);
+        resource.Identity.TargetPublicName.Should().Be("Water");
     }
 
     [Trait("Tier", "Fast")]
@@ -1438,7 +1446,9 @@ public sealed class MigrationManifestTranslatorTests
             Source = new MigrationSourceIdentity
             {
                 DisplayName = "Migration Source",
-                BaseUrl = "https://geoserver.example.test/geoserver",
+                BaseUrl = MigrationSourceKinds.IsGeoServicesRest(sourceKind)
+                    ? $"https://example.com/arcgis/rest/services/Fidelity/{serviceType}"
+                    : "https://geoserver.example.test/geoserver",
                 Product = "GeoServer",
                 Version = "2.26.0",
                 ServiceType = serviceType

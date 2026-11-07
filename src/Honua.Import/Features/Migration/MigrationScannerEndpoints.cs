@@ -4,6 +4,9 @@
 using System.Buffers;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Configuration;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
@@ -241,18 +244,18 @@ internal static partial class MigrationScannerEndpoints
                     }
             }
 
+            var response = await CreateScanResponseAsync(context, artifact, request).ConfigureAwait(false);
             if (IsJsonExportRequested(context.Request.Query))
             {
                 await WriteIndentedJsonAttachmentAsync(
                     context,
-                    CreateScanResponse(artifact, request),
+                    response,
                     artifact.Source.DisplayName,
                     request,
                     cancellationToken).ConfigureAwait(false);
             }
             else
             {
-                var response = CreateScanResponse(artifact, request);
                 if (response is MigrationScanArtifactSet artifactSet)
                 {
                     await Results.Json(artifactSet, ImportJsonContext.Default.MigrationScanArtifactSet)
@@ -264,6 +267,10 @@ internal static partial class MigrationScannerEndpoints
                         .ExecuteAsync(context).ConfigureAwait(false);
                 }
             }
+        }
+        catch (LayerPublishingException ex)
+        {
+            await GeoservicesImportPlanning.WriteErrorAsync(context, ex).ConfigureAwait(false);
         }
         catch (HttpRequestException)
         {
@@ -328,7 +335,8 @@ internal static partial class MigrationScannerEndpoints
             _ => sourceKind["ogc-".Length..]
         };
 
-    private static object CreateScanResponse(
+    private static async Task<object> CreateScanResponseAsync(
+        HttpContext context,
         MigrationSourceInventoryArtifact artifact,
         MigrationInventoryScanRequest request)
     {
@@ -337,9 +345,20 @@ internal static partial class MigrationScannerEndpoints
             return artifact;
         }
 
+        var target = MigrationSourceKinds.IsGeoServicesRest(artifact.SourceKind)
+            ? (await GeoservicesImportPlanning.PlanAsync(context, [new()
+            {
+                ServiceUrl = artifact.Source.BaseUrl ?? request.SourceUrl!,
+                ServiceName = request.TargetServiceName,
+                PublicName = request.PublicName,
+                FolderId = request.FolderId,
+                Namespace = request.Namespace,
+                Plan = request.Plan
+            }]).ConfigureAwait(false))[0] : null;
         var manifest = MigrationManifestTranslator.Translate(artifact, new MigrationManifestTranslationOptions
         {
-            TargetServiceName = request.TargetServiceName
+            TargetServiceName = request.TargetServiceName,
+            ImportTarget = target
         });
         var parityEvidence = MigrationParityEvidenceGenerator.Generate(artifact, manifest);
         return new MigrationScanArtifactSet
@@ -517,6 +536,15 @@ internal sealed record MigrationInventoryScanRequest
     /// Optional target service name used when generating a migration manifest.
     /// </summary>
     public string? TargetServiceName { get; init; }
+
+    public string? PublicName { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public MetadataV2FolderSelection FolderId { get; init; }
+
+    public string? Namespace { get; init; }
+
+    public GeoservicesImportPlan? Plan { get; init; }
 }
 
 /// <summary>

@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using System.Text.Json;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -11,6 +12,25 @@ namespace Honua.Core.Tests.Features.Metadata.Domain.V2;
 [Protocol(ProtocolNames.TestQuality)]
 public sealed class MetadataV2SpatialExtensionsTests
 {
+    [UnitTheory]
+    [Operation(Operations.Metadata)]
+    [InlineData("{}")]
+    [InlineData("{\"supportedCrs\":null}")]
+    public void DeserializeSpatial_MissingOrNullSupportedCrs_UsesEmptyCollection(string json)
+    {
+        var spatial = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2ResourceSpatial)!;
+        spatial.SupportedCrs.Should().NotBeNull().And.BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void DeserializeSpatial_ConfiguredSupportedCrs_PreservesCollection()
+    {
+        var spatial = JsonSerializer.Deserialize("{\"supportedCrs\":[{\"srid\":4326}]}",
+            MetadataV2JsonContext.Default.MetadataV2ResourceSpatial)!;
+        spatial.SupportedCrs.Should().ContainSingle().Which.Srid.Should().Be(4326);
+    }
+
     [UnitTest]
     [Operation(Operations.Metadata)]
     public void ReadSrid_NumericSrid_ReturnsValue()

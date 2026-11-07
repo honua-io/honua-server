@@ -16,6 +16,28 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class GeoservicesLayerPublicationServiceTests
 {
+    [Fact]
+    public async Task TryPublishImportedLayerAsync_PlannedReplacementReturnsAnotherService_RefusesWithoutRefreshing()
+    {
+        var publishing = new Mock<ILayerPublishingService>(MockBehavior.Strict);
+        publishing.Setup(service => service.PublishLayerAsync("Host=unused", It.IsAny<LayerPublishRequest>(), CancellationToken.None))
+            .ThrowsAsync(new LayerPublishingException(LayerPublishingErrorKind.Conflict, "Already published.", 27));
+        publishing.Setup(service => service.RewritePublishedLayerFieldsAsync("Host=unused", 27, It.IsAny<LayerPublishRequest>(), CancellationToken.None))
+            .ReturnsAsync(PublishedParcels());
+        var publication = new GeoservicesLayerPublicationService(NullLogger<GeoservicesLayerPublicationService>.Instance, publishing.Object);
+        var warnings = new List<string>();
+        var result = await publication.TryPublishImportedLayerAsync(new()
+        {
+            ServiceUrl = "https://example.com/rest/services/Planning/FeatureServer", LayerId = 0, TableName = "parcels", ServiceName = "different",
+            Target = new() { ServiceId = "different-id", ServiceName = "different", PublicName = "Parcels" }
+        }, "honua_data", new() { Id = 0, Name = "Parcels", Fields = [] }, warnings, null, "job", DateTimeOffset.UtcNow,
+            1, "Host=unused", CancellationToken.None, replacingExistingTarget: true);
+        result.Should().BeNull();
+        warnings.Should().ContainSingle().Which.Should().Contain("planned import service");
+        publishing.Verify(service => service.RefreshMaterializedFeaturesForSourceTableAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     [Theory]
     [InlineData(false, 0)]
     [InlineData(true, 0)]

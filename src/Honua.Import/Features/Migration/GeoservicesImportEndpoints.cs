@@ -2,6 +2,9 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.Configuration;
+using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
+using System.Text.Json.Serialization;
 using Honua.Core.Features.Import.Abstractions;
 using Honua.Core.Features.Import.Domain;
 using Honua.Infrastructure.Authentication;
@@ -347,6 +350,17 @@ internal static partial class GeoservicesImportEndpoints
             // Generate job ID
             jobId = Guid.NewGuid().ToString("N")[..12];
 
+            var target = (request.AutoPublish ?? true)
+                ? (await GeoservicesImportPlanning.PlanAsync(context, [new()
+                {
+                    ServiceUrl = request.ServiceUrl,
+                    ServiceName = request.ServiceName,
+                    PublicName = request.PublicName,
+                    FolderId = request.FolderId,
+                    Namespace = request.Namespace,
+                    Plan = request.Plan
+                }]).ConfigureAwait(false))[0] : null;
+
             // Create import request
             var importRequest = new GeoservicesImportRequest
             {
@@ -363,7 +377,8 @@ internal static partial class GeoservicesImportEndpoints
                 RequestTimeoutSeconds = request.RequestTimeoutSeconds ?? 120,
                 MaxRetries = request.MaxRetries ?? 3,
                 AutoPublish = request.AutoPublish ?? true,
-                ServiceName = request.ServiceName,
+                ServiceName = target?.ServiceName ?? request.ServiceName,
+                Target = target,
                 Credentials = credentials
             };
 
@@ -373,7 +388,7 @@ internal static partial class GeoservicesImportEndpoints
                 request.LayerId,
                 request.TableName) with
             {
-                ServiceName = request.ServiceName
+                ServiceName = importRequest.ServiceName
             };
 
             if (!await ImportEndpointCoordinationHelper.PersistQueuedJobStateAsync(
@@ -402,12 +417,18 @@ internal static partial class GeoservicesImportEndpoints
                 JobId = jobId,
                 Message = "Import job queued for processing",
                 StatusUrl = $"jobs/{jobId}",
-                CancelUrl = $"jobs/{jobId}/cancel"
+                CancelUrl = $"jobs/{jobId}/cancel",
+                Plan = target?.ToPlan(request.ServiceUrl)
             };
 
             await Results.Json(response, GeoservicesImportApiJsonContext.Default.GeoservicesImportJobResponse,
                     statusCode: StatusCodes.Status202Accepted)
                 .ExecuteAsync(context);
+        }
+        catch (LayerPublishingException ex)
+        {
+            await TryRollbackQueuedStateAsync(jobManager, jobId, jobQueued);
+            await GeoservicesImportPlanning.WriteErrorAsync(context, ex).ConfigureAwait(false);
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("Distributed import", StringComparison.OrdinalIgnoreCase) && ex.Message.Contains("unavailable", StringComparison.OrdinalIgnoreCase))
         {
@@ -754,6 +775,15 @@ internal sealed record GeoservicesStartImportRequest
     /// </summary>
     public string? ServiceName { get; init; }
 
+    public string? PublicName { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public MetadataV2FolderSelection FolderId { get; init; }
+
+    public string? Namespace { get; init; }
+
+    public GeoservicesImportPlan? Plan { get; init; }
+
     /// <summary>
     /// Optional ArcGIS credential descriptor. Queued imports must use secret references.
     /// </summary>
@@ -827,6 +857,8 @@ internal sealed record GeoservicesCredentialRequest
 /// </summary>
 internal sealed record GeoservicesImportJobResponse
 {
+    public GeoservicesImportPlan? Plan { get; init; }
+
     /// <summary>
     /// Job ID.
     /// </summary>

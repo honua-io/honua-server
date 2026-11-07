@@ -56,6 +56,11 @@ Run `POST /api/v1/admin/import/geoservices/start` with this body:
 
 Returns `202 Accepted` with a `jobId`. Optional fields: `whereClause` and `outputFields` to filter what is copied, `targetSchema` (a configured operational schema; see [Import files](import-files.md)), `batchSize`, `serviceName` (target Honua service for auto-publishing; `autoPublish` defaults to `true`).
 
+Auto-publishing preserves a single source folder by default; a root source stays at root.
+Omit `folderId` to retain that folder, send `null` for root, or supply an existing destination
+folder ID. `publicName`, `namespace`, and a reviewed `plan` also control the publication target;
+see [GeoServices import target rules](../../reference/admin-api/imports-and-jobs.md#geoservices-arcgis-migration-import).
+
 ### 3. Poll the job
 
 Run `GET /api/v1/admin/import/geoservices/jobs/{jobId}`, substituting the id returned in step 2.

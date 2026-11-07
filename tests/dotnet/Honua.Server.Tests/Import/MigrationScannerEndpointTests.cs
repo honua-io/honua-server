@@ -124,6 +124,43 @@ public sealed class MigrationScannerEndpointTests : IAsyncLifetime
         root.GetProperty("styles")[0].GetProperty("kind").GetString().Should().Be("renderer");
     }
 
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Endpoint("POST /api/v1/admin/import/scan")]
+    [Endpoint("POST /api/v1/admin/import/geoservices/start")]
+    public async Task Scan_GeoservicesFolderPlan_StartPreservesPreviewIdentity(bool explicitRoot)
+    {
+        const string sourceUrl = "https://example.com/arcgis/rest/services/Survey/Parcels/FeatureServer";
+        var request = new Dictionary<string, object?>
+        {
+            ["sourceKind"] = "geoservices",
+            ["sourceUrl"] = sourceUrl,
+            ["artifactSet"] = "all"
+        };
+        if (explicitRoot) request["folderId"] = null;
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/import/scan", request);
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        var artifacts = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var identity = artifacts.GetProperty("manifest").GetProperty("targetResources")[0].GetProperty("identity");
+        identity.GetProperty("sourceFolderPath").GetString().Should().Be("Survey");
+        identity.GetProperty("targetPublicName").GetString().Should().Be("Parcels");
+        var folder = identity.TryGetProperty("targetFolderPath", out var targetFolder) ? targetFolder.GetString() : null;
+        folder.Should().Be(explicitRoot ? null : "Survey");
+        var plan = identity.GetProperty("importPlan");
+        plan.TryGetProperty("tenantId", out _).Should().BeFalse();
+        var start = await _client.PostAsJsonAsync("/api/v1/admin/import/geoservices/start", new
+        {
+            serviceUrl = sourceUrl, layerId = 0, tableName = "preview_parcels", plan
+        });
+        start.StatusCode.Should().Be(HttpStatusCode.Accepted, await start.Content.ReadAsStringAsync());
+        var acceptedPlan = (await start.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("plan");
+        acceptedPlan.GetProperty("serviceId").GetString().Should().Be(plan.GetProperty("serviceId").GetString());
+        var initialFolderId = plan.TryGetProperty("folderId", out var firstId) ? firstId.GetString() : null;
+        var acceptedFolderId = acceptedPlan.TryGetProperty("folderId", out var nextId) ? nextId.GetString() : null;
+        acceptedFolderId.Should().Be(initialFolderId);
+    }
+
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/scan")]
     public async Task Scan_OgcWfsSourceWithAllArtifacts_ReturnsInventoryManifestAndEvidence()

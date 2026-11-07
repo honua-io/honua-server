@@ -94,12 +94,12 @@ internal sealed partial class PostgresMigrationBatchRunCatalog : IMigrationBatch
                 INSERT INTO honua.migration_batch_children (
                     batch_id, ordinal, source_resource_id, service_url, source_layer_id,
                     table_name, target_schema, service_name, depends_on, status,
-                    job_id, published_layer_id, status_note, updated_at
+                    job_id, published_layer_id, status_note, updated_at, publication_target
                 )
                 VALUES (
                     @batchId, @ordinal, @sourceResourceId, @serviceUrl, @sourceLayerId,
                     @tableName, @targetSchema, @serviceName, CAST(@dependsOn AS jsonb), @status,
-                    @jobId, @publishedLayerId, @statusNote, @updatedAt
+                    @jobId, @publishedLayerId, @statusNote, @updatedAt, CAST(@publicationTarget AS jsonb)
                 )
                 ON CONFLICT (batch_id, ordinal) DO NOTHING;
                 """;
@@ -115,6 +115,9 @@ internal sealed partial class PostgresMigrationBatchRunCatalog : IMigrationBatch
                 insertChild.Parameters.AddWithValue("@tableName", child.TableName);
                 insertChild.Parameters.AddWithValue("@targetSchema", (object?)child.TargetSchema ?? DBNull.Value);
                 insertChild.Parameters.AddWithValue("@serviceName", (object?)child.ServiceName ?? DBNull.Value);
+                var targetParam = insertChild.Parameters.Add("@publicationTarget", NpgsqlDbType.Text);
+                targetParam.Value = child.Target is null ? DBNull.Value :
+                    JsonSerializer.Serialize(child.Target, MigrationBatchRunJsonContext.Default.GeoservicesImportTarget);
                 var dependsParam = insertChild.Parameters.Add("@dependsOn", NpgsqlDbType.Text);
                 dependsParam.Value = JsonSerializer.Serialize(child.DependsOn, MigrationBatchRunJsonContext.Default.IReadOnlyListString);
                 insertChild.Parameters.AddWithValue("@status", ChildStatusToText(child.Status));
@@ -155,7 +158,7 @@ internal sealed partial class PostgresMigrationBatchRunCatalog : IMigrationBatch
         const string sql = """
             SELECT batch_id, ordinal, source_resource_id, service_url, source_layer_id,
                    table_name, target_schema, service_name, depends_on::text, status,
-                   job_id, published_layer_id, status_note, fidelity_verdict, updated_at
+                   job_id, published_layer_id, status_note, fidelity_verdict, updated_at, publication_target::text
             FROM honua.migration_batch_children
             WHERE batch_id = @batchId
             ORDER BY ordinal ASC;
@@ -366,7 +369,7 @@ internal sealed partial class PostgresMigrationBatchRunCatalog : IMigrationBatch
         const string sql = """
             SELECT batch_id, ordinal, source_resource_id, service_url, source_layer_id,
                    table_name, target_schema, service_name, depends_on::text, status,
-                   job_id, published_layer_id, status_note, fidelity_verdict, updated_at
+                   job_id, published_layer_id, status_note, fidelity_verdict, updated_at, publication_target::text
             FROM honua.migration_batch_children
             WHERE batch_id = @batchId AND ordinal = @ordinal LIMIT 1;
             """;
@@ -445,6 +448,8 @@ internal sealed partial class PostgresMigrationBatchRunCatalog : IMigrationBatch
             TableName = reader.GetString(reader.GetOrdinal("table_name")),
             TargetSchema = reader.IsDBNull(schemaOrdinal) ? null : reader.GetString(schemaOrdinal),
             ServiceName = reader.IsDBNull(serviceOrdinal) ? null : reader.GetString(serviceOrdinal),
+            Target = ReadNullableString(reader, "publication_target") is { } targetJson
+                ? JsonSerializer.Deserialize(targetJson, MigrationBatchRunJsonContext.Default.GeoservicesImportTarget) : null,
             DependsOn = dependsOn,
             Status = ChildStatusFromText(reader.GetString(reader.GetOrdinal("status"))),
             JobId = reader.IsDBNull(jobOrdinal) ? null : reader.GetString(jobOrdinal),

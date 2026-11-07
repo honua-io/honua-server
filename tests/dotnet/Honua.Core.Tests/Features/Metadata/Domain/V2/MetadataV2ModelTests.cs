@@ -16,6 +16,38 @@ namespace Honua.Core.Tests.Features.Metadata.Domain.V2;
 [Protocol(ProtocolNames.TestQuality)]
 public sealed class MetadataV2ModelTests
 {
+    [UnitTheory]
+    [Operation(Operations.Metadata)]
+    [InlineData("{\"status\":{}}")]
+    [InlineData("{\"identifier\":null,\"status\":{}}")]
+    public void DeserializePublication_MissingOrNullIdentifier_SerializesWithEmptyDerivedValues(string json)
+    {
+        var publication = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2Publication)!;
+
+        publication.Identifier.Should().NotBeNull();
+        publication.LayerIndex.Should().BeNull();
+        publication.Path.Should().BeNull();
+        publication.ServiceLocalId.Should().BeNull();
+        var roundTrip = JsonSerializer.Serialize(publication, MetadataV2JsonContext.Default.MetadataV2Publication);
+        JsonSerializer.Deserialize(roundTrip, MetadataV2JsonContext.Default.MetadataV2Publication)!
+            .Identifier.Should().Be(publication.Identifier);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void DeserializePublication_LegacyIdentifiers_PreservesValues()
+    {
+        var publication = JsonSerializer.Deserialize(
+            "{\"layerIndex\":7,\"path\":\"parcels\",\"serviceLocalId\":\"local\",\"status\":{}}",
+            MetadataV2JsonContext.Default.MetadataV2Publication)!;
+
+        publication.LayerIndex.Should().Be(7);
+        publication.Path.Should().Be("parcels");
+        publication.ServiceLocalId.Should().Be("local");
+        JsonSerializer.Serialize(publication, MetadataV2JsonContext.Default.MetadataV2Publication)
+            .Should().Contain("\"layerIndex\":7");
+    }
+
     [UnitTest]
     [Operation(Operations.Query)]
     public void Graph_Defaults_AreEmptyResourceFirstCollections()
