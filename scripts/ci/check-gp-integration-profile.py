@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Check that docker-compose.gp-dev.yml defines the integration profile.
+"""Check that docker/compose/docker-compose.gp-dev.yml defines the integration profile.
 
 When Docker Compose is available, the rendered config from
-`docker compose -f docker-compose.gp-dev.yml --profile integration config`
+`docker compose --project-directory . -f docker/compose/docker-compose.gp-dev.yml --profile integration config`
 is the source of truth. The compose file is also checked directly so the
 profile, worker services, artifact volume, and process-source mount cannot
 disappear in an environment without a daemon. This script is not a CI gate.
@@ -20,7 +20,7 @@ from pathlib import Path
 import yaml
 
 REPO = Path(__file__).resolve().parents[2]
-DEFAULT_COMPOSE = REPO / "docker-compose.gp-dev.yml"
+DEFAULT_COMPOSE = REPO / "docker/compose/docker-compose.gp-dev.yml"
 PROFILE = "integration"
 WORKERS = ("managed-worker", "gdal-worker")
 ARTIFACT_VOLUME = "gp_artifacts"
@@ -129,7 +129,7 @@ def rendered_problems(config, *, expect_workers):
 
 
 def compose_config(compose_file, profile=None):
-    command = ["docker", "compose", "-f", str(compose_file), "--project-directory", str(compose_file.parent)]
+    command = ["docker", "compose", "-f", str(compose_file), "--project-directory", str(REPO)]
     if profile:
         command.extend(["--profile", profile])
     command.extend(["config", "--format", "json"])

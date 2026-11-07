@@ -1,5 +1,5 @@
 ### Honua local GP dev — geometry.buffer over OGC API Processes
-### Prereq: docker compose -f docker-compose.gp-dev.yml up
+### Prereq: docker compose --project-directory . -f docker/compose/docker-compose.gp-dev.yml up
 ### Works with the VS Code REST Client / JetBrains HTTP client.
 ###
 ### The job runs IN-PROCESS in the honua container on the local backend

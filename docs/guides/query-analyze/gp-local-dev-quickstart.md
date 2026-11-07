@@ -30,8 +30,8 @@ The .NET 10 SDK is also needed when running the devkit from source.
 ## 1. Start the server
 
 ```bash
-docker compose -f docker-compose.gp-dev.yml up --build -d
-docker compose -f docker-compose.gp-dev.yml ps
+docker compose --project-directory . -f docker/compose/docker-compose.gp-dev.yml up --build -d
+docker compose --project-directory . -f docker/compose/docker-compose.gp-dev.yml ps
 ```
 
 Open `http://localhost:8080/healthz/ready` and wait for `Ready`. The stack starts
@@ -81,7 +81,7 @@ degrees. Keep the metric CRS with this result; reproject before WGS 84 map impor
 ## 3. Add native execution
 
 ```bash
-docker compose -f docker-compose.gp-dev.yml --profile gdal-worker up --build -d
+docker compose --project-directory . -f docker/compose/docker-compose.gp-dev.yml --profile gdal-worker up --build -d
 ```
 
 This adds the GDAL/PDAL heavy worker. It claims native-profile jobs from the same
@@ -100,7 +100,7 @@ The base file starts the host, PostGIS, and Redis. The integration profile adds
 the managed worker, the native heavy worker, and local artifact storage:
 
 ```bash
-docker compose -f docker-compose.gp-dev.yml --profile integration up --build -d
+docker compose --project-directory . -f docker/compose/docker-compose.gp-dev.yml --profile integration up --build -d
 ```
 
 `managed-worker` is a second serving-image process with no published ports. It
@@ -127,7 +127,7 @@ matrix is not executed by this change. Referenced output staging stays off.
 Stop the profile with:
 
 ```bash
-docker compose -f docker-compose.gp-dev.yml --profile integration down
+docker compose --project-directory . -f docker/compose/docker-compose.gp-dev.yml --profile integration down
 ```
 
 ## Attach a debugger on the native worker
@@ -136,7 +136,7 @@ This recipe is for a developer machine. It is not a production custom-code
 target, and it is not the default. The integration profile's `gdal-worker`
 keeps the image entrypoint, publishes no debugger port, and leaves
 `DOTNET_EnableDiagnostics=0`. Nothing below is written into
-`docker-compose.gp-dev.yml` or into `honua-worker-etl`. debugpy and vsdbg stay
+`docker/compose/docker-compose.gp-dev.yml` or into `honua-worker-etl`. debugpy and vsdbg stay
 off the image. Do not point the listen port at a shared or production host.
 Publish it only on `127.0.0.1`.
 
@@ -153,7 +153,7 @@ unavailable:
 
 ```bash
 honua-gp-devkit doctor
-docker compose -f docker-compose.gp-dev.yml --profile integration build gdal-worker
+docker compose --project-directory . -f docker/compose/docker-compose.gp-dev.yml --profile integration build gdal-worker
 ```
 
 ### Python (debugpy)
@@ -170,7 +170,7 @@ is writable inside the container. The script exits 2 when those two paths are
 omitted.
 
 ```bash
-docker compose -f docker-compose.gp-dev.yml --profile integration run --rm --no-deps \
+docker compose --project-directory . -f docker/compose/docker-compose.gp-dev.yml --profile integration run --rm --no-deps \
   --entrypoint /bin/sh \
   --publish 127.0.0.1:5678:5678 \
   -e HOME=/tmp \
@@ -193,9 +193,9 @@ do not claim the same Redis jobs. The idle container sets
 `DOTNET_EnableDiagnostics=1` only for itself.
 
 ```bash
-docker compose -f docker-compose.gp-dev.yml --profile integration stop gdal-worker
+docker compose --project-directory . -f docker/compose/docker-compose.gp-dev.yml --profile integration stop gdal-worker
 docker rm -f honua-gp-vsdbg >/dev/null 2>&1 || true
-docker compose -f docker-compose.gp-dev.yml --profile integration run --no-deps -d \
+docker compose --project-directory . -f docker/compose/docker-compose.gp-dev.yml --profile integration run --no-deps -d \
   --name honua-gp-vsdbg \
   --entrypoint sleep \
   -e DOTNET_EnableDiagnostics=1 \
@@ -219,7 +219,7 @@ The normal worker does not enable diagnostics.
 
 ```bash
 docker rm -f honua-gp-vsdbg
-docker compose -f docker-compose.gp-dev.yml --profile integration up -d gdal-worker
+docker compose --project-directory . -f docker/compose/docker-compose.gp-dev.yml --profile integration up -d gdal-worker
 ```
 
 ## Kind lifecycle cases
@@ -245,13 +245,13 @@ to implement a process and its fixture. Then rebuild the integration stack:
 
 ```bash
 # Managed executor or catalog changes.
-docker compose -f docker-compose.gp-dev.yml up --build -d honua
+docker compose --project-directory . -f docker/compose/docker-compose.gp-dev.yml up --build -d honua
 
 # Recreate the integration managed worker from that image when the profile is running.
-docker compose -f docker-compose.gp-dev.yml --profile integration up --build -d managed-worker
+docker compose --project-directory . -f docker/compose/docker-compose.gp-dev.yml --profile integration up --build -d managed-worker
 
 # Native executor changes; rebuild the server too when its catalog changes.
-docker compose -f docker-compose.gp-dev.yml --profile gdal-worker up --build -d honua gdal-worker
+docker compose --project-directory . -f docker/compose/docker-compose.gp-dev.yml --profile gdal-worker up --build -d honua gdal-worker
 ```
 
 Describe the deployed process before submitting it. Local devkit registration
@@ -268,8 +268,8 @@ links the SDK, native, and MCP examples.
 ## Stop or diagnose the stack
 
 ```bash
-docker compose -f docker-compose.gp-dev.yml --profile gdal-worker logs --tail=100 honua gdal-worker redis
-docker compose -f docker-compose.gp-dev.yml --profile gdal-worker down
+docker compose --project-directory . -f docker/compose/docker-compose.gp-dev.yml --profile gdal-worker logs --tail=100 honua gdal-worker redis
+docker compose --project-directory . -f docker/compose/docker-compose.gp-dev.yml --profile gdal-worker down
 ```
 
 `down` preserves the local data volumes. Add `--volumes` only when you intend to

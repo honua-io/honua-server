@@ -21,7 +21,7 @@ namespace Honua.Architecture.Tests;
 [Trait("Category", "Architecture")]
 public sealed class GeoprocessingOperationEvidenceMatrixTests
 {
-    private const string ManifestRelativePath = "certification/gp-operation-matrix.v1.json";
+    private const string ManifestRelativePath = "eng/gp-operation-matrix.v1.json";
 
     /// <summary>
     /// Source files whose content decides whether a 'proven' verdict still applies.

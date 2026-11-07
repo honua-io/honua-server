@@ -328,7 +328,7 @@ public static class GpRunnabilityAssessor
                 prerequisites.Add(new GpPrerequisite($"integration stack ({definition!.ConfigurationDependency})", probe.ConfigurationAvailable(definition.ConfigurationDependency!) ? "satisfied" : "missing",
                     probe.ConfigurationAvailable(definition.ConfigurationDependency!)
                         ? $"{definition.ConfigurationDependency} is configured"
-                        : $"configure {definition.ConfigurationDependency} and start docker-compose.gp-dev.yml; the devkit never submits to a server for you"));
+                        : $"configure {definition.ConfigurationDependency} and start docker/compose/docker-compose.gp-dev.yml; the devkit never submits to a server for you"));
                 break;
             default:
                 prerequisites.Add(new GpPrerequisite("custom-code local harness", probe.PythonAvailable ? "satisfied" : "unchecked",

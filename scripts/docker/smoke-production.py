@@ -3,7 +3,7 @@
 
 The smoke runs the annotated blocks of "Production install from the shipped Compose
 file" in docs/guides/deploy/docker-compose.md, verbatim, in a scratch directory that
-holds copies of the shipped docker-compose.production.yml and .env.production.example,
+holds copies of the shipped docker/compose/docker-compose.production.yml and .env.production.example,
 exactly as a customer would. For isolation from other installs on the same host it
 only renames the network and storage volume in the copied template and selects
 unused loopback ports; it changes no documented command.
@@ -109,7 +109,8 @@ def main():
     # needs a directory the Docker daemon can see.
     with tempfile.TemporaryDirectory(prefix=project + "-") as directory:
         install = Path(directory)
-        shutil.copy2(ROOT / "docker-compose.production.yml", install / "docker-compose.production.yml")
+        (install / "docker/compose").mkdir(parents=True)
+        shutil.copy2(ROOT / "docker/compose/docker-compose.production.yml", install / "docker/compose/docker-compose.production.yml")
         template = (ROOT / ".env.production.example").read_text(encoding="utf-8")
         template = re.sub(r"(?m)^HONUA_NETWORK_NAME=.*$", f"HONUA_NETWORK_NAME={project}", template)
         template = re.sub(r"(?m)^HONUA_STORAGE_VOLUME_NAME=.*$", f"HONUA_STORAGE_VOLUME_NAME={project}-storage",
@@ -118,7 +119,7 @@ def main():
 
         def compose(*arguments, timeout=120):
             return subprocess.run(
-                ["docker", "compose", "-f", "docker-compose.production.yml", "--env-file", ".env.production",
+                ["docker", "compose", "--project-directory", ".", "-f", "docker/compose/docker-compose.production.yml", "--env-file", ".env.production",
                  *arguments], cwd=install, env=environment, capture_output=True, text=True, timeout=timeout)
 
         def diagnose(text):
@@ -182,7 +183,7 @@ def main():
                         receipt["failure"] = "authentication-or-hostname"
         finally:
             down = subprocess.run(
-                ["docker", "compose", "-f", "docker-compose.production.yml", "--env-file",
+                ["docker", "compose", "--project-directory", ".", "-f", "docker/compose/docker-compose.production.yml", "--env-file",
                  ".env.production" if (install / ".env.production").exists() else ".env.production.example",
                  "down", "--volumes", "--remove-orphans"],
                 # Placeholders only satisfy interpolation for a stack that never started;

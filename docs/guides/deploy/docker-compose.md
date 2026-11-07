@@ -38,13 +38,14 @@ compiler, or a registry credential.
 ## Production install from the shipped Compose file
 
 The release also ships a production Compose file,
-[`docker-compose.production.yml`](../../../docker-compose.production.yml), and its
+[`docker/compose/docker-compose.production.yml`](../../../docker/compose/docker-compose.production.yml), and its
 environment template, [`.env.production.example`](../../../.env.production.example).
 Use them instead of the quickstart project when you want the hardened
 single-host shape from the start: Production environment, Gate migration policy,
 a trusted proxy and hostname, and PostgreSQL, Redis and file storage on volumes.
-Run these blocks on the Linux Docker host, in a directory that holds both files
-from the release source archive. `scripts/docker/smoke-production.py` runs the
+Run these blocks on the Linux Docker host from the root of the release source
+archive. Keep `docker/compose/docker-compose.production.yml` in that subdirectory,
+with `.env.production` and `secrets/` at the archive root. `scripts/docker/smoke-production.py` runs the
 same blocks against a published image on fresh volumes.
 
 Set `HONUA_IMAGE` to the release's immutable server image (`server.image` in its
@@ -67,7 +68,7 @@ rm -f .env.production.orig
 ```
 
 Production with Redis refuses to start until a PKCS#12 certificate encrypts the
-operation key ring that Redis holds. Generate it beside the Compose file. A
+operation key ring that Redis holds. Generate it under `secrets/` at the archive root. A
 one-shot step in the Compose file sets it to owner root, group 1001 (the server's
 group), mode `0640` before the server starts; the block removes any earlier copy
 first because you cannot overwrite that root-owned file.
@@ -97,7 +98,7 @@ container or on another host, put its own address in `HONUA_PROXY_IP` instead.
 
 <!-- docs-validation:production.start mode=run -->
 ```bash
-dc() { docker compose -f docker-compose.production.yml --env-file .env.production "$@"; }
+dc() { docker compose --project-directory . -f docker/compose/docker-compose.production.yml --env-file .env.production "$@"; }
 HONUA_PROXY_IP=127.0.0.1 dc create
 HONUA_NETWORK_NAME="$(sed -n 's/^HONUA_NETWORK_NAME=//p' .env.production)"
 HONUA_PROXY_IP="$(docker network inspect "$HONUA_NETWORK_NAME" --format '{{(index .IPAM.Config 0).Gateway}}')"

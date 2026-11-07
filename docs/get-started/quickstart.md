@@ -568,10 +568,10 @@ add the assistant overlay to the same Console profile:
 grep -q '^HONUA_AI_DEPLOYMENT_ID=' honua-server-dev/.env || \
   echo "HONUA_AI_DEPLOYMENT_ID=honua-quickstart-$(openssl rand -hex 8)" >> honua-server-dev/.env
 (cd honua-server-dev && HONUA_SERVER_IMAGE="$(grep '^HONUA_IMAGE=' ../.env | cut -d= -f2)" \
-  python3 scripts/docker/quickstart.py --profile console -f docker-compose.yml -f docker-compose.studio-ai.yml)
+  python3 scripts/docker/quickstart.py --profile console -f docker-compose.yml -f docker/compose/docker-compose.studio-ai.yml)
 ```
 
-The opt-in `docker-compose.studio-ai.yml` overlay adds the tool-capable provider,
+The opt-in `docker/compose/docker-compose.studio-ai.yml` overlay adds the tool-capable provider,
 exact disclosure approval and stable PostgreSQL admission identity to Studio.
 Starting it makes no model call; prompts need the server's AWS role with access
 to the configured Bedrock model. Keep `HONUA_AI_DEPLOYMENT_ID` stable across
