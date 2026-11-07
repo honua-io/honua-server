@@ -1,8 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Core.Features.Security.Domain;
 
@@ -446,6 +446,7 @@ public sealed record MetadataV2ServiceSettings
 
 public sealed record MetadataV2Publication
 {
+    private bool? _advertised;
     private int? _layerIndex;
     private string? _path;
     private string? _serviceLocalId;
@@ -467,6 +468,13 @@ public sealed record MetadataV2Publication
 
     [JsonPropertyName("titleOverride")]
     public string? TitleOverride { get; init; }
+
+    [JsonPropertyName("advertised")]
+    public bool Advertised
+    {
+        get => _advertised ?? true;
+        init => _advertised = value;
+    }
 
     // One protocol-facing identifier replaces the separate layer index, service-local id, and path so the three cannot diverge.
     [JsonPropertyName("identifier")]

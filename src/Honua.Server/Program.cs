@@ -1053,9 +1053,12 @@ builder.Services.AddSingleton<Honua.Core.Features.EmbedGovernance.Abstractions.I
 // V2 admin UX (epic #1046) edits the canonical MetadataV2Graph document directly via IMetadataV2GraphStore.
 
 // Console metadata v2 content + RBAC baseline (#1162). Persistent store lands in #1163.
-builder.Services.AddSingleton<Honua.Core.Features.Console.Abstractions.IConsoleContentStore>(sp =>
+builder.Services.AddSingleton<Honua.Server.Features.Console.Services.InMemoryConsoleContentStore>(sp =>
     new Honua.Server.Features.Console.Services.InMemoryConsoleContentStore(
         sp.GetService<TimeProvider>() ?? TimeProvider.System));
+builder.Services.AddScoped<Honua.Server.Features.Console.Services.PublishedConsoleContent>();
+builder.Services.AddScoped<Honua.Core.Features.Console.Abstractions.IConsoleContentStore,
+    Honua.Server.Features.Console.Services.ProjectedConsoleContentStore>();
 builder.Services.AddScoped<Honua.Core.Features.Console.Abstractions.IConsoleActionEvaluator,
     Honua.Server.Features.Console.Services.ConsoleActionEvaluator>();
 // Console Share access: public-link + embed state (#1215). In-memory store
