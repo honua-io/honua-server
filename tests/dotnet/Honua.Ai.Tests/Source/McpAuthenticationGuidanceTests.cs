@@ -9,6 +9,7 @@ using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
@@ -17,7 +18,12 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 [Operation(Operations.Security)]
 public sealed class McpAuthenticationGuidanceTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().ConfigureWebHost(builder =>
+    {
+        builder.UseEnvironment("Test");
+        builder.UseSetting("HONUA_DEV_AUTH", "false");
+        builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+    });
 
     public Task InitializeAsync() => _fixture.InitializeAsync();
 
