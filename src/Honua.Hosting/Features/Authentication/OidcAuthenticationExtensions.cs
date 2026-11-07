@@ -763,7 +763,7 @@ public static partial class OidcAuthenticationExtensions
                             if (registration.Store is { } store)
                             {
                                 context.HttpContext.Features.Set(
-                                    new TokenReplayAdmissionFeature(tokenKey, expiration, store) { Scope = scope });
+                                    new TokenReplayAdmissionFeature(tokenKey, expiration, store, scope));
                             }
                         }
                     }

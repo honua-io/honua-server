@@ -38,7 +38,7 @@ public sealed class RedisTokenReplayScopeTests(AiAdmissionRedisFixture fixture)
         Assert.Equal(TokenReplayRegistrationResult.Registered, (await RegisterAsync(first, scope)).Result);
         var originalExpiry = await first.GetDatabase().KeyExpireTimeAsync(key);
         Assert.NotNull(originalExpiry);
-        var admission = new TokenReplayAdmissionFeature(key, expiry, TokenReplayStore.Redis) { Scope = scope };
+        var admission = new TokenReplayAdmissionFeature(key, expiry, TokenReplayStore.Redis, scope);
         var bound = await TryBindTokenReplayContinuationAsync(admission, "session-a", second, null, NullLogger.Instance, default);
         Assert.Equal(initialSurface == "legacy", bound);
         var continued = initialSurface == "legacy"

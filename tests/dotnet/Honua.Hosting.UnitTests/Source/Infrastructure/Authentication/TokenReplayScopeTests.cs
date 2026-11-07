@@ -40,7 +40,7 @@ public sealed class TokenReplayScopeTests
             _ => modern
         };
         Assert.Equal(TokenReplayRegistrationResult.Registered, (await RegisterAsync(cache, key, initial, expiry)).Result);
-        var admission = new TokenReplayAdmissionFeature(key, expiry, TokenReplayStore.Memory) { Scope = initial };
+        var admission = new TokenReplayAdmissionFeature(key, expiry, TokenReplayStore.Memory, initial);
         var binding = await TryBindTokenReplayContinuationAsync(admission, "session-a", null, cache, NullLogger.Instance, default);
         Assert.Equal(initialSurface == "legacy", binding);
         var currentScope = initialSurface == "legacy"

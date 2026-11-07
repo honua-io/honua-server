@@ -212,11 +212,15 @@ internal interface ITokenReplayScopeResolver
 }
 
 // The continuation binding is created by the server and a client cannot supply it.
-internal sealed record TokenReplayAdmissionFeature(
-    string TokenKey,
-    DateTime ExpiresOn,
-    OidcAuthenticationExtensions.TokenReplayStore Store)
+internal sealed class TokenReplayAdmissionFeature(
+    string tokenKey,
+    DateTime expiresOn,
+    OidcAuthenticationExtensions.TokenReplayStore store,
+    OidcAuthenticationExtensions.TokenReplayScope? scope = null)
 {
-    public OidcAuthenticationExtensions.TokenReplayScope Scope { get; init; } =
-        OidcAuthenticationExtensions.TokenReplayScope.ContinuationSurface(null);
+    public string TokenKey { get; } = tokenKey;
+    public DateTime ExpiresOn { get; } = expiresOn;
+    public OidcAuthenticationExtensions.TokenReplayStore Store { get; } = store;
+    public OidcAuthenticationExtensions.TokenReplayScope Scope { get; } =
+        scope ?? OidcAuthenticationExtensions.TokenReplayScope.ContinuationSurface(null);
 }
