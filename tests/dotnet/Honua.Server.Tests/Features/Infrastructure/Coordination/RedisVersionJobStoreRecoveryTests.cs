@@ -101,7 +101,7 @@ public sealed class RedisVersionJobStoreRecoveryTests(RedisFixture fixture) : IA
 
     [IntegrationTest]
     [Operation(Operations.TestInfrastructure)]
-    public async Task GetAsync_JobAdmittedDuringOutage_IsLocalUntilItsOwnerRecovers()
+    public async Task SaveAsync_JobAdmittedDuringOutage_IsLocalUntilAHealthySave()
     {
         var pending = Job(VersionJobStatus.Pending);
         _faults.WriteUnavailable = true;
@@ -114,31 +114,34 @@ public sealed class RedisVersionJobStoreRecoveryTests(RedisFixture fixture) : IA
 
         _faults.WriteUnavailable = false;
         Assert.Equal(pending, await _owner.GetAsync(pending.JobId));
+        Assert.Null(await _replica.GetAsync(pending.JobId));
+        await _owner.SaveAsync(pending);
         Assert.Equal(pending, await _replica.GetAsync(pending.JobId));
     }
 
     [IntegrationTest]
     [Operation(Operations.TestInfrastructure)]
-    public async Task GetAsync_FallbackPredatesRetention_DoesNotResurrectAnExpiredJob()
+    public async Task GetAsync_MissingRedisRecord_DoesNotPublishAnOldLocalFallback()
     {
-        var expired = Job(VersionJobStatus.Pending) with { CreatedAt = DateTimeOffset.UtcNow.AddDays(-8) };
+        var prior = Job(VersionJobStatus.Succeeded) with { CreatedAt = DateTimeOffset.UtcNow.AddDays(-8) };
         _faults.WriteUnavailable = true;
-        await _owner.SaveAsync(expired);
+        await _owner.SaveAsync(prior);
         _faults.WriteUnavailable = false;
 
-        Assert.Null(await _owner.GetAsync(expired.JobId));
-        Assert.Null(await _replica.GetAsync(expired.JobId));
+        Assert.Equal(prior, await _owner.GetAsync(prior.JobId));
+        Assert.Null(await _replica.GetAsync(prior.JobId));
     }
 
     [IntegrationTest]
     [Operation(Operations.TestInfrastructure)]
-    public async Task GetAsync_LongRunningJobCompletesDuringOutage_RetainsItsRecentCompletion()
+    public async Task SaveAsync_LongRunningJobCompletesDuringOutage_PersistsItsRecentCompletion()
     {
         var terminal = Job(VersionJobStatus.Succeeded) with { CreatedAt = DateTimeOffset.UtcNow.AddDays(-8) };
         _faults.WriteUnavailable = true;
         await _owner.SaveAsync(terminal);
         _faults.WriteUnavailable = false;
 
+        await _owner.SaveAsync(terminal);
         Assert.Equal(terminal, await _owner.GetAsync(terminal.JobId));
         Assert.Equal(terminal, await _replica.GetAsync(terminal.JobId));
     }
