@@ -1,7 +1,6 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Exceptions;
 using Honua.ControlPlane;
 using Honua.Core.Features.Authorization.Abstractions;
@@ -13,14 +12,12 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Operations.Services;
-using Honua.Core.Features.Studio.Abstractions;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Console;
 using Honua.Server.Features.Operations;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.MultiTenancy;
-using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -217,8 +214,7 @@ internal static class ProposalEndpoints
         }
 
         var actor = ConsolePrincipal.ResolveActorId(context.User);
-        var approverIdentities = ResolveApproverIdentities(context, actor);
-        var denied = await EnsureApproverAsync(permissionResolver, proposalStore, id, actor, approverIdentities, context)
+        var denied = await EnsureApproverAsync(permissionResolver, proposalStore, id, actor, context)
             .ConfigureAwait(false);
         if (denied != null)
         {
@@ -262,7 +258,6 @@ internal static class ProposalEndpoints
                 {
                     ApprovedBy = approvalActor,
                     TenantId = tenantContext?.TenantId ?? string.Empty,
-                    ApproverIdentities = approverIdentities,
                 },
                 context.RequestAborted)
                 .ConfigureAwait(false);
@@ -365,7 +360,6 @@ internal static class ProposalEndpoints
         IOperationProposalStore proposalStore,
         string proposalId,
         string? actor,
-        IReadOnlyCollection<string> approverIdentities,
         HttpContext context)
     {
         var denied = await EnsureApprovePermissionAsync(permissionResolver, actor, context).ConfigureAwait(false);
@@ -395,29 +389,6 @@ internal static class ProposalEndpoints
             : Results.Problem(
                 detail: "The bearer scope does not authorize a decision on this operation proposal.",
                 statusCode: StatusCodes.Status403Forbidden);
-
-    private static HashSet<string> ResolveApproverIdentities(HttpContext context, string? actor)
-    {
-        var identities = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        Add(actor);
-        Add(CanonicalSecurityActor.Resolve(context.User)?.ActorId);
-        var auditActor = AuditContextResolver.ResolveActor(context, out var actorType);
-        if (actorType != AuditActorType.Anonymous)
-        {
-            Add(auditActor);
-        }
-
-        Add(context.RequestServices.GetService<IStudioAuthorizationService>()?.ResolveCallerId(context.User));
-        return identities;
-
-        void Add(string? identity)
-        {
-            if (!string.IsNullOrWhiteSpace(identity))
-            {
-                identities.Add(identity);
-            }
-        }
-    }
 
     private static async Task<IResult?> EnsureApprovePermissionAsync(
         IPermissionResolver permissionResolver,
