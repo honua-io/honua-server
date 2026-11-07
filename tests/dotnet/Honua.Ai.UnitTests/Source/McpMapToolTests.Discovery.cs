@@ -29,7 +29,8 @@ public sealed partial class McpMapToolTests
         var described = await surface.DispatchAsync(AuthenticatedContext(services), ToolCall("hidden-description", DescribeLayerTool.ToolName,
             $$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"includeRowCount":false}"""), CancellationToken.None);
         Assert.Null(described!.Error);
-        Assert.False(described.Result!.Value.GetProperty("isError").GetBoolean());
-        Assert.Equal(ServiceId, described.Result.Value.GetProperty("structuredContent").GetProperty("serviceId").GetString());
+        var description = described.Result!.Value;
+        Assert.False(description.GetProperty("isError").GetBoolean());
+        Assert.Equal(ServiceId, description.GetProperty("structuredContent").GetProperty("serviceId").GetString());
     }
 }
