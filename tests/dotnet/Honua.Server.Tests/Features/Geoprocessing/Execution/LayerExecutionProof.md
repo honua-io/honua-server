@@ -24,7 +24,7 @@ Counting outcomes alone would not have been enough. The Esri cases are in-proces
 database, so they would have held the passed count above zero even if both PostGIS-backed classes had
 disappeared — and those two classes are the entire real-persistence argument for `source.honua-layer` and
 `sink.honua-layer`. The step therefore reads the required test names out of
-`certification/gp-operation-matrix.v1.json` rather than repeating them, so the manifest claim and the gate
+`eng/gp-operation-matrix.v1.json` rather than repeating them, so the manifest claim and the gate
 cannot drift apart. `GeoprocessingOperationEvidenceMatrixTests` proves those names still exist in those
 files; this step proves they ran.
 

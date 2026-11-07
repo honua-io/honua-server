@@ -103,8 +103,8 @@ public sealed class AdminAuthorizationTests : IAsyncLifetime
         compatibility.GetProperty("metadataSchemas").GetArrayLength().Should().BeGreaterThan(0);
         compatibility.TryGetProperty("features", out _).Should().BeTrue();
 
-        // The advertised contract/schema version maps (#5378, ruling R27) are constant build
-        // metadata: exactly the declaration embedded from release/component-versions.json, at the
+        // The advertised contract/schema version maps are constant build
+        // metadata: exactly the declaration embedded from eng/release/component-versions.v1.json, at the
         // top level and inside the compatibility envelope.
         var declaration = ComponentVersionsDeclaration.Embedded;
         ReadVersionMap(data.GetProperty("contractVersions")).Should().Equal(declaration.ContractVersions);

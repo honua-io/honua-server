@@ -86,7 +86,7 @@ WARNING:
   committing, or fold them into canonical docs and ADRs.
 
 ## Release component versions
-Bump a contract or declared schema version? Update `release/component-versions.json` in the same PR
+Bump a contract or declared schema version? Update `eng/release/component-versions.v1.json` in the same PR
 (a new migration needs no edit). `ContractVersionsStartupCheck` and the release train refuse a mismatch.
 
 <!-- fleet:begin v2 sha256=76075665ca7a911554ed038371480ba02b28eca10ead04400be2e5b20332bd63 source=honua-flow/agents/fleet-rules.md -->

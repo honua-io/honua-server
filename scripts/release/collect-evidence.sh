@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Merge per-suite evidence records (emitted by dispatch-and-wait.sh, one JSON
-# object per line) plus the static suite registry (release/bundle-suites.json)
+# object per line) plus the static suite registry (eng/release/bundle-suites.v1.json)
 # into the single evidence.json consumed by build-release-manifest.sh.
 #
 # Integration suites whose id starts with "server-" become releaseGates; SDK

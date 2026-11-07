@@ -17,7 +17,7 @@ if [[ -z "${shard_name}" || -z "${filter_expression}" || -z "${log_name}" ]]; th
 fi
 
 configuration="${HONUA_SERVER_TEST_CONFIGURATION:-Release}"
-results_dir="${HONUA_SERVER_TEST_RESULTS_DIR:-./tests/TestResults}"
+results_dir="${HONUA_SERVER_TEST_RESULTS_DIR:-./artifacts/test-results}"
 # Phase 2 / ADR-0042: shards may target a per-protocol test project; default
 # remains the Honua.Server.Tests monolith when the env var is unset so legacy
 # shards keep working unchanged.
