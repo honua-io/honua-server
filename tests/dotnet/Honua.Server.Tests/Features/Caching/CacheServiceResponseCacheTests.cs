@@ -232,9 +232,12 @@ public sealed class CacheServiceResponseCacheTests
 
         public Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken = default) where T : class
         {
-            if (_versionValues.TryGetValue(key, out var version))
+            if (key.StartsWith(ResponseCacheVersionKeys.Prefix, StringComparison.Ordinal))
             {
                 VersionLookups.Add(key);
+            }
+            if (_versionValues.TryGetValue(key, out var version))
+            {
                 if (typeof(T) == typeof(string))
                 {
                     return Task.FromResult<T?>((T?)(object?)version);
