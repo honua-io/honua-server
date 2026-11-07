@@ -14,6 +14,7 @@ using Honua.Core.Features.Infrastructure.Migrations;
 using Honua.Core.Features.ControlPlane.Restore;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -24,9 +25,37 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 /// <summary>
 /// Fail-closed contract for the Compose proposal executor. These tests do not start Docker.
 /// </summary>
-public sealed class ComposeProposalExecutorTests
+public sealed partial class ComposeProposalExecutorTests
 {
     private static string Digest(char hex) => "sha256:" + new string(hex, 64);
+
+    [UnitTheory]
+    [InlineData(":")]
+    [InlineData(";")]
+    public async Task StartImageAsync_CustomerComposeFileList_PreservesOverridesBeforeManagedImage(string separator)
+    {
+        var root = Path.Join(Path.GetTempPath(), "honua-compose-unit", Guid.NewGuid().ToString("N"));
+        var options = ValidOptions(root, Digest('a'));
+        var files = new[] { "compose.yaml", "compose.executor.yaml", "customer.yaml", ComposeExecutorProtocol.OverrideFileName };
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            [$"{ComposeExecutorOptions.SectionName}:ComposeFileList"] = string.Join(separator, files),
+            [$"{ComposeExecutorOptions.SectionName}:ComposePathSeparator"] = separator,
+        }).Build();
+        config.GetSection(ComposeExecutorOptions.SectionName).Bind(options);
+        foreach (var name in files)
+            await File.WriteAllTextAsync(Path.Combine(options.ProjectDirectory, name), "services: {}\n");
+        var docker = new RecordingDocker();
+        using var controller = new ComposeProjectController(options, docker);
+
+        var failure = await controller.StartImageAsync(Digest('b'), CancellationToken.None);
+
+        Assert.Null(failure);
+        var arguments = Assert.Single(docker.Argv);
+        var composeFiles = arguments.Select((argument, index) => (argument, index))
+            .Where(item => item.argument == "-f").Select(item => arguments[item.index + 1]);
+        Assert.Equal(files.Select(name => Path.Combine(options.ProjectDirectory, name)), composeFiles);
+    }
 
     [UnitTest]
     public async Task Observe_MissingProjectIdentity_ReportsUnknownWithoutScopeMismatch()
