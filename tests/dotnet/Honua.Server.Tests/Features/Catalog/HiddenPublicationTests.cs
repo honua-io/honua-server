@@ -90,17 +90,17 @@ public sealed partial class HiddenPublicationTests : IAsyncLifetime
     }
 
     [IntegrationTheory]
-    [InlineData("/ogc/features/collections")]
-    [InlineData("/ogc/maps/collections")]
-    [InlineData("/ogc/tiles/collections")]
-    [InlineData("/stac/collections")]
+    [InlineData("/ogc/features/collections", HttpStatusCode.OK)]
+    [InlineData("/ogc/maps/collections", HttpStatusCode.OK)]
+    [InlineData("/ogc/tiles/collections", HttpStatusCode.NotFound)]
+    [InlineData("/stac/collections", HttpStatusCode.OK)]
     [Protocol(TestProtocols.OgcApiFeatures)]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /ogc/features/collections")]
     [Endpoint("GET /ogc/maps/collections")]
     [Endpoint("GET /ogc/tiles/collections")]
     [Endpoint("GET /stac/collections")]
-    public async Task Collections_HiddenPublication_OmitsCollections(string path)
+    public async Task Collections_HiddenPublication_OmitsCollections(string path, HttpStatusCode emptyStatus)
     {
         using var before = await _fixture.Client.GetAsync(path);
         Assert.Equal(HttpStatusCode.OK, before.StatusCode);
@@ -108,9 +108,12 @@ public sealed partial class HiddenPublicationTests : IAsyncLifetime
         Assert.NotEmpty(visible.RootElement.GetProperty("collections").EnumerateArray());
         SetAdvertising(false);
         using var after = await _fixture.Client.GetAsync(path);
-        Assert.Equal(HttpStatusCode.OK, after.StatusCode);
-        using var hidden = JsonDocument.Parse(await after.Content.ReadAsStringAsync());
-        Assert.Empty(hidden.RootElement.GetProperty("collections").EnumerateArray());
+        Assert.Equal(emptyStatus, after.StatusCode);
+        if (emptyStatus == HttpStatusCode.OK)
+        {
+            using var hidden = JsonDocument.Parse(await after.Content.ReadAsStringAsync());
+            Assert.Empty(hidden.RootElement.GetProperty("collections").EnumerateArray());
+        }
     }
 
     [IntegrationTest]
