@@ -23,7 +23,8 @@ internal static class ODataV2Lookups
         CancellationToken cancellationToken)
     {
         var publications = await ResolveAllODataPublicationsAsync(context, cancellationToken).ConfigureAwait(false);
-        return publications.Where(publication =>
+        var snapshot = await GetSnapshotAsync(context, cancellationToken).ConfigureAwait(false);
+        return publications.Where(publication => snapshot.IsDiscoverable(publication.Publication) &&
             AccessPolicyHelpers.IsResourceAccessible(context, publication.Resource, publication.Service)).ToArray();
     }
 

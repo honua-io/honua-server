@@ -724,6 +724,22 @@
       "geobench": []
     },
     {
+      "key": "discovery.public-catalog",
+      "displayName": "Public Catalog",
+      "category": "Discovery",
+      "edition": "Community",
+      "status": null,
+      "entryCount": 0,
+      "provingTestCount": 0,
+      "maturity": {},
+      "noSurface": null,
+      "cite": [],
+      "parity": [],
+      "geoservicesAssess": [],
+      "interop": [],
+      "geobench": []
+    },
+    {
       "key": "dr.backup-automation",
       "displayName": "Backup Automation",
       "category": "DisasterRecovery",

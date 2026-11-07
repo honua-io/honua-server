@@ -35,7 +35,7 @@ public sealed record PublishedCatalogQuery
             {
                 ["type"] = Count(filtered, item => [item.Type]),
                 ["protocol"] = Count(filtered, item => item.Endpoints.Select(endpoint => endpoint.Protocol)),
-                ["folder"] = Count(filtered, item => item.Folder is { } folder ? [folder] : []),
+                ["folder"] = Count(filtered, item => item.Type != "folder" && item.Folder is { } folder ? [folder] : []),
                 ["tag"] = Count(filtered, item => item.Tags),
                 ["owner"] = Count(filtered, item => [item.Owner])
             }

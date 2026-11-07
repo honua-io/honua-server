@@ -21,7 +21,7 @@ internal static class ReadableMetadataCatalog
             foreach (var publication in snapshot.PublicationsForService(service.Metadata.Id))
             {
                 var resource = snapshot.ResolveResource(publication);
-                if (!snapshot.IsRoutable(publication) ||
+                if (!snapshot.IsDiscoverable(publication) ||
                     !TenantScopeHelpers.IsPublicationVisible(context, publication, resource, service))
                 {
                     continue;

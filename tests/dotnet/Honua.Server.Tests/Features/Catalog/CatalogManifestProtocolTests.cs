@@ -22,7 +22,7 @@ public sealed class CatalogManifestProtocolTests
         };
         var routes = new ManifestRoutedCapabilityIndex(new DeploymentCapabilityRouteCatalog());
 
-        var endpoints = CapabilityManifestProtocolEndpoints.Build([], profile, routes);
+        var endpoints = CapabilityManifestProtocolEndpoints.Build([Capability("serve.wms")], profile, routes);
 
         if (ProtocolProfile.IncludesOgcClassic)
         {
@@ -56,4 +56,28 @@ public sealed class CatalogManifestProtocolTests
         Assert.DoesNotContain(endpoints, endpoint => endpoint.Protocol == ServiceProtocols.Wmts);
         Assert.DoesNotContain(endpoints, endpoint => endpoint.Protocol == ServiceProtocols.ImageServer);
     }
+    [UnitTest]
+    public void Build_CallerUnavailableCapability_OmitsOnlyThatProtocol()
+    {
+        var profile = new CapabilityManifestDeploymentProfile { Configured = false, SchemaVersion = null, EnabledCapabilities = [] };
+        var routes = new ManifestRoutedCapabilityIndex(new DeploymentCapabilityRouteCatalog());
+        var endpoints = CapabilityManifestProtocolEndpoints.Build(
+            [Capability("serve.ogc-api-features"), Capability("serve.wms") with { Available = false, ReasonCode = "caller-denied" }], profile, routes);
+        if (ProtocolProfile.IncludesOgcApi)
+        {
+            Assert.Equal(ServiceProtocols.OgcFeatures, Assert.Single(endpoints).Protocol);
+        }
+        else
+        {
+            Assert.Empty(endpoints);
+        }
+        Assert.DoesNotContain(endpoints, endpoint => endpoint.Protocol == ServiceProtocols.Wms);
+    }
+
+    private static CapabilityManifestCapability Capability(string id) => new()
+    {
+        Id = id, Category = "serve", Lifecycle = "implemented", Supported = true,
+        Available = true, OptInRequired = false, ReasonCode = null
+    };
+
 }

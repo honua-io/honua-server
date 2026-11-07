@@ -247,7 +247,7 @@ internal static partial class MapServerEndpoints
         var descriptors = new List<LegendLayerDescriptor>();
         foreach (var publication in MapServerPublicationResolver.ResolveLayerPublications(snapshot, service, TenantScopeHelpers.ResolveRequestTenantId(context)))
         {
-            if (publication.LayerIndex is not int layerId)
+            if (!snapshot.IsDiscoverable(publication) || publication.LayerIndex is not int layerId)
             {
                 continue;
             }

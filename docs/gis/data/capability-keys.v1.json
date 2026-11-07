@@ -262,6 +262,13 @@
       "description": "Advertise the server's capability manifest for SDK/agent discovery (#1186)."
     },
     {
+      "key": "discovery.public-catalog",
+      "displayName": "Public Catalog",
+      "category": "Discovery",
+      "edition": "Community",
+      "description": "Browse published folders, services and layers with caller-filtered search and facets."
+    },
+    {
       "key": "dr.backup-automation",
       "displayName": "Backup Automation",
       "category": "DisasterRecovery",

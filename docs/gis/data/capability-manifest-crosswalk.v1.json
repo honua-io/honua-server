@@ -9,11 +9,11 @@
     "adjudication": "docs/gis/data/capability-manifest-adjudication.v1.json"
   },
   "summary": {
-    "manifestIdCount": 48,
-    "resolvedCount": 39,
+    "manifestIdCount": 58,
+    "resolvedCount": 49,
     "byResolution": {
       "declared-gap": 2,
-      "direct": 21,
+      "direct": 31,
       "entitlement": 8,
       "mapped": 6,
       "not-licensable": 7,
@@ -72,6 +72,13 @@
       "capability": null,
       "resolution": "declared-gap",
       "note": "Declared gap, not a licensable capability. The only lease store that ships is in-process, so leases do not span nodes; the registry marks the entry Planned and the manifest publishes supported:false, lifecycle:planned, reasonCode:unsupported. Previously mapped to collaboration.map-sessions - an Implemented Community key - which framed an absent behaviour as a property of a working one."
+    },
+    {
+      "manifestId": "discovery.public-catalog",
+      "category": "discovery",
+      "kind": "Feature",
+      "capability": "discovery.public-catalog",
+      "resolution": "direct"
     },
     {
       "manifestId": "edit.features",
@@ -239,10 +246,31 @@
       "resolution": "direct"
     },
     {
+      "manifestId": "serve.geoservices-featureserver",
+      "category": "serve",
+      "kind": "ProtocolOperation",
+      "capability": "serve.geoservices-featureserver",
+      "resolution": "direct"
+    },
+    {
       "manifestId": "serve.geoservices-imageserver",
       "category": "raster",
       "kind": "ProtocolOperation",
       "capability": "serve.geoservices-imageserver",
+      "resolution": "direct"
+    },
+    {
+      "manifestId": "serve.geoservices-mapserver",
+      "category": "serve",
+      "kind": "ProtocolOperation",
+      "capability": "serve.geoservices-mapserver",
+      "resolution": "direct"
+    },
+    {
+      "manifestId": "serve.geoservices-vectortileserver",
+      "category": "serve",
+      "kind": "ProtocolOperation",
+      "capability": "serve.geoservices-vectortileserver",
       "resolution": "direct"
     },
     {
@@ -267,10 +295,52 @@
       "resolution": "direct"
     },
     {
+      "manifestId": "serve.ogc-api-features",
+      "category": "serve",
+      "kind": "ProtocolOperation",
+      "capability": "serve.ogc-api-features",
+      "resolution": "direct"
+    },
+    {
+      "manifestId": "serve.ogc-api-maps",
+      "category": "serve",
+      "kind": "ProtocolOperation",
+      "capability": "serve.ogc-api-maps",
+      "resolution": "direct"
+    },
+    {
+      "manifestId": "serve.ogc-api-tiles",
+      "category": "serve",
+      "kind": "ProtocolOperation",
+      "capability": "serve.ogc-api-tiles",
+      "resolution": "direct"
+    },
+    {
       "manifestId": "serve.sensorthings",
       "category": "realtime",
       "kind": "ProtocolOperation",
       "capability": "serve.sensorthings",
+      "resolution": "direct"
+    },
+    {
+      "manifestId": "serve.stac",
+      "category": "serve",
+      "kind": "ProtocolOperation",
+      "capability": "serve.stac",
+      "resolution": "direct"
+    },
+    {
+      "manifestId": "serve.wfs",
+      "category": "serve",
+      "kind": "ProtocolOperation",
+      "capability": "serve.wfs",
+      "resolution": "direct"
+    },
+    {
+      "manifestId": "serve.wms",
+      "category": "serve",
+      "kind": "ProtocolOperation",
+      "capability": "serve.wms",
       "resolution": "direct"
     },
     {

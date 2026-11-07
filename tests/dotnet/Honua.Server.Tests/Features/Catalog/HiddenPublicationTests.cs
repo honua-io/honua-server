@@ -15,7 +15,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Honua.Server.Tests.Features.Catalog;
 
 [Collection("Database")]
-public sealed class HiddenPublicationTests : IAsyncLifetime
+public sealed partial class HiddenPublicationTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
     private MetadataV2Graph _original = null!;
@@ -39,24 +39,32 @@ public sealed class HiddenPublicationTests : IAsyncLifetime
     public async Task Wms_HiddenPublication_OmitsCapabilitiesAndRendersNamedLayer()
     {
         var publication = _original.Publications.First(publication => publication.ServiceId == _original.Services.First(service => service.Metadata.Name == WebAppFixture.TestServiceId).Metadata.Id);
-        SetAdvertising(false);
         var route = $"/ogc/services/{WebAppFixture.TestServiceId}/wms?SERVICE=WMS";
+        using var before = await _fixture.Client.GetAsync(route + "&REQUEST=GetCapabilities");
+        Assert.Equal(HttpStatusCode.OK, before.StatusCode);
+        var visible = XDocument.Parse(await before.Content.ReadAsStringAsync());
+        var names = visible.Descendants().Where(element => element.Name.LocalName == "Layer")
+            .Elements().Where(element => element.Name.LocalName == "Name").Select(element => element.Value).ToArray();
+        Assert.NotEmpty(names);
+        SetAdvertising(false);
         using var capabilities = await _fixture.Client.GetAsync(route + "&REQUEST=GetCapabilities");
         Assert.Equal(HttpStatusCode.OK, capabilities.StatusCode);
         var xml = XDocument.Parse(await capabilities.Content.ReadAsStringAsync());
         Assert.DoesNotContain(xml.Descendants().Where(element => element.Name.LocalName == "Layer")
-            .Elements().Where(element => element.Name.LocalName == "Name"), name => name.Value == publication.ServiceLocalId);
+            .Elements().Where(element => element.Name.LocalName == "Name"), name => names.Contains(name.Value, StringComparer.Ordinal));
         using var rendered = await _fixture.Client.GetAsync(route + $"&REQUEST=GetMap&VERSION=1.3.0&LAYERS={Uri.EscapeDataString(publication.ServiceLocalId ?? WebAppFixture.TestLayerId.ToString(System.Globalization.CultureInfo.InvariantCulture))}&CRS=EPSG:4326&BBOX=37,-123,38,-122&WIDTH=32&HEIGHT=32&FORMAT=image/png&STYLES=");
         Assert.Equal(HttpStatusCode.OK, rendered.StatusCode);
         Assert.Equal("image/png", rendered.Content.Headers.ContentType?.MediaType);
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData("retired")]
+    [InlineData("disabled")]
     [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId:int}/query")]
-    public async Task Query_HiddenThenRetiredPublication_RemainsRequestableUntilRetired()
+    public async Task Query_HiddenThenUnavailablePublication_RemainsRequestableUntilUnavailable(string transition)
     {
         SetAdvertising(false);
         var route = $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer";
@@ -68,8 +76,15 @@ public sealed class HiddenPublicationTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, query.StatusCode);
         using var count = JsonDocument.Parse(await query.Content.ReadAsStringAsync());
         Assert.True(count.RootElement.GetProperty("count").GetInt32() > 0);
-        _provider.SetGraph(_original with { Publications = _original.Publications.Select(publication => publication with
-        { Status = new() { Lifecycle = MetadataV2LifecycleStatus.Retired } }).ToArray() }, schema: _fixture.CurrentSchema);
+        if (transition == "disabled")
+        {
+            _fixture.SetV2LayerEnabled(WebAppFixture.TestLayerId, enabled: false);
+        }
+        else
+        {
+            _provider.SetGraph(_original with { Revision = _original.Revision + 2, Publications = _original.Publications.Select(publication => publication with
+            { Advertised = false, Status = new() { Lifecycle = MetadataV2LifecycleStatus.Retired } }).ToArray() }, schema: _fixture.CurrentSchema);
+        }
         using var retired = await _fixture.Client.GetAsync(route + $"/{WebAppFixture.TestLayerId}/query?where=1%3D1&returnCountOnly=true&f=json");
         Assert.NotEqual(HttpStatusCode.OK, retired.StatusCode);
     }
@@ -140,6 +155,7 @@ public sealed class HiddenPublicationTests : IAsyncLifetime
     {
         _provider.SetGraph(_original with
         {
+            Revision = _original.Revision + 1,
             Publications = _original.Publications.Select(publication =>
             {
                 using var document = JsonDocument.Parse(JsonSerializer.Serialize(publication, MetadataV2JsonContext.Default.MetadataV2Publication));

@@ -108,6 +108,10 @@ internal static class PublishedMetadataCatalogProjection
         MetadataV2GraphSnapshot snapshot,
         CancellationToken cancellationToken)
     {
+        snapshot = new MetadataV2GraphSnapshot(snapshot.Graph with
+        {
+            Publications = snapshot.Graph.Publications.Where(snapshot.IsDiscoverable).ToArray()
+        }, snapshot.Etag, snapshot.LoadedAt);
         var results = new List<ServiceView>();
         // The canonical graph index resolves service names without case, so a
         // case-only duplicate cannot be exposed as two readable URIs.

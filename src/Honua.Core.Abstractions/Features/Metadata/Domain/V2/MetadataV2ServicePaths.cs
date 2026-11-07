@@ -30,7 +30,7 @@ public static class MetadataV2ServicePaths
         => ServiceTypes.Contains(name) || string.Equals(name, "Utilities", StringComparison.OrdinalIgnoreCase);
 
     public static string? FolderName(MetadataV2Graph graph, MetadataV2Service service)
-        => service.FolderId is null ? null : graph.Folders.Single(f => f.Metadata.Id == service.FolderId).Metadata.Name;
+        => service.FolderId is null ? null : graph.Folders.First(f => f.Metadata.Id == service.FolderId).Metadata.Name;
 
     public static string QualifiedName(MetadataV2Graph graph, MetadataV2Service service)
         => FolderName(graph, service) is { } folder ? $"{folder}/{service.EffectivePublicName}" : service.EffectivePublicName;

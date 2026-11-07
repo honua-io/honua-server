@@ -90,7 +90,11 @@ public sealed class PublishedCatalogProjection(PublishedMetadataProjection metad
             var candidates = template.Contains("{collectionId}", StringComparison.Ordinal) ? eligible : eligible.Take(1);
             foreach (var publication in candidates)
             {
-                var collectionId = publication.Metadata.Id;
+                var collectionId = CollectionId(request.Snapshot, endpoint, publication);
+                if (collectionId is null)
+                {
+                    continue;
+                }
                 var path = template.Replace("{servicePath}", MetadataV2ServicePaths.GeoServicesPath(request.Snapshot.Graph, service), StringComparison.Ordinal)
                     .Replace("{serviceId}", Uri.EscapeDataString(service.Metadata.Name), StringComparison.Ordinal)
                     .Replace("{collectionId}", Uri.EscapeDataString(collectionId), StringComparison.Ordinal);
@@ -98,6 +102,21 @@ public sealed class PublishedCatalogProjection(PublishedMetadataProjection metad
             }
         }
         return links.Distinct().ToArray();
+    }
+
+    private static string? CollectionId(MetadataV2GraphSnapshot snapshot, PublishedCatalogProtocol endpoint, MetadataV2Publication publication)
+    {
+        if (endpoint.Protocol is ServiceProtocols.OgcFeatures or ServiceProtocols.OgcApiTiles or ServiceProtocols.OgcApiMaps)
+        {
+            if (!snapshot.ResolveStorageLayerId(publication).HasValue)
+            {
+                return null;
+            }
+            return endpoint.Protocol == ServiceProtocols.OgcApiMaps
+                ? MetadataV2CollectionIds.ForMaps(snapshot).GetValueOrDefault(publication.Metadata.Id)
+                : MetadataV2CollectionIds.Advertised(publication, snapshot.ResolveResource(publication));
+        }
+        return endpoint.Protocol == ServiceProtocols.Stac && !publication.LayerIndex.HasValue ? null : publication.Metadata.Id;
     }
 
     private static MetadataV2Bbox? UnionExtent(IEnumerable<PublishedCatalogItem> items)
@@ -125,10 +144,10 @@ public sealed class PublishedCatalogProjection(PublishedMetadataProjection metad
     private static void AddFolders(List<PublishedCatalogItem> items, MetadataV2GraphSnapshot snapshot)
     {
         var visibleServices = items.Where(item => item.Type == "service").ToArray();
+        var servicesByFolder = visibleServices.ToLookup(item => snapshot.Index.ServicesById[item.Id].FolderId, StringComparer.Ordinal);
         foreach (var folder in snapshot.Graph.Folders.DistinctBy(folder => folder.Metadata.Id))
         {
-            var children = visibleServices.Where(item =>
-                snapshot.Index.ServicesById[item.Id].FolderId == folder.Metadata.Id).ToArray();
+            var children = servicesByFolder[folder.Metadata.Id].ToArray();
             if (children.Length == 0)
             {
                 continue;

@@ -589,7 +589,7 @@ internal sealed partial class Wcs20Handler
         foreach (var publication in snapshot.Index.PublicationsByService[service.Service!.Metadata.Id])
         {
             var resource = snapshot.ResolveResource(publication);
-            if (!snapshot.IsRoutable(publication) ||
+            if (!snapshot.IsDiscoverable(publication) ||
                 !TenantScopeHelpers.IsPublicationVisible(context, publication, resource, service.Service))
             {
                 continue;

@@ -94,7 +94,7 @@ internal sealed class ListLayersTool : IMcpTool
             foreach (var publication in publications)
             {
                 var resource = snapshot.ResolveResource(publication);
-                if (!snapshot.IsRoutable(publication) || publication.LayerIndex is not { } layerIndex
+                if (!snapshot.IsDiscoverable(publication) || publication.LayerIndex is not { } layerIndex
                     || !TenantScopeHelpers.IsPublicationVisible(httpContext, publication, resource, service))
                 {
                     continue;

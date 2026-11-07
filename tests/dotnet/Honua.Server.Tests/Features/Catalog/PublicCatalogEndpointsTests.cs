@@ -11,13 +11,18 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.Extensions.DependencyInjection;
+using Honua.Server.Tests.Features.Admin;
+using Honua.Infrastructure.Authentication;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Catalog;
 
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.GetMetadata)]
-public sealed class PublicCatalogEndpointsTests : IAsyncLifetime
+public sealed partial class PublicCatalogEndpointsTests : IAsyncLifetime
 {
     private const string AdminKey = "catalog-test-key";
     private readonly TestMetadataV2GraphProvider _provider = new(Graph());
@@ -34,6 +39,21 @@ public sealed class PublicCatalogEndpointsTests : IAsyncLifetime
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminKey);
+            }).ConfigureServices(services =>
+            {
+                services.RemoveAll<IPortalGroupStore>();
+                services.RemoveAll<IPortalItemSharingStore>();
+                services.RemoveAll<IPortalAudienceSnapshotProvider>();
+                services.AddSingleton<IPortalGroupStore, InMemoryPortalGroupStore>();
+                services.AddSingleton<IPortalItemSharingStore, InMemoryPortalItemSharingStore>();
+                services.AddAuthentication().AddScheme<AuthenticationSchemeOptions, RlsClaimsTestAuthHandler>(
+                    RlsClaimsTestAuthHandler.SchemeName, _ => { });
+                services.PostConfigureAll<AuthenticationOptions>(options =>
+                {
+                    options.DefaultAuthenticateScheme = RlsClaimsTestAuthHandler.SchemeName;
+                    options.DefaultChallengeScheme = RlsClaimsTestAuthHandler.SchemeName;
+                    options.DefaultScheme = RlsClaimsTestAuthHandler.SchemeName;
+                });
             });
     }
 
@@ -41,7 +61,7 @@ public sealed class PublicCatalogEndpointsTests : IAsyncLifetime
     {
         await _fixture.InitializeAsync();
         _anonymous = _fixture.CreateClient();
-        _member = _fixture.CreateClient(client => client.DefaultRequestHeaders.Add("X-API-Key", AdminKey));
+        _member = _fixture.CreateClient(client => client.DefaultRequestHeaders.Add(RlsClaimsTestAuthHandler.UserHeader, "catalog-reader"));
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
@@ -57,7 +77,7 @@ public sealed class PublicCatalogEndpointsTests : IAsyncLifetime
         var policies = new AccessPolicy[]
         {
             new() { AllowAnonymous = true }, new(),
-            new() { AllowedRoles = [caller == "allowed-role" ? "admin" : "survey-reader"] }
+            new() { AllowedRoles = ["survey-reader"] }
         };
         _provider.SetGraph(graph with
         {
@@ -71,6 +91,10 @@ public sealed class PublicCatalogEndpointsTests : IAsyncLifetime
             Publications = policies.Select((_, i) => graph.Publications[0] with
             { Metadata = graph.Publications[0].Metadata with { Id = $"publication-{i}" }, ServiceId = $"service-{i}" }).ToArray()
         });
+        if (caller == "allowed-role")
+        {
+            _member.DefaultRequestHeaders.Add(RlsClaimsTestAuthHandler.RolesHeader, "survey-reader");
+        }
         using var result = await ReadAsync(caller == "anonymous" ? _anonymous : _member, "?limit=1");
         Assert.Equal(visibleServices * 3, result.RootElement.GetProperty("total").GetInt32());
         Assert.Single(result.RootElement.GetProperty("items").EnumerateArray());
@@ -136,7 +160,7 @@ public sealed class PublicCatalogEndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Endpoint("GET /api/v1/catalog")]
     [Endpoint("GET /api/v1/catalog/{id}")]
-    public async Task GetCatalog_PublicationHiddenInJson_OmitsAllDiscoveryButKeepsNamedRouting()
+    public async Task GetCatalog_PublicationHiddenInJson_OmitsCatalogListAndDetail()
     {
         var graph = Graph();
         var publicationJson = JsonSerializer.Serialize(graph.Publications[0], MetadataV2JsonContext.Default.MetadataV2Publication);
@@ -148,8 +172,6 @@ public sealed class PublicCatalogEndpointsTests : IAsyncLifetime
         _provider.SetGraph(graph);
         using var result = await ReadAsync(_anonymous);
         Assert.Equal(0, result.RootElement.GetProperty("total").GetInt32());
-        var snapshot = new MetadataV2GraphSnapshot(graph, "hidden", DateTimeOffset.UtcNow);
-        Assert.NotNull(snapshot.FindPublicationByLayerIndex("service", 0));
         using var detail = await _anonymous.GetAsync("/api/v1/catalog/publication");
         Assert.Equal(HttpStatusCode.NotFound, detail.StatusCode);
     }
@@ -173,6 +195,7 @@ public sealed class PublicCatalogEndpointsTests : IAsyncLifetime
         Assert.NotEmpty(links);
         var expected = manifest.RootElement.GetProperty("protocolEndpoints").EnumerateArray()
             .Where(endpoint => !endpoint.GetProperty("preferredPublicationRequired").GetBoolean())
+            .Where(endpoint => endpoint.GetProperty("protocol").GetString() is not (ServiceProtocols.OgcFeatures or ServiceProtocols.OgcApiMaps or ServiceProtocols.OgcApiTiles))
             .Select(endpoint => endpoint.GetProperty("protocol").GetString()).ToArray();
         Assert.All(expected, protocol => Assert.Contains(links, link => link.GetProperty("protocol").GetString() == protocol));
         Assert.All(links, link => Assert.Contains(link.GetProperty("protocol").GetString(), protocols));

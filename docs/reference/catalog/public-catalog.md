@@ -6,11 +6,11 @@ The listing and item-detail routes are registered under the version 1 catalog AP
 
 ## Items
 
-Each item has an `id`, `type`, `title`, `description`, `owner`, `access`, creation and update timestamps, tags, and optional folder, extent and temporal extent. Unknown metadata remains null. Extents use longitude/latitude in CRS84; projected source bounds pass through the shared coordinate transformation service.
+Each item has an `id`, `type`, `title`, `description`, `owner`, `access`, creation and update timestamps, tags, and optional folder, extent and temporal extent. Optional missing metadata remains null. Owner falls back to `honua`, and the update timestamp falls back to the creation timestamp. Extents use longitude/latitude in CRS84; projected source bounds pass through the shared coordinate transformation service.
 
 A service item lists its visible layer IDs and protocol endpoint links. Layer rows represent each resource on a service once, preferring its primary visible publication. A folder appears only when it contains a service the caller can discover. Folder identity comes from the service's folder ID; a different folder with the same name contributes no metadata.
 
-Service and layer URLs use the shared Portal projection. Protocol endpoint links come from `protocolEndpoints` in the public capability manifest, restricted by the service's enabled protocols and applicable publications. The manifest omits descriptors for excluded compiled modules, unavailable gated capabilities and disabled deployment-profile routes. Its templates use `{servicePath}`, `{serviceId}` or `{collectionId}`; collection links use publication IDs accepted by the named protocol routes. A descriptor whose `preferredPublicationRequired` is true requires that protocol's publication representation.
+Service and layer URLs use the shared Portal projection. Protocol endpoint links come from `protocolEndpoints` in the public capability manifest, restricted by the service's enabled protocols and applicable publications. The manifest omits descriptors for excluded compiled modules, unavailable gated capabilities and disabled deployment-profile routes. Its templates use `{servicePath}`, `{serviceId}` or `{collectionId}`; collection links use each protocol's shared advertised identity resolver. Protocol-specific publication representation and storage eligibility use the same requirements as the named route.
 
 ## Filtering and paging
 

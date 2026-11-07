@@ -104,6 +104,7 @@ internal sealed class DeploymentCapabilityRouteCatalog
 {
     private const string CatalogResourceName = "Honua.Server.DeploymentProfiles.feature-catalog.json";
     private readonly Dictionary<string, RouteCapability[]> _routesByMethod;
+    private readonly Dictionary<string, (string Path, string Capability)> _getRoutesById = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<Endpoint, RouteResolution> _endpointCache = new();
 
     public DeploymentCapabilityRouteCatalog()
@@ -121,6 +122,11 @@ internal sealed class DeploymentCapabilityRouteCatalog
             if (string.IsNullOrWhiteSpace(method) || string.IsNullOrWhiteSpace(route) || string.IsNullOrWhiteSpace(capability))
             {
                 throw new InvalidOperationException("Embedded capability route catalog contains an incomplete entry.");
+            }
+
+            if (string.Equals(method, HttpMethods.Get, StringComparison.OrdinalIgnoreCase))
+            {
+                _getRoutesById.Add(entry.GetProperty("id").GetString()!, (route, capability));
             }
 
             routed.Add(capability);
@@ -141,6 +147,9 @@ internal sealed class DeploymentCapabilityRouteCatalog
     }
 
     public IReadOnlySet<string> RoutedCapabilities { get; }
+
+    public (string Path, string Capability)? GetRoute(string id)
+        => _getRoutesById.TryGetValue(id, out var route) ? route : null;
 
     public RouteResolution Resolve(HttpContext context)
     {
@@ -208,7 +217,7 @@ internal sealed class ManifestRoutedCapabilityIndex
         _byManifestId = LoadCrosswalk();
     }
 
-    public string? CapabilityForPath(string path) => _routes.ResolvePath(HttpMethods.Get, path).Capability;
+    public (string Path, string Capability)? GetRoute(string id) => _routes.GetRoute(id);
 
     public bool TryGetRoutedCapability(string manifestId, out string capability)
     {

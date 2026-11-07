@@ -58,7 +58,7 @@ internal static partial class MapServerEndpoints
 
             var (visibleLayers, accessError) = await AccessPolicyHelpers.FilterAccessibleResourcesAsync(
                 context,
-                publishedLayers,
+                publishedLayers.Where(layer => snapshot.IsDiscoverable(layer.Publication)).ToArray(),
                 static layer => layer.Resource,
                 service,
                 AuthorizationOperation.Metadata,
@@ -73,7 +73,7 @@ internal static partial class MapServerEndpoints
 
             var layerResponses = new List<MapServerLayerResponse>();
             var tableResponses = new List<MapServerLayerResponse>();
-            foreach (var layer in visibleLayers.Where(layer => layer.Publication.Advertised))
+            foreach (var layer in visibleLayers)
             {
                 var drawingInfo = ResolveMapServerDrawingInfo(layer.Resource, snapshot);
                 var mapExtent = await ResolveCachedExtentAsync(

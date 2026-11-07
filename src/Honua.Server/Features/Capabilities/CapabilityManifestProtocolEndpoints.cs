@@ -3,56 +3,56 @@
 
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Infrastructure.Hosting;
 using Honua.Server.Features.Capabilities.Models;
 
 namespace Honua.Server.Features.Capabilities;
 
 internal static class CapabilityManifestProtocolEndpoints
 {
+    private sealed record ProtocolRoute(string Protocol, string RouteId)
+    {
+        public string Query { get; init; } = "";
+        public bool PreferredPublicationRequired { get; init; }
+    }
+
+    private static readonly ProtocolRoute[] Routes =
+    [
+        new(ServiceProtocols.FeatureServer, "get-rest-services-serviceid-featureserver"),
+        new(ServiceProtocols.MapServer, "get-rest-services-serviceid-mapserver"),
+        new(ServiceProtocols.VectorTileServer, "get-rest-services-serviceid-vectortileserver") { PreferredPublicationRequired = true },
+        new(ServiceProtocols.ImageServer, "get-rest-services-serviceid-imageserver") { PreferredPublicationRequired = true },
+        new(ServiceProtocols.OgcFeatures, "get-ogc-features-collections-collectionid"),
+        new(ServiceProtocols.OgcApiMaps, "get-ogc-maps-collections-collectionid"),
+        new(ServiceProtocols.OgcApiTiles, "get-ogc-tiles-collections-collectionid"),
+        new(ServiceProtocols.Wms, "get-ogc-services-serviceid-wms") { Query = "?SERVICE=WMS&REQUEST=GetCapabilities" },
+        new(ServiceProtocols.Wfs20, "get-wfs") { Query = "?SERVICE=WFS&REQUEST=GetCapabilities" },
+        new(ServiceProtocols.Wmts, "get-ogc-services-serviceid-wmts") { Query = "?SERVICE=WMTS&REQUEST=GetCapabilities" },
+        new(ServiceProtocols.Stac, "get-stac-collections-collectionid") { PreferredPublicationRequired = true }
+    ];
+
+    public static string[] CapabilityIds(ManifestRoutedCapabilityIndex routes)
+        => Routes.Select(endpoint => routes.GetRoute(endpoint.RouteId)?.Capability).OfType<string>().Distinct(StringComparer.Ordinal).ToArray();
+
     public static PublishedCatalogProtocol[] Build(CapabilityManifestCapability[] capabilities,
         CapabilityManifestDeploymentProfile profile, ManifestRoutedCapabilityIndex routes)
     {
         var endpoints = new List<PublishedCatalogProtocol>();
-#if !HONUA_EXCLUDE_GEOSERVICES
-        endpoints.Add(new() { Protocol = ServiceProtocols.FeatureServer, HrefTemplate = "{servicePath}/FeatureServer" });
-        endpoints.Add(new() { Protocol = ServiceProtocols.MapServer, HrefTemplate = "{servicePath}/MapServer" });
-        endpoints.Add(new() { Protocol = ServiceProtocols.VectorTileServer, PreferredPublicationRequired = true, HrefTemplate = "{servicePath}/VectorTileServer" });
-        if (Available(capabilities, "serve.geoservices-imageserver"))
+        foreach (var endpoint in Routes)
         {
-            endpoints.Add(new() { Protocol = ServiceProtocols.ImageServer, PreferredPublicationRequired = true, HrefTemplate = "{servicePath}/ImageServer" });
+            if (routes.GetRoute(endpoint.RouteId) is not { } route ||
+                !ProtocolProfile.IsCapabilityCompiled(route.Capability) ||
+                profile.Configured && !profile.EnabledCapabilities.Contains(route.Capability, StringComparer.Ordinal) ||
+                !capabilities.Any(capability => capability.Id == route.Capability && capability.Supported && capability.Available))
+            {
+                continue;
+            }
+            endpoints.Add(new()
+            {
+                Protocol = endpoint.Protocol, PreferredPublicationRequired = endpoint.PreferredPublicationRequired,
+                HrefTemplate = route.Path.Replace("/rest/services/{serviceId}", "{servicePath}", StringComparison.Ordinal) + endpoint.Query
+            });
         }
-#endif
-#if !HONUA_EXCLUDE_OGC_API
-        endpoints.Add(new() { Protocol = ServiceProtocols.OgcFeatures, HrefTemplate = "/ogc/features/collections/{collectionId}" });
-        endpoints.Add(new() { Protocol = ServiceProtocols.OgcApiMaps, HrefTemplate = "/ogc/maps/collections/{collectionId}" });
-        endpoints.Add(new() { Protocol = ServiceProtocols.OgcApiTiles, HrefTemplate = "/ogc/tiles/collections/{collectionId}" });
-#endif
-#if !HONUA_EXCLUDE_OGC_CLASSIC
-        endpoints.Add(new() { Protocol = ServiceProtocols.Wms, HrefTemplate = "/ogc/services/{serviceId}/wms?SERVICE=WMS&REQUEST=GetCapabilities" });
-        endpoints.Add(new() { Protocol = ServiceProtocols.Wfs20, HrefTemplate = "/wfs?SERVICE=WFS&REQUEST=GetCapabilities" });
-        if (Available(capabilities, "serve.wmts"))
-        {
-            endpoints.Add(new() { Protocol = ServiceProtocols.Wmts, HrefTemplate = "/ogc/services/{serviceId}/wmts?SERVICE=WMTS&REQUEST=GetCapabilities" });
-        }
-#endif
-#if !HONUA_EXCLUDE_STAC
-        endpoints.Add(new() { Protocol = ServiceProtocols.Stac, PreferredPublicationRequired = true, HrefTemplate = "/stac/collections/{collectionId}" });
-#endif
-        return endpoints.Where(endpoint => IsEnabled(endpoint, profile, routes)).ToArray();
+        return endpoints.ToArray();
     }
-
-    private static bool IsEnabled(PublishedCatalogProtocol endpoint, CapabilityManifestDeploymentProfile profile,
-        ManifestRoutedCapabilityIndex routes)
-    {
-        if (!profile.Configured)
-        {
-            return true;
-        }
-        var path = endpoint.HrefTemplate.Split('?')[0].Replace("{servicePath}", "/rest/services/catalog", StringComparison.Ordinal);
-        var capability = routes.CapabilityForPath(path);
-        return capability is not null && profile.EnabledCapabilities.Contains(capability, StringComparer.Ordinal);
-    }
-
-    private static bool Available(IEnumerable<CapabilityManifestCapability> capabilities, string id)
-        => capabilities.Any(capability => capability.Id == id && capability.Supported && capability.Available);
 }

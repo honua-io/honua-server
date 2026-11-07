@@ -45,20 +45,23 @@ internal static class PublicCatalogEndpoints
         }
         var query = new PublishedCatalogQuery
         {
-            Text = parameters.Q, Type = parameters.Type, Protocol = parameters.Protocol, Folder = parameters.Folder,
-            Tag = parameters.Tag, Owner = parameters.Owner, Bbox = bounds.Value is { } bbox ? Honua.Core.Features.Shared.Models.BoundingBox.Create(bbox.MinX, bbox.MinY, bbox.MaxX, bbox.MaxY, 4326) : null,
-            Time = parameters.Datetime is null ? null : new() { Start = start, End = end },
+            Text = NonEmpty(parameters.Q), Type = NonEmpty(parameters.Type), Protocol = NonEmpty(parameters.Protocol), Folder = NonEmpty(parameters.Folder),
+            Tag = NonEmpty(parameters.Tag), Owner = NonEmpty(parameters.Owner), Bbox = bounds.Value is { } bbox ? Honua.Core.Features.Shared.Models.BoundingBox.Create(bbox.MinX, bbox.MinY, bbox.MaxX, bbox.MaxY, 4326) : null,
+            Time = string.IsNullOrWhiteSpace(parameters.Datetime) ? null : new() { Start = start, End = end },
             Offset = parameters.Offset, Limit = parameters.Limit
         };
         var items = await reader.ReadAsync(context).ConfigureAwait(false);
         return Results.Json(query.Apply(items), PublicCatalogJsonContext.Default.PublishedCatalogPage);
     }
 
+    private static string? NonEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
+
     private static async Task<IResult> DetailAsync(HttpContext context, string id, PublicCatalogReader reader)
     {
         context.Response.Headers.CacheControl = "no-store";
         var items = await reader.ReadAsync(context).ConfigureAwait(false);
-        var item = items.FirstOrDefault(item => string.Equals(item.Id, id, StringComparison.Ordinal));
+        var matches = items.Where(item => string.Equals(item.Id, id, StringComparison.Ordinal)).Take(2).ToArray();
+        var item = matches.Length == 1 ? matches[0] : null;
         return item is null ? StandardErrorHelpers.CreateNotFound(context, "Catalog item not found.")
             : Results.Json(item, PublicCatalogJsonContext.Default.PublishedCatalogItem);
     }

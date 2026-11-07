@@ -76,7 +76,7 @@ internal static partial class MapServerEndpoints
 
             var (visibleLayers, accessError) = await AccessPolicyHelpers.FilterAccessibleResourcesAsync(
                 context,
-                publishedLayers,
+                publishedLayers.Where(layer => snapshot.IsDiscoverable(layer.Publication)).ToArray(),
                 static layer => layer.Resource,
                 service,
                 AuthorizationOperation.Metadata,
@@ -85,8 +85,6 @@ internal static partial class MapServerEndpoints
             {
                 return accessError;
             }
-
-            visibleLayers = visibleLayers.Where(layer => layer.Publication.Advertised).ToArray();
 
             var limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value;
             var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();

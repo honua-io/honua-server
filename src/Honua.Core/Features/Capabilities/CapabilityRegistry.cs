@@ -243,7 +243,6 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
         // versioning.branch (VMS) is now gated here via its own descriptor (added below).
         (string Id, string Category, string? EntitlementKey, CapabilityKind Kind, string? PackageSchemaVersion, CapabilityMaturity Maturity)[] capabilities =
         [
-            ("discovery.public-catalog", "discovery", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("package.metadata-v2", "packages", null, CapabilityKind.Feature, MetadataV2Constants.SchemaVersion, CapabilityMaturity.Implemented),
             ("package.release-package", "packages", null, CapabilityKind.Feature, MetadataV2Constants.ApiVersion, CapabilityMaturity.Implemented),
             ("package.gitops-manifest", "packages", null, CapabilityKind.Feature, MetadataV2Constants.ApiVersion, CapabilityMaturity.Implemented),
@@ -271,6 +270,7 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("temporal.histogram", "temporal", "temporal.histogram", CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("temporal.time-series-tiles", "temporal", "temporal.time-series-tiles", CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
             ("temporal.animation-api", "temporal", "temporal.animation-api", CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
+            ("discovery.public-catalog", "discovery", null, CapabilityKind.Feature, null, CapabilityMaturity.Implemented),
 
             // Disconnected-sync replica / conflict review — Preview in 2026.1 per the
             // 2026-09-03 operator ruling (honua-release#266 / #264). It remains Pro-edition
@@ -300,6 +300,15 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             // only (honua-release#266 / #264); #5238, #6492 and #3558 were pulled into
             // 2026.1. It already serves by default, so only the maturity changes.
             // WMTS and OGC API Coverages stay Preview in 2026.1 under the 2026-09-03 ruling.
+            ("serve.geoservices-featureserver", "serve", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
+            ("serve.geoservices-mapserver", "serve", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
+            ("serve.geoservices-vectortileserver", "serve", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
+            ("serve.ogc-api-features", "serve", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
+            ("serve.ogc-api-maps", "serve", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
+            ("serve.ogc-api-tiles", "serve", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
+            ("serve.wms", "serve", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
+            ("serve.wfs", "serve", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
+            ("serve.stac", "serve", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
             ("serve.geoservices-imageserver", "raster", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Implemented),
             ("serve.wmts", "raster", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Preview),
             ("serve.ogc-api-coverages", "raster", null, CapabilityKind.ProtocolOperation, null, CapabilityMaturity.Preview),
