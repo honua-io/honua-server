@@ -52,6 +52,7 @@ services:
       ASPNETCORE_ENVIRONMENT: Production
       Mcp__WorkflowViews__DefaultView: ${HONUA_MCP_DEFAULT_VIEW:-default}
       Licensing__Mode: Disabled
+      Limits__Connections__RequestTimeout: "00:10:00"
       AllowedHosts: "localhost;127.0.0.1;compose-manager"
       PUBLIC_BASE_URL: "http://localhost:${HONUA_MANAGER_PORT:-18082}"
       ConnectionStrings__DefaultConnection: "Host=compose-manager-postgres;Database=honua_manager;Username=honua"

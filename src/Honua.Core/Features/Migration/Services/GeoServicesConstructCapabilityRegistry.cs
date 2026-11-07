@@ -8,7 +8,7 @@ using Honua.Core.Features.Migration.Domain;
 
 namespace Honua.Core.Features.Migration.Services;
 
-public sealed class GeoServicesConstructCapabilityRegistry : IEsriConstructCapabilityRegistry
+public sealed class GeoServicesConstructCapabilityRegistry : IGeoServicesConstructCapabilityRegistry
 {
     public static class Keys
     {

@@ -28,7 +28,7 @@ public sealed class CompositeRelationshipMetadataTests
                 new MetadataV2Relationship
                 {
                     Id = "summary",
-                    EsriRelationshipId = 0,
+                    GeoServicesRelationshipId = 0,
                     Composite = true,
                     RelatedResourceId = "child",
                     Role = "esriRelRoleOrigin",
@@ -187,7 +187,7 @@ public sealed class CompositeRelationshipMetadataTests
                     Cardinality = "one-to-many",
                     OriginField = "Join_ID",
                     DestinationField = "Join_ID",
-                    EsriRelationshipId = 0
+                    GeoServicesRelationshipId = 0
                 }
             ]
         };

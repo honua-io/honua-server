@@ -5,9 +5,9 @@ Inputs:
   --baselines DIR   Directory of committed baseline .cert.json files
                     (default: tests/baselines/client-compat).
   --current DIR     Directory of current-run .cert.json files
-                    (default: docker/client-compat/output, recursed).
+                    (default: artifacts/client-interop, recursed).
   --gap-report PATH Where to write the Markdown gap report
-                    (default: docs/gis/gap-report.md).
+                    (default: artifacts/client-interop/gap-report.md).
   --expected-pairs PATH   JSON manifest of expected (client_lane, protocol)
                           pairs that the nightly matrix must produce evidence
                           for, even when no baseline has been committed yet
@@ -366,8 +366,8 @@ def write_gap_report(
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--baselines", default="tests/baselines/client-compat")
-    parser.add_argument("--current", default="docker/client-compat/output")
-    parser.add_argument("--gap-report", default="docs/gis/gap-report.md")
+    parser.add_argument("--current", default="artifacts/client-interop")
+    parser.add_argument("--gap-report", default="artifacts/client-interop/gap-report.md")
     parser.add_argument(
         "--expected-pairs",
         default="tests/baselines/client-compat/expected-pairs.json",

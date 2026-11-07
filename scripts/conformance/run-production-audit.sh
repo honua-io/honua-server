@@ -10,7 +10,7 @@ SCRIPT_NAME="$(basename "$0")"
 PHASE="all"
 MODE="full"
 AGENT_SELECTION="all"
-OUTPUT_ROOT=".audit/runs"
+OUTPUT_ROOT="artifacts/audit"
 DRY_RUN=false
 FAIL_FAST=false
 SKIP_SCALE=false
@@ -42,7 +42,7 @@ Options:
   --phase <1|2|3|all>                  Phase scope (default: all)
   --mode <quick|full>                  Execution profile (default: full)
   --agents <a,b,c|all>                 Agent subset (default: all)
-  --output-dir <path>                  Audit artifact root (default: .audit/runs)
+  --output-dir <path>                  Audit artifact root (default: artifacts/audit)
   --dry-run                            Print planned checks without executing
   --fail-fast                          Stop on first required check failure
   --skip-scale                         Skip scale tests (phase 3 optional checks)
