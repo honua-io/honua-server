@@ -36,6 +36,7 @@ internal sealed partial class OperationGateway : IOperationGateway
     private readonly ILogger<OperationGateway> _logger;
     private readonly IOperationProposalEvidenceValidator? _evidenceValidator;
     private readonly OperationProposerApiKeyAuthority? _proposerKeyAuthority;
+    private readonly IOperationHumanApprovalVerifier? _humanApprovalVerifier;
 
     public OperationGateway(
         IGuardrailLadder ladder,
@@ -45,7 +46,8 @@ internal sealed partial class OperationGateway : IOperationGateway
         IProposalNotifier notifier,
         ILogger<OperationGateway> logger,
         IOperationProposalEvidenceValidator? evidenceValidator = null,
-        OperationProposerApiKeyAuthority? proposerKeyAuthority = null)
+        OperationProposerApiKeyAuthority? proposerKeyAuthority = null,
+        IOperationHumanApprovalVerifier? humanApprovalVerifier = null)
     {
         ArgumentNullException.ThrowIfNull(executors);
         _ladder = ladder;
@@ -55,6 +57,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         _logger = logger;
         _evidenceValidator = evidenceValidator;
         _proposerKeyAuthority = proposerKeyAuthority;
+        _humanApprovalVerifier = humanApprovalVerifier;
     }
 
     public async Task<OperationGatewayResult> RouteAsync(
@@ -247,11 +250,6 @@ internal sealed partial class OperationGateway : IOperationGateway
             hasApprovalContext: true,
             cancellationToken).ConfigureAwait(false);
 
-    private static bool IsRequester(string? requestedBy, OperationProposalApprovalContext approval) =>
-        !string.IsNullOrWhiteSpace(requestedBy)
-        && (string.Equals(requestedBy, approval.ApprovedBy, StringComparison.OrdinalIgnoreCase)
-            || approval.ApproverIdentities.Contains(requestedBy, StringComparer.OrdinalIgnoreCase));
-
     private async Task<OperationProposal?> ApplyApprovedProposalCoreAsync(
         string proposalId,
         OperationProposalApprovalContext approval,
@@ -272,16 +270,13 @@ internal sealed partial class OperationGateway : IOperationGateway
                 $"Proposal '{proposalId}' is '{proposal.Status}' and cannot be approved.");
         }
 
-        // Separation of duties is enforced here as well as at the approval endpoint, so no
-        // approval entry point can execute a proposal on its own requester's say-so (#4901).
-        if (IsRequester(proposal.RequestedBy, approval))
+        if (_humanApprovalVerifier is null)
         {
-            await OperationApprovalDenialRecorder.RecordAsync(
-                _scopeFactory, proposal, approvedBy, OperationApprovalDenialReason.SelfApproval, cancellationToken)
-                .ConfigureAwait(false);
             throw new InvalidOperationException(
-                "Separation of duties: the requester of a proposal cannot approve it.");
+                "A verified human session from Console or an MCP human review is required to approve an operation.");
         }
+
+        await _humanApprovalVerifier.VerifyAsync(proposal, approval, cancellationToken).ConfigureAwait(false);
 
         try
         {
@@ -321,7 +316,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         // Transitions AwaitingApproval → Executing via a CAS write: only one concurrent
         // caller wins this write; all others re-read a non-AwaitingApproval status and
         // throw, preventing double-execution of non-idempotent operations (BH4-031).
-        proposal = await ClaimForExecutionAsync(proposal, approvedBy, cancellationToken).ConfigureAwait(false);
+        proposal = await ClaimForExecutionAsync(proposal, approval, cancellationToken).ConfigureAwait(false);
 
         var request = RebuildRequest(proposal) with { ApprovedBy = approvedBy, ApprovedProposalId = proposal.ProposalId };
         string? executionOperationId = null;
@@ -922,11 +917,14 @@ internal sealed partial class OperationGateway : IOperationGateway
     // The claim is a compare-and-swap, and a lost claim throws instead of double-applying the proposal.
     private async Task<OperationProposal> ClaimForExecutionAsync(
         OperationProposal proposal,
-        string approvedBy,
+        OperationProposalApprovalContext approval,
         CancellationToken cancellationToken)
     {
         for (var attempt = 0; attempt < 3; attempt++)
         {
+            // The session or capability may expire while proposer evidence is revalidated.
+            var humanApproval = await _humanApprovalVerifier!.VerifyAsync(proposal, approval, cancellationToken)
+                .ConfigureAwait(false);
             var payload = proposal.Kind == OperationClass.Deploy
                 ? Honua.ControlPlane.Executors.DeployExecutionPayload.Parse(proposal.Plan.ExecutionPayload)
                 : null;
@@ -936,7 +934,8 @@ internal sealed partial class OperationGateway : IOperationGateway
             var claiming = proposal with
             {
                 Status = OperationProposalStatus.Executing,
-                ResolvedBy = approvedBy,
+                ResolvedBy = humanApproval.ActorId,
+                HumanApproval = humanApproval,
                 ExecutionOperationId = restoreId
             };
             if (await _proposalStore.TrySetAsync(claiming, cancellationToken: cancellationToken)

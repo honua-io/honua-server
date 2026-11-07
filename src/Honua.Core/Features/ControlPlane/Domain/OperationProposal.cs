@@ -202,6 +202,10 @@ public sealed record OperationProposalEvidence
 /// </summary>
 public sealed record OperationProposal
 {
+    public OperationInitiationEvidence? Initiation { get; init; }
+
+    public OperationHumanApprovalEvidence? HumanApproval { get; init; }
+
     /// <summary>Trusted tenant owner captured when the operation was accepted.</summary>
     public string? TenantId { get; init; }
 

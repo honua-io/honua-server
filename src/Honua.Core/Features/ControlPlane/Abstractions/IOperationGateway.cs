@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
+using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.ControlPlane.Abstractions;
 
@@ -315,12 +316,12 @@ public sealed record OperationProposalApprovalContext
     public required string ApprovedBy { get; init; }
     public required string TenantId { get; init; }
 
-    /// <summary>
-    /// Every framework-derived identifier naming the approving principal: the raw subject or
-    /// key id, the scheme-qualified canonical actor, and the Studio owner key. Proposal writers
-    /// record the requester in any one of these encodings, so separation of duties refuses the
-    /// approval when the requester matches <see cref="ApprovedBy"/> or any entry (#4901).
-    /// </summary>
+    [JsonIgnore]
+    public string? HumanSessionId { get; init; }
+
+    [JsonIgnore]
+    public string? ApprovalCapability { get; init; }
+
     public IReadOnlyCollection<string> ApproverIdentities { get; init; } = [];
 }
 

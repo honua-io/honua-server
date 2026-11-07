@@ -575,6 +575,29 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
             new object[] { kind, "admin:approve" }
         });
 
+    public static IEnumerable<object[]> ProposalKinds =>
+        Enum.GetValues<OperationClass>().Select(kind => new object[] { kind });
+
+    [IntegrationTheory]
+    [MemberData(nameof(ProposalKinds))]
+    public async Task ApplyApprovedProposalAsync_ActorContextWithoutHumanProof_DoesNotReleaseAuthority(OperationClass kind)
+    {
+        var proposal = await SeedProposalAsync(requestedBy: "agent:proposer", kind: kind);
+        var gateway = _fixture.Services.GetRequiredService<IOperationGateway>();
+        var approval = new OperationProposalApprovalContext
+        {
+            ApprovedBy = "different-person",
+            TenantId = "public",
+        };
+
+        var apply = () => gateway.ApplyApprovedProposalAsync(proposal.ProposalId, approval);
+
+        await apply.Should().ThrowAsync<InvalidOperationException>().WithMessage("*human*");
+        (await _proposalStore.GetAsync(proposal.ProposalId)).Should().BeEquivalentTo(proposal);
+        _executor.ExecutionCount.Should().Be(0);
+        _notifier.ResolvedCount.Should().Be(0);
+    }
+
     [IntegrationTheory]
     [MemberData(nameof(NonHumanApprovalCases))]
     [Endpoint("POST /api/v1/admin/api-keys")]

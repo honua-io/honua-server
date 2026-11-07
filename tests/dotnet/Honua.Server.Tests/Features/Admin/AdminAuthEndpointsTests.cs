@@ -736,6 +736,14 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
             session.Should().NotBeNull();
             session!.IsAuthenticated.Should().BeTrue();
             session.ProviderKey.Should().Be("oidc");
+            var cookiePrefix = AdminAuthSessionStore.AuthSessionCookieName + "=";
+            var issuedCookie = tokenResponse.Headers.GetValues("Set-Cookie")
+                .Single(value => value.StartsWith(cookiePrefix, StringComparison.Ordinal));
+            var sessionId = issuedCookie.Split(';')[0][cookiePrefix.Length..];
+            var verifiedSession = await oidcFixture.Services.GetRequiredService<AdminAuthSessionStore>()
+                .GetInteractiveSessionForApprovalAsync(sessionId, CancellationToken.None);
+            verifiedSession.Should().NotBeNull();
+            verifiedSession!.Origin.Should().Be(AdminAuthSessionOrigin.InteractiveOidc);
             session.Claims.Should().Contain(c => c.Type == "name" && c.Value == "Test Admin");
             session.Claims.Should().Contain(c => c.Type == ClaimTypes.Role && c.Value == "admin");
 
