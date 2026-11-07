@@ -39,6 +39,7 @@ public sealed partial class PublicCatalogEndpointsTests : IAsyncLifetime
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
                 builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminKey);
+                builder.UseSetting("Studio:EndUserAuthorization:Enabled", "true");
             }).ConfigureServices(services =>
             {
                 services.RemoveAll<IPortalGroupStore>();
@@ -46,6 +47,9 @@ public sealed partial class PublicCatalogEndpointsTests : IAsyncLifetime
                 services.RemoveAll<IPortalAudienceSnapshotProvider>();
                 services.AddSingleton<IPortalGroupStore, InMemoryPortalGroupStore>();
                 services.AddSingleton<IPortalItemSharingStore, InMemoryPortalItemSharingStore>();
+                services.RemoveAll<Honua.Core.Features.Studio.Abstractions.IStudioPackageStore>();
+                services.AddSingleton<Honua.Core.Features.Studio.Abstractions.IStudioPackageStore,
+                    Honua.Core.Features.Studio.Services.InMemoryStudioPackageStore>();
                 services.AddAuthentication().AddScheme<AuthenticationSchemeOptions, RlsClaimsTestAuthHandler>(
                     RlsClaimsTestAuthHandler.SchemeName, _ => { });
                 services.PostConfigureAll<AuthenticationOptions>(options =>
