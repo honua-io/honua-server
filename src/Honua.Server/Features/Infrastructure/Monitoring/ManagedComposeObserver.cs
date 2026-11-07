@@ -210,8 +210,17 @@ internal sealed class ManagedComposeObserver(
     }
 
     private static EvidenceSourceEnvelope WithReadbackDeadline(EvidenceSourceEnvelope readback)
-        => readback with
+        => new()
         {
+            SourceId = readback.SourceId,
+            BackendKind = readback.BackendKind,
+            BackendId = readback.BackendId,
+            ObservedAt = readback.ObservedAt,
+            LastSuccessfulAt = readback.LastSuccessfulAt,
+            Completeness = readback.Completeness,
+            ReasonCodes = readback.ReasonCodes,
+            Coverage = readback.Coverage,
+            MaximumAgeSeconds = readback.MaximumAgeSeconds,
             ValidUntil = readback.ObservedAt is { } observed && readback.MaximumAgeSeconds is { } maximumAge
                 ? observed.AddSeconds(maximumAge)
                 : null
