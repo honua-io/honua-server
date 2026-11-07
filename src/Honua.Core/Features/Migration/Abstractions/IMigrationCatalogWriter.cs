@@ -135,7 +135,6 @@ public sealed record MigrationRelationshipApplyRequest
 {
     public required string SourceRelationshipId { get; init; }
 
-    [System.Text.Json.Serialization.JsonPropertyName("esriRelationshipId")]
     public int? GeoServicesRelationshipId { get; init; }
 
     public string? Name { get; init; }

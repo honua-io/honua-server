@@ -12,6 +12,20 @@ namespace Honua.Core.Tests.Features.Metadata.Domain.V2;
 public sealed class MetadataV2CompositeRelationshipTests
 {
     [UnitTest]
+    public void RelationshipJson_LegacyNumericId_RetainsSerializedName()
+    {
+        var relationship = JsonSerializer.Deserialize(
+            """{"id":"relationship.test","esriRelationshipId":3}""",
+            MetadataV2JsonContext.Default.MetadataV2Relationship)!;
+
+        relationship.GeoServicesRelationshipId.Should().Be(3);
+        var json = JsonSerializer.Serialize(relationship, MetadataV2JsonContext.Default.MetadataV2Relationship);
+        using var document = JsonDocument.Parse(json);
+        document.RootElement.GetProperty("esriRelationshipId").GetInt32().Should().Be(3);
+        document.RootElement.TryGetProperty("geoServicesRelationshipId", out _).Should().BeFalse();
+    }
+
+    [UnitTest]
     public void CompositeGraph_RoundTripsBothReadOnlySides()
     {
         var graph = CreateGraph();

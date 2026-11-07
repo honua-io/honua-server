@@ -160,7 +160,7 @@ public sealed class GeoservicesRelationshipApplyTests
             originResourceId: "resource:Inspections:layer:0",
             relatedSourceLayerToken: "layer:1",
             cardinality: "1:N",
-            esriRelationshipId: 3,
+            geoServicesRelationshipId: 3,
             classification: MigrationManifestRelationshipClassifications.Assisted);
 
         var outcomes = await service.ApplyRelationshipsAsync(
@@ -196,7 +196,7 @@ public sealed class GeoservicesRelationshipApplyTests
             originResourceId: "resource:Inspections:layer:0",
             relatedSourceLayerToken: "layer:99",
             cardinality: "1:N",
-            esriRelationshipId: 3,
+            geoServicesRelationshipId: 3,
             classification: MigrationManifestRelationshipClassifications.Assisted);
 
         var outcomes = await service.ApplyRelationshipsAsync(
@@ -228,7 +228,7 @@ public sealed class GeoservicesRelationshipApplyTests
             originResourceId: "resource:Inspections:layer:0",
             relatedSourceLayerToken: "layer:1",
             cardinality: "1:N",
-            esriRelationshipId: 5,
+            geoServicesRelationshipId: 5,
             classification: MigrationManifestRelationshipClassifications.ManualReview);
 
         var outcomes = await service.ApplyRelationshipsAsync(
@@ -274,7 +274,7 @@ public sealed class GeoservicesRelationshipApplyTests
             originResourceId: "resource:Inspections:layer:0",
             relatedSourceLayerToken: "layer:1",
             cardinality: "1:N",
-            esriRelationshipId: 3,
+            geoServicesRelationshipId: 3,
             classification: MigrationManifestRelationshipClassifications.Assisted,
             relationshipType: "composite");
         var origin = manifest.TargetResources[0];
@@ -340,7 +340,7 @@ public sealed class GeoservicesRelationshipApplyTests
             originResourceId: "resource:Inspections:layer:0",
             relatedSourceLayerToken: "layer:1",
             cardinality: "1:N",
-            esriRelationshipId: 3,
+            geoServicesRelationshipId: 3,
             classification: MigrationManifestRelationshipClassifications.ManualReview,
             relationshipType: "composite");
 
@@ -388,7 +388,7 @@ public sealed class GeoservicesRelationshipApplyTests
         string originResourceId,
         string relatedSourceLayerToken,
         string cardinality,
-        int esriRelationshipId,
+        int geoServicesRelationshipId,
         string classification,
         string relationshipType = "simple")
     {
@@ -409,7 +409,7 @@ public sealed class GeoservicesRelationshipApplyTests
             [
                 new MigrationManifestRelationshipRecord
                 {
-                    SourceRelationshipId = esriRelationshipId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    SourceRelationshipId = geoServicesRelationshipId.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     SourceResourceId = originResourceId,
                     Name = "Photos",
                     Cardinality = cardinality,
@@ -418,10 +418,10 @@ public sealed class GeoservicesRelationshipApplyTests
                     Role = "esriRelRoleOrigin",
                     OriginKeyField = "INSPECTION_ID",
                     DestinationKeyField = "INSPECTION_ID",
-                    GeoServicesRelationshipId = esriRelationshipId,
+                    GeoServicesRelationshipId = geoServicesRelationshipId,
                     Classification = classification,
                     TargetRelationshipRef = classification != MigrationManifestRelationshipClassifications.ManualReview
-                        ? $"target:relationship:inspections:inspection-points:{esriRelationshipId}"
+                        ? $"target:relationship:inspections:inspection-points:{geoServicesRelationshipId}"
                         : null
                 }
             ],
