@@ -11,6 +11,7 @@ using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Operations.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.Server.Features.Console;
+using Honua.Server.Features.Operations;
 using Microsoft.AspNetCore.Authorization;
 
 namespace Honua.ControlPlane;
