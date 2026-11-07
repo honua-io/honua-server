@@ -15,6 +15,10 @@ public sealed class RetiredHostedSampleTests(WebAppFixture fixture) : IClassFixt
 {
     [IntegrationTest]
     [Operation(Operations.Infrastructure)]
+    [Endpoint("GET /samples/stac-ops")]
+    [Endpoint("GET /samples/stac-ops/")]
+    [Endpoint("GET /samples/stac-ops/index.html")]
+    [Endpoint("GET /samples/stac-ops/_framework/blazor.webassembly.js")]
     public async Task GetHostedSamplePaths_ReturnsNotFound()
     {
         using var client = fixture.CreateClient(allowAutoRedirect: false);
