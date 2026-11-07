@@ -22,6 +22,7 @@ internal sealed partial class ExecutionJobReconciler(
 {
     private static readonly TimeSpan LeaseDuration = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan LeaseRenewInterval = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan LeaseCleanupTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan ProgressRetention = TimeSpan.FromDays(7);
 
     private readonly IReadOnlyList<IBatchComputeBackend> _backends = backends.ToArray();
@@ -217,19 +218,40 @@ internal sealed partial class ExecutionJobReconciler(
                 { ControlPlaneTelemetry.Tags.ExecutionReconcileOutcome, reconcileOutcome }
             });
 
+            await StopAndReleaseLeaseAsync(operationId, reconciliationCancellation, renewalTask).ConfigureAwait(false);
+        }
+    }
+
+    private async Task StopAndReleaseLeaseAsync(
+        string operationId,
+        CancellationTokenSource reconciliationCancellation,
+        Task renewalTask)
+    {
+        using var stopping = new CancellationTokenSource(LeaseCleanupTimeout);
+        try
+        {
             reconciliationCancellation.Cancel();
+            await renewalTask.WaitAsync(stopping.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested && !stopping.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            Log.ExecutionJobLeaseCleanupFailed(logger, operationId, exception.GetType().Name);
+        }
+        finally
+        {
+            using var releasing = new CancellationTokenSource(LeaseCleanupTimeout);
             try
             {
-                await renewalTask.ConfigureAwait(false);
+                await jobStore.ReleaseLeaseAsync(operationId, _ownerId, releasing.Token)
+                    .WaitAsync(releasing.Token).ConfigureAwait(false);
             }
-            catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested)
+            catch (Exception exception) when (exception is not OutOfMemoryException)
             {
-                // Expected: cancelling reconciliationCancellation above deliberately unblocks
-                // the lease-renewal loop's Task.Delay/RenewLeaseAsync calls. Nothing to log.
+                Log.ExecutionJobLeaseCleanupFailed(logger, operationId, exception.GetType().Name);
             }
-
-            using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            await jobStore.ReleaseLeaseAsync(operationId, _ownerId, cleanup.Token).ConfigureAwait(false);
         }
     }
 
@@ -665,24 +687,33 @@ internal sealed partial class ExecutionJobReconciler(
         string operationId,
         CancellationTokenSource reconciliationCancellation)
     {
-        while (!reconciliationCancellation.IsCancellationRequested)
+        var cancellationToken = reconciliationCancellation.Token;
+        while (!cancellationToken.IsCancellationRequested)
         {
             try
             {
-                await Task.Delay(LeaseRenewInterval, reconciliationCancellation.Token).ConfigureAwait(false);
+                await Task.Delay(LeaseRenewInterval, cancellationToken).ConfigureAwait(false);
                 var renewed = await jobStore.RenewLeaseAsync(
                     operationId,
                     _ownerId,
                     LeaseDuration,
-                    reconciliationCancellation.Token).ConfigureAwait(false);
+                    cancellationToken).ConfigureAwait(false);
                 if (!renewed)
                 {
-                    reconciliationCancellation.Cancel();
+                    if (!cancellationToken.IsCancellationRequested)
+                        reconciliationCancellation.Cancel();
                     return;
                 }
             }
-            catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
+                return;
+            }
+            catch (Exception exception) when (exception is not OutOfMemoryException)
+            {
+                Log.ExecutionJobLeaseRenewalFailed(logger, operationId, exception.GetType().Name);
+                if (!cancellationToken.IsCancellationRequested)
+                    reconciliationCancellation.Cancel();
                 return;
             }
         }
@@ -703,6 +734,12 @@ internal sealed partial class ExecutionJobReconciler(
 
     internal static partial class Log
     {
+        [LoggerMessage(9090, LogLevel.Warning, "Execution-job lease renewal failed for operation {OperationId} ({ExceptionType}); reconciliation is cancelled")]
+        public static partial void ExecutionJobLeaseRenewalFailed(ILogger logger, string operationId, string exceptionType);
+
+        [LoggerMessage(9091, LogLevel.Warning, "Execution-job lease cleanup failed for operation {OperationId} ({ExceptionType})")]
+        public static partial void ExecutionJobLeaseCleanupFailed(ILogger logger, string operationId, string exceptionType);
+
         [LoggerMessage(9039, LogLevel.Warning, "Execution-job reconciliation for operation {OperationId} hit a transient infrastructure failure ({ExceptionType}); the job is left as it is for the next sweep")]
         public static partial void ExecutionJobReconciliationDeferred(ILogger logger, string operationId, string exceptionType);
 
