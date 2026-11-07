@@ -104,7 +104,7 @@ public sealed partial class AdminOperationRequestContractTests
     [InlineData("admin.layer.publish", HttpStatusCode.Created, true)]
     [InlineData("admin.layer.publish", HttpStatusCode.Accepted, false)]
     [InlineData("admin.layer.publish", HttpStatusCode.BadRequest, false)]
-    [InlineData("admin.layer.set-enabled", HttpStatusCode.OK, false)]
+    [InlineData("admin.layer.set-enabled", HttpStatusCode.Created, false)]
     public async Task SubmitAsync_WithoutCommittedPublication_DoesNotInventResourceIdentity(
         string operationId, HttpStatusCode statusCode, bool dryRun)
     {
@@ -126,6 +126,7 @@ public sealed partial class AdminOperationRequestContractTests
             : OperationHandleStatus.Completed);
         handle.ResourceIds.Should().BeEmpty();
     }
+
     private static string SerializePublishedLayer(int layerId)
         => JsonSerializer.Serialize(ApiResponse<PublishedLayerSummary>.CreateSuccess(new PublishedLayerSummary
         {
@@ -136,5 +137,4 @@ public sealed partial class AdminOperationRequestContractTests
             GeometryType = "Point",
             ServiceName = "published-roads",
         }), LayerPublishingJsonContext.Default.ApiResponsePublishedLayerSummary);
-
 }
