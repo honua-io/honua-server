@@ -14,7 +14,7 @@ workflow files.
 |---|---|---|---|
 | `docker-compose.yml` | `/healthz/live` | Server container liveness | `bash /dev/tcp` GET; discard body |
 | `docker-compose.yml` | `/operate` | Operations UI availability | `wget` GET; discard body |
-| `docker-compose.gp-dev.yml` | `/healthz/live` | Server container liveness | `bash /dev/tcp` GET; discard body |
+| `docker/compose/docker-compose.gp-dev.yml` | `/healthz/live` | Server container liveness | `bash /dev/tcp` GET; discard body |
 | `docker/scale-test/compose.yml` (server) | `/healthz/live` | Server container liveness | `bash /dev/tcp` GET; discard body |
 | `docker/scale-test/compose.yml` (server replica) | `/healthz/live` | Replica container liveness | `bash /dev/tcp` GET; discard body |
 | `docker/scale-test/compose.yml` (proxy) | `/healthz/live` | Proxied server liveness | `wget` GET; discard body |

@@ -15,6 +15,23 @@ public sealed class MigrationManifestTranslatorTests
 {
     [Trait("Tier", "Fast")]
     [Fact]
+    public void ManifestRelationshipJson_LegacyNumericId_RetainsSerializedName()
+    {
+        var context = MigrationEvidencePackJsonContext.Default;
+        var jsonType = context.GetTypeInfo(typeof(MigrationManifestRelationshipRecord))!;
+        var relationship = (MigrationManifestRelationshipRecord)JsonSerializer.Deserialize(
+            """{"sourceRelationshipId":"relationship.test","sourceResourceId":"resource.test","classification":"automated","esriRelationshipId":3}""",
+            jsonType)!;
+
+        relationship.GeoServicesRelationshipId.Should().Be(3);
+        var json = JsonSerializer.Serialize(relationship, jsonType);
+        using var document = JsonDocument.Parse(json);
+        document.RootElement.GetProperty("esriRelationshipId").GetInt32().Should().Be(3);
+        document.RootElement.TryGetProperty("geoServicesRelationshipId", out _).Should().BeFalse();
+    }
+
+    [Trait("Tier", "Fast")]
+    [Fact]
     public void Translate_WithUnsupportedResource_DoesNotEmitTargetAndRecordsUnsupported()
     {
         var inventory = CreateInventory(
@@ -752,7 +769,7 @@ public sealed class MigrationManifestTranslatorTests
         record.OriginKeyField.Should().Be("INSPECTION_ID");
         record.DestinationKeyField.Should().Be("INSPECTION_ID");
         record.Role.Should().Be("esriRelRoleOrigin");
-        record.EsriRelationshipId.Should().Be(3);
+        record.GeoServicesRelationshipId.Should().Be(3);
     }
 
     [Trait("Tier", "Fast")]

@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 class ProductionComposeTests(unittest.TestCase):
     def setUp(self):
         self.document = (ROOT / "docs/guides/deploy/docker-compose.md").read_text()
-        self.compose = (ROOT / "docker-compose.production.yml").read_text()
+        self.compose = (ROOT / "docker/compose/docker-compose.production.yml").read_text()
         self.values = {
             "HONUA_IMAGE": "ghcr.io/honua-io/honua-server@sha256:" + "a" * 64,
             "HONUA_HOST": "honua.example.com",
@@ -85,7 +85,7 @@ class ProductionComposeTests(unittest.TestCase):
 
     def test_production_env_file_routes_to_production_compose(self):
         guide = (ROOT / "docs/guides/deploy/configuration.md").read_text()
-        self.assertIn("docker compose -f docker-compose.production.yml --env-file .env.production up", guide)
+        self.assertIn("docker compose --project-directory . -f docker/compose/docker-compose.production.yml --env-file .env.production up", guide)
         self.assertIn("ASPNETCORE_ENVIRONMENT=Production", (ROOT / ".env.production.example").read_text())
 
     def test_runtime_secret_overrides_are_honored_in_production(self):
@@ -116,10 +116,11 @@ class ProductionComposeTests(unittest.TestCase):
         values.pop("HONUA_MASTER_KEY")
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / "docker-compose.production.yml").write_text(self.compose)
+            (root / "docker/compose").mkdir(parents=True)
+            (root / "docker/compose/docker-compose.production.yml").write_text(self.compose)
             (root / ".env.production").write_text("\n".join(f"{key}={value}" for key, value in values.items()))
             result = subprocess.run(
-                ["docker", "compose", "-f", "docker-compose.production.yml", "--env-file", ".env.production",
+                ["docker", "compose", "--project-directory", ".", "-f", "docker/compose/docker-compose.production.yml", "--env-file", ".env.production",
                  "config", "--format", "json"], cwd=root,
                 env={key: value for key, value in os.environ.items()
                      if key not in values and not key.startswith("COMPOSE_")}, capture_output=True, text=True)

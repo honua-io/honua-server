@@ -18,14 +18,14 @@ public sealed class DatabaseMigrationSafetyTests
     public void MigrationScripts_AfterReaderBaseline_MustRemainExpandOnly()
     {
         var root = FindProjectRoot(Directory.GetCurrentDirectory());
-        var baselineJson = File.ReadAllText(Path.Join(root, "certification", "schema-reader-baseline.json"));
+        var baselineJson = File.ReadAllText(Path.Join(root, "eng", "schema", "schema-reader-baseline.v1.json"));
         MigrationHash(baselineJson).Should().Be("4534DC4F439A70DCE9A50F2DA0C82EDBB1F0A551BC9BFE1E4AE44EF6F2B8A33B",
             "the reader baseline is frozen at 977a1c630; new migrations belong in the ongoing ledger, not this review record");
         var baseline = JsonSerializer.Deserialize<Dictionary<string, string>>(baselineJson)!;
         var scripts = EnumerateMigrationFiles().ToDictionary(
             path => Path.GetRelativePath(root, path).Replace('\\', '/'), File.ReadAllText);
         var hashes = JsonSerializer.Deserialize<Dictionary<string, string>>(
-            File.ReadAllText(Path.Join(root, "certification", "schema-migration-hashes.json")))!;
+            File.ReadAllText(Path.Join(root, "eng", "schema", "schema-migration-hashes.v1.json")))!;
         RollingUpgradeViolations(scripts, baseline, hashes).Should().BeEmpty(
             "the supported rolling update retains the previous reader's schema; a review annotation does not permit a contraction");
     }
@@ -209,7 +209,7 @@ public sealed class DatabaseMigrationSafetyTests
         {
             if (!hashes.ContainsKey(name))
             {
-                yield return $"{name}: every migration must be hash-pinned in schema-migration-hashes.json";
+                yield return $"{name}: every migration must be hash-pinned in schema-migration-hashes.v1.json";
             }
             if (!baseline.ContainsKey(name) && MigrationSafetyClassifier.Classify(name, sql).IsBreaking)
             {
@@ -250,7 +250,7 @@ public sealed class DatabaseMigrationSafetyTests
         const string path = "src/Honua.Server/Migrations/135_RecordMigrationReaderCompatibility.sql";
         var sql = File.ReadAllText(Path.Join(root, path));
         var hashes = JsonSerializer.Deserialize<Dictionary<string, string>>(
-            File.ReadAllText(Path.Join(root, "certification", "schema-migration-hashes.json")))!;
+            File.ReadAllText(Path.Join(root, "eng", "schema", "schema-migration-hashes.v1.json")))!;
 
         hashes.Should().ContainKey(path).WhoseValue.Should().Be(MigrationHash(sql));
         var declaration = MigrationReaderCompatibility.Declare("Honua.Server.Migrations.135_RecordMigrationReaderCompatibility.sql", sql);

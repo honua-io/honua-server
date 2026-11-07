@@ -24,7 +24,7 @@ Select a rebuilt Console image containing the supported browser assistant transp
 Start the optional assistant overlay and Console:
 
 ```bash
-python3 scripts/docker/quickstart.py --profile console -f docker-compose.yml -f docker-compose.studio-ai.yml
+python3 scripts/docker/quickstart.py --profile console -f docker-compose.yml -f docker/compose/docker-compose.studio-ai.yml
 ```
 
 The base Compose file enables the Console realtime editor and Server Studio end-user authorization. The overlay selects the supported browser conversation contract, enables the Bedrock provider, selects PostgreSQL invocation admission, and records an exact operator disclosure approval for that model, region, use case and workload classification. Using this overlay asserts that you approve sending this workload to that configured Bedrock boundary. Change the classification to your actual approved workload label; it is not automatic content classification. The default quickstart keeps paid inference disabled.

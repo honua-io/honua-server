@@ -1565,7 +1565,7 @@
                 },
                 {
                   "JsonName": "esriRelationshipId",
-                  "ClrName": "EsriRelationshipId",
+                  "ClrName": "GeoServicesRelationshipId",
                   "Container": "scalar",
                   "ElementType": "int",
                   "Required": false,

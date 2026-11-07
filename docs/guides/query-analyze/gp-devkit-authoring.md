@@ -263,7 +263,7 @@ Build a named worker image using the same Compose definition as the integration
 stack. This builds the image without starting PostGIS, Redis, or the server:
 
 ```bash
-docker compose -f docker-compose.gp-dev.yml --profile gdal-worker build gdal-worker
+docker compose --project-directory . -f docker/compose/docker-compose.gp-dev.yml --profile gdal-worker build gdal-worker
 export HONUA_GP_WORKER_IMAGE=honua-worker-etl:gp-local
 
 dotnet run --project src/Honua.Geoprocessing.Cli -- run gdal.ogr2ogr \

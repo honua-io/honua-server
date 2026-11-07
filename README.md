@@ -8,7 +8,7 @@
 [![PostGIS](https://img.shields.io/badge/PostGIS-3.4--3.6-brightgreen.svg)](https://postgis.net/)
 [![Docker](https://img.shields.io/badge/Docker-honuaio%2Fhonua--server-blue.svg)](https://hub.docker.com/r/honuaio/honua-server)
 
-**Cloud-native geospatial server.** One container exposes the same PostGIS-backed data through every major GIS protocol — GeoServices REST (FeatureServer, MapServer, ImageServer, Geometry, GPServer), OGC API (Features, Maps, Tiles, Coverages, Processes), classic OGC WMS/WFS/WMTS/WCS, STAC, OData v4, vector tiles (MVT/TileJSON), Terrain-RGB and elevation APIs, 3D Tiles, MCP for AI agents, and gRPC. Honua provides protocol-level compatibility for selected, operation-scoped Esri client workflows; support is bounded by the published [GeoServices parity matrix](docs/reference/compatibility/geoservices-parity.md) and [cross-client certification matrix](docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md). QGIS, MapLibre, Excel, and Power BI use the same layers — no ETL, no duplication, no GDAL toolchain to install.
+**Cloud-native geospatial server.** One container exposes the same PostGIS-backed data through every major GIS protocol — GeoServices REST (FeatureServer, MapServer, ImageServer, Geometry, GPServer), OGC API (Features, Maps, Tiles, Coverages, Processes), classic OGC WMS/WFS/WMTS/WCS, STAC, OData v4, vector tiles (MVT/TileJSON), Terrain-RGB and elevation APIs, 3D Tiles, MCP for AI agents, and gRPC. Honua provides protocol-level compatibility for the selected, operation-scoped client workflows listed in the certification matrices; support is bounded by the published [GeoServices parity matrix](docs/reference/compatibility/geoservices-parity.md) and [cross-client certification matrix](docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md). QGIS, MapLibre, Excel, and Power BI use the same layers — no ETL, no duplication, no GDAL toolchain to install.
 
 ## Status
 
@@ -64,16 +64,16 @@ Every published layer is reachable through every protocol its service enables. T
 
 | Protocol | Endpoint | Typical clients |
 |---|---|---|
-| GeoServices FeatureServer | `/rest/services/{id}/FeatureServer` | ArcGIS Pro, Esri SDKs, Esri Leaflet |
-| GeoServices MapServer | `/rest/services/{id}/MapServer` | ArcGIS Pro, Esri map clients |
-| GeoServices ImageServer **(Preview)** | `/rest/services/{id}/ImageServer` | ArcGIS raster workflows |
-| GeoServices Geometry Service | `/rest/services/Utilities/Geometry/GeometryServer` | Esri SDKs (buffer, project, intersect, …) |
-| GeoServices GPServer | `/rest/services/{id}/GPServer` | ArcGIS Pro, async geoprocessing clients |
-| GeoServices GeocodeServer | `/rest/services/{locator}/GeocodeServer` | Esri geocoding clients (`findAddressCandidates`) |
-| GeoServices VectorTileServer | `/rest/services/{id}/VectorTileServer` | Esri vector-tile clients, ArcGIS SDKs |
-| GeoServices NAServer **(Pro)** | `/rest/services/{id}/NAServer` | Esri routing / network-analysis clients |
-| GeoServices VersionManagementServer **(Pro, experimental)** | `/rest/services/{id}/VersionManagementServer` | Esri branch-versioning editing workflows |
-| Portal token issuance | `/sharing/rest/generateToken` | Esri clients using username/password tokens |
+| GeoServices FeatureServer | `/rest/services/{id}/FeatureServer` | Desktop GIS, SDK and Leaflet clients listed in the certification matrix |
+| GeoServices MapServer | `/rest/services/{id}/MapServer` | Desktop GIS and map clients listed in the certification matrix |
+| GeoServices ImageServer **(Preview)** | `/rest/services/{id}/ImageServer` | Raster clients listed in the certification matrix |
+| GeoServices Geometry Service | `/rest/services/Utilities/Geometry/GeometryServer` | GeoServices REST SDKs (buffer, project, intersect, …) |
+| GeoServices GPServer | `/rest/services/{id}/GPServer` | Desktop GIS and async geoprocessing clients |
+| GeoServices GeocodeServer | `/rest/services/{locator}/GeocodeServer` | GeoServices REST geocoding clients (`findAddressCandidates`) |
+| GeoServices VectorTileServer | `/rest/services/{id}/VectorTileServer` | VectorTileServer clients listed in the certification matrix |
+| GeoServices NAServer **(Pro)** | `/rest/services/{id}/NAServer` | GeoServices REST routing / network-analysis clients |
+| GeoServices VersionManagementServer **(Pro, experimental)** | `/rest/services/{id}/VersionManagementServer` | GeoServices REST branch-versioning editing workflows |
+| Portal token issuance | `/sharing/rest/generateToken` | Clients using Portal username/password tokens |
 | OGC API Features | `/ogc/features` | QGIS, GDAL, OpenLayers, any OGC client |
 | OGC API Maps | `/ogc/maps` | OGC map clients |
 | OGC API Tiles | `/ogc/tiles` | QGIS, MapLibre |
@@ -85,7 +85,7 @@ Every published layer is reachable through every protocol its service enables. T
 | OGC SensorThings v1.1 | `/sta/v1.1` | IoT / observations clients |
 | WMS 1.3 / 1.1.1 | `/ogc/services/{id}/wms`, `/rest/services/{id}/MapServer/WMS` | QGIS, legacy OGC clients |
 | WFS 2.0 / 1.1.0 / 1.0.0 | `/wfs` | QGIS, GDAL/OGR, legacy stacks |
-| WCS 2.0.1 | `/ogc/services/{id}/wcs`, `/ogc/wcs/{id}` (ArcGIS Pro), `/rest/services/{id}/ImageServer/WCS` | Science, elevation, coverage clients |
+| WCS 2.0.1 | `/ogc/services/{id}/wcs`, `/ogc/wcs/{id}` ([client-specific alias](docs/reference/compatibility/clients.md)), `/rest/services/{id}/ImageServer/WCS` | Science, elevation, coverage clients |
 | WMTS 1.0 **(Preview)** | `/ogc/services/{id}/wmts`, `/rest/services/{id}/MapServer/WMTS` | QGIS, legacy tile clients |
 | WPS 2.0 | `/wps` | Classic OGC processing clients |
 | OData v4 | `/odata` | Excel, Power BI, Tableau, SAP |
@@ -106,14 +106,14 @@ Plus operational surfaces: health probes (`/healthz/live`, `/healthz/ready`), Op
 ## Compliance
 
 - **OGC CITE historical evidence:** the 2026-09-18 run at source `80e23bedfe8ff7b43362c8d8ea22bfae1756df7d` passed 1138 / 1138 assertions across 14 suites, including WFS 2.0 `basic` at 167/167. This result covers that source and those profiles; newer images need their own evidence. See the [authoritative snapshot and run receipt](docs/cite-status.md) and [OGC conformance evidence](docs/reference/compatibility/ogc-conformance.md).
-- **Client compatibility:** the supported client x protocol matrix — including known limitations — is the [compatibility contract](docs/reference/compatibility/clients.md); Esri-side parity is tracked in [GeoServices parity](docs/reference/compatibility/geoservices-parity.md).
+- **Client compatibility:** the supported client x protocol matrix — including known limitations — is the [compatibility contract](docs/reference/compatibility/clients.md); GeoServices REST parity is tracked in [GeoServices parity](docs/reference/compatibility/geoservices-parity.md).
 - **gRPC stability:** gRPC remains supported for 2026.1. `Geospatial.Grpc` is on nuget.org (`dotnet add package Geospatial.Grpc`). See the [gRPC reference](docs/reference/protocols/grpc.md#net-package-installation) for versioning and stability guarantees.
 - **Control plane stability:** admin/control-plane API versioning is governed by [versioning and support](docs/reference/versioning-and-support.md).
 
 ## Key capabilities
 
 - **Query and edit** — FeatureServer query/applyEdits/attachments/related records, OGC API Features CRUD with CQL2, WFS 2.0 transactions, OData CRUD with spatial functions (`geo.distance`, `geo.intersects`, `$batch`). FeatureServer applyEdits is **(Pro)**; edits through the open protocols (OGC API Features, WFS-T, OData, gRPC) stay Community. Output as JSON, GeoJSON, PBF, FlatGeobuf, GeoParquet, and GeoArrow.
-- **GeoServices REST migration and coexistence** — Honua works with selected, operation-scoped ArcGIS Pro and ArcGIS Maps SDK workflows, bounded by the published [GeoServices parity matrix](docs/reference/compatibility/geoservices-parity.md) and [cross-client certification matrix](docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md). Import public GeoServices REST and GeoServer services into PostGIS (service imports are **(Enterprise)**); scan GeoServices REST servers and GeoServer for deterministic migration inventories. See [Migrate from GeoServices REST](docs/guides/migrate/from-geoservices-rest.md) and [from GeoServer](docs/guides/migrate/from-geoserver.md).
+- **GeoServices REST migration and coexistence** — Honua works with the selected, operation-scoped desktop GIS and mapping SDK workflows listed in the certification matrix, bounded by the published [GeoServices parity matrix](docs/reference/compatibility/geoservices-parity.md) and [cross-client certification matrix](docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md). Import public GeoServices REST and GeoServer services into PostGIS (service imports are **(Enterprise)**); scan GeoServices REST servers and GeoServer for deterministic migration inventories. See [Migrate from GeoServices REST](docs/guides/migrate/from-geoservices-rest.md) and [from GeoServer](docs/guides/migrate/from-geoserver.md).
 - **No GDAL required on the server** — import GeoJSON, Shapefile (zip), GeoPackage, GPX, KML, WKT, FlatGeobuf, File Geodatabase (`.gdb.zip`), and GeoParquet directly, with CRS auto-detection and PostGIS reprojection; the serving container ships no GDAL, while optional geoprocessing worker images bundle it separately.
 - **Rendering and rasters** — MapServer export/identify/legend, OGC API Maps, WCS, and server-generated Terrain-RGB elevation tiles (Community); ImageServer and OGC API Coverages **(Preview)**. Cloud-optimized GeoTIFFs registered in place from S3/Azure are served under **(Pro)**.
 - **Geoprocessing and workflows** — one canonical async job runtime behind GPServer, OGC API Processes, gRPC, and MCP; declarative multi-step DAG workflows with retries and cron scheduling (Redis required for durable jobs).
@@ -121,7 +121,7 @@ Plus operational surfaces: health probes (`/healthz/live`, `/healthz/ready`), Op
 - **Cloud-native operations** — container-first and stateless; multi-layer caching with in-memory fallback (output cache and Redis caching are **(Pro)**); OpenTelemetry traces and metrics; API-key auth, OIDC SSO **(Pro)** — multi-provider OIDC, SAML 2.0, and SCIM 2.0 are **(Enterprise)** — and experimental mTLS client-certificate auth **(Enterprise)** (off by default, not on the GA path); a server-computed operate loop for humans, Console, and agents ([Operating Honua](docs/guides/operate/README.md)).
 
 - **Spatial analytics** — viewshed, line-of-sight, and sun/shadow analysis; H3 aggregation; density, clustering, spatial join, buffer-aggregate, and slice, all **(Pro)**; analysis content and reporting stay Community. These are **synchronous** — the elevation analytics are `POST /elevation/{datasetId}/…` calls and the vector ones are FeatureServer query extensions, not async jobs. The long-running GDAL-worker operations are catalogued separately in [geoprocessing operations](docs/reference/geoprocessing-operations.md).
-- **Geocoding** — forward and reverse geocoding against a [local PostGIS-backed geocoder](docs/reference/geocoding/local-postgis-geocoder.md) (Community), batch geocoding **(Enterprise)**, and provider failover **(Pro)**, served to Esri clients through GeocodeServer ([provider parity](docs/reference/geocoding/geocode-server-parity.md)).
+- **Geocoding** — forward and reverse geocoding against a [local PostGIS-backed geocoder](docs/reference/geocoding/local-postgis-geocoder.md) (Community), batch geocoding **(Enterprise)**, and provider failover **(Pro)**, served to GeoServices REST clients through GeocodeServer ([provider parity](docs/reference/geocoding/geocode-server-parity.md)).
 - **Routing and network analysis** — routes, service areas, closest facility, origin-destination cost matrices, and location-allocation through NAServer **(Pro)**.
 - **Time** — temporal extent discovery and time filtering (Community), temporal histograms, time-series tiles, and an SDK-side animation API **(Pro)**, so time-aware layers answer "when" as well as "where". See [Work with time](docs/guides/query-analyze/work-with-time.md).
 - **Real-time, geofencing and alerting** — feature subscriptions for change streams **(Pro)**; an alert-rule evaluation engine **(Pro, Preview)** whose trigger types are enter/exit geofences **(Pro, Preview)** and dwell and threshold triggers **(Enterprise, Preview)**; delivery to a webhook **(Pro, Preview)** or to Slack, Teams, email, AWS SNS, Azure EventGrid, or a digest **(Enterprise, Preview)**. See [React to changes](docs/guides/edit/react-to-changes.md).
@@ -250,6 +250,6 @@ See [SECURITY.md](SECURITY.md) for how to report a vulnerability privately, resp
 
 [Fair Core License, Version 1.0, ALv2 Future License](LICENSE) (FCL-1.0-ALv2) — source-available. You may use, copy, modify and redistribute Honua Server for any purpose except a Competing Use: making it available to others in a commercial product or service that substitutes for Honua or offers substantially similar functionality. Internal use, non-commercial education and research, and professional services delivered to a licensee are expressly permitted. You may not circumvent or remove the license-key functionality, which includes edition entitlements and capacity metering (see [NOTICE](NOTICE)). Each version is additionally licensed under the Apache License 2.0 two years after Honua Geo Inc. makes it available.
 
-Esri, ArcGIS, and the Esri product names used here are trademarks, registered trademarks, or service
-marks of Esri in the United States and other countries. They identify the products Honua is compatible
-with; Honua is not affiliated with, sponsored by, or endorsed by Esri.
+Esri, ArcGIS, and other Esri product names are trademarks, registered trademarks, or service marks of
+Esri in the United States and other countries. Honua is not affiliated with, sponsored by, or endorsed
+by Esri. Compatibility is limited to the operation-scoped workflows in the linked matrices.

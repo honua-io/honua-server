@@ -660,11 +660,11 @@ public static partial class MigrationManifestTranslator
                                       !string.IsNullOrWhiteSpace(dkf)
                 ? dkf
                 : null;
-            int? esriRelationshipId = null;
-            if (classification.Metadata.TryGetValue("relationshipId", out var esriIdText) &&
-                int.TryParse(esriIdText, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var parsedEsriId))
+            int? geoServicesRelationshipId = null;
+            if (classification.Metadata.TryGetValue("relationshipId", out var geoServicesRelationshipIdText) &&
+                int.TryParse(geoServicesRelationshipIdText, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var parsedGeoServicesRelationshipId))
             {
-                esriRelationshipId = parsedEsriId;
+                geoServicesRelationshipId = parsedGeoServicesRelationshipId;
             }
             var relatedLayerIds = ExtractRelatedLayerIds(classification);
 
@@ -688,7 +688,7 @@ public static partial class MigrationManifestTranslator
                 Role = role,
                 OriginKeyField = originKeyField,
                 DestinationKeyField = destinationKeyField,
-                EsriRelationshipId = esriRelationshipId,
+                GeoServicesRelationshipId = geoServicesRelationshipId,
                 Classification = cls,
                 TargetRelationshipRef = targetRef,
                 Reason = reason
