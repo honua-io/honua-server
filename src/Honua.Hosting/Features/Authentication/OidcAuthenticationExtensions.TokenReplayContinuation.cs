@@ -93,7 +93,16 @@ public static partial class OidcAuthenticationExtensions
             return false;
         }
 
-        return await WithReplayLockAsync(admission.TokenKey, () =>
+        return await TryBindMemoryContinuationAsync(
+            admission, marker, memoryCache, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static Task<bool> TryBindMemoryContinuationAsync(
+        TokenReplayAdmissionFeature admission,
+        string marker,
+        IMemoryCache memoryCache,
+        CancellationToken cancellationToken) =>
+        WithReplayLockAsync(admission.TokenKey, () =>
         {
             if (!memoryCache.TryGetValue(admission.TokenKey, out var current)
                 || (current is not RegisteredTokenReplayValue
@@ -111,8 +120,7 @@ public static partial class OidcAuthenticationExtensions
             }
 
             return true;
-        }, cancellationToken).ConfigureAwait(false);
-    }
+        }, cancellationToken);
 
     // The replay store keeps only the continuation digest because the continuation id names a live session.
     internal static string BuildTokenReplayContinuationMarker(string continuationId) =>
