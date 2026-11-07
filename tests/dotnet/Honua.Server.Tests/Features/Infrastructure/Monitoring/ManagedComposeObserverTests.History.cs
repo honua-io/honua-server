@@ -81,10 +81,12 @@ public sealed partial class ManagedComposeObserverTests
     }
 
     [UnitTheory]
-    [InlineData(ManagedComposeObserver.SourceId)]
-    [InlineData(EvidencePostureVocabulary.SourceIds.PlatformReleaseStatus)]
+    [InlineData(ManagedComposeObserver.SourceId, "target")]
+    [InlineData(ManagedComposeObserver.SourceId, "backend")]
+    [InlineData(EvidencePostureVocabulary.SourceIds.PlatformReleaseStatus, "target")]
+    [InlineData(EvidencePostureVocabulary.SourceIds.PlatformReleaseStatus, "backend")]
     [Operation(Operations.TestInfrastructure)]
-    public async Task ReadAsync_ConfiguredTargetChanges_DoesNotReuseAnotherTargetsHistory(string sourceId)
+    public async Task ReadAsync_ConfiguredTargetChanges_DoesNotReuseAnotherTargetsHistory(string sourceId, string setting)
     {
         var options = Configuration();
         var client = Substitute.For<IComposeExecutorClient>();
@@ -95,14 +97,46 @@ public sealed partial class ManagedComposeObserverTests
         Assert.True(EvidencePostureFactory.IsActionable(SourceSnapshot(sourceId, options,
             await observer.ReadAsync(CancellationToken.None))));
 
-        options.DeployTargets[0].TargetId = "another-target";
+        var target = options.DeployTargets[0];
+        target.TargetId = setting == "target" ? "another-target" : target.TargetId;
+        target.Backend = setting == "backend" ? "another-backend" : target.Backend;
         var changed = SourceSnapshot(sourceId, options, await observer.ReadAsync(CancellationToken.None));
         Assert.Null(changed.LastSuccessfulAt);
         Assert.Contains(EvidencePostureVocabulary.ReasonCodes.NeverSucceeded, changed.ReasonCodes);
-        options.DeployTargets[0].TargetId = "compose-local";
+        target.TargetId = "compose-local";
+        target.Backend = ComposeDeployBackend.AdapterBackendName;
         var restored = SourceSnapshot(sourceId, options, await observer.ReadAsync(CancellationToken.None));
         Assert.Null(restored.LastSuccessfulAt);
         Assert.Contains(EvidencePostureVocabulary.ReasonCodes.NeverSucceeded, restored.ReasonCodes);
+    }
+
+    [UnitTheory]
+    [InlineData(ManagedComposeObserver.SourceId)]
+    [InlineData(EvidencePostureVocabulary.SourceIds.PlatformReleaseStatus)]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ReadAsync_RecoveryThenAnotherOutage_RetainsTheNewerSuccess(string sourceId)
+    {
+        var options = Configuration();
+        var firstSuccess = DateTimeOffset.UtcNow.AddSeconds(-3);
+        var secondSuccess = firstSuccess.AddSeconds(1);
+        var clock = Substitute.For<TimeProvider>();
+        clock.GetUtcNow().Returns(firstSuccess, firstSuccess.AddMilliseconds(100),
+            secondSuccess, secondSuccess.AddMilliseconds(100));
+        var client = Substitute.For<IComposeExecutorClient>();
+        var outage = Task.FromException<ComposeExecutorResponse>(new IOException("Executor unavailable"));
+        client.ExecuteAsync(Arg.Any<ComposeExecutorRequest>(), Arg.Any<CancellationToken>()).Returns(
+            Task.FromResult(ReadyResponse(options)), outage, Task.FromResult(ReadyResponse(options)), outage);
+        var observer = CreateObserver(client, options, clock);
+
+        await observer.ReadAsync(CancellationToken.None);
+        await observer.ReadAsync(CancellationToken.None);
+        var recovered = SourceSnapshot(sourceId, options, await observer.ReadAsync(CancellationToken.None));
+        var retained = SourceSnapshot(sourceId, options, await observer.ReadAsync(CancellationToken.None));
+
+        Assert.Equal(secondSuccess, recovered.LastSuccessfulAt);
+        Assert.Equal(secondSuccess, retained.LastSuccessfulAt);
+        Assert.DoesNotContain(EvidencePostureVocabulary.ReasonCodes.NeverSucceeded, retained.ReasonCodes);
+        Assert.False(EvidencePostureFactory.IsActionable(retained));
     }
 
     private static ComposeExecutorResponse ReadyResponse(ControlPlaneOptions options) => new()

@@ -281,11 +281,11 @@ public sealed partial class ManagedComposeObserverTests
         Assert.True(EvidencePostureFactory.IsActionable(ManagedComposeObserver.Source(targets)));
     }
 
-    private static ManagedComposeObserver CreateObserver(IComposeExecutorClient client, ControlPlaneOptions options)
+    private static ManagedComposeObserver CreateObserver(IComposeExecutorClient client, ControlPlaneOptions options, TimeProvider? clock = null)
     {
         var monitor = Substitute.For<IOptionsMonitor<ControlPlaneOptions>>();
         monitor.CurrentValue.Returns(options);
-        return new(client, Options.Create(new ComposeExecutorOptions()), monitor, TimeProvider.System);
+        return new(client, Options.Create(new ComposeExecutorOptions()), monitor, clock ?? TimeProvider.System);
     }
 
     private static ControlPlaneOptions Configuration() => new()
