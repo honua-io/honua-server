@@ -132,6 +132,8 @@ They expose only the `view` action and cannot be edited through content CRUD.
 Their `access` sidecar reuses the Portal `public`, `org`, and `private` policy
 projection; `url` uses the canonical public service path, including its folder.
 These rows do not create authored share or open-data state.
+Service `routeBase` is root-relative, including any configured public path prefix;
+`url` includes the configured public base URL when one is available.
 
 ## Update semantics
 

@@ -151,7 +151,8 @@ public sealed class PublishedContentProjectionTests : IAsyncLifetime
             Services = policies.Select((policy, index) => graph.Services[0] with
             {
                 Metadata = graph.Services[0].Metadata with { Id = "service-" + index, Name = "parcels-" + index },
-                PublicName = "Parcels-" + index, AccessPolicy = policy
+                PublicName = "Parcels-" + index,
+                AccessPolicy = policy
             }).ToArray(),
             Publications = policies.Select((_, index) => graph.Publications[0] with
             {
@@ -177,8 +178,11 @@ public sealed class PublishedContentProjectionTests : IAsyncLifetime
         var store = _fixture.Services.GetRequiredService<InMemoryConsoleContentStore>();
         await store.CreateAsync(new()
         {
-            Id = "publication", Name = "collision", Title = "Stored collision",
-            ItemType = ConsoleContentItemType.Layer, Visibility = ConsoleVisibility.Public
+            Id = "publication",
+            Name = "collision",
+            Title = "Stored collision",
+            ItemType = ConsoleContentItemType.Layer,
+            Visibility = ConsoleVisibility.Public
         });
         using var initial = await ReadContentAsync("?itemType=layer");
         Assert.Equal("Parcels", Assert.Single(initial.RootElement.GetProperty("items").EnumerateArray()).GetProperty("title").GetString());
@@ -206,7 +210,8 @@ public sealed class PublishedContentProjectionTests : IAsyncLifetime
         {
             await store.CreateAsync(new()
             {
-                Id = $"authored-{index:D3}", Name = $"authored-{index:D3}",
+                Id = $"authored-{index:D3}",
+                Name = $"authored-{index:D3}",
                 ItemType = ConsoleContentItemType.SavedMap
             });
         }
@@ -262,6 +267,7 @@ public sealed class PublishedContentProjectionTests : IAsyncLifetime
         Assert.DoesNotContain(items, item => item.GetProperty("title").GetString() == "Duplicate");
         var service = Assert.Single(items, item => item.GetProperty("itemType").GetString() == "service");
         Assert.True(service.GetProperty("typeMetadata").TryGetProperty("serviceType", out _));
+        Assert.Equal("/rest/services/Survey/Parcels/FeatureServer", service.GetProperty("typeMetadata").GetProperty("routeBase").GetString());
         Assert.True(service.GetProperty("typeMetadata").TryGetProperty("publications", out _));
     }
 
@@ -309,6 +315,50 @@ public sealed class PublishedContentProjectionTests : IAsyncLifetime
         using var listed = await ReadContentAsync("?itemType=layer");
         Assert.Equal(1, listed.RootElement.GetProperty("total").GetInt32());
         Assert.Equal("publication", Assert.Single(listed.RootElement.GetProperty("items").EnumerateArray()).GetProperty("id").GetString());
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/console/content")]
+    [Endpoint("GET /api/v1/console/content/{id}")]
+    public async Task GetContent_DuplicatePublicationAcrossServices_DoesNotExposeRestrictedIdentity()
+    {
+        var graph = Graph();
+        _provider.SetGraph(graph with
+        {
+            Services = [graph.Services[0], graph.Services[0] with
+            {
+                Metadata = graph.Services[0].Metadata with { Id = "service-b", Name = "other" },
+                PublicName = "Other"
+            }],
+            Resources = [graph.Resources[0] with { AccessPolicy = new() { AllowedRoles = ["survey-reader"] } },
+                graph.Resources[0] with { Metadata = graph.Resources[0].Metadata with { Id = "resource-b" } }],
+            Publications = [graph.Publications[0], graph.Publications[0] with
+            {
+                ServiceId = "service-b", ResourceId = "resource-b"
+            }]
+        });
+        using var listed = await ReadContentAsync();
+        Assert.Equal(0, listed.RootElement.GetProperty("total").GetInt32());
+        using var denied = await _admin.GetAsync("/api/v1/console/content/publication");
+        Assert.Equal(HttpStatusCode.NotFound, denied.StatusCode);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /sharing/rest/search")]
+    public async Task SearchPortal_DuplicateServiceId_PreservesCanonicalAccessPolicy()
+    {
+        var graph = Graph();
+        _provider.SetGraph(graph with
+        {
+            Services = [graph.Services[0] with { AccessPolicy = new() { AllowedRoles = ["survey-reader"] } },
+                graph.Services[0] with { Metadata = graph.Services[0].Metadata with { Title = "Readable duplicate" } }]
+        });
+        using var anonymous = _fixture.CreateClient();
+        using var response = await anonymous.GetAsync("/sharing/rest/search?f=json");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(0, payload.RootElement.GetProperty("total").GetInt32());
+        Assert.Empty(payload.RootElement.GetProperty("results").EnumerateArray());
     }
 
     private async Task<JsonDocument> ReadContentAsync(string suffix = "")

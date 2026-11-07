@@ -59,7 +59,7 @@ internal sealed class PublishedConsoleContent(
         var sidecar = new ConsoleServiceTypeMetadata
         {
             ServiceType = service.ServiceType,
-            RouteBase = published.Url,
+            RouteBase = Uri.TryCreate(published.Url, UriKind.Absolute, out var serviceUri) ? serviceUri.PathAndQuery : published.Url,
             Publications = published.Publications.Select(publication => publication.PublicationType).Distinct().ToArray(),
             ServiceId = service.Metadata.Id,
             Url = published.Url,
@@ -80,6 +80,7 @@ internal sealed class PublishedConsoleContent(
         MetadataV2Publication publication, PublishedMetadataService published, PublishedMetadataRequest request)
     {
         var resource = request.Snapshot.ResolveResource(publication)!;
+        var accessTier = projection.DeriveAccessTier(resource.AccessPolicy, published.Service.AccessPolicy);
         var sidecar = new ConsoleLayerTypeMetadata
         {
             ServiceId = published.Service.Metadata.Id,
@@ -87,14 +88,14 @@ internal sealed class PublishedConsoleContent(
             FieldCount = resource.SchemaFields.Count,
             GeometryType = resource.Spatial?.GeometryType.ToString(),
             Url = PublishedMetadataProjection.PublicationUrl(request, published.Service, publication),
-            Access = projection.DeriveAccessTier(resource.AccessPolicy, published.Service.AccessPolicy),
+            Access = accessTier,
             FolderPath = MetadataV2ServicePaths.FolderName(request.Snapshot.Graph, published.Service)
         };
         return ProjectItem(resource.Metadata, ConsoleContentItemType.Layer) with
         {
             Id = publication.Metadata.Id,
             TypeMetadata = JsonSerializer.SerializeToElement(sidecar, ConsoleJsonContext.Default.ConsoleLayerTypeMetadata),
-            Visibility = ProjectVisibility(sidecar.Access!),
+            Visibility = ProjectVisibility(accessTier),
             Title = publication.TitleOverride ?? resource.Metadata.Title ?? resource.Metadata.Name,
             Lifecycle = resource.Status?.Lifecycle ?? MetadataV2LifecycleStatus.Active,
             OperationalState = resource.Status?.State ?? MetadataV2OperationalState.Unknown
@@ -103,20 +104,20 @@ internal sealed class PublishedConsoleContent(
 
     private static ConsoleContentItem ProjectItem(
         MetadataV2ObjectMetadata metadata, ConsoleContentItemType itemType) => new()
-    {
-        Id = metadata.Id,
-        Name = metadata.Name,
-        Namespace = metadata.Namespace,
-        Description = metadata.Description,
-        ItemType = itemType,
-        Tags = metadata.Keywords.Count > 0 ? metadata.Keywords : metadata.Tags,
-        Labels = metadata.Labels,
-        OwnerId = PublishedMetadataProjection.ResolveOwner(metadata),
-        CreatedAt = metadata.CreatedAt,
-        UpdatedAt = metadata.UpdatedAt ?? metadata.CreatedAt,
-        Generation = metadata.Generation,
-        IsReadOnly = true
-    };
+        {
+            Id = metadata.Id,
+            Name = metadata.Name,
+            Namespace = metadata.Namespace,
+            Description = metadata.Description,
+            ItemType = itemType,
+            Tags = metadata.Keywords.Count > 0 ? metadata.Keywords : metadata.Tags,
+            Labels = metadata.Labels,
+            OwnerId = PublishedMetadataProjection.ResolveOwner(metadata),
+            CreatedAt = metadata.CreatedAt,
+            UpdatedAt = metadata.UpdatedAt ?? metadata.CreatedAt,
+            Generation = metadata.Generation,
+            IsReadOnly = true
+        };
 
     private static ConsoleVisibility ProjectVisibility(string access) => access switch
     {
