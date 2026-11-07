@@ -32,7 +32,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 /// executor was registered for the operation class, preventing the reconciler from
 /// ever advancing the proposal.
 /// </summary>
-public sealed class OperationGatewayStateMachineTests
+public sealed partial class OperationGatewayStateMachineTests
 {
     // ── BH6-032: ExecuteDirectAsync with unregistered operation class ─────────
 
