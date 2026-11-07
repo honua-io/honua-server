@@ -122,40 +122,16 @@ mismatches, size drift, digest failures, unsafe paths, entries outside the
 declared payload roots, missing project assets, missing binaries/PDBs, or a
 missing static web asset content root before extraction is accepted.
 
-The size limits were re-based by #4453, which made every payload of a project
-that references `Honua.Server` carry the hosted Blazor content roots (see
-[Static web asset content roots](#static-web-asset-content-roots-4453)).
-Measured locally at `19cb64cb6a` with .NET SDK 10.0.400, the same build packaged
-before and after the change:
-
-| Project | Staged before | Staged after | Archive before | Archive after | Pack seconds |
-|---|---:|---:|---:|---:|---:|
-| stac | 390.4 MiB | 438.5 MiB | 149.6 MiB | 181.8 MiB | 8.7 |
-| server | 456.1 MiB | 504.2 MiB | 171.9 MiB | 204.1 MiB | 10.8 |
-
-`server` is the largest registered payload. After the change it stood at 98.5%
-of the previous 512 MiB staged limit, and packaging is not `continue-on-error`,
-so the next growth would have turned the writer shard red. The new limits put
-it at 66% staged and 64% compressed, the same headroom for both.
-
 ## Static web asset content roots (#4453)
 
-Test projects that reference `Honua.Server` ship `*.staticwebassets.runtime.json`
-manifests. Each names the directories the host serves static web assets from,
-as absolute paths on the building machine. Several of those directories are
-build outputs of *other* projects: the hosted STAC ops demo's
-`samples/Honua.StacOpsDemo/bin/<Configuration>/net10.0/wwwroot` (the ~420
-`_framework/` files), its `obj/.../compressed` and `obj/.../scopedcss/bundle`,
-and `src/Honua.Server/obj/.../compressed`. The payload used to stage only the
-test project's own `bin/` and `obj/`. A materializing shard therefore served
-404 for `/samples/stac-ops/_framework/blazor.webassembly.js` where a building
-shard served 200 (attempt 2 of run 34039679229).
+Static web asset runtime manifests name content roots as absolute paths on the
+building machine. Packaging preserves every declared root needed by a consumer.
 
 `package-server-test-binaries.sh` classifies every referenced root:
 
 | Class | Where the root is | Handling |
 |---|---|---|
-| `payload` | inside the repository, with a `bin` or `obj` path segment | staged at its repository-relative path; a root the build never materialized is staged empty, which is what the building host sees once `LoadHostedBlazorStaticWebAssets` pre-creates it (#2904) |
+| `payload` | inside the repository, with a `bin` or `obj` path segment | staged at its repository-relative path; a root the build never materialized is staged empty, which is what the building host sees once `EnsureStaticWebAssetContentRootsExist` pre-creates it |
 | `checkout` | inside the repository, outside `bin`/`obj` | not staged; packaging fails if `git ls-files --others` finds any untracked or ignored file under it |
 | `nuget` | under `NUGET_PACKAGES` (default `~/.nuget/packages`) | not staged; must exist when packaging |
 
@@ -189,10 +165,6 @@ if a consumer missing a checkout or NuGet root is accepted, if a declared root
 is unsafe, or if packaging accepts an untracked checkout file or a root outside
 the repository. `validate-server-test-shard-cache.sh` covers rejection cleanup,
 and `validate-server-test-archive.test.py` covers the entry scope check.
-
-Shard layout no longer constrains which shard of a project owns tests of hosted
-Blazor assets. The `dispatch_rank` cache-writer pin that
-`validate-ci-router.sh` carried for `StacOpsDemoEndpointTests` was removed.
 
 `.github/server-test-artifact-projects.json` is the complete project registry.
 Router validation requires it to equal the effective unique `csproj` set in

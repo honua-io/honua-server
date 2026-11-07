@@ -157,8 +157,7 @@ done < <(printf '%s' "${referenced_roots}" | LC_ALL=C sort -u)
 payload_raw_bytes=0
 for relative in "${payload_roots[@]}"; do
   mkdir -p "${stage_root}/${relative}"
-  # A root the build never materialized is staged empty: that is exactly what the building
-  # host sees once LoadHostedBlazorStaticWebAssets pre-creates it (#2904).
+  # Missing roots are empty on the building host after EnsureStaticWebAssetContentRootsExist.
   if [[ -d "${REPO_ROOT}/${relative}" ]]; then
     cp -a --reflink=auto "${REPO_ROOT}/${relative}/." "${stage_root}/${relative}/"
     payload_raw_bytes="$(( payload_raw_bytes + $(du -sb "${REPO_ROOT}/${relative}" | cut -f1) ))"
