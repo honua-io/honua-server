@@ -157,6 +157,70 @@ class AffectedShardVerdictTests(unittest.TestCase):
             message.startswith("HONUA_AFFECTED_SHARD_REPORT_ONLY ") for message in messages(green)
         ))
 
+    def test_green_receipts_cannot_override_a_failed_or_cancelled_job(self) -> None:
+        for result in ("failure", "cancelled", "skipped", ""):
+            with self.subTest(result=result):
+                outcome = decide(mode="enforce", shards_result=result)
+                self.assertEqual(outcome["exit_code"], 1)
+                self.assertFalse(outcome["receipt"]["test_pass"])
+
+    def test_summary_reports_measured_test_counts(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_passing_receipt(root)
+            outcome = decide(mode="enforce", timings=verdict._load_timings(root))
+            self.assertIn("| Passed | Failed | Skipped | Executed |", outcome["summary"])
+            self.assertIn("| 1 | 0 | 0 | 1 |", outcome["summary"])
+
+    def test_every_shard_job_preserves_test_failure(self) -> None:
+        import yaml
+
+        for filename, job_id in (("pr-gate.yml", "affected-shard"), ("ci.yml", "server-tests")):
+            with self.subTest(workflow=filename):
+                workflow = yaml.safe_load((ROOT / ".github/workflows" / filename).read_text())
+                job = workflow["jobs"][job_id]
+                self.assertFalse(job.get("continue-on-error", False))
+                test_step = next(step for step in job["steps"]
+                                 if "scripts/ci/run-server-test-shard.sh" in step.get("run", ""))
+                self.assertFalse(test_step.get("continue-on-error", False))
+
+    def test_full_ci_rechecks_selected_shard_receipts_before_ci_gate(self) -> None:
+        import yaml
+
+        workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+        summary = workflow["jobs"]["test-all"]
+        self.assertIn("targeted-shards", summary["needs"])
+        check = next(step for step in summary["steps"]
+                     if "affected-shard-verdict.py" in step.get("run", ""))
+        self.assertEqual(check["env"]["MODE"], "enforce")
+        self.assertIn("needs.targeted-shards.outputs.matrix_include", check["env"]["SELECT_MATRIX"])
+        self.assertIn("needs.server-tests.result", check["env"]["SHARDS_RESULT"])
+        download = next(step for step in summary["steps"]
+                        if step.get("with", {}).get("pattern") == "server-test-results-*")
+        self.assertEqual(download["with"]["path"], "artifacts/server-shard-results")
+        self.assertIn("test-all", workflow["jobs"]["ci-gate"]["needs"])
+
+    def test_foundation_fan_in_rejects_failed_trx_independently_of_job_conclusions(self) -> None:
+        import yaml
+
+        workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+        job = workflow["jobs"]["dotnet-foundation-tests"]
+        step = next(step for step in job["steps"] if step.get("name") == "Verify foundation TRX outcomes")
+        self.assertEqual(step["if"], "always()")
+        self.assertFalse(step.get("continue-on-error", False))
+        command = step["run"].replace("scripts/ci/assert-trx-executed.py", str(ROOT / "scripts/ci/assert-trx-executed.py"))
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            results = root / "tests/TestResults"
+            results.mkdir(parents=True)
+            path, _ = write_passing_receipt(results)
+            env = {**os.environ, "GITHUB_STEP_SUMMARY": str(root / "summary.md")}
+            for outcome in ("Passed", "Failed"):
+                path.write_text(f'<TestRun><Results><UnitTestResult testName="control" outcome="{outcome}" /></Results></TestRun>')
+                run = subprocess.run(["bash", "-e", "-o", "pipefail", "-c", command],
+                                     cwd=root, env=env, capture_output=True, text=True)
+                self.assertEqual(run.returncode == 0, outcome == "Passed", run.stdout + run.stderr)
+
     def test_skipped_selection_is_not_a_test_pass_in_either_mode(self) -> None:
         for mode in ("report", "enforce"):
             for reason in ("docs_only", "validated_generated_only", "no_product_code", "no_shards_selected"):

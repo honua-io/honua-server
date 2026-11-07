@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise restore targets and advisory failures with a fake dotnet only."""
+"""Exercise restore targets and isolated build failures with a fake dotnet only."""
 import json
 import os
 from pathlib import Path
@@ -53,7 +53,7 @@ class ScopedRestoreTests(unittest.TestCase):
             subprocess.run(['bash', '-e', '-c', script], cwd=root, env=dict(env, GATE_BUILD_MODE='full', GATE_BUILD_FILTER=''), check=True)
             self.assertFalse((root / 'union-call').exists())
 
-    def test_foundation_same_filter_and_advisory_restore_failure(self):
+    def test_foundation_same_filter_and_separate_build_failure(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / 'scripts/ci').mkdir(parents=True)
@@ -77,7 +77,8 @@ class ScopedRestoreTests(unittest.TestCase):
             self.assertTrue(calls[1].startswith('build selected.slnf '))
             failed = subprocess.run(['bash','scripts/ci/run-foundation-family.sh','restore','providers','selected.slnf'],cwd=root,env=dict(env,FAIL_REQUIRED='1'),capture_output=True)
             self.assertNotEqual(failed.returncode, 0)
-            run('run','providers')
+            failed = subprocess.run(['bash','scripts/ci/run-foundation-family.sh','run','providers'],cwd=root,env=env,capture_output=True)
+            self.assertNotEqual(failed.returncode, 0)
             calls=(root / 'calls').read_text().splitlines()
             self.assertTrue(any(c.startswith('restore ') and 'Postgres.Security' in c for c in calls))
             self.assertFalse(any(c.startswith(('build ','test ')) and 'Postgres.Security' in c for c in calls))

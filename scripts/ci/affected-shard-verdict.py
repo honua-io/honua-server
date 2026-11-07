@@ -174,16 +174,18 @@ def decide(
 
     lines.extend([
         "",
-        "| Shard | Status | Duration | Budget used | Capacity |",
-        "|---|---|---:|---:|---|",
+        "| Shard | Status | Duration | Budget used | Capacity | Passed | Failed | Skipped | Executed |",
+        "|---|---|---:|---:|---|---:|---:|---:|---:|",
     ])
     for timing in timings:
         shard = _cell(timing.get("shard"))
         status = _cell(timing.get("status"))
         duration = _cell(timing.get("duration_seconds"))
+        cases = (timing.get("execution") or {}).get("counts") or {}
+        case_cells = " | ".join(str(cases.get(key, "n/a")) for key in ("passed", "failed", "skipped", "executed"))
         lines.append(
             f"| {shard} | `{status}` | {duration}s | {_budget(timing.get('headroom_ratio'))} | "
-            f"`{_cell(timing.get('capacity_status'))}` |"
+            f"`{_cell(timing.get('capacity_status'))}` | {case_cells} |"
         )
         if status != "passed":
             counts["red"] += 1
@@ -204,6 +206,12 @@ def decide(
             "cannot substitute for missing evidence.",
         )
     if red == 0:
+        if shards_result != "success":
+            return unavailable(
+                "shard_jobs_not_successful",
+                f"execution receipts are green but shard jobs concluded `{shards_result}`.",
+                f"shard jobs concluded '{shards_result}'.",
+            )
         annotations.append((
             "notice",
             f"HONUA_AFFECTED_SHARD_GREEN {received} selected shard families passed.",
@@ -233,8 +241,6 @@ def decide(
 
 
 def _verify_execution(timing: dict[str, Any], directory: Path) -> None:
-    if timing.get("status") != "passed":
-        return
     execution = timing.get("execution") or {}
     trx_name = f"{timing.get('log_name')}.trx"
     if Path(trx_name).name != trx_name or execution.get("trxFile") != trx_name:
@@ -244,7 +250,9 @@ def _verify_execution(timing: dict[str, Any], directory: Path) -> None:
     if (execution.get("status") != "passed" or measured["status"] != "passed"
             or execution.get("trxSha256") != measured["trxSha256"]
             or execution.get("counts") != measured["counts"]):
-        timing["status"] = "invalid_execution"
+        if timing.get("status") == "passed":
+            timing["status"] = "invalid_execution"
+    timing["execution"] = measured
 
 
 def _load_timings(directory: Path) -> list[dict[str, Any]]:
