@@ -27,7 +27,7 @@ public sealed class PublishedMetadataProjection(
         }
 
         var publications = snapshot.PublicationsForService(service.Metadata.Id);
-        var visible = publications.Where(snapshot.IsDiscoverable)
+        var visible = publications.Where(snapshot.IsRoutable)
             .Where(publication => ReferenceEquals(publication, snapshot.Index.PublicationsById[publication.Metadata.Id]))
             .Where(publication => readAuthorizer.Evaluate(
                 request.Principal, snapshot.ResolveResource(publication), service, publication).IsAllowed)
@@ -49,6 +49,27 @@ public sealed class PublishedMetadataProjection(
             Access = DeriveAccessTier(firstResource?.AccessPolicy, service.AccessPolicy),
             FirstResource = firstResource,
             Url = ServiceUrl(request, service)
+        };
+    }
+
+    public PublishedMetadataService? ProjectDiscoverableService(PublishedMetadataRequest request, MetadataV2Service service)
+    {
+        var published = ProjectService(request, service);
+        if (published is null)
+        {
+            return null;
+        }
+        var publications = published.Publications.Where(request.Snapshot.IsDiscoverable).ToArray();
+        if (published.Publications.Count > 0 && publications.Length == 0)
+        {
+            return null;
+        }
+        var firstResource = publications.Length == 0 ? null : request.Snapshot.ResolveResource(publications[0]);
+        return published with
+        {
+            Publications = publications,
+            FirstResource = firstResource,
+            Access = DeriveAccessTier(firstResource?.AccessPolicy, service.AccessPolicy)
         };
     }
 
@@ -86,7 +107,7 @@ public sealed class PublishedMetadataProjection(
         }
         return publication.Path is { Length: > 0 } path && path.StartsWith('/') && !path.StartsWith("//", StringComparison.Ordinal)
             ? request.BaseUrl.TrimEnd('/') + path
-            : serviceUrl;
+            : null;
     }
 
     public static string ResolveOwner(MetadataV2ObjectMetadata metadata)

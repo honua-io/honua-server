@@ -32,7 +32,6 @@ internal static class CollectionsEndpoints
             .WithSummary("Get OGC API Tiles collections")
             .WithDescription("Lists all available collections with tile links")
             .WithTags("OGC API Tiles")
-            .CacheOutput("OgcTilesCollections")
             .Produces<Collections>(200, MediaTypes.Json)
             .Produces<string>(200, MediaTypes.Html);
 

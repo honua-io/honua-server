@@ -4,6 +4,9 @@
 using System.Net;
 using System.Text;
 using FluentAssertions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Security.Domain;
+using Honua.TestKit.Infrastructure;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -121,6 +124,35 @@ public sealed class OgcStylesAuthorizationTests : IAsyncLifetime
         var response = await _anonymousClient.GetAsync("/ogc/styles");
 
         response.Be200Ok();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/styles/{styleId}")]
+    public async Task GetStyle_HiddenRestrictedService_PreservesServicePolicy()
+    {
+        var provider = (TestMetadataV2GraphProvider)_fixture.GetService<IMetadataV2GraphProvider>();
+        var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        var restricted = graph with
+        {
+            Revision = graph.Revision + 1,
+            Services = graph.Services.Select(service => service with
+            { AccessPolicy = new AccessPolicy { AllowedRoles = ["style-reader"] } }).ToArray(),
+            Resources = graph.Resources.Select(resource => resource with
+            { AccessPolicy = new AccessPolicy { AllowAnonymous = true } }).ToArray()
+        };
+        var resourceName = restricted.Resources.First(resource => resource.Metadata.Id == "res-layer-0").Metadata.Name;
+        provider.SetGraph(restricted, schema: _fixture.CurrentSchema);
+        using var before = await _anonymousClient.GetAsync("/ogc/styles/" + Uri.EscapeDataString(resourceName));
+        before.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        provider.SetGraph(restricted with
+        {
+            Revision = restricted.Revision + 1,
+            Publications = restricted.Publications.Select(publication => publication with { Advertised = false }).ToArray()
+        }, schema: _fixture.CurrentSchema);
+        using var after = await _anonymousClient.GetAsync("/ogc/styles/" + Uri.EscapeDataString(resourceName));
+        after.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
     [IntegrationTest]

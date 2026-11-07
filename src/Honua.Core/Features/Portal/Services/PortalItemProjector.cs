@@ -100,7 +100,7 @@ public sealed class PortalItemProjector : IPortalItemProjector
             return null;
         }
 
-        var projected = _catalogProjection.ProjectService(new(snapshot, principal, baseUrl), service);
+        var projected = _catalogProjection.ProjectDiscoverableService(new(snapshot, principal, baseUrl), service);
         if (projected is null)
         {
             return null;

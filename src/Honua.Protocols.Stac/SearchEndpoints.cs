@@ -240,16 +240,7 @@ internal static class SearchEndpoints
             var visible = await StacV2Lookups.ResolveVisibleStacPublicationsAsync(
                 context, cancellationToken).ConfigureAwait(false);
 
-            // Multiple STAC-enabled publications can resolve to the same storage layer
-            // (e.g. one resource published through two services). The v1 layer-keyed
-            // walk produced a single hit per layer; preserve that contract so feature
-            // counts and result-sets remain stable. Keep the first encountered
-            // publication — ResolveVisibleStacPublicationsAsync already orders by
-            // LayerIndex so this is deterministic.
-            IEnumerable<StacV2Lookups.ResolvedStacPublication> targets = visible
-                .GroupBy(t => t.LayerIndex)
-                .Select(g => g.First())
-                .ToArray();
+            IEnumerable<StacV2Lookups.ResolvedStacPublication> targets = visible;
 
             if (request.Collections is { IsDefault: false } requestedCollections && requestedCollections.Length > 0)
             {
@@ -280,6 +271,12 @@ internal static class SearchEndpoints
                     return false;
                 });
             }
+
+            else
+            {
+                targets = targets.Where(target => target.Snapshot.IsDiscoverable(target.Publication));
+            }
+            targets = targets.GroupBy(target => target.StorageLayerId).Select(group => group.First()).ToArray();
 
             if (request.Ids is { IsDefault: false } requestedIds && requestedIds.Length > 0)
             {

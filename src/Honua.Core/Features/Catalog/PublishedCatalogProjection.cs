@@ -19,7 +19,7 @@ public sealed class PublishedCatalogProjection(PublishedMetadataProjection metad
         var snapshot = request.Snapshot;
         foreach (var service in snapshot.Index.ServicesById.Values)
         {
-            var published = metadataProjection.ProjectService(request, service);
+            var published = metadataProjection.ProjectDiscoverableService(request, service);
             if (published is null)
             {
                 continue;
