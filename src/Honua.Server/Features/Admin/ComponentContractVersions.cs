@@ -1,7 +1,9 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Text.Json;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 #if !HONUA_EXCLUDE_GEOSERVICES
 using Honua.Protocols.GeoServices;
@@ -201,6 +203,17 @@ internal static class ServedContractVersions
 
 internal static class ContractVersionsStartupCheck
 {
+    internal static void ValidateApprovalSchemas(IReadOnlyDictionary<string, string> declared)
+    {
+        var required = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["operation-initiation"] = "v" + OperationInitiationEvidence.CurrentVersion.ToString(CultureInfo.InvariantCulture),
+            ["operation-human-approval"] = "v" + OperationHumanApprovalEvidence.CurrentVersion.ToString(CultureInfo.InvariantCulture),
+        };
+        Validate(declared.Where(entry => required.ContainsKey(entry.Key))
+            .ToDictionary(entry => entry.Key, entry => entry.Value, StringComparer.Ordinal), required);
+    }
+
     internal static void Validate(
         IReadOnlyDictionary<string, string> declared,
         IReadOnlyDictionary<string, string> served,
@@ -241,7 +254,7 @@ internal static class ContractVersionsStartupCheck
         if (mismatches.Count > 0)
         {
             throw new InvalidOperationException(
-                "eng/release/component-versions.v1.json contractVersions do not match the contract versions this server serves: " +
+                "eng/release/component-versions.v1.json versions do not match the versions this server serves: " +
                 string.Join("; ", mismatches) +
                 ". Update the declaration in the same change that bumps a contract version (AGENTS.md, Release component versions).");
         }
