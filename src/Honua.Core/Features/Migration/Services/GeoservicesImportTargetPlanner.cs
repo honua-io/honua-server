@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Buffers;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -13,6 +14,7 @@ namespace Honua.Core.Features.Migration.Services;
 public static class GeoservicesImportTargetPlanner
 {
     private const string ServiceIdPrefix = "svc-import-";
+    private static readonly SearchValues<char> ServiceIdHexDigits = SearchValues.Create("0123456789abcdef");
 
     public static GeoservicesImportTarget Plan(MetadataV2Graph graph, GeoservicesImportSelection selection, string? trustedTenant)
     {
@@ -139,7 +141,7 @@ public static class GeoservicesImportTargetPlanner
 
     private static bool IsAllocatedServiceId(string serviceId)
         => serviceId.Length == ServiceIdPrefix.Length + 32 && serviceId.StartsWith(ServiceIdPrefix, StringComparison.Ordinal) &&
-           serviceId.AsSpan(ServiceIdPrefix.Length).IndexOfAnyExcept("0123456789abcdef") < 0;
+           serviceId.AsSpan(ServiceIdPrefix.Length).IndexOfAnyExcept(ServiceIdHexDigits) < 0;
 
     private static string AllocateServiceName(MetadataV2Graph graph, string publicName, string? folderName)
     {
