@@ -124,12 +124,12 @@ def test_local_failure_records_failure_event_before_terminal(tmp_path):
     assert events[-1]["kind"] == "terminal" and events[-1]["status"] == "failed" and events[-1]["phase"] == "execute"
 
 
-def test_documented_sample_has_expected_numeric_result(tmp_path):
-    sample = Path(__file__).resolve().parents[4] / "samples" / "gp-custom-local"
+def test_local_summary_fixture_has_expected_numeric_result(tmp_path):
+    fixture = Path(__file__).parent / "fixtures" / "numeric-summary"
     output = tmp_path / "runs"
-    assert run_local(source=sample / "python", entrypoint="summary_tool:execute",
-                     params=json.loads((sample / "params.json").read_text()),
-                     inputs={"features": sample / "input.geojson"}, output=output) == 0
+    assert run_local(source=fixture / "python", entrypoint="summary_tool:execute",
+                     params=json.loads((fixture / "params.json").read_text()),
+                     inputs={"features": fixture / "input.geojson"}, output=output) == 0
     result = receipt(output)
     summary = json.loads((output / result["runId"] / "artifacts" / "summary.json").read_text())
     assert summary == {"count": 2, "sum": 30, "mean": 15}
