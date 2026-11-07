@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
