@@ -177,9 +177,8 @@ services:
       # docker compose ls names the project. The quickstart project name is the directory name.
       ControlPlane__ComposeExecutor__ProjectName: ${COMPOSE_PROJECT_NAME:?Set the Compose project name}
       ControlPlane__ComposeExecutor__ComposeFile: compose.yaml
-      # Ordered files for later image changes. The override is appended after this list.
-      ControlPlane__ComposeExecutor__ComposeFiles__0: compose.yaml
-      ControlPlane__ComposeExecutor__ComposeFiles__1: compose.executor.yaml
+      ControlPlane__ComposeExecutor__ComposeFileList: ${COMPOSE_FILE:?Set the Compose file list}
+      ControlPlane__ComposeExecutor__ComposePathSeparator: ${COMPOSE_PATH_SEPARATOR:-:}
       # Published prior images without a schema label require an operator-owned exact-image catalog.
       ControlPlane__ComposeExecutor__Revisions__0__Image: ${HONUA_PRIOR_IMAGE:?Set the immutable prior image}
       ControlPlane__ComposeExecutor__Revisions__0__MaxSchema: ${HONUA_PRIOR_MAX_SCHEMA:?Set the prior image shipped schema number}

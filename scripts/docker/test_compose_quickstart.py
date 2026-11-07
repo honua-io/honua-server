@@ -22,6 +22,20 @@ WORKER = 'ghcr.io/honua-io/honua-worker@sha256:' + '3' * 64
 
 
 class ComposeQuickstartTests(unittest.TestCase):
+    def test_executor_receives_the_customer_compose_file_list(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.prepare(directory)
+            (path / 'customer.yaml').write_text('services:\n  honua:\n    environment:\n      CUSTOMER_SETTING: preserved\n')
+            files = 'compose.yaml:compose.executor.yaml:customer.yaml:compose.executor.image.yaml'
+            env = dict(self.compose_env(path), COMPOSE_FILE=files)
+            result = subprocess.run(['docker', 'compose', 'config', '--format', 'json'],
+                                    cwd=path, env=env, capture_output=True, text=True)
+            self.assertEqual(0, result.returncode, 'Customer overrides must render')
+            services = json.loads(result.stdout)['services']
+            self.assertEqual('preserved', services['honua']['environment']['CUSTOMER_SETTING'])
+            self.assertEqual(files, services['compose-executor']['environment'].get(
+                'ControlPlane__ComposeExecutor__ComposeFileList'))
+
     def prepare(self, directory):
         path = Path(directory)
         package(path, SERVER, EXECUTOR, WORKER, '2026.1-rc.2')
@@ -308,8 +322,8 @@ class ComposeQuickstartTests(unittest.TestCase):
             serving = {entry['source'] for entry in services['honua']['secrets']}
             self.assertFalse(serving & {entry['source'] for entry in services['compose-manager']['secrets']}
                              - {'honua_keyring_password'}, 'The serving container must not mount manager secrets')
-            self.assertEqual({'compose.yaml', 'compose.executor.yaml'},
-                             {executor['environment'][f'ControlPlane__ComposeExecutor__ComposeFiles__{i}'] for i in (0, 1)})
+            self.assertEqual(self.compose_env(path)['COMPOSE_FILE'],
+                             executor['environment']['ControlPlane__ComposeExecutor__ComposeFileList'])
 
     def test_credentials_are_local_distinct_and_stable_on_restart(self):
         with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second:

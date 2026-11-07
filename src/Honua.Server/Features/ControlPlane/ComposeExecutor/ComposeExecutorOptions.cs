@@ -22,6 +22,10 @@ internal sealed class ComposeExecutorOptions
     // The model cannot add a compose file; the image override is appended after the configured list.
     public string[] ComposeFiles { get; set; } = [];
 
+    public string ComposeFileList { get; set; } = string.Empty;
+
+    public string ComposePathSeparator { get; set; } = ":";
+
     public List<ComposeImageSchemaOption> Revisions { get; set; } = [];
 
     public string ServiceName { get; set; } = "honua";
@@ -93,7 +97,13 @@ internal sealed class ComposeExecutorOptions
             return Scope("Revision schemas must name distinct immutable images and non-negative schema numbers.");
         }
 
-        foreach (var composeFile in EffectiveComposeFiles())
+        var composeFiles = EffectiveComposeFiles();
+        if (composeFiles.Length == 0)
+        {
+            return Unconfigured("The compose file list must include project configuration before the managed image override.");
+        }
+
+        foreach (var composeFile in composeFiles)
         {
             if (string.IsNullOrWhiteSpace(composeFile)
                 || Path.IsPathRooted(composeFile)
@@ -159,7 +169,12 @@ internal sealed class ComposeExecutorOptions
     }
 
     private string[] EffectiveComposeFiles()
-        => ComposeFiles is { Length: > 0 } ? ComposeFiles : [ComposeFile];
+    {
+        var files = string.IsNullOrEmpty(ComposeFileList)
+            ? ComposeFiles is { Length: > 0 } ? ComposeFiles : [ComposeFile]
+            : ComposeFileList.Split(ComposePathSeparator, StringSplitOptions.None);
+        return files.Where(file => file != ComposeExecutorProtocol.OverrideFileName).ToArray();
+    }
 
     private static bool IsHttpUrl(string value)
         => Uri.TryCreate(value, UriKind.Absolute, out var uri)
