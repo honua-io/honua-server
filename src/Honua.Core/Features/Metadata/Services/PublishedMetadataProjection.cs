@@ -86,7 +86,7 @@ public sealed class PublishedMetadataProjection(
         }
         return publication.Path is { Length: > 0 } path && path.StartsWith('/') && !path.StartsWith("//", StringComparison.Ordinal)
             ? request.BaseUrl.TrimEnd('/') + path
-            : serviceUrl;
+            : null;
     }
 
     public static string ResolveOwner(MetadataV2ObjectMetadata metadata)

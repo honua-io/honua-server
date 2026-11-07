@@ -361,6 +361,26 @@ public sealed class PublishedContentProjectionTests : IAsyncLifetime
         Assert.Empty(payload.RootElement.GetProperty("results").EnumerateArray());
     }
 
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/console/content")]
+    public async Task GetContent_CollectionPublicationWithoutExplicitPath_OmitsUnresolvedLayerUrl()
+    {
+        var graph = Graph();
+        _provider.SetGraph(graph with
+        {
+            Services = [graph.Services[0] with { Protocols = [ServiceProtocols.OgcFeatures], Route = "/ogc/features" }],
+            Publications = [graph.Publications[0] with
+            {
+                LayerIndex = null,
+                ServiceLocalId = "parcels",
+                Identifier = new() { Value = "parcels" }
+            }]
+        });
+        using var result = await ReadContentAsync("?itemType=layer");
+        var item = Assert.Single(result.RootElement.GetProperty("items").EnumerateArray());
+        Assert.False(item.GetProperty("typeMetadata").TryGetProperty("url", out _));
+    }
+
     private async Task<JsonDocument> ReadContentAsync(string suffix = "")
     {
         using var response = await _admin.GetAsync("/api/v1/console/content" + suffix);
