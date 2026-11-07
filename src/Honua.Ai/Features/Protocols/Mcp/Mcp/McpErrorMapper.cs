@@ -298,7 +298,7 @@ internal static class McpErrorMapper
     public static McpJsonRpcError InvalidToken() => new()
     {
         Code = JsonRpcServerError,
-        Message = "The bearer token is invalid, expired, or issued for a different resource.",
+        Message = $"The bearer token is invalid, expired, or issued for a different resource. {AuthenticationGuidance}",
         Data = new McpErrorData
         {
             Code = Codes.Unauthenticated,
