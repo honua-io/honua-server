@@ -108,7 +108,7 @@ public sealed partial class AdminOperationRequestContractTests
     public async Task SubmitAsync_WithoutCommittedPublication_DoesNotInventResourceIdentity(
         string operationId, HttpStatusCode statusCode, bool dryRun)
     {
-        const string payload = """{"data":{"layerId":42,"serviceName":"roads"}}""";
+        var payload = SerializePublishedLayer(42);
         using var capture = new CaptureHandler(payload, statusCode);
         using var client = new HttpClient(capture);
         var executor = CreateApi(operationId, client);
