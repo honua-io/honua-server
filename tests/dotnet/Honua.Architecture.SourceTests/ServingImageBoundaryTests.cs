@@ -433,7 +433,7 @@ public sealed class ServingImageBoundaryTests
         foreach (var project in new[]
                  {
                      "Honua.Db/Redshift",
-                     "Honua.Snowflake",
+                     "Honua.Db/Snowflake",
                      "Honua.Db/Databricks",
                      "Honua.Protocols.SensorThings"
                  })

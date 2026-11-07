@@ -4579,7 +4579,7 @@
       "paths": [
         "src/Honua.Core.Abstractions/",
         "src/Honua.Core/",
-        "src/Honua.GeoServicesRest/",
+        "src/Honua.Db/GeoServicesRest/",
         "src/Honua.Geocoding/",
         "src/Honua.Geometry/",
         "src/Honua.Geoprocessing/",
@@ -4828,7 +4828,7 @@
       "paths": [
         "src/Honua.Core.Abstractions/",
         "src/Honua.Core/",
-        "src/Honua.Snowflake/",
+        "src/Honua.Db/Snowflake/",
         "tests/dotnet/Honua.Snowflake.UnitTests/"
       ],
       "_comment": "Fixture-independent modular unit assembly; all cases including preserved Fast traits run here. Full integration owners remain separate.",
