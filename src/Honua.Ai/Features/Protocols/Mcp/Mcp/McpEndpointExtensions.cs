@@ -179,6 +179,13 @@ internal static class McpEndpointExtensions
                 return;
             }
 
+            if (context.Features.Get<TokenReplayAdmissionFeature>() is { Scope.CanBindContinuation: false })
+            {
+                await McpBearerAuthenticationEndpointExtensions.BuildInvalidTokenResult().ExecuteAsync(context)
+                    .ConfigureAwait(false);
+                return;
+            }
+
             var isInitialize = IsInitialize(root);
             var principalKey = McpAuthorizationHelper.ResolveSessionBindingKey(context);
             if (principalKey is null)
