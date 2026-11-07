@@ -1,0 +1,45 @@
+{
+  "originalShard": {
+    "name": "MCP and Sessions",
+    "shard_name": "MCP and Sessions",
+    "dispatch_rank": 12.3,
+    "artifact_suffix": "mcp-and-sessions",
+    "log_name": "server-tests-mcp-and-sessions",
+    "timeout_minutes": 30,
+    "test_timeout_minutes": 20,
+    "max_cpu_count": "",
+    "upload_operator_eval_report": false,
+    "upload_odata_evidence": false,
+    "csproj": "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj",
+    "filter": "((FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Mcp|FullyQualifiedName~Honua.Server.Tests.Features.AiBuilder|FullyQualifiedName~Honua.Server.Tests.Features.Reporting|FullyQualifiedName~Honua.Ai.Tests.Capabilities|FullyQualifiedName~Honua.Ai.Tests.DatabaseCollectionContractTests|FullyQualifiedName~Honua.Server.Tests.Features.StudioAiProxy)&FullyQualifiedName!~McpBearerAuthenticationTests&FullyQualifiedName!~McpProtectedResourceMetadataTests&FullyQualifiedName!~McpScopeAuthorizationTests&FullyQualifiedName!~McpAuthorizationHelperTests&FullyQualifiedName!~McpStyle&FullyQualifiedName!~ServicePublish&FullyQualifiedName!~StudioMcpOwnership)",
+    "paths": [
+      "src/Honua.Ai/",
+      "src/Honua.Core/Features/Publishing/",
+      "src/Honua.Core/Features/Validation/",
+      "src/Honua.Db/Postgres/Features/Publishing/",
+      "tests/dotnet/Honua.Ai.Tests/DatabaseCollectionContractTests.cs",
+      "tests/dotnet/Honua.Ai.Tests/ConformanceSchemas/",
+      "tests/dotnet/Honua.Ai.Tests/Source/",
+      "tests/dotnet/Honua.Ai.Tests/Source/McpBearerAuthenticationTests.cs",
+      "tests/dotnet/Honua.Ai.Tests/Source/McpEndpointIntegrationTests.cs",
+      "tests/dotnet/Honua.Server.Tests/Features/NlQuery/NlQueryTestResources.cs",
+      "tests/dotnet/Honua.Server.Tests/Features/Reporting/ReportingFixtures.cs",
+      "tests/dotnet/Shared/ProtocolUnits/Ai/McpServiceCollectionExtensionsTests.Shared.cs",
+      "tests/dotnet/Shared/ProtocolUnits/Ai/McpSessionSharedStoreTests.Shared.cs",
+      "tests/dotnet/Shared/ProtocolUnits/Ai/McpTaxonomyAlignmentTests.Shared.cs",
+      "tests/dotnet/Shared/ProtocolUnits/Ai/McpTelemetryCollectionDefinition.cs",
+      "tests/dotnet/Shared/ProtocolUnits/Ai/McpTestFactory.cs",
+      "tests/dotnet/Shared/ProtocolUnits/Ai/StudioAiProxyTestHttp.cs"
+    ]
+  },
+  "endpointClass": "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests",
+  "parentPartition": {
+    "name": "MCP and Sessions capacity split (#3204)",
+    "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Mcp|FullyQualifiedName~Honua.Server.Tests.Features.AiBuilder|FullyQualifiedName~Honua.Server.Tests.Features.Reporting|FullyQualifiedName~Honua.Ai.Tests.Capabilities|FullyQualifiedName~Honua.Ai.Tests.DatabaseCollectionContractTests|FullyQualifiedName~Honua.Server.Tests.Features.Infrastructure.Rendering|FullyQualifiedName~Honua.Server.Tests.Features.StudioAiProxy)",
+    "children": [
+      "MCP Endpoints",
+      "MCP and Sessions",
+      "MCP Authentication and Governance"
+    ]
+  }
+}

@@ -12,8 +12,8 @@ SPEC = importlib.util.spec_from_file_location("coverage", ROOT / "scripts/ci/che
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 CONFIG = json.loads((ROOT / ".github/ci-shards.json").read_text())
-EVIDENCE = json.loads((ROOT / "docs/internal/ci/mcp-shard-capacity-20261107.json").read_text())
-ORIGINAL = EVIDENCE["originalShard"]
+CONTRACT = json.loads((ROOT / "scripts/ci/fixtures/mcp-capacity-contract.json").read_text())
+ORIGINAL = CONTRACT["originalShard"]
 NAMES = ("MCP Endpoints", "MCP and Sessions")
 CHILDREN = [next(s for s in CONFIG["shards"] if s["name"] == name) for name in NAMES]
 MODULE.TEST_PROJECT_DIRS = {
@@ -24,14 +24,14 @@ CLASSES = MODULE.enumerate_test_classes()
 METHODS = MODULE.selection_pool(CLASSES, ORIGINAL["csproj"])
 PARENT = MODULE._FilterParser(ORIGINAL["filter"]).parse()
 EXPECTED = {method for method in METHODS if MODULE._eval(PARENT, method)}
-ENDPOINTS = {method for method in EXPECTED if method.startswith(EVIDENCE["endpointClass"] + ".")}
+ENDPOINTS = {method for method in EXPECTED if method.startswith(CONTRACT["endpointClass"] + ".")}
 assert ENDPOINTS and ENDPOINTS < EXPECTED
 
 
 def check_registration(config):
     parents = [p for p in config["shard_partitions"] if set(NAMES) & set(p["children"])]
     assert len(parents) == 1, "Partition children must have exactly one parent."
-    assert parents[0] == EVIDENCE["parentPartition"], "The legacy parent contract changed."
+    assert parents[0] == CONTRACT["parentPartition"], "The legacy parent contract changed."
     for override in config["targeted_override_prefixes"]:
         if ORIGINAL["name"] in override["shards"]:
             assert "MCP Endpoints" in override["shards"], "Only half the override survived."
