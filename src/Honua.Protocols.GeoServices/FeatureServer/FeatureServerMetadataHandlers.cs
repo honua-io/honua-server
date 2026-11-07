@@ -314,8 +314,7 @@ internal static partial class FeatureServerEndpoints
                     extrusionValidationErrors);
             }
 
-            var allPairs = GetRoutableFeaturePublicationsV2(service, snapshot, context)
-            .Where(pair => snapshot.IsDiscoverable(pair.Publication)).ToArray();
+            var allPairs = GetRoutableFeaturePublicationsV2(service, snapshot, context);
             var access = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
                 context, allPairs.Select(pair => pair.Resource), service,
                 AuthorizationOperation.Metadata, cancellationToken).ConfigureAwait(false);

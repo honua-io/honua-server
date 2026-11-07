@@ -50,7 +50,7 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 /// the MCP adapter behavior without a database or renderer dependency.
 /// </summary>
 [Protocol(TestProtocols.Mcp)]
-public sealed class McpMapToolTests
+public sealed partial class McpMapToolTests
 {
     private const string ServiceId = "svc-parcels";
     private const string ServiceName = "Parcels";
