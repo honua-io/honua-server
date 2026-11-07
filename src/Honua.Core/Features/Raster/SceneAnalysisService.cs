@@ -7,13 +7,6 @@ using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Core.Features.Raster;
 
-/// <summary>
-/// Default <see cref="ISceneAnalysisService"/> implementation. The solar
-/// position is computed with the NOAA solar position algorithm (pure math); the
-/// shadow extent and slice cross-section build on the elevation profile sampler
-/// so they inherit the geodesic profile geometry, mosaic merge strategy, and
-/// no-data handling of the elevation API and do not re-implement DEM sampling.
-/// </summary>
 public sealed class SceneAnalysisService : ISceneAnalysisService
 {
     private const int Wgs84Srid = SpatialConstants.DefaultSrid;
@@ -26,30 +19,21 @@ public sealed class SceneAnalysisService : ISceneAnalysisService
     // as an exact match.
     private const double CoordinateEqualityTolerance = 1e-9;
 
-    /// <summary>Default number of samples traced along a shadow ray.</summary>
     public const int DefaultShadowSampleCount = 128;
 
-    /// <summary>Upper bound on shadow-ray samples.</summary>
     public const int MaxShadowSamples = 1024;
 
-    /// <summary>Default number of samples taken along a slice plane.</summary>
     public const int DefaultSliceSampleCount = 128;
 
-    /// <summary>Upper bound on slice samples.</summary>
     public const int MaxSliceSamples = 2048;
 
     private readonly IElevationService _elevationService;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="SceneAnalysisService"/> class.
-    /// </summary>
-    /// <param name="elevationService">Elevation profile sampler.</param>
     public SceneAnalysisService(IElevationService elevationService)
     {
         _elevationService = elevationService ?? throw new ArgumentNullException(nameof(elevationService));
     }
 
-    /// <inheritdoc />
     public async Task<SunShadowResult> ComputeSunShadowAsync(
         int layerId,
         ShadowObserver observer,
@@ -213,7 +197,6 @@ public sealed class SceneAnalysisService : ISceneAnalysisService
         };
     }
 
-    /// <inheritdoc />
     public async Task<SliceResult> ComputeSliceAsync(
         int layerId,
         SlicePlane plane,
@@ -296,19 +279,6 @@ public sealed class SceneAnalysisService : ISceneAnalysisService
         };
     }
 
-    /// <summary>
-    /// Computes the solar position (altitude + azimuth, plus the intermediate
-    /// declination, equation of time, and hour angle) for a UTC instant and a
-    /// WGS 84 longitude/latitude using the NOAA solar position algorithm.
-    /// The result is not corrected for atmospheric refraction.
-    /// </summary>
-    /// <remarks>
-    /// Implements the NOAA Solar Calculator equations: Julian day → Julian
-    /// century → geometric mean longitude/anomaly of the sun → equation of
-    /// center → true longitude → apparent longitude → obliquity → declination
-    /// and equation of time → true solar time → hour angle → solar zenith →
-    /// altitude and azimuth.
-    /// </remarks>
     public static SolarPosition ComputeSolarPosition(DateTimeOffset instant, double longitude, double latitude)
     {
         var utc = instant.ToUniversalTime();
@@ -403,9 +373,6 @@ public sealed class SceneAnalysisService : ISceneAnalysisService
         };
     }
 
-    /// <summary>
-    /// Converts a UTC instant to its Julian day number (with fractional day).
-    /// </summary>
     internal static double ToJulianDay(DateTimeOffset utc)
     {
         var year = utc.Year;
@@ -455,10 +422,6 @@ public sealed class SceneAnalysisService : ISceneAnalysisService
             cancellationToken);
     }
 
-    /// <summary>
-    /// Builds a 2-point 2D LineString WKB (little-endian) for a geodesic profile
-    /// between two WGS 84 coordinates.
-    /// </summary>
     internal static byte[] BuildLineWkb(double startLon, double startLat, double endLon, double endLat)
     {
         // Byte order (1) + type (4) + numPoints (4) + 2 * (x,y as float8) = 41 bytes.
@@ -473,9 +436,6 @@ public sealed class SceneAnalysisService : ISceneAnalysisService
         return buffer;
     }
 
-    /// <summary>
-    /// Spherical great-circle interpolation between two WGS 84 coordinates.
-    /// </summary>
     internal static (double Longitude, double Latitude) InterpolateGeodesic(
         double startLon,
         double startLat,
@@ -522,12 +482,6 @@ public sealed class SceneAnalysisService : ISceneAnalysisService
         return (RadToDeg(lambda), RadToDeg(phi));
     }
 
-    /// <summary>
-    /// Computes the destination WGS 84 coordinate reached by travelling
-    /// <paramref name="distanceMeters"/> along <paramref name="azimuthDegrees"/>
-    /// (clockwise from north) from the start, using the spherical great-circle
-    /// direct formula.
-    /// </summary>
     internal static (double Longitude, double Latitude) DestinationPoint(
         double startLon,
         double startLat,

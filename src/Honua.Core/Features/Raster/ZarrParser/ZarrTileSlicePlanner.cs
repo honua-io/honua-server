@@ -6,29 +6,8 @@ using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Core.Features.Raster.ZarrParser;
 
-/// <summary>
-/// A tile bounding box expressed in the coverage's storage CRS, used to resolve
-/// a Zarr grid-index window for tile rendering.
-/// </summary>
-/// <param name="MinX">Western edge in storage-CRS units.</param>
-/// <param name="MinY">Southern edge in storage-CRS units.</param>
-/// <param name="MaxX">Eastern edge in storage-CRS units.</param>
-/// <param name="MaxY">Northern edge in storage-CRS units.</param>
 public readonly record struct ZarrTileBounds(double MinX, double MinY, double MaxX, double MaxY);
 
-/// <summary>
-/// A resolved plan for rendering one Zarr coverage slice to a map tile: the bounded
-/// subset request plus the indices of the X and Y dimensions within the subset shape
-/// so the renderer can iterate the 2D grid in row-major order.
-/// </summary>
-/// <param name="Plan">Bounded subset plan over the target variable.</param>
-/// <param name="YDimensionIndex">Index of the Y (row) dimension in the array shape.</param>
-/// <param name="XDimensionIndex">Index of the X (column) dimension in the array shape.</param>
-/// <param name="GridXMin">Storage-CRS X coordinate of the western edge of the selected window.</param>
-/// <param name="GridYMax">Storage-CRS Y coordinate of the northern edge of the selected window.</param>
-/// <param name="CellWidth">Storage-CRS width of one grid cell along X.</param>
-/// <param name="CellHeight">Storage-CRS height of one grid cell along Y (positive magnitude).</param>
-/// <param name="YAxisAscending">True when row indices increase from south to north.</param>
 public sealed record ZarrTileSlicePlan(
     ZarrCoverageSubsetPlan Plan,
     int YDimensionIndex,
@@ -39,27 +18,8 @@ public sealed record ZarrTileSlicePlan(
     double CellHeight,
     bool YAxisAscending = false);
 
-/// <summary>
-/// Resolves a tile request (bbox in storage CRS plus optional time / vertical /
-/// extra-dimension index selections) into a bounded 2D Zarr subset suitable for
-/// rasterizing to a map tile. Shared, pure, and AOT-safe so the tile adapter never
-/// builds an independent Zarr index path. Builds on the coordinate/time-axis
-/// resolution introduced for OGC API Coverages (#1790) rather than duplicating it.
-/// </summary>
 public static class ZarrTileSlicePlanner
 {
-    /// <summary>
-    /// Builds a tile slice plan for one variable of a georeferenced Zarr store.
-    /// </summary>
-    /// <param name="metadata">Scanned store metadata. Must declare a CRS and extent.</param>
-    /// <param name="variable">Variable name, or null to use the store's primary variable.</param>
-    /// <param name="bounds">Tile bounds in the store's storage CRS.</param>
-    /// <param name="datetime">Optional requested instant/interval for the time axis (resolved to a single index when present).</param>
-    /// <param name="verticalIndex">Optional zero-based index on the vertical/elevation axis. Defaults to 0 when the array has a non-spatial, non-temporal axis.</param>
-    /// <param name="maxOutputBytes">Upper bound for the decoded subset payload.</param>
-    /// <param name="plan">Resolved plan when the method returns true.</param>
-    /// <param name="error">Client-safe error when the method returns false.</param>
-    /// <returns>True when the tile intersects the coverage and the slice resolves within limits.</returns>
     public static bool TryPlan(
         ZarrStoreMetadata metadata,
         string? variable,

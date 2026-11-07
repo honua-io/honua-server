@@ -1,16 +1,38 @@
-# Affected-shard promotion evidence
+# Affected-shard enforcement and promotion evidence
 
-`PR Gate / Affected shards` stays in `report` until a complete seven-day
-measurement has at least 60 executed samples and a false-red rate strictly
-below 2%. Reconcile every red with the same shard's trailing matrix result for
-the PR's merge commit. An unresolved red is an unknown measurement, not a
-confirmed regression or a false red. A successful aggregate in report mode
-can contain either outcome.
+## Current enforcement
 
-Promotion is the two changes documented in `pr-gate.yml`: flip
-`AFFECTED_SHARDS_MODE` to `enforce` and add `PR Gate / Affected shards` to branch
-protection. Keep the shard cap, timeouts, selection, and advisory shards as
-they are. Roll back by flipping the mode to `report`.
+`PR Gate / Affected shards` runs in `enforce` mode. A failed, timed-out or
+missing selected shard result fails the aggregate and the stable required
+`PR Gate` context. A successful job conclusion cannot substitute for execution
+evidence. The aggregate reuses `shard-execution-evidence.py` to read each
+passing timing receipt's exact TRX and compare its measured counts and digest.
+It requires exactly one receipt for each selected family. Documentation-only
+and validated generated-only selections retain their explicit skipped verdict.
+Other proven empty selections (`no_product_code`, `no_shards_selected`) may also
+skip; an untrustworthy base or unknown skip reason fails closed.
+The six-family cap remains unchanged; the trailing matrix retains full coverage.
+
+The founder authorized enforcement after real regressions passed the
+report-only gate. This supersedes the report-mode disposition below without
+claiming that the historical false-red measurement passed its promotion bar.
+No branch-protection setting changes. Reverting to report mode would permit
+red selected shards to merge again and requires an explicit policy decision.
+
+The Miscellaneous class split is recorded in
+[the capacity receipt](../internal/ci/miscellaneous-shard-capacity.json).
+The completed trunk run has 223 passing cases over a serial 23.2-minute
+interval. Moving whole package, form and temporal classes predicts 10.7 minutes
+in `Server Features Packages and Temporal` and 12.5 minutes in the remaining
+catch-all, with unchanged 27-minute test and 37-minute job budgets. The canonical
+coverage guard proves the child union equals its parent with no overlap.
+These are estimates from one completed run, not measured post-split durations.
+
+## Historical measurement policy
+
+The retained seven-day audit below used at least 60 executed samples and a
+false-red rate strictly below 2% as its promotion bar. Preserve the observations
+and unresolved classifications; enforcement does not change those findings.
 
 ## Collect a complete window
 

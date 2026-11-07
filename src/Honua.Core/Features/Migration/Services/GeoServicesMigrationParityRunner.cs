@@ -15,36 +15,14 @@ namespace Honua.Core.Features.Migration.Services;
 public static class GeoServicesMigrationParityRunner
 {
 
-    /// <summary>
-    /// Warn-band threshold for the feature-count probe (absolute delta ratio).
-    /// </summary>
     public const double FeatureCountWarnBand = 0.05;
 
-    /// <summary>
-    /// Fail-band threshold for the feature-count probe (absolute delta ratio).
-    /// </summary>
     public const double FeatureCountFailBand = 0.20;
 
-    /// <summary>
-    /// Pass-band threshold for coverage probes (identity, attachment, relationship).
-    /// </summary>
     public const double CoveragePassBand = 0.99;
 
-    /// <summary>
-    /// Warn-band threshold for coverage probes (identity, attachment, relationship).
-    /// </summary>
     public const double CoverageWarnBand = 0.80;
 
-    /// <summary>
-    /// Run the parity probes and emit a deterministic artifact.
-    /// </summary>
-    /// <param name="manifest">Manifest emitted by slices 2-4 for the ArcGIS source.</param>
-    /// <param name="inventory">Original ArcGIS inventory the manifest was translated from.</param>
-    /// <param name="targetReader">Probe-focused reader over the Honua-applied target.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Deterministic parity artifact.</returns>
-    /// <exception cref="ArgumentNullException">A required argument was <c>null</c>.</exception>
-    /// <exception cref="ArgumentException">The manifest or inventory is not an ArcGIS source.</exception>
     public static async Task<GeoServicesMigrationParityArtifact> RunAsync(
         MigrationManifestArtifact manifest,
         MigrationSourceInventoryArtifact inventory,

@@ -7,18 +7,6 @@ using Honua.Core.Features.Migration.Domain;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Accounts for every construct discovered on an ArcGIS GeoServices source against a service migration
-/// selection before anything is applied (issue #4600, acceptance criterion 1). Pure and deterministic.
-/// </summary>
-/// <remarks>
-/// A service migration is full fidelity only when the service type is supported, every discovered layer
-/// and table is selected, and every selected construct is carried by the automated import. The
-/// accounting reads the source manifest that <see cref="MigrationManifestTranslator"/> produces from a
-/// scan: its target resources, its unsupported items, its fidelity matrix cells, its style actions and its
-/// label class diagnostics. Nothing is fetched from the source, so a persisted manifest and selection
-/// replay to the same accounting.
-/// </remarks>
 public static class MigrationServiceConstructAccountant
 {
     private static readonly string[] SupportedServiceTypes = ["FeatureServer", "MapServer"];
@@ -28,13 +16,6 @@ public static class MigrationServiceConstructAccountant
     private static readonly Dictionary<string, MigrationConstructMatrixRow> RowsByConstruct =
         MigrationConstructMatrix.Rows.ToDictionary(static row => row.Construct, StringComparer.Ordinal);
 
-    /// <summary>
-    /// Accounts a selection against a persisted manifest body.
-    /// </summary>
-    /// <param name="sourceKind">Source kind of the migration, such as <c>arcgis-geoservices-rest</c>.</param>
-    /// <param name="manifestBody">Manifest JSON, or <c>null</c> when none was supplied.</param>
-    /// <param name="selection">Layers and tables selected for migration.</param>
-    /// <returns>The accounting; not executed when the manifest is missing, unreadable or for another source kind.</returns>
     public static MigrationConstructAccountingReport Account(
         string sourceKind,
         string? manifestBody,
@@ -67,12 +48,6 @@ public static class MigrationServiceConstructAccountant
             : Account(manifest, selection);
     }
 
-    /// <summary>
-    /// Accounts a selection against a source manifest.
-    /// </summary>
-    /// <param name="manifest">Manifest translated from a source scan.</param>
-    /// <param name="selection">Layers and tables selected for migration.</param>
-    /// <returns>The accounting.</returns>
     public static MigrationConstructAccountingReport Account(
         MigrationManifestArtifact manifest,
         IReadOnlyList<MigrationConstructSelection> selection)
@@ -129,11 +104,6 @@ public static class MigrationServiceConstructAccountant
         };
     }
 
-    /// <summary>
-    /// An accounting that did not run, with the reason and the unverified difference it contributes.
-    /// </summary>
-    /// <param name="reason">Why the accounting did not run, as a sentence fragment ending in a period.</param>
-    /// <returns>The not-executed accounting.</returns>
     public static MigrationConstructAccountingReport NotExecuted(string reason) => NotExecuted([], reason);
 
     private static MigrationConstructAccountingReport NotExecuted(

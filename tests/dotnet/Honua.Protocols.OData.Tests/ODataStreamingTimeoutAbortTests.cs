@@ -47,7 +47,7 @@ public sealed class ODataStreamingTimeoutAbortTests : IAsyncLifetime
     {
         _fixture = new WebAppFixture()
             .UseKestrel()
-            .DecorateService<IFeatureReader>(inner => new StallingFeatureReader(inner, _source))
+            .DecorateFeatureReaders(inner => new StallingFeatureReader(inner, _source))
             .ConfigureServices(services => services.AddSingleton<IOptions<LimitsOptions>>(provider =>
             {
                 var limits = provider.GetRequiredService<IOptionsFactory<LimitsOptions>>().Create(Options.DefaultName);

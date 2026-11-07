@@ -8,18 +8,6 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 
 namespace Honua.Core.Features.Infrastructure.Session;
 
-/// <summary>
-/// Provider-neutral ADO.NET-backed <see cref="IDatabaseSession"/> implementation.
-/// Owns the supplied <see cref="DbConnection"/> (when <c>ownsConnection: true</c>)
-/// and any active <see cref="DbTransaction"/>, releasing them on
-/// <see cref="DisposeAsync"/>.
-/// </summary>
-/// <remarks>
-/// Each relational provider (Postgres / MySql / DuckDB) inherits this for its
-/// concrete session type — there is nothing dialect-specific in the
-/// non-query / scalar / streaming reader code path because everything uses
-/// the <c>System.Data.Common</c> base types.
-/// </remarks>
 public class AdoNetDatabaseSession : IDatabaseSession
 {
     private readonly DbConnection _connection;
@@ -29,17 +17,6 @@ public class AdoNetDatabaseSession : IDatabaseSession
     private bool _disposed;
     private readonly string _connectionString;
 
-    /// <summary>
-    /// Creates a new ADO.NET-backed session.
-    /// </summary>
-    /// <param name="connection">An open <see cref="DbConnection"/>.</param>
-    /// <param name="transaction">Optional active transaction.</param>
-    /// <param name="ownsConnection">
-    /// When <c>true</c> the session will dispose the connection on
-    /// <see cref="DisposeAsync"/>. When <c>false</c> the connection is
-    /// expected to be disposed by the owner (used by transactional
-    /// sub-sessions that share a parent's connection).
-    /// </param>
     protected AdoNetDatabaseSession(DbConnection connection, DbTransaction? transaction, bool ownsConnection)
     {
         _connection = connection ?? throw new ArgumentNullException(nameof(connection));
@@ -48,13 +25,10 @@ public class AdoNetDatabaseSession : IDatabaseSession
         _connectionString = connection.ConnectionString ?? string.Empty;
     }
 
-    /// <inheritdoc />
     public string ConnectionString => _connectionString;
 
-    /// <inheritdoc />
     public bool IsTransactional => _transaction is not null;
 
-    /// <inheritdoc />
     public async Task<int> ExecuteAsync(string sql, object? parameters = null, CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
@@ -64,7 +38,6 @@ public class AdoNetDatabaseSession : IDatabaseSession
         return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
     public async Task<T?> QuerySingleOrDefaultAsync<T>(string sql, object? parameters = null, CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
@@ -75,7 +48,6 @@ public class AdoNetDatabaseSession : IDatabaseSession
         return ConvertScalar<T>(result);
     }
 
-    /// <inheritdoc />
     public async IAsyncEnumerable<T> QueryAsync<T>(
         string sql,
         object? parameters = null,
@@ -99,7 +71,6 @@ public class AdoNetDatabaseSession : IDatabaseSession
         }
     }
 
-    /// <inheritdoc />
     public async Task<T?> QuerySingleOrDefaultAsync<T>(
         string sql,
         Func<IDatabaseRow, T> rowMapper,
@@ -121,7 +92,6 @@ public class AdoNetDatabaseSession : IDatabaseSession
         return rowMapper(new DataReaderRow(reader));
     }
 
-    /// <inheritdoc />
     public async IAsyncEnumerable<T> QueryAsync<T>(
         string sql,
         Func<IDatabaseRow, T> rowMapper,
@@ -142,7 +112,6 @@ public class AdoNetDatabaseSession : IDatabaseSession
         }
     }
 
-    /// <inheritdoc />
     public async Task<IDatabaseSession> BeginTransactionAsync(
         IsolationLevel isolationLevel = IsolationLevel.RepeatableRead,
         CancellationToken cancellationToken = default)
@@ -158,7 +127,6 @@ public class AdoNetDatabaseSession : IDatabaseSession
         return new AdoNetTransactionalSubSession(_connection, tx);
     }
 
-    /// <inheritdoc />
     public async Task CommitAsync(CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
@@ -175,7 +143,6 @@ public class AdoNetDatabaseSession : IDatabaseSession
         _committed = true;
     }
 
-    /// <inheritdoc />
     public async Task RollbackAsync(CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
@@ -188,7 +155,6 @@ public class AdoNetDatabaseSession : IDatabaseSession
         _committed = true;
     }
 
-    /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
         if (_disposed)
@@ -260,11 +226,6 @@ public class AdoNetDatabaseSession : IDatabaseSession
         return (T)Convert.ChangeType(value, targetType, System.Globalization.CultureInfo.InvariantCulture);
     }
 
-    /// <summary>
-    /// <see cref="IDatabaseRow"/> adapter over the live <see cref="DbDataReader"/>.
-    /// A single instance is reused across rows of one enumeration; mappers must
-    /// materialise values inside the callback (see <see cref="IDatabaseRow"/> remarks).
-    /// </summary>
     private sealed class DataReaderRow(DbDataReader reader) : IDatabaseRow
     {
         public int FieldCount => reader.FieldCount;
@@ -277,11 +238,6 @@ public class AdoNetDatabaseSession : IDatabaseSession
     }
 }
 
-/// <summary>
-/// Transactional sub-session produced by
-/// <see cref="AdoNetDatabaseSession.BeginTransactionAsync"/>. Owns the
-/// transaction but NOT the parent connection.
-/// </summary>
 internal sealed class AdoNetTransactionalSubSession : AdoNetDatabaseSession
 {
     public AdoNetTransactionalSubSession(DbConnection connection, DbTransaction transaction)

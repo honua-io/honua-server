@@ -7,27 +7,9 @@ using System.Text;
 
 namespace Honua.Core.Features.Infrastructure.Logging;
 
-/// <summary>
-/// AOT-safe helpers for redacting user-controlled values that flow into log lines.
-/// </summary>
-/// <remarks>
-/// Two operations are exposed:
-/// <list type="bullet">
-///   <item><description><see cref="Hash"/> produces a short, irreversible correlation token suitable for grouping
-///   events that share an underlying secret (api key, session id, cache key) without exposing the secret itself.</description></item>
-///   <item><description><see cref="SanitizeForLog"/> strips CR / LF and other control characters that would otherwise
-///   allow user input to forge or split log lines, and truncates to a bounded length.</description></item>
-/// </list>
-/// Both operations are pure, allocation-bounded, and reflection-free so they remain trim / Native AOT compatible.
-/// Exposed as <see langword="public"/> so consuming projects (Honua.Server, Honua.Postgres, etc.) can redact
-/// log values without each project owning a copy of the helper.
-/// </remarks>
+// Control characters are stripped so user input cannot forge a second log line, and the correlation token does not reveal the secret.
 public static class LogValueRedactor
 {
-    /// <summary>
-    /// Default cap for a sanitized log fragment in characters. Long enough to retain meaningful context for valid
-    /// values (schema names, family labels) and short enough to bound log volume on adversarial input.
-    /// </summary>
     public const int DefaultMaxSanitizedLength = 256;
 
     private const int HashHexLength = 8;
@@ -36,12 +18,6 @@ public static class LogValueRedactor
 
     private const char SanitizedReplacement = '_';
 
-    /// <summary>
-    /// Returns a short, irreversible SHA-256 prefix (8 hex chars) of the supplied value for log correlation.
-    /// </summary>
-    /// <param name="value">User-controlled or sensitive value to redact.</param>
-    /// <returns>A lowercase hexadecimal token of length <see cref="HashHexLength"/>, or <c>"00000000"</c> when the
-    /// input is null or empty.</returns>
     public static string Hash(string? value)
     {
         if (string.IsNullOrEmpty(value))
@@ -74,14 +50,6 @@ public static class LogValueRedactor
         }
     }
 
-    /// <summary>
-    /// Returns a copy of <paramref name="value"/> with CR / LF and other control characters replaced by
-    /// <c>'_'</c>, and the result truncated to <paramref name="maxLength"/> characters.
-    /// </summary>
-    /// <param name="value">User-controlled value that may flow into a log line.</param>
-    /// <param name="maxLength">Maximum length of the returned string. Defaults to
-    /// <see cref="DefaultMaxSanitizedLength"/>.</param>
-    /// <returns>A bounded, control-character-free representation suitable for direct inclusion in log output.</returns>
     public static string SanitizeForLog(string? value, int maxLength = DefaultMaxSanitizedLength)
     {
         if (string.IsNullOrEmpty(value) || maxLength <= 0)

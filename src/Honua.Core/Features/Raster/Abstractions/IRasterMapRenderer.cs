@@ -6,44 +6,18 @@ using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Core.Features.Raster.Abstractions;
 
-/// <summary>
-/// Abstraction for server-side map rendering from raster and vector data.
-/// Supports OGC API - Maps operations.
-/// </summary>
 public interface IRasterMapRenderer
 {
-    /// <summary>
-    /// Renders a map from a single collection (layer) with optional styling.
-    /// </summary>
-    /// <param name="layerId">Layer identifier to render</param>
-    /// <param name="request">Map rendering request with extent, size, and format options</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Rendered map image</returns>
     Task<RasterResult> RenderCollectionMapAsync(
         int layerId,
         MapRenderRequest request,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Renders a map from multiple collections (dataset-wide map).
-    /// </summary>
-    /// <param name="layerIds">Layer identifiers to render (in order)</param>
-    /// <param name="request">Map rendering request with extent, size, and format options</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Rendered map image</returns>
     Task<RasterResult> RenderDatasetMapAsync(
         int[] layerIds,
         MapRenderRequest request,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Renders a styled map using a specific style definition.
-    /// </summary>
-    /// <param name="layerId">Layer identifier to render</param>
-    /// <param name="styleId">Style identifier to apply</param>
-    /// <param name="request">Map rendering request with extent, size, and format options</param>
-    /// <param name="cancellationToken">Cancellation token</param>
-    /// <returns>Rendered map image</returns>
     Task<RasterResult> RenderStyledMapAsync(
         int layerId,
         string styleId,
@@ -51,108 +25,40 @@ public interface IRasterMapRenderer
         CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// Request parameters for map rendering operations.
-/// </summary>
 public readonly record struct MapRenderRequest
 {
-    /// <summary>
-    /// Bounding box for the map extent (in the specified CRS).
-    /// Format: [minX, minY, maxX, maxY].
-    /// </summary>
     public required double[] BoundingBox { get; init; }
 
-    /// <summary>
-    /// Coordinate reference system for the bounding box.
-    /// </summary>
     public int? BoundingBoxCrs { get; init; }
 
-    /// <summary>
-    /// Output coordinate reference system for the map.
-    /// </summary>
     public int? Crs { get; init; }
 
-    /// <summary>
-    /// Width of the output map in pixels.
-    /// </summary>
     public required int Width { get; init; }
 
-    /// <summary>
-    /// Height of the output map in pixels.
-    /// </summary>
     public required int Height { get; init; }
 
-    /// <summary>
-    /// Output format for the map.
-    /// </summary>
     public RasterFormat Format { get; init; } = RasterFormat.PNG;
 
-    /// <summary>
-    /// Whether to include a background (transparent if false).
-    /// </summary>
     public bool Transparent { get; init; } = true;
 
-    /// <summary>
-    /// Background color (if not transparent).
-    /// </summary>
     public string? BackgroundColor { get; init; }
 
-    /// <summary>
-    /// Upper bound (inclusive) of the temporal filter for time-enabled layers. For an
-    /// instant datetime, this is the requested timestamp. For an OGC datetime interval
-    /// (e.g. <c>start/end</c> or <c>../end</c>), this is the end value; <c>null</c>
-    /// indicates an unbounded upper end (e.g. <c>start/..</c>).
-    /// </summary>
+    // For an instant this is the requested timestamp; for an interval it is the inclusive end, and null means the end is open.
     public DateTimeOffset? DateTime { get; init; }
 
-    /// <summary>
-    /// Lower bound (inclusive) of the temporal filter for time-enabled layers. OGC
-    /// datetime instants leave this unset so renderers can apply newest-at-or-before
-    /// semantics using <see cref="DateTime"/>. For OGC datetime intervals (e.g.
-    /// <c>start/end</c> or <c>start/..</c>), this is the start value; <c>null</c>
-    /// indicates an unbounded lower end (e.g. <c>../end</c>).
-    /// </summary>
+    // An instant leaves this unset so the renderer uses newest-at-or-before; an interval uses it as the inclusive start.
     public DateTimeOffset? DateTimeFrom { get; init; }
 
-    /// <summary>
-    /// Canonical temporal filters for vector resources, keyed by Metadata v2 resource id.
-    /// Raster renderers continue to use <see cref="DateTime"/> and
-    /// <see cref="DateTimeFrom"/> for acquisition-time mosaic selection.
-    /// </summary>
     public IReadOnlyDictionary<string, TemporalFilter>? TemporalFiltersByResourceId { get; init; }
 
-    /// <summary>
-    /// Quality settings for compressed formats (1-100).
-    /// </summary>
     public int? Quality { get; init; }
 
-    /// <summary>
-    /// Layer id → canonical resource identities that a protocol handler already
-    /// resolved (collision-aware) for this request. When present, renderers MUST
-    /// resolve each layer's resource through this identity (via the
-    /// <c>ResourcesById</c> index) instead of re-resolving through the first-wins
-    /// <c>ResourcesByStorageLayerId</c> index, which can select the wrong resource
-    /// when one numeric layer id is published through multiple storage bindings
-    /// (for example a raster + vector compatibility publication that share a
-    /// StorageLayerId). <see langword="null"/> preserves the legacy first-wins
-    /// resolution behavior.
-    /// </summary>
+    // When a resolved identity is present the renderer must use it, because the first-wins storage-layer index can pick the wrong resource.
     public IReadOnlyList<ResolvedMapLayer>? ResolvedLayers { get; init; }
 
-    /// <summary>
-    /// Storage layer id → MapLibre style JSON of the style currently applied to that
-    /// layer (its primary binding in the styleId-keyed style catalog, as written by
-    /// <c>style.apply-preset</c> or the OGC API - Styles authoring surface). When an
-    /// entry is present, the styled vector path renders the layer with this document
-    /// instead of the layer's stored default style; an entry whose document has no
-    /// style layers draws nothing for that layer. <see langword="null"/> (or a missing
-    /// entry) preserves rendering with the layer's stored default style.
-    /// </summary>
+    // A supplied style replaces the stored default, and a document with no style layers draws nothing for that layer.
     public IReadOnlyDictionary<int, string>? AppliedStyleJsonByLayerId { get; init; }
 
-    /// <summary>
-    /// Initializes a new instance of the MapRenderRequest struct.
-    /// </summary>
     public MapRenderRequest(double[] boundingBox, int width, int height)
     {
         BoundingBox = boundingBox;
@@ -161,12 +67,4 @@ public readonly record struct MapRenderRequest
     }
 }
 
-/// <summary>
-/// A storage layer id paired with the canonical Metadata v2 resource id that a
-/// protocol handler already resolved for it. Flowing this identity into a renderer
-/// lets the renderer skip a second, first-wins storage-layer lookup that can pick a
-/// colliding resource of the wrong kind.
-/// </summary>
-/// <param name="LayerId">Storage layer id.</param>
-/// <param name="ResourceId">Canonical resource id (Metadata v2 <c>Metadata.Id</c>).</param>
 public readonly record struct ResolvedMapLayer(int LayerId, string ResourceId);

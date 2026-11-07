@@ -56,6 +56,27 @@ class PlanTests(unittest.TestCase):
         self.assertEqual("F=2", plan["baseline"][1]["filter"])
         self.assertEqual(["one", "two"], [item["identity"] for item in plan["reused_consumers"]])
 
+    def test_matrix_capacity_matches_github_job_limit(self) -> None:
+        for mode in ("core", "observed-full"):
+            for count in (0, 256, 257):
+                with self.subTest(mode=mode, count=count):
+                    shards = [
+                        {"name": f"shard-{index}", "artifact_suffix": f"shard-{index}",
+                         "filter": "F=1"}
+                        for index in range(count)
+                    ]
+                    config = {
+                        "contract_version": 1,
+                        "shards": shards,
+                        "profiles": [{"name": "all", "shards": [item["name"] for item in shards]}],
+                    }
+                    if count == 256:
+                        plan = MODULE.build_plan(config, {"shards": shards}, registry(), mode)
+                        self.assertEqual(len(plan["baseline"]), count)
+                    else:
+                        with self.assertRaisesRegex(ValueError, "shard count"):
+                            MODULE.build_plan(config, {"shards": shards}, registry(), mode)
+
     def test_rejects_unknown_project_and_duplicate_identity(self) -> None:
         base = {
             "contract_version": 1,

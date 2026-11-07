@@ -12,25 +12,10 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Deterministic migration planner for OGC WMTS sources. Given a slice-1 source
-/// inventory artifact, produces classified plan entries that tag layer metadata
-/// as <c>automated</c>, SLD/SE style references as <c>assisted</c>, tile-set
-/// definitions as <c>automated</c> when they describe a trivial XYZ/TMS-like
-/// grid (WebMercatorQuad and friends) and <c>manual-review</c> otherwise, and
-/// the render-only tile data path as <c>unsupported</c>. The planner does not
-/// perform any I/O; it operates purely on the inventory artifact and is
-/// idempotent.
-/// </summary>
 public static class OgcWmtsMigrationPlanner
 {
     private const string SourceKindOgcWmts = "ogc-wmts";
 
-    /// <summary>
-    /// Names of well-known WMTS tile matrix sets that map deterministically to a
-    /// trivial XYZ/TMS-like Honua tile cache configuration. Comparison is
-    /// case-insensitive.
-    /// </summary>
     private static readonly HashSet<string> TrivialTileMatrixSetNames = new(StringComparer.OrdinalIgnoreCase)
     {
         "WebMercatorQuad",
@@ -43,23 +28,12 @@ public static class OgcWmtsMigrationPlanner
         "urn:ogc:def:wkss:OGC:1.0:GoogleMapsCompatible"
     };
 
-    /// <summary>
-    /// Returns <c>true</c> when the inventory describes a WMTS source the planner can plan.
-    /// </summary>
-    /// <param name="inventory">Source inventory artifact.</param>
-    /// <returns>Whether the inventory is a WMTS source.</returns>
     public static bool CanPlan(MigrationSourceInventoryArtifact inventory)
     {
         ArgumentNullException.ThrowIfNull(inventory);
         return string.Equals(inventory.SourceKind, SourceKindOgcWmts, StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Build the classified plan entries and diagnostics for the WMTS service plan.
-    /// </summary>
-    /// <param name="inventory">Source inventory artifact.</param>
-    /// <param name="containerId">Service container identifier to plan for.</param>
-    /// <returns>Deterministic plan-entry and diagnostic collections.</returns>
     public static OgcRenderMigrationPlanResult Plan(
         MigrationSourceInventoryArtifact inventory,
         string containerId)

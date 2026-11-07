@@ -158,24 +158,26 @@ public sealed class RoutingUtilityServiceTests : IClassFixture<NAServerEndpointT
         }
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData("")]
+    [InlineData("/arcgis")]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /rest/services/{serviceId}/GPServer")]
-    public async Task ExistingPrivateRoutingStableId_RootTaskAndExecuteKeepItsAccessPolicy()
+    public async Task ExistingPrivateRoutingStableId_RootTaskAndExecuteKeepItsAccessPolicy(string mount)
     {
         var fixture = await CreateCatalogCollisionFixtureAsync(gpServerEnabled: true, stableIdCollision: true);
         try
         {
             // GeoServices represents a missing credential as body error 499 (TokenRequired),
             // while retaining HTTP 200 for Esri clients' authentication flow.
-            await AssertErrorAsync(fixture.Client, "/rest/services/Routing/GPServer?f=json", 499);
-            await AssertErrorAsync(fixture.Client, "/rest/services/Routing/GPServer/GetTravelModes?f=json", 499);
-            await AssertErrorAsync(fixture.Client, "/rest/services/Routing/GPServer/FindRoutes/execute?f=json", 499);
+            await AssertErrorAsync(fixture.Client, $"{mount}/rest/services/Routing/GPServer?f=json", 499);
+            await AssertErrorAsync(fixture.Client, $"{mount}/rest/services/Routing/GPServer/GetTravelModes?f=json", 499);
+            await AssertErrorAsync(fixture.Client, $"{mount}/rest/services/Routing/GPServer/FindRoutes/execute?f=json", 499);
             // Stable IDs are ordinal. The lowercase route is absent, and must not
             // create a public synthetic alias for the private uppercase ID.
-            await AssertErrorAsync(fixture.Client, "/rest/services/routing/GPServer?f=json", 404);
-            await AssertErrorAsync(fixture.Client, "/rest/services/routing/GPServer/GetTravelModes?f=json", 404);
-            await AssertErrorAsync(fixture.Client, "/rest/services/routing/GPServer/FindRoutes/execute?f=json", 404);
+            await AssertErrorAsync(fixture.Client, $"{mount}/rest/services/routing/GPServer?f=json", 404);
+            await AssertErrorAsync(fixture.Client, $"{mount}/rest/services/routing/GPServer/GetTravelModes?f=json", 404);
+            await AssertErrorAsync(fixture.Client, $"{mount}/rest/services/routing/GPServer/FindRoutes/execute?f=json", 404);
         }
         finally
         {
@@ -197,6 +199,59 @@ public sealed class RoutingUtilityServiceTests : IClassFixture<NAServerEndpointT
             await AssertErrorAsync(fixture.Client, "/rest/services/routing/GPServer?f=json", 404);
             await AssertErrorAsync(fixture.Client, "/rest/services/routing/GPServer/GetTravelModes?f=json", 404);
             await AssertErrorAsync(fixture.Client, "/rest/services/routing/GPServer/FindRoutes/execute?f=json", 404);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData("Network", "Routing", "")]
+    [InlineData("Network", "Routing", "/arcgis")]
+    [InlineData(null, "Directions", "")]
+    [InlineData(null, "Directions", "/arcgis")]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer")]
+    public async Task AnonymousRoutingService_NoncanonicalLogicalRootIsRejectedAndCanonicalPathWorks(
+        string? folderName, string publicName, string mount)
+    {
+        var fixture = await CreateCatalogCollisionFixtureAsync(gpServerEnabled: true);
+        try
+        {
+            var graph = fixture.GetCurrentV2GraphSnapshot().Graph;
+            var service = graph.Services.Single() with
+            {
+                PublicName = publicName,
+                FolderId = folderName is null ? null : "routing-folder",
+                AccessPolicy = new AccessPolicy { AllowAnonymous = true }
+            };
+            var provider = (TestMetadataV2GraphProvider)fixture.GetService<IMetadataV2GraphProvider>();
+            provider.SetGraph(graph with
+            {
+                Folders = folderName is null ? [] : [new() { Metadata = new() { Id = "routing-folder", Name = folderName } }],
+                Services = [service]
+            }, schema: fixture.CurrentSchema);
+
+            foreach (var logicalName in new[] { "Routing", "routing" })
+            {
+                foreach (var suffix in new[] { "", "/GetTravelModes", "/FindRoutes/execute" })
+                {
+                    await AssertErrorAsync(fixture.Client, $"{mount}/rest/services/{logicalName}/GPServer{suffix}?f=json", 404);
+                }
+            }
+
+            var canonicalPath = folderName is null ? publicName : $"{folderName}/{publicName}";
+            using var root = await fixture.Client.GetAsync($"{mount}/rest/services/{canonicalPath}/GPServer?f=json");
+            root.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var rootDocument = JsonDocument.Parse(await root.Content.ReadAsStringAsync());
+            rootDocument.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+            rootDocument.RootElement.GetProperty("serviceDescription").GetString().Should()
+                .Be($"Geoprocessing service for {publicName}");
+            using var task = await fixture.Client.GetAsync($"{mount}/rest/services/{canonicalPath}/GPServer/GetTravelModes?f=json");
+            task.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var taskDocument = JsonDocument.Parse(await task.Content.ReadAsStringAsync());
+            taskDocument.RootElement.GetProperty("name").GetString().Should().Be("GetTravelModes");
         }
         finally
         {

@@ -6,32 +6,8 @@ using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Core.Features.Raster.ZarrParser;
 
-/// <summary>
-/// Resolves a requested non-spatial dimension coordinate (a single slice value)
-/// against a registered Zarr store's declared axes to a grid-index slice.
-/// Shared by protocol adapters that pin a single slice of a multidimensional
-/// cube by coordinate value — for example the Esri ImageServer
-/// <c>multidimensionalDefinition</c> / <c>getSamples</c> path (#1869) and the
-/// classic WCS additional-dimension <c>SUBSET</c> path (#1872).
-/// </summary>
-/// <remarks>
-/// Resolution covers the additional coordinate axes
-/// (<see cref="ZarrStoreMetadata.Axes"/>) and the temporal axis
-/// (<see cref="ZarrStoreMetadata.Temporal"/>); spatial axes are addressed
-/// geometrically by the caller and are not resolvable here.
-/// </remarks>
 public static class ZarrDimensionSliceResolver
 {
-    /// <summary>
-    /// Resolves a single slice coordinate on a named dimension to its inclusive
-    /// grid index.
-    /// </summary>
-    /// <param name="metadata">Scanned store metadata.</param>
-    /// <param name="dimensionName">Requested dimension name (e.g. <c>StdZ</c>, an elevation axis, or the time axis).</param>
-    /// <param name="coordinate">Requested coordinate value. For the time axis this is epoch milliseconds.</param>
-    /// <param name="index">Resolved inclusive grid index when the method returns true.</param>
-    /// <param name="error">Client-safe error when the method returns false.</param>
-    /// <returns>True when the dimension is known and the coordinate resolves to an in-range slice.</returns>
     public static bool TryResolveSliceIndex(
         ZarrStoreMetadata metadata,
         string dimensionName,
@@ -94,13 +70,7 @@ public static class ZarrDimensionSliceResolver
         return false;
     }
 
-    /// <summary>
-    /// Maps a dimension name a client read from the advertised <c>multidimensionalInfo</c>
-    /// (the Esri standard <c>StdTime</c> / <c>StdZ</c>) to the store's own dimension name
-    /// (for example <c>time</c> / <c>depth</c>). Names the store declares literally, and all
-    /// other names, are returned unchanged. <c>StdZ</c> maps only when the store declares
-    /// exactly one non-temporal coordinate axis, so the mapping is never a guess.
-    /// </summary>
+    // StdZ maps only when the store has exactly one non-temporal coordinate axis, so the mapping is never a guess.
     public static string ResolveAdvertisedDimensionName(ZarrStoreMetadata metadata, string dimensionName)
     {
         ArgumentNullException.ThrowIfNull(metadata);
@@ -131,10 +101,6 @@ public static class ZarrDimensionSliceResolver
            metadata.Arrays.Any(array => array.DimensionNames.Any(
                name => string.Equals(name, dimensionName, StringComparison.OrdinalIgnoreCase)));
 
-    /// <summary>
-    /// Locates the grid dimension index for a named axis within a variable's
-    /// <see cref="ZarrArrayMetadata.DimensionNames"/>.
-    /// </summary>
     public static bool TryFindArrayDimension(ZarrArrayMetadata array, string dimensionName, out int dimensionIndex)
     {
         ArgumentNullException.ThrowIfNull(array);

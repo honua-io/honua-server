@@ -8,14 +8,10 @@ using Honua.Core.Features.Infrastructure.Validation;
 
 namespace Honua.Core.Features.Infrastructure.ServiceRegistration;
 
-/// <summary>
-/// Base class for configuration validators with common patterns.
-/// </summary>
 public abstract class ConfigurationValidator<
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TOptions> : IValidateOptions<TOptions>
     where TOptions : class
 {
-    /// <inheritdoc />
     public ValidateOptionsResult Validate(string? name, TOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -33,10 +29,6 @@ public abstract class ConfigurationValidator<
             : ValidateOptionsResult.Fail(errors);
     }
 
-    /// <summary>
-    /// Perform validation common across all features.
-    /// Override to customize common validation.
-    /// </summary>
     protected virtual void PerformCommonValidation(TOptions options, List<string> errors)
     {
         // Validate using data annotations
@@ -49,14 +41,8 @@ public abstract class ConfigurationValidator<
         }
     }
 
-    /// <summary>
-    /// Perform feature-specific validation. Must be implemented by derived classes.
-    /// </summary>
     protected abstract void PerformFeatureSpecificValidation(TOptions options, List<string> errors);
 
-    /// <summary>
-    /// Helper to validate that a string property is not null or whitespace.
-    /// </summary>
     protected static void ValidateRequired(string? value, string propertyName, List<string> errors)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -65,9 +51,6 @@ public abstract class ConfigurationValidator<
         }
     }
 
-    /// <summary>
-    /// Helper to validate that a numeric property is within a range.
-    /// </summary>
     protected static void ValidateRange<T>(T value, T min, T max, string propertyName, List<string> errors)
         where T : IComparable<T>
     {
@@ -77,9 +60,6 @@ public abstract class ConfigurationValidator<
         }
     }
 
-    /// <summary>
-    /// Helper to validate that a collection is not null or empty.
-    /// </summary>
     protected static void ValidateCollectionNotEmpty<T>(IEnumerable<T>? collection, string propertyName, List<string> errors)
     {
         if (collection == null || !collection.Any())
@@ -88,9 +68,6 @@ public abstract class ConfigurationValidator<
         }
     }
 
-    /// <summary>
-    /// Helper to validate that a URI is valid.
-    /// </summary>
     protected static void ValidateUri(string? uriString, string propertyName, List<string> errors, UriKind uriKind = UriKind.Absolute)
     {
         if (!string.IsNullOrWhiteSpace(uriString) && !Uri.TryCreate(uriString, uriKind, out _))
@@ -99,9 +76,6 @@ public abstract class ConfigurationValidator<
         }
     }
 
-    /// <summary>
-    /// Helper to validate that a file path exists.
-    /// </summary>
     protected static void ValidateFilePath(string? filePath, string propertyName, List<string> errors, bool mustExist = false)
     {
         if (string.IsNullOrWhiteSpace(filePath))
@@ -129,9 +103,6 @@ public abstract class ConfigurationValidator<
         }
     }
 
-    /// <summary>
-    /// Helper to validate database connection string format.
-    /// </summary>
     protected static void ValidateConnectionString(string? connectionString, string propertyName, List<string> errors)
     {
         if (string.IsNullOrWhiteSpace(connectionString))
@@ -147,9 +118,6 @@ public abstract class ConfigurationValidator<
         }
     }
 
-    /// <summary>
-    /// Helper to validate that a TimeSpan is within a range.
-    /// </summary>
     protected static void ValidateTimeSpan(TimeSpan value, TimeSpan min, TimeSpan max, string propertyName, List<string> errors)
     {
         if (value < min || value > max)
@@ -158,11 +126,6 @@ public abstract class ConfigurationValidator<
         }
     }
 
-    /// <summary>
-    /// Helper to validate outbound HTTPS URLs via <see cref="OutboundHttpUrlValidator.ValidateConfiguration(string)"/>,
-    /// which performs the same DNS-aware reservation checks as the runtime path so configuration-time
-    /// validation does not silently accept hostnames that the runtime would later reject.
-    /// </summary>
     protected static void ValidateOutboundHttpUrl(string? url, string propertyName, List<string> errors)
     {
         if (string.IsNullOrWhiteSpace(url))
@@ -178,9 +141,6 @@ public abstract class ConfigurationValidator<
         }
     }
 
-    /// <summary>
-    /// Helper to validate data annotations on nested objects.
-    /// </summary>
     protected static void ValidateDataAnnotations<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)] TObject>(
         TObject? obj,
@@ -203,9 +163,6 @@ public abstract class ConfigurationValidator<
         }
     }
 
-    /// <summary>
-    /// Helper to validate logical order between two values.
-    /// </summary>
     protected static void ValidateLogicalOrder<T>(T smaller, T larger, string smallerName, string largerName, List<string> errors)
         where T : IComparable<T>
     {
@@ -215,9 +172,6 @@ public abstract class ConfigurationValidator<
         }
     }
 
-    /// <summary>
-    /// Helper to validate that a string is not null or whitespace.
-    /// </summary>
     protected static void ValidateRequiredString(string? value, string propertyName, List<string> errors)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -226,9 +180,6 @@ public abstract class ConfigurationValidator<
         }
     }
 
-    /// <summary>
-    /// Helper to validate string length.
-    /// </summary>
     protected static void ValidateStringLength(string? value, int maxLength, string propertyName, List<string> errors, int minLength = 0)
     {
         if (string.IsNullOrEmpty(value))
@@ -240,9 +191,6 @@ public abstract class ConfigurationValidator<
         }
     }
 
-    /// <summary>
-    /// Helper to validate collection item counts.
-    /// </summary>
     protected static void ValidateCollectionCount<T>(
         IEnumerable<T>? collection,
         int minCount,
@@ -273,9 +221,6 @@ public abstract class ConfigurationValidator<
         }
     }
 
-    /// <summary>
-    /// Helper to validate GUID strings.
-    /// </summary>
     protected static void ValidateGuid(string? value, string propertyName, List<string> errors)
     {
         if (!string.IsNullOrWhiteSpace(value) && !Guid.TryParse(value, out _))
@@ -284,9 +229,6 @@ public abstract class ConfigurationValidator<
         }
     }
 
-    /// <summary>
-    /// Helper to validate file size within acceptable bounds.
-    /// </summary>
     protected static void ValidateFileSize(long value, long min, long max, string propertyName, List<string> errors)
     {
         if (value < min || value > max)
@@ -298,9 +240,6 @@ public abstract class ConfigurationValidator<
         }
     }
 
-    /// <summary>
-    /// Helper to validate URL format.
-    /// </summary>
     protected static void ValidateUrl(string? url, string propertyName, List<string> errors, bool requireHttps = true)
     {
         if (string.IsNullOrWhiteSpace(url))
@@ -322,9 +261,6 @@ public abstract class ConfigurationValidator<
         }
     }
 
-    /// <summary>
-    /// Helper to validate file/directory paths.
-    /// </summary>
     protected static void ValidatePath(string? path, string propertyName, List<string> errors, bool requireAbsolute = false, bool preventTraversal = true)
     {
         if (string.IsNullOrWhiteSpace(path))

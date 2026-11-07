@@ -652,7 +652,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         errorElement.GetProperty("message").GetString().Should().Be("Not Found");
         errorElement.GetProperty("details").EnumerateArray()
             .Select(detail => detail.GetString() ?? string.Empty)
-            .Should().Contain(detail => detail.Contains("Layer 999 not found in service"));
+            .Should().Contain("Service layer was not found.");
     }
 
     [IntegrationTest]
@@ -1673,7 +1673,7 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         errorElement.GetProperty("message").GetString().Should().Be("Not Found");
         errorElement.GetProperty("details").EnumerateArray()
             .Select(detail => detail.GetString() ?? string.Empty)
-            .Should().Contain(detail => detail.Contains("Layer 999 not found in service"));
+            .Should().Contain("Service layer was not found.");
     }
 
     [IntegrationTest]

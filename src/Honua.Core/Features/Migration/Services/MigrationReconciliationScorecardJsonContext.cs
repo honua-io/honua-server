@@ -6,12 +6,6 @@ using Honua.Core.Features.Migration.Domain;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// AOT-safe JSON serialization context for the reconciliation scorecard (issue #1381). Used to
-/// produce the deterministic, canonical byte payload that
-/// <see cref="MigrationReconciliationScorecardBuilder.ComputeFingerprint"/> hashes, so the
-/// fingerprint is stable across runs and recomputable by verifiers without reflection.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.Never,

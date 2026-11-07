@@ -10,18 +10,10 @@ namespace Honua.Core.Features.Migration.Services;
 
 public static class GeoServicesSubtypeFidelityClassifier
 {
-    /// <summary>Metadata key carrying the stable code of the unsupported source construct.</summary>
     public const string UnsupportedConstructMetadataKey = "unsupportedConstruct";
 
-    /// <summary>Metadata key carrying the operator-facing description of the offending source type.</summary>
     public const string UnsupportedDetailMetadataKey = "unsupportedDetail";
 
-    /// <summary>
-    /// Classifies the subtype/feature-type metadata on a source resource document.
-    /// </summary>
-    /// <param name="resourceElement">The source layer/table document as returned by the service.</param>
-    /// <param name="descriptor">The registry descriptor for <c>resource.subtypes</c>.</param>
-    /// <returns>The finding to record against the resource.</returns>
     public static GeoServicesSubtypeFidelityFinding Classify(
         JsonElement resourceElement,
         GeoServicesConstructCapabilityDescriptor descriptor)
@@ -92,24 +84,16 @@ public static class GeoServicesSubtypeFidelityClassifier
         }.ToFrozenDictionary(StringComparer.Ordinal);
 }
 
-/// <summary>
-/// The subtype fidelity finding recorded against one source resource.
-/// </summary>
 public sealed record GeoServicesSubtypeFidelityFinding
 {
-    /// <summary>Automation status; one of <see cref="MigrationFidelityAutomationStatuses"/>.</summary>
     public required string AutomationStatus { get; init; }
 
-    /// <summary>Stable <see cref="ImportCompatibilityCodes"/> value for the finding.</summary>
     public required string Code { get; init; }
 
-    /// <summary>Operator-facing explanation of what was and was not captured.</summary>
     public required string Reason { get; init; }
 
-    /// <summary>Operator follow-up steps.</summary>
     public IReadOnlyList<string> ManualSteps { get; init; } = [];
 
-    /// <summary>Additional finding metadata, empty when the construct was captured.</summary>
     public IReadOnlyDictionary<string, string> Metadata { get; init; } =
         new Dictionary<string, string>(StringComparer.Ordinal);
 }

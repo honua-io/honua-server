@@ -9,21 +9,8 @@ using System.Diagnostics.CodeAnalysis;
 
 namespace Honua.Core.Features.Infrastructure.Resilience;
 
-/// <summary>
-/// Extension methods for adding HTTP client resilience policies to service registration.
-/// </summary>
 public static partial class HttpClientResilienceExtensions
 {
-    /// <summary>
-    /// Adds a typed HTTP client with standardized resilience policies.
-    /// </summary>
-    /// <typeparam name="TClient">The typed HTTP client type.</typeparam>
-    /// <param name="services">The service collection.</param>
-    /// <param name="serviceType">Service type identifier for circuit breaker isolation.</param>
-    /// <param name="options">Optional resilience policy options.</param>
-    /// <param name="configureClient">Optional HTTP client configuration.</param>
-    /// <param name="configureHandler">Optional message handler configuration.</param>
-    /// <returns>The HTTP client builder for further configuration.</returns>
     public static IHttpClientBuilder AddResilientHttpClient<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TClient>(
         this IServiceCollection services,
@@ -48,16 +35,6 @@ public static partial class HttpClientResilienceExtensions
         return builder.AddHttpResiliencePolicy(serviceType, options);
     }
 
-    /// <summary>
-    /// Adds a named HTTP client with standardized resilience policies.
-    /// </summary>
-    /// <param name="services">The service collection.</param>
-    /// <param name="name">The HTTP client name.</param>
-    /// <param name="serviceType">Service type identifier for circuit breaker isolation.</param>
-    /// <param name="options">Optional resilience policy options.</param>
-    /// <param name="configureClient">Optional HTTP client configuration.</param>
-    /// <param name="configureHandler">Optional message handler configuration.</param>
-    /// <returns>The HTTP client builder for further configuration.</returns>
     public static IHttpClientBuilder AddResilientHttpClient(
         this IServiceCollection services,
         string name,
@@ -81,13 +58,6 @@ public static partial class HttpClientResilienceExtensions
         return builder.AddHttpResiliencePolicy(serviceType, options);
     }
 
-    /// <summary>
-    /// Adds resilience policies to an existing HTTP client builder.
-    /// </summary>
-    /// <param name="builder">The HTTP client builder.</param>
-    /// <param name="serviceType">Service type identifier for circuit breaker isolation.</param>
-    /// <param name="options">Optional resilience policy options.</param>
-    /// <returns>The HTTP client builder for chaining.</returns>
     public static IHttpClientBuilder AddHttpResiliencePolicy(
         this IHttpClientBuilder builder,
         string serviceType,
@@ -219,9 +189,6 @@ public static partial class HttpClientResilienceExtensions
     }
 }
 
-/// <summary>
-/// Internal class to provide logger context for HTTP resilience operations.
-/// </summary>
 internal sealed class HttpResilienceHandler
 {
     // This class exists solely to provide a logger category for HTTP resilience operations

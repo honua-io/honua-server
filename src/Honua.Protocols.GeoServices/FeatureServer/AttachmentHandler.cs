@@ -603,14 +603,7 @@ internal static partial class AttachmentHandler
             return null;
         }
 
-        var resourcePath = $"/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}";
-        if (BaseUrlResolver.TryGetConfiguredBaseUrl(context, out var configuredBaseUrl) &&
-            !string.IsNullOrWhiteSpace(configuredBaseUrl))
-        {
-            return $"{configuredBaseUrl}{resourcePath}";
-        }
-
-        return $"{context.Request.PathBase}{resourcePath}";
+        return $"{GeoServicesServiceUrls.RequestedLocation(context, serviceId, "FeatureServer")}/{layerId}/{featureId}/attachments/{attachmentId}";
     }
 
     #region Logging

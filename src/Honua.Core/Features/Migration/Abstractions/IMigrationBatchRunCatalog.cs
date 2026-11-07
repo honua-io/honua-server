@@ -5,69 +5,27 @@ using Honua.Core.Features.Migration.Domain;
 
 namespace Honua.Core.Features.Migration.Abstractions;
 
-/// <summary>
-/// Issue #1253. Storage abstraction for footprint-driven batch migration runs
-/// (<see cref="MigrationBatchRunRecord"/>) and their ordered child imports
-/// (<see cref="MigrationBatchChildRecord"/>). The batch orchestrator and the
-/// admin endpoints adapt over this catalog so the storage backend (Postgres
-/// today) stays behind a single seam.
-/// </summary>
-/// <remarks>
-/// Implementations must be idempotent for repeat <see cref="CreateAsync"/> calls
-/// with the same batch id (re-recording an existing batch returns it untouched)
-/// so the orchestrator can retry safely. Child rows are immutable except for
-/// their status fields, which advance monotonically toward terminal states.
-/// </remarks>
+// A repeat call with the same batch id returns the existing batch, and a child status only moves toward a terminal state.
 public interface IMigrationBatchRunCatalog
 {
-    /// <summary>
-    /// Persist a new batch run plus its ordered child rows. Idempotent: if the
-    /// batch id already exists, the existing batch and children are returned and
-    /// the supplied children are ignored.
-    /// </summary>
-    /// <param name="record">Initial batch record. Status should be
-    /// <see cref="MigrationBatchRunStatus.Running"/>.</param>
-    /// <param name="manifestBody">Optional manifest JSON body persisted alongside
-    /// the batch so relationship-apply can run after all children publish. Null
-    /// when relationship-apply is not requested.</param>
-    /// <param name="children">Ordered child rows (by ordinal).</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
     Task<MigrationBatchRunRecord> CreateAsync(
         MigrationBatchRunRecord record,
         string? manifestBody,
         IReadOnlyList<MigrationBatchChildRecord> children,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Fetch a single batch run by id, or null if unknown.
-    /// </summary>
     Task<MigrationBatchRunRecord?> GetAsync(
         string batchId,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Return the ordered child rows for a batch (by ordinal ascending). Empty
-    /// when the batch is unknown.
-    /// </summary>
     Task<IReadOnlyList<MigrationBatchChildRecord>> GetChildrenAsync(
         string batchId,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Return the manifest JSON body persisted for a batch, or null when the
-    /// batch is unknown or relationship-apply was not requested.
-    /// </summary>
     Task<string?> GetManifestBodyAsync(
         string batchId,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Update a single child's status (and optional job id / published layer id /
-    /// note / fidelity verdict). Returns the updated child, or null if the
-    /// batch/ordinal is unknown. Terminal child states (succeeded, failed,
-    /// cancelled, needs-review) are sticky. Null optional values leave the stored
-    /// value unchanged.
-    /// </summary>
     Task<MigrationBatchChildRecord?> UpdateChildAsync(
         string batchId,
         int ordinal,
@@ -79,13 +37,6 @@ public interface IMigrationBatchRunCatalog
         string? fidelityVerdict = null,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Update the rolled-up batch status, child counts and — at the terminal
-    /// transition — the service-level fidelity verdict and its differences (issue
-    /// #4600). Returns the updated record, or null if the batch is unknown.
-    /// Terminal batch states are sticky. Null optional values leave the stored
-    /// value unchanged.
-    /// </summary>
     Task<MigrationBatchRunRecord?> UpdateBatchAsync(
         string batchId,
         MigrationBatchRunStatus status,
@@ -99,10 +50,6 @@ public interface IMigrationBatchRunCatalog
         MigrationFidelityDifference[]? fidelityDifferences = null,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Return the ids of batches that are still running so a recovering leader can
-    /// resume advancing them.
-    /// </summary>
     Task<IReadOnlyList<string>> GetActiveBatchIdsAsync(
         CancellationToken cancellationToken = default);
 }

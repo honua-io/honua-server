@@ -15,26 +15,8 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Builds deterministic, website-linkable migration performance evidence artifacts
-/// from a slice-1 <see cref="MigrationRunMetricsArtifact"/> + slice-2
-/// <see cref="MigrationRunMetricsBaselineArtifact"/> pair (issue #1033 slice 4).
-/// </summary>
-/// <remarks>
-/// AOT-safe: the builder uses no reflection-based serialization. The SHA-256
-/// fingerprint is computed by a hand-rolled deterministic canonicalizer so the
-/// hash is stable across machines and runtimes regardless of JSON formatting.
-/// </remarks>
 public static class MigrationPerformanceEvidenceBuilder
 {
-    /// <summary>
-    /// Build the slice-4 performance evidence artifact.
-    /// </summary>
-    /// <param name="runMetrics">Slice-1 raw run metrics artifact.</param>
-    /// <param name="baselineEvaluation">Slice-2 baseline classification output for the same run.</param>
-    /// <param name="fixtureProfile">Fixture metadata used to size the baseline.</param>
-    /// <param name="generatedAt">Wall-clock instant to stamp on the artifact (workflow-supplied).</param>
-    /// <returns>A deterministic artifact ready for release publication.</returns>
     public static MigrationPerformanceEvidenceArtifact Build(
         MigrationRunMetricsArtifact runMetrics,
         MigrationRunMetricsBaselineArtifact baselineEvaluation,
@@ -119,11 +101,6 @@ public static class MigrationPerformanceEvidenceBuilder
             Summary = "Deny-by-default posture; URLs, credentials, source data, and operator identifiers are excluded from the artifact."
         };
 
-    /// <summary>
-    /// Compute a deterministic SHA-256 fingerprint over a canonical view of the
-    /// run metrics + baseline + fixture profile. Hex-encoded lowercase with a
-    /// <c>sha256:</c> prefix so consumers can identify the algorithm.
-    /// </summary>
     private static string ComputeFingerprint(
         MigrationRunMetricsArtifact runMetrics,
         MigrationRunMetricsBaselineArtifact baseline,

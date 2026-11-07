@@ -13,12 +13,6 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// AOT-safe JSON serialization context for the slice-5 OGC coverage
-/// migration evidence pack (issue #1030). Source-generated metadata avoids
-/// reflection-based serialization so the pack can be emitted under
-/// <c>PublishAot</c> builds without trimming warnings.
-/// </summary>
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.Never,

@@ -3,35 +3,19 @@
 
 namespace Honua.Core.Features.Migration.Watermark;
 
-/// <summary>
-/// Durable store for per-pipeline+source high-water marks used by incremental ("changed-since")
-/// extraction. The watermark is read before a pull to bound the scan, and advanced only on a
-/// successful pull so a failed or interrupted run resumes from the last durable mark rather than
-/// re-scanning from scratch.
-/// </summary>
+// The mark is read before a pull and advanced only after that pull succeeds, so a failed run resumes from the last durable mark.
 public interface ISourceWatermarkStore
 {
-    /// <summary>
-    /// Reads the persisted watermark for the pipeline+source, or <c>null</c> when none exists
-    /// (first extraction → full pull).
-    /// </summary>
     Task<SourceWatermark?> GetAsync(
         string pipelineId,
         string sourceId,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Advances the watermark monotonically. Implementations must never move a timestamp-based
-    /// watermark backwards so concurrent replicas and out-of-order completions cannot cause a
-    /// later run to re-pull already-extracted records. Returns the effective stored watermark.
-    /// </summary>
+    // A timestamp watermark never moves backward, so a late completion cannot make the next run re-pull extracted records.
     Task<SourceWatermark> AdvanceAsync(
         SourceWatermark watermark,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Clears the watermark for the pipeline+source so the next run performs a full re-scan.
-    /// </summary>
     Task ClearAsync(
         string pipelineId,
         string sourceId,

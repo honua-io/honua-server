@@ -28,7 +28,7 @@ namespace Honua.Protocols.OData.UnitTests.Services;
 /// <summary>
 /// OData create, update, and delete go through the same owner-edit gate as FeatureServer.
 /// </summary>
-public sealed class ODataCrudOwnerEditPolicyTests
+public sealed partial class ODataCrudOwnerEditPolicyTests
 {
     private const int RouteLayerId = 1;
     private const int StorageLayerId = 7;
@@ -62,9 +62,9 @@ public sealed class ODataCrudOwnerEditPolicyTests
             ]
         };
 
-        var result = await service.UpdateFeatureAsync(
+        var result = await service.UpdateFeatureAsync(new ODataUpdateRequest(
             RouteLayerId, 42, Payload("After"), "https://example.test", null, null,
-            StorageLayerId, true, resource, CancellationToken.None);
+            StorageLayerId, true, resource, reader), CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
         var update = writer.LastBatch.Updates.Should().ContainSingle().Which;
@@ -82,10 +82,10 @@ public sealed class ODataCrudOwnerEditPolicyTests
         var writer = new CapturingWriter();
         var service = CreateService(reader, writer, Principal("bob", admin: false));
 
-        var updated = await service.UpdateFeatureAsync(
-            RouteLayerId, 42, Payload("After"), "https://example.test", null, null, StorageLayerId, false, Resource(Policy), CancellationToken.None);
-        var deleted = await service.DeleteFeatureAsync(
-            RouteLayerId, 42, null, null, StorageLayerId, Resource(Policy), CancellationToken.None);
+        var updated = await service.UpdateFeatureAsync(new ODataUpdateRequest(
+            RouteLayerId, 42, Payload("After"), "https://example.test", null, null, StorageLayerId, false, Resource(Policy), reader), CancellationToken.None);
+        var deleted = await service.DeleteFeatureAsync(new ODataDeleteRequest(
+            RouteLayerId, 42, null, null, StorageLayerId, Resource(Policy), reader), CancellationToken.None);
 
         updated.IsSuccess.Should().BeFalse();
         deleted.IsSuccess.Should().BeFalse();
@@ -105,8 +105,8 @@ public sealed class ODataCrudOwnerEditPolicyTests
         var writer = new CapturingWriter();
         var service = CreateService(reader, writer, Principal("alice", admin: false));
 
-        var updated = await service.UpdateFeatureAsync(
-            RouteLayerId, 42, Payload("After"), "https://example.test", null, null, StorageLayerId, false, Resource(Policy), CancellationToken.None);
+        var updated = await service.UpdateFeatureAsync(new ODataUpdateRequest(
+            RouteLayerId, 42, Payload("After"), "https://example.test", null, null, StorageLayerId, false, Resource(Policy), reader), CancellationToken.None);
 
         updated.IsSuccess.Should().BeTrue();
         updated.StatusCode.Should().Be(StatusCodes.Status200OK);
@@ -123,8 +123,8 @@ public sealed class ODataCrudOwnerEditPolicyTests
         var writer = new CapturingWriter();
         var service = CreateService(reader, writer, Principal("carol", admin: true));
 
-        var updated = await service.UpdateFeatureAsync(
-            RouteLayerId, 42, Payload("After"), "https://example.test", null, null, StorageLayerId, false, Resource(Policy), CancellationToken.None);
+        var updated = await service.UpdateFeatureAsync(new ODataUpdateRequest(
+            RouteLayerId, 42, Payload("After"), "https://example.test", null, null, StorageLayerId, false, Resource(Policy), reader), CancellationToken.None);
 
         updated.IsSuccess.Should().BeTrue();
         writer.ApplyCount.Should().Be(1);
@@ -139,8 +139,7 @@ public sealed class ODataCrudOwnerEditPolicyTests
         var writer = new CapturingWriter();
         var service = CreateService(reader, writer, httpContext: null);
 
-        var created = await service.CreateFeatureAsync(
-            RouteLayerId, Payload("Created"), "https://example.test", StorageLayerId, Resource(Policy), CancellationToken.None);
+        var created = await service.CreateFeatureAsync(new ODataCreateRequest(RouteLayerId, Payload("Created"), "https://example.test", StorageLayerId, Resource(Policy), reader), CancellationToken.None);
 
         created.IsSuccess.Should().BeFalse();
         created.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
@@ -155,8 +154,7 @@ public sealed class ODataCrudOwnerEditPolicyTests
         var stampedReader = new OwnerReader();
         var stampedWriter = new CapturingWriter();
         var stamped = CreateService(stampedReader, stampedWriter, Principal("alice", admin: false));
-        var created = await stamped.CreateFeatureAsync(
-            RouteLayerId, Payload("Created"), "https://example.test", StorageLayerId, Resource(Policy), CancellationToken.None);
+        var created = await stamped.CreateFeatureAsync(new ODataCreateRequest(RouteLayerId, Payload("Created"), "https://example.test", StorageLayerId, Resource(Policy), stampedReader), CancellationToken.None);
 
         created.IsSuccess.Should().BeTrue();
         created.StatusCode.Should().Be(StatusCodes.Status201Created);
@@ -167,13 +165,7 @@ public sealed class ODataCrudOwnerEditPolicyTests
         var openReader = new OwnerReader();
         var openWriter = new CapturingWriter();
         var open = CreateService(openReader, openWriter, httpContext: null);
-        var unstamped = await open.CreateFeatureAsync(
-            RouteLayerId,
-            Payload("Created"),
-            "https://example.test",
-            StorageLayerId,
-            Resource(Policy with { Enabled = false }),
-            CancellationToken.None);
+        var unstamped = await open.CreateFeatureAsync(new ODataCreateRequest(RouteLayerId, Payload("Created"), "https://example.test", StorageLayerId, Resource(Policy with { Enabled = false }), openReader), CancellationToken.None);
 
         unstamped.IsSuccess.Should().BeTrue();
         openWriter.ApplyCount.Should().Be(1);
@@ -218,7 +210,7 @@ public sealed class ODataCrudOwnerEditPolicyTests
         return context;
     }
 
-    private static ODataCrudService CreateService(OwnerReader reader, CapturingWriter writer, HttpContext? httpContext)
+    private static ODataCrudService CreateService(IFeatureReader reader, IFeatureWriter writer, HttpContext? httpContext)
     {
         var dependencies = new ODataCrudDependencies(
             Substitute.For<IResourceValidator>(),

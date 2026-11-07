@@ -13,12 +13,6 @@ using Honua.Core.Features.Raster.Multidimensional.Domain;
 
 namespace Honua.Core.Features.Raster.ZarrParser;
 
-/// <summary>
-/// AOT-safe Zarr metadata reader. Reads Zarr v2 stores via <c>.zgroup</c>,
-/// <c>.zattrs</c> (with an optional <c>variables</c> manifest), and <c>.zarray</c>
-/// documents, and Zarr v3 stores via consolidated <c>zarr.json</c> documents
-/// (<c>node_type</c> group/array), all through <see cref="ICloudRangeReader"/>.
-/// </summary>
 public sealed class ZarrMetadataExtractor : IZarrMetadataReader
 {
     // Consolidated metadata and CF coordinate manifests routinely exceed 64 KiB.
@@ -27,7 +21,6 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
     private const int MaxMetadataBytes = 16 * 1024 * 1024;
     private const int MaxVariables = 64;
 
-    /// <inheritdoc />
     public async Task<ZarrStoreMetadata> ReadMetadataAsync(
         ICloudRangeReader reader,
         string bucket,
@@ -335,11 +328,6 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
 
     // ---- Zarr v3 (zarr.json) ----------------------------------------------
 
-    /// <summary>
-    /// Reads a Zarr v3 store rooted at a <c>zarr.json</c> document. The root may be
-    /// a v3 group (variables discovered from a <c>variables</c> attribute manifest)
-    /// or a single v3 array.
-    /// </summary>
     private static async Task<ZarrStoreMetadata> ReadV3MetadataAsync(
         ICloudRangeReader reader,
         string bucket,
@@ -620,12 +608,6 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
         return chunks;
     }
 
-    /// <summary>
-    /// Resolves the chunk key encoding for a v3 array. Supports the v3 <c>default</c>
-    /// encoding (<c>c</c>-prefixed, configurable separator) and <c>v2</c> encoding
-    /// (dotted, no prefix). The encoding metadata is required; an omitted separator
-    /// defaults to slash for <c>default</c> and dot for <c>v2</c>.
-    /// </summary>
     private static ZarrChunkKeyEncoding ResolveV3ChunkKeyEncoding(JsonElement root, string name)
     {
         var encoding = root.GetProperty("chunk_key_encoding");
@@ -649,14 +631,7 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
             : new ZarrChunkKeyEncoding(separator, string.Empty, "0");
     }
 
-    /// <summary>
-    /// Inspects the v3 codec pipeline. Requires a leading <c>bytes</c> (endianness)
-    /// codec and at most one trailing <c>gzip</c> codec. Multi-byte samples require
-    /// little-endian bytes; gzip levels must be integers from zero through nine.
-    /// Gzip uses its RFC 1952 container, distinct from the RFC 1950 zlib container
-    /// used by v2 chunks. Uncompressed arrays return a null compressor. Unsupported
-    /// pipelines are rejected before any chunk data is read.
-    /// </summary>
+    // Multi-byte samples must be little-endian, gzip levels are integers from 0 through 9, and v3 gzip is an RFC 1952 container rather than the v2 zlib wrapper.
     private static string? ResolveV3Codecs(JsonElement root, string name, string dataType)
     {
         if (!root.TryGetProperty("codecs", out var codecsEl) || codecsEl.ValueKind != JsonValueKind.Array)
@@ -734,11 +709,6 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
         return compressor;
     }
 
-    /// <summary>
-    /// Normalizes a Zarr v3 <c>data_type</c> name (e.g. <c>float32</c>) to the
-    /// numpy little-endian dtype string the subset reader and CoverageJSON writer
-    /// consume (e.g. <c>&lt;f4</c>). Rejects unsupported data types cleanly.
-    /// </summary>
     internal static string NormalizeV3DataType(string dataType, string name) => dataType switch
     {
         "bool" => "|b1",
@@ -950,16 +920,6 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
         return (srid, extent, primary, xDim, yDim, tDim, temporal, axes);
     }
 
-    /// <summary>
-    /// Builds the additional (non-spatial, non-temporal) coordinate axes from an
-    /// optional <c>axes</c> manifest in the store <c>.zattrs</c>. Each entry is a
-    /// <c>{ "name", "coordinates":[...] }</c> object for an explicit (possibly
-    /// irregular) axis, or a <c>{ "name", "start", "end" }</c> object for an
-    /// evenly-spaced axis; the sample count is taken from the matching array
-    /// dimension. Spatial and temporal dimensions are excluded so they keep their
-    /// dedicated handling. Entries that do not match any array dimension, or that
-    /// declare neither coordinates nor a start/end pair, are skipped.
-    /// </summary>
     private static ZarrAxis[] ResolveAdditionalAxes(
         JsonElement root,
         string? xDim,
@@ -1065,14 +1025,6 @@ public sealed class ZarrMetadataExtractor : IZarrMetadataReader
                el.TryGetDouble(out value);
     }
 
-    /// <summary>
-    /// Builds the store temporal extent from optional <c>.zattrs</c> keys
-    /// <c>t_start</c>, <c>t_end</c>, and a step expressed as either
-    /// <c>t_step</c> (ISO-8601 duration / RFC3339-parseable timespan) or
-    /// <c>t_step_seconds</c> (numeric seconds). Step count is taken from the
-    /// time dimension's length on any array that declares it. Returns null when
-    /// the required attributes are absent or unresolvable.
-    /// </summary>
     private static TemporalExtent? ResolveTemporalExtent(JsonElement root, string? tDim, List<ZarrArrayMetadata> arrays)
     {
         if (string.IsNullOrEmpty(tDim))

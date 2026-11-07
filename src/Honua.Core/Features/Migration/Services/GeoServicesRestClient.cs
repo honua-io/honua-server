@@ -24,10 +24,6 @@ using Honua.Sdk.GeoServices.FeatureServer.Models;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// HTTP client for communicating with ArcGIS REST API services.
-/// Handles service discovery, layer metadata retrieval, and paginated feature queries.
-/// </summary>
 internal sealed partial class GeoServicesRestClient
 {
     private const string DisallowedNetworkAddressMessage = "ArcGIS service URL resolves to a disallowed network address.";
@@ -63,9 +59,6 @@ internal sealed partial class GeoServicesRestClient
         return new PinnedDnsConnector(resolver, PinnedConnectionFailures).CreateHandler(MaxConnectionsPerArcGisHost);
     }
 
-    /// <summary>
-    /// Discover service metadata from an ArcGIS Server URL.
-    /// </summary>
     public async Task<GeoservicesServiceInfo> DiscoverServiceAsync(
         string serviceUrl,
         int timeoutSeconds,
@@ -128,9 +121,6 @@ internal sealed partial class GeoServicesRestClient
         };
     }
 
-    /// <summary>
-    /// Get detailed metadata for a specific layer.
-    /// </summary>
     public async Task<GeoservicesLayerInfo> GetLayerInfoAsync(
         string serviceUrl,
         int layerId,
@@ -222,7 +212,6 @@ internal sealed partial class GeoServicesRestClient
         };
     }
 
-    /// <summary>Fetches all source object IDs for a layer.</summary>
     public async Task<long[]> QueryObjectIdsAsync(
         string serviceUrl,
         int layerId,
@@ -246,11 +235,6 @@ internal sealed partial class GeoServicesRestClient
         return [.. objectIds];
     }
 
-    /// <summary>
-    /// Counts the source features matching <paramref name="whereClause"/> (all features when it is
-    /// empty). Unlike the best-effort count on <see cref="GetLayerInfoAsync"/>, failures propagate so
-    /// callers can distinguish "unreadable" from a real count.
-    /// </summary>
     public async Task<long> QueryFeatureCountAsync(
         string serviceUrl,
         int layerId,
@@ -276,11 +260,6 @@ internal sealed partial class GeoServicesRestClient
             cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Queries the extent of the source features matching <paramref name="whereClause"/>.
-    /// This is the data extent, not the extent advertised on the layer metadata, so a stale
-    /// service extent can be told apart from the features that were transferred (#4826).
-    /// </summary>
     public async Task<BoundingBox?> QueryFeatureExtentAsync(
         string serviceUrl,
         int layerId,
@@ -335,17 +314,6 @@ internal sealed partial class GeoServicesRestClient
             srid > 0 ? srid : null);
     }
 
-    /// <summary>
-    /// Query attachment metadata for one or more features in a layer.
-    /// </summary>
-    /// <param name="serviceUrl">Service root URL (FeatureServer or MapServer).</param>
-    /// <param name="layerId">Layer identifier.</param>
-    /// <param name="objectIds">Source ObjectIds whose attachments should be enumerated.</param>
-    /// <param name="timeoutSeconds">Per-request timeout in seconds.</param>
-    /// <param name="maxRetries">Maximum HTTP retry attempts.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <param name="credentials">Optional credential descriptor.</param>
-    /// <returns>Attachment groupings keyed by parent ObjectId. Empty when no objectIds are supplied.</returns>
     public async Task<GeoServicesAttachmentQueryResponse> QueryAttachmentsAsync(
         string serviceUrl,
         int layerId,
@@ -395,10 +363,6 @@ internal sealed partial class GeoServicesRestClient
         };
     }
 
-    /// <summary>
-    /// Download a single attachment as a binary stream. The caller owns the returned stream
-    /// and the disposable wrapper that backs it.
-    /// </summary>
     public async Task<GeoServicesAttachmentDownload> DownloadAttachmentAsync(
         string serviceUrl,
         int layerId,
@@ -447,9 +411,6 @@ internal sealed partial class GeoServicesRestClient
         }
     }
 
-    /// <summary>
-    /// Query features from a layer with pagination support.
-    /// </summary>
     public async Task<GeoServicesQueryResult> QueryFeaturesAsync(
         string serviceUrl,
         int layerId,
@@ -799,11 +760,7 @@ internal sealed partial class GeoServicesRestClient
     }
 }
 
-/// <summary>
-/// Categorises authentication-related ArcGIS REST failures so callers can surface
-/// structured diagnostics (credential expired vs. denied vs. required) without
-/// reflecting raw token material into logs or job state.
-/// </summary>
+// Auth failures are classified without copying raw token material into logs or job state.
 internal enum GeoServicesAuthenticationFailureKind
 {
     CredentialRequired,
@@ -828,9 +785,6 @@ internal sealed class GeoServicesAuthenticationException : HttpRequestException
     public int UpstreamStatusCode { get; }
 }
 
-/// <summary>
-/// Result of a paginated feature query.
-/// </summary>
 internal sealed record GeoServicesQueryResult
 {
     public required GeoServicesSourceFeature[] Features { get; init; }
@@ -900,10 +854,6 @@ internal sealed record GeoServicesAttachmentInfo
 
 #pragma warning restore CA1812
 
-/// <summary>
-/// Wraps a single ArcGIS attachment download: the binary content stream plus the
-/// per-download source client whose lifetime the caller controls.
-/// </summary>
 internal sealed class GeoServicesAttachmentDownload : IAsyncDisposable, IDisposable
 {
     private readonly IDisposable _owner;
@@ -950,9 +900,6 @@ internal sealed class GeoServicesAttachmentDownload : IAsyncDisposable, IDisposa
     }
 }
 
-/// <summary>
-/// JSON adaptation context for canonical migration relationship declarations.
-/// </summary>
 [JsonSerializable(typeof(GeoservicesRelationshipInfo[]))]
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 internal sealed partial class GeoServicesJsonContext : JsonSerializerContext

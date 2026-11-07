@@ -10,13 +10,6 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Adaptive sampler that dynamically adjusts tracing sampling rates based on
-/// system load, error rates, and operation importance.
-/// WEEK 5 FIX: Enhanced with ML-based intelligence for historical patterns, temporal adjustments, and predictive sampling.
-/// Provides intelligent tracing with minimal performance overhead for production environments.
-/// Integrates with smart sampling rules for business-aware sampling decisions.
-/// </summary>
 public sealed partial class AdaptiveSampler : IAdaptiveSampler, IDisposable
 {
     private readonly AdaptiveSamplingOptions _options;
@@ -35,18 +28,8 @@ public sealed partial class AdaptiveSampler : IAdaptiveSampler, IDisposable
     private readonly MLSamplingDecisionEngine _mlEngine;
     private readonly ConcurrentDictionary<string, OperationPattern> _operationPatterns;
 
-    /// <summary>
-    /// Caps the number of distinct raw operation names tracked in
-    /// <see cref="_operationPatterns"/>. Operation names are caller-supplied and not from a
-    /// fixed enum, so without a cap a workload with high-cardinality/unbounded operation
-    /// names would grow this dictionary without bound.
-    /// </summary>
     private const int MaxOperationPatterns = 1000;
 
-    /// <summary>
-    /// Initializes a new adaptive sampler with configuration and metrics collection.
-    /// WEEK 5 FIX: Enhanced with ML-based intelligence components
-    /// </summary>
     public AdaptiveSampler(
         IOptions<AdaptiveSamplingOptions> options,
         ISystemMetricsCollector metricsCollector,
@@ -86,10 +69,6 @@ public sealed partial class AdaptiveSampler : IAdaptiveSampler, IDisposable
         }
     }
 
-    /// <summary>
-    /// Determines if a specific operation should be sampled based on adaptive rules.
-    /// WEEK 5 FIX: Enhanced with ML-based intelligence for predictive sampling decisions
-    /// </summary>
     public bool ShouldSample(string operationName, ActivityKind activityKind = ActivityKind.Internal)
     {
         if (_disposed)
@@ -131,11 +110,6 @@ public sealed partial class AdaptiveSampler : IAdaptiveSampler, IDisposable
         return samplingDecision.WasSampled;
     }
 
-    /// <summary>
-    /// Determines if a specific operation should be sampled using smart sampling rules
-    /// and adaptive logic with rich context information.
-    /// WEEK 5 FIX: Enhanced with ML-based context integration
-    /// </summary>
     public bool ShouldSample(SamplingContext context)
     {
         if (_disposed)
@@ -170,9 +144,6 @@ public sealed partial class AdaptiveSampler : IAdaptiveSampler, IDisposable
         return ShouldSample(context.OperationName ?? "unknown", ActivityKind.Internal);
     }
 
-    /// <summary>
-    /// Gets the current effective sampling rate.
-    /// </summary>
     public double GetCurrentSamplingRate()
     {
         return Volatile.Read(ref _currentSamplingRate);
@@ -329,9 +300,6 @@ public sealed partial class AdaptiveSampler : IAdaptiveSampler, IDisposable
         };
     }
 
-    /// <summary>
-    /// WEEK 5 FIX: ML-enhanced sampling rate calculation using historical patterns and predictions
-    /// </summary>
     private double CalculateMLEnhancedSamplingRate(SystemMetrics metrics, double errorRate, double traditionalRate)
     {
         var temporalContext = TemporalPatternAnalyzer.GetCurrentContext();
@@ -356,9 +324,6 @@ public sealed partial class AdaptiveSampler : IAdaptiveSampler, IDisposable
         return Math.Clamp(mlEnhancedRate, _options.MinSamplingRate, _options.MaxSamplingRate);
     }
 
-    /// <summary>
-    /// WEEK 5 FIX: Update ML components with new data for continuous learning
-    /// </summary>
     private void UpdateMLComponents(SystemMetrics metrics, double errorRate, double currentRate)
     {
         var timestamp = DateTime.UtcNow;
@@ -379,9 +344,6 @@ public sealed partial class AdaptiveSampler : IAdaptiveSampler, IDisposable
         }
     }
 
-    /// <summary>
-    /// WEEK 5 FIX: Record operation pattern for ML learning
-    /// </summary>
     private void RecordOperationPattern(string operationName, double samplingRate, bool wasSampled)
     {
         // Mutating a shared pattern inside AddOrUpdate is not thread-safe (the update factory can
@@ -405,9 +367,6 @@ public sealed partial class AdaptiveSampler : IAdaptiveSampler, IDisposable
         pattern.Record(samplingRate, wasSampled);
     }
 
-    /// <summary>
-    /// WEEK 5 FIX: Record smart decision for ML learning
-    /// </summary>
     private void RecordSmartDecisionForLearning(SamplingContext context, SmartSamplingDecision decision)
     {
         if (string.IsNullOrEmpty(context.OperationName))
@@ -424,9 +383,6 @@ public sealed partial class AdaptiveSampler : IAdaptiveSampler, IDisposable
         });
     }
 
-    /// <summary>
-    /// Releases all resources used by the <see cref="AdaptiveSampler"/>.
-    /// </summary>
     public void Dispose()
     {
         if (_disposed)
@@ -554,34 +510,18 @@ public sealed partial class AdaptiveSampler : IAdaptiveSampler, IDisposable
     }
 }
 
-/// <summary>
-/// Interface for adaptive sampling functionality.
-/// </summary>
 public interface IAdaptiveSampler
 {
-    /// <summary>
-    /// Determines whether an operation should be traced.
-    /// </summary>
     bool ShouldSample(string operationName, ActivityKind activityKind = ActivityKind.Internal);
 
-    /// <summary>
-    /// Determines whether an operation should be traced using smart sampling rules
-    /// and rich context information.
-    /// </summary>
     bool ShouldSample(SamplingContext context);
 
-    /// <summary>
-    /// Gets the current effective sampling rate.
-    /// </summary>
     double GetCurrentSamplingRate();
 
 }
 
 // WEEK 5 FIX: ML-based intelligence component classes
 
-/// <summary>
-/// WEEK 5 FIX: Tracks historical patterns in system metrics and sampling decisions for pattern recognition
-/// </summary>
 internal sealed class HistoricalPatternTracker : IDisposable
 {
     private readonly ConcurrentQueue<HistoricalDataPoint> _dataPoints = new();
@@ -686,9 +626,6 @@ internal sealed class HistoricalPatternTracker : IDisposable
     }
 }
 
-/// <summary>
-/// WEEK 5 FIX: Analyzes temporal patterns for time-based sampling adjustments
-/// </summary>
 internal sealed class TemporalPatternAnalyzer : IDisposable
 {
     private readonly ConcurrentQueue<TemporalDataPoint> _temporalData = new();
@@ -798,9 +735,6 @@ internal sealed class TemporalPatternAnalyzer : IDisposable
     }
 }
 
-/// <summary>
-/// WEEK 5 FIX: Predicts future load based on historical data and trends
-/// </summary>
 internal sealed class PredictiveLoadForecaster : IDisposable
 {
     private readonly ConcurrentQueue<LoadDataPoint> _loadHistory = new();
@@ -902,9 +836,6 @@ internal sealed class PredictiveLoadForecaster : IDisposable
     }
 }
 
-/// <summary>
-/// WEEK 5 FIX: ML-based decision engine that combines all intelligence sources
-/// </summary>
 internal sealed class MLSamplingDecisionEngine : IDisposable
 {
     private readonly ILogger _logger;
@@ -1017,9 +948,6 @@ internal sealed class MLSamplingDecisionEngine : IDisposable
     }
 }
 
-/// <summary>
-/// WEEK 5 FIX: Simple linear regression for load prediction
-/// </summary>
 internal sealed class LinearRegression
 {
     private double _slope;
@@ -1085,7 +1013,6 @@ internal sealed class TemporalDataPoint
 
 internal sealed class TemporalContext
 {
-    /// <summary>Minute-of-epoch stamp used to invalidate the cached instance.</summary>
     public long MinuteStamp { get; set; }
     public TimeSpan TimeOfDay { get; set; }
     public DayOfWeek DayOfWeek { get; set; }
@@ -1124,7 +1051,6 @@ internal sealed class OperationPattern
     public DateTime LastSeen => new(Volatile.Read(ref _lastSeenTicks), DateTimeKind.Utc);
     public double AverageSamplingRate => Volatile.Read(ref _averageSamplingRate);
 
-    /// <summary>Records one sampling decision; safe to call concurrently.</summary>
     public void Record(double samplingRate, bool wasSampled)
     {
         var total = Interlocked.Increment(ref _totalInvocations);

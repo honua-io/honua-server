@@ -7,185 +7,80 @@ using Honua.Core.Features.Migration.Domain;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Inputs the fidelity evaluator folds into a single migration verdict (issue #4600). Every field
-/// is a fact captured by the import pipeline; the evaluator itself performs no I/O so the verdict
-/// is deterministic and replayable from persisted evidence.
-/// </summary>
 public sealed record MigrationFidelityEvaluationInput
 {
-    /// <summary>Source layer display name, used as the default difference subject.</summary>
     public string? LayerName { get; init; }
 
-    /// <summary>
-    /// Data-movement reconciliation artifact, or <c>null</c> when the probe did not execute.
-    /// </summary>
     public MigrationReconciliationArtifact? DataReconciliation { get; init; }
 
-    /// <summary>
-    /// True when the data-movement reconciliation probe was actually run. Distinguishes "ran and
-    /// passed" from "never ran", which <see cref="DataReconciliation"/> being non-null cannot.
-    /// </summary>
+    // A non-null probe result does not mean the probe ran; this flag separates a pass from a probe that never ran.
     public bool DataReconciliationExecuted { get; init; }
 
-    /// <summary>
-    /// Catalog (schema/domain/identifier/subtype/relationship) reconciliation report, or
-    /// <c>null</c> when the pass did not execute.
-    /// </summary>
     public MigrationCatalogReconciliationReport? CatalogReconciliation { get; init; }
 
-    /// <summary>True when the catalog reconciliation pass was actually run.</summary>
     public bool CatalogReconciliationExecuted { get; init; }
 
-    /// <summary>
-    /// True when the run published a queryable target layer. Catalog reconciliation is reported as
-    /// not executed only when a target exists. Data-movement reconciliation is reported whenever
-    /// the probe did not run, including an unpublished import, so that import cannot be full fidelity.
-    /// </summary>
+    // An unpublished import cannot be full fidelity, because data-movement reconciliation is reported as not executed when the probe did not run.
     public bool PublishedTarget { get; init; }
 
-    /// <summary>
-    /// True when the run was asked to publish its target layer. A requested publish that did not produce
-    /// <see cref="PublishedTarget"/> is a blocking omission, not an import that simply chose not to publish.
-    /// </summary>
     public bool PublishRequested { get; init; }
 
-    /// <summary>Number of source records read that failed to land in the target table.</summary>
     public int FailedFeatures { get; init; }
 
-    /// <summary>Number of source records that were written to the target table.</summary>
     public int FeaturesProcessed { get; init; }
 
-    /// <summary>
-    /// Source records the transfer was expected to account for, or <c>null</c> when the importer
-    /// did not capture a count. Compared with <see cref="FeaturesProcessed"/> plus
-    /// <see cref="FailedFeatures"/> only when a value is present.
-    /// </summary>
     public long? SourceCountBeforeTransfer { get; init; }
 
-    /// <summary>
-    /// Source features stored with a null geometry because the source geometry could not be converted.
-    /// </summary>
+    // The source geometry could not be converted, so the feature was stored with a null geometry.
     public int UnconvertedGeometryCount { get; init; }
 
-    /// <summary>Attachment copy outcome, or <c>null</c> when the source advertises no attachments.</summary>
     public MigrationFidelityAttachmentInput? Attachments { get; init; }
 
-    /// <summary>
-    /// Relationship apply outcomes for the run. Deferred/skipped relationships are blocking
-    /// omissions: a migration that silently drops a relationship is not full fidelity.
-    /// </summary>
     public MigrationRelationshipApplyOutcome[] Relationships { get; init; } = [];
 
-    /// <summary>
-    /// Source record population observed when the transfer started and when it finished, or
-    /// <c>null</c> when the importer does not capture one. A live source is not a snapshot: records
-    /// added or deleted while pages are being read leave the target matching no single moment of the
-    /// source, so the change is reported rather than implied away.
-    /// </summary>
     public MigrationFidelitySourceSnapshotInput? SourceSnapshot { get; init; }
 }
 
-/// <summary>
-/// Source population facts bracketing a transfer (issue #4600 acceptance criterion 5). Counts are
-/// taken with the import's own filter applied, so a filtered import is compared with the filtered
-/// source.
-/// </summary>
 public sealed record MigrationFidelitySourceSnapshotInput
 {
-    /// <summary>Source records matching the import filter when the transfer started, or <c>null</c> when unreadable.</summary>
     public long? CountBeforeTransfer { get; init; }
 
-    /// <summary>Source records matching the import filter when the transfer finished, or <c>null</c> when unreadable.</summary>
     public long? CountAfterTransfer { get; init; }
 
-    /// <summary>
-    /// True when the source object-ID set itself changed (records swapped in and out) even though the
-    /// count may be unchanged. Only captured on the object-ID window path, which enumerates the IDs.
-    /// </summary>
     public bool MembershipChanged { get; init; }
 }
 
-/// <summary>
-/// Attachment-side facts, captured independently of the feature count so a run cannot pass the
-/// attachment check merely because the feature counts matched (issue #4600 acceptance criterion 6).
-/// </summary>
+// Attachment facts are captured apart from the feature count, so matching feature counts cannot pass the attachment check.
 public sealed record MigrationFidelityAttachmentInput
 {
-    /// <summary>Attachments the source advertised across every parent feature that was probed.</summary>
     public int Advertised { get; init; }
 
-    /// <summary>Attachments whose bytes were successfully written to the Honua attachment store.</summary>
     public int Copied { get; init; }
 
-    /// <summary>Attachments that were advertised but could not be copied.</summary>
     public int Failed { get; init; }
 
-    /// <summary>
-    /// Parent features whose attachment inventory could never be read (the source metadata query
-    /// failed). Their attachments are neither copied nor counted as failed, so the attachment total
-    /// is unknown and the check is unverified rather than passing.
-    /// </summary>
+    // Attachments that could not be listed are unverified, not failed and not passed.
     public int UnverifiedParents { get; init; }
 
-    /// <summary>True when retained target attachments or failed reconciliation prevent verifying the target set.</summary>
     public bool TargetUnverified { get; init; }
 
-    /// <summary>
-    /// True when the source layer advertised attachments but the copy step never ran (disabled by
-    /// request, or no attachment store registered).
-    /// </summary>
+    // The source advertised attachments, but the copy never ran, so the check is not a pass.
     public bool CopySkipped { get; init; }
 }
 
-/// <summary>
-/// The unified migration verdict: one classification plus the per-resource differences that
-/// produced it.
-/// </summary>
 public sealed record MigrationFidelityEvaluation
 {
-    /// <summary>One of <see cref="MigrationFidelityVerdicts"/>.</summary>
     public required string Verdict { get; init; }
 
-    /// <summary>
-    /// Differences ordered deterministically by (code, subject) so persisted evidence and test
-    /// assertions are stable.
-    /// </summary>
     public MigrationFidelityDifference[] Differences { get; init; } = [];
 
-    /// <summary>
-    /// True when the run must be routed to operator review instead of being reported as a
-    /// successful migration.
-    /// </summary>
     public bool IsBlocking => string.Equals(Verdict, MigrationFidelityVerdicts.Incomplete, StringComparison.Ordinal);
 
-    /// <summary>
-    /// Operator-visible summary of the blocking differences, or <c>null</c> when nothing blocks.
-    /// </summary>
     public string? BlockingReason { get; init; }
 }
 
-/// <summary>
-/// Folds the data-movement reconciliation artifact, the catalog reconciliation report, the
-/// record/attachment loss counters and the relationship apply outcomes into a single migration
-/// verdict (issue #4600, acceptance criterion 3).
-/// </summary>
-/// <remarks>
-/// Before this evaluator the two reconciliation passes disagreed by construction: the data artifact
-/// alone decided <c>Completed</c> vs <c>NeedsReview</c>, while catalog findings — the pass that
-/// catches "counts match but the schema is wrong" — were recorded and then ignored. Lost records,
-/// lost attachments and deferred relationships were likewise only warnings. A job could therefore
-/// report success while being a strictly weaker migration than the source service.
-/// </remarks>
 public static class MigrationFidelityEvaluator
 {
-    /// <summary>
-    /// Evaluates the unified verdict. Pure and deterministic: identical inputs always yield an
-    /// identical verdict and an identically ordered difference set.
-    /// </summary>
-    /// <param name="input">Facts captured by the import pipeline.</param>
-    /// <returns>The unified verdict and its supporting differences.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="input"/> is <c>null</c>.</exception>
     public static MigrationFidelityEvaluation Evaluate(MigrationFidelityEvaluationInput input)
     {
         ArgumentNullException.ThrowIfNull(input);
@@ -206,13 +101,6 @@ public static class MigrationFidelityEvaluator
         return Fold(differences);
     }
 
-    /// <summary>
-    /// Orders differences deterministically and folds them into a verdict: any blocking difference
-    /// is <see cref="MigrationFidelityVerdicts.Incomplete"/>, any other difference is
-    /// <see cref="MigrationFidelityVerdicts.Unverified"/>, none is
-    /// <see cref="MigrationFidelityVerdicts.FullFidelity"/>. Shared with the service-level fold in
-    /// <see cref="MigrationBatchFidelityEvaluator"/> so both levels classify identically.
-    /// </summary>
     internal static MigrationFidelityEvaluation Fold(IEnumerable<MigrationFidelityDifference> differences)
     {
         var ordered = differences

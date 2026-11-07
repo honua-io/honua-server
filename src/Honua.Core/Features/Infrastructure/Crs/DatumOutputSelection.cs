@@ -5,29 +5,12 @@ using Honua.Core.Features.Shared.Models;
 
 namespace Honua.Core.Features.Infrastructure.Crs;
 
-/// <summary>
-/// Resolves the catalog pipeline for a draw or sample reprojection. Feature query
-/// output already carries <see cref="DatumTransformationSelection"/>; tiles, scene
-/// publishing, and raster identify call this when the caller did not.
-/// </summary>
 internal static class DatumOutputSelection
 {
     private const int Wgs84 = 4326;
     private const int Nad83 = 4269;
 
-    /// <summary>
-    /// Catalog selection for reprojecting <paramref name="fromSrid"/> to <paramref name="toSrid"/>.
-    /// </summary>
-    /// <remarks>
-    /// A direct catalog pair wins. Web Mercator uses the WGS 84 geographic pair and
-    /// <c>DatumTransformSql</c> composes the projection. NAD27 and the other grids that
-    /// reach WGS 84 only through NAD83 use that grid; the NAD83 to WGS 84 step stays the
-    /// catalog no-operation. No catalog entry returns null so the caller keeps two-argument
-    /// <c>ST_Transform</c>.
-    /// When <paramref name="area"/> is set, a pair that has areas of use must match exactly
-    /// one of them. No match, or more than one, stays null instead of the no-envelope default
-    /// (the CONUS NAD27 grid), which does not cover an Alaska tile or the world at zoom 0.
-    /// </remarks>
+    // No catalog entry, or more than one area of use, returns null so the caller keeps two-argument ST_Transform instead of the CONUS NAD27 grid.
     public static DatumTransformationSelection? Resolve(
         IDatumTransformationCatalog catalog,
         int fromSrid,
@@ -102,11 +85,6 @@ internal static class DatumOutputSelection
         return null;
     }
 
-    /// <summary>
-    /// Geographic degrees for a tile envelope. Web Mercator bounds are inverse-projected.
-    /// Any other projected tile CRS returns null; the caller then keeps two-argument
-    /// <c>ST_Transform</c> when the datum pair has areas of use.
-    /// </summary>
     public static DatumAreaEnvelope? AreaForTile(
         double xMin,
         double yMin,
@@ -205,9 +183,6 @@ internal static class DatumOutputSelection
         return true;
     }
 
-    /// <summary>
-    /// Swaps the selection so a tile envelope in the output CRS can be filtered in the layer CRS.
-    /// </summary>
     public static DatumTransformationSelection Inverse(DatumTransformationSelection selection)
     {
         ArgumentNullException.ThrowIfNull(selection);

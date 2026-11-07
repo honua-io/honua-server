@@ -326,7 +326,9 @@ public sealed class RbacTestLayerCatalog : ITestMetadataV2GraphSource
     /// optional shared alpha layer / reversed service order, with per-service and per-layer
     /// access policies seeded onto services and resources respectively).
     /// </summary>
-    public TestMetadataV2GraphProvider BuildProvider()
+    public TestMetadataV2GraphProvider BuildProvider() => new(BuildGraph());
+
+    public MetadataV2Graph BuildGraph()
     {
         var builder = new TestMetadataV2GraphBuilder();
         AddLayer(builder, ServiceRbacTestFixture.AlphaLayerId, "Alpha Layer", _alphaLayerAccessPolicy);
@@ -366,7 +368,6 @@ public sealed class RbacTestLayerCatalog : ITestMetadataV2GraphSource
                     serviceId,
                     $"res-layer-{layerId.ToString(CultureInfo.InvariantCulture)}",
                     layerIndex: layerId,
-                    storageBindingId: $"binding-layer-{layerId.ToString(CultureInfo.InvariantCulture)}",
                     publicationType: MetadataV2PublicationType.ODataEntitySet,
                     isPrimary: isPrimary);
                 builder.AddPublication(
@@ -374,13 +375,12 @@ public sealed class RbacTestLayerCatalog : ITestMetadataV2GraphSource
                     serviceId,
                     $"res-layer-{layerId.ToString(CultureInfo.InvariantCulture)}",
                     layerIndex: layerId,
-                    storageBindingId: $"binding-layer-{layerId.ToString(CultureInfo.InvariantCulture)}",
                     publicationType: MetadataV2PublicationType.EsriFeatureLayer,
                     isPrimary: isPrimary);
             }
         }
 
-        return builder.BuildProvider();
+        return builder.Build();
     }
 
     private static void AddLayer(TestMetadataV2GraphBuilder builder, int layerId, string name, AccessPolicy? accessPolicy)
@@ -412,12 +412,7 @@ public sealed class RbacTestLayerCatalog : ITestMetadataV2GraphSource
                         IsGeographic = true
                     },
                     PrimaryGeometryField = "shape"
-                })
-            .AddStorageBinding(
-                $"binding-layer-{layerId.ToString(CultureInfo.InvariantCulture)}",
-                resourceId,
-                $"test.layers.{layerId.ToString(CultureInfo.InvariantCulture)}",
-                storageLayerId: layerId);
+                });
     }
 
     private static Dictionary<string, JsonElement> BuildServiceOptions()

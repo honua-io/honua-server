@@ -5,18 +5,15 @@ description: "Use the quickstart's task-specific Agent Skills and verify their p
 ---
 # Honua operating skills
 
-The Compose quickstart carries five [Agent Skills](https://agentskills.io/specification)
+The Compose quickstart carries two [Agent Skills](https://agentskills.io/specification)
 under `skills/`, alongside `AGENTS.md`. Each directory contains `SKILL.md` and
 supporting references. Installation is explicit; the package does not change
 your home directory or permissions.
 
 | Skill | Use it for | Workflow family |
 | --- | --- | --- |
-| `honua-install` | Install, readiness, secret files | Automate / Deploy |
 | `honua-ops` | Findings, approved restarts, upgrades and rollback | Automate / Deploy |
 | `honua-services` | Import, publish and verify filtered results | Publish Data |
-| `honua-studio-maps` | Studio styles, saved versions and audience | Build App |
-| `honua-tuning` | Measured publication budgets | Automate / Deploy |
 
 These workflow families align with geospatial-mcp's skills catalog. Its
 visualization, composition, query-shaping and publishing skills complement
@@ -38,7 +35,7 @@ the trustworthiness of instructions. Site edits to `AGENTS.md` change its digest
 ## Install for Claude Code and Codex
 
 From the trusted, extracted quickstart directory, install the same canonical
-files for either host (or both). These commands copy all five skills and their
+files for either host (or both). These commands copy both skills and their
 references without changing their bytes:
 
 ```bash
@@ -73,4 +70,8 @@ its execution approval policy. Reading `SKILL.md` alone grants no permission.
 Format validation and package byte checks do not measure agent task success.
 A separate evaluation needs a pinned guide-only baseline and a guide-plus-skills
 arm, the same product and client revisions, equivalent permissions and tasks,
-and per-stage measured outcomes. That evaluation is separate from this package.
+and per-stage measured outcomes. The two skills above stayed after one informal
+local comparison on a quickstart. That comparison did not pin product revisions,
+client versions, or file hashes. The notes are
+[operating-skills-ab.md](https://github.com/honua-io/honua-server/blob/213e7ef3bf243fddf30c06a4cdb4cac737b9bfc8/docs/internal/evidence/operating-skills-ab.md).
+The record is not part of the quickstart package.

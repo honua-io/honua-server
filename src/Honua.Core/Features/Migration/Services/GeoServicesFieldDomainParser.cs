@@ -6,30 +6,13 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Shared, deterministic parser that converts an Esri field <c>domain</c> JSON
-/// fragment into the canonical <see cref="MetadataV2FieldDomain"/> model.
-/// <para>
-/// This is the single source of truth for Esri domain capture so the migration
-/// inventory artifact and the import/publish field builder agree on cap
-/// semantics (<see cref="CodedValueDomainCap"/>). Coded-value domains larger than
-/// the cap are reported as truncated and not persisted, so a large domain is
-/// surfaced as a review warning rather than being silently halved or
-/// false-failing later reconciliation against a capped artifact.
-/// </para>
-/// </summary>
+// A coded-value domain past the cap is reported as truncated and not persisted, so later reconciliation does not compare a halved domain.
 public static class GeoServicesFieldDomainParser
 {
     public const int CodedValueDomainCap = 100;
 
-    /// <summary>
-    /// Canonical domain-kind token for an enumerated coded-value domain.
-    /// </summary>
     public const string CodedValueDomainType = "codedValue";
 
-    /// <summary>
-    /// Canonical domain-kind token for a numeric range domain.
-    /// </summary>
     public const string RangeDomainType = "range";
 
     public static GeoServicesFieldDomainParseResult Parse(JsonElement fieldElement)
@@ -193,14 +176,6 @@ public static class GeoServicesFieldDomainParser
             Truncated: false);
     }
 
-    /// <summary>
-    /// True when a parsed domain is one the shared edit validator actually enforces: a coded-value
-    /// domain with at least one code, or a range domain with exactly two numeric bounds. Mirrors the
-    /// rules in <c>FeatureMutationValidator.ValidateAgainstDomain</c>, which accepts every value for an
-    /// unknown domain type, an empty coded-value list, or a missing/malformed range (issue #4600).
-    /// </summary>
-    /// <param name="domain">The parsed domain, or <c>null</c> when none was persisted.</param>
-    /// <returns><c>true</c> when edits against the published field are validated by this domain.</returns>
     public static bool IsEnforceable(MetadataV2FieldDomain? domain)
     {
         if (domain is null)
@@ -243,8 +218,5 @@ public readonly record struct GeoServicesFieldDomainParseResult(
     bool Truncated,
     string? DomainName = null)
 {
-    /// <summary>
-    /// Shared result for a field that carries no domain.
-    /// </summary>
     public static readonly GeoServicesFieldDomainParseResult None = new(Domain: null, Truncated: false);
 }

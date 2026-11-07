@@ -30,6 +30,36 @@ Desktop GeoServices REST client, QGIS (manual lane), Power BI, and Excel evidenc
 certification snapshot; the PyQGIS, MapLibre, Esri Leaflet, and Cesium lanes are
 re-certified automatically on every run.
 
+## Policies on resources sharing managed storage
+
+Reads through explicit or resource-primary bindings apply the selected resource's
+row and field policies, including FeatureServer and OData publications backed by
+the managed shared feature table.
+
+Bindings to the primary managed `features` relation must declare its `layer_id`
+partition selector and a storage-layer value. Reads reject missing or incompatible
+partition mappings before querying feature rows. Custom or external same-named
+tables retain their declared source mapping.
+
+OData writes through an explicit binding require the bound reader to verify the
+managed writer's connection, physical table, column mapping and layer partition.
+Custom tables on the default connection remain readable but reject OData writes
+before mutation pre-reads. Connection-bound writes remain unsupported.
+
+A numeric-only primary-provider operation cannot select a resource policy when
+several resources bind the same actual storage layer identifier. Such operations
+fail closed when any applicable permanent filter, row policy or field mask
+exists. The numeric lookup conservatively considers metadata bindings sharing
+that identifier across connections; it does not guess which physical data source
+the caller intended. Policy-free duplicate bindings retain their previous
+compatibility.
+
+This restriction includes managed writes and mutation pre-reads/state-token
+reads until a resource-bound writer contract is available. Publishing the same
+canonical resource through multiple publications avoids a conflicting resource
+identity at that boundary. Distinct public layer indexes do not resolve an
+ambiguous actual storage layer identifier.
+
 ## Protected feature fields
 
 Updates reject changes or removals of fields declared non-editable and the

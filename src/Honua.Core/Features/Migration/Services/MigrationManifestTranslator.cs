@@ -13,17 +13,8 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Translates source inventory artifacts into deterministic migration manifests.
-/// </summary>
 public static partial class MigrationManifestTranslator
 {
-    /// <summary>
-    /// Translate source inventory into a target manifest artifact.
-    /// </summary>
-    /// <param name="inventory">Source inventory artifact.</param>
-    /// <param name="options">Optional target naming options.</param>
-    /// <returns>Deterministic manifest artifact.</returns>
     public static MigrationManifestArtifact Translate(
         MigrationSourceInventoryArtifact inventory,
         MigrationManifestTranslationOptions? options = null)

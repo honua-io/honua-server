@@ -10,19 +10,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Issue #1253. Default <see cref="IMigrationBatchOrchestrator"/> implementation.
-/// Composes the existing per-layer Geoservices import pipeline into an ordered,
-/// resumable batch run with aggregated progress and post-publish relationship
-/// application (issue #1256).
-/// </summary>
-/// <remarks>
-/// The orchestrator resolves scoped collaborators (<see cref="IMigrationBatchRunCatalog"/>,
-/// <see cref="IDistributedImportJobManager"/>, <see cref="IGeoservicesImportService"/>,
-/// <see cref="IMetadataV2GraphStore"/>) through an <see cref="IServiceScopeFactory"/>
-/// per call so it can run from both request handlers and the long-lived batch
-/// background service without capturing scoped lifetimes.
-/// </remarks>
+// Scoped collaborators are resolved per call so a request handler and the long-lived batch service do not capture scoped lifetimes.
 public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestrator
 {
     private static readonly TimeSpan ChildJobTtl = TimeSpan.FromHours(24);
@@ -30,11 +18,6 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<MigrationBatchOrchestrator> _logger;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="MigrationBatchOrchestrator"/> class.
-    /// </summary>
-    /// <param name="scopeFactory">Factory used to resolve scoped collaborators per call.</param>
-    /// <param name="logger">Structured logger.</param>
     public MigrationBatchOrchestrator(
         IServiceScopeFactory scopeFactory,
         ILogger<MigrationBatchOrchestrator> logger)
@@ -43,7 +26,6 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <inheritdoc />
     public async Task<MigrationBatchRunRecord> StartAsync(
         MigrationBatchStartRequest request,
         CancellationToken cancellationToken = default)
@@ -124,7 +106,6 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
         return advanced ?? created;
     }
 
-    /// <inheritdoc />
     public async Task<MigrationBatchRunRecord?> AdvanceAsync(
         string batchId,
         CancellationToken cancellationToken = default)
@@ -465,12 +446,6 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
         return jobId;
     }
 
-    /// <summary>
-    /// The construct-accounting selection a batch's child rows describe: each child's source resource and
-    /// the target table it imports into.
-    /// </summary>
-    /// <param name="children">Batch child rows.</param>
-    /// <returns>The selection, in child order.</returns>
     public static MigrationConstructSelection[] ToConstructSelection(IEnumerable<MigrationBatchChildRecord> children)
     {
         ArgumentNullException.ThrowIfNull(children);
@@ -491,9 +466,6 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
             TargetTable = string.IsNullOrWhiteSpace(targetSchema) ? tableName : $"{targetSchema}.{tableName}"
         };
 
-    /// <summary>
-    /// Import job id for a batch child: stable for the child, distinct across batches and ordinals.
-    /// </summary>
     internal static string BuildChildJobId(string batchId, int ordinal)
     {
         var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
@@ -511,12 +483,6 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
         _ => null // still in flight
     };
 
-    /// <summary>
-    /// Deterministic topological order over the footprint: dependencies first,
-    /// stable by the supplied order for ties. Cycles and dangling dependency
-    /// references fall back to the supplied order so a malformed footprint still
-    /// runs rather than deadlocking.
-    /// </summary>
     private static List<MigrationBatchLayerSpec> OrderLayers(IReadOnlyList<MigrationBatchLayerSpec> layers)
     {
         var byId = new Dictionary<string, MigrationBatchLayerSpec>(StringComparer.Ordinal);
@@ -572,11 +538,7 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
         }
     }
 
-    /// <summary>
-    /// Outcome of the relationship-apply step. <see cref="Executed"/> is false when apply was
-    /// requested but never reached the catalog writer (manifest missing or unparseable, or the batch
-    /// stopped on a failed layer), which the service-level verdict treats as a blocking omission.
-    /// </summary>
+    // A requested relationship apply that never reached the catalog writer is a blocking omission.
     private readonly record struct RelationshipApplyResult(
         bool Executed,
         string? Note,

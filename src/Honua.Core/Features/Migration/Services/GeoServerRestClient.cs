@@ -20,9 +20,6 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// HTTP client for communicating with GeoServer REST API.
-/// </summary>
 internal sealed partial class GeoServerRestClient
 {
 
@@ -81,9 +78,6 @@ internal sealed partial class GeoServerRestClient
         };
     }
 
-    /// <summary>
-    /// Discover GeoServer service metadata, workspaces, datastores, layers and styles.
-    /// </summary>
     public async Task<GeoServerServiceInfo> DiscoverServiceAsync(
         string geoServerRestUrl,
         string? username,
@@ -1503,9 +1497,6 @@ internal sealed partial class GeoServerRestClient
     }
 }
 
-/// <summary>
-/// Activity tracking for GeoServer import operations.
-/// </summary>
 internal static partial class GeoServerImportActivity
 {
     private static readonly System.Diagnostics.ActivitySource ActivitySource = new("Honua.GeoServer.Import");

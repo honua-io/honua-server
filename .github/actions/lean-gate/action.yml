@@ -274,7 +274,7 @@ runs:
     - name: Create Test Results Directory
       if: inputs.phase != 'build'
       shell: bash
-      run: mkdir -p ./tests/TestResults
+      run: mkdir -p ./artifacts/test-results
 
     # Generator failures stay hard. Existing validators consume fresh projections,
     # so stale checked-in bytes cannot redden an otherwise valid PR.
@@ -298,7 +298,7 @@ runs:
             --configuration Release \
             --logger "trx;LogFileName=${{ inputs.trx-prefix }}-architecture-source.trx" \
             --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults
+            --results-directory ./artifacts/test-results
 
     # Fast unit smoke. The [UnitTest] tests in Server.Tests use NSubstitute /
     # NullLogger / in-memory caches and do NOT require the PostgreSQL service —
@@ -317,7 +317,7 @@ runs:
             --filter "Tier=Fast" \
             --logger "trx;LogFileName=${{ inputs.trx-prefix }}-server-fast.trx" \
             --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults
+            --results-directory ./artifacts/test-results
 
     # Migrated pure Fast cases retain the required smoke they had in Server.Tests.
     # Their catalogued projects were included in the one combined build above.
@@ -341,7 +341,7 @@ runs:
             --configuration Release \
             --logger "trx;LogFileName=${{ inputs.trx-prefix }}-architecture.trx" \
             --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults
+            --results-directory ./artifacts/test-results
 
     # Service-free MCP roster governance. The capability registry and taxonomy
     # fixture must mirror the same live DI tool surface. The assembly is already
@@ -359,7 +359,7 @@ runs:
             --filter "FullyQualifiedName~McpTaxonomyAlignmentTests|FullyQualifiedName~CapabilityRegistryConformanceTests" \
             --logger "trx;LogFileName=${{ inputs.trx-prefix }}-mcp-roster.trx" \
             --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults
+            --results-directory ./artifacts/test-results
 
     # Server-project governance/drift tests. These Category=Architecture tests
     # enumerate the real deployed route table, requiring the Testcontainers
@@ -382,4 +382,4 @@ runs:
             --filter "Category=Architecture|FullyQualifiedName~AlertPreviewFloorTests" \
             --logger "trx;LogFileName=${{ inputs.trx-prefix }}-server-governance.trx" \
             --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults
+            --results-directory ./artifacts/test-results

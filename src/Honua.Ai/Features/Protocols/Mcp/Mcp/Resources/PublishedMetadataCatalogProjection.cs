@@ -6,6 +6,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Helpers;
 
 namespace Honua.Ai.Protocols.Mcp.Resources;
 
@@ -22,6 +23,7 @@ internal static class PublishedMetadataCatalogProjection
         string Etag)
     {
         public string ServiceName => Service.Metadata.Name;
+        public string? CanonicalEndpoint { get; init; }
 
         public McpPublishedServiceView ToDetail() => new()
         {
@@ -36,7 +38,7 @@ internal static class PublishedMetadataCatalogProjection
             SourceKind = "MetadataV2Graph",
             SourceId = Service.Metadata.Id,
             TargetKind = "FeatureService",
-            Endpoint = Service.Route,
+            Endpoint = CanonicalEndpoint ?? Service.Route,
             PublishedAt = PublishedAt,
             UpdatedAt = UpdatedAt,
             Etag = Etag,
@@ -242,6 +244,9 @@ internal static class PublishedMetadataCatalogProjection
             serving,
             created,
             updated,
-            snapshot.Etag);
+            snapshot.Etag)
+        {
+            CanonicalEndpoint = GeoServicesServiceUrls.CanonicalLocation(context, snapshot.Graph, service, ServiceProtocols.FeatureServer)
+        };
     }
 }

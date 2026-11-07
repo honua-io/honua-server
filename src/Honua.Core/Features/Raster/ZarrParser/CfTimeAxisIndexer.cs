@@ -5,38 +5,9 @@ using System.Globalization;
 
 namespace Honua.Core.Features.Raster.ZarrParser;
 
-/// <summary>
-/// Maps OGC API <c>datetime</c> requests onto integer indices of an evenly
-/// spaced CF time axis. Pure and AOT-safe: no allocation beyond the optional
-/// error string and no dependency on the read pipeline. The axis is described
-/// by its first and last sample instants plus the number of samples
-/// (<c>stepCount</c>); the per-step spacing is derived as
-/// <c>(end - start) / (stepCount - 1)</c> for <c>stepCount &gt; 1</c>.
-/// Irregular or unknown spacing is rejected with a client-safe error.
-/// </summary>
 public static class CfTimeAxisIndexer
 {
-    /// <summary>
-    /// Resolves the inclusive index range on an evenly spaced time axis that an
-    /// OGC <c>datetime</c> request selects.
-    /// </summary>
-    /// <param name="start">First sample instant of the axis.</param>
-    /// <param name="end">Last sample instant of the axis.</param>
-    /// <param name="stepCount">Number of samples along the axis.</param>
-    /// <param name="reqStart">Requested interval start, or null for an open-ended (<c>../t1</c>) request.</param>
-    /// <param name="reqEnd">Requested interval end, or null for an open-ended (<c>t0/..</c>) request.</param>
-    /// <param name="lowInclusive">Resolved inclusive low index when the method returns true.</param>
-    /// <param name="highInclusive">Resolved inclusive high index when the method returns true.</param>
-    /// <param name="error">Client-safe error when the method returns false.</param>
-    /// <returns>True when the request resolves to a non-empty in-range index range.</returns>
-    /// <remarks>
-    /// An instant request (<paramref name="reqStart"/> == <paramref name="reqEnd"/>) rounds to the
-    /// nearest index and is rejected when it falls outside <c>[start - step/2, end + step/2]</c>.
-    /// An interval request takes <c>low = ceil((t0 - start) / step)</c> and
-    /// <c>high = floor((t1 - start) / step)</c>, each clamped to the axis, and is rejected when the
-    /// clamped range is empty. The axis must declare at least one sample and (for
-    /// <c>stepCount &gt; 1</c>) a positive spacing; both are otherwise rejected as irregular/unknown.
-    /// </remarks>
+    // An instant more than half a step outside the axis is rejected, and an interval that clamps to nothing is rejected.
     public static bool TryResolveTimeIndexRange(
         DateTimeOffset start,
         DateTimeOffset end,

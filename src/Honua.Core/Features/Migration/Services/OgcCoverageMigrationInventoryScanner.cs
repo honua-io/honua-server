@@ -16,28 +16,15 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Builds deterministic migration inventory artifacts for OGC coverage service sources.
-/// </summary>
 public sealed partial class OgcCoverageMigrationInventoryScanner
 {
     private readonly ICrsRegistry _crsRegistry;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="OgcCoverageMigrationInventoryScanner"/> class.
-    /// </summary>
-    /// <param name="crsRegistry">CRS registry used to normalize advertised coverage references.</param>
     public OgcCoverageMigrationInventoryScanner(ICrsRegistry crsRegistry)
     {
         _crsRegistry = crsRegistry ?? throw new ArgumentNullException(nameof(crsRegistry));
     }
 
-    /// <summary>
-    /// Builds a migration source inventory artifact from structured coverage service metadata.
-    /// </summary>
-    /// <param name="request">Coverage service scan request.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>A deterministic source inventory artifact.</returns>
     public async Task<MigrationSourceInventoryArtifact> ScanAsync(
         OgcCoverageServiceScanRequest request,
         CancellationToken cancellationToken = default)

@@ -223,7 +223,7 @@ internal static partial class GPServerEndpoints
 
         var response = new GPServiceInfoResponse
         {
-            ServiceDescription = $"Geoprocessing service for {serviceId}",
+            ServiceDescription = $"Geoprocessing service for {serviceValidation.Service!.EffectivePublicName}",
             ExecutionType = "esriExecutionTypeAsynchronous",
             Capabilities = string.Empty,
             ResultMapServerName = string.Empty,
@@ -289,7 +289,7 @@ internal static partial class GPServerEndpoints
             return SetSpanErrorAndReturn(
                 StandardErrorHelpers.CreateNotFound(
                     context,
-                    $"Task '{taskName}' on service '{serviceId}' was not found."),
+                    $"Task '{taskName}' was not found for this service."),
                 "Task not found");
         }
 
@@ -1347,7 +1347,7 @@ internal static partial class GPServerEndpoints
             GPServerLog.JobBindingMismatch(logger, job.OperationId, serviceId, taskName);
             return SetSpanErrorAndReturn(
                 StandardErrorHelpers.CreateNotFound(context,
-                    $"Job '{job.OperationId}' does not belong to service '{serviceId}' task '{taskName}'."),
+                    $"Job '{job.OperationId}' does not belong to task '{taskName}' on this service."),
                 "Job binding mismatch");
         }
 
@@ -1360,7 +1360,7 @@ internal static partial class GPServerEndpoints
         GPServerLog.JobBindingMismatch(logger, job.OperationId, serviceId, taskName);
         return SetSpanErrorAndReturn(
             StandardErrorHelpers.CreateNotFound(context,
-                $"Job '{job.OperationId}' does not belong to service '{serviceId}' task '{taskName}'."),
+                $"Job '{job.OperationId}' does not belong to task '{taskName}' on this service."),
             "Job binding mismatch");
     }
 

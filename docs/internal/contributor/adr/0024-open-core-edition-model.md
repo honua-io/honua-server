@@ -152,7 +152,7 @@ License checks must be:
 > doc lives at
 > [`docs/contributor/architecture/unified-license-and-entitlement.md`](../architecture/unified-license-and-entitlement.md);
 > operational procedures live in the
-> [licensing runbooks](../../../archive/role-indexes/operator-runbooks-README.md#licensing-runbooks).
+> [licensing runbooks](https://github.com/honua-io/honua-server/blob/213e7ef3bf243fddf30c06a4cdb4cac737b9bfc8/docs/archive/role-indexes/operator-runbooks-README.md#licensing-runbooks).
 >
 > Per-node enforcement (a node-count claim plus runtime gating) is **not**
 > in the v1 claim set defined by ADR-0033 — Pro and Enterprise are gated

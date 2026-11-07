@@ -24,7 +24,7 @@ namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
 /// <summary>Exercises managed branch overlays through the production mapped reader (#5044).</summary>
 [Collection("Database")]
-public sealed class PostgresStorageMappedFeatureReaderVersionIntegrationTests(PostgresFixture fixture) : IAsyncLifetime
+public sealed partial class PostgresStorageMappedFeatureReaderVersionIntegrationTests(PostgresFixture fixture) : IAsyncLifetime
 {
     private readonly Guid _version = Guid.NewGuid();
     private readonly Guid _otherVersion = Guid.NewGuid();
@@ -138,6 +138,7 @@ public sealed class PostgresStorageMappedFeatureReaderVersionIntegrationTests(Po
         // as its own table simply because sourceBacked is absent.
         var reader = CreateReader(managedFeatureSchema: "honua", sourceBacked: false);
         (await reader.SupportsBranchVersioningAsync()).Should().BeFalse();
+        (await reader.SupportsManagedWritesAsync(1)).Should().BeFalse();
 
         var branchRead = () => reader.QueryAsync(1, Branch);
         await branchRead.Should().ThrowAsync<NotSupportedException>();
@@ -158,6 +159,7 @@ public sealed class PostgresStorageMappedFeatureReaderVersionIntegrationTests(Po
         // connection. The isolated binding names a different same-shaped relation.
         var reader = CreateReader(managedFeatureSchema: "", sourceBacked: false);
         (await reader.SupportsBranchVersioningAsync()).Should().BeFalse();
+        (await reader.SupportsManagedWritesAsync(1)).Should().BeFalse();
         var branchRead = () => reader.QueryAsync(1, Branch);
         await branchRead.Should().ThrowAsync<NotSupportedException>();
     }
@@ -183,6 +185,8 @@ public sealed class PostgresStorageMappedFeatureReaderVersionIntegrationTests(Po
             };
             var managedReader = CreateReader(unqualifiedMapping: true, connectionString: managedPath.ConnectionString);
             (await managedReader.SupportsBranchVersioningAsync()).Should().BeTrue();
+            (await managedReader.SupportsManagedWritesAsync(1)).Should().BeTrue();
+            (await managedReader.SupportsManagedWritesAsync(2)).Should().BeFalse();
             var managedBranch = await managedReader.QueryAsync(1, Branch with { ObjectIds = [1] });
             managedBranch.Items.Should().ContainSingle();
             Convert.ToInt64(managedBranch.Items[0].Attributes["count"], CultureInfo.InvariantCulture)
@@ -194,6 +198,7 @@ public sealed class PostgresStorageMappedFeatureReaderVersionIntegrationTests(Po
             };
             var externalReader = CreateReader(unqualifiedMapping: true, connectionString: externalPath.ConnectionString);
             (await externalReader.SupportsBranchVersioningAsync()).Should().BeFalse();
+            (await externalReader.SupportsManagedWritesAsync(1)).Should().BeFalse();
             var branchRead = () => externalReader.QueryAsync(1, Branch);
             await branchRead.Should().ThrowAsync<NotSupportedException>();
             var baseline = await externalReader.QueryAsync(1, new FeatureQuery { ObjectIds = [1] });
@@ -354,6 +359,25 @@ public sealed class PostgresStorageMappedFeatureReaderVersionIntegrationTests(Po
         var parameters = implicitSql.GetType().GetProperty("Parameters")!;
         ((IEnumerable<object?>)parameters.GetValue(explicitSql)!).Should()
             .Equal((IEnumerable<object?>)parameters.GetValue(implicitSql)!);
+    }
+
+    private Task AddForeignPartitionRowAsync()
+        => fixture.ExecuteAsync($$"""
+            INSERT INTO {{_schema}}.features VALUES (2,91,NULL,'{"count":91,"tenant":"a"}');
+            """);
+
+    private PostgresStorageMappedFeatureReader CreatePartitionReader(FeatureStorageMapping mapping, string managedSchema)
+    {
+        var pool = new DefaultObjectPoolProvider().Create(
+            new Honua.Core.Features.Infrastructure.ServiceRegistration.DictionaryPooledObjectPolicy());
+        return new PostgresStorageMappedFeatureReader(
+            new FixtureConnectionProvider(fixture.ConnectionString),
+            pool,
+            new MetadataV2Resource(),
+            mapping,
+            connection: null,
+            connectionEncryptionService: null,
+            managedFeatureSchema: managedSchema);
     }
 
     private PostgresStorageMappedFeatureReader CreateReader(bool secured = false, bool externalTable = false,

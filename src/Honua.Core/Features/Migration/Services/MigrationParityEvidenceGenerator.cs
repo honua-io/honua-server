@@ -12,9 +12,6 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Builds deterministic migration parity and cutover-readiness evidence packs.
-/// </summary>
 public static class MigrationParityEvidenceGenerator
 {
     private static readonly MigrationCutoverReadinessItemDefinition[] ReadinessChecklist =
@@ -27,15 +24,6 @@ public static class MigrationParityEvidenceGenerator
         new("traffic-switch-planned", "DNS or load-balancer change planned")
     ];
 
-    /// <summary>
-    /// Generate a parity evidence pack from deterministic migration artifacts.
-    /// Missing readiness attestations remain <c>unknown</c>.
-    /// </summary>
-    /// <param name="inventory">Source inventory artifact.</param>
-    /// <param name="manifest">Optional migration manifest artifact.</param>
-    /// <param name="attestation">Optional operator-supplied readiness evidence.</param>
-    /// <param name="performanceCost">Optional performance and migration-cost measurements.</param>
-    /// <returns>Deterministic parity evidence artifact.</returns>
     public static MigrationParityEvidenceArtifact Generate(
         MigrationSourceInventoryArtifact inventory,
         MigrationManifestArtifact? manifest = null,
@@ -68,11 +56,6 @@ public static class MigrationParityEvidenceGenerator
         };
     }
 
-    /// <summary>
-    /// Returns a deterministic, secret-safe performance/cost evidence block.
-    /// </summary>
-    /// <param name="performanceCost">Performance and cost evidence supplied by a scanner, importer, or test harness.</param>
-    /// <returns>Normalized evidence, or <c>null</c> when no evidence was supplied.</returns>
     public static MigrationPerformanceCostEvidence? NormalizePerformanceCost(
         MigrationPerformanceCostEvidence? performanceCost)
     {

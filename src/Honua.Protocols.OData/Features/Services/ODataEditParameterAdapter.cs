@@ -121,11 +121,12 @@ internal sealed class ODataEditParameterAdapter(
         var objectId = request.ObjectId
             ?? throw new InvalidOperationException("Object ID is required for update operations.");
 
-        if (!string.IsNullOrWhiteSpace(request.IfMatch))
+        var feature = !string.IsNullOrWhiteSpace(request.IfMatch)
+            ? EditFeature.ForConditionalUpdate(objectId, geometry, attributes, request.IfMatch!, updateMode)
+            : EditFeature.ForUpdate(objectId, geometry, attributes, updateMode);
+        return feature with
         {
-            return EditFeature.ForConditionalUpdate(objectId, geometry, attributes, request.IfMatch!, updateMode);
-        }
-
-        return EditFeature.ForUpdate(objectId, geometry, attributes, updateMode);
+            PreserveOmittedGeometry = updateMode == EditUpdateMode.Merge && !request.Payload.GeometrySpecified
+        };
     }
 }

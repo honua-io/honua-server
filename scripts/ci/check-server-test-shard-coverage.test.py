@@ -743,4 +743,32 @@ def test_core_endpoint_split_preserves_methods_triggers_and_budgets() -> None:
 test_core_attachments_split_preserves_union_and_disjoint_substring_ownership()
 test_core_endpoint_split_preserves_methods_triggers_and_budgets()
 
+
+def test_miscellaneous_partition_detects_missing_moved_methods() -> None:
+    config = json.loads((REPOSITORY_ROOT / ".github/ci-shards.json").read_text())
+    partition = next(p for p in config["shard_partitions"] if p["name"] == "Server Features Misc")
+    assert partition["granularity"] == "method"
+    shards = {s["name"]: s for s in config["shards"]}
+    children = partition["children"]
+    parent = MODULE._FilterParser(partition["filter"]).parse()
+    parsed = {name: MODULE._FilterParser(shards[name]["filter"]).parse() for name in children}
+    fqn = "Honua.Server.Tests.Features.Temporal.TemporalHistorySliceEndpointsTests"
+    info = MODULE.enumerate_classes()[f"{KNOWN}::{fqn}"]
+    methods = info["methods"]
+    assert methods
+    assert MODULE.partition_claim_errors(partition["name"], parent, children, parsed,
+        fqn, methods, partition["granularity"]) == []
+    moved = "Server Features Packages and Temporal"
+    broken = dict(parsed)
+    broken[moved] = MODULE._FilterParser("|".join(
+        clause for clause in shards[moved]["filter"].split("|")
+        if clause != f"FullyQualifiedName~{fqn}."
+    )).parse()
+    errors = MODULE.partition_claim_errors(partition["name"], parent, children, broken,
+        fqn, methods, partition["granularity"])
+    assert len(errors) == len(methods), errors
+
+
+test_miscellaneous_partition_detects_missing_moved_methods()
+
 print("shard-filter-dangling-guard=ok")

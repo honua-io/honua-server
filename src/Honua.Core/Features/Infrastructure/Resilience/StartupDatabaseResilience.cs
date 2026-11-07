@@ -6,47 +6,14 @@ using System.Globalization;
 
 namespace Honua.Core.Features.Infrastructure.Resilience;
 
-/// <summary>
-/// Pure, provider-agnostic helpers that classify database startup failures and compute
-/// retry backoff for degraded-start mode.
-/// </summary>
-/// <remarks>
-/// On serverless hosts (e.g. AWS Lambda) a failed initialization aborts the runtime
-/// (<c>Runtime.ExitError</c>) and becomes a crash loop, returning 500s on every route —
-/// even routes that never touch the database. When the unavailability is a <em>transient</em>
-/// connectivity problem (pool exhaustion, the database still warming up, a momentary socket
-/// failure) the process should start in a degraded mode and retry in the background rather than
-/// crash. Genuine misconfiguration (bad migration SQL, an incompatible PostGIS install) is not
-/// transient and should still fail loudly. This type encodes that distinction without taking a
-/// dependency on a specific ADO.NET provider, so it lives in <c>Honua.Core</c> and is unit-testable.
-/// </remarks>
+// A transient database outage starts degraded and retries; bad migration SQL or an incompatible PostGIS install still fails startup.
 public static class StartupDatabaseResilience
 {
-    /// <summary>
-    /// PostgreSQL SQLSTATE codes (and code classes) that indicate a transient connectivity
-    /// problem rather than a permanent configuration error.
-    /// </summary>
-    /// <remarks>
-    /// <list type="bullet">
-    /// <item><description><c>53*</c> — insufficient resources class, including <c>53300</c>
-    /// too_many_connections (pool/slot exhaustion, e.g. RDS "remaining connection slots are
-    /// reserved") and <c>53400</c> configuration_limit_exceeded.</description></item>
-    /// <item><description><c>57P03</c> — cannot_connect_now (server still starting up).</description></item>
-    /// <item><description><c>08*</c> — connection exception class (connection_failure, etc.).</description></item>
-    /// </list>
-    /// </remarks>
     private static readonly string[] TransientSqlStates =
     [
         "57P03",
     ];
 
-    /// <summary>
-    /// Determines whether the supplied exception (or any exception in its inner chain) represents a
-    /// transient database connectivity failure that should not crash a degraded-start process.
-    /// </summary>
-    /// <param name="exception">The exception thrown while touching the database during startup.</param>
-    /// <returns><see langword="true"/> when the failure looks transient (connectivity/availability);
-    /// <see langword="false"/> for permanent failures such as bad migration SQL or schema errors.</returns>
     public static bool IsTransientConnectivityError(Exception? exception)
     {
         if (exception is null)
@@ -108,12 +75,6 @@ public static class StartupDatabaseResilience
         return false;
     }
 
-    /// <summary>
-    /// Determines whether a PostgreSQL SQLSTATE code indicates a transient connectivity failure.
-    /// </summary>
-    /// <param name="sqlState">The five-character SQLSTATE code.</param>
-    /// <returns><see langword="true"/> when the code is in the connection-exception class or a
-    /// known transient resource-limit code.</returns>
     public static bool IsTransientSqlState(string? sqlState)
     {
         if (string.IsNullOrEmpty(sqlState))
@@ -132,15 +93,7 @@ public static class StartupDatabaseResilience
         return TransientSqlStates.Contains(sqlState, StringComparer.Ordinal);
     }
 
-    /// <summary>
-    /// Describes the class of a database failure for operator-facing health and log surfaces
-    /// without echoing the provider message, which can carry host names, ports or other
-    /// connection-string fragments.
-    /// </summary>
-    /// <param name="exception">The failure to describe.</param>
-    /// <returns>A short, sanitized description such as
-    /// <c>SQLSTATE 53300 (class 53: insufficient resources)</c>, <c>timeout</c> or
-    /// <c>socket error (ConnectionRefused)</c>; the exception message is never included.</returns>
+    // The description never includes the provider message, which can carry host names and ports.
     public static string DescribeFailureClass(Exception? exception)
     {
         if (exception is null)
@@ -216,16 +169,6 @@ public static class StartupDatabaseResilience
         return property?.GetValue(exception) as string;
     }
 
-    /// <summary>
-    /// Computes the delay before the next degraded-start retry using bounded exponential backoff
-    /// with full jitter.
-    /// </summary>
-    /// <param name="attempt">The 1-based retry attempt number.</param>
-    /// <param name="baseDelay">The base delay for the first retry.</param>
-    /// <param name="maxDelay">The ceiling for any single retry delay.</param>
-    /// <param name="jitter">An optional source of [0,1) jitter; defaults to no jitter (deterministic
-    /// for tests). Production callers pass <see cref="Random.Shared"/>.</param>
-    /// <returns>The delay to wait before the next attempt.</returns>
     public static TimeSpan GetRetryDelay(
         int attempt,
         TimeSpan baseDelay,
@@ -252,13 +195,6 @@ public static class StartupDatabaseResilience
         return TimeSpan.FromMilliseconds(Math.Max(0, cappedMs));
     }
 
-    /// <summary>
-    /// Builds the loud, operator-facing warning emitted when startup enters degraded mode so a real
-    /// misconfiguration is never silently masked.
-    /// </summary>
-    /// <param name="phase">The startup phase that failed (e.g. "migrations", "PostGIS preflight").</param>
-    /// <param name="errorMessage">The sanitized failure message.</param>
-    /// <returns>A human-readable degraded-start warning.</returns>
     public static string BuildDegradedStartWarning(string phase, string errorMessage)
         => string.Format(
             CultureInfo.InvariantCulture,

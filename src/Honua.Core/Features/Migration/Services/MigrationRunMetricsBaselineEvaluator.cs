@@ -12,18 +12,8 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Evaluates a <see cref="MigrationRunMetricsArtifact"/> against a
-/// <see cref="MigrationMetricBaseline"/> and emits a
-/// <see cref="MigrationRunMetricsBaselineArtifact"/> with a Pass/Warn/Fail status.
-/// </summary>
 public static class MigrationRunMetricsBaselineEvaluator
 {
-    /// <summary>
-    /// Classify a slice-1 run-metrics artifact against the supplied baseline.
-    /// </summary>
-    /// <param name="run">Run-metrics artifact emitted by <see cref="MigrationRunMetricsBuilder"/>.</param>
-    /// <param name="baseline">Baseline to evaluate against.</param>
     public static MigrationRunMetricsBaselineArtifact Evaluate(
         MigrationRunMetricsArtifact run,
         MigrationMetricBaseline baseline)
@@ -54,12 +44,6 @@ public static class MigrationRunMetricsBaselineEvaluator
         };
     }
 
-    /// <summary>
-    /// Convenience overload that looks up the baseline from
-    /// <see cref="MigrationFixtureBaselineCatalog"/> using the run artifact's source family.
-    /// </summary>
-    /// <param name="run">Run-metrics artifact.</param>
-    /// <param name="size">Fixture size to evaluate against.</param>
     public static MigrationRunMetricsBaselineArtifact? TryEvaluate(
         MigrationRunMetricsArtifact run,
         string size)

@@ -123,8 +123,7 @@ public sealed class MetadataV2GraphIndex
         foreach (var binding in graph.StorageBindings.Where(binding => binding.StorageLayerId.HasValue))
         {
             var storageLayerId = binding.StorageLayerId.GetValueOrDefault();
-            // First-wins on collisions — graph validation surfaces duplicates
-            // separately so the index stays deterministic even on a bad graph.
+            // First-wins on numeric storage-layer collisions keeps the index deterministic.
             storageBindingsByStorageLayerId.TryAdd(storageLayerId, binding);
             if (resourcesById.TryGetValue(binding.ResourceId, out var resource))
             {

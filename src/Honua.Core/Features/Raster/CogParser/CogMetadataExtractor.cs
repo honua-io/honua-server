@@ -8,10 +8,6 @@ using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Core.Features.Raster.CogParser;
 
-/// <summary>
-/// Reads COG metadata from cloud storage via range requests.
-/// Implements <see cref="ICogMetadataReader"/> with AOT-safe TIFF IFD parsing.
-/// </summary>
 public sealed class CogMetadataExtractor : ICogMetadataReader
 {
     // Initial read size: enough for header + first IFD with up to 100 entries
@@ -26,7 +22,6 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
     // while rejecting crafted Count values that would otherwise drive multi-GB allocations.
     private const long MaxExternalArrayElements = 16L * 1024 * 1024;
 
-    /// <inheritdoc />
     public async Task<CogMetadata> ReadMetadataAsync(
         ICloudRangeReader reader,
         string bucket,
@@ -386,11 +381,7 @@ public sealed class CogMetadataExtractor : ICogMetadataReader
         return tables;
     }
 
-    /// <summary>
-    /// Computes the byte size of an external IFD array in overflow-safe arithmetic,
-    /// rejecting file-controlled <see cref="IfdEntry.Count"/> values that would drive
-    /// runaway range reads and allocations.
-    /// </summary>
+    // File-controlled IFD sizes are rejected before they can drive an unbounded range read.
     private static int GetValidatedExternalArrayByteCount(IfdEntry entry)
     {
         if (entry.Count is <= 0 or > MaxExternalArrayElements)

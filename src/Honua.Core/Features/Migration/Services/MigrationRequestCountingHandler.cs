@@ -13,27 +13,12 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Ambient flow that lets per-request HTTP handlers locate the <see cref="MigrationRunMetricsRecorder"/>
-/// associated with the active migration run without threading the recorder through every API.
-/// </summary>
-/// <remarks>
-/// The recorder is stored in an <see cref="AsyncLocal{T}"/>, so it follows the logical call chain across
-/// async hops. Callers wrap a migration phase with <see cref="PushRecorder(MigrationRunMetricsRecorder)"/>
-/// and dispose the returned scope when the phase ends. HTTP message handlers read the ambient recorder
-/// via <see cref="Current"/>.
-/// </remarks>
 public static class MigrationMetricsAmbient
 {
     private static readonly AsyncLocal<MigrationRunMetricsRecorder?> CurrentRecorder = new();
 
-    /// <summary>Returns the recorder currently associated with the executing logical call context, if any.</summary>
     public static MigrationRunMetricsRecorder? Current => CurrentRecorder.Value;
 
-    /// <summary>
-    /// Associates <paramref name="recorder"/> with the current logical call context. Dispose the returned
-    /// scope to restore the previously active recorder.
-    /// </summary>
     public static Scope PushRecorder(MigrationRunMetricsRecorder recorder)
     {
         ArgumentNullException.ThrowIfNull(recorder);
@@ -42,7 +27,6 @@ public static class MigrationMetricsAmbient
         return new Scope(previous);
     }
 
-    /// <summary>Disposable scope returned by <see cref="PushRecorder(MigrationRunMetricsRecorder)"/>.</summary>
     public readonly struct Scope : IDisposable
     {
         private readonly MigrationRunMetricsRecorder? _previous;
@@ -52,32 +36,20 @@ public static class MigrationMetricsAmbient
             _previous = previous;
         }
 
-        /// <summary>Restores the previously active recorder.</summary>
         public void Dispose() => CurrentRecorder.Value = _previous;
     }
 }
 
-/// <summary>
-/// <see cref="DelegatingHandler"/> that records one source request — and, when cheap to read, the response
-/// payload byte count — with the ambient <see cref="MigrationRunMetricsRecorder"/> for every HTTP call
-/// flowing through the GeoServer/ArcGIS migration clients.
-/// </summary>
-/// <remarks>
-/// Mounted via <c>AddHttpMessageHandler&lt;MigrationRequestCountingHandler&gt;()</c> so the resilience
-/// pipeline can retry the inner request as needed and each physical send is counted. When no recorder is
-/// currently active (e.g. health probes or out-of-band calls) the handler simply forwards the request.
-/// </remarks>
+// Mounted inside the resilience pipeline so each physical retry is counted, not only the logical operation.
 public sealed partial class MigrationRequestCountingHandler : DelegatingHandler
 {
     private readonly ILogger<MigrationRequestCountingHandler> _logger;
 
-    /// <summary>Initializes a new <see cref="MigrationRequestCountingHandler"/>.</summary>
     public MigrationRequestCountingHandler(ILogger<MigrationRequestCountingHandler> logger)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <inheritdoc />
     protected override async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request,
         CancellationToken cancellationToken)

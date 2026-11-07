@@ -23,7 +23,6 @@ internal sealed partial class ODataBatchHandler
     private const string AbsoluteBatchRequestUrlMessage = "Absolute batch request URLs are not supported.";
     private const string ODataProtocol = "OData";
 
-    private readonly IFeatureReader _featureReader;
     private readonly IFeatureWriter _featureWriter;
     private readonly IGeometryService _geometryService;
     private readonly ICrsRegistry _crsRegistry;
@@ -42,7 +41,6 @@ internal sealed partial class ODataBatchHandler
         ILogger logger)
     {
         ArgumentNullException.ThrowIfNull(dependencies);
-        _featureReader = dependencies.FeatureReader;
         _featureWriter = dependencies.FeatureWriter;
         _geometryService = dependencies.GeometryService;
         _crsRegistry = dependencies.CrsRegistry;
@@ -61,7 +59,8 @@ internal sealed partial class ODataBatchHandler
         int Srid,
         MetadataV2Publication? Publication,
         MetadataV2Resource Resource,
-        MetadataV2Service? Service);
+        MetadataV2Service? Service,
+        IFeatureReader Reader);
 
     public async Task<ODataBatchResponse> ProcessBatchAsync(
         HttpContext context,

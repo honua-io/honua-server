@@ -28,48 +28,54 @@ internal static class FilterExpressionHelpers
         MetadataV2Resource resource,
         Func<string, string?>? protocolFieldResolver = null)
     {
+        return RewriteProperties(expression, property => new PropertyReference(
+            protocolFieldResolver?.Invoke(property.PropertyName) ??
+            ResolveFieldName(resource, property.PropertyName, allowGeometryAlias: true) ??
+            NormalizeIdentifier(property.PropertyName)));
+    }
+
+    internal static FilterExpression RewriteProperties(
+        FilterExpression expression, Func<PropertyReference, FilterExpression> rewrite)
+    {
         return expression switch
         {
-            PropertyReference property => new PropertyReference(
-                protocolFieldResolver?.Invoke(property.PropertyName) ??
-                ResolveFieldName(resource, property.PropertyName, allowGeometryAlias: true) ??
-                NormalizeIdentifier(property.PropertyName)),
+            PropertyReference property => rewrite(property),
             BinaryExpression binary => new BinaryExpression(
-                NormalizeFilterPropertyReferences(binary.Left, resource, protocolFieldResolver),
+                RewriteProperties(binary.Left, rewrite),
                 binary.Operator,
-                NormalizeFilterPropertyReferences(binary.Right, resource, protocolFieldResolver)),
+                RewriteProperties(binary.Right, rewrite)),
             UnaryExpression unary => new UnaryExpression(
                 unary.Operator,
-                NormalizeFilterPropertyReferences(unary.Operand, resource, protocolFieldResolver)),
+                RewriteProperties(unary.Operand, rewrite)),
             // 'with' preserves protocol-scoped flags (SpatialPredicate.Geodesic,
             // SpatialDistancePredicate.DistanceInMeters) that a positional reconstruction would
             // silently reset to their defaults.
             SpatialPredicate spatial => spatial with
             {
-                Left = NormalizeFilterPropertyReferences(spatial.Left, resource, protocolFieldResolver),
-                Right = NormalizeFilterPropertyReferences(spatial.Right, resource, protocolFieldResolver)
+                Left = RewriteProperties(spatial.Left, rewrite),
+                Right = RewriteProperties(spatial.Right, rewrite)
             },
             SpatialDistancePredicate distance => distance with
             {
-                Left = NormalizeFilterPropertyReferences(distance.Left, resource, protocolFieldResolver),
-                Right = NormalizeFilterPropertyReferences(distance.Right, resource, protocolFieldResolver),
-                Distance = NormalizeFilterPropertyReferences(distance.Distance, resource, protocolFieldResolver)
+                Left = RewriteProperties(distance.Left, rewrite),
+                Right = RewriteProperties(distance.Right, rewrite),
+                Distance = RewriteProperties(distance.Distance, rewrite)
             },
             TemporalPredicate temporal => new TemporalPredicate(
                 temporal.Operator,
-                NormalizeFilterPropertyReferences(temporal.Left, resource, protocolFieldResolver),
-                NormalizeFilterPropertyReferences(temporal.Right, resource, protocolFieldResolver)),
+                RewriteProperties(temporal.Left, rewrite),
+                RewriteProperties(temporal.Right, rewrite)),
             ArrayPredicate array => new ArrayPredicate(
                 array.Operator,
-                NormalizeFilterPropertyReferences(array.Left, resource, protocolFieldResolver),
-                NormalizeFilterPropertyReferences(array.Right, resource, protocolFieldResolver)),
+                RewriteProperties(array.Left, rewrite),
+                RewriteProperties(array.Right, rewrite)),
             FunctionCall function => new FunctionCall(
                 function.FunctionName,
-                function.Arguments.Select(argument => NormalizeFilterPropertyReferences(argument, resource, protocolFieldResolver)).ToArray()),
+                function.Arguments.Select(argument => RewriteProperties(argument, rewrite)).ToArray()),
             ArrayLiteral arrayLiteral => new ArrayLiteral(
-                arrayLiteral.Elements.Select(element => NormalizeFilterPropertyReferences(element, resource, protocolFieldResolver)).ToArray()),
+                arrayLiteral.Elements.Select(element => RewriteProperties(element, rewrite)).ToArray()),
             ValueList valueList => new ValueList(
-                valueList.Values.Select(value => NormalizeFilterPropertyReferences(value, resource, protocolFieldResolver)).ToArray()),
+                valueList.Values.Select(value => RewriteProperties(value, rewrite)).ToArray()),
             _ => expression
         };
     }

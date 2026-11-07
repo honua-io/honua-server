@@ -8,18 +8,8 @@ namespace Honua.Core.Features.Migration.Services;
 
 public static class GeoServicesAttributeRuleParser
 {
-    /// <summary>
-    /// Maximum number of attribute rules captured for a single layer. Layers exceeding
-    /// this cap are reported as truncated and not persisted, keeping the artifact bounded.
-    /// </summary>
     public const int AttributeRuleCap = 200;
 
-    /// <summary>
-    /// Parses the Esri attribute-rule metadata on a layer element into the canonical
-    /// <see cref="MetadataV2AttributeRule"/> list.
-    /// </summary>
-    /// <param name="layerElement">The Esri layer element carrying <c>attributeRules</c>.</param>
-    /// <returns>The parse result describing the captured rules and whether they were truncated.</returns>
     public static GeoServicesAttributeRuleParseResult Parse(JsonElement layerElement)
     {
         if (layerElement.ValueKind != JsonValueKind.Object)
@@ -180,9 +170,7 @@ public readonly record struct GeoServicesAttributeRuleParseResult(
     IReadOnlyList<MetadataV2AttributeRule>? Rules,
     bool Truncated)
 {
-    /// <summary>Shared result for a layer that carries no attribute rules.</summary>
     public static readonly GeoServicesAttributeRuleParseResult None = new(Rules: null, Truncated: false);
 
-    /// <summary>Shared result for a layer whose rule set exceeded the cap and was omitted.</summary>
     public static readonly GeoServicesAttributeRuleParseResult OverCap = new(Rules: null, Truncated: true);
 }

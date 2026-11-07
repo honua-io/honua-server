@@ -220,6 +220,8 @@
   - [CITE status](cite-status.md)
   - [Clients & known limitations](reference/compatibility/clients.md)
   - [GeoServices REST parity](reference/compatibility/geoservices-parity.md)
+  - [Datum transformation parity](reference/compatibility/datum-transformation-parity.md)
+  - [Editing parity conformance](reference/compatibility/editing-parity-conformance.md)
   - [SCIM / SAML IdP conformance](reference/compatibility/idp-conformance-matrix.md)
   - [ImageServer admin mapping](reference/compatibility/imageserver-admin-mapping.md)
 ## Security
@@ -227,5 +229,3 @@
 ## Internal
 - [Internal engineering docs](internal/README.md)
 - [Demo runbooks (moved to honua-demo)](internal/demo/README.md)
-## Archive
-- [Historical archive](archive/README.md)

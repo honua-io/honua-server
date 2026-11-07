@@ -27,6 +27,26 @@ Folder operations follow publication scope: omit the optional `namespace` query 
 unscoped ownership; supply it to select the resolved tenant. Canonical operations preserve that
 selection through approval replay. A namespace selects ownership and confers no access.
 
-This model/Admin change does not advertise folder-qualified protocol URLs. Routing and discovery
-must ship together in the next server change before folder paths are offered to public clients.
-SDK and Console releases follow that routing contract.
+GeoServices directory entries advertise the canonical folder/public leaf path. The root directory
+lists root services and caller-visible folders; a folder lists its qualified service facets.
+Historical aliases continue resolving their original facets but do not appear in discovery.
+Empty and inaccessible folders are indistinguishable from unknown folders. Folder membership
+does not grant service or resource access.
+
+Named FeatureServer, MapServer, ImageServer, VectorTileServer, GPServer, NAServer and
+VersionManagementServer prefixes use the same handlers and endpoint policies as root services.
+Existing constrained numeric raster aliases and independently configured namespaces retain their
+routes. SOAP catalog discovery and existing SOAP service prefixes follow the public path.
+The optional `/arcgis` prefix and configured public base continue to apply to advertised links.
+WMS and WMTS capabilities retain the incoming supported protocol base, including historical aliases.
+
+Read-only GeoServices Admin probes accept a qualified folder/public leaf. A bare public leaf
+resolves only when it identifies one logical service; an existing root reservation takes
+precedence. Metadata-id and numeric-layer probes remain supported. These protocol probes are
+separate from the control-plane Admin API, whose logical identities remain unchanged.
+
+Native OGC identifiers, MCP resource/tool identities and Studio/Console matching keys stay stable.
+Links targeting a GeoServices facet use its canonical public path; display labels use the title
+or public leaf. Explicit folder discovery tools, SDK and Console authoring follow separately.
+Source-folder import execution remains a separate change; the routing change does not promise
+that import requests preserve or remap source folders.

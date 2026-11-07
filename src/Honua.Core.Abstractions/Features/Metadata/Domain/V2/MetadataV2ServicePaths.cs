@@ -35,6 +35,17 @@ public static class MetadataV2ServicePaths
     public static string QualifiedName(MetadataV2Graph graph, MetadataV2Service service)
         => FolderName(graph, service) is { } folder ? $"{folder}/{service.EffectivePublicName}" : service.EffectivePublicName;
 
+    public static string EscapePath(string path)
+        => string.Join('/', path.Split('/').Select(Uri.EscapeDataString));
+
+    public static string GeoServicesPath(MetadataV2Graph graph, MetadataV2Service service)
+    {
+        var publicName = Uri.EscapeDataString(service.EffectivePublicName);
+        return FolderName(graph, service) is { } folder
+            ? $"/rest/services/{Uri.EscapeDataString(folder)}/{publicName}"
+            : $"/rest/services/{publicName}";
+    }
+
     public static bool SamePath(MetadataV2ServicePathAlias first, MetadataV2ServicePathAlias second)
         => ScopesOverlap(first.Tenant, second.Tenant) &&
            string.Equals(first.FolderName, second.FolderName, StringComparison.OrdinalIgnoreCase) &&

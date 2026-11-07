@@ -13,21 +13,13 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// In-memory implementation of <see cref="IMigrationRunCheckpointStore"/>. Intended for
-/// tests and for short-lived in-process migration runs that do not need to survive a
-/// process restart. Persisted scenarios should use
-/// <see cref="FileSystemMigrationRunCheckpointStore"/> or another backing store.
-/// </summary>
 public sealed class InMemoryMigrationRunCheckpointStore : IMigrationRunCheckpointStore
 {
     private readonly ConcurrentDictionary<string, MigrationRunCheckpoint> _checkpoints =
         new(StringComparer.Ordinal);
 
-    /// <summary>Number of checkpoints currently persisted. Exposed for tests.</summary>
     public int Count => _checkpoints.Count;
 
-    /// <inheritdoc />
     public ValueTask SaveAsync(MigrationRunCheckpoint checkpoint, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(checkpoint);
@@ -38,7 +30,6 @@ public sealed class InMemoryMigrationRunCheckpointStore : IMigrationRunCheckpoin
         return ValueTask.CompletedTask;
     }
 
-    /// <inheritdoc />
     public ValueTask<MigrationRunCheckpoint?> LoadAsync(string runId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(runId);
@@ -49,7 +40,6 @@ public sealed class InMemoryMigrationRunCheckpointStore : IMigrationRunCheckpoin
             : ValueTask.FromResult<MigrationRunCheckpoint?>(null);
     }
 
-    /// <inheritdoc />
     public ValueTask<bool> DeleteAsync(string runId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(runId);

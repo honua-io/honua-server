@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -236,13 +237,8 @@ public sealed class LayerReadSecurityResolver
         int layerId,
         CancellationToken cancellationToken)
     {
-        if (_rlsFilterSource is null)
-        {
-            return null;
-        }
-
         var resource = await FindResourceAsync(layerId, cancellationToken).ConfigureAwait(false);
-        return resource is null
+        return resource is null || _rlsFilterSource is null
             ? null
             : await _rlsFilterSource.ResolveAsync(resource, cancellationToken).ConfigureAwait(false);
     }
@@ -353,10 +349,6 @@ public sealed class LayerReadSecurityResolver
         IFilterExpressionService? filterExpressionService)
         => PermanentFilterResolver.Resolve(resource, filterExpressionService);
 
-    /// <summary>
-    /// Best-effort storage-layer-id to resource lookup: a missing graph provider or a layer
-    /// id absent from the metadata index resolves to no resource (and therefore no policy).
-    /// </summary>
     private async Task<MetadataV2Resource?> FindResourceAsync(int layerId, CancellationToken cancellationToken)
     {
         if (_v2Provider is null)
@@ -365,6 +357,73 @@ public sealed class LayerReadSecurityResolver
         }
 
         var snapshot = await _v2Provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        return snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var resource) ? resource : null;
+        var candidates = FindResourceCandidates(snapshot, layerId);
+        if (candidates.Length > 1)
+        {
+            await RejectAmbiguousPolicyAsync(candidates, cancellationToken).ConfigureAwait(false);
+        }
+        return candidates.FirstOrDefault();
     }
+
+    private static MetadataV2Resource[] FindResourceCandidates(MetadataV2GraphSnapshot snapshot, int layerId)
+    {
+        var boundResources = snapshot.Graph.StorageBindings
+            .Where(binding => binding.StorageLayerId == layerId)
+            .Select(binding => snapshot.Index.ResourcesById.GetValueOrDefault(binding.ResourceId))
+            .OfType<MetadataV2Resource>();
+        var publishedResources = snapshot.Graph.Publications
+            .Select(publication => (Publication: publication, Resource: snapshot.ResolveResource(publication)))
+            .Where(candidate => candidate.Resource is not null &&
+                snapshot.ResolveStorageLayerId(candidate.Publication, candidate.Resource) == layerId)
+            .Select(candidate => candidate.Resource!);
+        var candidates = boundResources.Concat(publishedResources)
+            .DistinctBy(candidate => candidate.Metadata.Id, StringComparer.Ordinal)
+            .ToArray();
+        var featureResources = candidates.Where(IsFeatureResource).ToArray();
+        if (featureResources.Length == 0 || featureResources.Length == candidates.Length)
+        {
+            return candidates;
+        }
+
+        var bindings = snapshot.Graph.StorageBindings.Where(binding => binding.StorageLayerId == layerId)
+            .ToLookup(binding => binding.ResourceId, StringComparer.Ordinal);
+        if (featureResources.Any(resource =>
+            !bindings[resource.Metadata.Id].Any() || bindings[resource.Metadata.Id]
+                .Any(binding => binding.StorageType != MetadataV2StorageType.RelationalTable)))
+        {
+            return candidates;
+        }
+
+        // Numeric handles cannot distinguish schemas or connection aliases; matching table names remain ambiguous.
+        var featureTableNames = featureResources.SelectMany(resource => bindings[resource.Metadata.Id]
+                .Select(binding => FeatureStorageMapping.FromMetadata(resource, binding).TableName))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return candidates.Where(resource => IsFeatureResource(resource) || !UsesDistinctTables(resource)).ToArray();
+
+        bool UsesDistinctTables(MetadataV2Resource resource)
+        {
+            var resourceBindings = bindings[resource.Metadata.Id].ToArray();
+            return resourceBindings.Length > 0 && resourceBindings.All(binding =>
+                binding.StorageType == MetadataV2StorageType.RelationalTable &&
+                !featureTableNames.Contains(FeatureStorageMapping.FromMetadata(resource, binding).TableName));
+        }
+    }
+
+    private static bool IsFeatureResource(MetadataV2Resource resource)
+        => resource.Type is MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table;
+
+    private async Task RejectAmbiguousPolicyAsync(
+        IReadOnlyList<MetadataV2Resource> resources, CancellationToken cancellationToken)
+    {
+        foreach (var resource in resources)
+        {
+            if (!string.IsNullOrWhiteSpace(resource.PermanentFilter?.Expression) ||
+                (_rlsFilterSource is not null && await _rlsFilterSource.ResolveAsync(resource, cancellationToken).ConfigureAwait(false) is not null) ||
+                !(await ResolveMaskedFieldsAsync(resource, cancellationToken).ConfigureAwait(false)).IsDefaultOrEmpty)
+            {
+                throw new ResourceAccessDeniedException();
+            }
+        }
+    }
+
 }

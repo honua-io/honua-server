@@ -57,6 +57,8 @@ public sealed class ODataContractTests(ODataComponentFixture fixture) : IClassFi
         using var createPayload = ODataContent(new { Attributes = new { name, population = 12345 }, Geometry = new { type = "Point", coordinates = new[] { -122.0, 37.0 } } });
         using var created = await fixture.Client.PostAsync(Features, createPayload);
         created.StatusCode.Should().Be(HttpStatusCode.Created, await created.Content.ReadAsStringAsync());
+        var createdEtag = Assert.IsType<string>(created.Headers.ETag?.ToString());
+        createdEtag.Should().NotBeNullOrEmpty();
         using var json = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
         var id = json.RootElement.GetProperty("ObjectId").GetInt64();
         var path = $"/odata/Features(LayerId=0,ObjectId={id})";
@@ -66,14 +68,15 @@ public sealed class ODataContractTests(ODataComponentFixture fixture) : IClassFi
             read.StatusCode.Should().Be(HttpStatusCode.OK);
             var etag = read.Headers.ETag?.ToString();
             etag.Should().NotBeNullOrEmpty();
+            etag.Should().Be(createdEtag);
             using var conditional = new HttpRequestMessage(HttpMethod.Get, path);
             conditional.Headers.TryAddWithoutValidation("If-None-Match", etag);
             using var unchanged = await fixture.Client.SendAsync(conditional);
             unchanged.StatusCode.Should().Be(HttpStatusCode.NotModified);
             using var patch = new HttpRequestMessage(HttpMethod.Patch, path) { Content = ODataContent(new { Attributes = new { name, population = 54321 } }) };
-            patch.Headers.TryAddWithoutValidation("If-Match", etag);
+            patch.Headers.TryAddWithoutValidation("If-Match", createdEtag);
             using var updated = await fixture.Client.SendAsync(patch);
-            updated.IsSuccessStatusCode.Should().BeTrue();
+            updated.IsSuccessStatusCode.Should().BeTrue(await updated.Content.ReadAsStringAsync());
             using var stale = new HttpRequestMessage(HttpMethod.Patch, path) { Content = ODataContent(new { Attributes = new { population = 1 } }) };
             stale.Headers.TryAddWithoutValidation("If-Match", etag);
             using var rejected = await fixture.Client.SendAsync(stale);
@@ -83,11 +86,29 @@ public sealed class ODataContractTests(ODataComponentFixture fixture) : IClassFi
         }
         finally
         {
-            using var deleted = await fixture.Client.DeleteAsync(path);
-            deleted.StatusCode.Should().Be(HttpStatusCode.NoContent);
+            await DeleteWithCurrentEtagAsync(path);
         }
         using var missing = await fixture.Client.GetAsync(path);
         missing.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task ConditionalBatchUpdate_UsesThePublicReadSnapshot()
+    {
+        using var payload = ODataContent(new { Attributes = new { name = "batch-" + Guid.NewGuid().ToString("N"), population = 12345 } });
+        using var created = await fixture.Client.PostAsync(Features, payload);
+        created.StatusCode.Should().Be(HttpStatusCode.Created, await created.Content.ReadAsStringAsync());
+        using var json = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
+        var id = json.RootElement.GetProperty("ObjectId").GetInt64();
+        var path = $"/odata/Features(LayerId=0,ObjectId={id})";
+        try
+        {
+            await AssertConditionalBatchUpdateAsync(path);
+        }
+        finally
+        {
+            await DeleteWithCurrentEtagAsync(path);
+        }
     }
 
     [Fact]
@@ -135,6 +156,46 @@ public sealed class ODataContractTests(ODataComponentFixture fixture) : IClassFi
         error.RootElement.TryGetProperty("error", out _).Should().BeTrue();
         using var negative = await fixture.Client.GetAsync(Features + "?$top=-1");
         negative.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    private async Task DeleteWithCurrentEtagAsync(string path)
+    {
+        using var current = await fixture.Client.GetAsync(path);
+        current.StatusCode.Should().Be(HttpStatusCode.OK);
+        var currentEtag = Assert.IsType<string>(current.Headers.ETag?.ToString());
+        currentEtag.Should().NotBeNullOrEmpty();
+        using var delete = new HttpRequestMessage(HttpMethod.Delete, path);
+        delete.Headers.TryAddWithoutValidation("If-Match", currentEtag);
+        using var deleted = await fixture.Client.SendAsync(delete);
+        deleted.StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    private async Task AssertConditionalBatchUpdateAsync(string path)
+    {
+        using var current = await fixture.Client.GetAsync(path);
+        var etag = Assert.IsType<string>(current.Headers.ETag?.ToString());
+        etag.Should().NotBeNullOrEmpty();
+        (await BatchUpdateAsync(path, etag, 98765)).Should().BeInRange(200, 299);
+        (await BatchUpdateAsync(path, etag, 1)).Should().Be(412);
+        using var final = await GetJsonAsync(path);
+        Attributes(final.RootElement).GetProperty("population").GetInt64().Should().Be(98765);
+    }
+
+    private async Task<int> BatchUpdateAsync(string path, string etag, int population)
+    {
+        using var payload = ODataContent(new
+        {
+            requests = new[]
+            {
+                new { id = "conditional", method = "PATCH", url = path, atomicityGroup = "conditional",
+                    headers = new Dictionary<string, string> { ["Content-Type"] = "application/json", ["If-Match"] = etag },
+                    body = new { Attributes = new { population } } }
+            }
+        });
+        using var response = await fixture.Client.PostAsync("/odata/$batch", payload);
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        using var result = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        return result.RootElement.GetProperty("responses")[0].GetProperty("status").GetInt32();
     }
 
     private static StringContent ODataContent<T>(T value)

@@ -10,7 +10,7 @@ name: Release Bundle (Compatibility Train)
 #
 # Evidence-first: with promote=false (default) nothing is published — the run
 # produces the manifest + evidence bundle and stops. Suites not yet wired to the
-# prebuilt image (release/bundle-suites.json -> refactorPending) are reported as
+# prebuilt image (eng/release/bundle-suites.v1.json -> refactorPending) are reported as
 # not-yet-gated rather than silently skipped; widen coverage by flipping those.
 
 on:
@@ -20,7 +20,7 @@ on:
       - '.github/workflows/cite-conformance.yml'
       - '.github/workflows/cite-conformance-common.yml'
       - 'scripts/release/dispatch-and-wait.sh'
-      - 'release/bundle-suites.json'
+      - 'eng/release/bundle-suites.v1.json'
       - 'tests/dotnet/Honua.ReleaseWorkflows.Tests/**'
   workflow_dispatch:
     inputs:
@@ -251,9 +251,10 @@ jobs:
           ref='${{ needs.rc-image.outputs.image_ref }}'
           digest='${{ needs.rc-image.outputs.image_digest }}'
           image="${ref}@${digest}"
-          : > integration-evidence.ndjson
+          mkdir -p artifacts/release
+          : > artifacts/release/integration-evidence.ndjson
           # Each dispatchable integration suite from the registry, run against the RC image.
-          jq -c '.integration[]' release/bundle-suites.json | while read -r entry; do
+          jq -c '.integration[]' eng/release/bundle-suites.v1.json | while read -r entry; do
             id="$(jq -r '.id' <<<"$entry")"
             repo="$(jq -r '.owningRepo' <<<"$entry")"
             wf="$(jq -r '.workflow // ""' <<<"$entry")"
@@ -272,14 +273,14 @@ jobs:
             args=(--id "$id" --repo "$repo" --workflow "$(basename "$wf")" --ref "$dispatch_ref"
               --expected-image "$image" --image-input "$input")
             [ -n "$input" ] && args+=(--input "${input}=${image}")
-            ./scripts/release/dispatch-and-wait.sh "${args[@]}" >> integration-evidence.ndjson || true
+            ./scripts/release/dispatch-and-wait.sh "${args[@]}" >> artifacts/release/integration-evidence.ndjson || true
           done
-          echo "Collected integration evidence:"; cat integration-evidence.ndjson || true
+          echo "Collected integration evidence:"; cat artifacts/release/integration-evidence.ndjson || true
       - name: Upload integration evidence
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: integration-evidence
-          path: integration-evidence.ndjson
+          path: artifacts/release/integration-evidence.ndjson
           if-no-files-found: warn
 
   sdk-cut:
@@ -297,8 +298,9 @@ jobs:
           ref='${{ needs.rc-image.outputs.image_ref }}'
           digest='${{ needs.rc-image.outputs.image_digest }}'
           image="${ref}@${digest}"
-          : > sdk-evidence.ndjson
-          jq -c '.sdk[]' release/bundle-suites.json | while read -r entry; do
+          mkdir -p artifacts/release
+          : > artifacts/release/sdk-evidence.ndjson
+          jq -c '.sdk[]' eng/release/bundle-suites.v1.json | while read -r entry; do
             id="$(jq -r '.id' <<<"$entry")"
             repo="$(jq -r '.owningRepo' <<<"$entry")"
             pub="$(jq -r '.publishWorkflow // ""' <<<"$entry")"
@@ -315,17 +317,17 @@ jobs:
               args=(--id "$id" --repo "$repo" --workflow "$compat" --ref trunk
                 --expected-image "$image" --image-input "$input")
               [ -n "$input" ] && args+=(--input "${input}=${image}")
-              ./scripts/release/dispatch-and-wait.sh "${args[@]}" >> sdk-evidence.ndjson || true
+              ./scripts/release/dispatch-and-wait.sh "${args[@]}" >> artifacts/release/sdk-evidence.ndjson || true
             else
               echo "[skip] $id compat ($compat, refactorPending=$pending) — reported as not-yet-gated"
             fi
           done
-          echo "Collected SDK evidence:"; cat sdk-evidence.ndjson || true
+          echo "Collected SDK evidence:"; cat artifacts/release/sdk-evidence.ndjson || true
       - name: Upload SDK evidence
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sdk-evidence
-          path: sdk-evidence.ndjson
+          path: artifacts/release/sdk-evidence.ndjson
           if-no-files-found: warn
 
   realtime-preview-qualification:
@@ -371,26 +373,25 @@ jobs:
           token: ${{ secrets.RELEASE_BUNDLE_TOKEN || secrets.GITHUB_TOKEN }}
       - name: Download integration evidence
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with: { name: integration-evidence, path: ev }
+        with: { name: integration-evidence, path: artifacts/release/downloads }
         continue-on-error: true
       - name: Download SDK evidence
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with: { name: sdk-evidence, path: ev }
+        with: { name: sdk-evidence, path: artifacts/release/downloads }
         continue-on-error: true
       - name: Assemble evidence -> manifest -> scoreboard bundle
         id: validate
         run: |
           set -euo pipefail
+          mkdir -p artifacts/release
           observed="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           ./scripts/release/collect-evidence.sh \
-            --registry release/bundle-suites.json \
-            --integration ev/integration-evidence.ndjson \
-            --sdk ev/sdk-evidence.ndjson \
-            --output evidence.json
-          base_arg=()
-          [ -f "release/${{ github.event.inputs.release_id }}.json" ] && base_arg=(--base "release/${{ github.event.inputs.release_id }}.json")
+            --registry eng/release/bundle-suites.v1.json \
+            --integration artifacts/release/downloads/integration-evidence.ndjson \
+            --sdk artifacts/release/downloads/sdk-evidence.ndjson \
+            --output artifacts/release/evidence.json
           ./scripts/release/build-release-manifest.sh \
-            --evidence evidence.json \
+            --evidence artifacts/release/evidence.json \
             --release-id '${{ github.event.inputs.release_id }}' \
             --channel '${{ github.event.inputs.channel }}' \
             --server-ref '${{ needs.rc-image.outputs.server_sha }}' \
@@ -399,29 +400,26 @@ jobs:
             --image-tag '${{ needs.rc-image.outputs.image_tag }}' \
             --image-digest '${{ needs.rc-image.outputs.image_digest }}' \
             --observed-at "$observed" \
-            "${base_arg[@]}" \
-            --output "release/${{ github.event.inputs.release_id }}.json"
+            --output "artifacts/release/${{ github.event.inputs.release_id }}.json"
           chmod +x .honua-devops/scripts/compat-train-release-validation.sh
           COMPAT_TRAIN_MODE=advisory \
-          COMPAT_TRAIN_BUNDLE_OUTPUT="release-validation-bundle.json" \
+          COMPAT_TRAIN_BUNDLE_OUTPUT="artifacts/release/release-validation-bundle.json" \
             .honua-devops/scripts/compat-train-release-validation.sh \
-            "release/${{ github.event.inputs.release_id }}.json" || true
-          verdict="$(jq -r '.verdict' release-validation-bundle.json)"
+            "artifacts/release/${{ github.event.inputs.release_id }}.json" || true
+          verdict="$(jq -r '.verdict' artifacts/release/release-validation-bundle.json)"
           echo "verdict=${verdict}" >> "$GITHUB_OUTPUT"
           {
             echo "## Release-train scoreboard — ${{ github.event.inputs.release_id }}"
             echo "Verdict: **${verdict}**"
             echo '```'
-            jq -r '.followUps[] | "- " + (.url // "(no issue yet)") + " — " + .reason' release-validation-bundle.json
+            jq -r '.followUps[] | "- " + (.url // "(no issue yet)") + " — " + .reason' artifacts/release/release-validation-bundle.json
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-      - name: Upload manifest + scoreboard bundle
+      - name: Upload release evidence bundle
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-train-evidence
-          path: |
-            release/${{ github.event.inputs.release_id }}.json
-            release-validation-bundle.json
+          path: artifacts/release/
       - name: Fail if promoting on a non-green train
         if: ${{ github.event.inputs.promote == 'true' && steps.validate.outputs.verdict != 'pass' }}
         run: |
@@ -449,7 +447,7 @@ jobs:
           set -euo pipefail
           echo "Promoting ${{ github.event.inputs.release_id }} (verdict=pass)."
           # Real SDK publishes (dry_run=false) — gated behind the protected environment.
-          jq -c '.sdk[]' release/bundle-suites.json | while read -r entry; do
+          jq -c '.sdk[]' eng/release/bundle-suites.v1.json | while read -r entry; do
             repo="$(jq -r '.owningRepo' <<<"$entry")"
             pub="$(jq -r '.publishWorkflow // ""' <<<"$entry")"
             case "${repo}:${pub}" in

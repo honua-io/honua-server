@@ -1330,6 +1330,7 @@ builder.Services.AddHonuaJsonContexts();
 // the matching restoration middleware below puts HEAD back once the endpoint is selected.
 // Normalize the optional ArcGIS application prefix before HEAD's endpoint inspection.
 builder.Services.AddSingleton<IStartupFilter, GeoServicesPathBaseStartupFilter>();
+builder.Services.AddSingleton<IStartupFilter, GeoServicesFolderPathStartupFilter>();
 builder.Services.AddHonuaHeadRequestSupport();
 
 // Add comprehensive IOptions configuration validation
@@ -1384,11 +1385,9 @@ if (activeDbConnectionTracker != null)
     EnhancedTelemetry.ConfigureActiveDbConnectionsProvider(activeDbConnectionTracker.GetActiveCount);
 }
 
-// First middleware in the application pipeline, which for a WebApplication is the first
-// thing to run *after* the implicit UseRouting: routing has already matched the GET endpoint
-// for a request that arrived as HEAD, so restore HEAD here and every cross-cutting component
-// (auth, tenancy, rate limiting, auditing, telemetry, request logging) sees the method the
-// client actually sent. See UseHonuaHeadRequestGetSemantics below for the handler side (#3389).
+app.UseGeoServicesPublicPaths();
+
+// Restore HEAD after routing so cross-cutting middleware sees the method the client sent.
 app.UseHonuaHeadRequestMethod();
 
 // Data-plane writes stay closed until degraded startup has a database (#6008).
@@ -1862,6 +1861,7 @@ app.UsePortalTokenAuthenticationRejection();
 app.UseMiddleware<Honua.Server.Features.Operations.UrlImportOperationMiddleware>();
 
 // Map public demo service/layer contract IDs to internal seeded layer IDs and guard demo writes.
+app.UseGeoServicesServicePaths();
 app.UseCloudDemoServiceLayerAliases();
 app.UseCloudDemoWritableFeatureGuard();
 

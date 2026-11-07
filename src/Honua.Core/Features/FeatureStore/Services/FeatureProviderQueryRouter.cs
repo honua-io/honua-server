@@ -115,9 +115,7 @@ public sealed class FeatureProviderQueryRouter
 
         try
         {
-            var storageBinding = snapshot.ResolveStorageBinding(publication)
-                ?? throw new InvalidOperationException(
-                    $"Publication '{publication.Metadata.Id}' on service '{service.Metadata.Id}' does not resolve to a storage binding.");
+            var storageBinding = ResolveAuthorizedStorageBinding(snapshot, resource, publication);
             var resolvedStorageLayerId = storageBinding.StorageLayerId ?? storageLayerId;
             var storageMapping = FeatureStorageMapping.FromMetadata(resource, storageBinding);
 
@@ -190,6 +188,24 @@ public sealed class FeatureProviderQueryRouter
         }
 
         return _providerRegistry.TryGetProvider(providerName, out var provider) ? provider : null;
+    }
+
+    private static MetadataV2StorageBinding ResolveAuthorizedStorageBinding(
+        MetadataV2GraphSnapshot snapshot, MetadataV2Resource resource, MetadataV2Publication publication)
+    {
+        if (publication.ResourceId != resource.Metadata.Id ||
+            (!string.IsNullOrWhiteSpace(publication.StorageBindingId) &&
+             !snapshot.Index.StorageBindingsById.ContainsKey(publication.StorageBindingId)))
+        {
+            throw new InvalidOperationException("The authorized publication references an invalid storage binding.");
+        }
+        var binding = snapshot.ResolveStorageBinding(publication)
+            ?? throw new InvalidOperationException("The authorized publication does not resolve to a storage binding.");
+        if (binding.ResourceId != resource.Metadata.Id)
+        {
+            throw new InvalidOperationException("The authorized publication references an invalid storage binding.");
+        }
+        return binding;
     }
 
     private async Task<(DataConnection? Connection, string? ProviderName, string? MissingConnectionId)> ResolveProviderNameAsync(

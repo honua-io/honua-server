@@ -7,35 +7,9 @@ using Honua.Core.Features.Migration.Domain;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Server-authoritative round-trip validation for SDK-translated toolbox manifests (#2145).
-/// The canonical process catalog is the single source of truth for executable signatures, so
-/// the round-trip proof lives here rather than in the SDK: every proposed tool mapping is
-/// resolved against <see cref="IProcessCatalog"/>, valid mappings are echoed back with their
-/// canonical parameter signature, and untranslatable constructs become explicit per-tool
-/// issues instead of silently dropped or stubbed-as-executable tools.
-/// </summary>
 public static class ToolboxTranslationValidator
 {
-    /// <summary>
-    /// Validates a translated toolbox manifest against the canonical process catalog.
-    /// </summary>
-    /// <param name="manifest">SDK-emitted translation manifest. Must be structurally valid
-    /// (non-blank toolbox name, known source format, at least one tool with a non-blank
-    /// name); protocol adapters enforce structure before calling.</param>
-    /// <param name="catalog">Canonical process catalog.</param>
-    /// <param name="conditionalInputProbe">
-    /// Optional seam onto the canonical plan validator's presence-based input requirements
-    /// and the runtime availability of the target process. When supplied, a mapping that
-    /// would be rejected at submit time (for example because it satisfies no member of a
-    /// mutually-substitutable input group) or that targets a process whose executor cannot
-    /// complete any job is reported instead of being certified, and it also decides which
-    /// unmapped parameters are genuinely branch-dependent rather than unconditionally
-    /// optional. When <c>null</c>, only static <c>Required</c> flags are checked and every
-    /// unmapped, defaultless parameter is reported, because the two cases cannot be told
-    /// apart without the validator.
-    /// </param>
-    /// <returns>Per-tool classification report with round-tripped signatures.</returns>
+    // Without the plan validator, a missing default is reported as required, because a branch-dependent parameter cannot be told from an unconditional one.
     public static ToolboxTranslationReport Validate(
         ToolboxTranslationManifest manifest,
         IProcessCatalog catalog,
@@ -253,12 +227,6 @@ public static class ToolboxTranslationValidator
         return BuildResult(descriptor, classification, definition.ProcessId, bindings, issues);
     }
 
-    /// <summary>
-    /// Adds one exact, branch-qualified issue per unmapped parameter the canonical validator
-    /// requires on an enumerable discriminator branch. Grouped by parameter so a domain that
-    /// spells the same branch several ways (<c>kmeans</c> / <c>k-means</c>) reads as one gap
-    /// with several triggering values rather than as several gaps.
-    /// </summary>
     private static bool AddConditionalBranchIssues(
         ProcessDefinition definition,
         IProcessConditionalInputProbe? conditionalInputProbe,
@@ -300,10 +268,6 @@ public static class ToolboxTranslationValidator
         return exhaustsAllBranches;
     }
 
-    /// <summary>
-    /// Decides which remedy the branch-requirement issues may honestly recommend, by testing
-    /// whether every assignment in the finite discriminator domain is covered by some gap.
-    /// </summary>
     private static (string Remedy, bool ExhaustsAllBranches) DescribeBranchRemedy(
         ProcessDefinition definition,
         IReadOnlyList<ProcessBranchRequirement> requirements)

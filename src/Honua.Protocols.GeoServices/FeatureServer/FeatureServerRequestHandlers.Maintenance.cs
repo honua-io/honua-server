@@ -1790,7 +1790,7 @@ internal static partial class FeatureServerEndpoints
         if (accessibleLayers.Length == 0)
         {
             return StandardErrorHelpers.CreateNotFound(context,
-                $"Service '{serviceId}' has no accessible layers to validate SQL against.");
+                $"Service '{service.EffectivePublicName}' has no accessible layers to validate SQL against.");
         }
 
         // validateSQL is GET or POST. Merge query and (for POST) form/body values so the

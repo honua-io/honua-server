@@ -184,7 +184,7 @@ internal static partial class ImageServerSoapEndpoints
                     soapNamespace,
                     operationNamespace,
                     "GetMetadataResponse",
-                    new XElement("Result", BuildMetadata(serviceId))),
+                    new XElement("Result", BuildMetadata(GeoServicesServicePath.FromRequest(context)?.PublicName ?? serviceId))),
                 "GetMultidimensionalInfo" => await HandleGetMultidimensionalInfoAsync(
                     rasterRequest,
                     cancellationToken).ConfigureAwait(false),
@@ -470,11 +470,12 @@ internal static partial class ImageServerSoapEndpoints
             return extras.Error;
         }
 
+        var publicName = GeoServicesServicePath.FromRequest(request.HttpContext)?.PublicName ?? serviceId;
         var result = new XElement(
             "Result",
             new XAttribute(xsi + "type", "tns:ImageServiceInfo"),
-            new XElement("Name", serviceId),
-            new XElement("Description", $"Image service for {serviceId}"),
+            new XElement("Name", publicName),
+            new XElement("Description", $"Image service for {publicName}"),
             BuildEnvelope(extent),
             new XElement("PixelSizeX", FormatDouble(pixelSizeX)),
             new XElement("PixelSizeY", FormatDouble(pixelSizeY)),

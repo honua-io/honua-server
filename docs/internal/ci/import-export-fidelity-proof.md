@@ -29,7 +29,8 @@ null string values as empty cells; the spatial formats must preserve null geomet
 and CRS. Raster nodata does not apply to these vector fixtures.
 
 The reviewed baseline declares the complete import/format denominator and numeric
-counts, not golden output bytes. Each invocation creates a new UUID directory,
+counts, not golden output bytes. Each invocation creates a new UUID directory under
+`artifacts/import-export-fidelity/`,
 requires exactly three passing export and seven passing import behavior results (no skips),
 then decodes all nine files before comparison. The successful receipt records
 HEAD, run ID, UTC completion, reader version/image and SHA-256 of the actual files

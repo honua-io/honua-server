@@ -487,9 +487,9 @@ internal static class OgcRecordsEndpoints
     {
         var serviceMetadata = service.Metadata
             ?? throw new InvalidOperationException("Metadata v2 service metadata is required.");
-        var servicePath = $"{baseUrl}/rest/services/{Uri.EscapeDataString(serviceMetadata.Name)}";
+        var servicePath = baseUrl + GeoServicesServiceUrls.CanonicalPath(snapshot.Graph, service);
         var links = ImmutableArray.CreateBuilder<Link>();
-        links.Add(Link.Create($"{baseUrl}/ogc/records/collections/{CatalogCollectionId}/items/{Uri.EscapeDataString($"service:{serviceMetadata.Name}")}", RelationTypes.Self, MediaTypes.GeoJson, serviceMetadata.Name));
+        links.Add(Link.Create($"{baseUrl}/ogc/records/collections/{CatalogCollectionId}/items/{Uri.EscapeDataString($"service:{serviceMetadata.Name}")}", RelationTypes.Self, MediaTypes.GeoJson, serviceMetadata.Title ?? service.EffectivePublicName));
         if (IsProtocolEnabled(service, FeatureServerProtocolName))
         {
             links.Add(Link.Create($"{servicePath}/FeatureServer", RelationTypes.Alternate, MediaTypes.Json, "FeatureServer"));
@@ -511,7 +511,7 @@ internal static class OgcRecordsEndpoints
 
         var properties = new OgcRecordProperties
         {
-            Title = serviceMetadata.Title ?? serviceMetadata.Name,
+            Title = serviceMetadata.Title ?? service.EffectivePublicName,
             Description = serviceMetadata.Description,
             Type = "service",
             ResourceType = "Service",
@@ -569,10 +569,10 @@ internal static class OgcRecordsEndpoints
             links.Add(Link.Create($"{baseUrl}/stac/collections/{layerIdString}", RelationTypes.Alternate, MediaTypes.Json, "STAC collection"));
         }
 
-        if (service is { Metadata: { } featureServiceMetadata } featureServerService &&
+        if (service is { } featureServerService &&
             IsProtocolEnabled(featureServerService, FeatureServerProtocolName))
         {
-            links.Add(Link.Create($"{baseUrl}/rest/services/{Uri.EscapeDataString(featureServiceMetadata.Name)}/FeatureServer/{layerIdString}", RelationTypes.Alternate, MediaTypes.Json, "FeatureServer layer"));
+            links.Add(Link.Create($"{baseUrl}{GeoServicesServiceUrls.CanonicalPath(snapshot.Graph, featureServerService)}/FeatureServer/{layerIdString}", RelationTypes.Alternate, MediaTypes.Json, "FeatureServer layer"));
         }
 
         var properties = new OgcRecordProperties

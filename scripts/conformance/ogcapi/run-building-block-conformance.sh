@@ -164,16 +164,13 @@ cat > "$RESULTS_DIR/candidate.json" <<EOF
 }
 EOF
 
-# Keep the declaration boundary executable. These are the implemented discovery
-# classes required by GDAL/QGIS (#4995), proven by live building-block behavior,
-# seeded integration assertions and the pinned-client receipts under
-# docs/internal/evidence/client-certification-2cc2213/fixes-4994-4995/.
+# Keep the declaration boundary executable: these discovery classes are required
+# by GDAL and QGIS and proven by live building-block behaviour and seeded tests.
 # This lane is not a complete ETS-equivalent class certification. Part 2 CRS
 # also has the complete ETS class in cite-evidence-report.yml. Exact equality
-# continues to reject unevidenced optional classes. Features Part 4 discovery
-# was enabled in #5147; OgcFeaturesTransactionTests exercises create, replace,
-# update, delete, and conditional writes, and OgcFeaturesEnhancementsTests
-# asserts this same declaration boundary.
+# rejects unevidenced optional classes. OgcFeaturesTransactionTests exercises
+# create, replace, update, delete, and conditional writes;
+# OgcFeaturesEnhancementsTests asserts the same declaration boundary.
 python3 - "$RESULTS_DIR/conformance.json" <<'PY'
 import json
 import sys

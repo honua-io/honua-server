@@ -74,7 +74,7 @@ cat >"$WORKDIR/evidence.json" <<'EOF'
     { "id": "release-evidence-pack",
       "requirement": "Manifest, smoke results, and feature map attached.",
       "conclusion": "success",
-      "evidence": { "manifest": "release/honua-test-rc.json" } }
+      "evidence": { "manifest": "artifacts/release/honua-test-rc.json" } }
   ]
 }
 EOF

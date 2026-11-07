@@ -47,7 +47,11 @@ public sealed class FolderPersistenceTests : IAsyncLifetime
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/folders")]
     [Endpoint("PUT /api/v1/admin/services/{serviceName}/folder")]
-    public async Task FolderMove_AfterRestart_PreservesMembershipAndFlatReads()
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    [Endpoint("GET /rest/services/{folderName}/{serviceId}/FeatureServer")]
+    [Endpoint("GET /rest/services/{folderName}/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task FolderMove_AfterRestart_PreservesMembershipAndServicePaths()
     {
         var listing = await _client.GetAsync("/api/v1/admin/folders");
         listing.EnsureSuccessStatusCode();
@@ -66,7 +70,7 @@ public sealed class FolderPersistenceTests : IAsyncLifetime
         snapshot.Graph.Services.Where(service => service.Metadata.Name == "test")
             .Should().OnlyContain(service => service.FolderId == id);
         await RestartHost();
-        await AssertFlatReads();
+        await AssertServiceReadsAsync();
         using var restartedScope = _fixture.Services.CreateScope();
         var persisted = await restartedScope.ServiceProvider.GetRequiredService<IMetadataV2GraphStore>().GetCurrentAsync();
         persisted.Etag.Should().Be(snapshot.Etag);
@@ -82,9 +86,16 @@ public sealed class FolderPersistenceTests : IAsyncLifetime
         _client = _fixture.CreateClient(c => c.DefaultRequestHeaders.Add("X-API-Key", "folder-persistence-key"));
     }
 
-    private async Task AssertFlatReads()
+    private async Task AssertServiceReadsAsync()
     {
-        foreach (var path in new[] { "/rest/services?f=json", "/rest/services/test/FeatureServer?f=json", "/rest/services/test/FeatureServer/0/query?where=1%3D1&outFields=*&f=json" })
+        foreach (var path in new[]
+        {
+            "/rest/services?f=json",
+            "/rest/services/test/FeatureServer?f=json",
+            "/rest/services/test/FeatureServer/0/query?where=1%3D1&outFields=*&f=json",
+            "/rest/services/Survey/test/FeatureServer?f=json",
+            "/rest/services/Survey/test/FeatureServer/0/query?where=1%3D1&outFields=*&f=json"
+        })
         {
             var response = await _client.GetAsync(path);
             response.StatusCode.Should().Be(HttpStatusCode.OK);

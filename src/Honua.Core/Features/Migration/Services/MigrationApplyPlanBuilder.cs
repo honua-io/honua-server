@@ -14,20 +14,12 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Builds deterministic apply-plan artifacts from migration manifests.
-/// </summary>
 public static class MigrationApplyPlanBuilder
 {
     private const string ReadyDisposition = "ready";
     private const string ManualReviewDisposition = "manual-review";
     private const string UnsupportedDisposition = "unsupported";
 
-    /// <summary>
-    /// Build an ordered, replayable apply plan from a migration manifest.
-    /// </summary>
-    /// <param name="manifest">Source migration manifest.</param>
-    /// <returns>Deterministic apply plan artifact.</returns>
     public static MigrationApplyPlanArtifact Build(MigrationManifestArtifact manifest)
     {
         ArgumentNullException.ThrowIfNull(manifest);

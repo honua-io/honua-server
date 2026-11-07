@@ -8,14 +8,8 @@ using Honua.Core.Features.Raster.ZarrParser;
 
 namespace Honua.Core.Features.Raster.CogParser;
 
-/// <summary>Losslessly packages decoded COG samples as a client-readable PNG.</summary>
 public static class CogTileEncoder
 {
-    /// <summary>
-    /// Encodes chunky unsigned 8/16-bit grayscale or RGB samples, retaining their bit depth
-    /// and representing a declared nodata sample with PNG transparency. Unsupported layouts
-    /// return null; malformed sample buffers are rejected before encoding.
-    /// </summary>
     public static byte[]? EncodePng(byte[] samples, CogMetadata metadata)
     {
         if (metadata.PlanarConfiguration != 1 || metadata.BitsPerSample is not (8 or 16)

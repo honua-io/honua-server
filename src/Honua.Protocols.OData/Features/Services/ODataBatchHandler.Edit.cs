@@ -66,6 +66,21 @@ internal sealed partial class ODataBatchHandler
             }
         };
 
+    private static ODataEditRequest CreateMutationEditRequest(
+        ODataBatchRequestItem request, Feature feature, long objectId)
+    {
+        var edit = CreateEditRequestFromFeature(
+            request.Method.Equals("PATCH", StringComparison.OrdinalIgnoreCase) ? ODataOperation.Patch : ODataOperation.Update,
+            feature, objectId, request.Headers?.GetValueOrDefault("If-Match"), request.Headers?.GetValueOrDefault("If-None-Match"));
+        return edit with
+        {
+            Payload = edit.Payload with
+            {
+                GeometrySpecified = TryGetGeometrySpecified(request.Body)
+            }
+        };
+    }
+
     private static bool TryGetGeometrySpecified(Dictionary<string, object?>? body)
     {
         if (body is null || body.Count == 0)

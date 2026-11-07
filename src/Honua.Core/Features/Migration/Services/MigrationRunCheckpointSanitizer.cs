@@ -12,24 +12,13 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Shared sanitizer that enforces the release-safe shape of
-/// <see cref="MigrationRunCheckpoint"/> values written to a checkpoint store. URLs and
-/// credential-like strings are stripped from the resume marker; markers are truncated
-/// to a deterministic upper bound.
-/// </summary>
+// A marker containing :// is replaced wholesale, then cut to MaxMarkerLength. Bare credential text is not scrubbed, and the save is not rejected.
 public static class MigrationRunCheckpointSanitizer
 {
-    /// <summary>Maximum resume-marker length tolerated by checkpoint stores.</summary>
     public const int MaxMarkerLength = 128;
 
-    /// <summary>Replacement value used when a marker contains URL-like content.</summary>
     public const string RedactedMarker = "[redacted-marker]";
 
-    /// <summary>
-    /// Return a sanitized copy of <paramref name="checkpoint"/> with URL-like markers
-    /// redacted, marker length capped, and run identifier trimmed.
-    /// </summary>
     public static MigrationRunCheckpoint Sanitize(MigrationRunCheckpoint checkpoint)
     {
         ArgumentNullException.ThrowIfNull(checkpoint);

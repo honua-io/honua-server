@@ -255,7 +255,9 @@ internal sealed class OgcCoveragesHandler
                             ? null
                             : Services.ZarrCoverageService.CreateCollection(resource, storageLayerId, zarr, baseUrl);
                     }
-                    return await CreateCollectionAsync(resource, entry.Value.Service, storageLayerId, raster.Value, baseUrl, ct)
+                    var servicePath = entry.Value.Service is { } service
+                        ? GeoServicesServiceUrls.CanonicalPath(snapshot.Graph, service) : null;
+                    return await CreateCollectionAsync(resource, servicePath, storageLayerId, raster.Value, baseUrl, ct)
                         .ConfigureAwait(false);
                 },
                 cancellationToken).ConfigureAwait(false);
@@ -337,7 +339,7 @@ internal sealed class OgcCoveragesHandler
                     baseUrl)
                 : await CreateCollectionAsync(
                         resolution.Resource!,
-                        resolution.Service,
+                        resolution.ServicePath,
                         resolution.StorageLayerId!.Value,
                         resolution.Raster!.Value,
                         baseUrl,
@@ -577,6 +579,7 @@ internal sealed class OgcCoveragesHandler
         var publication = validation.Publication!;
         var service = validation.Service;
         var snapshot = validation.Snapshot!;
+        var servicePath = service is null ? null : GeoServicesServiceUrls.CanonicalPath(snapshot.Graph, service);
         var storageLayerId = snapshot.ResolveStorageLayerId(publication);
         if (!storageLayerId.HasValue)
         {
@@ -595,7 +598,7 @@ internal sealed class OgcCoveragesHandler
             var zarr = await _zarrCoverages.FindServableRegistrationAsync(storageLayerId.Value, cancellationToken).ConfigureAwait(false);
             if (zarr is not null)
             {
-                return new CoverageResolution(resource, service, storageLayerId.Value, null, zarr, null);
+                return new CoverageResolution(resource, servicePath, storageLayerId.Value, null, zarr, null);
             }
 
             return new CoverageResolution(
@@ -607,7 +610,7 @@ internal sealed class OgcCoveragesHandler
                 StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' does not expose a raster coverage."));
         }
 
-        return new CoverageResolution(resource, service, storageLayerId.Value, raster.Value, null, null);
+        return new CoverageResolution(resource, servicePath, storageLayerId.Value, raster.Value, null, null);
     }
 
     private async Task<RasterInfo?> GetPrimaryRasterWithExtentAsync(int layerId, CancellationToken cancellationToken)
@@ -632,7 +635,7 @@ internal sealed class OgcCoveragesHandler
 
     private async Task<OgcCoverageCollection> CreateCollectionAsync(
         MetadataV2Resource resource,
-        MetadataV2Service? service,
+        string? servicePath,
         int storageLayerId,
         RasterInfo raster,
         string baseUrl,
@@ -669,10 +672,10 @@ internal sealed class OgcCoveragesHandler
             type: PngContentType,
             title: "Coverage data as PNG"));
 
-        if (service is not null)
+        if (servicePath is not null)
         {
             links.Add(Link.Create(
-                href: $"{baseUrl}/rest/services/{Uri.EscapeDataString(service.Metadata.Name)}/ImageServer",
+                href: $"{baseUrl}{servicePath}/ImageServer",
                 rel: RelationTypes.DescribedBy,
                 type: MediaTypes.Json,
                 title: "GeoServices ImageServer metadata"));
@@ -1958,7 +1961,7 @@ internal sealed class OgcCoveragesHandler
 
     private readonly record struct CoverageResolution(
         MetadataV2Resource? Resource,
-        MetadataV2Service? Service,
+        string? ServicePath,
         int? StorageLayerId,
         RasterInfo? Raster,
         ZarrRegistration? ZarrRegistration,

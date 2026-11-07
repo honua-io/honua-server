@@ -12,17 +12,8 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Builds deterministic migration fidelity matrix rollups from per-source classification rows.
-/// </summary>
 public static class MigrationFidelityMatrixBuilder
 {
-    /// <summary>
-    /// Builds a matrix from source fidelity classifications.
-    /// </summary>
-    /// <param name="classifications">Source fidelity classification records.</param>
-    /// <param name="identityRemaps">Optional source-to-target identity remaps used to enrich matrix cells.</param>
-    /// <returns>A deterministic matrix, or <c>null</c> when no classifications are present.</returns>
     public static MigrationFidelityMatrix? Build(
         IEnumerable<MigrationFidelityClassificationRecord> classifications,
         IEnumerable<MigrationManifestIdentityRemap>? identityRemaps = null)

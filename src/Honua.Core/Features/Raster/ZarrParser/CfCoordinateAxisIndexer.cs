@@ -6,42 +6,8 @@ using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Core.Features.Raster.ZarrParser;
 
-/// <summary>
-/// Maps numeric coordinate-value requests onto integer indices of a non-spatial,
-/// non-temporal Zarr axis (vertical/elevation/pressure-level or any named axis).
-/// The vertical/generic analogue of <see cref="CfTimeAxisIndexer"/>: pure and
-/// AOT-safe with no allocation beyond an optional error string and no dependency
-/// on the read pipeline.
-/// </summary>
-/// <remarks>
-/// Two axis descriptions are supported:
-/// <list type="bullet">
-/// <item><description><b>Evenly spaced</b> — described by first (<c>start</c>) and last
-/// (<c>end</c>) sample coordinate plus <c>count</c>; spacing is
-/// <c>(end - start) / (count - 1)</c>. Works for ascending or descending axes
-/// (e.g. pressure levels that decrease with height).</description></item>
-/// <item><description><b>Explicit coordinate array</b> — an arbitrary, possibly
-/// irregular monotonic list of sample coordinates; the nearest sample is selected
-/// for an instant and the inclusive covered span for a range.</description></item>
-/// </list>
-/// An instant request rounds to the nearest sample and is rejected when it falls
-/// outside the axis by more than half the local spacing. A range request resolves
-/// to the inclusive set of samples whose coordinate lies within the requested
-/// (possibly open-ended) interval and is rejected when that set is empty.
-/// </remarks>
 public static class CfCoordinateAxisIndexer
 {
-    /// <summary>
-    /// Resolves the inclusive index range on a coordinate axis described by an
-    /// optional explicit coordinate array or an evenly-spaced descriptor.
-    /// </summary>
-    /// <param name="axis">Axis metadata to resolve against.</param>
-    /// <param name="reqLow">Requested interval low coordinate, or null for an open-ended (<c>../v1</c>) request.</param>
-    /// <param name="reqHigh">Requested interval high coordinate, or null for an open-ended (<c>v0/..</c>) request.</param>
-    /// <param name="lowInclusive">Resolved inclusive low index when the method returns true.</param>
-    /// <param name="highInclusive">Resolved inclusive high index when the method returns true.</param>
-    /// <param name="error">Client-safe error when the method returns false.</param>
-    /// <returns>True when the request resolves to a non-empty in-range index range.</returns>
     public static bool TryResolveIndexRange(
         ZarrAxis axis,
         double? reqLow,

@@ -62,7 +62,6 @@ class GeneratedGraphFreshness(unittest.TestCase):
                 repo = Path(temp)
                 ci = repo / 'scripts/ci'
                 ci.mkdir(parents=True)
-                (repo / 'scripts/examples').mkdir()
                 docs = repo / 'docs/okf/capabilities'
                 docs.mkdir(parents=True)
                 page = docs / 'test.md'
@@ -76,7 +75,6 @@ class GeneratedGraphFreshness(unittest.TestCase):
                     (repo / 'scripts' / name).write_text('exit 0\n')
                 for name in ('verify-admin-operation-parity.py', 'generate-capability-matrix.py'):
                     (ci / name).write_text('pass\n')
-                (repo / 'scripts/examples/generate-manifest.py').write_text('pass\n')
                 (ci / 'generate-capability-concepts.py').write_text(
                     'from pathlib import Path\n'
                     'with Path("docs/okf/capabilities/test.md").open("a") as stream:\n'

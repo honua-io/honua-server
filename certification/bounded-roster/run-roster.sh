@@ -6,7 +6,7 @@
 #   certification/bounded-roster/run-roster.sh \
 #       --tag nightly-2cc2213 \
 #       --expect-digest sha256:61e06ef3a94d00e4c8fc57ce93e008a5e31b2dcf1da5deb22781fdd42d2d4e51 \
-#       --evidence docs/internal/evidence/client-certification-2cc2213 \
+#       --evidence artifacts/client-certification-2cc2213 \
 #       --run-root /path/on/real/disk/roster-runs
 #
 # The producer is this repository at a clean, committed HEAD: the receipts'

@@ -8,15 +8,8 @@ using System.Diagnostics.CodeAnalysis;
 
 namespace Honua.Core.Features.Infrastructure.ServiceRegistration;
 
-/// <summary>
-/// Common service registration patterns to eliminate duplication across features.
-/// </summary>
 public static class ServiceRegistrationPatterns
 {
-    /// <summary>
-    /// Register object pools for performance optimization.
-    /// Common pattern across feature stores for StringBuilder and Dictionary pooling.
-    /// </summary>
     public static IServiceCollection AddPerformanceOptimizedObjectPools(this IServiceCollection services)
     {
         var poolProvider = new DefaultObjectPoolProvider();
@@ -30,10 +23,6 @@ public static class ServiceRegistrationPatterns
         return services;
     }
 
-    /// <summary>
-    /// Register simple core feature services pattern.
-    /// Used by Import, AutoDocs, Styling core features.
-    /// </summary>
     public static IServiceCollection AddSimpleCoreFeature<
         TService,
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TImplementation>(
@@ -54,15 +43,10 @@ public static class ServiceRegistrationPatterns
     }
 }
 
-/// <summary>
-/// Pooled object policy for Dictionary&lt;string, object?&gt; instances.
-/// </summary>
 public class DictionaryPooledObjectPolicy : PooledObjectPolicy<Dictionary<string, object?>>
 {
-    /// <inheritdoc />
     public override Dictionary<string, object?> Create() => new(StringComparer.OrdinalIgnoreCase);
 
-    /// <inheritdoc />
     public override bool Return(Dictionary<string, object?> obj)
     {
         obj.Clear();
@@ -70,14 +54,9 @@ public class DictionaryPooledObjectPolicy : PooledObjectPolicy<Dictionary<string
     }
 }
 
-/// <summary>
-/// Default pooled object policy for types with parameterless constructor.
-/// </summary>
 public class DefaultPooledObjectPolicy<T> : PooledObjectPolicy<T> where T : class, new()
 {
-    /// <inheritdoc />
     public override T Create() => new();
 
-    /// <inheritdoc />
     public override bool Return(T obj) => true;
 }

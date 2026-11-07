@@ -311,7 +311,7 @@ def execute_gate_fast(root, projects):
                         action['filter'],
                         '--logger', 'trx;LogFileName=lean-fast-' + Path(project).stem + '.trx',
                         '--logger', 'console;verbosity=minimal',
-                        '--results-directory', str(root / 'tests/TestResults')],
+                        '--results-directory', str(root / 'artifacts/test-results')],
                        cwd=root, check=True)
 
 

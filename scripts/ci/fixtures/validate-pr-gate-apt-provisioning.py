@@ -1,100 +1,108 @@
 #!/usr/bin/env python3
-"""Assert the real-GDAL proof's apt provisioning stays bounded and outside the proof.
-
-The `Prove the real-GDAL CLI cases run on the required gate` step used to
-`apt-get update` / `apt-get install` inside its own 10-minute budget. When the
-Azure Ubuntu mirror stalled, the step printed nothing and timed out (13 runs on
-2026-10-23..26), and the import/export fidelity upload then failed with
-"No files were found", hiding the real failure behind a second one.
-
-This holds the fix structurally:
-
-- the proof step installs nothing, keeps its 10-minute timeout, and stays
-  blocking;
-- a provisioning step runs before it under the same condition, with apt's own
-  network retries and timeouts, every attempt wrapped in `timeout`, a bounded
-  retry loop with backoff, and an offline (`--no-download`) install;
-- the provisioning step's timeout covers the loop's worst case, and the job's
-  timeout covers that plus the job's observed runtime;
-- the fidelity evidence upload only errors on missing files when the fidelity
-  proof actually ran.
-"""
-
+"""Validate the shared native cache and required real-GDAL proof contract."""
 from __future__ import annotations
 
-import argparse
 import re
+import subprocess
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
+import yaml
 
+ROOT = Path(__file__).resolve().parents[3]
 JOB = "pr-gate-tests"
 PROOF = "Prove the real-GDAL CLI cases run on the required gate"
 PROVISION = "Provision the GDAL CLI packages for the real-GDAL proof"
+WORKER_JOB = "worker-gdal-tests"
+WORKER_STEP = "Install GDAL CLI"
+PYTHON_JOB = "python-integration-tests"
+PYTHON_STEP = "Install GDAL tools and native Parquet dependency"
 FIDELITY = "Execute import and independent vector export fidelity proofs"
 FIDELITY_UPLOAD = "Upload import and independent vector export fidelity evidence"
 PROOF_TIMEOUT_MINUTES = 10
-# The slowest successful `Tests and runtime proofs` job across 2026-10-24..26
-# (65 runs) took 2454 s, about 41 minutes, with a ~30 s provisioning step.
-# Round up so the job timeout must hold that plus the full provisioning budget.
 JOB_BASELINE_SECONDS = 45 * 60
-
-DURATION = r"(\d+)s?"
+NATIVE_BUDGET_SECONDS = 15 * 60
+PYTHON_JOB_MINUTES = 25
+ACTION = "./.github/actions/provision-gdal-cli"
+CACHE_REVISION = "55cc8345863c7cc4c66a329aec7e433d2d1c52a9"
 
 
 class ContractError(Exception):
-    """A structural violation of the apt provisioning contract."""
+    pass
+
+
+class Sources(NamedTuple):
+    workflow: str
+    script: str
+    action: str
+    ci: str
 
 
 def _step(steps: list, name: str) -> tuple[int, dict]:
-    matches = [
-        (index, step)
-        for index, step in enumerate(steps)
-        if isinstance(step, dict) and step.get("name") == name
-    ]
+    matches = [(index, step) for index, step in enumerate(steps) if step.get("name") == name]
     if len(matches) != 1:
-        raise ContractError(f"expected exactly one step named {name!r}; found {len(matches)}")
+        raise ContractError(f"expected one step named {name!r}; found {len(matches)}")
     return matches[0]
 
 
 def provisioning_worst_case_seconds(script: str) -> int:
-    """Worst case of the bounded download loop plus the offline install."""
-    loop = re.search(r"for attempt in ([\d ]+); do(.*?)\n\s*done", script, re.DOTALL)
-    if not loop:
-        raise ContractError(f"{PROVISION!r} must retry the download in a bounded `for attempt in ...` loop")
-    attempts = [int(value) for value in loop.group(1).split()]
-    body = loop.group(2)
-    bounded = re.search(rf"timeout --kill-after={DURATION} {DURATION} ", body)
-    if not bounded or "apt-get update" not in body or "--download-only" not in body:
-        raise ContractError(
-            f"each {PROVISION!r} attempt must run apt-get update and a --download-only install under `timeout`"
-        )
-    per_attempt = int(bounded.group(1)) + int(bounded.group(2))
-    backoff = re.search(r"sleep \$\(\(attempt \* (\d+)\)\)", body)
-    if not backoff:
-        raise ContractError(f"{PROVISION!r} must back off between attempts")
-    # The loop does not sleep after its final attempt.
-    sleeps = sum(attempt * int(backoff.group(1)) for attempt in attempts[:-1])
-    install = re.search(
-        rf"timeout --kill-after={DURATION} {DURATION} apt-get install [^\n]*--no-download", script
+    constants = {name: int(seconds) for name, seconds in re.findall(r"^readonly (APT_\w+)=(\d+)$", script, re.M)}
+    attempts = re.findall(r"for attempt in ([\d ]+); do", script)
+    if attempts != ["1 2 3"] or script.count("if download_from_mirror;") != 1 or script.count("if ! download_from_mirror;") != 1:
+        raise ContractError("both mirrors must use the same three-attempt download loop")
+    try:
+        per_mirror = 3 * (constants["APT_ATTEMPT_SECONDS"] + constants["APT_KILL_GRACE_SECONDS"]) + 3 * constants["APT_BACKOFF_SECONDS"]
+        total = 2 * per_mirror + constants["APT_INSTALL_SECONDS"] + constants["APT_KILL_GRACE_SECONDS"]
+    except KeyError as error:
+        raise ContractError(f"missing native provisioning bound: {error}") from error
+    if total > NATIVE_BUDGET_SECONDS:
+        raise ContractError(f"native provisioning worst case {total}s exceeds its {NATIVE_BUDGET_SECONDS}s budget")
+    required = (
+        'timeout --kill-after="${APT_KILL_GRACE_SECONDS}s" "${APT_ATTEMPT_SECONDS}s"',
+        'timeout --kill-after="${APT_KILL_GRACE_SECONDS}s" "${APT_INSTALL_SECONDS}s"',
+        'apt-get "$@" update --error-on=any -q &&',
+        'apt-get "$@" install -yq --reinstall --download-only',
+        'install -yq --no-download "${install_dir}"/*.deb',
+        'sleep $((attempt * APT_BACKOFF_SECONDS))',
+        'if [[ "$attempt" -lt 3 ]]',
+        'Acquire::Retries', 'Acquire::http::Timeout', 'Acquire::https::Timeout',
     )
-    if not install:
-        raise ContractError(
-            f"{PROVISION!r} must finish with a bounded, offline (--no-download) apt-get install"
-        )
-    return len(attempts) * per_attempt + sleeps + int(install.group(1)) + int(install.group(2))
+    if any(needle not in script for needle in required):
+        raise ContractError("native provisioning must bound each complete download attempt and install offline")
+    return total
 
 
-def validate(source: str) -> None:
-    import yaml
+def _require_cache_action(action_source: str) -> None:
+    action = yaml.safe_load(action_source)
+    steps = action["runs"]["steps"]
+    if len(steps) != 4:
+        raise ContractError("the native action must identify, restore, verify/install and save in order")
+    identify, restore, install, save = steps
+    if identify.get("run") != "bash scripts/ci/provision-gdal-cli.sh resolve":
+        raise ContractError("runner identity must precede the cache lookup")
+    if restore.get("uses") != f"actions/cache/restore@{CACHE_REVISION}" or save.get("uses") != f"actions/cache/save@{CACHE_REVISION}":
+        raise ContractError("native packages require separate pinned restore/save actions")
+    if restore.get("id") != "gdal-debs" or restore.get("with") != save.get("with"):
+        raise ContractError("restore and save must use the same exact cache identity")
+    cache = restore["with"]
+    for identity in ("runner.os", "runner.arch", "steps.resolve.outputs.image", "hashFiles('scripts/ci/provision-gdal-cli.sh')"):
+        if identity not in cache.get("key", ""):
+            raise ContractError(f"native cache key must include {identity}")
+    if "restore-keys" in cache or cache.get("path") != "${{ steps.resolve.outputs.cache-dir }}":
+        raise ContractError("native caches cannot fall back across identities")
+    if install.get("run") != "bash scripts/ci/provision-gdal-cli.sh install":
+        raise ContractError("cache restore must precede native verification/install")
+    expected_env = {"GDAL_DEB_CACHE_HIT": "${{ steps.gdal-debs.outputs.cache-hit }}", "GDAL_PYTHON_ENVIRONMENT": "${{ inputs.python-environment }}"}
+    if install.get("env") != expected_env or save.get("if") != "steps.gdal-debs.outputs.cache-hit != 'true'":
+        raise ContractError("only a verified cache miss may save packages")
+    if action["inputs"]["python-environment"].get("default") != "system":
+        raise ContractError("the shared action must publish distro Python by default")
+    if any("continue-on-error" in step or "if" in step for step in steps[:-1]):
+        raise ContractError("native cache identification, restore and installation must stay blocking")
 
-    document = yaml.safe_load(source)
-    job = ((document or {}).get("jobs") or {}).get(JOB)
-    if not isinstance(job, dict) or not isinstance(job.get("steps"), list):
-        raise ContractError(f"the required workflow no longer declares the {JOB!r} job's steps")
-    steps = job["steps"]
 
-    proof_index, proof = _step(steps, PROOF)
+def _require_tripwire(proof: dict) -> None:
     proof_run = str(proof.get("run") or "")
     if "apt-get" in proof_run:
         raise ContractError(
@@ -105,9 +113,36 @@ def validate(source: str) -> None:
         raise ContractError(f"{PROOF!r} must keep its {PROOF_TIMEOUT_MINUTES}-minute timeout")
     if "continue-on-error" in proof:
         raise ContractError(f"{PROOF!r} must stay blocking")
-    if "dotnet test" not in proof_run or "Category=GDAL" not in proof_run:
-        raise ContractError(f"{PROOF!r} no longer runs the Category=GDAL tests")
+    for needle in ("dotnet test", "Category=GDAL", "count_outcome Passed", "count_outcome NotExecuted"):
+        if needle not in proof_run:
+            raise ContractError(f"{PROOF!r} no longer proves the Category=GDAL cases ran ({needle})")
+    enabled = (proof.get("env") or {}).get("HONUA_REQUIRE_GDAL_CLI")
+    if enabled is not True and str(enabled) != "true":
+        raise ContractError(f"{PROOF!r} must set HONUA_REQUIRE_GDAL_CLI so a missing tool fails the proof")
 
+
+def _require_shared_use(document: dict, job_name: str, step_name: str) -> dict:
+    job = ((document or {}).get("jobs") or {}).get(job_name)
+    if not isinstance(job, dict) or not isinstance(job.get("steps"), list):
+        raise ContractError(f"{job_name!r} no longer declares steps")
+    _, step = _step(job["steps"], step_name)
+    if "continue-on-error" in step:
+        raise ContractError(f"{job_name} native provisioning must stay blocking")
+    if step.get("uses") != ACTION:
+        raise ContractError(f"{job_name} {step_name!r} must use the shared GDAL CLI provisioner")
+    if "apt-get" in str(step.get("run") or ""):
+        raise ContractError(f"{job_name} {step_name!r} must not install packages inline")
+    return step
+
+
+def _require_gate(sources: Sources, worst_case: int) -> None:
+    document = yaml.safe_load(sources.workflow)
+    job = ((document or {}).get("jobs") or {}).get(JOB)
+    if not isinstance(job, dict) or not isinstance(job.get("steps"), list):
+        raise ContractError(f"the required workflow no longer declares the {JOB!r} job's steps")
+    steps = job["steps"]
+    proof_index, proof = _step(steps, PROOF)
+    _require_tripwire(proof)
     provision_index, provision = _step(steps, PROVISION)
     if provision_index >= proof_index:
         raise ContractError(f"{PROVISION!r} must run before {PROOF!r}")
@@ -115,12 +150,8 @@ def validate(source: str) -> None:
         raise ContractError(f"{PROVISION!r} must run under exactly the same condition as {PROOF!r}")
     if "continue-on-error" in provision:
         raise ContractError(f"{PROVISION!r} must stay blocking")
-    script = str(provision.get("run") or "")
-    for option in ("Acquire::Retries", "Acquire::http::Timeout", "Acquire::https::Timeout"):
-        if option not in script:
-            raise ContractError(f"{PROVISION!r} must configure apt's {option}")
-
-    worst_case = provisioning_worst_case_seconds(script)
+    if provision.get("uses") != ACTION or provision.get("run"):
+        raise ContractError(f"{PROVISION!r} must delegate to the shared GDAL CLI provisioner")
     step_timeout = provision.get("timeout-minutes")
     if not isinstance(step_timeout, int) or step_timeout * 60 < worst_case:
         raise ContractError(
@@ -132,7 +163,6 @@ def validate(source: str) -> None:
             f"the {JOB!r} job timeout {job_timeout!r} minutes cannot hold its {JOB_BASELINE_SECONDS}s "
             f"observed runtime plus {step_timeout} minutes of provisioning"
         )
-
     fidelity_index, fidelity = _step(steps, FIDELITY)
     upload_index, upload = _step(steps, FIDELITY_UPLOAD)
     fidelity_id = fidelity.get("id")
@@ -147,73 +177,111 @@ def validate(source: str) -> None:
         )
 
 
-def self_test() -> None:
-    """Prove each rejection fires, so a green run means something."""
-    source = read_workflow(Path(__file__).resolve().parents[3] / ".github/workflows/pr-gate.yml")
-    validate(source)
-    proof_anchor = "          export PATH=\"/usr/bin:${PATH}\"\n"
-    injections = (
-        # Provisioning moved back inside the proof.
-        source.replace(proof_anchor, "          sudo apt-get update -qq\n" + proof_anchor, 1),
-        # The proof's budget changed.
-        source.replace(
-            f"      - name: {PROOF}\n",
-            f"      - name: {PROOF}\n        continue-on-error: true\n",
-            1,
-        ),
-        # Unbounded attempts.
-        source.replace("sudo timeout --kill-after=15s 240s sh -c", "sudo sh -c", 1),
-        # More retries than the step timeout holds.
-        source.replace("for attempt in 1 2 3; do", "for attempt in 1 2 3 4 5 6; do", 1),
-        # apt's own network timeout dropped.
-        source.replace("'Acquire::http::Timeout \"30\";'", "'Acquire::Queue-Mode \"host\";'", 1),
-        # Install reaching the network again.
-        source.replace("apt-get install -yqq --no-download", "apt-get install -yqq", 1),
-        # The job can no longer outlive the provisioning budget.
-        source.replace(
-            "    name: PR Gate / Tests and runtime proofs\n    needs: pr-gate\n    runs-on: ubuntu-latest\n    timeout-minutes: 75\n",
-            "    name: PR Gate / Tests and runtime proofs\n    needs: pr-gate\n    runs-on: ubuntu-latest\n    timeout-minutes: 60\n",
-            1,
-        ),
-        # The upload masks the real failure again.
-        source.replace(
-            "if-no-files-found: ${{ steps.fidelity-proof.outcome != 'skipped' && 'error' || 'warn' }}",
-            "if-no-files-found: error",
-            1,
-        ),
+
+def _require_ci_native_callers(ci: dict) -> None:
+    _require_shared_use(ci, WORKER_JOB, WORKER_STEP)
+    worker_job = ci["jobs"][WORKER_JOB]
+    worker_enabled = (worker_job.get("env") or {}).get("HONUA_REQUIRE_GDAL_CLI")
+    if worker_enabled is not True and str(worker_enabled) != "true":
+        raise ContractError(f"{WORKER_JOB} must set HONUA_REQUIRE_GDAL_CLI so a missing tool fails the run")
+    for step in worker_job["steps"]:
+        if not isinstance(step, dict):
+            continue
+        if "python3-scipy" in str(step.get("run") or ""):
+            raise ContractError(f"{WORKER_JOB} must not keep a second copy of the GDAL CLI install")
+
+    python = _require_shared_use(ci, PYTHON_JOB, PYTHON_STEP)
+    python_job = ci["jobs"][PYTHON_JOB]
+    if python_job.get("timeout-minutes") != PYTHON_JOB_MINUTES:
+        raise ContractError("Python integration must retain its 25-minute job budget")
+    if python.get("with") != {"python-environment": "setup-python"}:
+        raise ContractError("Python integration must preserve its setup-python interpreter")
+    if any("with" in step for step in worker_job["steps"] if step.get("name") == WORKER_STEP):
+        raise ContractError("Worker must retain distro Python publication")
+    for job in (worker_job, python_job):
+        if job.get("runs-on") != "ubuntu-24.04":
+            raise ContractError("native-cache callers must use the approved Ubuntu 24.04 runner")
+    steps = python_job["steps"]
+    indexes = [_step(steps, name)[0] for name in ("Setup Python", PYTHON_STEP, "Install Python test dependencies", "Prove GeoParquet independent-consumer execution", "Run Python Integration Tests (OGC + FeatureServer + GDAL)")]
+    if indexes != sorted(indexes):
+        raise ContractError("native restore/install/save must finish before Python dependencies and tests")
+
+
+def validate(sources: Sources) -> None:
+    worst_case = provisioning_worst_case_seconds(sources.script)
+    _require_cache_action(sources.action)
+    _require_gate(sources, worst_case)
+    _require_ci_native_callers(yaml.safe_load(sources.ci))
+
+
+def read_sources(workflow: Path) -> Sources:
+    return Sources(*(path.read_text() for path in (
+        workflow, ROOT / "scripts/ci/provision-gdal-cli.sh",
+        ROOT / ".github/actions/provision-gdal-cli/action.yml", ROOT / ".github/workflows/ci.yml")))
+
+
+def self_test(sources: Sources) -> None:
+    subprocess.run(["bash", str(ROOT / "scripts/ci/provision-gdal-cli.sh"), "self-test"], check=True)
+    mutations = (
+        (0, f"      - name: {PROOF}\n", f"      - name: {PROOF}\n        continue-on-error: true\n"),
+        (0, f"      - name: {PROVISION}\n", f"      - name: {PROVISION}\n        continue-on-error: true\n"),
+        (0, "        uses: ./.github/actions/provision-gdal-cli\n", "        run: sudo apt-get install -yqq gdal-bin\n"),
+        (3, "        uses: ./.github/actions/provision-gdal-cli\n", "        run: sudo apt-get install -yqq gdal-bin\n"),
+        (3, f"      - name: {PYTHON_STEP}\n", f"      - name: {PYTHON_STEP}\n        continue-on-error: true\n"),
+        (0, 'HONUA_REQUIRE_GDAL_CLI: "true"', 'HONUA_REQUIRE_GDAL_CLI: "false"'),
+        (0, 'timeout-minutes: 30', 'timeout-minutes: 1'),
+        (0, 'timeout-minutes: 75', 'timeout-minutes: 60'),
+        (0, "if-no-files-found: ${{ steps.fidelity-proof.outcome != 'skipped' && 'error' || 'warn' }}", 'if-no-files-found: error'),
+        (1, 'APT_ATTEMPT_SECONDS=90', 'APT_ATTEMPT_SECONDS=240'),
+        (1, '"${APT_ATTEMPT_SECONDS}s"', '"1s"'),
+        (1, '"${APT_INSTALL_SECONDS}s"', '"1s"'),
+        (1, '--error-on=any', ''), (1, '--no-download', ''),
+        (2, "${{ steps.resolve.outputs.image }}", "image"),
+        (2, "${{ hashFiles('scripts/ci/provision-gdal-cli.sh') }}", "hash"),
+        (2, 'actions/cache/save@', 'actions/cache@'),
+        (3, 'python-environment: setup-python', 'python-environment: system'),
     )
-    for index, candidate in enumerate(injections):
-        if candidate == source:
-            raise SystemExit(f"apt provisioning failure-injection fixture {index} no longer applies")
+    for index, old, new in mutations:
+        changed = list(sources)
+        if old not in changed[index]:
+            raise ContractError(f"failure injection no longer applies: {old}")
+        changed[index] = changed[index].replace(old, new)
         try:
-            validate(candidate)
+            validate(Sources(*changed))
         except ContractError:
             continue
-        raise SystemExit(f"apt provisioning failure-injection fixture {index} was accepted")
+        raise ContractError(f"failure injection was accepted: {old}")
+    for index, selector in ((2, None), (3, PYTHON_JOB)):
+        changed = list(sources)
+        document = yaml.safe_load(changed[index])
+        steps = document["runs"]["steps"] if selector is None else document["jobs"][selector]["steps"]
+        if selector is None:
+            steps[2], steps[3] = steps[3], steps[2]
+        else:
+            native, _ = _step(steps, PYTHON_STEP)
+            dependencies, _ = _step(steps, "Install Python test dependencies")
+            steps[native], steps[dependencies] = steps[dependencies], steps[native]
+        changed[index] = yaml.safe_dump(document, sort_keys=False)
+        try:
+            validate(Sources(*changed))
+        except ContractError:
+            continue
+        raise ContractError("out-of-order native cache phases were accepted")
     print("pr-gate-apt-provisioning-self-test=ok")
 
 
-def read_workflow(path: Path) -> str:
-    return path.read_text(encoding="utf-8").replace("\r\n", "\n")
-
-
 def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "workflow",
-        type=Path,
-        nargs="?",
-        default=Path(__file__).resolve().parents[3] / ".github/workflows/pr-gate.yml",
-    )
-    parser.add_argument("--self-test", action="store_true")
-    args = parser.parse_args()
+    workflow = ROOT / ".github/workflows/pr-gate.yml"
+    if len(sys.argv) > 1 and sys.argv[1] != "--self-test":
+        workflow = Path(sys.argv[1])
     try:
-        validate(read_workflow(args.workflow))
-    except ContractError as error:
+        sources = read_sources(workflow)
+        validate(sources)
+        if "--self-test" in sys.argv:
+            self_test(sources)
+    except (ContractError, subprocess.CalledProcessError) as error:
         print(f"::error::{error}", file=sys.stderr)
         return 1
-    if args.self_test:
-        self_test()
     print("pr-gate-apt-provisioning=ok")
     return 0
 

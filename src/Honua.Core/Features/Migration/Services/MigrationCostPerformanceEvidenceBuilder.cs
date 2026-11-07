@@ -13,9 +13,6 @@ using Honua.Core.Features.FileImport.Services;
 
 namespace Honua.Core.Features.Migration.Services;
 
-/// <summary>
-/// Builds deterministic, release-safe migration cost and performance evidence artifacts.
-/// </summary>
 public static class MigrationCostPerformanceEvidenceBuilder
 {
     private static readonly string[] RequiredPhaseOrder =
@@ -34,13 +31,6 @@ public static class MigrationCostPerformanceEvidenceBuilder
         MigrationCostPerformanceRecoveryScenarios.RepeatedApplyAttempt
     ];
 
-    /// <summary>
-    /// Builds a cost and performance evidence artifact from source inventory and phase measurements.
-    /// </summary>
-    /// <param name="inventory">Source inventory artifact used to provide safe source context.</param>
-    /// <param name="input">Measurement input collected by a scanner, importer, or test harness.</param>
-    /// <param name="thresholds">Optional threshold profile. The release evidence baseline is used when omitted.</param>
-    /// <returns>A deterministic artifact with private URLs, credentials, and source data omitted.</returns>
     public static MigrationCostPerformanceEvidenceArtifact Build(
         MigrationSourceInventoryArtifact inventory,
         MigrationCostPerformanceEvidenceInput input,

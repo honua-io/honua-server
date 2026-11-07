@@ -3,28 +3,8 @@
 
 namespace Honua.Core.Features.Raster.Domain;
 
-/// <summary>
-/// Shared overview/pyramid-level selection scoring. Both the COG tile resolver
-/// (<c>CogTileResolver.FindBestOverviewLevel</c>) and the PostGIS persisted-pyramid tile read
-/// path pick the reduced-resolution level whose ground sample distance best matches the
-/// requested tile's ground resolution, so the score lives here once instead of being duplicated
-/// per protocol (#1836).
-/// </summary>
 public static class OverviewLevelSelector
 {
-    /// <summary>
-    /// Scores how well an overview level matches a requested tile, lower is better. The score
-    /// is the absolute difference, summed across both axes, between the number of overview pixels
-    /// that fall inside the requested tile envelope and the tile's pixel dimensions. A perfect
-    /// match (one overview pixel per tile pixel) scores 0.
-    /// </summary>
-    /// <param name="tileSpanX">Ground span of the requested tile along X (CRS units).</param>
-    /// <param name="tileSpanY">Ground span of the requested tile along Y (CRS units).</param>
-    /// <param name="tilePixelWidth">Tile width in pixels (e.g. 256).</param>
-    /// <param name="tilePixelHeight">Tile height in pixels (e.g. 256).</param>
-    /// <param name="overviewGroundResolutionX">Overview ground sample distance along X (CRS units per pixel).</param>
-    /// <param name="overviewGroundResolutionY">Overview ground sample distance along Y (CRS units per pixel).</param>
-    /// <returns>The non-negative match score, or <see cref="double.MaxValue"/> for invalid inputs.</returns>
     public static double Score(
         double tileSpanX,
         double tileSpanY,
@@ -46,17 +26,6 @@ public static class OverviewLevelSelector
         return widthScore + heightScore;
     }
 
-    /// <summary>
-    /// Selects the best-scoring candidate index from a list of overview ground resolutions for the
-    /// requested tile geometry. Returns <c>-1</c> when there are no positive-resolution candidates.
-    /// </summary>
-    /// <param name="tileSpanX">Ground span of the requested tile along X (CRS units).</param>
-    /// <param name="tileSpanY">Ground span of the requested tile along Y (CRS units).</param>
-    /// <param name="tilePixelWidth">Tile width in pixels.</param>
-    /// <param name="tilePixelHeight">Tile height in pixels.</param>
-    /// <param name="candidateResolutions">
-    /// Per-candidate (groundResolutionX, groundResolutionY) ground sample distances.
-    /// </param>
     public static int SelectBestIndex(
         double tileSpanX,
         double tileSpanY,

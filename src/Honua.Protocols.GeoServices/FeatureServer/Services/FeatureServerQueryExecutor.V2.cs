@@ -457,20 +457,17 @@ internal sealed partial class FeatureServerQueryExecutor
         FeatureProviderReadOperation operation,
         CancellationToken cancellationToken)
     {
-        if (_providerQueryRouter == null
-            || _metadataGraphProvider == null
-            || !ShouldRouteProviderReaderV2(publication))
+        if (_providerQueryRouter == null || _metadataGraphProvider == null)
         {
             return null;
         }
-
-        return await ResolveReaderV2Async(
-            service,
-            resource,
-            publication,
-            storageLayerId,
-            operation,
-            cancellationToken).ConfigureAwait(false);
+        var snapshot = await _metadataGraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrEmpty(publication.StorageBindingId) && snapshot.ResolveStorageBinding(publication) is null)
+        {
+            return null;
+        }
+        return await _providerQueryRouter.ResolveReaderAsync(
+            snapshot, service, resource, publication, storageLayerId, operation, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<BoundedObjectIds?> TryQueryNonStreamingObjectIdsAsync(
@@ -574,39 +571,7 @@ internal sealed partial class FeatureServerQueryExecutor
         ArgumentNullException.ThrowIfNull(service);
         ArgumentNullException.ThrowIfNull(resource);
         ArgumentNullException.ThrowIfNull(publication);
-
-        // When no provider router is wired (test/in-process fixtures) or the
-        // graph does not yet route through a per-tenant connection, fall back
-        // to the shared feature reader. This matches the legacy resolver gate.
-        if (_providerQueryRouter == null
-            || _metadataGraphProvider == null
-            || !ShouldRouteProviderReaderV2(publication))
-        {
-            return _featureReader;
-        }
-
-        var snapshot = await _metadataGraphProvider
-            .GetCurrentAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        return await _providerQueryRouter
-            .ResolveReaderAsync(
-                snapshot,
-                service,
-                resource,
-                publication,
-                storageLayerId,
-                operation,
-                cancellationToken)
-            .ConfigureAwait(false);
-    }
-
-    private static bool ShouldRouteProviderReaderV2(MetadataV2Publication publication)
-    {
-        // Mirrors the legacy provider-reader gate: route through the
-        // provider router only when the publication has a backing storage
-        // binding (the V2 graph form of "source-backed"). The router itself
-        // walks the snapshot to find the binding's connection.
-        return !string.IsNullOrEmpty(publication.StorageBindingId);
+        return await ResolveRoutedReaderV2Async(
+            service, resource, publication, storageLayerId, operation, cancellationToken).ConfigureAwait(false) ?? _featureReader;
     }
 }

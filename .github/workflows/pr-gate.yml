@@ -45,13 +45,9 @@ env:
   # Keep synchronized with review-gate.yml; the admission validator fails on
   # drift. Rollback is the inverse one-line change back to `observe`.
   REVIEW_FIRST_MODE: observe
-  # Promotion switch for the report-only affected-shard detector below. `report`
-  # publishes the verdict and concludes success; `enforce` fails the
-  # `PR Gate / Affected shards` context on a red shard. See the block comment on
-  # the `affected-shards-select` job for the measurement that gates the flip.
-  AFFECTED_SHARDS_MODE: report
-  # Hard fan-out bound for that lane. A `run_all` router answer is 71 shard
-  # jobs; this is what keeps the lane a detector instead of a second matrix.
+  # Selected shards fail the required gate on red or missing execution receipts.
+  AFFECTED_SHARDS_MODE: enforce
+  # Bound per-PR fan-out; the trailing matrix retains complete coverage.
   AFFECTED_SHARDS_CAP: '6'
 
 jobs:
@@ -410,17 +406,18 @@ jobs:
           BASE_REF: ${{ github.event.pull_request.base.sha || 'origin/trunk' }}
           HEAD_REF: ${{ github.event.pull_request.head.sha || 'HEAD' }}
         run: |
-          python3 scripts/ci/compute-affected-shards.py --cap "${CAP}" --annotate-resources --json "${RUNNER_TEMP}/producer-shards.json"
-          python3 scripts/ci/managed-test-build.py projects --lane pr --matrix-file "${RUNNER_TEMP}/producer-shards.json" --output "${RUNNER_TEMP}/managed-projects.json"
-          python3 scripts/ci/protocol-profile-selection.py --dry-run --changed-from-git > "${RUNNER_TEMP}/protocol-profiles.json"
-          cat "${RUNNER_TEMP}/protocol-profiles.json"
+          mkdir -p artifacts/pr-gate
+          python3 scripts/ci/compute-affected-shards.py --cap "${CAP}" --annotate-resources --json "artifacts/pr-gate/producer-shards.json"
+          python3 scripts/ci/managed-test-build.py projects --lane pr --matrix-file "artifacts/pr-gate/producer-shards.json" --output "artifacts/pr-gate/managed-projects.json"
+          python3 scripts/ci/protocol-profile-selection.py --dry-run --changed-from-git > "artifacts/pr-gate/protocol-profiles.json"
+          cat "artifacts/pr-gate/protocol-profiles.json"
 
       - name: Lean gate (managed build producer)
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         uses: ./.github/actions/lean-gate
         with:
           phase: build
-          projects-file: ${{ runner.temp }}/managed-projects.json
+          projects-file: artifacts/pr-gate/managed-projects.json
           trx-prefix: pr-gate
           prepull-postgis: 'true'
           # Per-PR only. The gate compiles the diff's reverse-dependency closure
@@ -436,7 +433,7 @@ jobs:
 
       - name: Build selected protocol profiles
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
-        run: python3 scripts/ci/build-selected-protocol-profiles.py --selection "${RUNNER_TEMP}/protocol-profiles.json"
+        run: python3 scripts/ci/build-selected-protocol-profiles.py --selection "artifacts/pr-gate/protocol-profiles.json"
 
       - name: Publish pristine managed test outputs
         id: managed-producer
@@ -444,7 +441,7 @@ jobs:
         uses: ./.github/actions/managed-test-artifacts
         with:
           mode: publish
-          projects-file: ${{ runner.temp }}/managed-projects.json
+          projects-file: artifacts/pr-gate/managed-projects.json
           enabled: ${{ vars.HONUA_MANAGED_TEST_ARTIFACTS != 'false' && 'true' || 'false' }}
 
       # The standalone host needs its canonical bin directory. Verify it here
@@ -526,7 +523,9 @@ jobs:
 
       - name: Plan managed test consumer
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && needs.pr-gate.outputs.skip != 'true'
-        run: python3 scripts/ci/managed-test-build.py projects --lane pr --output "${RUNNER_TEMP}/managed-projects.json"
+        run: |
+          mkdir -p artifacts/pr-gate
+          python3 scripts/ci/managed-test-build.py projects --lane pr --output "artifacts/pr-gate/managed-projects.json"
 
       - name: Restore verified managed test outputs
         id: managed-consumer
@@ -534,7 +533,7 @@ jobs:
         uses: ./.github/actions/managed-test-artifacts
         with:
           mode: consume
-          projects-file: ${{ runner.temp }}/managed-projects.json
+          projects-file: artifacts/pr-gate/managed-projects.json
           producer-attempt: ${{ needs.pr-gate.outputs.producer-attempt }}
           enabled: ${{ vars.HONUA_MANAGED_TEST_ARTIFACTS != 'false' && 'true' || 'false' }}
 
@@ -543,7 +542,7 @@ jobs:
         timeout-minutes: 30
         env:
           RESTORED_PROJECTS: ${{ steps.managed-consumer.outputs.restored-projects-file }}
-        run: python3 scripts/ci/managed-test-build.py fallback --projects-file "${RUNNER_TEMP}/managed-projects.json" --restored-file "${RESTORED_PROJECTS}"
+        run: python3 scripts/ci/managed-test-build.py fallback --projects-file "artifacts/pr-gate/managed-projects.json" --restored-file "${RESTORED_PROJECTS}"
 
       # Warm the Testcontainers-backed Governance/Drift coverage independently
       # on this consumer runner.
@@ -580,14 +579,14 @@ jobs:
         run: |
           dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
             --no-build --no-restore --configuration Release --filter 'Category=RemoteSourceExecutionProof' \
-            --logger 'trx;LogFileName=remote-source-execution-proof.trx' --results-directory tests/TestResults
+            --logger 'trx;LogFileName=remote-source-execution-proof.trx' --results-directory artifacts/test-results
 
       - name: Upload remote source execution proof
         if: always() && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: remote-source-execution-proof
-          path: tests/TestResults/remote-source-execution-proof.trx
+          path: artifacts/test-results/remote-source-execution-proof.trx
 
       - name: Prove raster catalog execution with production GDAL
         id: raster-execution-proof
@@ -601,19 +600,19 @@ jobs:
             --no-build --no-restore --configuration Release -maxcpucount:4 \
             --filter 'Category=RasterExecutionProof' \
             --logger 'trx;LogFileName=raster-execution-proof.trx' \
-            --results-directory tests/TestResults
+            --results-directory artifacts/test-results
 
           dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
             --no-build --no-restore --configuration Release -maxcpucount:4 \
             --filter 'Category=CopyFeaturesExecutionProof' \
             --logger 'trx;LogFileName=copy-features-execution-proof.trx' \
-            --results-directory tests/TestResults
+            --results-directory artifacts/test-results
 
           dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
             --no-build --no-restore --configuration Release -maxcpucount:4 \
             --filter 'Category=LayerExecutionProof' \
             --logger 'trx;LogFileName=layer-execution-proof.trx' \
-            --results-directory tests/TestResults
+            --results-directory artifacts/test-results
 
           # imagery.classify (#3935) delegates inference to a model server. The
           # proof stands one up on loopback and runs the committed classifier in
@@ -622,7 +621,7 @@ jobs:
             --no-build --no-restore --configuration Release -maxcpucount:4 \
             --filter 'Category=ImageryClassifyExecutionProof' \
             --logger 'trx;LogFileName=imagery-classify-execution-proof.trx' \
-            --results-directory tests/TestResults
+            --results-directory artifacts/test-results
 
           # Protocol-tier proofs from #3936/#3937. Keep these in the same
           # evidence-bearing raster block so both geometry-format and
@@ -631,7 +630,7 @@ jobs:
             --no-build --no-restore --configuration Release -maxcpucount:4 \
             --filter 'Category=GeometryFormatExecutionProof|Category=CalculateFieldExecutionProof' \
             --logger 'trx;LogFileName=protocol-tier-execution-proof.trx' \
-            --results-directory tests/TestResults
+            --results-directory artifacts/test-results
 
       - name: Prove the raster execution cases ran, not skipped
         # honua-server#4401. The step above is on the REQUIRED gate, but
@@ -646,7 +645,7 @@ jobs:
         if: ${{ !cancelled() && steps.raster-execution-proof.conclusion != 'skipped' }}
         run: |
           set -euo pipefail
-          trx=tests/TestResults/raster-execution-proof.trx
+          trx=artifacts/test-results/raster-execution-proof.trx
           if [[ ! -f "${trx}" ]]; then
             echo "::error::no TRX produced for the Category=RasterExecutionProof subset — the required raster receipts did not run"
             exit 1
@@ -683,7 +682,7 @@ jobs:
         # when every matched case skips, and the Honua source/sink proofs need a
         # real Docker PostGIS — so a renamed trait or a cleanly-skipping database
         # fixture would leave this required gate green with zero layer receipts
-        # while certification/gp-operation-matrix.v1.json still calls those rows
+        # while eng/gp-operation-matrix.v1.json still calls those rows
         # proven. Assert on the TRX outcomes, not the exit code.
         #
         # Counts alone are too weak here: the Esri cases are in-process HTTP
@@ -698,7 +697,7 @@ jobs:
         if: ${{ !cancelled() && steps.raster-execution-proof.conclusion != 'skipped' }}
         run: |
           set -euo pipefail
-          trx=tests/TestResults/layer-execution-proof.trx
+          trx=artifacts/test-results/layer-execution-proof.trx
           if [[ ! -f "${trx}" ]]; then
             echo "::error::no TRX produced for the Category=LayerExecutionProof subset — the required layer receipts did not run"
             exit 1
@@ -742,7 +741,7 @@ jobs:
             | select(.status == "proven")
             | .evidence[]
             | select(.path | test("/Execution/(LayerSource|EsriSource|LayerSink)ExecutionProofTests[.]cs$"))
-            | .test' certification/gp-operation-matrix.v1.json | sort -u)
+            | .test' eng/gp-operation-matrix.v1.json | sort -u)
           echo "matrix cites ${#required[@]} layer execution receipt(s)"
           # A broken selection must not pass vacuously: process substitution hides
           # a jq failure from mapfile, and an empty list would skip the loop
@@ -752,7 +751,7 @@ jobs:
               | select(.processId == "source.honua-layer"
                   or .processId == "source.esri-featureserver"
                   or .processId == "sink.honua-layer")
-              | select(.status == "proven")] | length' certification/gp-operation-matrix.v1.json)
+              | select(.status == "proven")] | length' eng/gp-operation-matrix.v1.json)
             if [[ "${proven}" -ne 0 ]]; then
               echo "::error::the matrix still calls ${proven} layer row(s) proven but no LayerExecutionProof evidence test was read out of it — the receipt selection is broken"
               exit 1
@@ -776,56 +775,18 @@ jobs:
             exit 1
           fi
 
-      # Runner provisioning for the real-GDAL proof below, kept out of the proof's
-      # own 10-minute budget. The Azure Ubuntu mirror stalls for minutes at a
-      # time: on 2026-10-23..26 the proof timed out 13 times with no output at all
-      # (passing runs print apt output ~8 s in and finish in ~30 s), and one run
-      # spent 9m27s silent before the first package arrived. Every network attempt
-      # is bounded by `timeout` and retried with backoff, apt itself retries and
-      # times out stalled fetches, and the install is --no-download so dpkg is
-      # never interrupted mid-download. Category=GDAL also selects the proximity
-      # proofs: gdal_proximity.py and Scripts/gdal_euclidean_allocation.py need
-      # the GDAL Python bindings, NumPy and SciPy, which `gdal-bin` does not ship,
-      # so this is the same set ci.yml's worker-gdal-tests job installs.
-      # scripts/ci/fixtures/validate-pr-gate-apt-provisioning.py holds the step
-      # timeout and the job timeout to this loop's worst case.
       - name: Provision the GDAL CLI packages for the real-GDAL proof
         id: gdal-cli-packages
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'
-        timeout-minutes: 25
-        run: |
-          set -euo pipefail
-          packages="gdal-bin python3-gdal python3-numpy python3-scipy"
-          printf '%s\n' \
-            'Acquire::Retries "3";' \
-            'Acquire::http::Timeout "30";' \
-            'Acquire::https::Timeout "30";' \
-            | sudo tee /etc/apt/apt.conf.d/80honua-ci-network >/dev/null
-          downloaded=false
-          for attempt in 1 2 3; do
-            if sudo timeout --kill-after=15s 240s sh -c \
-                "apt-get update -q && apt-get install -yq --download-only ${packages}"; then
-              downloaded=true
-              break
-            fi
-            echo "::warning::GDAL CLI package download attempt ${attempt} failed or stalled on the apt mirror"
-            if [[ "${attempt}" -lt 3 ]]; then
-              sleep $((attempt * 15))
-            fi
-          done
-          if [[ "${downloaded}" != "true" ]]; then
-            echo "::error::the GDAL CLI packages could not be downloaded from the runner's apt mirror after 3 bounded attempts"
-            exit 1
-          fi
-          # shellcheck disable=SC2086 # word-splitting the package list is intended
-          sudo timeout --kill-after=15s 600s apt-get install -yqq --no-download ${packages}
+        timeout-minutes: 30
+        uses: ./.github/actions/provision-gdal-cli
 
       - name: Prove the real-GDAL CLI cases run on the required gate
         # honua-server#4401: the five [GdalCliFact] cases emit Tier=Integration,
         # which the lean gate's Tier=Fast filter can never match, and ci.yml has no
         # pull_request trigger — so real gdaldem / ogr2ogr coverage could regress
         # without blocking a merge. Run them here on the gate runner, over the GDAL
-        # CLI the previous step apt-provisioned (the same provisioning ci.yml's
+        # CLI the previous step provisioned (the same provisioning ci.yml's
         # worker-gdal-tests job uses), with the same counts-based tripwire.
         # HONUA_REQUIRE_GDAL_CLI turns a missing tool into a failure rather than a
         # skip.
@@ -850,12 +811,12 @@ jobs:
             command -v "${tool}" >/dev/null \
               || { echo "::error::${tool} is missing after installing the GDAL CLI packages"; exit 1; }
           done
-          trx=tests/TestResults/worker-gdal-cli.trx
+          trx=artifacts/test-results/worker-gdal-cli.trx
           dotnet test tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj \
             --no-build --no-restore --configuration Release -maxcpucount:4 \
             --filter 'Category=GDAL' \
             --logger 'trx;LogFileName=worker-gdal-cli.trx' \
-            --results-directory tests/TestResults
+            --results-directory artifacts/test-results
           if [[ ! -f "${trx}" ]]; then
             echo "::error::no TRX produced for the Category=GDAL subset"
             exit 1
@@ -885,7 +846,7 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: imagery-classify-execution-proof
-          path: tests/TestResults/imagery-classify-execution-proof.trx
+          path: artifacts/test-results/imagery-classify-execution-proof.trx
           if-no-files-found: warn
 
       # Read-only registry cache for the native-tools stage (apt from
@@ -911,7 +872,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           HONUA_NATIVE_TOOLS_REUSE: ${{ vars.HONUA_NATIVE_TOOLS_REUSE != 'false' && 'true' || 'false' }}
-        run: python3 scripts/ci/native-tools-image.py resolve --output tests/TestResults/native-tools-proof.json
+        run: python3 scripts/ci/native-tools-image.py resolve --output artifacts/test-results/native-tools-proof.json
 
       - name: Prove point-cloud execution with production PDAL
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'
@@ -919,7 +880,7 @@ jobs:
         run: |
           dotnet test tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj \
             --no-build --no-restore --configuration Release --filter 'Category=PdalExecutionProof' \
-            --logger 'trx;LogFileName=pdal-execution-proof.trx' --results-directory tests/TestResults
+            --logger 'trx;LogFileName=pdal-execution-proof.trx' --results-directory artifacts/test-results
 
       - name: Execute import and independent vector export fidelity proofs
         id: fidelity-proof
@@ -935,7 +896,7 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: import-export-fidelity-proof
-          path: tests/TestResults/import-export-fidelity/
+          path: artifacts/import-export-fidelity/
           # Missing evidence is an error only when the proof itself ran. When an
           # earlier step failed (or timed out) the proof never runs, and an error
           # here would bury that step's real failure under a second one.
@@ -947,8 +908,8 @@ jobs:
         with:
           name: pdal-execution-proof
           path: |
-            tests/TestResults/pdal-execution-proof.trx
-            tests/TestResults/native-tools-proof.json
+            artifacts/test-results/pdal-execution-proof.trx
+            artifacts/test-results/native-tools-proof.json
 
       - name: Upload raster execution proof
         if: always() && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'
@@ -956,8 +917,8 @@ jobs:
         with:
           name: raster-execution-proof
           path: |
-            tests/TestResults/raster-execution-proof.trx
-            tests/TestResults/worker-gdal-cli.trx
+            artifacts/test-results/raster-execution-proof.trx
+            artifacts/test-results/worker-gdal-cli.trx
           if-no-files-found: warn
 
       - name: Upload layer execution proof
@@ -965,7 +926,7 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: layer-execution-proof
-          path: tests/TestResults/layer-execution-proof.trx
+          path: artifacts/test-results/layer-execution-proof.trx
           if-no-files-found: warn
 
       - name: Upload protocol-tier execution proof
@@ -973,7 +934,7 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: protocol-tier-execution-proof
-          path: tests/TestResults/protocol-tier-execution-proof.trx
+          path: artifacts/test-results/protocol-tier-execution-proof.trx
           if-no-files-found: warn
 
       - name: Await Testcontainers PostGIS pre-pull
@@ -987,7 +948,7 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: copy-features-execution-proof
-          path: tests/TestResults/copy-features-execution-proof.trx
+          path: artifacts/test-results/copy-features-execution-proof.trx
           if-no-files-found: warn
 
       # Exercise all clean and injected-rootfs fixtures here without building a
@@ -1018,74 +979,9 @@ jobs:
               core.setFailed(`Exact-head Review Gate is ${reviewGate?.state || 'missing'}.`);
             }
 
-  # ---------------------------------------------------------------------------
-  # AFFECTED SHARD FAMILIES (#3204 / #3213). REPORT-ONLY.
-  #
-  # THE PROBLEM. `PR Gate` above is a lean subset: build + fast unit +
-  # architecture. The 71 server-test shard families in `.github/ci-shards.json`
-  # run per trunk tip in the trailing matrix (p50 44 / p90 65 min, plus a rerun
-  # to classify), so a shard regression is found AFTER the merge that caused it.
-  # On 2026-09-07 trunk was red ~15 of the previous 24 hours, and every real
-  # regression in that window -- Console/Alerts (#4489), Tiles/Replica
-  # (#4463/#4465), Caching/Styling (#4466) -- was in a shard whose own `paths`
-  # the offending PR had touched. The routing information needed to catch them
-  # pre-merge already existed; nothing on the pull request consumed it.
-  #
-  # WHAT THIS LANE DOES. `affected-shards-select` asks the SAME ADR-0037 router
-  # the trailing matrix uses (scripts/ci/honua-server-targeted-tests.sh) which
-  # shard families claim the diff, narrows a `run_all` answer by the ADR-0043
-  # reverse-dependency closure (scripts/ci/compute-affected-projects.sh, which
-  # is what maps a changed SOURCE project to the TEST projects that consume it),
-  # ranks largest-impact first, and truncates to AFFECTED_SHARDS_CAP families.
-  # `affected-shard` then runs each one through scripts/ci/run-server-test-shard.sh
-  # -- the same runner, the same `.github/ci-shards.json` filter, and the same
-  # inner/outer budgets as ci.yml::server-tests -- so a red here is a red there.
-  #
-  # WHY THE CAP IS NOT NEGOTIABLE. A `run_all` answer is 71 shard jobs. Fanning
-  # that out per pull request is the 2026-06-18 runner-starvation spiral that
-  # #2865 removed and that ./.github/actions/lean-gate is written to avoid. This
-  # lane is a DETECTOR with a fixed budget, not a second full matrix: it buys a
-  # bounded probability of catching the regression pre-merge, and the trailing
-  # matrix stays the complete backstop. Do not raise the cap to "cover more".
-  #
-  # WHY IT IS REPORT-ONLY, AND HOW IT GETS PROMOTED. `AFFECTED_SHARDS_MODE`
-  # starts at `report`: the per-shard test failure is swallowed at the step (the
-  # ci.yml advisory-shard pattern -- a red check-run on a non-required job still
-  # forces the pull request to UNSTABLE and stalls the clean-only merge train),
-  # and the aggregate context `PR Gate / Affected shards` publishes the verdict
-  # in its step summary and as HONUA_AFFECTED_SHARD_* annotations while
-  # concluding success. That success is not a test pass. The publisher
-  # (scripts/ci/affected-shard-verdict.py) sets test_pass=false on every
-  # report-mode result, including a green shard table and a skipped selection.
-  # Trunk branch protection already requires this context (read back
-  # 2026-10-27; docs/ci/affected-shards-disposition-20261027.json). That
-  # requirement is not the promotion below and is not removed here: the
-  # lander requires the check to exist, and deleting it is a protection edit.
-  # Do not flip this mode to enforce to paper over the requirement.
-  #
-  #   PROMOTION RULE: make this context required when its FALSE-RED rate over 7
-  #   days of runs is < 2%. A false red is a run that emits
-  #   HONUA_AFFECTED_SHARD_RED for a head whose change did not in fact break
-  #   that shard -- flake, cross-shard interference, or an environment
-  #   difference from ci.yml::server-tests. Measure it by collecting the
-  #   annotations from this context across the window and reconciling each red
-  #   against the same shard's result in the trailing matrix for the merge
-  #   commit. Collect the COMPLETE window with scripts/ci/audit-affected-shards.py
-  #   (60 executed samples minimum); skipped/successful report-only shells do
-  #   not prove a shard passed, and unreconciled reds block promotion. See
-  #   docs/ci/affected-shards-promotion.md for collection and reconciliation.
-  #   The impact-routing ledger's docs-only/native-image cohorts do not measure
-  #   this lane's false-red rate. Promotion is then TWO audited changes: flip
-  #   AFFECTED_SHARDS_MODE
-  #   to `enforce` here, and add `PR Gate / Affected shards` to branch
-  #   protection. Rollback is the inverse one-line flip. Below 2% is the bar
-  #   because this lane costs a bounded fan-out on every product-code PR;
-  #   a noisier detector spends that budget re-running green shards by hand.
-  #
-  # If the measurement says the false-red rate is too high, leaving
-  # AFFECTED_SHARDS_MODE at `report` is a successful measurement, not a failed
-  # change.
-  # ---------------------------------------------------------------------------
+  # Select at most six families with the trailing matrix's router and runner.
+  # Keep per-shard failures available for receipt upload; the aggregate enforces
+  # their measured results and is a dependency of the stable required context.
   affected-shards-select:
     name: PR Gate / Affected shards (select)
     # pull_request only: the selection diffs against HEAD^1, and only the
@@ -1171,20 +1067,21 @@ jobs:
         env:
           CAP: ${{ env.AFFECTED_SHARDS_CAP }}
         run: |
+          mkdir -p artifacts/pr-gate
           python3 scripts/ci/compute-affected-shards.py \
             --cap "${CAP}" \
             --annotate-resources \
             --github-output \
-            --json "${RUNNER_TEMP}/affected-shards.json" \
-            --summary "${RUNNER_TEMP}/affected-shards.md"
-          cat "${RUNNER_TEMP}/affected-shards.md" >> "${GITHUB_STEP_SUMMARY}"
+            --json "artifacts/pr-gate/affected-shards.json" \
+            --summary "artifacts/pr-gate/affected-shards.md"
+          cat "artifacts/pr-gate/affected-shards.md" >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Upload selection receipt
         if: always() && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: pr-gate-affected-shards-selection
-          path: ${{ runner.temp }}/affected-shards.json
+          path: artifacts/pr-gate/affected-shards.json
           if-no-files-found: warn
 
   affected-shard:
@@ -1202,7 +1099,7 @@ jobs:
     # The shard's OWN outer budget from .github/ci-shards.json, exactly as
     # ci.yml::server-tests applies it. Substituting a flat cap here would make
     # this lane time out on shards the trailing matrix runs comfortably, which
-    # is precisely the false red the promotion rule measures.
+    # is precisely the false red measured in docs/ci/affected-shards-promotion.md.
     timeout-minutes: ${{ matrix.timeout_minutes }}
     strategy:
       fail-fast: false
@@ -1248,14 +1145,16 @@ jobs:
       - name: Plan affected shard binary consumer
         env:
           SHARD_CSPROJ: ${{ matrix.csproj }}
-        run: python3 scripts/ci/managed-test-build.py projects --lane shard --project "${SHARD_CSPROJ}" --output "${RUNNER_TEMP}/managed-projects.json"
+        run: |
+          mkdir -p artifacts/pr-gate
+          python3 scripts/ci/managed-test-build.py projects --lane shard --project "${SHARD_CSPROJ}" --output "artifacts/pr-gate/managed-projects.json"
 
       - name: Restore verified managed test outputs
         id: managed-consumer
         uses: ./.github/actions/managed-test-artifacts
         with:
           mode: consume
-          projects-file: ${{ runner.temp }}/managed-projects.json
+          projects-file: artifacts/pr-gate/managed-projects.json
           producer-attempt: ${{ needs.pr-gate.outputs.producer-attempt }}
           enabled: ${{ vars.HONUA_MANAGED_TEST_ARTIFACTS != 'false' && 'true' || 'false' }}
 
@@ -1263,18 +1162,12 @@ jobs:
         timeout-minutes: 20
         env:
           RESTORED_PROJECTS: ${{ steps.managed-consumer.outputs.restored-projects-file }}
-        run: python3 scripts/ci/managed-test-build.py fallback --projects-file "${RUNNER_TEMP}/managed-projects.json" --restored-file "${RESTORED_PROJECTS}"
+        run: python3 scripts/ci/managed-test-build.py fallback --projects-file "artifacts/pr-gate/managed-projects.json" --restored-file "${RESTORED_PROJECTS}"
 
       - name: Create Test Results Directory
-        run: mkdir -p ./tests/TestResults
+        run: mkdir -p ./artifacts/test-results
 
-      # continue-on-error, always: the test failure is the SIGNAL this lane
-      # exists to publish, and it is published by the aggregate context below.
-      # Letting it fail the matrix job would put a red check-run on the pull
-      # request for a non-required lane, which forces mergeStateStatus to
-      # UNSTABLE and stalls the clean-only merge train -- the exact regression
-      # ci.yml::server-tests documents for advisory shards. Promotion changes
-      # AFFECTED_SHARDS_MODE below, never this.
+      # Preserve receipts after failures; the required aggregate owns the verdict.
       - name: Run affected shard
         id: shard
         continue-on-error: true
@@ -1284,7 +1177,7 @@ jobs:
           HONUA_SERVER_TEST_LOG_NAME: ${{ matrix.log_name }}
           HONUA_SERVER_TEST_TIMEOUT_MINUTES: ${{ matrix.test_timeout_minutes }}
           HONUA_SERVER_TEST_MAX_CPU_COUNT: ${{ matrix.max_cpu_count }}
-          HONUA_SERVER_TEST_RESULTS_DIR: ./tests/TestResults
+          HONUA_SERVER_TEST_RESULTS_DIR: ./artifacts/test-results
           HONUA_SERVER_TEST_CONFIGURATION: Release
           HONUA_SERVER_TEST_CSPROJ: ${{ matrix.csproj }}
         run: scripts/ci/run-server-test-shard.sh
@@ -1298,12 +1191,11 @@ jobs:
         timeout-minutes: 3
         with:
           name: pr-gate-affected-shard-${{ matrix.artifact_suffix }}
-          path: tests/TestResults/
+          path: artifacts/test-results/
           retention-days: 7
 
   affected-shards:
-    # The single stable context for this lane. Report-only until the promotion
-    # rule at the top of this block is satisfied; NOT in `required.needs`.
+    # Enforce measured execution receipts before the required gate can succeed.
     name: PR Gate / Affected shards
     if: always() && github.event_name == 'pull_request'
     needs: [affected-shards-select, affected-shard]
@@ -1322,7 +1214,7 @@ jobs:
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: pr-gate-affected-shard-*
-          path: shard-results
+          path: artifacts/pr-gate/shard-results
           merge-multiple: true
 
       - name: Report affected-shard verdict
@@ -1333,15 +1225,18 @@ jobs:
           SELECT_SKIP: ${{ needs.affected-shards-select.outputs.skip }}
           SELECT_REASON: ${{ needs.affected-shards-select.outputs.reason }}
           SELECT_COUNT: ${{ needs.affected-shards-select.outputs.selected_count }}
+          SELECT_MATRIX: ${{ needs.affected-shards-select.outputs.matrix_include }}
           SHARDS_RESULT: ${{ needs.affected-shard.result }}
-        run: python3 scripts/ci/affected-shard-verdict.py --timings shard-results --receipt affected-shard-verdict.json
+        run: |
+          mkdir -p artifacts/pr-gate
+          python3 scripts/ci/affected-shard-verdict.py --timings artifacts/pr-gate/shard-results --receipt artifacts/pr-gate/affected-shard-verdict.json
 
       - name: Retain affected-shard verdict
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: pr-gate-affected-shards-verdict-${{ github.run_id }}-${{ github.run_attempt }}
-          path: affected-shard-verdict.json
+          path: artifacts/pr-gate/affected-shard-verdict.json
           if-no-files-found: warn
           retention-days: 7
 
@@ -1474,7 +1369,7 @@ jobs:
           # The verdict step below interprets the exit code; this step must reach it.
           set +e -uo pipefail
           python3 scripts/ci/n1-reader-compat.py \
-            --output "${RUNNER_TEMP}/n1-reader-compat" \
+            --output "artifacts/pr-gate/n1-reader-compat" \
             --candidate-dll src/Honua.Server/bin/Release/net10.0/Honua.Server.dll \
             --candidate-sha "${GITHUB_SHA}" \
             --candidate-head-sha "${HEAD_SHA}" \
@@ -1485,8 +1380,8 @@ jobs:
       - name: Publish N-1 receipt summary
         if: ${{ !cancelled() && steps.n1.conclusion != 'skipped' }}
         run: |
-          if [[ -f "${RUNNER_TEMP}/n1-reader-compat/summary.md" ]]; then
-            cat "${RUNNER_TEMP}/n1-reader-compat/summary.md" >> "${GITHUB_STEP_SUMMARY}"
+          if [[ -f "artifacts/pr-gate/n1-reader-compat/summary.md" ]]; then
+            cat "artifacts/pr-gate/n1-reader-compat/summary.md" >> "${GITHUB_STEP_SUMMARY}"
           else
             echo '### N-1 reader compatibility: no receipt was written' >> "${GITHUB_STEP_SUMMARY}"
           fi
@@ -1496,7 +1391,7 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: n1-reader-compat-receipt
-          path: ${{ runner.temp }}/n1-reader-compat/
+          path: artifacts/pr-gate/n1-reader-compat/
           if-no-files-found: error
           retention-days: 30
 
@@ -1510,7 +1405,7 @@ jobs:
           SCRIPT_EXIT: ${{ steps.n1.outputs.exit_code }}
         run: |
           set -euo pipefail
-          receipt="${RUNNER_TEMP}/n1-reader-compat/receipt.json"
+          receipt="artifacts/pr-gate/n1-reader-compat/receipt.json"
           if [[ ! -f "${receipt}" ]]; then
             echo "::error::HONUA_N1_READER_COMPAT_NO_RECEIPT the N-1 check wrote no receipt (exit '${SCRIPT_EXIT:-none}')."
             exit 1
@@ -1543,17 +1438,22 @@ jobs:
     # verification paths fail closed into it.
     name: PR Gate
     if: always()
-    needs: [pr-gate, pr-gate-tests, format, ci-router-validation]
+    needs: [pr-gate, pr-gate-tests, format, ci-router-validation, affected-shards]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Require build, tests, format, and CI router validation
+      - name: Require build, tests, format, CI router validation, and affected shards
         env:
           BUILD_AND_TEST_RESULT: ${{ needs.pr-gate.result }}
           TEST_RESULT: ${{ needs.pr-gate-tests.result }}
           FORMAT_RESULT: ${{ needs.format.result }}
           CI_ROUTER_RESULT: ${{ needs.ci-router-validation.result }}
+          AFFECTED_SHARDS_RESULT: ${{ needs.affected-shards.result }}
         run: |
+          if [[ "${GITHUB_EVENT_NAME}" == pull_request && "${AFFECTED_SHARDS_RESULT}" != success ]]; then
+            echo "::error::PR Gate failed: affected-shards=${AFFECTED_SHARDS_RESULT}"
+            exit 1
+          fi
           if [[ "${BUILD_AND_TEST_RESULT}" != "success" || "${TEST_RESULT}" != "success" || "${FORMAT_RESULT}" != "success" || "${CI_ROUTER_RESULT}" != "success" ]]; then
             echo "::error::PR Gate failed: build=${BUILD_AND_TEST_RESULT}, tests=${TEST_RESULT}, format=${FORMAT_RESULT}, ci-router-validation=${CI_ROUTER_RESULT}"
             exit 1

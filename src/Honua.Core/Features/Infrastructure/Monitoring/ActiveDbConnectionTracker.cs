@@ -3,24 +3,12 @@
 
 namespace Honua.Core.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Tracks active database connections for lightweight telemetry.
-/// </summary>
 public interface IActiveDbConnectionTracker
 {
-    /// <summary>
-    /// Increments the active connection count.
-    /// </summary>
     void Increment();
 
-    /// <summary>
-    /// Decrements the active connection count.
-    /// </summary>
     void Decrement();
 
-    /// <summary>
-    /// Gets the current active connection count.
-    /// </summary>
     int GetActiveCount();
 }
 

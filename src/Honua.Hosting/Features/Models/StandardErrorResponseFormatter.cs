@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Security;
 using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
 using Honua.ServiceDefaults;
 
@@ -44,7 +45,7 @@ internal static class StandardErrorResponseFormatter
 
     private static IResult FormatProtocolError(HttpContext context, StandardErrorResponse errorResponse, ErrorResponseFormatterOptions options)
     {
-        var path = context.Request.Path;
+        var path = GeoServicesServiceRoutes.RoutingPath(context);
 
         if (ProtocolRequestClassifier.IsOData(path))
         {
@@ -501,7 +502,7 @@ internal static class StandardErrorResponseFormatter
     internal static void RecordErrorTelemetry(HttpContext context, int statusCode, int? httpStatusCode = null)
     {
         var path = context.Request.Path;
-        var (serviceType, isGeoServices) = ClassifyServiceType(path);
+        var (serviceType, isGeoServices) = ClassifyServiceType(GeoServicesServiceRoutes.RoutingPath(context));
         HonuaTelemetry.RecordErrorEnvelope(serviceType, ResolveOperation(path), statusCode, isGeoServices, httpStatusCode ?? statusCode);
     }
 
