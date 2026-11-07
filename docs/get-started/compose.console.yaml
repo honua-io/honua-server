@@ -1,0 +1,49 @@
+services:
+  honua:
+    environment:
+      Studio__EndUserAuthorization__Enabled: "true"
+  console:
+    image: ${HONUA_CONSOLE_IMAGE:?The package image lock must include an immutable Console image}
+    profiles: [console]
+    # Install secrets are group-owned by the servers; Console's app user has a different primary group.
+    group_add: ["1001"]
+    ports:
+      - "127.0.0.1:${HONUA_CONSOLE_PORT:-18083}:8080"
+    entrypoint:
+      - bash
+      - +x
+      - -euc
+      - |
+        # Inherited shell tracing would expose the private credential during export.
+        { set +x; } 2>/dev/null
+        admin_password=$$(< "$$HONUA_SECRET_FILE__HONUA_ADMIN_API_KEY")
+        [ -n "$$admin_password" ] || { echo "empty Console admin password file" >&2; exit 1; }
+        export HONUA_ADMIN_API_KEY="$$admin_password" Honua__Server__AdminApiKey="$$admin_password"
+        unset admin_password HONUA_SECRET_FILE__HONUA_ADMIN_API_KEY
+        exec "$$@"
+      - console-secrets
+      - dotnet
+      - Honua.Console.Web.dll
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      HONUA_SERVER_BASE_URL: http://honua:8080
+      Honua__Server__BaseUrl: http://honua:8080
+      HONUA_SECRET_FILE__HONUA_ADMIN_API_KEY: /run/secrets/honua_admin_password
+      Studio__EmbedJsStudio: "true"
+    depends_on:
+      honua:
+        condition: service_healthy
+    secrets: [honua_admin_password]
+    healthcheck:
+      test: ["CMD-SHELL", "test -s /app/version.json || test -s /app/wwwroot/version.json"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
