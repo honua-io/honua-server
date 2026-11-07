@@ -41,7 +41,7 @@ namespace Honua.Server.Tests.Features.Studio;
 /// </remarks>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
-public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
+public sealed partial class StudioPublicationSelfApprovalTests : IAsyncLifetime
 {
     private const string JsonMediaType = "application/json";
     private const string Issuer = "https://idp.example.com";
