@@ -12,7 +12,7 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
-using NSubstitute;
+using Honua.TestKit.Helpers;
 using Xunit;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
 
@@ -33,13 +33,7 @@ public sealed class WfsCapabilitiesExtentFailureTests
     [InterfaceOperation(TestProtocols.Wfs20, "GetCapabilities")]
     public async Task GetCapabilities_ExtentReadAvailability_AdvertisesOnlyHealthyLayers(bool extentReadFails)
     {
-        var transform = Substitute.For<ICoordinateTransformService>();
-        transform.TransformExtentAsync(
-                Arg.Any<double>(), Arg.Any<double>(), Arg.Any<double>(), Arg.Any<double>(),
-                ProjectedSrid, 4326, Arg.Any<CancellationToken>())
-            .Returns(_ => extentReadFails
-                ? ValueTask.FromException<(double, double, double, double)?>(new InvalidOperationException("Extent unavailable"))
-                : ValueTask.FromResult<(double, double, double, double)?>((-5d, 40d, -4d, 41d)));
+        var transform = new ExtentTransformProbe(extentReadFails);
         await using var fixture = new WebAppFixture()
             .WithTestLicense(HonuaEdition.Pro)
             .ReplaceService<IMetadataV2GraphProvider>(PublishedLayers())
@@ -49,8 +43,8 @@ public sealed class WfsCapabilitiesExtentFailureTests
         using var response = await fixture.Client.GetAsync("/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=2.0.0");
         var content = await response.Content.ReadAsStringAsync();
 
-        Assert.Single(transform.ReceivedCalls().Where(call =>
-            call.GetMethodInfo().Name == nameof(ICoordinateTransformService.TransformExtentAsync)));
+        Assert.Equal(1, transform.ExtentReads);
+        Assert.Equal((ProjectedSrid, 4326), transform.LastCrs);
         Assert.True(response.StatusCode == HttpStatusCode.OK, content);
         var titles = XDocument.Parse(content).Descendants()
             .Where(element => element.Name.LocalName == "FeatureType")
@@ -92,5 +86,27 @@ public sealed class WfsCapabilitiesExtentFailureTests
                     publicationType: MetadataV2PublicationType.WfsFeatureType);
         }
         return new TestMetadataV2GraphProvider(builder.Build());
+    }
+
+    private sealed class ExtentTransformProbe(bool extentReadFails) : ICoordinateTransformService
+    {
+        private int _extentReads;
+        public int ExtentReads => Volatile.Read(ref _extentReads);
+        public (int Source, int Target) LastCrs { get; private set; }
+
+        public ValueTask<(double MinX, double MinY, double MaxX, double MaxY)?> TransformExtentAsync(
+            double minX, double minY, double maxX, double maxY,
+            int fromSrid, int toSrid, CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _extentReads);
+            LastCrs = (fromSrid, toSrid);
+            return extentReadFails
+                ? ValueTask.FromException<(double, double, double, double)?>(new InvalidOperationException("Extent unavailable"))
+                : ValueTask.FromResult<(double, double, double, double)?>((-5d, 40d, -4d, 41d));
+        }
+
+        public ValueTask<(double X, double Y)?> TransformPointAsync(
+            double x, double y, int fromSrid, int toSrid, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
     }
 }
