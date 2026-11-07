@@ -68,6 +68,38 @@ def write_secret(path, value):
         pending.unlink(missing_ok=True)
 
 
+def update_environment(path, updates, removed=()):
+    existing = path.read_text() if path.exists() else ''
+    source_lines = existing.splitlines()
+    values = dict(line.split('=', 1) for line in source_lines if line and not line.startswith('#'))
+    values.update(updates)
+    for key in removed:
+        values.pop(key, None)
+    lines, written = [], set()
+    for line in source_lines:
+        if not line or line.startswith('#'):
+            lines.append(line)
+            continue
+        key = line.split('=', 1)[0]
+        if key in values and key not in written:
+            lines.append(f'{key}={values[key]}')
+            written.add(key)
+    lines.extend(f'{key}={value}' for key, value in values.items() if key not in written)
+    updated = ''.join(line + '\n' for line in lines)
+    if updated == existing:
+        return
+    pending = path.with_name('.env.pending')
+    pending.unlink(missing_ok=True)
+    fd = os.open(pending, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o640)
+    with os.fdopen(fd, 'w') as stream:
+        os.fchmod(stream.fileno(), 0o640)
+        stream.write(updated)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(pending, path)
+    path.chmod(0o640)
+
+
 def console_profile_settings(lock, values):
     image = lock.get('console', '')
     if not isinstance(image, str) or not IMMUTABLE.fullmatch(image):
@@ -138,13 +170,8 @@ def initialize(directory, profiles=()):
     additions = {key: value for key, value in defaults.items() if key not in values}
     if 'console' in profiles:
         additions.update(console_profile_settings(lock, dict(defaults, **values)))
-    if additions:
-        fd = os.open(env_file, os.O_WRONLY | os.O_CREAT | (os.O_APPEND if env_file.exists() else os.O_EXCL), 0o600)
-        with os.fdopen(fd, 'a') as stream:
-            if existing and not existing.endswith('\n'):
-                stream.write('\n')
-            stream.writelines(f'{key}={value}\n' for key, value in additions.items())
     values.update(additions)
+    update_environment(env_file, additions)
     # Only this install directory and its private group are writable by the executor.
     directory.chmod(0o770)
     env_file.chmod(0o640)
@@ -162,20 +189,9 @@ def initialize(directory, profiles=()):
         resolved[key] = legacy.get(key) or generate_secret(key)
         write_secret(secret_path(directory, key), resolved[key])
     if legacy:
-        # The files are durable now; drop the migrated lines and keep every other setting.
-        kept = [line for line in env_file.read_text().splitlines()
-                if not (line and not line.startswith('#') and line.split('=', 1)[0] in legacy)]
-        pending = directory / '.env.pending'
-        pending.unlink(missing_ok=True)
-        fd = os.open(pending, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o640)
-        with os.fdopen(fd, 'w') as stream:
-            stream.write(''.join(line + '\n' for line in kept))
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(pending, env_file)
-        env_file.chmod(0o640)
         for key in legacy:
             values.pop(key)
+        update_environment(env_file, {}, legacy)
 
     image_override = directory / 'compose.executor.image.yaml'
     if not image_override.exists():

@@ -14,8 +14,8 @@ services:
       - +x
       - -euc
       - |
-        { set +x; } 2>/dev/null
         # Inherited shell tracing would expose the private credential during export.
+        { set +x; } 2>/dev/null
         admin_password=$$(< "$$HONUA_SECRET_FILE__HONUA_ADMIN_API_KEY")
         [ -n "$$admin_password" ] || { echo "empty Console admin password file" >&2; exit 1; }
         export HONUA_ADMIN_API_KEY="$$admin_password" Honua__Server__AdminApiKey="$$admin_password"

@@ -176,7 +176,6 @@ services:
       ControlPlane__ComposeExecutor__ProjectDirectory: ${HONUA_COMPOSE_PROJECT_DIRECTORY:?Set the absolute host project directory}
       # docker compose ls names the project. The quickstart project name is the directory name.
       ControlPlane__ComposeExecutor__ProjectName: ${COMPOSE_PROJECT_NAME:?Set the Compose project name}
-      ControlPlane__ComposeExecutor__ComposeFile: compose.yaml
       ControlPlane__ComposeExecutor__ComposeFileList: ${COMPOSE_FILE:?Set the Compose file list}
       ControlPlane__ComposeExecutor__ComposePathSeparator: ${COMPOSE_PATH_SEPARATOR:-:}
       # Published prior images without a schema label require an operator-owned exact-image catalog.

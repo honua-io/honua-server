@@ -71,10 +71,44 @@ class ComposeQuickstartTests(unittest.TestCase):
             self.assertEqual('compose.yaml:compose.executor.yaml:customer.yaml:compose.console.yaml:compose.executor.image.yaml', files)
             self.assertEqual(files, services['compose-executor']['environment']['ControlPlane__ComposeExecutor__ComposeFileList'])
             self.assertEqual(0o640, (path / 'compose.console.yaml').stat().st_mode & 0o777)
+            self.assertEqual(1, sum(line.startswith('COMPOSE_FILE=') for line in (path / '.env').read_text().splitlines()))
             self.assertNotIn(read_secret(path, 'HONUA_ADMIN_PASSWORD'), result.stdout)
             saved = (path / '.env').read_bytes()
             initialize(path, ('console',))
             self.assertEqual(saved, (path / '.env').read_bytes(), 'Enabling Console twice must preserve the install')
+
+    def test_console_compose_file_edit_survives_restart(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            package(path, dict(PACKAGE_IMAGES, console=CONSOLE), 'test')
+            initialize(path)
+            files = initialize(path, ('console',))['COMPOSE_FILE']
+            env_file = path / '.env'
+            self.assertEqual(1, sum(line.startswith('COMPOSE_FILE=') for line in env_file.read_text().splitlines()))
+            edited = files.replace(':compose.executor.image.yaml', ':extra.yaml:compose.executor.image.yaml')
+            env_file.write_text(env_file.read_text().replace(f'COMPOSE_FILE={files}', f'COMPOSE_FILE={edited}'))
+            (path / 'extra.yaml').write_text('services:\n  honua:\n    environment:\n      EXTRA_SETTING: retained\n')
+
+            self.assertEqual(edited, initialize(path)['COMPOSE_FILE'])
+            rendered = subprocess.run(['docker', 'compose', 'config', '--format', 'json'],
+                                     cwd=path, env=self.compose_env(path), capture_output=True, text=True)
+
+            self.assertEqual(0, rendered.returncode)
+            self.assertEqual('retained', json.loads(rendered.stdout)['services']['honua']['environment']['EXTRA_SETTING'])
+
+    def test_duplicate_environment_keys_normalize_without_losing_custom_settings(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.prepare(directory)
+            env_file = path / '.env'
+            files = self.compose_env(path)['COMPOSE_FILE']
+            env_file.write_text(env_file.read_text() + f'COMPOSE_FILE={files}\nCUSTOM_SETTING=first\n# keep this note\nCUSTOM_SETTING=last\n')
+
+            values = initialize(path)
+
+            self.assertEqual('last', values['CUSTOM_SETTING'])
+            self.assertIn('# keep this note\n', env_file.read_text())
+            for key in ('COMPOSE_FILE', 'CUSTOM_SETTING'):
+                self.assertEqual(1, sum(line.startswith(key + '=') for line in env_file.read_text().splitlines()))
 
     def test_console_without_release_pin_fails_before_changing_install(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -151,7 +185,8 @@ class ComposeQuickstartTests(unittest.TestCase):
     def compose_env(self, path):
         values = dict(line.split('=', 1) for line in (path / '.env').read_text().splitlines())
         # The disposable project must win over ambient Compose flags, including cleanup.
-        return dict({k: v for k, v in os.environ.items() if k not in ALL_SECRET_KEYS}, **values)
+        excluded = (*ALL_SECRET_KEYS, 'LayerPublishing__MaterializationTimeoutSeconds')
+        return dict({k: v for k, v in os.environ.items() if k not in excluded}, **values)
 
     def secrets_of(self, path):
         return {key: read_secret(path, key) for key in ALL_SECRET_KEYS}

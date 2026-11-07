@@ -68,7 +68,8 @@ and run `python3 quickstart.py` to apply the list to the serving stack and its
 executor. Keep `compose.yaml` and `compose.executor.yaml` in that list. The
 executor preserves the customer's file order on upgrade and rollback, then
 applies `compose.executor.image.yaml` last so the approved image stays pinned.
-Files must remain inside the install directory; unsupported paths fail closed.
+Files must remain inside the install directory and be readable by its project
+group so the executor can read them; unsupported paths fail closed.
 `COMPOSE_PATH_SEPARATOR` is forwarded when a custom separator is configured.
 
 ### Add Console and embedded Studio

@@ -170,9 +170,11 @@ internal sealed class ComposeExecutorOptions
 
     private string[] EffectiveComposeFiles()
     {
-        var files = string.IsNullOrEmpty(ComposeFileList)
-            ? ComposeFiles is { Length: > 0 } ? ComposeFiles : [ComposeFile]
-            : ComposeFileList.Split(ComposePathSeparator, StringSplitOptions.None);
+        string[] files = ComposeFiles is { Length: > 0 } ? ComposeFiles : [ComposeFile];
+        if (!string.IsNullOrEmpty(ComposeFileList))
+        {
+            files = ComposeFileList.Split(ComposePathSeparator, StringSplitOptions.None);
+        }
         return files.Where(file => file != ComposeExecutorProtocol.OverrideFileName).ToArray();
     }
 
