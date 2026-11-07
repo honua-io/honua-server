@@ -264,7 +264,7 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
     [Endpoint("POST /api/v1/admin/proposals/{id}/reject")]
-    public async Task ProposalDecision_SignedAdminWithPublishScope_ReachesResolution()
+    public async Task ProposalDecision_SignedAdminWithPublishScope_RejectsButCannotApprove()
     {
         foreach (var action in new[] { "approve", "reject" })
         {
@@ -284,10 +284,18 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
                     $"/api/v1/admin/proposals/{proposal.ProposalId}/{action}",
                     new { reason = "authorized decision" });
 
-                response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
-                _proposalGateway.ReceivedCalls().Should().ContainSingle();
-                _proposalGateway.ReceivedCalls().Single().GetMethodInfo().Name.Should().Be(
-                    action == "approve" ? "ApplyApprovedProposalAsync" : "RejectProposalAsync");
+                if (action == "approve")
+                {
+                    response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+                    _proposalGateway.ReceivedCalls().Should().BeEmpty();
+                    (await _proposalStore.GetAsync(proposal.ProposalId)).Should().BeSameAs(proposal);
+                }
+                else
+                {
+                    response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+                    _proposalGateway.ReceivedCalls().Should().ContainSingle();
+                    _proposalGateway.ReceivedCalls().Single().GetMethodInfo().Name.Should().Be("RejectProposalAsync");
+                }
             }
         }
     }
@@ -317,7 +325,7 @@ public sealed class OidcJwtBearerValidationTests : IAsyncLifetime
                         $"/api/v1/admin/proposals/{proposal.ProposalId}/{action}",
                         new { reason = "legacy rollback scope boundary" });
 
-                    if (scope is "honua.mcp.rollback" or "honua.mcp.full")
+                    if (action == "reject" && (scope is "honua.mcp.rollback" or "honua.mcp.full"))
                     {
                         response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
                         _proposalGateway.ReceivedCalls().Should().ContainSingle();

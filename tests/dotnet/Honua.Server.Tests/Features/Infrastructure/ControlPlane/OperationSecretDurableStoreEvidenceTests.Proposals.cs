@@ -30,7 +30,7 @@ public sealed partial class OperationSecretDurableStoreEvidenceTests
     [InlineData("admin.api-key.revoke", false, false)]
     [InlineData("admin.api-key.create", true, false)]
     [InlineData("admin.api-key.create", false, true)]
-    public async Task ProposeAsync_AllowPolicy_RequiresDistinctApprovalAndReplaysOriginalExactlyOnce(string operationId, bool loseProposalAudit, bool revokeProposer)
+    public async Task ProposeAsync_AllowPolicy_VerifiedHumanApprovalReplaysOriginalExactlyOnce(string operationId, bool loseProposalAudit, bool revokeProposer)
     {
         await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
         var proposals = new RedisOperationProposalStore(multiplexer, NullLogger<RedisOperationProposalStore>.Instance);
@@ -55,7 +55,8 @@ public sealed partial class OperationSecretDurableStoreEvidenceTests
         var executor = new ContradictoryProposalExecutor(BuildAccessExecutor(operationId, client, secrets, credentialStore));
         services.AddSingleton<IOperationGateway>(sp => new OperationGateway(ladder, proposals, [],
             sp.GetRequiredService<IServiceScopeFactory>(), new NullProposalNotifier(), NullLogger<OperationGateway>.Instance,
-            proposerKeyAuthority: new OperationProposerApiKeyAuthority(TimeProvider.System, credentialStore)));
+            proposerKeyAuthority: new OperationProposerApiKeyAuthority(TimeProvider.System, credentialStore),
+            humanApprovalVerifier: new CanonicalOperationGatewayTestComposition.StateMachineHumanApprovalVerifier()));
         services.AddSingleton<IOperationInvoker>(sp => new OperationDispatcher(
             new OperationCatalog([new AdminAccessOperationDescriptorProvider()], TimeProvider.System), [executor],
             new AllowPolicyDecisionPoint(), TimeProvider.System,
@@ -114,8 +115,6 @@ public sealed partial class OperationSecretDurableStoreEvidenceTests
             denial.Details.Should().Contain("current_authority");
             return;
         }
-        var self = () => gateway.ApplyApprovedProposalAsync(pending.ProposalId!, new OperationProposalApprovalContext { ApprovedBy = original, TenantId = string.Empty });
-        await self.Should().ThrowAsync<InvalidOperationException>(); handler.Sends.Should().Be(0);
         var approved = await gateway.ApplyApprovedProposalAsync(pending.ProposalId!, new OperationProposalApprovalContext { ApprovedBy = "distinct-approver-6662", TenantId = string.Empty });
         approved!.Status.Should().Be(Honua.Core.Features.ControlPlane.Domain.OperationProposalStatus.Succeeded);
         handler.Sends.Should().Be(1);

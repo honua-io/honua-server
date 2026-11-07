@@ -2,6 +2,9 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
+using System.Security.Claims;
+using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
 using System.Net.Http.Json;
 using FluentAssertions;
 using Honua.ControlPlane;
@@ -15,9 +18,10 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-internal sealed class HumanApprovalHttpClient(HttpClient client) : IDisposable
+internal sealed class HumanApprovalHttpClient(HttpClient client, string actorId) : IDisposable
 {
     public HttpClient Client { get; } = client;
+    public string ActorId { get; } = actorId;
 
     public static WebAppFixture Configure(
         WebAppFixture fixture, AdminAuthEndpointsTests.StubHttpClientFactory provider) =>
@@ -52,7 +56,15 @@ internal sealed class HumanApprovalHttpClient(HttpClient client) : IDisposable
                 state,
             });
             token.StatusCode.Should().Be(HttpStatusCode.NoContent);
-            return new HumanApprovalHttpClient(client);
+            using var sessionResponse = await client.GetAsync("/api/v1/admin/auth/session");
+            sessionResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            var session = await sessionResponse.Content.ReadFromJsonAsync(AdminAuthJsonContext.Default.AdminAuthSessionResponse);
+            session!.IsAuthenticated.Should().BeTrue();
+            var principal = new ClaimsPrincipal(new ClaimsIdentity(session.Claims.Select(
+                claim => new Claim(claim.Type, claim.Value)), OidcAuthenticationExtensions.AdminSessionScheme));
+            var actor = CanonicalSecurityActor.Resolve(principal);
+            actor.Should().NotBeNull();
+            return new HumanApprovalHttpClient(client, actor!.ActorId);
         }
         catch
         {
@@ -72,12 +84,15 @@ internal sealed class HumanApprovalHttpClient(HttpClient client) : IDisposable
         return snapshot.Review;
     }
 
-    public async Task<HttpResponseMessage> ApproveAsync(string proposalId)
+    public async Task<HttpResponseMessage> ApproveAsync(string proposalId) =>
+        await SubmitReviewAsync(proposalId, await OpenReviewAsync(proposalId));
+
+    public async Task<HttpResponseMessage> SubmitReviewAsync(
+        string proposalId, OperationHumanApprovalReview review, CancellationToken cancellationToken = default)
     {
-        var review = await OpenReviewAsync(proposalId);
         using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/proposals/{proposalId}/approve");
         request.Headers.Add(OperationHumanApprovalAuthority.CapabilityHeader, review.Capability);
-        return await Client.SendAsync(request);
+        return await Client.SendAsync(request, cancellationToken);
     }
 
     public void Dispose() => Client.Dispose();

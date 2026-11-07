@@ -227,11 +227,11 @@ public sealed class OperationGatewayStateMachineTests
             Summary = "Restart Compose service",
             ExecutionPayload = "{\"action\":\"compose.restart_service\"}",
         };
-        var proposal = CreateProposal("p-restart", OperationClass.AdminConfigChange, OperationProposalStatus.AwaitingApproval) with
+        var proposal = CanonicalOperationGatewayTestComposition.WithVersionedInitiation(CreateProposal("p-restart", OperationClass.AdminConfigChange, OperationProposalStatus.AwaitingApproval) with
         {
             Plan = plan,
             SealedPlanHash = OperationApprovalPlanSeal.Compute(plan),
-        };
+        });
         var store = new InMemoryProposalStore(proposal);
         var gateway = BuildGateway(store, executor);
 

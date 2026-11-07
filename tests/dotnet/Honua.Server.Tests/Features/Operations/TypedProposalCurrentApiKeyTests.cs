@@ -18,6 +18,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.Server.Tests.Features.Admin;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -33,6 +34,8 @@ namespace Honua.Server.Tests.Features.OperationsToolset;
 public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
+    private readonly AdminAuthEndpointsTests.StubHttpClientFactory _identityProvider = AdminAuthEndpointsTests.CreateStubFactory();
+    private HumanApprovalHttpClient _human = null!;
     private readonly CountingPublishExecutor _executor = new();
     private readonly List<HttpClient> _clients = [];
     private IAdminApiKeyStore _keys = null!;
@@ -45,7 +48,7 @@ public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsync
 
     public async Task InitializeAsync()
     {
-        _fixture.ConfigureWebHost(builder =>
+        HumanApprovalHttpClient.Configure(_fixture, _identityProvider).ConfigureWebHost(builder =>
         {
             builder.UseEnvironment("Test");
             builder.UseSetting("ConnectionStrings:redis", redis.ConnectionString);
@@ -79,48 +82,47 @@ public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsync
         await _fixture.InitializeAsync();
         _keys = _fixture.Services.GetRequiredService<IAdminApiKeyStore>();
         _proposals = _fixture.Services.GetRequiredService<IOperationProposalStore>();
+        _human = await HumanApprovalHttpClient.AuthenticateAsync(_fixture, _identityProvider, "typed-proposal-reviewer");
     }
 
     public async Task DisposeAsync()
     {
         foreach (HttpClient client in _clients) client.Dispose();
-        await _fixture.DisposeAsync();
+        _human?.Dispose();
+        try { await _fixture.DisposeAsync(); }
+        finally { _identityProvider.Dispose(); }
     }
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/operations/{id}/submit")]
     [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
-    public async Task SubmitThenRevoke_SeparateApprovalRefusesBeforeTypedEffect()
+    public async Task SubmitThenRevoke_HumanApprovalRefusesBeforeTypedEffect()
     {
         var proposer = await CreateKeyAsync("proposer");
-        var approver = await CreateKeyAsync("approver");
         OperationProposal proposal = await SubmitAsync(proposer);
         await _keys.RevokeAsync(proposer.Record.Id, CancellationToken.None);
-        using HttpResponseMessage response = await Client(approver.Key).PostAsync(
-            $"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
+        using HttpResponseMessage response = await _human.ApproveAsync(proposal.ProposalId);
         var persisted = await _proposals.GetAsync(proposal.ProposalId, CancellationToken.None);
         using var assertions = new AssertionScope();
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
         _executor.Calls.Should().Be(0);
         persisted!.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
-        await AssertDenialAuditAsync(proposal, approver.Record.Id.ToString("D"), "current_authority");
+        await AssertDenialAuditAsync(proposal, _human.ActorId, "current_authority");
     }
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/operations/{id}/submit")]
     [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
-    public async Task CurrentKey_SeparateApprovalExecutesOnceWithOriginalPrincipal()
+    public async Task CurrentKey_HumanApprovalExecutesOnceWithOriginalPrincipal()
     {
         var proposer = await CreateKeyAsync("current-proposer");
-        var approver = await CreateKeyAsync("current-approver");
         OperationProposal proposal = await SubmitAsync(proposer);
-        using HttpResponseMessage first = await Client(approver.Key).PostAsync(
-            $"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
+        var review = await _human.OpenReviewAsync(proposal.ProposalId);
+        using HttpResponseMessage first = await _human.SubmitReviewAsync(proposal.ProposalId, review);
         first.StatusCode.Should().Be(HttpStatusCode.OK, await first.Content.ReadAsStringAsync());
         _executor.Calls.Should().Be(1);
         _executor.LastPrincipal.Should().Be($"apikey:api-key:{proposer.Record.Id:D}");
-        using HttpResponseMessage replay = await Client(approver.Key).PostAsync(
-            $"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
+        using HttpResponseMessage replay = await _human.SubmitReviewAsync(proposal.ProposalId, review);
         replay.StatusCode.Should().Be(HttpStatusCode.Conflict);
         _executor.Calls.Should().Be(1);
         (await ReadAuditsAsync(proposal.ProposalId)).Should()
@@ -136,7 +138,6 @@ public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsync
     public async Task CurrentKeyLookupDenies_ApprovalCannotUseSealedOldAuthority(string state)
     {
         var proposer = await CreateKeyAsync("changed-proposer");
-        var approver = await CreateKeyAsync("changed-approver");
         OperationProposal proposal = await SubmitAsync(proposer);
         _lookup.Target = proposer.Record.Id;
         _lookup.Transform = record => state switch
@@ -147,14 +148,13 @@ public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsync
             _ => record
         };
         if (state == "outage") _lookup.OnRead = (_, _) => throw new InvalidOperationException(Canary);
-        using HttpResponseMessage response = await Client(approver.Key).PostAsync(
-            $"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
+        using HttpResponseMessage response = await _human.ApproveAsync(proposal.ProposalId);
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
         (await response.Content.ReadAsStringAsync()).Should().NotContain(Canary);
         _executor.Calls.Should().Be(0);
         (await _proposals.GetAsync(proposal.ProposalId, CancellationToken.None))!.Status
             .Should().Be(OperationProposalStatus.AwaitingApproval);
-        await AssertDenialAuditAsync(proposal, approver.Record.Id.ToString("D"), "current_authority");
+        await AssertDenialAuditAsync(proposal, _human.ActorId, "current_authority");
         _audit.Should().OnlyContain(message => !message.Contains(Canary));
         _logs.Messages.Should().OnlyContain(message => !message.Contains(Canary));
     }
@@ -166,7 +166,6 @@ public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsync
     public async Task AfterClaimAuthorityLoss_FailsDurablyBeforeEffectWithoutRawErrors(bool outage)
     {
         var proposer = await CreateKeyAsync("claim-proposer");
-        var approver = await CreateKeyAsync("claim-approver");
         OperationProposal proposal = await SubmitAsync(proposer);
         _lookup.Target = proposer.Record.Id;
         _lookup.OnRead = async (count, token) =>
@@ -176,8 +175,7 @@ public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsync
             if (outage) throw new InvalidOperationException(Canary);
             await _keys.RevokeAsync(proposer.Record.Id, token);
         };
-        using HttpResponseMessage response = await Client(approver.Key).PostAsync(
-            $"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
+        using HttpResponseMessage response = await _human.ApproveAsync(proposal.ProposalId);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         _lookup.Reads.Should().Be(2);
         _executor.Calls.Should().Be(0);
@@ -208,11 +206,13 @@ public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsync
             cancellation.Cancel();
             token.ThrowIfCancellationRequested();
         };
-        // The real route created the proposal above; direct gateway cancellation lets the
-        // test retain an observer after the caller's cancellation, rather than assert on a closed socket.
-        var gateway = _fixture.Services.GetRequiredService<IOperationGateway>();
-        var act = () => gateway.ApplyApprovedProposalAsync(proposal.ProposalId, new OperationProposalApprovalContext { ApprovedBy = "separate-cancellation-test-approver", TenantId = string.Empty }, cancellation.Token);
+        var review = await _human.OpenReviewAsync(proposal.ProposalId);
+        var act = () => _human.SubmitReviewAsync(proposal.ProposalId, review, cancellation.Token);
         await act.Should().ThrowAsync<OperationCanceledException>();
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(5);
+        while ((await _proposals.GetAsync(proposal.ProposalId, CancellationToken.None))!.Status == OperationProposalStatus.Executing
+            && DateTimeOffset.UtcNow < deadline)
+            await Task.Delay(20);
         _executor.Calls.Should().Be(0);
         (await _proposals.GetAsync(proposal.ProposalId, CancellationToken.None))!.Status
             .Should().Be(OperationProposalStatus.Cancelled);
@@ -222,7 +222,7 @@ public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsync
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
-    public async Task SameProposer_CannotApproveTypedProposal()
+    public async Task ApiKeyRequester_CannotApproveTypedProposal()
     {
         var proposer = await CreateKeyAsync("self-proposer");
         OperationProposal proposal = await SubmitAsync(proposer);
@@ -237,13 +237,11 @@ public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsync
     public async Task ExistingRotationSemantics_ActiveSameIdCanStillBeApproved()
     {
         var proposer = await CreateKeyAsync("rotate-proposer");
-        var approver = await CreateKeyAsync("rotate-approver");
         OperationProposal proposal = await SubmitAsync(proposer);
         var rotated = await _keys.RotateAsync(proposer.Record.Id, CancellationToken.None);
         rotated.Should().NotBeNull();
         rotated!.Record.Id.Should().Be(proposer.Record.Id);
-        using HttpResponseMessage response = await Client(approver.Key).PostAsync(
-            $"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
+        using HttpResponseMessage response = await _human.ApproveAsync(proposal.ProposalId);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         _executor.Calls.Should().Be(1);
     }
@@ -265,12 +263,10 @@ public sealed class TypedProposalCurrentApiKeyTests(RedisFixture redis) : IAsync
     public async Task CurrentAuthorityRefused_AuditUnavailable_ReturnsSafe503BeforeClaim(string mode)
     {
         var proposer = await CreateKeyAsync("audit-unavailable-proposer");
-        var approver = await CreateKeyAsync("audit-unavailable-approver");
         var proposal = await SubmitAsync(proposer);
         await _keys.RevokeAsync(proposer.Record.Id, CancellationToken.None);
         _denialAuditMode = mode;
-        using var response = await Client(approver.Key).PostAsync(
-            $"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
+        using var response = await _human.ApproveAsync(proposal.ProposalId);
         response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, await response.Content.ReadAsStringAsync());
         (await response.Content.ReadAsStringAsync()).Should().NotContain(Canary);
         _executor.Calls.Should().Be(0);

@@ -713,7 +713,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         review.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         (await review.Content.ReadAsStringAsync()).Should().NotContain("capability\":");
         var body = await response.Content.ReadAsStringAsync();
-        body.Should().Contain("human").And.Contain("Console").And.Contain("MCP");
+        body.Should().ContainEquivalentOf("human").And.Contain("Console").And.Contain("MCP");
         (await _proposalStore.GetAsync(proposal.ProposalId)).Should().BeEquivalentTo(proposal);
         _executor.ExecutionCount.Should().Be(0);
         _notifier.ResolvedCount.Should().Be(0);

@@ -122,7 +122,7 @@ public sealed class OperationProposerApiKeyAuthorityTests
     public async Task Gateway_MissingAuthorityHelper_DeniesBeforeClaimWithAuditReceipt(string actor)
     {
         var store = Substitute.For<IOperationProposalStore>();
-        var proposal = new OperationProposal
+        var proposal = CanonicalOperationGatewayTestComposition.WithVersionedInitiation(new OperationProposal
         {
             ProposalId = "synthetic",
             Kind = OperationClass.ServicePublish,
@@ -132,7 +132,7 @@ public sealed class OperationProposerApiKeyAuthorityTests
             UpdatedAt = Now,
             Plan = new OperationProposalPlan { Summary = "synthetic" },
             Audit = new OperationAuditInfo { OperationInstanceId = "synthetic-instance", CorrelationId = "synthetic-correlation", Reason = "test" }
-        };
+        });
         store.GetAsync("synthetic", Arg.Any<CancellationToken>()).Returns(Task.FromResult<OperationProposal?>(proposal));
         var audit = Substitute.For<IAuditLog>();
         audit.IsPersisted.Returns(true);
@@ -142,7 +142,8 @@ public sealed class OperationProposerApiKeyAuthorityTests
             .BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         var scopes = services.GetRequiredService<IServiceScopeFactory>();
         var gateway = new OperationGateway(Substitute.For<IGuardrailLadder>(), store, [], scopes,
-            Substitute.For<IProposalNotifier>(), NullLogger<OperationGateway>.Instance);
+            Substitute.For<IProposalNotifier>(), NullLogger<OperationGateway>.Instance,
+            humanApprovalVerifier: new CanonicalOperationGatewayTestComposition.StateMachineHumanApprovalVerifier());
         var act = () => gateway.ApplyApprovedProposalAsync("synthetic", new OperationProposalApprovalContext { ApprovedBy = "distinct-approver", TenantId = string.Empty });
         var error = (await act.Should().ThrowAsync<InvalidOperationException>()).Which;
         error.Message.Should().Be(OperationProposerApiKeyAuthority.Refusal);

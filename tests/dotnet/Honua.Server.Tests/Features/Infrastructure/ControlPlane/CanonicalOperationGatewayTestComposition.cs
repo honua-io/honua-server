@@ -101,7 +101,7 @@ internal static class CanonicalOperationGatewayTestComposition
         };
     }
 
-    private sealed class StateMachineHumanApprovalVerifier : IOperationHumanApprovalVerifier
+    internal sealed class StateMachineHumanApprovalVerifier : IOperationHumanApprovalVerifier
     {
         public Task<OperationHumanApprovalEvidence> VerifyAsync(
             OperationProposal proposal, OperationProposalApprovalContext approval, CancellationToken cancellationToken = default)
