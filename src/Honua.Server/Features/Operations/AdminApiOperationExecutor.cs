@@ -8,6 +8,7 @@ using System.Text.Json;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Infrastructure.Authentication;
 
 namespace Honua.Server.Features.Operations;
@@ -165,6 +166,7 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
             Status = OperationHandleStatus.Completed,
             CreatedAt = now,
             UpdatedAt = now,
+            ResourceIds = BuildPublishedResourceIds(request, response.StatusCode, payload),
             Result = BuildSuccessResult(response, payload)
         };
     }
@@ -192,6 +194,35 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
             ResourceIds = handle.ResourceIds,
             EvidenceRefs = handle.EvidenceRefs,
         });
+    }
+
+    private IReadOnlyDictionary<string, string> BuildPublishedResourceIds(
+        OperationRequest request, HttpStatusCode statusCode, string payload)
+    {
+        var resources = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (OperationId != "admin.layer.publish" || request.DryRun || statusCode != HttpStatusCode.Created)
+        {
+            return resources;
+        }
+
+        try
+        {
+            var response = JsonSerializer.Deserialize(payload, LayerPublishingJsonContext.Default.ApiResponsePublishedLayerSummary);
+            if (response is not { Success: true, Data: { } published }
+                || string.IsNullOrWhiteSpace(published.ServiceName) || published.LayerId < 0)
+            {
+                return resources;
+            }
+
+            resources["serviceName"] = published.ServiceName;
+            resources["layerId"] = published.LayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+        catch (JsonException)
+        {
+            return resources;
+        }
+
+        return resources;
     }
 
     private OperationResultSummary BuildSuccessResult(HttpResponseMessage response, string payload)
