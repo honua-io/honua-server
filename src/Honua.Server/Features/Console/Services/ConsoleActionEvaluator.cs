@@ -98,6 +98,9 @@ internal sealed class ConsoleActionEvaluator(
 
     private static bool IsItemActionAllowed(ConsoleContentItem item, AuthorizationProfile profile, ConsoleContentAction action)
     {
+        if (item.IsReadOnly)
+            return action == ConsoleContentAction.View;
+
         if (profile.IsAdmin)
             return true;
 

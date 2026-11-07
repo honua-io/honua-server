@@ -3,9 +3,10 @@
 
 using Honua.Core.Features.Console.Abstractions;
 using Honua.Core.Features.Console.Domain;
-using Honua.Server.Features.Console.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Honua.Server.Features.Console.Models;
+using Honua.Server.Features.Console.Services;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 
@@ -42,7 +43,7 @@ internal static class ConsoleActionEndpoints
 
     private static async Task<Results<Ok<ApiResponse<ConsoleActionCheckResponse>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>> HandleCheck(
         ConsoleActionCheckRequest request,
-        [FromServices] IConsoleContentStore store,
+        [FromServices] ProjectedConsoleContentStore store,
         [FromServices] IConsoleActionEvaluator evaluator,
         [FromServices] ILogger<ConsoleActionEndpointsLog> logger,
         HttpContext context)

@@ -10,6 +10,9 @@ namespace Honua.Core.Features.Console.Domain;
 // The Console slice owns this wire shape so the Metadata v2 graph can change without changing the Console API version.
 public sealed record ConsoleContentItem
 {
+    [JsonIgnore]
+    public bool IsReadOnly { get; init; }
+
     [JsonPropertyName("id")]
     public required string Id { get; init; }
 
