@@ -5,14 +5,14 @@ from honua_customcode_harness import GpContext, GpResult
 
 
 def execute(context: GpContext) -> GpResult:
-    data = json.loads(context.inputs["features"].read_text(encoding="utf-8"))
-    if data.get("type") != "FeatureCollection":
+    feature_collection = json.loads(context.inputs["features"].read_text(encoding="utf-8"))
+    if feature_collection.get("type") != "FeatureCollection":
         return GpResult.failed("Expected a GeoJSON FeatureCollection.")
     field = context.params.get("field", "value")
     values = []
-    for feature in data["features"]:
+    for feature in feature_collection["features"]:
         context.cancellation.raise_if_cancelled()
-        value = float(feature["properties"][field])  # Set a breakpoint here.
+        value = float(feature["properties"][field])
         if not math.isfinite(value):
             return GpResult.failed("Values must be finite.")
         values.append(value)
