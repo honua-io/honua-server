@@ -20,32 +20,35 @@ public sealed class MetadataV2ModelTests
     [Operation(Operations.Metadata)]
     [InlineData("{\"status\":{}}")]
     [InlineData("{\"identifier\":null,\"status\":{}}")]
-    public void DeserializePublication_MissingOrNullIdentifier_SerializesWithEmptyDerivedValues(string json)
+    public void DeserializePublication_MissingOrNullIdentifier_PreservesNullWireShape(string json)
     {
         var publication = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2Publication)!;
 
-        publication.Identifier.Should().NotBeNull();
+        publication.Identifier.Should().BeNull();
         publication.LayerIndex.Should().BeNull();
         publication.Path.Should().BeNull();
         publication.ServiceLocalId.Should().BeNull();
         var roundTrip = JsonSerializer.Serialize(publication, MetadataV2JsonContext.Default.MetadataV2Publication);
+        using var document = JsonDocument.Parse(roundTrip);
+        document.RootElement.GetProperty("identifier").ValueKind.Should().Be(JsonValueKind.Null);
         JsonSerializer.Deserialize(roundTrip, MetadataV2JsonContext.Default.MetadataV2Publication)!
             .Identifier.Should().Be(publication.Identifier);
     }
 
-    [UnitTest]
+    [UnitTheory]
     [Operation(Operations.Metadata)]
-    public void DeserializePublication_LegacyIdentifiers_PreservesValues()
+    [InlineData("{\"layerIndex\":7,\"path\":\"parcels\",\"serviceLocalId\":\"local\",\"status\":{}}")]
+    [InlineData("{\"identifier\":null,\"layerIndex\":7,\"path\":\"parcels\",\"serviceLocalId\":\"local\",\"status\":{}}")]
+    public void DeserializePublication_LegacyIdentifiers_PreservesValues(string json)
     {
-        var publication = JsonSerializer.Deserialize(
-            "{\"layerIndex\":7,\"path\":\"parcels\",\"serviceLocalId\":\"local\",\"status\":{}}",
-            MetadataV2JsonContext.Default.MetadataV2Publication)!;
+        var publication = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2Publication)!;
 
+        publication.Identifier.Should().BeNull();
         publication.LayerIndex.Should().Be(7);
         publication.Path.Should().Be("parcels");
         publication.ServiceLocalId.Should().Be("local");
         JsonSerializer.Serialize(publication, MetadataV2JsonContext.Default.MetadataV2Publication)
-            .Should().Contain("\"layerIndex\":7");
+            .Should().Contain("\"layerIndex\":7").And.Contain("\"identifier\":null");
     }
 
     [UnitTest]

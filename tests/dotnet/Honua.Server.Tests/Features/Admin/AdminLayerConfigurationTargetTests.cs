@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -84,6 +85,8 @@ public sealed class AdminLayerConfigurationTargetTests
         target.IsAmbiguous.Should().BeFalse();
         target.Resource!.Metadata.Id.Should().Be("res-legacy");
         snapshot.Graph.Publications.Single().Identifier.Should().BeNull();
+        JsonSerializer.Serialize(snapshot.Graph.Publications.Single(), MetadataV2JsonContext.Default.MetadataV2Publication)
+            .Should().Contain("\"identifier\":null").And.Contain("\"layerIndex\":4");
     }
 
     private static MetadataV2GraphSnapshot Graph(params MetadataV2Graph[] parts)

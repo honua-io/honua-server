@@ -449,7 +449,6 @@ public sealed record MetadataV2Publication
     private int? _layerIndex;
     private string? _path;
     private string? _serviceLocalId;
-    private MetadataV2PublicationIdentifier _identifier = new();
 
     [JsonPropertyName("metadata")]
     public MetadataV2ObjectMetadata Metadata { get; init; } = new();
@@ -471,16 +470,12 @@ public sealed record MetadataV2Publication
 
     // One protocol-facing identifier replaces the separate layer index, service-local id, and path so the three cannot diverge.
     [JsonPropertyName("identifier")]
-    public MetadataV2PublicationIdentifier Identifier
-    {
-        get => _identifier;
-        init => _identifier = value ?? new();
-    }
+    public MetadataV2PublicationIdentifier Identifier { get; init; } = new();
 
     [JsonPropertyName("layerIndex")]
     public int? LayerIndex
     {
-        get => _layerIndex ?? (Identifier.IsNumeric
+        get => _layerIndex ?? (Identifier?.IsNumeric == true
             && int.TryParse(Identifier.Value, System.Globalization.NumberStyles.Integer,
                 System.Globalization.CultureInfo.InvariantCulture, out var parsed)
                 ? parsed
@@ -491,14 +486,14 @@ public sealed record MetadataV2Publication
     [JsonPropertyName("path")]
     public string? Path
     {
-        get => _path ?? Identifier.PathOverride;
+        get => _path ?? Identifier?.PathOverride;
         init => _path = value;
     }
 
     [JsonPropertyName("serviceLocalId")]
     public string? ServiceLocalId
     {
-        get => _serviceLocalId ?? (string.IsNullOrEmpty(Identifier.Value) ? null : Identifier.Value);
+        get => _serviceLocalId ?? (string.IsNullOrEmpty(Identifier?.Value) ? null : Identifier.Value);
         init => _serviceLocalId = value;
     }
 
