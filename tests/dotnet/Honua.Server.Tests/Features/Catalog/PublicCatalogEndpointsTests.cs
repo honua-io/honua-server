@@ -2,6 +2,8 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Helpers;
 using System.Text.Json;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -32,7 +34,7 @@ public sealed partial class PublicCatalogEndpointsTests : IAsyncLifetime
 
     public PublicCatalogEndpointsTests()
     {
-        _fixture = new WebAppFixture().ReplaceService<IMetadataV2GraphProvider>(_provider)
+        _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Enterprise).ReplaceService<IMetadataV2GraphProvider>(_provider)
             .ConfigureWebHost(builder =>
             {
                 builder.UseEnvironment("Test");

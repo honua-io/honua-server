@@ -1,6 +1,9 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.TestKit.Infrastructure;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Configuration;
@@ -175,6 +178,7 @@ public sealed class GeoServicesErrorEnvelopeOutputCacheTests
             .ConfigureServices(services =>
             {
                 services.AddRouting();
+                services.AddSingleton<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(new MetadataV2Graph { Revision = 1 }));
                 services.AddSingleton<IOptions<LimitsOptions>>(
                     Options.Create(new LimitsOptions { Tiles = new TileLimits() }));
                 ObservabilityServiceCollectionExtensions.ConfigureOutputCaching(
