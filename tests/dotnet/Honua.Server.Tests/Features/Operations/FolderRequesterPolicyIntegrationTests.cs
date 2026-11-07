@@ -8,7 +8,11 @@ using FluentAssertions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
+using Honua.Infrastructure.Authentication;
+using Honua.Server.Features.Admin;
 using Honua.TestKit.Attributes;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.OperationsToolset;
@@ -66,6 +70,17 @@ public sealed partial class FolderOperationIntegrationTests
         };
         var saved = await store.SaveAsync(restricted, before.Etag);
         saved.Etag.Should().NotBe(before.Etag);
+        var policyContext = new DefaultHttpContext { RequestServices = scope.ServiceProvider };
+        policyContext.Request.Method = HttpMethods.Put;
+        policyContext.Request.Path = "/api/v1/admin/services/test/folder";
+        policyContext.Request.Headers["X-API-Key"] = _proposer.DefaultRequestHeaders.GetValues("X-API-Key").Single();
+        var authenticated = await policyContext.AuthenticateAsync(AuthenticationExtensions.ApiKeyScheme);
+        authenticated.Succeeded.Should().BeTrue();
+        policyContext.User = authenticated.Principal!;
+        var deniedFacet = saved.Graph.Services.Single(service => service.Metadata.Id == facet.Metadata.Id);
+        MetadataV2TenantVisibility.IsVisibleToTenant(deniedFacet, null).Should().BeTrue();
+        (await FolderEndpoints.RequireServiceAccessAsync(policyContext, deniedFacet)).Should().NotBeNull(
+            "the real authenticated requester must fail the shared service-policy check before testing proposal admission");
         return saved;
     }
 }
