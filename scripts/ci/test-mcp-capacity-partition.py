@@ -5,7 +5,7 @@ import importlib.util
 import json
 from pathlib import Path
 
-from shard_capacity_partition import check_partition
+from shard_capacity_partition import PartitionSource, check_partition
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("coverage", ROOT / "scripts/ci/check-server-test-shard-coverage.py")
@@ -39,7 +39,7 @@ def check_registration(config):
         assert len({s[field] for s in config["shards"]}) == len(config["shards"]), field
 
 
-selected = check_partition(MODULE, CLASSES, ORIGINAL, CHILDREN)
+selected = check_partition(PartitionSource(MODULE, CLASSES), ORIGINAL, CHILDREN)
 assert selected[0] == ENDPOINTS, "The measured endpoint class changed ownership."
 counts = list(map(len, selected))
 check_registration(CONFIG)

@@ -1,7 +1,17 @@
 """Shared conservation checks for whole-class capacity splits."""
 
+from types import ModuleType
+from typing import NamedTuple
 
-def check_partition(coverage, classes, original, children):
+
+class PartitionSource(NamedTuple):
+    coverage: ModuleType
+    classes: dict
+
+
+def check_partition(source, original, children):
+    coverage, classes = source
+
     methods = coverage.selection_pool(classes, original["csproj"])
     parent = coverage._FilterParser(original["filter"]).parse()
     expected = {method for method in methods if coverage._eval(parent, method)}

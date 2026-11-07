@@ -5,7 +5,7 @@ import importlib.util
 import json
 from pathlib import Path
 
-from shard_capacity_partition import check_partition
+from shard_capacity_partition import PartitionSource, check_partition
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("coverage", ROOT / "scripts/ci/check-server-test-shard-coverage.py")
@@ -28,7 +28,7 @@ assert EVIDENCE["trxPresent"] is False and EVIDENCE["qualification"] == "not-eva
 
 
 def check(children):
-    selected = check_partition(MODULE, CLASSES, ORIGINAL, children)
+    selected = check_partition(PartitionSource(MODULE, CLASSES), ORIGINAL, children)
     assert selected[0] == MAIN, "The measured main class changed ownership."
     return list(map(len, selected))
 

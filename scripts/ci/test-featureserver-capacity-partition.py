@@ -5,7 +5,7 @@ import importlib.util
 import json
 from pathlib import Path
 
-from shard_capacity_partition import check_partition
+from shard_capacity_partition import PartitionSource, check_partition
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("coverage", ROOT / "scripts/ci/check-server-test-shard-coverage.py")
@@ -36,7 +36,7 @@ assert EVIDENCE["historicalSizing"]["sourceDirty"] is True, "Do not relabel hist
 
 
 def check(children):
-    selected = check_partition(MODULE, CLASSES, ORIGINAL, children)
+    selected = check_partition(PartitionSource(MODULE, CLASSES), ORIGINAL, children)
     assert selected[0] == EDITING, "The measured editing class families changed ownership."
     parsed = [MODULE._FilterParser(child["filter"]).parse() for child in children]
     # A future method name cannot move an unrelated whole class into the cut.
