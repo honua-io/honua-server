@@ -43,10 +43,23 @@ internal static class SourceTextRatchet
             return null;
         }
 
-        return RunGit(repositoryRoot, "show", $"{parent}:{relativePath}")
+        var entries = RunGit(repositoryRoot, "show", $"{parent}:{relativePath}")
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Where(line => !line.StartsWith('#'))
             .ToArray();
+        var renamedPaths = RunGit(repositoryRoot, "diff", "--find-renames", "--name-status", "--diff-filter=R",
+                "-z", parent, "HEAD", "--", "src")
+            .Split('\0', StringSplitOptions.RemoveEmptyEntries)
+            .Chunk(3)
+            .ToDictionary(rename => rename[1], rename => rename[2], StringComparer.Ordinal);
+
+        return entries.Select(entry => string.Join('|', entry.Split('|').Select(part =>
+        {
+            var pathEnd = part.IndexOfAny([':', '\t']);
+            return pathEnd >= 0 && renamedPaths.TryGetValue(part[..pathEnd], out var renamedPath)
+                ? renamedPath + part[pathEnd..]
+                : part;
+        }))).ToArray();
     }
 
     internal static string RunGit(string repositoryRoot, params string[] arguments)
