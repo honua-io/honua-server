@@ -22,7 +22,7 @@ namespace Honua.Server.Tests.Features.Console;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.GetMetadata)]
-public sealed class PublishedContentProjectionTests : IAsyncLifetime
+public sealed partial class PublishedContentProjectionTests : IAsyncLifetime
 {
     private const string AdminKey = "published-content-test-key";
     private readonly TestMetadataV2GraphProvider _provider = new(Graph());
@@ -388,30 +388,4 @@ public sealed class PublishedContentProjectionTests : IAsyncLifetime
         using var envelope = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         return JsonDocument.Parse(envelope.RootElement.GetProperty("data").GetRawText());
     }
-
-    private static MetadataV2Graph Graph() => new()
-    {
-        Revision = 1,
-        Folders = [new() { Metadata = new() { Id = "folder", Name = "Survey" } }],
-        Services = [new()
-        {
-            Metadata = new() { Id = "service", Name = "internal", Title = "Parcels" },
-            PublicName = "Parcels", FolderId = "folder", Protocols = [ServiceProtocols.FeatureServer],
-            Status = new() { Lifecycle = MetadataV2LifecycleStatus.Active },
-            AccessPolicy = new() { AllowAnonymous = true }
-        }],
-        Resources = [new()
-        {
-            Metadata = new() { Id = "resource", Name = "parcels", Title = "Parcels" },
-            Status = new() { Lifecycle = MetadataV2LifecycleStatus.Active },
-            AccessPolicy = new() { AllowAnonymous = true }
-        }],
-        Publications = [new()
-        {
-            Metadata = new() { Id = "publication", Name = "parcels" },
-            IsPrimary = true,
-            ServiceId = "service", ResourceId = "resource", LayerIndex = 0,
-            Status = new() { Lifecycle = MetadataV2LifecycleStatus.Active }
-        }]
-    };
 }
