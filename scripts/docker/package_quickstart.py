@@ -13,6 +13,8 @@ IMMUTABLE = re.compile(r'(?:[a-z0-9./:_-]+@)?sha256:[a-f0-9]{64}')
 
 
 def package(destination, images, version):
+    if any(name not in images for name in ('server', 'executor', 'worker')):
+        raise ValueError('The package requires server, executor and worker image pins')
     for image in images.values():
         if not IMMUTABLE.fullmatch(image):
             raise ValueError('All quickstart images must be immutable sha256 references')

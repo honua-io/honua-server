@@ -19,7 +19,7 @@ AUDIT_KEYS = ('HONUA_AUDIT_CHAIN_KEY', 'HONUA_MANAGER_AUDIT_CHAIN_KEY')
 # /run/secrets; none is a Compose interpolation variable, so `docker compose config` cannot print one.
 ALL_SECRET_KEYS = SECRET_KEYS + AUDIT_KEYS
 IMMUTABLE = re.compile(r'(?:[a-z0-9./:_-]+@)?sha256:[a-f0-9]{64}')
-COMPOSE_FILES = ('compose.yaml', 'compose.executor.yaml')
+COMPOSE_FILES = ('compose.yaml', 'compose.executor.yaml', 'compose.console.yaml')
 
 
 def secret_path(directory, key):
@@ -108,7 +108,7 @@ def initialize(directory, profiles=()):
         'HONUA_COMPOSE_CUSTOMER_PROBE': 'http://honua:8080/healthz/ready',
     }
     for key in ('HONUA_IMAGE', 'HONUA_EXECUTOR_IMAGE', 'HONUA_RELEASE_IMAGE',
-                'HONUA_RELEASE_WORKER_IMAGE', 'HONUA_PRIOR_IMAGE'):
+                'HONUA_RELEASE_WORKER_IMAGE', 'HONUA_PRIOR_IMAGE', 'HONUA_CONSOLE_IMAGE'):
         if key in values and not IMMUTABLE.fullmatch(values[key]):
             raise ValueError(f'{key} must be an immutable sha256 reference')
     if any(char in str(directory) for char in '\n\r$#\'"'):

@@ -5,6 +5,8 @@ services:
   console:
     image: ${HONUA_CONSOLE_IMAGE:?The package image lock must include an immutable Console image}
     profiles: [console]
+    # Install secrets are group-owned by the servers; Console's app user has a different primary group.
+    group_add: ["1001"]
     ports:
       - "127.0.0.1:${HONUA_CONSOLE_PORT:-18083}:8080"
     entrypoint:
@@ -13,13 +15,11 @@ services:
       - -euc
       - |
         { set +x; } 2>/dev/null
-        for ref in $${!HONUA_SECRET_FILE__@}; do
-          value=$$(< "$${!ref}")
-          [ -n "$$value" ] || { echo "empty secret file for $${ref#HONUA_SECRET_FILE__}" >&2; exit 1; }
-          export "$${ref#HONUA_SECRET_FILE__}=$$value"
-          unset "$$ref"
-        done
-        unset value ref
+        # Inherited shell tracing would expose the private credential during export.
+        admin_password=$$(< "$$HONUA_SECRET_FILE__HONUA_ADMIN_API_KEY")
+        [ -n "$$admin_password" ] || { echo "empty Console admin password file" >&2; exit 1; }
+        export HONUA_ADMIN_API_KEY="$$admin_password" Honua__Server__AdminApiKey="$$admin_password"
+        unset admin_password HONUA_SECRET_FILE__HONUA_ADMIN_API_KEY
         exec "$$@"
       - console-secrets
       - dotnet
@@ -30,7 +30,6 @@ services:
       HONUA_SERVER_BASE_URL: http://honua:8080
       Honua__Server__BaseUrl: http://honua:8080
       HONUA_SECRET_FILE__HONUA_ADMIN_API_KEY: /run/secrets/honua_admin_password
-      HONUA_SECRET_FILE__Honua__Server__AdminApiKey: /run/secrets/honua_admin_password
       Studio__EmbedJsStudio: "true"
     depends_on:
       honua:

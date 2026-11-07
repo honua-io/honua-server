@@ -24,6 +24,19 @@ PACKAGE_IMAGES = dict(server=SERVER, executor=EXECUTOR, worker=WORKER)
 
 
 class ComposeQuickstartTests(unittest.TestCase):
+    def test_materialization_timeout_is_forwarded_from_dotenv(self):
+        for selected, expected in (('', '300'), ('900', '900')):
+            with self.subTest(selected=selected), tempfile.TemporaryDirectory() as directory:
+                path = self.prepare(directory)
+                if selected:
+                    env_file = path / '.env'
+                    env_file.write_text(env_file.read_text() + f'LayerPublishing__MaterializationTimeoutSeconds={selected}\n')
+                result = subprocess.run(['docker', 'compose', 'config', '--format', 'json'],
+                                        cwd=path, env=self.compose_env(path), capture_output=True, text=True)
+                self.assertEqual(0, result.returncode, 'Packaged Compose must render materialization settings')
+                serving = json.loads(result.stdout)['services']['honua']
+                self.assertEqual(expected, serving['environment'].get('LayerPublishing__MaterializationTimeoutSeconds'))
+
     def test_console_profile_uses_packaged_pin_and_preserves_executor_files(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)
@@ -46,10 +59,18 @@ class ComposeQuickstartTests(unittest.TestCase):
             services = json.loads(result.stdout)['services']
             self.assertEqual(CONSOLE, services['console']['image'])
             self.assertEqual('true', services['console']['environment']['Studio__EmbedJsStudio'])
+            self.assertIn('1001', services['console']['group_add'])
+            self.assertEqual('/run/secrets/honua_admin_password', services['console']['environment'][
+                'HONUA_SECRET_FILE__HONUA_ADMIN_API_KEY'])
             self.assertIn('compose-executor', services)
             self.assertIn('compose-manager', services)
             self.assertEqual(SERVER, services['honua']['image'])
             self.assertEqual('preserved', services['honua']['environment']['CUSTOMER_SETTING'])
+            self.assertEqual('true', services['honua']['environment']['Studio__EndUserAuthorization__Enabled'])
+            files = self.compose_env(path)['COMPOSE_FILE']
+            self.assertEqual('compose.yaml:compose.executor.yaml:customer.yaml:compose.console.yaml:compose.executor.image.yaml', files)
+            self.assertEqual(files, services['compose-executor']['environment']['ControlPlane__ComposeExecutor__ComposeFileList'])
+            self.assertEqual(0o640, (path / 'compose.console.yaml').stat().st_mode & 0o777)
             self.assertNotIn(read_secret(path, 'HONUA_ADMIN_PASSWORD'), result.stdout)
             saved = (path / '.env').read_bytes()
             initialize(path, ('console',))
@@ -86,6 +107,26 @@ class ComposeQuickstartTests(unittest.TestCase):
                 package(Path(directory), images, 'test')
 
             self.assertEqual([], list(Path(directory).iterdir()))
+
+    def test_missing_required_image_pin_is_rejected_before_writing_package(self):
+        for missing in PACKAGE_IMAGES:
+            with self.subTest(missing=missing), tempfile.TemporaryDirectory() as directory:
+                images = {name: image for name, image in PACKAGE_IMAGES.items() if name != missing}
+                with self.assertRaisesRegex(ValueError, 'requires server, executor and worker'):
+                    package(Path(directory), images, 'test')
+                self.assertEqual([], list(Path(directory).iterdir()))
+
+    def test_saved_mutable_console_pin_is_rejected_on_restart(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.prepare(directory)
+            env_file = path / '.env'
+            env_file.write_text(env_file.read_text() + 'HONUA_CONSOLE_IMAGE=ghcr.io/honua-io/honua-console:latest\n')
+            saved = env_file.read_bytes()
+
+            with self.assertRaisesRegex(ValueError, 'HONUA_CONSOLE_IMAGE must be an immutable'):
+                initialize(path)
+
+            self.assertEqual(saved, env_file.read_bytes())
 
     def test_executor_receives_the_customer_compose_file_list(self):
         with tempfile.TemporaryDirectory() as directory:

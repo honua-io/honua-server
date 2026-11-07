@@ -197,6 +197,7 @@ services:
       - "127.0.0.1:${HONUA_GRPC_PORT:-18081}:8081"
     environment:
       ASPNETCORE_ENVIRONMENT: Production
+      LayerPublishing__MaterializationTimeoutSeconds: ${LayerPublishing__MaterializationTimeoutSeconds:-300}
       Mcp__WorkflowViews__DefaultView: ${HONUA_MCP_DEFAULT_VIEW:-default}
       Licensing__Mode: Disabled
       AllowedHosts: "localhost;127.0.0.1"
@@ -549,10 +550,11 @@ a backup.
 
 ## Use Studio in Console without the assistant
 
-The customer package above does not include Console. Studio in Console runs from
-the repository development stack. From this install directory, clone the
-repository and start that stack on the serving image you installed, so nothing is
-built from source:
+For a customer installation, follow [Add Console and embedded Studio](#add-console-and-embedded-studio)
+and open Console at `http://localhost:18083` (or your configured port).
+
+For a separate development environment, clone the repository from this install
+directory and start its development stack on the serving image you installed:
 
 <!-- docs-validation:studio.console mode=skip reason="Repository development stack; the public install replay uses the customer package" -->
 ```bash
@@ -566,7 +568,7 @@ publishes `127.0.0.1` ports `8080`, `8081`, `5432`, `6379` and `5174`, so those 
 be free; the quickstart above keeps `18080` and `18081`. Its admin password is the
 public development default, which is why every port binds to loopback only.
 
-Open Console at `http://localhost:5174` (or your configured `HONUA_CONSOLE_PORT`)
+Open the development Console at `http://localhost:5174` (or its configured `HONUA_CONSOLE_PORT`)
 and use Studio to author maps, save and reopen versions, and request publication.
 The repository's `docker-compose.yml` sets `Studio__EmbedJsStudio=true` on Console
 and `Studio__EndUserAuthorization__Enabled=true` on Server. Customer sign-in,

@@ -15,6 +15,15 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class QuickstartTests(unittest.TestCase):
+    def test_materialization_timeout_is_forwarded_from_dotenv(self):
+        with tempfile.TemporaryDirectory() as directory:
+            env_file = Path(directory) / '.env'
+            env_file.write_text('LayerPublishing__MaterializationTimeoutSeconds=900\n')
+            services = self.render(env_file, POSTGRES_PASSWORD=os.urandom(32).hex(),
+                                   MINIO_ROOT_PASSWORD=os.urandom(32).hex())
+
+            self.assertEqual('900', services['honua']['environment'].get('LayerPublishing__MaterializationTimeoutSeconds'))
+
     def test_issue_5419_no_redis_keeps_storage_initialization_dependency(self):
         override = (ROOT / "docker-compose.no-redis.yml").read_text()
         depends_on = override.split("depends_on: !override", 1)[1].split("environment:", 1)[0]
@@ -43,7 +52,8 @@ class QuickstartTests(unittest.TestCase):
     def render(self, env_file, **overrides):
         env = {key: value for key, value in os.environ.items()
                if key not in ("POSTGRES_PASSWORD", "MINIO_ROOT_PASSWORD", "HONUA_BIND_ADDRESS",
-                              "HONUA_CONSOLE_IMAGE", "HONUA_PUBLIC_BASE_URL")}
+                              "HONUA_CONSOLE_IMAGE", "HONUA_PUBLIC_BASE_URL",
+                              "LayerPublishing__MaterializationTimeoutSeconds")}
         env.update(overrides)
         result = subprocess.run(
             ["docker", "compose", "--env-file", str(env_file), "-f",

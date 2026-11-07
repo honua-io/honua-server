@@ -8,6 +8,7 @@ on:
       - 'src/Honua.Server/Features/Infrastructure/Monitoring/McpPlatformOpsReader.cs'
       - 'src/Honua.Core/Features/ControlPlane/**'
       - 'docs/get-started/compose.executor.yaml'
+      - 'docs/get-started/compose.console.yaml'
       - 'docs/get-started/quickstart.md'
       - 'docs/guides/connect/working-with-ai-agents.md'
       - 'docs/guides/connect/operating-skills.md'
