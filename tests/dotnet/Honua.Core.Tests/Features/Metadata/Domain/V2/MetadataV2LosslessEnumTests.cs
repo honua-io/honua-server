@@ -48,9 +48,9 @@ public sealed class MetadataV2LosslessEnumTests
               "status":{"lifecycle":TOKEN,"state":TOKEN},"schemaFields":[{"type":TOKEN}],
               "spatial":{"geometryType":TOKEN},"attributeRules":[{"type":TOKEN}],
               "symbology3D":{"rules":[{"attribute":"height","comparison":TOKEN}]}}],
-             "connections":[{"type":TOKEN}],
-             "storageBindings":[{"storageType":TOKEN,"capabilities":[TOKEN]}],
-             "services":[{"serviceType":TOKEN}],"publications":[{"publicationType":TOKEN}]}
+             "connections":[{"type":TOKEN,"status":{}}],
+             "storageBindings":[{"storageType":TOKEN,"capabilities":[TOKEN],"status":{}}],
+             "services":[{"serviceType":TOKEN,"status":{}}],"publications":[{"publicationType":TOKEN,"status":{}}]}
             """;
         var graph = JsonSerializer.Deserialize(template.Replace("TOKEN", token, StringComparison.Ordinal),
             MetadataV2JsonContext.Default.MetadataV2Graph)!;
@@ -73,9 +73,9 @@ public sealed class MetadataV2LosslessEnumTests
     [UnitTest]
     public void Equals_NormalizedUnknownToken_MatchesDictionaryKeyWithoutChangingEncoding()
     {
-        var escaped = JsonSerializer.Deserialize("""{"resources":[{"type":"future-\u0076alue"}]}""",
+        var escaped = JsonSerializer.Deserialize("""{"resources":[{"type":"future-\u0076alue","status":{}}]}""",
             MetadataV2JsonContext.Default.MetadataV2Graph)!;
-        var normalized = JsonSerializer.Deserialize("""{"resources":[{"type":"future-value"}]}""",
+        var normalized = JsonSerializer.Deserialize("""{"resources":[{"type":"future-value","status":{}}]}""",
             MetadataV2JsonContext.Default.MetadataV2Graph)!;
         var index = new[] { escaped.Resources.Single().TypeValue }.ToDictionary(kind => kind);
 
@@ -88,7 +88,7 @@ public sealed class MetadataV2LosslessEnumTests
     [UnitTest]
     public void Serialize_ExplicitEnumEdit_ReplacesUnknownToken()
     {
-        var graph = JsonSerializer.Deserialize("""{"resources":[{"type":"future-kind"}]}""",
+        var graph = JsonSerializer.Deserialize("""{"resources":[{"type":"future-kind","status":{}}]}""",
             MetadataV2JsonContext.Default.MetadataV2Graph)!;
         var edited = graph with { Resources = [graph.Resources[0] with { Type = MetadataV2ResourceType.Table }] };
         var json = JsonSerializer.Serialize(edited, MetadataV2JsonContext.Default.MetadataV2Graph);
@@ -99,7 +99,7 @@ public sealed class MetadataV2LosslessEnumTests
     [UnitTest]
     public void Serialize_ExplicitUnknownEdit_ReplacesRawToken()
     {
-        var graph = JsonSerializer.Deserialize("""{"resources":[{"type":"future-kind"}]}""",
+        var graph = JsonSerializer.Deserialize("""{"resources":[{"type":"future-kind","status":{}}]}""",
             MetadataV2JsonContext.Default.MetadataV2Graph)!;
         var edited = graph with { Resources = [graph.Resources[0] with { Type = MetadataV2ResourceType.Unknown }] };
         using var persisted = JsonDocument.Parse(JsonSerializer.Serialize(edited, MetadataV2JsonContext.Default.MetadataV2Graph));
@@ -110,7 +110,7 @@ public sealed class MetadataV2LosslessEnumTests
     [UnitTest]
     public void Serialize_ExplicitCapabilitiesEdit_ReplacesRawTokens()
     {
-        var graph = JsonSerializer.Deserialize("""{"storageBindings":[{"capabilities":["future-capability"]}]}""",
+        var graph = JsonSerializer.Deserialize("""{"storageBindings":[{"capabilities":["future-capability"],"status":{}}]}""",
             MetadataV2JsonContext.Default.MetadataV2Graph)!;
         var edited = graph with
         {
@@ -127,7 +127,7 @@ public sealed class MetadataV2LosslessEnumTests
     [InlineData("1", "table")]
     public void Serialize_KnownDatasetKind_PreservesExistingCanonicalEncoding(string token, string expected)
     {
-        var graph = JsonSerializer.Deserialize("{\"resources\":[{\"type\":" + token + "}]}",
+        var graph = JsonSerializer.Deserialize("{\"resources\":[{\"status\":{},\"type\":" + token + "}]}",
             MetadataV2JsonContext.Default.MetadataV2Graph)!;
 
         using var json = JsonDocument.Parse(JsonSerializer.Serialize(graph, MetadataV2JsonContext.Default.MetadataV2Graph));
@@ -138,7 +138,7 @@ public sealed class MetadataV2LosslessEnumTests
 
     [UnitTheory]
     [InlineData("0")]
-    [InlineData("\"UNKNOWN\"")]
+    [InlineData("\"unknown\"")]
     public void Serialize_KnownUnknownFieldType_PreservesCanonicalEncoding(string token)
     {
         var field = JsonSerializer.Deserialize("{\"type\":" + token + "}",

@@ -21,6 +21,19 @@ public sealed class MetadataV2StatusJsonConverterTests
         status.State.Should().Be(MetadataV2OperationalState.Ready);
     }
 
+    [UnitTheory]
+    [InlineData("{\"lifecycle\":\" ACTIVE \",\"state\":\" UNKNOWN \"}", "active", "unknown")]
+    [InlineData("{\"lifecycle\":\" 1 \",\"state\":\" +1 \"}", " 1 ", " +1 ")]
+    public void Write_StatusStringCompatibility_PreservesKnownAliasesAndUnsupportedNumbers(
+        string json, string lifecycle, string state)
+    {
+        var status = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2Status)!;
+        using var serialized = JsonDocument.Parse(JsonSerializer.Serialize(status, MetadataV2JsonContext.Default.MetadataV2Status));
+
+        serialized.RootElement.GetProperty("lifecycle").GetString().Should().Be(lifecycle);
+        serialized.RootElement.GetProperty("state").GetString().Should().Be(state);
+    }
+
     [UnitTest]
     public void Read_NumericCodes_StayOnTheNumberPath()
     {

@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Scene.Domain;
@@ -43,7 +44,12 @@ public sealed class MetadataV2PropertyRobustnessTests
             """;
         var typeInfo = MetadataV2JsonContext.Default.GetTypeInfo(recordType)!;
         typeInfo.Should().NotBeNull();
-        var value = JsonSerializer.Deserialize(json, typeInfo);
+        var input = JsonNode.Parse(json)!;
+        if (typeInfo.Properties.Any(property => property.PropertyType == typeof(MetadataV2Status)))
+        {
+            input["status"] = new JsonObject();
+        }
+        var value = JsonSerializer.Deserialize(input.ToJsonString(), typeInfo);
         using var serialized = JsonDocument.Parse(JsonSerializer.Serialize(value, typeInfo));
         using var original = JsonDocument.Parse(json);
 
@@ -104,7 +110,7 @@ public sealed class MetadataV2PropertyRobustnessTests
     public void Reconcile_KnownFolderRename_PreservesFutureProperties()
     {
         const string json = """
-            {"folders":[{"metadata":{"id":"folder","name":"before","futureMetadata":1},
+            {"services":[],"folders":[{"metadata":{"id":"folder","name":"before","futureMetadata":1},
               "futureFolder":{"value":2}}]}
             """;
         var graph = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2Graph)!;

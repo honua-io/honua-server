@@ -13,6 +13,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Infrastructure;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Streaming;

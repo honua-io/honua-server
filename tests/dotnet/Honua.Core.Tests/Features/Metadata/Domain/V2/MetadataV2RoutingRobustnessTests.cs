@@ -12,7 +12,7 @@ namespace Honua.Core.Tests.Features.Metadata.Domain.V2;
 public sealed class MetadataV2RoutingRobustnessTests
 {
     private const string KnownGraph = """
-        {"services":[{"metadata":{"id":"service","name":"service"}}],
+        {"catalogs":[],"projectionProfiles":[],"policies":[],"roles":[],"services":[{"metadata":{"id":"service","name":"service"}}],
          "resources":[{"metadata":{"id":"dataset","name":"dataset"},"storageBindingIds":["binding"]}],
          "connections":[{"metadata":{"id":"connection"},"type":"managed"}],
          "storageBindings":[{"metadata":{"id":"binding"},"resourceId":"dataset","connectionId":"connection","storageLayerId":17}],

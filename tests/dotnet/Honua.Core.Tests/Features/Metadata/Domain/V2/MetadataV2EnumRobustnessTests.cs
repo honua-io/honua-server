@@ -103,13 +103,13 @@ public sealed class MetadataV2EnumRobustnessTests
     }
 
     [UnitTheory]
-    [InlineData(typeof(MetadataV2ResourceType), "\"FEATURE-DATASET\"", 0)]
-    [InlineData(typeof(MetadataV2ConnectionType), "\"DATABASE\"", 0)]
-    public void Deserialize_MixedCaseWireValue_PreservesKnownMeaning(Type enumType, string json, int expected)
+    [InlineData(typeof(MetadataV2ResourceType), "\"FEATURE-DATASET\"")]
+    [InlineData(typeof(MetadataV2ConnectionType), "\"DATABASE\"")]
+    public void Deserialize_UnsupportedCasing_UsesUnknownSentinel(Type enumType, string json)
     {
         var value = JsonSerializer.Deserialize(json, MetadataV2EnumTestJsonContext.Default.GetTypeInfo(enumType)!);
 
-        Convert.ToInt32(value, System.Globalization.CultureInfo.InvariantCulture).Should().Be(expected);
+        value!.ToString().Should().Be("Unknown");
     }
 
     [UnitTheory]
