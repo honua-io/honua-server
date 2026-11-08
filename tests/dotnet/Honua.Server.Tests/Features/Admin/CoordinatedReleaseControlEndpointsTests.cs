@@ -27,7 +27,7 @@ namespace Honua.Server.Tests.Features.Admin;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Metadata)]
-public sealed class CoordinatedReleaseControlEndpointsTests : IAsyncLifetime
+public sealed partial class CoordinatedReleaseControlEndpointsTests : IAsyncLifetime
 {
     private readonly InMemoryWorkflowOperationStore _workflowStore = new();
     private readonly FakeContainerStep _container = new();
