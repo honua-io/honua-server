@@ -739,6 +739,19 @@ internal sealed class WorkflowPackageService(
             });
         }
 
+        if (target is WorkflowPublicationTarget.Job or WorkflowPublicationTarget.ProcessEndpoint
+            && (graph.Nodes.Any(node => node.RetryPolicy is not null || node.FailurePolicy != WorkflowStepFailurePolicy.Fail
+                || node.TimeoutSeconds is not null || node.Condition is not null || node.ForEach is not null)
+                || graph.Edges.Any(edge => edge.Kind == WorkflowEdgeKind.Failure)))
+        {
+            failures.Add(new WorkflowPackageValidationFailure
+            {
+                Code = "UNSUPPORTED_EXECUTION_TARGET",
+                Message = $"Publication target '{target}' cannot honour node execution settings or Failure edges; use a Schedule target.",
+                FieldPath = "graph"
+            });
+        }
+
         foreach (var node in graph.Nodes)
         {
             if (!definitions.TryGetValue(node.NodeTypeId, out var definition))
@@ -890,13 +903,19 @@ internal sealed class WorkflowPackageService(
                     Outputs = outputs.Length == 0 ? [ArtifactKind.File] : outputs
                 },
                 DependsOn = version.Graph.Edges
-                    .Where(edge => edge.Kind != WorkflowEdgeKind.Failure &&
-                                   string.Equals(edge.TargetNodeId, node.NodeId, StringComparison.Ordinal))
+                    .Where(edge => string.Equals(edge.TargetNodeId, node.NodeId, StringComparison.Ordinal))
                     .Select(edge => edge.SourceNodeId)
                     .Distinct(StringComparer.Ordinal)
                     .ToArray(),
                 InputBindings = WorkflowPackageGraphCompiler.BuildStepInputBindings(version.Graph, node.NodeId),
-                FailurePolicy = WorkflowStepFailurePolicy.Fail
+                FailureDependsOn = version.Graph.Edges
+                    .Where(edge => edge.Kind == WorkflowEdgeKind.Failure && edge.TargetNodeId == node.NodeId)
+                    .Select(edge => edge.SourceNodeId).Distinct(StringComparer.Ordinal).ToArray(),
+                RetryPolicy = node.RetryPolicy,
+                FailurePolicy = node.FailurePolicy,
+                TimeoutSeconds = node.TimeoutSeconds,
+                Condition = node.Condition,
+                ForEach = node.ForEach
             });
         }
 

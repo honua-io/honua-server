@@ -21,7 +21,7 @@ namespace Honua.Server.Tests.Features.WorkflowPackages;
 /// Schedule publication behavior for issue 5634: a disabled publish must not cron,
 /// each publication owns its definition, and a failed write does not leave a trigger.
 /// </summary>
-public sealed class WorkflowPackageSchedulePublicationTests
+public sealed partial class WorkflowPackageSchedulePublicationTests
 {
     [UnitTest]
     public async Task DisabledPublication_DoesNotRegisterAnEnabledCron()

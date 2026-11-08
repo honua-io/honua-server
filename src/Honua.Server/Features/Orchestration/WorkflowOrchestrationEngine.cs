@@ -950,6 +950,19 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
             return null;
         }
 
+        if (state.TimeoutCancellationRequested)
+        {
+            return IsStepTerminal(MapJobStatusToStepStatus(job.Status))
+                ? ApplyObservedFailure(run, stepDefinition, state with { ErrorMessage = "Workflow step timeout exceeded." })
+                : await RequestTimeoutCancellationAsync(run, state, cancellationToken).ConfigureAwait(false);
+        }
+        if (stepDefinition.TimeoutSeconds is > 0 && state.StartedAt is { } startedAt
+            && now - startedAt >= TimeSpan.FromSeconds(stepDefinition.TimeoutSeconds.Value)
+            && !IsStepTerminal(MapJobStatusToStepStatus(job.Status)))
+        {
+            return await RequestTimeoutCancellationAsync(run, state, cancellationToken).ConfigureAwait(false);
+        }
+
         var newStepStatus = MapJobStatusToStepStatus(job.Status);
         if (newStepStatus == state.Status && job.Status != ExecutionJobStatus.Succeeded && job.Status != ExecutionJobStatus.Failed)
         {
@@ -1025,38 +1038,7 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
 
             case ExecutionJobStatus.Failed:
                 {
-                    var reason = job.ErrorMessage ?? "job failed";
-                    OrchestrationLog.WorkflowStepFailed(_logger, run.RunId, state.StepId, reason);
-                    var (newStatus, scheduledAt) = ComputeFailureDisposition(stepDefinition, state, state.AttemptCount, now);
-
-                    if (newStatus == WorkflowStepStatus.Pending)
-                    {
-                        OrchestrationTelemetry.StepsRetried.Add(1);
-                        OrchestrationLog.WorkflowStepRetrying(_logger, run.RunId, state.StepId, state.AttemptCount + 1, scheduledAt ?? now);
-                        return state with
-                        {
-                            Status = WorkflowStepStatus.Pending,
-                            NextAttemptAt = scheduledAt,
-                            ErrorMessage = reason,
-                            CompletedAt = null,
-                            StartedAt = null,
-                            JobId = null
-                        };
-                    }
-
-                    OrchestrationTelemetry.StepDuration.Record(
-                        (now - (state.StartedAt ?? job.CreatedAt)).TotalMilliseconds,
-                        new KeyValuePair<string, object?>(OrchestrationTelemetry.Tags.StepStatus, newStatus.ToString()));
-                    OrchestrationTelemetry.StepsCompleted.Add(
-                        1,
-                        new KeyValuePair<string, object?>(OrchestrationTelemetry.Tags.StepStatus, newStatus.ToString()));
-                    OrchestrationLog.WorkflowStepCompleted(_logger, run.RunId, state.StepId, newStatus.ToString());
-                    return state with
-                    {
-                        Status = newStatus,
-                        CompletedAt = now,
-                        ErrorMessage = reason
-                    };
+                    return ApplyObservedFailure(run, stepDefinition, state with { ErrorMessage = job.ErrorMessage ?? "job failed" });
                 }
 
             case ExecutionJobStatus.Cancelled:
@@ -1076,6 +1058,57 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
             default:
                 return state with { Status = newStepStatus };
         }
+    }
+
+    private async Task<WorkflowStepState> RequestTimeoutCancellationAsync(
+        WorkflowRun run,
+        WorkflowStepState state,
+        CancellationToken cancellationToken)
+    {
+        var principal = OrchestrationSystemPrincipal.Create(run.Audit.RequestedBy, run.Audit.SubmitterSecurityContext);
+        try
+        {
+            await _jobService.CancelJobAsync(state.JobId!, principal, cancellationToken).ConfigureAwait(false);
+            return state with { TimeoutCancellationRequested = true };
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
+        {
+            OrchestrationLog.WorkflowStepCancelJobFailed(_logger, run.RunId, state.StepId, state.JobId!, ex);
+            return state with { ErrorMessage = "Workflow timeout cancellation failed; cancellation will be attempted again." };
+        }
+    }
+
+    private WorkflowStepState ApplyObservedFailure(
+        WorkflowRun run,
+        WorkflowStepDefinition stepDefinition,
+        WorkflowStepState state)
+    {
+        var now = _clock.GetUtcNow();
+        var reason = state.ErrorMessage ?? "job failed";
+        OrchestrationLog.WorkflowStepFailed(_logger, run.RunId, state.StepId, reason);
+        var (newStatus, scheduledAt) = ComputeFailureDisposition(stepDefinition, state, state.AttemptCount, now);
+        if (newStatus == WorkflowStepStatus.Pending)
+        {
+            OrchestrationTelemetry.StepsRetried.Add(1);
+            OrchestrationLog.WorkflowStepRetrying(_logger, run.RunId, state.StepId, state.AttemptCount + 1, scheduledAt ?? now);
+            return state with
+            {
+                Status = newStatus,
+                NextAttemptAt = scheduledAt,
+                ErrorMessage = reason,
+                CompletedAt = null,
+                StartedAt = null,
+                JobId = null,
+                TimeoutCancellationRequested = false
+            };
+        }
+        OrchestrationTelemetry.StepDuration.Record(
+            (now - (state.StartedAt ?? now)).TotalMilliseconds,
+            new KeyValuePair<string, object?>(OrchestrationTelemetry.Tags.StepStatus, newStatus.ToString()));
+        OrchestrationTelemetry.StepsCompleted.Add(
+            1, new KeyValuePair<string, object?>(OrchestrationTelemetry.Tags.StepStatus, newStatus.ToString()));
+        OrchestrationLog.WorkflowStepCompleted(_logger, run.RunId, state.StepId, newStatus.ToString());
+        return state with { Status = newStatus, CompletedAt = now, ErrorMessage = reason };
     }
 
     private static (WorkflowStepStatus Status, DateTimeOffset? NextAttemptAt) ComputeFailureDisposition(
@@ -1112,6 +1145,20 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
             if (!states.TryGetValue(dependency, out var upstream))
             {
                 cascade = new CascadeReason(WorkflowStepStatus.Failed, $"Unknown dependency '{dependency}'.");
+                return false;
+            }
+
+            if (stepDefinition.FailureDependsOn.Contains(dependency, StringComparer.Ordinal))
+            {
+                if (!IsStepTerminal(upstream.Status))
+                {
+                    return false;
+                }
+                if (upstream.Status == WorkflowStepStatus.Failed)
+                {
+                    continue;
+                }
+                cascade = new CascadeReason(WorkflowStepStatus.Skipped, $"Failure branch from '{dependency}' was not taken.");
                 return false;
             }
 

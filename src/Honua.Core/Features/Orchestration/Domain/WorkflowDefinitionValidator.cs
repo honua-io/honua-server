@@ -58,10 +58,8 @@ public static class WorkflowDefinitionValidator
                 }
             }
 
-            if (step.RetryPolicy != null && step.RetryPolicy.MaxAttempts < 1)
-            {
-                failures.Add($"Step '{step.StepId}' retry policy must allow at least one attempt.");
-            }
+            failures.AddRange(WorkflowStepExecutionValidator.Validate(step)
+                .Values.Select(message => $"Step '{step.StepId}' {message}"));
 
             if (!string.IsNullOrWhiteSpace(step.StepId) &&
                 step.StepId.Contains(WorkflowDefinitionExpander.IterationSeparator, StringComparison.Ordinal))
@@ -69,7 +67,7 @@ public static class WorkflowDefinitionValidator
                 failures.Add($"Step '{step.StepId}' identifier must not contain the reserved iteration separator '{WorkflowDefinitionExpander.IterationSeparator}'.");
             }
 
-            ValidateForEach(step, failures);
+
         }
 
         var forEachStepIds = new HashSet<string>(
@@ -85,10 +83,6 @@ public static class WorkflowDefinitionValidator
                 if (!stepIds.Contains(dependency))
                 {
                     failures.Add($"Step '{step.StepId}' depends on unknown step '{dependency}'.");
-                }
-                else if (step.ForEach is not null && forEachStepIds.Contains(dependency))
-                {
-                    failures.Add($"ForEach step '{step.StepId}' may not depend on ForEach step '{dependency}'; nested iteration is not supported.");
                 }
             }
 
@@ -119,7 +113,12 @@ public static class WorkflowDefinitionValidator
                 }
             }
 
-            ValidateCondition(step, stepIds, forEachStepIds, failures);
+            failures.AddRange(WorkflowStepExecutionValidator.ValidateReferences(step, step.DependsOn, (stepIds, forEachStepIds))
+                .Values.Select(message => $"Step '{step.StepId}' {message}"));
+            if (step.FailureDependsOn.Any(source => !step.DependsOn.Contains(source, StringComparer.Ordinal)))
+            {
+                failures.Add($"Step '{step.StepId}' failure dependencies must be declared in DependsOn.");
+            }
         }
 
         // Cycle detection requires unique step identifiers; skip when duplicates were flagged
@@ -193,75 +192,6 @@ public static class WorkflowDefinitionValidator
         }
 
         return failures;
-    }
-
-    private static void ValidateForEach(WorkflowStepDefinition step, List<string> failures)
-    {
-        if (step.ForEach is not { } forEach)
-        {
-            return;
-        }
-
-        if (forEach.Items.Count == 0)
-        {
-            failures.Add($"Step '{step.StepId}' ForEach must declare at least one item.");
-        }
-
-        if (forEach.Items.Count > WorkflowForEachSpec.HardIterationLimit)
-        {
-            failures.Add($"Step '{step.StepId}' ForEach declares {forEach.Items.Count} items, exceeding the hard limit of {WorkflowForEachSpec.HardIterationLimit}.");
-        }
-
-        if (forEach.MaxIterations is { } max)
-        {
-            if (max < 1)
-            {
-                failures.Add($"Step '{step.StepId}' ForEach MaxIterations must be at least 1.");
-            }
-            else if (forEach.Items.Count > max)
-            {
-                failures.Add($"Step '{step.StepId}' ForEach declares {forEach.Items.Count} items but MaxIterations is {max}.");
-            }
-        }
-
-        if (string.IsNullOrEmpty(forEach.ItemPlaceholder))
-        {
-            failures.Add($"Step '{step.StepId}' ForEach item placeholder must be non-empty.");
-        }
-    }
-
-    private static void ValidateCondition(
-        WorkflowStepDefinition step,
-        HashSet<string> stepIds,
-        HashSet<string> forEachStepIds,
-        List<string> failures)
-    {
-        if (step.Condition is not { } condition)
-        {
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(condition.SourceStepId) || !stepIds.Contains(condition.SourceStepId))
-        {
-            failures.Add($"Step '{step.StepId}' condition references unknown source step '{condition.SourceStepId}'.");
-        }
-        else
-        {
-            if (!step.DependsOn.Contains(condition.SourceStepId, StringComparer.Ordinal))
-            {
-                failures.Add($"Step '{step.StepId}' condition references source step '{condition.SourceStepId}' which is not declared in DependsOn. Condition sources must be explicit dependencies so they are terminal before the branch is evaluated.");
-            }
-
-            if (forEachStepIds.Contains(condition.SourceStepId))
-            {
-                failures.Add($"Step '{step.StepId}' condition may not read from ForEach step '{condition.SourceStepId}'.");
-            }
-        }
-
-        if (condition.Threshold < 0)
-        {
-            failures.Add($"Step '{step.StepId}' condition threshold must be non-negative.");
-        }
     }
 
     private static bool HasCycle(IReadOnlyList<WorkflowStepDefinition> steps)
