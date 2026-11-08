@@ -11,6 +11,20 @@ internal static class MetadataV2FieldSemantics
     internal static bool SupportsTime(MetadataV2FieldType type)
         => type is MetadataV2FieldType.Date or MetadataV2FieldType.DateTime or MetadataV2FieldType.Time;
 
+    internal static MetadataV2Field? FindField(IReadOnlyList<MetadataV2Field> fields, string name)
+    {
+        for (var i = 0; i < fields.Count; i++)
+        {
+            var field = fields[i];
+            if (string.Equals(field.Name, name, StringComparison.OrdinalIgnoreCase))
+            {
+                return field;
+            }
+        }
+
+        return null;
+    }
+
     internal static bool HasSupportedReferences(MetadataV2Resource dataset)
         => SupportsField(dataset, dataset.Spatial?.PrimaryGeometryField, SupportsGeometry)
            && SupportsField(dataset, dataset.Temporal?.StartTimeField, SupportsTime)
@@ -19,7 +33,6 @@ internal static class MetadataV2FieldSemantics
     private static bool SupportsField(
         MetadataV2Resource dataset, string? fieldName, Func<MetadataV2FieldType, bool> supportsType)
         => string.IsNullOrWhiteSpace(fieldName)
-           || dataset.SchemaFields.FirstOrDefault(field =>
-               string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase)) is { } field
+           || FindField(dataset.SchemaFields, fieldName) is { } field
            && supportsType(field.Type);
 }

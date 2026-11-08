@@ -65,7 +65,7 @@ public sealed class MetadataV2RoutingRobustnessTests
     [InlineData("shape", MetadataV2FieldType.String)]
     [InlineData("start", MetadataV2FieldType.Integer)]
     [InlineData("end", MetadataV2FieldType.Geometry)]
-    public void Validate_KnownIncorrectSemanticField_RejectsGraph(string fieldName, MetadataV2FieldType fieldType)
+    public void Validate_KnownIncorrectSemanticField_RejectsGraphAndDoesNotServe(string fieldName, MetadataV2FieldType fieldType)
     {
         var graph = SemanticFieldGraph();
         var dataset = graph.Resources[0];
@@ -89,7 +89,7 @@ public sealed class MetadataV2RoutingRobustnessTests
     [InlineData("shape")]
     [InlineData("start")]
     [InlineData("end")]
-    public void Validate_MissingSemanticField_RejectsGraph(string fieldName)
+    public void Validate_MissingSemanticField_RejectsGraphAndDoesNotServe(string fieldName)
     {
         var graph = SemanticFieldGraph();
         var dataset = graph.Resources[0];
@@ -174,6 +174,7 @@ public sealed class MetadataV2RoutingRobustnessTests
             ]
         };
 
+        MetadataV2GraphValidator.Validate(graph).IsValid.Should().BeFalse();
         new MetadataV2GraphSnapshot(graph, "\"test\"", DateTimeOffset.UnixEpoch)
             .IsRoutable(graph.Publications[0]).Should().BeFalse();
     }

@@ -142,7 +142,7 @@ public sealed class FileMetadataV2GraphProviderTests
             var loaded = await provider.GetCurrentAsync();
             var edited = loaded.Graph with
             {
-                Resources = [loaded.Graph.Resources[0] with { Metadata = dataset.Metadata with { Title = "Edited title" } }]
+                Resources = [loaded.Graph.Resources[0] with { Metadata = loaded.Graph.Resources[0].Metadata with { Title = "Edited title" } }]
             };
             MetadataV2GraphValidator.Validate(edited).Errors.Should().BeEmpty();
             await WriteGraphAsync(path, edited);

@@ -411,8 +411,7 @@ public static class MetadataV2GraphValidator
 
         if (!string.IsNullOrWhiteSpace(spatial.PrimaryGeometryField))
         {
-            var named = resource.SchemaFields.FirstOrDefault(f =>
-                string.Equals(f.Name, spatial.PrimaryGeometryField, StringComparison.OrdinalIgnoreCase));
+            var named = MetadataV2FieldSemantics.FindField(resource.SchemaFields, spatial.PrimaryGeometryField);
             if (named is null)
             {
                 errors.Add(
@@ -450,8 +449,7 @@ public static class MetadataV2GraphValidator
             return;
         }
 
-        var field = resource.SchemaFields.FirstOrDefault(f =>
-            string.Equals(f.Name, fieldName, StringComparison.OrdinalIgnoreCase));
+        var field = MetadataV2FieldSemantics.FindField(resource.SchemaFields, fieldName);
         if (field is null)
         {
             errors.Add($"resource '{resource.Metadata.Id}' temporal.{slot} '{fieldName}' is not declared in schemaFields.");
