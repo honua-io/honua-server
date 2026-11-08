@@ -443,9 +443,7 @@ internal static class AdminAuthEndpoints
                     IdToken = tokenResponse.IdToken,
                     Claims = sessionClaims.ToArray(),
                     ExpiresAt = sessionExpiresAt,
-                    Origin = pendingSessionId is not null && codeVerifier is not null
-                        ? AdminAuthSessionOrigin.InteractiveOidc
-                        : AdminAuthSessionOrigin.Unknown
+                    Origin = AdminAuthSessionOrigin.InteractiveOidc
                 }, context.RequestAborted).ConfigureAwait(false);
 
             SetCookie(

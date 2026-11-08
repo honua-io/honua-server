@@ -217,10 +217,9 @@ internal static class ProposalEndpoints
         var transportDenial = await DenyNonHumanApprovalAsync(proposal, actor!, context).ConfigureAwait(false);
         if (transportDenial is not null) return transportDenial;
 
-        var operationId = proposal?.OperationId ?? (proposal is null ? null : LegacyOperationIds.For(proposal.Kind));
-        if (proposal != null &&
-            (operationExecutors is null || !operationExecutors.Any(executor =>
-                string.Equals(executor.OperationId, operationId, StringComparison.Ordinal))))
+        var operationId = proposal.OperationId ?? LegacyOperationIds.For(proposal.Kind);
+        if (operationExecutors is null || !operationExecutors.Any(executor =>
+                string.Equals(executor.OperationId, operationId, StringComparison.Ordinal)))
         {
             return Results.Problem(
                 title: "Operation executor unavailable",
@@ -238,7 +237,7 @@ internal static class ProposalEndpoints
 
         try
         {
-            if (proposal?.Evidence is not null && string.IsNullOrWhiteSpace(tenantContext?.TenantId))
+            if (proposal.Evidence is not null && string.IsNullOrWhiteSpace(tenantContext?.TenantId))
             {
                 return Results.Problem(
                     detail: "A resolved tenant is required to approve this proposal.",

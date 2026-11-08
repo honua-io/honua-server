@@ -15,7 +15,6 @@ internal static class AdminAuthSessionTokenBridgeExtensions
         {
             // #6100: never turn the session cookie into a bearer for a cross-site unsafe request.
             if (context.Request.Headers.ContainsKey(HeaderNames.Authorization) ||
-                context.GetEndpoint()?.Metadata.GetMetadata<AdminHumanApprovalEndpointMetadata>() is not null ||
                 !context.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase) ||
                 AdminSessionCrossSiteRequestGuard.IsCrossSiteUnsafeRequest(context.Request))
             {

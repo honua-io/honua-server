@@ -16,6 +16,8 @@ internal sealed record CoordinatedReleaseApprovalBinding(
     string? RequesterTenantId,
     string? RequestedBy,
     string? RequesterSubject,
+    string? RequesterName,
+    string RequesterTenantClaimType,
     string? RequesterAuthenticationType,
     IReadOnlyList<string> RequesterRoles,
     string PackageId,
@@ -32,7 +34,8 @@ internal sealed record CoordinatedReleaseApprovalBinding(
         var context = operation.CoordinatedRelease ?? throw new HumanApprovalRequiredException();
         return new CoordinatedReleaseApprovalBinding(operation.OperationId, operation.Kind, gate,
             operation.Audit.TenantId, context.RequesterTenantId, operation.Audit.RequestedBy,
-            context.RequesterSubject, context.RequesterAuthenticationType, context.RequesterRoles,
+            context.RequesterSubject, context.RequesterName, context.RequesterTenantClaimType,
+            context.RequesterAuthenticationType, context.RequesterRoles,
             context.PackageId, context.TargetEnvironment, context.Container, context.MetadataPlan);
     }
 
