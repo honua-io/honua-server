@@ -14,7 +14,7 @@ test("Inspector query uses the service index without a storage or obsolete selec
   assert.equal(Object.hasOwn(arguments_, "storageLayerId"), false);
 });
 
-test("SDK cancellation sends the service index to the installed client's callTool", async () => {
+test("SDK cancellation driver passes the service index to callTool", async () => {
   const transport = { sessionId: "original-session", async send() {} };
   const otherTransport = { sessionId: "other-session" };
   const requests = [];
