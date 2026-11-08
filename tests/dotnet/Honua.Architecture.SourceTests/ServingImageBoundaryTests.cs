@@ -475,7 +475,6 @@ public sealed class ServingImageBoundaryTests
                  {
                      "'src/**'",
                      "'eng/**'",
-                     "'samples/Honua.StacOpsDemo/**'",
                      "'docs/gis/data/feature-catalog.json'",
                      "'docs/developer/api-specs/admin-api.json'",
                      "'tests/fixtures/ai-builder/**'",

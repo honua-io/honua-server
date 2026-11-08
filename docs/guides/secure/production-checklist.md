@@ -41,7 +41,6 @@ Work through this checklist before exposing Honua to the internet; each item is 
 ### Demo and development surfaces
 
 - [ ] `HONUA_SERVE_API_DOCS` is unset or `false` — the `/docs` interactive API explorer defaults to Development-only; do not enable it in production.
-- [ ] `HONUA_SERVE_STAC_DEMO=false` so the hosted STAC demo at `/samples/stac-ops` is not served.
 - [ ] `HONUA_ENABLE_OBSERVABILITY_TEST_SEED` is unset (setting it in production fails startup).
 
 ## Verify

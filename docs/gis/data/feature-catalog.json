@@ -13536,22 +13536,6 @@
       "capability": "identity.saml"
     },
     {
-      "id": "get-samples-stac-ops",
-      "route": "/samples/stac-ops",
-      "method": "GET",
-      "family": "STAC API",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.Stac.StacOpsDemoEndpointTests.GetStacOpsDemo_ServesHostedSampleShell",
-        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked",
-        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRoutes_TenantlessValidBearer_ReachHandlers"
-      ],
-      "proof_ledger_surface": "stac-api",
-      "maturity": "implemented",
-      "capability": "serve.stac"
-    },
-    {
       "id": "get-scenes-sceneid-sceneserver",
       "route": "/scenes/{sceneId}/SceneServer",
       "method": "GET",

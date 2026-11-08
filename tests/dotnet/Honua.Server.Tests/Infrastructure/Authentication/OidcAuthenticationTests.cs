@@ -815,15 +815,11 @@ public class OidcAuthenticationTests
     [Endpoint("GET /api/v1/admin/operations/cache/health")]
     [Endpoint("GET /api/v1/admin/operations/cache/statistics")]
     [Endpoint("GET /api/v1/admin/operations/cache/redis")]
-    [Endpoint("GET /samples/stac-ops")]
     [Endpoint("GET /sharing/rest/info")]
     [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/project")]
     public void TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked()
     {
-        var settings = CreateEnabledOidcSettings(new Dictionary<string, string?>
-        {
-            ["ServeStacOpsDemo"] = "true",
-        });
+        var settings = CreateEnabledOidcSettings();
         using var factory = CreateOidcTestFactory(oidcSettings: settings);
         using var client = factory.CreateClient();
 
@@ -862,7 +858,6 @@ public class OidcAuthenticationTests
             ("client-certificate trust", route => route.StartsWith("/api/v{version:apiVersion}/admin/security/client-certificates", StringComparison.Ordinal)),
             ("rate-limit policy administration", route => route.StartsWith("/api/v{version:apiVersion}/admin/rate-limits", StringComparison.Ordinal)),
             ("admin realtime hub", route => route.Equals("/hubs/admin", StringComparison.Ordinal)),
-            ("hosted STAC demo", route => route.StartsWith("/samples/stac-ops", StringComparison.Ordinal)),
             ("stateless GeometryServer", route => route.StartsWith("/rest/services/Utilities/Geometry/GeometryServer/", StringComparison.Ordinal))
         };
 
@@ -964,15 +959,10 @@ public class OidcAuthenticationTests
     [Endpoint("GET /api/v1/admin/operations/cache/health")]
     [Endpoint("GET /api/v1/admin/operations/cache/statistics")]
     [Endpoint("GET /api/v1/admin/operations/cache/redis")]
-    [Endpoint("GET /samples/stac-ops")]
-    [Endpoint("GET /samples/stac-ops/")]
     [Endpoint("GET /sharing/rest/info")]
     public async Task TenantIndependentAuthAndOperationalRoutes_TenantlessValidBearer_ReachHandlers()
     {
-        var settings = CreateEnabledOidcSettings(new Dictionary<string, string?>
-        {
-            ["ServeStacOpsDemo"] = "true",
-        });
+        var settings = CreateEnabledOidcSettings();
         using var factory = CreateOidcTestFactory(oidcSettings: settings);
         using var client = factory.CreateClient();
         var token = GenerateTestJwtToken(roles: ["admin"]);
@@ -996,8 +986,6 @@ public class OidcAuthenticationTests
             "/api/v1/admin/operations/cache/health",
             "/api/v1/admin/operations/cache/statistics",
             "/api/v1/admin/operations/cache/redis",
-            "/samples/stac-ops",
-            "/samples/stac-ops/",
             "/sharing/rest/info"
         }.Select(route => new HttpRequestMessage(HttpMethod.Get, route)))
         {

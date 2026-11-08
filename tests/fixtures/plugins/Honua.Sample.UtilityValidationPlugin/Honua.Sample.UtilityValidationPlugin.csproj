@@ -17,7 +17,7 @@
       Honua.Plugins.Abstractions contract surface. This sample is compiled into the host at
       build time (compile-time static, AOT-safe) — there is no runtime assembly loading.
     -->
-    <ProjectReference Include="..\..\..\src\Honua.Plugins.Abstractions\Honua.Plugins.Abstractions.csproj" />
+    <ProjectReference Include="..\..\..\..\src\Honua.Plugins.Abstractions\Honua.Plugins.Abstractions.csproj" />
   </ItemGroup>
 
 </Project>
