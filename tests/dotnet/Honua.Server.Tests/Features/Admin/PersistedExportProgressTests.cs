@@ -31,7 +31,7 @@ namespace Honua.Server.Tests.Features.Admin;
 public sealed class PersistedExportProgressTests : IAsyncLifetime
 {
     private readonly ServiceProvider _services;
-    private readonly IConnectionMultiplexer _redis;
+    private readonly ConnectionMultiplexer _redis;
     private readonly IDistributedCache _cache;
     private readonly UniversalProgressStore _store;
     private readonly List<string> _ids = [];
