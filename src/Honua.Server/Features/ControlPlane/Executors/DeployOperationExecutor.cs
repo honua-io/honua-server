@@ -102,6 +102,12 @@ internal sealed class DeployOperationExecutor(DeployWorkflowService deployWorkfl
             throw new InvalidOperationException("Deploy execution payload is missing or malformed.");
         }
 
+        if (!string.IsNullOrWhiteSpace(request.ApprovedBy) || !string.IsNullOrWhiteSpace(request.ApprovedProposalId))
+        {
+            return (await deployWorkflowService.CreateApprovedWithBackupAsync(request, payload, restoreOwnerId,
+                cancellationToken).ConfigureAwait(false))?.OperationId;
+        }
+
         var record = await deployWorkflowService.CreateWithBackupAsync(
                 payload.TargetId,
                 payload.DesiredRevision,
@@ -119,23 +125,6 @@ internal sealed class DeployOperationExecutor(DeployWorkflowService deployWorkfl
                 request.ApprovedBy,
                 cancellationToken)
             .ConfigureAwait(false);
-
-        // Approval persists the workflow and returns before Start when the target requires it.
-        // The approver is a different principal from the requester, so replay that approval as the
-        // submit. Targets that were already started (approval not required) are left as they are.
-        if (record != null &&
-            !string.IsNullOrWhiteSpace(request.ApprovedBy) &&
-            record.BlockingReasons.Count == 0 &&
-            record.Status is WorkflowOperationStatus.AwaitingApproval or WorkflowOperationStatus.Planned)
-        {
-            record = await deployWorkflowService.SubmitWithRestoreAsync(
-                    record.OperationId,
-                    request.ApprovedBy,
-                    request.Reason,
-                    restoreOwnerId,
-                    cancellationToken)
-                .ConfigureAwait(false);
-        }
 
         return record?.OperationId;
     }

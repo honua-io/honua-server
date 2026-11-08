@@ -39,6 +39,7 @@ internal sealed partial class DeployWorkflowService
     private readonly IOptionsMonitor<ControlPlaneOptions>? _controlPlaneOptions;
     private readonly IOptions<Honua.Infrastructure.MultiTenancy.TenantContextOptions>? _tenantOptions;
     private readonly IOptions<RestoreCellOptions>? _restoreOptions;
+    private readonly IOperationProposalStore? _proposalStore;
 
     public DeployWorkflowService(
         IDeployTargetRegistry targetRegistry,
@@ -48,11 +49,13 @@ internal sealed partial class DeployWorkflowService
         ILogger<DeployWorkflowService> logger,
         IOptionsMonitor<ControlPlaneOptions>? controlPlaneOptions = null,
         IOptions<Honua.Infrastructure.MultiTenancy.TenantContextOptions>? tenantOptions = null,
-        IOptions<RestoreCellOptions>? restoreOptions = null)
+        IOptions<RestoreCellOptions>? restoreOptions = null,
+        IOperationProposalStore? proposalStore = null)
     {
         _controlPlaneOptions = controlPlaneOptions;
         _tenantOptions = tenantOptions;
         _restoreOptions = restoreOptions;
+        _proposalStore = proposalStore;
         _targetRegistry = targetRegistry;
         _workflowStore = workflowStores.FirstOrDefault();
         _backends = backends.ToDictionary(
@@ -549,12 +552,13 @@ internal sealed partial class DeployWorkflowService
         CancellationToken cancellationToken = default)
         => SubmitWithRestoreAsync(operationId, requestedBy, reason, restoreOwnerId: null, cancellationToken);
 
-    internal async Task<WorkflowOperationRecord?> SubmitWithRestoreAsync(
-        string operationId,
-        string? requestedBy,
-        string? reason,
-        string? restoreOwnerId,
-        CancellationToken cancellationToken)
+    internal Task<WorkflowOperationRecord?> SubmitWithRestoreAsync(
+        string operationId, string? requestedBy, string? reason, string? restoreOwnerId, CancellationToken cancellationToken)
+        => SubmitCoreAsync(operationId, requestedBy, reason, restoreOwnerId, null, cancellationToken);
+
+    private async Task<WorkflowOperationRecord?> SubmitCoreAsync(
+        string operationId, string? requestedBy, string? reason, string? restoreOwnerId,
+        OperationProposal? approvedProposal, CancellationToken cancellationToken)
     {
         EnsureDurableStoreConfigured();
         await using var admission = RestoreAdmissionEnabled
@@ -630,9 +634,8 @@ internal sealed partial class DeployWorkflowService
         var audit = MergeSubmissionAudit(operation.Audit, requestedBy, reason);
         if (operation.Deploy.TargetKind == DeployTargetKind.LocalCompose)
         {
-            // Checked before the claim so a same-principal submit cannot change the Compose project.
             if (string.IsNullOrWhiteSpace(requestedBy) ||
-                string.Equals(requestedBy, operation.Audit.RequestedBy, StringComparison.OrdinalIgnoreCase))
+                (approvedProposal is null && string.Equals(requestedBy, operation.Audit.RequestedBy, StringComparison.OrdinalIgnoreCase)))
             {
                 throw new ResourceConflictException(
                     "Separation of duties: a different principal must submit this Compose operation.");
