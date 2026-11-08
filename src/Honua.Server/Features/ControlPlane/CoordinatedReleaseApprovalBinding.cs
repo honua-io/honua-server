@@ -44,12 +44,7 @@ internal sealed record CoordinatedReleaseApprovalBinding(
         var context = operation.CoordinatedRelease!;
         var evidence = gate == CoordinatedReleaseStep.ContainerRollout
             ? context.ContainerHumanApproval : context.DataHumanApproval;
-        if (evidence is null)
-        {
-            // Already-submitted legacy children drain; a legacy approval boolean cannot start a child.
-            return !string.IsNullOrWhiteSpace(gate == CoordinatedReleaseStep.ContainerRollout
-                ? context.ContainerOperationId : context.MetadataOperationId);
-        }
+        if (evidence is null) return false;
 
         return evidence.Version == CoordinatedReleaseHumanApproval.CurrentVersion
             && evidence.WorkflowId == operation.OperationId && evidence.Gate == gate

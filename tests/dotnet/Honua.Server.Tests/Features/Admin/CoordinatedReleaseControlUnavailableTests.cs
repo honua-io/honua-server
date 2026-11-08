@@ -37,9 +37,9 @@ public sealed class CoordinatedReleaseControlUnavailableTests
             using var client = fixture.CreateAdminClient();
             using var request = new HttpRequestMessage(new HttpMethod(method),
                 $"/api/v1/admin/metadata/coordinated-releases/operations/unavailable/{route}/container");
-    
+
             using var response = await client.SendAsync(request);
-    
+
             response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
         }
         finally
