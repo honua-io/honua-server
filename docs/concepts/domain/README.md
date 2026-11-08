@@ -58,13 +58,17 @@ Use the same words in the Console, Studio, SDKs, guides, error messages, APIs, d
 
 The [data-model narrative](../data-model.md) follows these same relationships.
 
+## Coming from another system
+
+Moving from another system? Use [Coming from ArcGIS](coming-from-arcgis.md) or [Coming from GeoServer](coming-from-geoserver.md) to map familiar terms to these definitions.
+
+The Dataset concept includes discovery aliases for its source terms. Other concept aliases and object-search behavior are outside this documentation batch.
+
 ## Implementation transition
 
 The canonical names are Dataset, Layer, Map, App, and each other named Studio kind throughout the system. Existing code and persisted metadata still contain `MetadataV2Resource`, `MetadataV2Publication`, and Studio content-item names. These are legacy names scheduled for migration, not a second vocabulary. Until that migration lands, use the current API reference for literal routes and fields. This glossary changes no runtime contract. A forward migration will convert existing databases after a verified backup and draining pending Proposals; steady-state readers will use only canonical shapes. Protocol wire names required by clients remain unchanged.
 
 ## Vocabulary review rules
-
-Moving from another system? Use [Coming from ArcGIS](coming-from-arcgis.md) or [Coming from GeoServer](coming-from-geoserver.md) to map familiar terms to these definitions.
 
 Review new UI labels, model types, database names, API fields, MCP schemas, public SDK names, guides, and error messages against this table. Block additions that use:
 
