@@ -103,6 +103,22 @@ public sealed class AdminLayerSharedLayerIndexTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/style")]
+    public async Task UpdateStyle_AmbiguousStorageHandle_ReturnsConflictWithoutChangingGraph()
+    {
+        var (before, _) = AddTwinAtLayerId(retireTwin: false);
+        using var client = _fixture.CreateAdminClient();
+        using var response = await client.PutAsJsonAsync($"/api/v1/admin/metadata/layers/{LayerId}/style", new
+        {
+            mapLibreStyle = new { version = 8, sources = new { }, layers = Array.Empty<object>() },
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        _fixture.GetCurrentV2GraphSnapshot().Graph.Resources.Should().BeEquivalentTo(before.Graph.Resources);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
     [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/filter")]
     public async Task UpdateLayerFilter_LayerIdSharedByTwoResources_Returns409AndChangesNeither()
     {

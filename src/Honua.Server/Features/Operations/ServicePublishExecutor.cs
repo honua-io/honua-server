@@ -374,46 +374,19 @@ internal sealed class ServicePublishExecutor
         if (progress.Status == Honua.Core.Features.Infrastructure.Domain.OperationStatus.Completed &&
             progress.LayerId is int committedLayerId)
         {
-            var resolved = false;
-            var promotionReadback = PromotionReadback.Available;
-            var serviceName = string.Empty;
-            string? serviceUri = null;
-            int? serviceLayerIndex = null;
-            try
+            var (identity, promotionReadback) = await ResolvePublishedLayerReadbackAsync(
+                committedLayerId, progress.TenantId, cancellationToken).ConfigureAwait(false);
+            if (identity is { } publishedLayer && promotionReadback == PromotionReadback.Available)
             {
-                var graph = await _metadataGraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-                var identity = ResolvePublishedLayerIdentity(graph, committedLayerId, progress.TenantId);
-                resolved = identity.HasValue;
-                if (identity is { } publishedLayer)
-                {
-                    serviceName = publishedLayer.ServiceName;
-                    serviceLayerIndex = publishedLayer.ServiceLayerIndex;
-                    promotionReadback = await ResolvePromotionReadbackAsync(serviceName, cancellationToken)
-                        .ConfigureAwait(false);
-                    if (promotionReadback == PromotionReadback.Available)
-                    {
-                        serviceUri = McpResourceUris.PublishedServiceUri(serviceName);
-                    }
-                }
-            }
-            catch (Exception exception) when (exception is not OutOfMemoryException)
-            {
-                // The worker has committed. Readback enrichment cannot change
-                // completion into a retryable failure or invent a service URI.
-                promotionReadback = PromotionReadback.Unavailable;
-            }
-
-            if (resolved && serviceUri is not null && promotionReadback == PromotionReadback.Available)
-            {
-                details["serviceName"] = serviceName;
-                details["serviceUri"] = serviceUri;
+                details["serviceName"] = publishedLayer.ServiceName;
+                details["serviceUri"] = McpResourceUris.PublishedServiceUri(publishedLayer.ServiceName);
                 if (metadataRevision is > 0)
                 {
                     details["metadataRevision"] = metadataRevision.Value.ToString(CultureInfo.InvariantCulture);
                 }
                 details["readbackStatus"] = "Resolved";
-                resourceIds["serviceName"] = serviceName;
-                if (serviceLayerIndex is int index)
+                resourceIds["serviceName"] = publishedLayer.ServiceName;
+                if (publishedLayer.ServiceLayerIndex is int index)
                 {
                     var indexText = index.ToString(CultureInfo.InvariantCulture);
                     details["serviceLayerIndex"] = indexText;
@@ -450,6 +423,27 @@ internal sealed class ServicePublishExecutor
                 Details = details,
             },
         };
+    }
+
+    private async Task<(PublishedLayerIdentity? Identity, PromotionReadback Promotion)> ResolvePublishedLayerReadbackAsync(
+        int storageLayerId,
+        string? tenantId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var graph = await _metadataGraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            var identity = ResolvePublishedLayerIdentity(graph, storageLayerId, tenantId);
+            var promotion = identity is { } publishedLayer
+                ? await ResolvePromotionReadbackAsync(publishedLayer.ServiceName, cancellationToken).ConfigureAwait(false)
+                : PromotionReadback.Available;
+            return (identity, promotion);
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            // Readback failure cannot make the committed publication retryable.
+            return (null, PromotionReadback.Unavailable);
+        }
     }
 
     private enum PromotionReadback
