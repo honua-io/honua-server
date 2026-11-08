@@ -36,15 +36,20 @@ public sealed class MetadataV2RoutingRobustnessTests
         };
         var binding = graph.StorageBindings[0] with
         {
-            Metadata = new() { Id = "future-binding" }, ResourceId = "future-dataset", StorageLayerId = 18
+            Metadata = new() { Id = "future-binding" },
+            ResourceId = "future-dataset",
+            StorageLayerId = 18
         };
         var layer = graph.Publications[0] with
         {
-            Metadata = new() { Id = "future-layer" }, ResourceId = "future-dataset", StorageBindingId = "future-binding"
+            Metadata = new() { Id = "future-layer" },
+            ResourceId = "future-dataset",
+            StorageBindingId = "future-binding"
         };
         graph = graph with
         {
-            Resources = [dataset, unsupported], StorageBindings = [graph.StorageBindings[0], binding],
+            Resources = [dataset, unsupported],
+            StorageBindings = [graph.StorageBindings[0], binding],
             Publications = [graph.Publications[0], layer]
         };
         var snapshot = new MetadataV2GraphSnapshot(graph, "\"test\"", DateTimeOffset.UnixEpoch);
