@@ -350,7 +350,10 @@ internal sealed partial class Wfs20Handler
             await throttler.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                return await BuildFeatureTypeAsync(featureType, cancellationToken).ConfigureAwait(false);
+                return await CapabilitiesLayerBuilder.TryBuildAsync(
+                    () => BuildFeatureTypeAsync(featureType, cancellationToken),
+                    featureType.Publication.Metadata.Id,
+                    _logger).ConfigureAwait(false);
             }
             finally
             {
@@ -358,7 +361,8 @@ internal sealed partial class Wfs20Handler
             }
         });
 
-        return await Task.WhenAll(tasks).ConfigureAwait(false);
+        var built = await Task.WhenAll(tasks).ConfigureAwait(false);
+        return built.OfType<FeatureType>().ToArray();
     }
 
 
