@@ -194,7 +194,7 @@ public sealed class OutputCacheInvalidationServiceTests
 
     [UnitTest]
     [Operation(Operations.Cache)]
-    public async Task InvalidateLayerAsync_StorageHandleDiffersFromServiceIndex_EvictsOwningService()
+    public async Task InvalidateStorageLayerAsync_StorageHandleDiffersFromServiceIndex_EvictsOwningService()
     {
         var graph = CreateFeatureServerGraph(("alpha", [7]), ("beta", [41]));
         graph = graph with
@@ -208,7 +208,7 @@ public sealed class OutputCacheInvalidationServiceTests
         var sut = new OutputCacheInvalidationService(outputCacheStore, responseCache, null,
             CreateScopeFactory(graph), null, NullLogger<OutputCacheInvalidationService>.Instance);
 
-        await sut.InvalidateLayerAsync(null, 741, CancellationToken.None);
+        await sut.InvalidateStorageLayerAsync(741, CancellationToken.None);
 
         await outputCacheStore.Received(1).EvictByTagAsync("service:alpha", Arg.Any<CancellationToken>());
         await outputCacheStore.DidNotReceive().EvictByTagAsync("service:beta", Arg.Any<CancellationToken>());

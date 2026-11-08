@@ -37,11 +37,43 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
         _logger = logger;
     }
 
-    public async Task InvalidateLayerAsync(string? serviceId, int? layerId, CancellationToken cancellationToken)
+    public async Task InvalidateStorageLayerAsync(int storageLayerId, CancellationToken cancellationToken)
     {
-        var normalizedServiceIds = await ResolveLayerServiceIdsAsync(serviceId, layerId, cancellationToken).ConfigureAwait(false);
-        var ogcCollectionIds = layerId.HasValue
-            ? await ResolveLayerCollectionIdsAsync(layerId.Value, cancellationToken).ConfigureAwait(false)
+        await EvictTagsAsync(LayerTags(storageLayerId), cancellationToken).ConfigureAwait(false);
+        using var scope = _scopeFactory.CreateScope();
+        var graphProvider = scope.ServiceProvider.GetService<IMetadataV2GraphProvider>();
+        if (graphProvider is null)
+        {
+            await InvalidateQueryResponsesAsync(cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var publications = snapshot.PublicationsForStorageLayer(storageLayerId).ToArray();
+        foreach (var publication in publications.DistinctBy(static publication => (publication.ServiceId, publication.LayerIndex)))
+        {
+            if (snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service))
+            {
+                await InvalidateLayerAsync(service.Metadata.Name, publication.LayerIndex, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        var collectionIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var publication in publications)
+        {
+            AddPublicationCollectionAliases(collectionIds, publication, snapshot.ResolveResource(publication));
+        }
+        await Task.WhenAll(collectionIds.Select(collectionId => InvalidateCollectionAsync(collectionId, cancellationToken)))
+            .ConfigureAwait(false);
+    }
+
+    private static string[] LayerTags(int layerId)
+        => [$"layer:{layerId}", "service-metadata", "tiles", "layer-metadata", "layer-styles", "terrain", "ogc-maps", "ogc-styles"];
+
+    public async Task InvalidateLayerAsync(string? serviceId, int? serviceLayerIndex, CancellationToken cancellationToken)
+    {
+        var normalizedServiceIds = await ResolveLayerServiceIdsAsync(serviceId, serviceLayerIndex, cancellationToken).ConfigureAwait(false);
+        var ogcCollectionIds = serviceLayerIndex.HasValue
+            ? await ResolveLayerCollectionIdsAsync(serviceLayerIndex.Value, cancellationToken).ConfigureAwait(false)
             : [];
         var tags = new List<string>();
         var responsePatterns = new List<string>();
@@ -51,18 +83,11 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
             tags.Add($"service:{normalizedServiceId}");
         }
 
-        if (layerId.HasValue)
+        if (serviceLayerIndex.HasValue)
         {
-            tags.Add($"layer:{layerId.Value}");
-            tags.Add("service-metadata");
-            tags.Add("tiles");
-            tags.Add("layer-metadata");
-            tags.Add("layer-styles");
-            tags.Add("terrain");
-            tags.Add("ogc-maps");
-            tags.Add("ogc-styles");
-            responsePatterns.Add(ResponseCacheUtilities.BuildFeatureServerLayerPattern(layerId.Value));
-            responsePatterns.Add(ResponseCacheUtilities.BuildODataLayerPattern(layerId.Value));
+            tags.AddRange(LayerTags(serviceLayerIndex.Value));
+            responsePatterns.Add(ResponseCacheUtilities.BuildFeatureServerLayerPattern(serviceLayerIndex.Value));
+            responsePatterns.Add(ResponseCacheUtilities.BuildODataLayerPattern(serviceLayerIndex.Value));
             foreach (var ogcCollectionId in ogcCollectionIds)
             {
                 tags.Add($"collection:{ogcCollectionId.Trim().ToLowerInvariant()}");
@@ -70,12 +95,12 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
             }
         }
 
-        if (layerId.HasValue)
+        if (serviceLayerIndex.HasValue)
         {
             foreach (var normalizedServiceId in normalizedServiceIds)
             {
                 responsePatterns.Add(ResponseCacheUtilities.BuildFeatureServerServicePattern(normalizedServiceId));
-                responsePatterns.Add(ResponseCacheUtilities.BuildFeatureServerLayerPattern(normalizedServiceId, layerId.Value));
+                responsePatterns.Add(ResponseCacheUtilities.BuildFeatureServerLayerPattern(normalizedServiceId, serviceLayerIndex.Value));
             }
         }
 
@@ -336,7 +361,7 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
 
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             var serviceIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var pub in snapshot.PublicationsForStorageLayer(layerId.Value))
+            foreach (var pub in snapshot.Graph.Publications.Where(publication => publication.LayerIndex == layerId.Value && snapshot.IsRoutable(publication)))
             {
                 if (snapshot.Index.ServicesById.TryGetValue(pub.ServiceId, out var service))
                 {
@@ -374,9 +399,7 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
             foreach (var pub in snapshot.Graph.Publications)
             {
                 var resource = snapshot.ResolveResource(pub);
-                // LayerIndex is the service-local id. Publications with a non-numeric
-                // identifier keep that null and are reached through the storage binding.
-                if (pub.LayerIndex != layerId && snapshot.ResolveStorageLayerId(pub, resource) != layerId)
+                if (pub.LayerIndex != layerId)
                 {
                     continue;
                 }

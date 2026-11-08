@@ -141,7 +141,7 @@ internal static class AdminLayerStyleEndpoints
                 "Failed to update layer style.");
         }
 
-        await cacheInvalidator.InvalidateLayerAsync(null, storageLayerId, cancellationToken).ConfigureAwait(false);
+        await cacheInvalidator.InvalidateStorageLayerAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
 
         var response = BuildResponse(result.Style, result.UnsupportedSymbolizers);
 

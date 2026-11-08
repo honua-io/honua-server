@@ -131,9 +131,9 @@ internal sealed partial class Wfs20Handler
                 using var postCommitCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
                 try
                 {
-                    foreach (var (layerId, serviceId) in serviceIdsByLayer)
+                    foreach (var layerId in serviceIdsByLayer.Keys)
                     {
-                        await _mutationEventService.InvalidateLayerAsync(serviceId, layerId, postCommitCts.Token).ConfigureAwait(false);
+                        await _mutationEventService.InvalidateStorageLayerAsync(layerId, postCommitCts.Token).ConfigureAwait(false);
                     }
 
                     await PublishTransactionEventsAsync(

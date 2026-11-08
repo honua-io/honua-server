@@ -170,7 +170,7 @@ internal static class AdminSldStyleEndpoints
                 $"Style for layer {storageLayerId} not found.");
         }
 
-        await cacheInvalidator.InvalidateLayerAsync(null, storageLayerId, cancellationToken).ConfigureAwait(false);
+        await cacheInvalidator.InvalidateStorageLayerAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
 
         var response = new SldImportResponse
         {
