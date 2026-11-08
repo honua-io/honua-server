@@ -25,7 +25,8 @@ public sealed class RuntimeImageCveTests
             runtimeStage.Should().NotContain("RUN ");
             runtimeStage.Should().NotContain("bash");
             runtimeStage.Should().Contain("HEALTHCHECK", relativePath);
-            runtimeStage.Should().Contain("CMD [\"/app/honua-healthcheck\"]", relativePath);
+            runtimeStage.Should().Contain("CMD [\"/app/honua-healthcheck\", \"--ready\"]", relativePath);
+            runtimeStage.Should().Contain("LABEL honua.store.profile=$HONUA_STORE_PROFILE", relativePath);
         }
     }
 

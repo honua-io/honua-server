@@ -36,7 +36,7 @@ namespace Honua.Server.Tests.Features.Admin;
 [SecurityTest]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
-public class SecureConnectionEndpointsTests : IAsyncLifetime
+public partial class SecureConnectionEndpointsTests : IAsyncLifetime
 {
     private const string AdminPassword = "secure-connection-admin-key";
     private static readonly JsonSerializerOptions _jsonOptions = new()
@@ -50,15 +50,17 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
 
     public SecureConnectionEndpointsTests()
     {
-        _fixture = new WebAppFixture()
-            .UseSeed("tests/seed/server.yaml")
-            .ConfigureWebHost(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.UseSetting("HONUA_DEV_AUTH", "false");
-                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
-            });
+        _fixture = CreateFixture();
     }
+
+    private static WebAppFixture CreateFixture() => new WebAppFixture()
+        .UseSeed("tests/seed/server.yaml")
+        .ConfigureWebHost(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+        });
 
     public async Task InitializeAsync()
     {

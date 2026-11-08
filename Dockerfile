@@ -13,6 +13,8 @@
 ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:de4fe90a98845d75910b9769662465c84de1a934665c431279d1382b2bddc02b
 ARG DOTNET_ASPNET_IMAGE=mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled-extra@sha256:a9298ccc39c6258ae71228479e2f3f8d2ceb6639a9927262a4b0ff7d319a0e7e
 
+ARG HONUA_STORE_PROFILE=postgis
+
 FROM ${DOTNET_ASPNET_IMAGE} AS chiseled-base
 
 # Extract restore inputs with their directory structure. Ordinary source edits,
@@ -48,7 +50,7 @@ COPY eng/protocol-profiles.v1.json eng/
 COPY scripts/docker/restore-dotnet-with-github-packages.sh scripts/docker/
 
 ARG TARGETARCH
-ARG HONUA_STORE_PROFILE=postgis
+ARG HONUA_STORE_PROFILE
 ARG HONUA_BUILD_PROFILE=full
 ARG HONUA_PROTOCOL_PROFILE=all
 ARG HONUA_INCLUDE_AWS=
@@ -122,7 +124,6 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     rm -rf /app/wwwroot/admin && \
     find /app -type f \( -name '*.pdb' -o -name '*.dbg' \) -delete
 
-# Runtime stage
 RUN mkdir -p /store-evidence && \
     cp src/Honua.Server/obj/project.assets.json /store-evidence/ && \
     find src/Honua.Server/obj -name '*.ilc.rsp' -type f -exec cp {} /store-evidence/ \;
@@ -144,7 +145,7 @@ COPY --from=build /app /runtime-root/app
 RUN sh docker/runtime/verify-native.sh /runtime-root /app
 
 FROM chiseled-base AS runtime
-ARG HONUA_STORE_PROFILE=postgis
+ARG HONUA_STORE_PROFILE
 LABEL honua.store.profile=$HONUA_STORE_PROFILE
 COPY --from=runtime-assets /runtime-additions/ /
 
@@ -196,7 +197,7 @@ ENV ASPNETCORE_ENVIRONMENT=Production \
 
 # The compiled probe runs without a shell.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD ["/app/honua-healthcheck"]
+    CMD ["/app/honua-healthcheck", "--ready"]
 
 EXPOSE 8080/tcp 8081/tcp
 

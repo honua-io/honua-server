@@ -1908,7 +1908,7 @@ try
         startupScope.ServiceProvider.GetRequiredService<Honua.Core.Features.Security.Abstractions.ISecureConnectionRegistry>(),
         startupScope.ServiceProvider.GetRequiredService<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider>());
 }
-catch (ExcludedDataStoreException ex)
+catch (Honua.Core.Features.FeatureStore.Domain.DataStoreProviderUnavailableException ex)
 {
     await Honua.Server.Hosting.GatedBootShutdown.StopRefusedHostAsync(app, ex.Message);
     return;

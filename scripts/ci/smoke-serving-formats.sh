@@ -21,6 +21,7 @@ cat > "$work/override.yml" <<EOF
 services:
   honua-server:
     image: $IMAGE
+    restart: "no"
 EOF
 export HONUA_CNG_SERVER_PORT="$PORT" HONUA_CNG_POSTGRES_PORT="$PG_PORT"
 export HONUA_GITHUB_ACTOR_SECRET_FILE="$work/empty-secret" HONUA_GITHUB_TOKEN_SECRET_FILE="$work/empty-secret"
@@ -34,7 +35,7 @@ trap cleanup EXIT
 
 python3 -m venv "$work/python"
 format_python="$work/python/bin/python"
-"$format_python" -m pip install --quiet --only-binary=:all: -r "$REPO_ROOT/scripts/ci/requirements-image-smoke.txt"
+"$format_python" -m pip install --quiet --only-binary=:all: --require-hashes -r "$REPO_ROOT/scripts/ci/requirements-image-smoke.txt"
 "$format_python" "$REPO_ROOT/scripts/ci/test-serving-formats.py"
 format_assertions="$REPO_ROOT/scripts/ci/verify-serving-formats.py"
 
@@ -53,6 +54,35 @@ wait_healthy() {
   done
 }
 
+verify_persisted_store_refusal() {
+  local profile id deadline exit_code
+  profile="$(docker image inspect "$IMAGE" --format '{{ index .Config.Labels "honua.store.profile" }}')"
+  [[ "$profile" == postgis ]] || return 0
+  compose stop honua-server
+  docker exec -i "$pg" psql -v ON_ERROR_STOP=1 -U postgres -d honua_cng <<'SQL'
+INSERT INTO honua.data_connections
+  (name, host, port, database_name, username, provider_name, secret_ref, secret_type)
+VALUES
+  ('image-excluded-store', 'localhost', 3306, 'fixture', 'fixture', 'mysql',
+   'env:HONUA_FORMAT_SMOKE', 'environment');
+SQL
+  compose up -d --no-build honua-server
+  id="$(compose ps -a -q honua-server)"
+  deadline=$((SECONDS + 90))
+  while [[ "$(docker inspect -f '{{.State.Running}}' "$id")" == true ]]; do
+    if (( SECONDS > deadline )); then fail 'persisted excluded store did not refuse startup'; fi
+    sleep 1
+  done
+  exit_code="$(docker inspect -f '{{.State.ExitCode}}' "$id")"
+  [[ "$exit_code" != 0 ]] || fail 'persisted excluded store exited successfully'
+  compose logs --no-color honua-server > "$OUT/persisted-store-refusal.log"
+  grep -F 'This image includes only the PostGIS data store.' "$OUT/persisted-store-refusal.log" >/dev/null \
+    || fail 'persisted refusal did not name the store policy'
+  grep -F -- '-full' "$OUT/persisted-store-refusal.log" >/dev/null \
+    || fail 'persisted refusal did not name the full variant'
+  printf 'profile=%s\nexit_code=%s\n' "$profile" "$exit_code" > "$OUT/persisted-store-refusal.txt"
+}
+
 docker image inspect "$IMAGE" \
   --format 'image={{if .RepoDigests}}{{index .RepoDigests 0}}{{else}}{{.Id}}{{end}}{{"\n"}}revision={{index .Config.Labels "org.opencontainers.image.revision"}}{{"\n"}}architecture={{.Architecture}}' \
   > "$OUT/image.txt"
@@ -66,6 +96,8 @@ compose stop honua-server
 pg="$(compose ps -q postgres)"
 docker cp "$SEED_FILE" "$pg:/tmp/cng-seed.sql"
 docker exec -i "$pg" psql -v ON_ERROR_STOP=1 -U postgres -d honua_cng -f /tmp/cng-seed.sql >/dev/null
+seeded_feature_count="$(docker exec "$pg" psql -tA -U postgres -d honua_cng -c 'SELECT COUNT(*) FROM public.features WHERE layer_id=1000')"
+printf '%s\n' "$seeded_feature_count" > "$OUT/expected-feature-count.txt"
 compose up -d --no-build honua-server
 wait_healthy honua-server 300
 
@@ -110,12 +142,13 @@ path="/api/v1/admin/services/cng/layers/1000/export?format=gpkg"
 code="$(curl -sS --max-time 120 -H "X-API-Key: $admin_key" -o "$OUT/cng.gpkg" -w '%{http_code}' "http://localhost:${PORT}${path}")" \
   || fail "GeoPackage export failed"
 [[ "$code" == 200 ]] || fail "GeoPackage export answered HTTP ${code}"
-"$format_python" "$format_assertions" gpkg "$OUT/cng.gpkg"
-path="/rest/services/cng/MapServer/WMS?SERVICE=WMS&REQUEST=GetLegendGraphic&VERSION=1.3.0&LAYER=1000&FORMAT=image/png&WIDTH=24&HEIGHT=24"
+"$format_python" "$format_assertions" gpkg "$OUT/cng.gpkg" --feature-count "$seeded_feature_count"
+path="/rest/services/cng/MapServer/WMS?SERVICE=WMS&REQUEST=GetLegendGraphic&VERSION=1.3.0&LAYER=1000&FORMAT=image/png&WIDTH=24&HEIGHT=24&TRANSPARENT=TRUE"
 code="$(curl -sS --max-time 120 -o "$OUT/legend.png" -w '%{http_code}' "http://localhost:${PORT}${path}")" \
   || fail "legend request failed"
 [[ "$code" == 200 ]] || fail "legend answered HTTP ${code}"
 "$format_python" "$format_assertions" legend "$OUT/legend.png"
 # The container must still be serving after the encoder ran: a native crash exits the process.
 wait_healthy honua-server 60
+verify_persisted_store_refusal
 echo "Serving format smoke passed: ${bytes} bytes of GeoParquet from ${IMAGE}"

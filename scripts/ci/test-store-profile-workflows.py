@@ -13,16 +13,25 @@ def workflow(name):
 
 
 class StoreProfileWorkflowTests(unittest.TestCase):
-    def test_default_profile_compile_preserves_published_full_profile_artifacts_and_boot_proof(self):
-        steps = workflow('pr-gate.yml')['jobs']['pr-gate']['steps']
+    def test_default_profile_verification_preserves_full_producer_and_runtime_proofs(self):
+        jobs = workflow('pr-gate.yml')['jobs']
+        producer_names = [step.get('name', '') for step in jobs['pr-gate']['steps']]
+        verify_name = 'Verify default PostGIS store profile'
+        self.assertNotIn(verify_name, producer_names)
+        self.assertIn('Publish pristine managed test outputs', producer_names)
+        self.assertIn('Honua.Server boot + migrations smoke', producer_names)
+        consumer = jobs['pr-gate-tests']
+        self.assertEqual(consumer['needs'], 'pr-gate')
+        steps = consumer['steps']
         names = [step.get('name', '') for step in steps]
-        compile_name = 'Compile default PostGIS store profile'
-        self.assertIn(compile_name, names)
-        compile_step = steps[names.index(compile_name)]
-        self.assertGreater(names.index(compile_name), names.index('Publish pristine managed test outputs'))
-        self.assertGreater(names.index(compile_name), names.index('Honua.Server boot + migrations smoke'))
-        self.assertIn('-p:HonuaStoreProfile=postgis', compile_step['run'])
-        self.assertEqual(compile_step['if'], steps[names.index('Honua.Server boot + migrations smoke')]['if'])
+        verify = steps[names.index(verify_name)]
+        self.assertGreater(names.index(verify_name), names.index('Test serving-image boundary detector'))
+        self.assertEqual(steps[names.index('Setup .NET')]['with']['enable-build-cache'], 'false')
+        self.assertIn('-p:HonuaStoreProfile=postgis', verify['run'])
+        self.assertIn('StoreProfileWritePolicyTests', verify['run'])
+        self.assertIn('RunConfiguration.TreatNoTestsAsError=true', verify['run'])
+        self.assertEqual(verify['env']['HONUA_EXPECTED_STORE_PROFILE'], 'postgis')
+        self.assertEqual(verify['if'], steps[names.index('Test serving-image boundary detector')]['if'])
 
     def test_full_ci_can_measure_images_without_opening_a_pr(self):
         ci = workflow('ci.yml')

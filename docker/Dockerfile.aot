@@ -16,6 +16,8 @@
 ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:de4fe90a98845d75910b9769662465c84de1a934665c431279d1382b2bddc02b
 ARG DOTNET_RUNTIME_DEPS_IMAGE=mcr.microsoft.com/dotnet/runtime-deps:10.0-noble-chiseled-extra@sha256:56b6c354a140e50e09d45a397b43f9f9d31012c325020239e602e06d1594f8ff
 
+ARG HONUA_STORE_PROFILE=postgis
+
 FROM ${DOTNET_RUNTIME_DEPS_IMAGE} AS chiseled-base
 
 # Extract restore inputs with their directory structure. Ordinary source edits,
@@ -60,7 +62,7 @@ COPY eng/protocol-profiles.v1.json eng/
 COPY scripts/docker/restore-dotnet-with-github-packages.sh scripts/docker/
 
 ARG TARGETARCH
-ARG HONUA_STORE_PROFILE=postgis
+ARG HONUA_STORE_PROFILE
 ARG HONUA_BUILD_PROFILE=full
 ARG HONUA_PROTOCOL_PROFILE=all
 ARG HONUA_INCLUDE_AWS=
@@ -194,7 +196,7 @@ COPY --from=build /app /runtime-root/app
 RUN sh docker/runtime/verify-native.sh /runtime-root /app
 
 FROM chiseled-base AS runtime
-ARG HONUA_STORE_PROFILE=postgis
+ARG HONUA_STORE_PROFILE
 LABEL honua.store.profile=$HONUA_STORE_PROFILE
 COPY --from=runtime-assets /runtime-additions/ /
 
@@ -247,7 +249,7 @@ ENV ASPNETCORE_ENVIRONMENT=Production \
 
 # The compiled probe runs without a shell.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD ["/app/honua-healthcheck"]
+    CMD ["/app/honua-healthcheck", "--ready"]
 
 # Security: Explicit port exposure
 EXPOSE 8080/tcp 8081/tcp

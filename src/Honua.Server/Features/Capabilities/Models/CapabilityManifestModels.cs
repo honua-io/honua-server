@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
+using Honua.Core.Features.FeatureStore.Domain;
 
 namespace Honua.Server.Features.Capabilities.Models;
 
@@ -50,9 +51,9 @@ internal sealed record CapabilityManifestDataStores
 
     [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public string? FullImageTagSuffix { get; } = Startup.DataStoreBuildPolicy.AdditionalStoresIncluded
-        ? null : Startup.DataStoreBuildPolicy.FullImageTagSuffix;
+        ? null : DataStoreProviderPolicy.FullImageTagSuffix;
 
-    public string DocumentationHref { get; } = Startup.DataStoreBuildPolicy.DocumentationHref;
+    public string DocumentationHref { get; } = DataStoreProviderPolicy.DocumentationHref;
 }
 
 internal sealed record CapabilityManifestDeploymentProfile

@@ -124,6 +124,57 @@ public sealed class CustomBuildProfileTests
     }
 
     [ArchitectureTest]
+    public void PostgisStoreProfile_ExplicitAdditionalStoreFlags_RefusesValidation()
+    {
+        foreach (var optionalStoreFlag in new[] { "HonuaIncludeOracle", "HonuaIncludeSnowflake" })
+        {
+            var result = ExecuteMsBuild("-t:ValidateHonuaBuildProfile",
+                "-p:HonuaStoreProfile=postgis", $"-p:{optionalStoreFlag}=true");
+
+            result.ExitCode.Should().NotBe(0);
+            (result.Output + result.Error).Should().Contain("require HonuaStoreProfile=full");
+        }
+    }
+
+    [ArchitectureTest]
+    public void DockerStoreProfileReferences_DeclareOrInheritTheirStageArgument()
+    {
+        var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        foreach (var path in new[] { "Dockerfile", "docker/Dockerfile.aot",
+                     "docker/Dockerfile.lambda", "docker/Dockerfile.lambda.aot" })
+        {
+            AssertStoreProfileArgumentScope(Path.Join(repositoryRoot, path));
+        }
+    }
+
+    private static void AssertStoreProfileArgumentScope(string path)
+    {
+        var inheritedScopes = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        string? stage = null;
+        var profileInScope = false;
+        foreach (var sourceLine in File.ReadLines(path))
+        {
+            var line = sourceLine.Trim();
+            if (line.StartsWith("FROM ", StringComparison.OrdinalIgnoreCase))
+            {
+                if (stage is not null)
+                    inheritedScopes[stage] = profileInScope;
+                var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                var parent = parts.Skip(1).First(part => !part.StartsWith("--", StringComparison.Ordinal));
+                profileInScope = inheritedScopes.GetValueOrDefault(parent);
+                stage = parts.Length >= 4 && parts[^2].Equals("AS", StringComparison.OrdinalIgnoreCase)
+                    ? parts[^1] : null;
+            }
+            if (line.Equals("ARG HONUA_STORE_PROFILE", StringComparison.Ordinal)
+                || line.StartsWith("ARG HONUA_STORE_PROFILE=", StringComparison.Ordinal))
+                profileInScope = true;
+            if (line.Contains("${HONUA_STORE_PROFILE", StringComparison.Ordinal)
+                || line.Contains("$HONUA_STORE_PROFILE", StringComparison.Ordinal))
+                profileInScope.Should().BeTrue($"{path}: {line} must receive its stage argument");
+        }
+    }
+
+    [ArchitectureTest]
     public void Dockerfiles_ShouldExposeAndForwardCustomBuildProfileArguments()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
@@ -196,6 +247,15 @@ public sealed class CustomBuildProfileTests
 
     private static string RunMsBuild(string queryArgument, params string[] msbuildArguments)
     {
+        var result = ExecuteMsBuild(queryArgument, msbuildArguments);
+        result.ExitCode.Should().Be(0,
+            "dotnet msbuild must evaluate custom build profiles successfully. stderr: {0}", result.Error);
+        return result.Output;
+    }
+
+    private static (int ExitCode, string Output, string Error) ExecuteMsBuild(
+        string queryArgument, params string[] msbuildArguments)
+    {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var startInfo = new ProcessStartInfo
         {
@@ -228,11 +288,6 @@ public sealed class CustomBuildProfileTests
             throw new TimeoutException("dotnet msbuild property evaluation timed out.");
         }
 
-        process.ExitCode.Should().Be(
-            0,
-            "dotnet msbuild must evaluate custom build profiles successfully. stderr: {0}",
-            error);
-
-        return output;
+        return (process.ExitCode, output, error);
     }
 }

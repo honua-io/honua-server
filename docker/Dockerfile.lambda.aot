@@ -12,6 +12,8 @@ ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:de4fe90a98845d7591
 ARG LAMBDA_ADAPTER_IMAGE=public.ecr.aws/awsguru/aws-lambda-adapter:0.9.1@sha256:46d6625e68cbbdd2efab4a20245977664513f13ffef47915b000d431adcea0b4
 ARG DOTNET_RUNTIME_DEPS_IMAGE=mcr.microsoft.com/dotnet/runtime-deps:10.0-noble-chiseled-extra@sha256:56b6c354a140e50e09d45a397b43f9f9d31012c325020239e602e06d1594f8ff
 
+ARG HONUA_STORE_PROFILE=postgis
+
 FROM ${DOTNET_RUNTIME_DEPS_IMAGE} AS chiseled-base
 
 FROM ${DOTNET_SDK_IMAGE} AS restore
@@ -73,7 +75,7 @@ COPY src/Honua.Plugins/*.csproj src/Honua.Plugins/
 COPY src/Honua.Plugins.Abstractions/*.csproj src/Honua.Plugins.Abstractions/
 
 ARG TARGETARCH
-ARG HONUA_STORE_PROFILE=postgis
+ARG HONUA_STORE_PROFILE
 
 RUN --mount=type=cache,target=/root/.nuget/packages \
     --mount=type=secret,id=github_actor \

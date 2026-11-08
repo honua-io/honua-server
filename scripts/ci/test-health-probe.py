@@ -97,7 +97,28 @@ class HealthProbeTests(unittest.TestCase):
         self.assertEqual(self.fragmented_response([b'HTTP/1.1 ', b'200 OK\r', b'\n\r\n'], 0.05), 0)
 
     def test_server_that_never_replies_fails(self):
-        self.assertNotEqual(self.fragmented_response([b''], 4), 0)
+        release = threading.Event()
+        with socket.socket() as listener:
+            listener.bind(('127.0.0.1', 0))
+            listener.listen()
+            listener.settimeout(5)
+            def hold_connection():
+                with listener.accept()[0] as connection:
+                    connection.recv(1024)
+                    release.wait(10)
+            thread = threading.Thread(target=hold_connection)
+            thread.start()
+            started = time.monotonic()
+            try:
+                result = subprocess.run([self.binary],
+                    env={**os.environ, 'HONUA_HEALTH_PORT': str(listener.getsockname()[1])},
+                    capture_output=True, timeout=5)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertLess(time.monotonic() - started, 5)
+                self.assertFalse(release.is_set())
+            finally:
+                release.set()
+                thread.join()
 
     def test_invalid_port_fails(self):
         self.assertNotEqual(subprocess.run([self.binary], env={**os.environ, 'HONUA_HEALTH_PORT': '65536'},

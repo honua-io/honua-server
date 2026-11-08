@@ -456,12 +456,6 @@ jobs:
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         run: timeout 175s scripts/ci/server-boot-smoke.sh
 
-      # Switching store profiles changes the canonical output directories, so
-      # preserve full-profile test artifacts and finish their boot proof first.
-      - name: Compile default PostGIS store profile
-        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
-        run: dotnet build src/Honua.Server/Honua.Server.csproj --configuration Release -p:HonuaStoreProfile=postgis -p:TreatWarningsAsErrors=true
-
       - name: Revalidate exact-head review before success
         if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt > 1
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
@@ -521,6 +515,7 @@ jobs:
         uses: ./.github/actions/setup-dotnet-ci
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
+          enable-build-cache: 'false'
           artifact-sdk-version: ${{ needs.pr-gate.outputs.managed-sdk-version }}
 
       - name: Wait for runtime proof disk cleanup
@@ -965,6 +960,27 @@ jobs:
         run: |
           python3 scripts/ci/fixtures/validate-serving-image-boundary.py
           python3 scripts/ci/fixtures/validate-promote-verified-image.py
+
+      # Profile changes replace canonical outputs. Finish the full-profile
+      # proofs first on this runner, which never publishes binary caches.
+      - name: Verify default PostGIS store profile
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'
+        env:
+          HONUA_EXPECTED_STORE_PROFILE: postgis
+        run: |
+          started=$SECONDS
+          dotnet build src/Honua.Server/Honua.Server.csproj --configuration Release -p:HonuaStoreProfile=postgis -p:TreatWarningsAsErrors=true
+          dotnet test tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj --configuration Release -p:HonuaStoreProfile=postgis --filter 'FullyQualifiedName~StoreProfileWritePolicyTests' --logger 'trx;LogFileName=core-profile.trx' --results-directory artifacts/pr-gate/postgis-policy -- RunConfiguration.TreatNoTestsAsError=true
+          dotnet test tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj --configuration Release -p:HonuaStoreProfile=postgis --filter 'FullyQualifiedName~StoreProfileWritePolicyTests' --logger 'trx;LogFileName=persistence-profile.trx' --results-directory artifacts/pr-gate/postgis-policy -- RunConfiguration.TreatNoTestsAsError=true
+          printf 'Default PostGIS profile verification: %s seconds\n' "$((SECONDS - started))" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload PostGIS policy proof
+        if: always() && (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && needs.pr-gate.outputs.docs_only != 'true' && needs.pr-gate.outputs.generated_only != 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: postgis-policy-proof
+          path: artifacts/pr-gate/postgis-policy/
+          if-no-files-found: warn
 
       - name: Revalidate exact-head review before success
         if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt > 1

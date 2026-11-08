@@ -53,12 +53,16 @@ select `-p:HonuaStoreProfile=postgis` explicitly.
 
 The shell-free image provides `/app/honua-healthcheck`; use `--ready` for readiness
 or omit it for liveness. `HONUA_HEALTH_PORT` selects the loopback port (default 8080).
-Deployment probes must use direct execution. Pull-only Compose stacks inherit the
+The image's Docker health check probes readiness. Deployment probes must use direct execution. Pull-only Compose stacks inherit the
 image health check, so pinned images retain their own probe. Older images lack the
-new executable;
-retain their existing probe when pinning a pre-change image, and update the image
+new executable; retain their existing probe when pinning a pre-change image, and update the image
 and probe together. The ECS module exposes `health_check_command` and
 `health_check_port` for that transition.
+
+Connection creation, updates and metadata validation reject stores absent from the image.
+If an existing database contains such a Connection, startup refuses with the same full-image
+instruction. Recover with the matching full image; remove an unused Connection through the
+normal administration workflow before returning to the PostGIS-only image.
 
 Authenticated callers can read `dataStores` from `/api/v1/capabilities/manifest`.
 `profile` is `postgis` or `full`; `installedProviders` lists canonical provider identifiers

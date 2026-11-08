@@ -29,7 +29,7 @@ permissions:
   packages: read
 
 concurrency:
-  group: store-image-size-${{ github.event.pull_request.number || github.ref }}
+  group: store-image-size-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 jobs:
@@ -99,6 +99,7 @@ jobs:
           PROFILE: ${{ matrix.profile }}
         run: |
           docker pull --platform linux/amd64 "$BASELINE"
+          test "$(docker image inspect honua-store-measure:current --format '{{ index .Config.Labels "honua.store.profile" }}')" = "$PROFILE"
           python3 scripts/ci/measure-serving-image.py honua-store-measure:current \
             --profile "$PROFILE" --baseline "$BASELINE" --output artifacts/image-size.json \
             --compilation "${{ matrix.compilation }}" --evidence-directory artifacts/build-evidence
@@ -114,7 +115,7 @@ jobs:
         if: matrix.profile == 'postgis'
         run: |
           mkdir -p artifacts
-          for provider in duckdb mysql mssql oracle redshift snowflake dbsql; do
+          for provider in duckdb mysql mssql oracle redshift snowflake dbsql featureserver; do
             if timeout 30 docker run --rm --env "DataSource__Provider=$provider" \
               honua-store-measure:current > "artifacts/startup-$provider.log" 2>&1; then
               echo "::error::Excluded provider was accepted"

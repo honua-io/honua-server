@@ -561,7 +561,7 @@ jobs:
           CANDIDATE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}@${{ steps.build.outputs.digest }}
         run: |
           set -euo pipefail
-          scripts/ci/smoke-serving-formats.sh "$CANDIDATE" "${RUNNER_TEMP}/aot-geoparquet-smoke"
+          scripts/ci/smoke-serving-formats.sh "$CANDIDATE" "${RUNNER_TEMP}/serving-formats-smoke"
 
       - name: Publish verified nightly AOT architecture tags
         shell: bash

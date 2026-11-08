@@ -5,7 +5,9 @@ import tempfile
 import importlib.util
 import json
 import itertools
+import os
 import re
+import sys
 from pathlib import Path
 import unittest
 from unittest.mock import patch
@@ -20,7 +22,7 @@ class ImmutableTagsTests(unittest.TestCase):
         SPEC.loader.exec_module(cls.module)
 
     def setUp(self):
-        profile = patch.object(self.module, 'supports_full_variant', return_value=True, create=True)
+        profile = patch.object(self.module, 'supports_full_variant', return_value=True)
         profile.start()
         self.addCleanup(profile.stop)
 
@@ -30,6 +32,21 @@ class ImmutableTagsTests(unittest.TestCase):
         ):
             self.assertEqual(self.module.publication_state('ghcr.io/honua/server', 'abcdef0' + 'a' * 33, ''),
                              (True, True))
+
+    def test_cli_filter_and_digest_lookup_work_without_a_git_repository(self):
+        script = Path(__file__).with_name('immutable-container-tags.py').resolve()
+        with tempfile.TemporaryDirectory() as directory:
+            stub = Path(directory) / 'docker'
+            stub.write_text('#!/bin/sh\nprintf "manifest unknown\\n" >&2\nexit 1\n')
+            stub.chmod(0o755)
+            environment = {**os.environ, 'PATH': directory + os.pathsep + os.environ['PATH']}
+            for arguments, tags, expected in [([], 'ghcr.io/honua/server:latest\n', 'ghcr.io/honua/server:latest'),
+                    (['--tag', 'ghcr.io/honua/server:nightly-aaaaaaa'], '', '')]:
+                with self.subTest(arguments=arguments):
+                    result = subprocess.run([sys.executable, str(script), '--sha', 'a' * 40, *arguments],
+                        cwd=directory, env=environment, input=tags, text=True, capture_output=True, timeout=10)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(result.stdout.strip(), expected)
 
     def test_existing_sha_tags_are_preserved_but_floating_tags_can_move(self):
         tags = ['ghcr.io/honua-io/honua-server:nightly-abcdef0',
@@ -117,6 +134,8 @@ class ImmutableTagsTests(unittest.TestCase):
             if 'scripts/ci/immutable-container-tags.py' not in block:
                 continue
             with self.subTest(job=name):
+                if '--already-imaged' in block:
+                    self.assertIn('fetch-depth: 0', block)
                 self.assertTrue('actions/checkout@' in block,
                                 f'{name} runs the immutable-tag guard without checking it out')
 

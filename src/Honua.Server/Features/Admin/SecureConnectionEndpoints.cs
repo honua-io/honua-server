@@ -558,6 +558,10 @@ internal static partial class SecureConnectionEndpoints
             return TypedResults.Created($"/api/v1/admin/connections/{createdConnection.ConnectionId}",
                 ApiResponse<SecureConnectionSummary>.CreateSuccess(summary));
         }
+        catch (DataStoreProviderUnavailableException)
+        {
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(DataStoreProviderPolicy.RefusalMessage));
+        }
         catch (InvalidOperationException ex)
             when (IsClientSafeCreateConnectionInvalidOperation(ex))
         {
@@ -878,6 +882,10 @@ internal static partial class SecureConnectionEndpoints
                 context.RequestAborted);
 
             return TypedResults.Ok(ApiResponse<SecureConnectionSummary>.CreateSuccess(summary));
+        }
+        catch (DataStoreProviderUnavailableException)
+        {
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(DataStoreProviderPolicy.RefusalMessage));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

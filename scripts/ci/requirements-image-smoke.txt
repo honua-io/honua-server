@@ -1,1 +1,4 @@
-Pillow==13.0.0
+# CPython 3.12 wheels for the Ubuntu CI runners.
+Pillow==13.0.0 \
+    --hash=sha256:8bf295fe459343bc6093c8e5e0df60bfa189e0fcb775a22e2c2488fdeccc6c0d \
+    --hash=sha256:42d63be3af4f9b951b199b0a9d23365d37ab14687e6d77b74940432c8515c4ca

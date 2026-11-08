@@ -72,9 +72,29 @@ class NativeRuntimeGateTests(unittest.TestCase):
         self.assertIn('undefined symbol', result.stdout + result.stderr)
 
     def test_alternate_native_variant_is_left_to_runtime_selection(self):
+        shutil.copy2(self.app / 'ParquetSharpNative.so', self.app / 'librdkafka.so')
         self.host_only_dependency(self.app / 'centos8-librdkafka.so')
         result = self.verify()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_primary_client_native_must_resolve_its_dependencies(self):
+        self.host_only_dependency(self.app / 'librdkafka.so')
+        result = self.verify()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('libhostonlyfixture.so', result.stderr)
+
+    def test_no_compatible_client_variant_is_rejected(self):
+        self.host_only_dependency(self.app / 'centos8-librdkafka.so')
+        self.assertNotEqual(self.verify().returncode, 0)
+
+    def test_compatible_prefixed_client_variant_is_accepted(self):
+        shutil.copy2(self.app / 'ParquetSharpNative.so', self.app / 'centos8-librdkafka.so')
+        result = self.verify()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_managed_client_without_any_native_variant_is_rejected(self):
+        (self.app / 'Confluent.Kafka.dll').touch()
+        self.assertNotEqual(self.verify().returncode, 0)
 
 
 if __name__ == '__main__':

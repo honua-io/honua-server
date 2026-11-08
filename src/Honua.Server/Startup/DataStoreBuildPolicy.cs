@@ -3,27 +3,18 @@
 
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
-using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 
 namespace Honua.Server.Startup;
 
 internal static class DataStoreBuildPolicy
 {
-#if HONUA_POSTGIS_ONLY
-    public static bool AdditionalStoresIncluded => false;
-#else
-    public static bool AdditionalStoresIncluded => true;
-#endif
-
-    public const string FullImageTagSuffix = "-full";
-    public const string DocumentationHref =
-        "https://github.com/honua-io/honua-server/blob/trunk/docs/ops/nightly-images.md";
+    public static bool AdditionalStoresIncluded => DataStoreProviderPolicy.AdditionalStoresIncluded;
 
     public static string Profile => AdditionalStoresIncluded ? "full" : "postgis";
 
     public static string[] InstalledProviders => AdditionalStoresIncluded
-        ? [DataProviderNames.Postgis, .. AdditionalStoreSectionsByProvider.Keys.Except(ExcludedBuildProviders)]
+        ? [DataProviderNames.Postgis, .. DataStoreProviderPolicy.AdditionalStoreSectionsByProvider.Keys.Except(ExcludedBuildProviders)]
         : [DataProviderNames.Postgis];
 
     public static async Task ValidatePostgisConnectionsAsync(
@@ -32,16 +23,15 @@ internal static class DataStoreBuildPolicy
         var securedConnections = await registry.GetAllConnectionsAsync().ConfigureAwait(false);
         foreach (var connection in securedConnections)
         {
-            ValidatePostgisProvider(connection.Provider);
+            DataStoreProviderPolicy.EnsurePostgisProvider(connection.Provider);
         }
 
         var snapshot = await graphProvider.GetCurrentAsync().ConfigureAwait(false);
         foreach (var connection in snapshot.Graph.Connections)
         {
-            if (connection.Type is MetadataV2ConnectionType.Database or MetadataV2ConnectionType.Managed
-                || AdditionalStoreSectionsByProvider.ContainsKey(DataProviderNames.Normalize(connection.Provider)))
+            if (DataStoreProviderPolicy.IsDataStoreConnection(connection))
             {
-                ValidatePostgisProvider(connection.Provider);
+                DataStoreProviderPolicy.EnsurePostgisProvider(connection.Provider);
             }
         }
     }
@@ -55,9 +45,9 @@ internal static class DataStoreBuildPolicy
 
     public static void ValidatePostgisConfiguration(IConfiguration configuration)
     {
-        ValidatePostgisProvider(configuration["DataSource:Provider"]);
+        DataStoreProviderPolicy.EnsurePostgisProvider(configuration["DataSource:Provider"]);
 
-        foreach (var sectionName in AdditionalStoreSectionsByProvider.Values)
+        foreach (var sectionName in DataStoreProviderPolicy.AdditionalStoreSectionsByProvider.Values)
         {
             var section = configuration.GetSection(sectionName);
             if (section.GetValue<bool?>("Enabled") == false)
@@ -79,19 +69,6 @@ internal static class DataStoreBuildPolicy
         }
     }
 
-    private static readonly IReadOnlyDictionary<string, string> AdditionalStoreSectionsByProvider =
-        new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            [DataProviderNames.DuckDb] = "DuckDB",
-            [DataProviderNames.MySql] = "MySql",
-            [DataProviderNames.SqlServer] = "SqlServer",
-            [DataProviderNames.GeoServicesRest] = "GeoServicesRest",
-            [DataProviderNames.Redshift] = "Redshift",
-            [DataProviderNames.Databricks] = "Databricks",
-            [DataProviderNames.Oracle] = "Oracle",
-            [DataProviderNames.Snowflake] = "Snowflake"
-        };
-
     private static readonly string[] ExcludedBuildProviders =
     [
 #if HONUA_SKIP_ORACLE
@@ -102,17 +79,5 @@ internal static class DataStoreBuildPolicy
 #endif
     ];
 
-    private static void ValidatePostgisProvider(string? provider)
-    {
-        if (DataProviderNames.Normalize(provider) is not (DataProviderNames.Postgis or DataProviderNames.PostgreSql))
-        {
-            RefuseAdditionalStores();
-        }
-    }
-
-    private static void RefuseAdditionalStores() => throw new ExcludedDataStoreException();
+    private static void RefuseAdditionalStores() => throw new DataStoreProviderUnavailableException();
 }
-
-internal sealed class ExcludedDataStoreException() : InvalidOperationException(
-    "This image includes only the PostGIS data store. Use the same-version nightly-jit-<revision>" +
-    DataStoreBuildPolicy.FullImageTagSuffix + " image for additional data stores; see " + DataStoreBuildPolicy.DocumentationHref + ".");
