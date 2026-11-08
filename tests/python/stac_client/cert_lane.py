@@ -334,7 +334,7 @@ def envelope_output_dir() -> Path:
     override = os.environ.get(OUTPUT_DIR_ENV)
     if override and override.strip():
         return Path(override.strip())
-    return canonical_fixture.TESTS_ROOT / "TestResults"
+    return canonical_fixture.TEST_RESULTS_ROOT
 
 
 def envelope_path(output_dir: Path | None = None, run_id: str | None = None) -> Path:

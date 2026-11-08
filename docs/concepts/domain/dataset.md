@@ -25,9 +25,9 @@ relations:
 ---
 
 # Dataset
-A dataset is a collection of records, features, or imagery. A file and a database table can carry equivalent information while having different formats, identities, and update rules. A [connection](connection.md) makes a database source discoverable; a [layer](layer.md) describes published access to data.[^contract]
+A Dataset is a collection of records, features, or imagery. It owns logical identity, schema, spatial metadata, policy, and Style references independently of storage and protocol. It can have several [storage bindings](storage-binding.md) and be exposed through several Layers without copying its data. A file and a database table can carry equivalent information while having different formats, identities, and update rules. A [connection](connection.md) makes a database source discoverable; a [layer](layer.md) describes published access to data.[^contract]
 
-“Load this data” can mean preview a file, import records into storage, register an existing source, or add a layer to a [map](map.md). Resolve that distinction before promising a durable result. Importing changes storage; adding a map layer changes a composition.
+“Load this data” can mean preview a file, import records into storage, register an existing source, or add a layer to a [map](map.md). Resolve that distinction before promising a durable result. Importing changes storage; adding a drawing layer changes a Map.
 
 For example, “show these survey points” identifies a desired display, but does not establish coordinate columns, [CRS](crs.md), destination, or sharing rights. Preserve source identifiers and [metadata](metadata.md), and check counts and representative values after conversion.
 

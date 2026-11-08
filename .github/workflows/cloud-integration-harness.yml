@@ -124,7 +124,7 @@ jobs:
         env:
           TESTCONTAINERS_RYUK_DISABLED: false
         run: |
-          mkdir -p ./tests/TestResults
+          mkdir -p ./artifacts/test-results
           dotnet test ${{ env.CSPROJ }} \
             --no-build \
             --no-restore \
@@ -132,7 +132,7 @@ jobs:
             --filter "Category=CloudIntegration" \
             --logger "trx;LogFileName=cloud-integration.trx" \
             --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults
+            --results-directory ./artifacts/test-results
 
       # honua-server#4414: every cell here gates cleanly with [SkippableFact] when kind or
       # LocalStack is unavailable, and `dotnet test` exits 0 either way — so a kind-action failure,
@@ -144,7 +144,7 @@ jobs:
         run: |
           python3 scripts/ci/assert-trx-executed.py \
             --label "Free-tier cloud integration (kind + LocalStack)" \
-            --trx tests/TestResults/cloud-integration.trx \
+            --trx artifacts/test-results/cloud-integration.trx \
             --min-passed 1 \
             --max-skipped 0
 
@@ -153,7 +153,7 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: cloud-integration-results
-          path: tests/TestResults/
+          path: artifacts/test-results/
           retention-days: 14
 
   local-substrate:
@@ -211,7 +211,7 @@ jobs:
           TESTCONTAINERS_RYUK_DISABLED: false
           HONUA_TEST_REDIS_URL: localhost:6379
         run: |
-          mkdir -p ./tests/TestResults
+          mkdir -p ./artifacts/test-results
           dotnet test ${{ env.CSPROJ }} \
             --no-build \
             --no-restore \
@@ -219,7 +219,7 @@ jobs:
             --filter "Category=LocalSubstrate" \
             --logger "trx;LogFileName=local-substrate.trx" \
             --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults
+            --results-directory ./artifacts/test-results
 
       # honua-server#4415/#4414: LocalSubstrateDockerFixture and LocalSubstratePostgresFixture both
       # silently set Available=false on ANY InitializeAsync exception (image-pull failure, full disk,
@@ -234,7 +234,7 @@ jobs:
         run: |
           python3 scripts/ci/assert-trx-executed.py \
             --label "Local substrate (YARP rolling + local process + migration gate)" \
-            --trx tests/TestResults/local-substrate.trx \
+            --trx artifacts/test-results/local-substrate.trx \
             --min-passed 1 \
             --max-skipped 0
 
@@ -243,5 +243,5 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: local-substrate-results
-          path: tests/TestResults/
+          path: artifacts/test-results/
           retention-days: 14

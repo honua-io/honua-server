@@ -21,7 +21,7 @@ A connection records how Honua reaches a data source. The connection registry su
 
 A connection can expose candidate tables for [layer](layer.md) publication, subject to the provider and the operator's schema and host restrictions. Registering a connection is neither importing every table nor granting viewers access.
 
-“Connect my database” needs a reachable endpoint, approved credential mechanism, intended database/schema, and the caller's authority. A successful connection test establishes reachability, not that a particular table is published or editable. “Connection” in a browser SDK can instead mean a client object; it is not necessarily a saved server registry entry.
+“Connect my database” needs a reachable endpoint, approved credential mechanism, intended database/schema, and the caller's authority. A successful connection test establishes reachability, not that a particular table is published or editable. A browser SDK client session is temporary interaction state; reserve Connection for the registered database or file.
 
 Use [connect and publish existing data](../../guides/workflows/connect-publish-data.md). Keep credentials out of [session](session.md) handoffs.
 

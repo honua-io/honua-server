@@ -5,7 +5,7 @@
 """Record mandatory GeoParquet pytest cells; skips are non-passing (#4396).
 
 Usage: check-geoparquet-interop.py REPORT PYTEST_EXIT_CODE PRODUCER_COMMIT
-Run from tests/python with GITHUB_STEP_SUMMARY set.
+Writes a JSON receipt beside REPORT; GITHUB_STEP_SUMMARY must be set.
 """
 
 import json
@@ -29,7 +29,7 @@ receipt = dict(
     passing=(passed >= 5 and not (skipped or errors or failures or int(sys.argv[2]))),
 )
 summary = json.dumps(receipt, indent=2)
-Path("../TestResults/geoparquet-interop.json").write_text(summary + "\n")
+Path(sys.argv[1]).with_suffix(".json").write_text(summary + "\n")
 with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as output:
     output.write("GeoParquet independent-consumer evidence\n```json\n" + summary + "\n```\n")
 print(summary)

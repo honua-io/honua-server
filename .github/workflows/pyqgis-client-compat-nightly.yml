@@ -50,7 +50,7 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
           base-seed-path: ${{ env.CLIENT_COMPAT_SEED_SOURCE }}
-          log-path: tests/TestResults/server.log
+          log-path: artifacts/test-results/server.log
 
       - name: Install QGIS and PyQGIS
         run: |
@@ -77,6 +77,9 @@ jobs:
 
       - name: Install Python test dependencies
         run: pip install -r tests/python/requirements.txt
+
+      - name: Verify certification output defaults and overrides
+        run: python3 -m pytest -c /dev/null --rootdir=. --confcutdir=tests/python/unit tests/python/unit/test_pyqgis_evidence_output.py -q
 
       # test_cog_client_compat.py reads an artifact that only the running server can
       # produce: LocalFileStorage indexes its objects at construction, so a COG written
@@ -111,15 +114,15 @@ jobs:
         with:
           kind: evidence
           path: |
-            tests/TestResults/*-desktop-qgis-*.cert.json
-            tests/TestResults/server.log
+            artifacts/test-results/*-desktop-qgis-*.cert.json
+            artifacts/test-results/server.log
           tier: nightly
 
       - name: Validate certification envelopes
         if: always()
         run: |
           shopt -s nullglob
-          certs=(tests/TestResults/*-desktop-qgis-*.cert.json)
+          certs=(artifacts/test-results/*-desktop-qgis-*.cert.json)
           if [ ${#certs[@]} -eq 0 ]; then
             echo "::error::No .cert.json envelopes were produced."
             exit 1

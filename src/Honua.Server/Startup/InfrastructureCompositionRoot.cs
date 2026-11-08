@@ -108,7 +108,7 @@ internal static class InfrastructureCompositionRoot
         // GeoServicesRest:Enabled is explicitly false.
         if (configuration.GetValue("GeoServicesRest:Enabled", true))
         {
-            Honua.GeoServicesRest.ServiceCollectionExtensions.AddGeoServicesRestFeatureProvider(services, configuration);
+            Honua.Db.GeoServicesRest.ServiceCollectionExtensions.AddGeoServicesRestFeatureProvider(services, configuration);
         }
 
         // Register the Oracle spatial provider as an additional read-only feature backend (#1252).
@@ -139,7 +139,7 @@ internal static class InfrastructureCompositionRoot
 #if !HONUA_SKIP_SNOWFLAKE
         if (warehouseProviders.Snowflake.Enabled)
         {
-            Honua.Snowflake.ServiceCollectionExtensions.AddSnowflakeFeatureProvider(services, configuration);
+            Honua.Db.Snowflake.ServiceCollectionExtensions.AddSnowflakeFeatureProvider(services, configuration);
         }
 #endif
 

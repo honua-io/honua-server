@@ -168,7 +168,7 @@ class FeedbackTests(unittest.TestCase):
                 raise KeyboardInterrupt()
             with self.assertRaises(KeyboardInterrupt):
                 feedback.execute(root, self.plan([self.unit]), run=cancel)
-            results = list((root / 'tests/TestResults/local-feedback').iterdir())
+            results = list((root / 'artifacts/test-results/local-feedback').iterdir())
             status = json.loads((results[0] / 'result.json').read_text())
             self.assertEqual(status['status'], 'cancelled')
             self.assertFalse(status['validatesPullRequest'])

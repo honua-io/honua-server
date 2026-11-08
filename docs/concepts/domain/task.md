@@ -1,7 +1,7 @@
 ---
 type: concept
 title: "Task and operation"
-description: "The user's desired work, distinguished from a callable process and a particular job execution."
+description: "A desired outcome, a typed control-plane action, and an analysis process have distinct meanings."
 tags: [gis, domain-language]
 aliases: ["task","operation","process","workflow","request"]
 sources:
@@ -21,7 +21,7 @@ relations:
 ---
 
 # Task and operation
-A task in ordinary language is a desired outcome, such as “find nearby facilities.” A process is an advertised operation with an input/output contract. A [job](job.md) is one execution. A [workflow](workflow-language.md) can connect several operations and decisions.
+A task in ordinary language is a desired outcome, such as “find nearby facilities.” An **Operation** is a typed control-plane action with an execution and audit contract, such as applying an approved change. A process is advertised analysis with an input/output contract; a [Job](job.md) records one accepted execution. A [workflow](workflow-language.md) can connect processes, Operations, and decisions.
 
 GPServer also uses “task” for a published process. Familiar aliases do not guarantee another system's parameter contract: the advertised process metadata determines the accepted inputs.[^contract]
 

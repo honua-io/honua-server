@@ -14,7 +14,7 @@ out so every lane asserts it the same way.
 
 Usage:
     assert-trx-executed.py --label "Real-AWS certification" \
-        --trx tests/TestResults/real-aws-certification.trx \
+        --trx artifacts/test-results/real-aws-certification.trx \
         --min-passed 1
 
     assert-trx-executed.py --self-test
