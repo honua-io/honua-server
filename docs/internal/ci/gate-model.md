@@ -365,6 +365,13 @@ cannot pass; legitimate partial skips retain their existing policy. A child
 failure or timeout retains its original exit code even if partial TRX contains
 passing cases.
 
+PR and full-CI shard jobs propagate that exit code without suppressing test
+failures, and upload diagnostic artifacts even after failure. Both aggregates
+re-read the selected shards' TRX files and require complete passing receipts
+and successful jobs. Full CI also checks the merged foundation TRX outcomes;
+foundation security build and test failures count even when built separately.
+`CI Gate` depends on these enforced test summaries.
+
 The retained `*.timing.json` includes `execution` with actual result counts,
 TRX SHA-256, source SHA/dirty flag, project, and runner/verifier hashes. The timing
 record retains the effective filter and original shard status. Its count status

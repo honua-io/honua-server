@@ -6,6 +6,8 @@ resource: "honua://capability/import.geoservices"
 ---
 # Import from GeoServices REST services
 
+See the [Honua vocabulary](../../concepts/domain/README.md) for the meanings of Connection, Dataset, Layer, Service, Folder, and Environment.
+
 You'll have a layer from a public GeoServices REST service copied into PostGIS and published in about 10 minutes.
 
 **Prerequisites:** A running server ([quickstart](../../get-started/quickstart.md)) and admin credentials ([authentication](../secure/authentication.md)). Queued imports require the distributed job queue (Redis) to be healthy.
@@ -55,6 +57,11 @@ Run `POST /api/v1/admin/import/geoservices/start` with this body:
 ```
 
 Returns `202 Accepted` with a `jobId`. Optional fields: `whereClause` and `outputFields` to filter what is copied, `targetSchema` (a configured operational schema; see [Import files](import-files.md)), `batchSize`, `serviceName` (target Honua service for auto-publishing; `autoPublish` defaults to `true`).
+
+Auto-publishing preserves a single source folder by default; a root source stays at root.
+Omit `folderId` to retain that folder, send `null` for root, or supply an existing destination
+folder ID. `publicName`, `namespace`, and a reviewed `plan` also control the publication target;
+see [GeoServices import target rules](../../reference/admin-api/imports-and-jobs.md#geoservices-arcgis-migration-import).
 
 ### 3. Poll the job
 

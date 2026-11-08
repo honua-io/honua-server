@@ -396,7 +396,7 @@ public class QueryHandler
     dotnet test tests/dotnet/Honua.Architecture.Tests/ \
       --filter "Category=Architecture" \
       --logger "trx" \
-      --results-directory TestResults/
+      --results-directory artifacts/test-results/
 
     # Fail build if architecture tests fail
     if [ $? -ne 0 ]; then

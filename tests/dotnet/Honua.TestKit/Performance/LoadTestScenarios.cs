@@ -368,7 +368,7 @@ public static class LoadTestScenarios
         ReportFormat[]? reportFormats = null)
     {
         baseUrl = NormalizeBaseUrl(baseUrl);
-        reportFolder ??= "load-test-reports";
+        reportFolder ??= Path.Join("artifacts", "load-test-reports");
         reportFormats ??= new[] { ReportFormat.Html, ReportFormat.Csv };
 
         var scenarios = new List<ScenarioProps>();

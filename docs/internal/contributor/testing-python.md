@@ -158,9 +158,9 @@ pytest -n auto --tb=short
 
 The STAC lane emits both machine-readable and human-readable evidence files at the end of each run:
 
-- `tests/TestResults/stac-client-compat-results*.json`
-- `tests/TestResults/stac-client-compat-results*.md`
-- `tests/TestResults/stac-api-validator-results*.json`
+- `artifacts/test-results/stac-client-compat-results*.json`
+- `artifacts/test-results/stac-client-compat-results*.md`
+- `artifacts/test-results/stac-api-validator-results*.json`
 
 Each report includes the runtime server version, local git commit SHA, and the seed snapshot name used for the run. The validator transcript records the pinned `stac-api-validator` version, command, collection id, AOI geometry, exit code, stdout, stderr, and pass/fail status.
 
@@ -185,12 +185,12 @@ QT_QPA_PLATFORM=offscreen pytest tests/python/pyqgis -m pyqgis --tb=short
 | `HONUA_PYQGIS_SEED_PATH` | SQL snapshot for the local runtime | `tests/seed/client-compat-v1.sql` |
 | `HONUA_PYQGIS_PORT` | Base server port (worker index added for xdist) | `5575` |
 | `HONUA_PYQGIS_TIMEOUT` | Server startup timeout (seconds) | `120` |
-| `HONUA_PYQGIS_OUTPUT_DIR` | Destination directory for `.cert.json` envelopes (the docker/client-compat lane sets this to `/output` because `tests/` is bind-mounted read-only) | unset (writes under `tests/TestResults/`) |
+| `HONUA_PYQGIS_OUTPUT_DIR` | Destination directory for `.cert.json` envelopes (the docker/client-compat lane sets this to `/output` because `tests/` is bind-mounted read-only) | unset (writes under `artifacts/test-results/`) |
 | `QGIS_PREFIX_PATH` | QGIS installation prefix | auto-detected |
 
 ### Evidence Output
 
-The PyQGIS lane produces per-protocol `.cert.json` certification envelopes under `tests/TestResults/` (override with `HONUA_PYQGIS_OUTPUT_DIR`):
+The PyQGIS lane produces per-protocol `.cert.json` certification envelopes under `artifacts/test-results/` (override with `HONUA_PYQGIS_OUTPUT_DIR`):
 
 - `<run-id>-desktop-qgis-ogc-features.cert.json`
 - `<run-id>-desktop-qgis-wfs.cert.json`

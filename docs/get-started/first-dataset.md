@@ -5,6 +5,8 @@ description: "Upload a GeoJSON file, publish it as a layer, and query it through
 ---
 # Publish your first dataset
 
+See the [Honua vocabulary](../concepts/domain/README.md) for the meanings of Connection, Dataset, Layer, Service, Folder, and Environment.
+
 Upload a GeoJSON file, publish it as a layer, and query it through the supported Honua clients.
 
 **Prerequisites:** a running server with an admin password set (steps 1–4 of the [quickstart](quickstart.md)), Python 3.11+ with the pinned clients `honua-admin` 0.1.12 and `honua-sdk` 0.1.19 and the MCP Python client `mcp` 2.1.1 (step 2 installs them), and Node.js with `npx`.

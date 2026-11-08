@@ -3,7 +3,7 @@ param([switch]$NoBuild, [switch]$ReuseContainers)
 
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
-$artifacts = Join-Path $repo 'TestResults/evidence-live'
+$artifacts = Join-Path $repo 'artifacts/evidence-live'
 New-Item -ItemType Directory -Force $artifacts | Out-Null
 if (-not $NoBuild) {
     dotnet build (Join-Path $repo 'src/Honua.Server/Honua.Server.csproj') --configuration Release -maxcpucount:4

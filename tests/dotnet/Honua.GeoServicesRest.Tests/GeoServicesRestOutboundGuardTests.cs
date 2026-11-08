@@ -2,9 +2,9 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
-using Honua.GeoServicesRest.Features.FeatureStore.Services;
+using Honua.Db.GeoServicesRest.Features.FeatureStore.Services;
 
-namespace Honua.GeoServicesRest.Tests;
+namespace Honua.Db.GeoServicesRest.Tests;
 
 /// <summary>
 /// Regression coverage for #2012 (DNS-rebinding SSRF / TOCTOU): the federated

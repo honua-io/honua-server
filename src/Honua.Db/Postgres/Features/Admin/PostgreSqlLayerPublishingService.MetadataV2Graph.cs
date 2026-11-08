@@ -131,6 +131,13 @@ internal sealed partial class PostgreSqlLayerPublishingService
         CancellationToken cancellationToken)
     {
         var (graph, expectedEtag) = await LoadCurrentOrEmptyGraphAsync(cancellationToken).ConfigureAwait(false);
+        if (expectedEtag is null && request.ImportTarget is not null)
+        {
+            // A planned import must retain seeded services when it introduces the first folder.
+            var bootstrap = await _metadataGraphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            graph = bootstrap.Graph;
+            expectedEtag = bootstrap.Etag;
+        }
         // Recheck the exact persisted write base. A concurrent graph change is then protected
         // by its ETag; a rejected scope leaves the SQL layer transaction uncommitted.
         ValidatePublicationScope(graph, serviceName, publicationScope, requireExistingScopedService);
@@ -140,6 +147,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var storageConnectionId = storage.IsManagedStore ? null : request.ConnectionId;
         var graphLayerKey = BuildLayerGraphId("layer", layerId, storageConnectionId);
         var service = BuildPublishedService(graph, serviceName, srid, now);
+        service = service with { Metadata = ApplyPublicationScope(service.Metadata, publicationScope) };
+        var organizedGraph = PublishedImportTarget.PrepareFolder(graph, request, service.Metadata.Tenant);
+        service = PublishedImportTarget.BindService(organizedGraph, service, request);
+        service = PublishedServiceOrganization.Apply(organizedGraph, service, request);
         var resource = BuildPublishedResource(
             request,
             layerId,
@@ -195,8 +206,6 @@ internal sealed partial class PostgreSqlLayerPublishingService
                     publicationScope)
             };
         }
-        service = service with { Metadata = ApplyPublicationScope(service.Metadata, publicationScope) };
-        service = PublishedServiceOrganization.Apply(graph, service, request);
         resource = resource with { Metadata = ApplyPublicationScope(resource.Metadata, publicationScope) };
         binding = binding with { Metadata = ApplyPublicationScope(binding.Metadata, publicationScope) };
         featurePublication = featurePublication with { Metadata = ApplyPublicationScope(featurePublication.Metadata, publicationScope) };
@@ -243,6 +252,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         {
             Revision = Math.Max(graph.Revision + 1, 1),
             GeneratedAt = now,
+            Folders = organizedGraph.Folders,
             Services = UpsertById(graph.Services, service, static item => item.Metadata.Id),
             Resources = resourcesWithStyles,
             StorageBindings = UpsertById(graph.StorageBindings, binding, static item => item.Metadata.Id),
@@ -896,6 +906,11 @@ internal sealed partial class PostgreSqlLayerPublishingService
             StorageBindings = bindings,
             Publications = publications,
             Connections = connections,
+            Folders = currentGraph.Folders.Where(folder =>
+                previousGraph.Folders.Any(previous => previous.Metadata.Id == folder.Metadata.Id) ||
+                !persistedGraph.Folders.Any(persisted => persisted.Metadata.Id == folder.Metadata.Id &&
+                    JsonEquivalent(folder, persisted, MetadataV2JsonContext.Default.MetadataV2Folder)) ||
+                services.Any(service => service.FolderId == folder.Metadata.Id)).ToArray(),
         };
     }
 
@@ -2499,10 +2514,13 @@ internal sealed partial class PostgreSqlLayerPublishingService
             : current;
 
     private static IReadOnlyList<T> RestoreMutationSequence<T>(
-        IReadOnlyList<T> current,
-        IReadOnlyList<T> previous,
-        IReadOnlyList<T> persisted)
+        IReadOnlyList<T>? current,
+        IReadOnlyList<T>? previous,
+        IReadOnlyList<T>? persisted)
     {
+        current ??= Array.Empty<T>();
+        previous ??= Array.Empty<T>();
+        persisted ??= Array.Empty<T>();
         if (previous.SequenceEqual(persisted))
         {
             return current;
@@ -2677,10 +2695,13 @@ internal sealed partial class PostgreSqlLayerPublishingService
     private readonly record struct SequenceIndexMatch(int LeftIndex, int RightIndex);
 
     private static Dictionary<string, string> RestoreMetadataMapMutation(
-        IReadOnlyDictionary<string, string> current,
-        IReadOnlyDictionary<string, string> previous,
-        IReadOnlyDictionary<string, string> persisted)
+        IReadOnlyDictionary<string, string>? current,
+        IReadOnlyDictionary<string, string>? previous,
+        IReadOnlyDictionary<string, string>? persisted)
     {
+        current ??= new Dictionary<string, string>();
+        previous ??= new Dictionary<string, string>();
+        persisted ??= new Dictionary<string, string>();
         var restored = new Dictionary<string, string>(current, StringComparer.Ordinal);
         foreach (var key in previous.Keys.Concat(persisted.Keys).Distinct(StringComparer.Ordinal))
         {
@@ -2720,10 +2741,13 @@ internal sealed partial class PostgreSqlLayerPublishingService
     }
 
     private static Dictionary<string, JsonElement> RestoreJsonMapMutation(
-        IReadOnlyDictionary<string, JsonElement> current,
-        IReadOnlyDictionary<string, JsonElement> previous,
-        IReadOnlyDictionary<string, JsonElement> persisted)
+        IReadOnlyDictionary<string, JsonElement>? current,
+        IReadOnlyDictionary<string, JsonElement>? previous,
+        IReadOnlyDictionary<string, JsonElement>? persisted)
     {
+        current ??= new Dictionary<string, JsonElement>();
+        previous ??= new Dictionary<string, JsonElement>();
+        persisted ??= new Dictionary<string, JsonElement>();
         var restored = new Dictionary<string, JsonElement>(current, StringComparer.Ordinal);
         foreach (var key in previous.Keys.Concat(persisted.Keys).Distinct(StringComparer.Ordinal))
         {
