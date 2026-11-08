@@ -2,6 +2,7 @@
 """Check added lines against the shared Honua vocabulary policy."""
 
 import argparse
+import difflib
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -22,7 +23,7 @@ DIFF_OPTIONS = ("--no-ext-diff", "--no-textconv", "--no-color", "--find-renames"
 def git(root, *arguments):
     environment = {key: value for key, value in os.environ.items() if key not in GIT_ENVIRONMENT_OVERRIDES}
     return subprocess.run(
-        ["git", "--literal-pathspecs", "-c", "diff.relative=false", "-C", str(root), *arguments],
+        ["git", "-c", "diff.relative=false", "-C", str(root), *arguments],
         check=True, capture_output=True, env=environment,
     ).stdout
 
@@ -91,18 +92,14 @@ def read_allowlist(path, rules):
     return {(entry["path"], entry["rule"], entry["line"]) for entry in entries}
 
 
-def added_lines(patch):
-    number = None
-    for record in patch.split(b"\n"):
-        if record.startswith(b"diff --git "):
-            number = None
-        elif record.startswith(b"@@ "):
-            number = int(re.search(rb"\+(\d+)", record).group(1))
-        elif number is not None and record.startswith(b"+"):
-            yield number, record[1:].removesuffix(b"\r").decode("utf-8")
-            number += 1
-        elif number is not None and record.startswith(b" "):
-            number += 1
+def added_lines(previous, current):
+    previous_lines = previous.split(b"\n")
+    current_lines = current.split(b"\n")
+    changes = difflib.SequenceMatcher(None, previous_lines, current_lines, autojunk=False)
+    for kind, _, _, start, end in changes.get_opcodes():
+        if kind in ("insert", "replace"):
+            for index in range(start, end):
+                yield index + 1, current_lines[index].removesuffix(b"\r").decode("utf-8")
 
 
 def changed_paths(status):
@@ -139,26 +136,31 @@ class VocabularyCheck:
 
     def check_changes(self, base):
         commit = git(self.root, "rev-parse", "--verify", "--end-of-options", f"{base}^{{commit}}").decode().strip()
-        base = git(self.root, "merge-base", commit, "HEAD").decode().strip()
+        merge_base = git(self.root, "merge-base", commit, "HEAD").decode().strip()
         current = git(self.root, "ls-files", "-z")
-        previous = git(self.root, "ls-tree", "-r", "--name-only", "-z", base)
+        previous = git(self.root, "ls-tree", "-r", "--name-only", "-z", merge_base)
         names = sorted(set((current + previous).decode("utf-8").split("\0")) - {""})
-        safe = [name for name in names if self.is_safe_path(name)]
+        safe = {name for name in names if self.is_safe_path(name)}
         if not safe:
             return []
-        status = git(self.root, "diff", *DIFF_OPTIONS, "--name-status", "-z", base, "--", *safe)
+        pathspecs = [f":(top,literal){name}" for name in sorted(safe)]
+        pathspecs.extend(f":(top,exclude,literal){name}" for name in names if name not in safe)
+        status = git(self.root, "diff", *DIFF_OPTIONS, "--name-status", "-z", merge_base, "--", *pathspecs)
         findings = []
         for original, name in changed_paths(status):
-            findings.extend(self.changed_file_findings(base, (original, name)))
+            findings.extend(self.changed_file_findings(merge_base, original, name))
         return findings
 
-    def changed_file_findings(self, base, paths):
-        original, name = paths
+    def changed_file_findings(self, base, original, name):
         path = self.root / name
-        if not self.is_safe_path(name) or not path.is_file() or not text_lines(path):
+        if not self.is_safe_path(name) or not path.is_file():
             return []
-        patch = git(self.root, "diff", *DIFF_OPTIONS, "--text", "--unified=0", base, "--", original, name)
-        return self.file_findings(name, added_lines(patch))
+        current = path.read_bytes()
+        if b"\0" in current:
+            return []
+        entry = git(self.root, "ls-tree", base, "--", f":(top,literal){original}").split()
+        previous = git(self.root, "show", f"{base}:{original}") if entry and entry[1] == b"blob" else b""
+        return self.file_findings(name, added_lines(previous, current))
 
     def audit(self):
         names = git(self.root, "ls-files", "-z").decode("utf-8").split("\0")
@@ -176,11 +178,10 @@ class VocabularyCheck:
     def file_findings(self, name, lines):
         findings = []
         for number, line in lines:
-            findings.extend(self.line_findings(name, (number, line)))
+            findings.extend(self.line_findings(name, number, line))
         return findings
 
-    def line_findings(self, name, source_line):
-        number, line = source_line
+    def line_findings(self, name, number, line):
         return [f"{name}:{number}: {rule['id']}: use {rule['replacement']}"
                 for rule, pattern in self.patterns
                 if pattern.search(line) and (name, rule["id"], line) not in self.exceptions]

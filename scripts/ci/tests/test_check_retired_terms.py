@@ -204,6 +204,72 @@ class RetiredTermsTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.check()
 
+    def test_policy_version_and_contextual_rules_are_validated(self):
+        valid = json.loads(self.policy.read_text())
+        documents = [dict(valid, version=True), dict(valid, version=1.0),
+                     {"version": 1, "rules": valid["rules"]},
+                     dict(valid, reviewRules=["bad"]),
+                     dict(valid, reviewRules=[{"literal": "word", "replacement": "name", "exceptions": ""}])]
+        for document in documents:
+            with self.subTest(document=document):
+                self.policy.write_text(json.dumps(document))
+                with self.assertRaises(ValueError):
+                    self.check()
+
+    def test_exception_paths_must_be_canonical_and_relative(self):
+        for name in ("/abs.md", "../x.md", "./page.md", "a//b.md"):
+            with self.subTest(name=name):
+                self.allowlist.write_text(json.dumps({"version": 1, "entries": [
+                    {"path": name, "rule": "legacy", "line": "retired phrase", "reason": "Protocol name"}
+                ]}))
+                with self.assertRaises(ValueError):
+                    self.check()
+
+    def test_unchanged_non_utf8_bytes_do_not_hide_valid_added_text(self):
+        (self.root / "page.md").write_bytes(b"unchanged\xff\n")
+        self.run_git("add", ".")
+        self.run_git("-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+                     "commit", "-qm", "legacy encoding")
+        (self.root / "page.md").write_bytes(b"unchanged\xff\nnew retired phrase\n")
+        self.assertEqual(self.scan(), ["page.md:2: legacy: use canonical phrase"])
+
+    def test_directory_replacement_never_exposes_protected_blob_content(self):
+        name = "certification/agent-e2e/synthetic.txt"
+        self.write(name, "synthetic-protected-sentinel\n")
+        self.run_git("add", ".")
+        self.run_git("-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+                     "commit", "-qm", "synthetic protected directory")
+        (self.root / name).unlink()
+        (self.root / "certification/agent-e2e").rmdir()
+        (self.root / "certification").rmdir()
+        self.write("certification", "new retired phrase\n")
+        self.run_git("add", "-A")
+        actual_git = checker.git
+
+        def guarded_git(root, *arguments):
+            result = actual_git(root, *arguments)
+            self.assertNotIn(b"synthetic-protected-sentinel", result)
+            return result
+
+        with patch.object(checker, "git", side_effect=guarded_git):
+            self.assertEqual(self.scan(), ["certification:1: legacy: use canonical phrase"])
+
+    def test_rename_into_original_directory_does_not_attribute_sibling_changes(self):
+        self.run_git("mv", "page.md", "temp.md")
+        (self.root / "page.md").mkdir()
+        self.run_git("mv", "temp.md", "page.md/renamed.md")
+        self.write("page.md/other.md", "new retired phrase\n")
+        self.run_git("add", ".")
+        self.assertEqual(self.scan(), ["page.md/other.md:1: legacy: use canonical phrase"])
+
+    def test_missing_final_newline_preserves_added_line_detection(self):
+        self.write("page.md", "unchanged")
+        self.run_git("add", ".")
+        self.run_git("-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+                     "commit", "-qm", "no final newline")
+        self.write("page.md", "unchanged\nnew retired phrase")
+        self.assertEqual(self.scan(), ["page.md:2: legacy: use canonical phrase"])
+
     def test_symlink_ancestors_and_binary_files_are_skipped(self):
         self.write("docs/page.md", "retired phrase\n")
         self.run_git("add", ".")
