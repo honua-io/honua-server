@@ -1,4 +1,3 @@
-import importlib.util
 import json
 import os
 from pathlib import Path
@@ -9,43 +8,11 @@ import unittest
 from unittest.mock import patch
 
 
-CHECKER = Path(__file__).resolve().parents[1] / "check-retired-terms.py"
-spec = importlib.util.spec_from_file_location("retired_terms", CHECKER)
-checker = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(checker)
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from retired_terms_test_support import CHECKER, RetiredTermsTestCase, checker
 
 
-class RetiredTermsTests(unittest.TestCase):
-    def setUp(self):
-        self.unpatched_git = checker.git
-        self.directory = tempfile.TemporaryDirectory()
-        self.addCleanup(self.directory.cleanup)
-        self.root = Path(self.directory.name)
-        self.policy = self.root / "policy.json"
-        self.policy.write_text(json.dumps({"version": 1, "rules": [
-            {"id": "legacy", "literal": "retired phrase", "replacement": "canonical phrase"}
-        ], "reviewRules": []}))
-        self.allowlist = self.root / "allowlist.json"
-        self.run_git("init", "-q")
-        self.write("page.md", "retired phrase already exists\nunchanged\n")
-        self.run_git("add", ".")
-        self.run_git("-c", "user.name=Test", "-c", "user.email=test@example.invalid",
-                     "commit", "-qm", "baseline")
-
-    def run_git(self, *arguments):
-        return checker.git(self.root, *arguments)
-
-    def write(self, name, text):
-        path = self.root / name
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text)
-
-    def check(self):
-        return checker.VocabularyCheck(self.root, self.policy, self.allowlist)
-
-    def scan(self):
-        return self.check().check_changes("HEAD")
-
+class RetiredTermsTests(RetiredTermsTestCase):
     def test_existing_debt_is_ignored_but_new_case_insensitive_line_is_reported(self):
         self.write("page.md", "retired phrase already exists\nunchanged\nNew RETIRED PHRASE\n")
         self.assertEqual(self.scan(), ["page.md:3: legacy: use canonical phrase"])
