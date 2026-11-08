@@ -3,7 +3,6 @@
 
 using System.Data;
 using System.Data.Common;
-using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
@@ -25,73 +24,8 @@ namespace Honua.Db.Postgres.Tests.Features.Metadata;
 /// failure and prove ordinary reads/writes never self-apply the migration (#3899).
 /// </summary>
 [Collection("Database")]
-public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fixture)
+public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fixture)
 {
-    [IntegrationTest]
-    public async Task SaveAsync_FutureSnapshotValues_PreservesUnknownPropertiesAfterKnownEdit()
-    {
-        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreFreshDbTests));
-        try
-        {
-            await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
-            var provider = new TestConnectionProvider(fixture.DataSource, schema);
-            var store = new PostgresMetadataV2GraphStore(provider, "Test",
-                schemaGuard: FixtureBypassDatabaseSchemaGuard.Instance, schemaName: schema);
-            await store.SaveAsync(new MetadataV2Graph { Environment = "Test" }, expectedEtag: null);
-            await using (var connection = await fixture.DataSource.OpenConnectionAsync())
-            await using (var command = connection.CreateCommand())
-            {
-                command.CommandText = $"""
-                    UPDATE "{schema}".metadata_v2_snapshots
-                    SET document = document || $1::jsonb
-                    WHERE environment = 'Test';
-                    """;
-                command.Parameters.AddWithValue("""
-                    {
-                      "futureRoot": {"values": [1, null, {"enabled": true}]},
-                      "resources": [{
-                        "metadata": {"id": "future-dataset", "name": "future", "futureMetadata": "retained"},
-                        "type": "future-dataset-kind",
-                        "futureDataset": ["retained"],
-                        "status": {"lifecycle": "future-lifecycle", "state": "future-state", "futureStatus": false,
-                          "conditions": [{"type": "future", "status": "True", "futureCondition": {"value": 7}}]}
-                      }]
-                    }
-                    """);
-                await command.ExecuteNonQueryAsync();
-            }
-
-            var loaded = await new PostgresMetadataV2GraphStore(provider, "Test",
-                schemaGuard: FixtureBypassDatabaseSchemaGuard.Instance, schemaName: schema).GetCurrentAsync();
-            var dataset = loaded.Graph.Resources.Should().ContainSingle().Subject;
-            dataset.Type.ToString().Should().Be("Unknown");
-            dataset.Status.Lifecycle.ToString().Should().Be("Unknown");
-            var saved = await store.SaveAsync(loaded.Graph with
-            {
-                Resources = [dataset with { Metadata = dataset.Metadata with { Title = "Edited title" } }]
-            }, loaded.Etag);
-            var reloaded = await new PostgresMetadataV2GraphStore(provider, "Test",
-                schemaGuard: FixtureBypassDatabaseSchemaGuard.Instance, schemaName: schema).GetCurrentAsync();
-            reloaded.Revision.Should().BeGreaterThan(loaded.Revision);
-            reloaded.Etag.Should().Be(saved.Etag);
-            reloaded.Graph.Resources[0].Metadata.Title.Should().Be("Edited title");
-            using var document = JsonDocument.Parse(JsonSerializer.Serialize(reloaded.Graph,
-                MetadataV2JsonContext.Default.MetadataV2Graph));
-            var root = document.RootElement;
-            root.GetProperty("futureRoot").GetProperty("values")[2].GetProperty("enabled").GetBoolean().Should().BeTrue();
-            var persistedDataset = root.GetProperty("resources")[0];
-            persistedDataset.GetProperty("futureDataset")[0].GetString().Should().Be("retained");
-            persistedDataset.GetProperty("metadata").GetProperty("futureMetadata").GetString().Should().Be("retained");
-            var status = persistedDataset.GetProperty("status");
-            status.GetProperty("futureStatus").GetBoolean().Should().BeFalse();
-            status.GetProperty("conditions")[0].GetProperty("futureCondition").GetProperty("value").GetInt32().Should().Be(7);
-        }
-        finally
-        {
-            await fixture.DropSchemaAsync(schema);
-        }
-    }
-
     [IntegrationTest]
     public async Task GetCurrentAsync_WhenMigration031Missing_FailsWithTypedSchemaFloorError()
     {
