@@ -105,12 +105,12 @@ class ContainerVersionTests(unittest.TestCase):
                                             capture_output=True,
                                             env={'VERSION': version, 'HONUA_GIT_SHA': 'a' * 40})
                     arguments = result.stdout.splitlines()
-                    if version:
-                        self.assertEqual(arguments, ['-p:Version=' + version,
-                            '-p:InformationalVersion=' + version + '+aaaaaaa',
-                            '-p:IncludeSourceRevisionInInformationalVersion=false'])
-                    else:
-                        self.assertEqual(arguments, [''])
+                    profile_arguments = (['-p:HonuaStoreProfile=postgis']
+                        if name in ('docker/Dockerfile.lambda', 'docker/Dockerfile.functions.aot') else [])
+                    version_arguments = (['-p:Version=' + version,
+                        '-p:InformationalVersion=' + version + '+aaaaaaa',
+                        '-p:IncludeSourceRevisionInInformationalVersion=false'] if version else [])
+                    self.assertEqual(arguments, profile_arguments + version_arguments or [''])
 
 
 if __name__ == '__main__':
