@@ -26,7 +26,7 @@ Use this table to find familiar concepts in the [Honua vocabulary](README.md). T
 | Catalog or discovery listing | [Catalog](catalog.md) | A listing helps people find permitted objects. Listing an object does not grant access to it. |
 | User and role | [User](identity.md) and [Role](permissions.md) | Re-evaluate effective permissions and dependencies. Source sharing settings are not proof of Honua access. |
 
-A feature dataset in a geodatabase is not automatically a Honua Folder: a Folder groups Services, not source tables. Map each feature class separately and review shared constraints or relationships. An organization or group is not a tenancy boundary or grouping object in Honua; choose Folder for Service organization Role for permissions, and [Sharing](sharing.md) for a Map or App audience.
+A feature dataset in a geodatabase is not automatically a Honua Folder: a Folder groups Services, not source tables. Map each feature class separately and review shared constraints or relationships. An organization or group is not a tenancy boundary or grouping object in Honua; choose Folder for Service organization, Role for permissions, and [Sharing](sharing.md) for a Map or App audience.
 
 For example, a roads feature class becomes a Dataset of kind Feature type. Publishing it creates a Layer in a Service. Adding that Layer to a Map creates a drawing-layer reference; it does not copy the Dataset. Releasing a saved Map Version activates the Map's route independently of publishing the Layer.
 
