@@ -64,9 +64,15 @@ public sealed class DuplicateMethodRatchetTests
             return;
         }
 
-        var added = current.Except(prior, StringComparer.Ordinal).OrderBy(line => line, StringComparer.Ordinal).ToArray();
+        var added = current.Select(CanonicalPair)
+            .Except(prior.Select(CanonicalPair), StringComparer.Ordinal)
+            .OrderBy(line => line, StringComparer.Ordinal)
+            .ToArray();
         string.Join('\n', added).Should().BeEmpty();
     }
+
+    internal static string CanonicalPair(string pair)
+        => string.Join('|', pair.Split('|').Order(StringComparer.Ordinal));
 
     private static string BaselinePath()
         => SourceTextRatchet.AbsolutePath(ArchitectureTestHelpers.ResolveRepositoryRoot(), RelativeBaseline);

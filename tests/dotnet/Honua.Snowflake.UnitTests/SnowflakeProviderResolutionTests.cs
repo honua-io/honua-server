@@ -9,12 +9,12 @@ using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
-using Honua.Snowflake.Features.FeatureStore;
-using Honua.Snowflake.Features.FeatureStore.Services;
+using Honua.Db.Snowflake.Features.FeatureStore;
+using Honua.Db.Snowflake.Features.FeatureStore.Services;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Snowflake.Tests;
+namespace Honua.Db.Snowflake.Tests;
 
 /// <summary>
 /// Verifies that the Snowflake provider plugs into the shared Metadata v2 provider seam:

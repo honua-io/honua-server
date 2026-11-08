@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\src\Honua.Snowflake\Honua.Snowflake.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Db\Snowflake\Honua.Snowflake.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Core\Core\Honua.Core.csproj" />
     <ProjectReference Include="../Honua.TestKit.Abstractions/Honua.TestKit.Abstractions.csproj" />
   </ItemGroup>

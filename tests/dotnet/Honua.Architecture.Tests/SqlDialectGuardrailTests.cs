@@ -33,7 +33,7 @@ public sealed class SqlDialectGuardrailTests
         ("Honua.DuckDB", typeof(Honua.Db.DuckDB.Queries.Filters.DuckDbSqlDialect).Assembly),
         ("Honua.Oracle", typeof(Honua.Db.Oracle.Queries.Filters.OracleSqlDialect).Assembly),
         ("Honua.Redshift", typeof(Honua.Db.Redshift.Queries.Filters.RedshiftSqlDialect).Assembly),
-        ("Honua.Snowflake", typeof(Honua.Snowflake.Queries.Filters.SnowflakeSqlDialect).Assembly),
+        ("Honua.Snowflake", typeof(Honua.Db.Snowflake.Queries.Filters.SnowflakeSqlDialect).Assembly),
     };
 
     [ArchitectureTest]
