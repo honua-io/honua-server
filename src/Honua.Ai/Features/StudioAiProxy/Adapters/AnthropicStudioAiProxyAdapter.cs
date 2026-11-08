@@ -290,7 +290,7 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
                     break;
 
                 case "content_block_delta" when frame.Delta?.Type is "thinking_delta" or "signature_delta"
-                    && state.SawMessageStart && frame.Index is { } thinkingIndex && state.OpenContentBlocks.GetValueOrDefault(thinkingIndex) == "thinking":
+                    && frame.Index is { } thinkingIndex && state.OpenContentBlocks.GetValueOrDefault(thinkingIndex) == "thinking":
                     break;
 
                 case "content_block_delta" when frame.Index is { } blockIndex && state.OpenContentBlocks.GetValueOrDefault(blockIndex) == "thinking":
