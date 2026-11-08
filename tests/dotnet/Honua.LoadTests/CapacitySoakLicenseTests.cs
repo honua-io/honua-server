@@ -66,7 +66,7 @@ public sealed class CapacitySoakLicenseTests
         var payloadBytes = Base64Url.DecodeFromChars(envelope.RootElement.GetProperty("payload").GetString()!);
         var signature = Base64Url.DecodeFromChars(envelope.RootElement.GetProperty("signature").GetString()!);
         Assert.StartsWith("base64url:", trustedKey, StringComparison.Ordinal);
-        var publicKey = new Ed25519PublicKeyParameters(Base64Url.DecodeFromChars(trustedKey["base64url:".Length..]), 0);
+        var publicKey = new Ed25519PublicKeyParameters(Base64Url.DecodeFromChars(trustedKey.AsSpan("base64url:".Length)), 0);
         var verifier = new Ed25519Signer();
         verifier.Init(false, publicKey);
         verifier.BlockUpdate(payloadBytes, 0, payloadBytes.Length);
