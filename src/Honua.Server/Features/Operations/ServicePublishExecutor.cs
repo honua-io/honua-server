@@ -287,7 +287,7 @@ internal sealed class ServicePublishExecutor
             .ConfigureAwait(false);
         var resultDetails = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            ["layerId"] = summary.LayerId.ToString(CultureInfo.InvariantCulture),
+            ["storageLayerId"] = summary.LayerId.ToString(CultureInfo.InvariantCulture),
             ["layerName"] = summary.LayerName,
             ["geometryType"] = summary.GeometryType,
         };
@@ -319,16 +319,16 @@ internal sealed class ServicePublishExecutor
             ResourceIds = promotionReadback != PromotionReadback.Available
                 ? new Dictionary<string, string>(StringComparer.Ordinal)
                 {
-                    ["layerId"] = summary.LayerId.ToString(CultureInfo.InvariantCulture),
+                    ["storageLayerId"] = summary.LayerId.ToString(CultureInfo.InvariantCulture),
                 }
                 : new Dictionary<string, string>(StringComparer.Ordinal)
                 {
-                    ["layerId"] = summary.LayerId.ToString(CultureInfo.InvariantCulture),
+                    ["storageLayerId"] = summary.LayerId.ToString(CultureInfo.InvariantCulture),
                     ["serviceName"] = summary.ServiceName,
                 },
             Result = new OperationResultSummary
             {
-                Summary = $"Published layer '{summary.LayerName}' (id {summary.LayerId}) to service '{summary.ServiceName}'.",
+                Summary = $"Published storage layer '{summary.LayerName}' (handle {summary.LayerId}) to service '{summary.ServiceName}'.",
                 Details = resultDetails
             }
         };
@@ -361,12 +361,14 @@ internal sealed class ServicePublishExecutor
         // the current persisted stores on every poll before carrying it forward.
         resourceIds.Remove("serviceName");
         resourceIds.Remove("serviceUri");
+        resourceIds.Remove("layerId");
+        resourceIds.Remove("serviceLayerIndex");
         var metadataRevision = progress.MetadataRevision ?? handle.MetadataRevision;
         if (progress.LayerId is int layerId)
         {
             var layerText = layerId.ToString(CultureInfo.InvariantCulture);
-            details["layerId"] = layerText;
-            resourceIds["layerId"] = layerText;
+            details["storageLayerId"] = layerText;
+            resourceIds["storageLayerId"] = layerText;
         }
 
         if (progress.Status == Honua.Core.Features.Infrastructure.Domain.OperationStatus.Completed &&
@@ -376,12 +378,16 @@ internal sealed class ServicePublishExecutor
             var promotionReadback = PromotionReadback.Available;
             var serviceName = string.Empty;
             string? serviceUri = null;
+            int? serviceLayerIndex = null;
             try
             {
                 var graph = await _metadataGraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-                resolved = TryResolvePublishedService(graph, committedLayerId, progress.TenantId, out serviceName);
-                if (resolved)
+                var identity = ResolvePublishedLayerIdentity(graph, committedLayerId, progress.TenantId);
+                resolved = identity.HasValue;
+                if (identity is { } publishedLayer)
                 {
+                    serviceName = publishedLayer.ServiceName;
+                    serviceLayerIndex = publishedLayer.ServiceLayerIndex;
                     promotionReadback = await ResolvePromotionReadbackAsync(serviceName, cancellationToken)
                         .ConfigureAwait(false);
                     if (promotionReadback == PromotionReadback.Available)
@@ -407,6 +413,12 @@ internal sealed class ServicePublishExecutor
                 }
                 details["readbackStatus"] = "Resolved";
                 resourceIds["serviceName"] = serviceName;
+                if (serviceLayerIndex is int index)
+                {
+                    var indexText = index.ToString(CultureInfo.InvariantCulture);
+                    details["serviceLayerIndex"] = indexText;
+                    resourceIds["serviceLayerIndex"] = indexText;
+                }
             }
             else
             {
@@ -433,7 +445,7 @@ internal sealed class ServicePublishExecutor
             {
                 Summary = progress.Status == Honua.Core.Features.Infrastructure.Domain.OperationStatus.Completed &&
                     progress.LayerId is int published
-                    ? $"Published layer id {published.ToString(CultureInfo.InvariantCulture)}."
+                    ? $"Published storage layer {published.ToString(CultureInfo.InvariantCulture)}."
                     : $"Layer publish {progress.Status}.",
                 Details = details,
             },
@@ -490,16 +502,16 @@ internal sealed class ServicePublishExecutor
         }
     }
 
-    private static bool TryResolvePublishedService(
+    private readonly record struct PublishedLayerIdentity(string ServiceName, int? ServiceLayerIndex);
+
+    private static PublishedLayerIdentity? ResolvePublishedLayerIdentity(
         MetadataV2GraphSnapshot? snapshot,
         int storageLayerId,
-        string? tenantId,
-        out string serviceName)
+        string? tenantId)
     {
-        serviceName = string.Empty;
         if (snapshot is null)
         {
-            return false;
+            return null;
         }
 
         // Durable completion records the storage-layer identity. A public layer
@@ -520,15 +532,17 @@ internal sealed class ServicePublishExecutor
                 publication, snapshot.ResolveResource(publication),
                 snapshot.Index.ServicesById[publication.ServiceId], tenantId))
             .ToArray();
-        var services = publications
+        var matchingPublications = publications
             .Where(publication => snapshot.ResolveStorageBinding(publication)!.StorageLayerId == storageLayerId)
+            .ToArray();
+        var services = matchingPublications
             .Select(publication => snapshot.Index.ServicesById[publication.ServiceId])
             .DistinctBy(service => service.Metadata.Id, StringComparer.Ordinal)
             .Take(2)
             .ToArray();
         if (services.Length != 1 || string.IsNullOrWhiteSpace(services[0].Metadata.Name))
         {
-            return false;
+            return null;
         }
 
         // A resource URI uses the public name, so a different storage layer in
@@ -541,13 +555,14 @@ internal sealed class ServicePublishExecutor
             publications.Where(publication => publication.ServiceId == selected.Metadata.Id)
                 .GroupBy(publication => publication.LayerIndex).Any(group => group.Count() > 1))
         {
-            return false;
+            return null;
         }
 
         // Publishing into a stopped service can complete successfully. Returning
         // its identity does not reactivate it; the resource reports its lifecycle.
-        serviceName = services[0].Metadata.Name;
-        return true;
+        var indices = matchingPublications.Select(publication => publication.LayerIndex!.Value)
+            .Distinct().Take(2).ToArray();
+        return new PublishedLayerIdentity(selected.Metadata.Name, indices.Length == 1 ? indices[0] : null);
     }
 
     private static OperationStatus Echo(OperationHandle handle)

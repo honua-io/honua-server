@@ -341,7 +341,7 @@ public sealed class LayerPublishJobTests
         });
 
         Assert.Equal(OperationHandleStatus.Completed, status.Status);
-        Assert.Equal("7", status.ResourceIds["layerId"]);
+        Assert.Equal("7", status.ResourceIds["storageLayerId"]);
         Assert.Equal("12", status.Result!.Details["rowsMaterialized"]);
     }
 

@@ -7,6 +7,10 @@ namespace Honua.Core.Features.Validation.Abstractions;
 
 public interface IResourceValidator
 {
+    Task<ResourceValidationResult<MetadataV2Resource>> ValidateStorageLayerV2Async(
+        int storageLayerId,
+        CancellationToken cancellationToken = default);
+
     Task<ResourceValidationResult<MetadataV2Resource>> ValidateLayerV2Async(
         int layerId,
         CancellationToken cancellationToken = default);

@@ -134,7 +134,7 @@ internal static class AdminLayerFieldConfigurationEndpoints
         IResourceValidator resourceValidator,
         CancellationToken cancellationToken)
     {
-        var layerResult = await resourceValidator.ValidateLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
+        var layerResult = await resourceValidator.ValidateStorageLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
         if (!layerResult.IsValid || layerResult.Resource == null)
         {
             var statusCode = layerResult.ErrorCode == ResourceValidationError.InvalidIdentifier

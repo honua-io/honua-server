@@ -45,7 +45,7 @@ internal static class AdminStyleSuggestionEndpoints
         AdminStyleSuggestionLog.StyleSuggestionRequested(logger, layerId);
 
         // Validate layer exists in the canonical Metadata v2 graph.
-        var resourceResult = await resourceValidator.ValidateLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
+        var resourceResult = await resourceValidator.ValidateStorageLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
         if (!resourceResult.IsValid || resourceResult.Resource == null)
         {
             var statusCode = resourceResult.ErrorCode == Core.Features.Validation.Abstractions.ResourceValidationError.InvalidIdentifier

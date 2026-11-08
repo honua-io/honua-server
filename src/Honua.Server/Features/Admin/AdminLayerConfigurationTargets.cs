@@ -6,12 +6,10 @@ using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Server.Features.Admin;
 
-// A layer index is service-local, so a write addresses one feature or table resource; a raster sidecar that shares the index is not a second target, and an unset identifier is not numeric.
 internal static class AdminLayerConfigurationTargets
 {
     private const int MetadataMutationMaxAttempts = 5;
 
-    // The result is a conflict when more than one resource matches the layer id.
     internal readonly record struct AdminLayerConfigurationTarget(
         MetadataV2Resource? Resource,
         string? ConflictDetail)
@@ -23,7 +21,7 @@ internal static class AdminLayerConfigurationTargets
         public static AdminLayerConfigurationTarget Ambiguous(string detail) => new(null, detail);
     }
 
-    internal static AdminLayerConfigurationTarget Resolve(MetadataV2GraphSnapshot snapshot, int layerId)
+    internal static AdminLayerConfigurationTarget Resolve(MetadataV2GraphSnapshot snapshot, int storageLayerId)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
 
@@ -31,13 +29,8 @@ internal static class AdminLayerConfigurationTargets
         var serviceNames = new List<string>();
         var seenServices = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var publication in snapshot.Graph.Publications)
+        foreach (var publication in snapshot.PublicationsForStorageLayer(storageLayerId))
         {
-            if (publication.LayerIndex != layerId || !snapshot.IsRoutable(publication))
-            {
-                continue;
-            }
-
             var candidate = snapshot.ResolveResource(publication);
             if (candidate?.Type is not (MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table))
             {
@@ -65,7 +58,7 @@ internal static class AdminLayerConfigurationTargets
             ? "multiple services"
             : string.Join(", ", serviceNames.Select(static name => $"'{name}'"));
         return AdminLayerConfigurationTarget.Ambiguous(
-            $"Layer {layerId} is published by more than one resource ({listed}). Update one service's layer at a time.");
+            $"Storage layer {storageLayerId} is published by more than one resource ({listed}). Correct its storage bindings before updating the configuration.");
     }
 
     internal static async Task<AdminLayerConfigurationTarget> WriteAsync(
