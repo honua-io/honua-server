@@ -465,7 +465,7 @@ internal sealed partial class CoordinatedReleaseReconciler(
                 CompletedAt = failedAt,
                 CurrentPhase = "Coordinated release reconciliation failed and requires manual intervention.",
                 ErrorMessage = $"Coordinated release reconciliation failed due to {ex.GetType().Name}.",
-                CoordinatedRelease = operation.CoordinatedRelease with { CurrentStep = CoordinatedReleaseStep.Failed }
+                CoordinatedRelease = operation.CoordinatedRelease! with { CurrentStep = CoordinatedReleaseStep.Failed }
             };
 
             await workflowStore.SetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false);

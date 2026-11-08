@@ -671,18 +671,18 @@ internal sealed partial class DeployWorkflowService
 
         try
         {
-            var submission = await backend.StartAsync(preliminary, cancellationToken).ConfigureAwait(false);
+            var backendSubmission = await backend.StartAsync(preliminary, cancellationToken).ConfigureAwait(false);
             var updated = preliminary with
             {
-                Status = submission.Status,
+                Status = backendSubmission.Status,
                 UpdatedAt = DateTimeOffset.UtcNow,
-                ProviderOperationId = submission.ProviderOperationId,
-                CurrentPhase = submission.Message ?? "Submitted to deploy backend",
+                ProviderOperationId = backendSubmission.ProviderOperationId,
+                CurrentPhase = backendSubmission.Message ?? "Submitted to deploy backend",
                 ErrorMessage = null,
                 Deploy = operation.Deploy with
                 {
-                    CurrentRevision = submission.ObservedRevision ?? operation.Deploy.CurrentRevision,
-                    TrafficExposedAt = StampTrafficExposure(operation.Deploy.TrafficExposedAt, submission.Status)
+                    CurrentRevision = backendSubmission.ObservedRevision ?? operation.Deploy.CurrentRevision,
+                    TrafficExposedAt = StampTrafficExposure(operation.Deploy.TrafficExposedAt, backendSubmission.Status)
                 }
             };
 

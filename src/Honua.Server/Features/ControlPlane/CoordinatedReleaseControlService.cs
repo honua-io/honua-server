@@ -121,7 +121,7 @@ internal sealed partial class CoordinatedReleaseControlService(
         var authority = approvalAuthority ?? throw new HumanApprovalRequiredException();
         var actor = requestedBy ?? throw new HumanApprovalRequiredException();
         var evidence = await authority.VerifyGateAsync(operation, gate,
-            new OperationProposalApprovalContext { ApprovedBy = actor, TenantId = operation.Audit.TenantId },
+            new OperationProposalApprovalContext { ApprovedBy = actor, TenantId = operation.Audit.TenantId ?? string.Empty },
             cancellationToken).ConfigureAwait(false);
         var updatedContext = gate switch
         {
