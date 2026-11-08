@@ -30,5 +30,27 @@ public readonly record struct PreservedEnumValue<TEnum> where TEnum : struct, En
         return new PreservedEnumValue<TEnum>(UnknownValue, document.RootElement.GetRawText());
     }
 
+    public bool Equals(PreservedEnumValue<TEnum> other)
+    {
+        if (!EqualityComparer<TEnum>.Default.Equals(Value, other.Value))
+        {
+            return false;
+        }
+        if (RawToken == other.RawToken)
+        {
+            return true;
+        }
+        if (RawToken is null || other.RawToken is null)
+        {
+            return false;
+        }
+
+        using var left = JsonDocument.Parse(RawToken);
+        using var right = JsonDocument.Parse(other.RawToken);
+        return JsonElement.DeepEquals(left.RootElement, right.RootElement);
+    }
+
+    public override int GetHashCode() => EqualityComparer<TEnum>.Default.GetHashCode(Value);
+
     public static implicit operator PreservedEnumValue<TEnum>(TEnum value) => new(value);
 }

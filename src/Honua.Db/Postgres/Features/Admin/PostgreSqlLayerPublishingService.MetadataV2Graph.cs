@@ -3387,7 +3387,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
             // fire on the shared edit path (FeatureServer applyEdits). Calculation rules
             // whose target column was not published are dropped (honua-server#1271).
             AttributeRules = ResolveAttributeRulesForPublish(request.AttributeRules, fields),
-            Status = LayerReadyStatus(request.Enabled, now)
+            Status = ReadyStatus(
+                request.Enabled ? MetadataV2LifecycleStatus.Active : MetadataV2LifecycleStatus.Retired, now)
         };
     }
 
@@ -3584,7 +3585,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
                     MetadataV2StorageBindingCapability.Aggregate
                 ],
             Options = options,
-            Status = LayerReadyStatus(request.Enabled, now)
+            Status = ReadyStatus(
+                request.Enabled ? MetadataV2LifecycleStatus.Active : MetadataV2LifecycleStatus.Retired, now)
         };
     }
 
@@ -3624,7 +3626,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
             IsPrimary = isPrimary,
             SupportedFormats = _defaultFormats,
             Capabilities = capabilities ?? _defaultCapabilities,
-            Status = LayerReadyStatus(enabled, now)
+            Status = ReadyStatus(
+                enabled ? MetadataV2LifecycleStatus.Active : MetadataV2LifecycleStatus.Retired, now)
         };
     }
 
@@ -3726,11 +3729,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
         };
 
     private static MetadataV2Status ActiveReadyStatus(DateTimeOffset now)
-        => LayerReadyStatus(enabled: true, now);
+        => ReadyStatus(MetadataV2LifecycleStatus.Active, now);
 
-    private static MetadataV2Status LayerReadyStatus(bool enabled, DateTimeOffset now)
-        => WithReadyLifecycle(new MetadataV2Status(),
-            enabled ? MetadataV2LifecycleStatus.Active : MetadataV2LifecycleStatus.Retired, now);
+    private static MetadataV2Status ReadyStatus(MetadataV2LifecycleStatus lifecycle, DateTimeOffset now)
+        => WithReadyLifecycle(new MetadataV2Status(), lifecycle, now);
 
     private static MetadataV2Status WithReadyLifecycle(
         MetadataV2Status status, MetadataV2LifecycleStatus lifecycle, DateTimeOffset now)
