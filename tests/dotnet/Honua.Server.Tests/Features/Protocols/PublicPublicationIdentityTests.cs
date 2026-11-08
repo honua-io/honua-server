@@ -96,6 +96,20 @@ public sealed class PublicPublicationIdentityTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Protocol(TestProtocols.OgcApiRecords)]
+    [Operation(Operations.GetById)]
+    [Endpoint("GET /ogc/records/collections/{collectionId}/items/{recordId}")]
+    public async Task RecordsService_StorageRebound_ListsStablePublicationIds()
+    {
+        var before = await ServiceRecordLayerIdsAsync();
+        RebindStorage();
+        var after = await ServiceRecordLayerIdsAsync();
+
+        before.Should().Equal(PublicationId);
+        after.Should().Equal(PublicationId);
+    }
+
+    [IntegrationTest]
     [Protocol(TestProtocols.OgcApiStyles)]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /api/styles/{publicationId}.json")]
@@ -159,6 +173,17 @@ public sealed class PublicPublicationIdentityTests : IAsyncLifetime
         return json.RootElement.GetProperty("features").EnumerateArray()
             .Select(feature => feature.GetProperty("id").GetString()!)
             .Where(id => id.StartsWith("layer:", StringComparison.Ordinal)).ToArray();
+    }
+
+    private async Task<string[]> ServiceRecordLayerIdsAsync()
+    {
+        using var response = await _fixture.Client.GetAsync(
+            $"/ogc/records/collections/honua-catalog/items/service:{ServiceName}");
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        using var json = JsonDocument.Parse(body);
+        return json.RootElement.GetProperty("properties").GetProperty("layerIds").EnumerateArray()
+            .Select(id => id.ToString()).ToArray();
     }
 
     private void ConfigurePublications()
