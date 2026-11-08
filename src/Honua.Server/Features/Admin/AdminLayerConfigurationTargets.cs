@@ -10,58 +10,16 @@ internal static class AdminLayerConfigurationTargets
 {
     private const int MetadataMutationMaxAttempts = 5;
 
-    internal readonly record struct AdminLayerConfigurationTarget(
-        MetadataV2Resource? Resource,
-        string? ConflictDetail)
-    {
-        public bool IsAmbiguous => ConflictDetail is not null;
-
-        public static AdminLayerConfigurationTarget Unique(MetadataV2Resource resource) => new(resource, null);
-
-        public static AdminLayerConfigurationTarget Ambiguous(string detail) => new(null, detail);
-    }
-
-    internal static AdminLayerConfigurationTarget Resolve(MetadataV2GraphSnapshot snapshot, int storageLayerId)
+    internal static MetadataV2StorageResourceResolution Resolve(MetadataV2GraphSnapshot snapshot, int storageLayerId)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
-
-        var resources = new Dictionary<string, MetadataV2Resource>(StringComparer.Ordinal);
-        var serviceNames = new List<string>();
-        var seenServices = new HashSet<string>(StringComparer.Ordinal);
-
-        foreach (var publication in snapshot.PublicationsForStorageLayer(storageLayerId))
-        {
-            var candidate = snapshot.ResolveResource(publication);
-            if (candidate?.Type is not (MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table))
-            {
-                continue;
-            }
-
-            resources.TryAdd(candidate.Metadata.Id, candidate);
-            if (seenServices.Add(publication.ServiceId))
-            {
-                serviceNames.Add(ServiceName(snapshot, publication));
-            }
-        }
-
-        if (resources.Count == 1)
-        {
-            return AdminLayerConfigurationTarget.Unique(resources.Values.First());
-        }
-
-        if (resources.Count == 0)
-        {
-            return default;
-        }
-
-        var listed = serviceNames.Count == 0
-            ? "multiple services"
-            : string.Join(", ", serviceNames.Select(static name => $"'{name}'"));
-        return AdminLayerConfigurationTarget.Ambiguous(
-            $"Storage layer {storageLayerId} is published by more than one resource ({listed}). Correct its storage bindings before updating the configuration.");
+        var target = snapshot.ResolveStorageResource(storageLayerId);
+        return target.IsAmbiguous || target.Resource?.Type is MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table
+            ? target
+            : default;
     }
 
-    internal static async Task<AdminLayerConfigurationTarget> WriteAsync(
+    internal static async Task<MetadataV2StorageResourceResolution> WriteAsync(
         IMetadataV2GraphStore graphStore,
         int storageLayerId,
         Func<MetadataV2Resource, MetadataV2Resource> mutate,
@@ -113,17 +71,6 @@ internal static class AdminLayerConfigurationTargets
                 // Concurrent etag bump — re-read and re-apply.
             }
         }
-    }
-
-    private static string ServiceName(MetadataV2GraphSnapshot snapshot, MetadataV2Publication publication)
-    {
-        if (snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service)
-            && !string.IsNullOrWhiteSpace(service.Metadata.Name))
-        {
-            return service.Metadata.Name;
-        }
-
-        return publication.ServiceId;
     }
 
     private static bool IsEtagMismatch(Exception exception) =>

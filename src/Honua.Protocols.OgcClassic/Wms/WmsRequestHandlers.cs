@@ -155,12 +155,6 @@ internal static partial class WmsRequestHandlers
             var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
-            // Resolve all WMS layers up-front: walk publications, dedupe by resource
-            // (prefer IsPrimary), drop those without a usable storage layer id, and
-            // keep only resources that carry geometry (WMS is a raster protocol).
-            // Sorted by storage layer id so capabilities ordering is stable — matches
-            // the resolution order WCS/WMTS V2 ports use and the FeatureServer V2
-            // cluster established earlier in the cutover.
             var wmsLayers = ResolveWmsLayers(snapshot, svcDef, context);
 
             var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
@@ -294,9 +288,12 @@ internal static partial class WmsRequestHandlers
             layers.Add(new WmsLayer(routableResource, publication, storageLayerId.Value, identifier, snapshot));
         }
 
-        return layers.GroupBy(static layer => layer.Resource.Metadata.Id, StringComparer.Ordinal)
+        return layers.GroupBy(static layer => (layer.Identifier, layer.Resource.Metadata.Id))
             .Select(group => group.OrderByDescending(static layer => layer.Publication.IsPrimary)
                 .ThenBy(static layer => layer.Publication.Metadata.Id, StringComparer.Ordinal).First())
+            .GroupBy(static layer => layer.Identifier, StringComparer.Ordinal)
+            .Where(static group => group.Count() == 1)
+            .Select(static group => group.Single())
             .OrderBy(static layer => layer.Identifier, StringComparer.Ordinal).ToArray();
     }
 
@@ -431,9 +428,7 @@ internal static partial class WmsRequestHandlers
             return true;
         }
 
-        var byId = accessibleLayers.GroupBy(static layer => layer.Identifier, StringComparer.Ordinal)
-            .Where(static group => group.Count() == 1)
-            .ToDictionary(static group => group.Key, static group => group.Single(), StringComparer.Ordinal);
+        var byId = accessibleLayers.ToDictionary(static layer => layer.Identifier, StringComparer.Ordinal);
 
         var resolved = new List<WmsLayer>(requestedTokens.Length);
         foreach (var token in requestedTokens)

@@ -15,7 +15,8 @@ internal sealed record DiscoveryMetadataTarget(
 {
     public static DiscoveryMetadataTarget? ForLayer(MetadataV2GraphSnapshot snapshot, int storageLayerId)
     {
-        if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(storageLayerId, out var resource))
+        var resource = snapshot.ResolveStorageResource(storageLayerId).Resource;
+        if (resource is null)
             return null;
         var resourceIds = new HashSet<string>(StringComparer.Ordinal) { resource.Metadata.Id };
         return new(resource.Metadata, resourceIds, new HashSet<string>(), Impact(snapshot,

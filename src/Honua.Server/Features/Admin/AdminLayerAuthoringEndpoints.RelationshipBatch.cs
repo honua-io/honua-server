@@ -115,19 +115,9 @@ internal static partial class AdminLayerAuthoringEndpoints
     private static (MetadataV2Resource? Resource, string? Error) ResolveRelationshipResource(
         int storageLayerId, MetadataV2GraphSnapshot snapshot)
     {
-        // These admin DTOs carry global storage-layer ids, not service-local
-        // LayerIndex values. A resource may have several protocol publications.
-        var resourceIds = snapshot.PublicationsForStorageLayer(storageLayerId)
-            .Where(publication => snapshot.ResolveResource(publication)?.Type
-                is MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table)
-            .Select(publication => publication.ResourceId).Distinct(StringComparer.Ordinal).Take(2).ToArray();
-        if (resourceIds.Length != 1)
-        {
-            return (null, $"Layer {storageLayerId} must resolve to exactly one routable storage-backed resource.");
-        }
-
-        return snapshot.Index.ResourcesById.TryGetValue(resourceIds[0], out var resource)
-            ? (resource, null)
-            : (null, $"Layer {storageLayerId} was not found.");
+        var target = snapshot.ResolveStorageResource(storageLayerId);
+        return target.Resource?.Type is MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table
+            ? (target.Resource, null)
+            : (null, $"Layer {storageLayerId} must resolve to exactly one routable storage-backed resource.");
     }
 }

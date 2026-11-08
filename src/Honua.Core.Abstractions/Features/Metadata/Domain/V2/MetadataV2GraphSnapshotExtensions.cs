@@ -182,15 +182,31 @@ public static class MetadataV2GraphSnapshotExtensions
             && snapshot.ResolveStorageLayerId(publication) == storageLayerId);
     }
 
-    public static MetadataV2Resource? ResolveStorageResource(
+    public static MetadataV2StorageResourceResolution ResolveStorageResource(
         this MetadataV2GraphSnapshot snapshot,
         int storageLayerId,
         Func<MetadataV2Publication, bool>? includePublication = null)
-        => snapshot.PublicationsForStorageLayer(storageLayerId)
-            .Where(publication => includePublication?.Invoke(publication) ?? true)
-            .Select(publication => snapshot.ResolveResource(publication)!)
-            .OrderBy(static candidate => candidate.Type is MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table ? 0 : 1)
-            .FirstOrDefault();
+    {
+        var publications = snapshot.PublicationsForStorageLayer(storageLayerId)
+            .Where(publication => includePublication?.Invoke(publication) ?? true).ToArray();
+        var resources = publications.Select(publication => snapshot.ResolveResource(publication)!)
+            .DistinctBy(static resource => resource.Metadata.Id).ToArray();
+        var featureResources = resources.Where(static resource =>
+            resource.Type is MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table).ToArray();
+        var candidates = featureResources.Length > 0 ? featureResources : resources;
+        if (candidates.Length < 2)
+        {
+            return new(candidates.FirstOrDefault(), null);
+        }
+        var resourceIds = candidates.Select(static resource => resource.Metadata.Id).ToHashSet(StringComparer.Ordinal);
+        var serviceNames = publications.Where(publication => resourceIds.Contains(publication.ResourceId))
+            .Select(publication => snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service)
+                && !string.IsNullOrWhiteSpace(service.Metadata.Name) ? service.Metadata.Name : publication.ServiceId)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(static name => $"'{name}'");
+        return new(null,
+            $"Storage layer {storageLayerId} is published by more than one resource ({string.Join(", ", serviceNames)}). Correct its storage bindings before updating the configuration.");
+    }
 
     public static MetadataV2Connection? ResolveConnection(
         this MetadataV2GraphSnapshot snapshot, MetadataV2StorageBinding binding)
@@ -278,4 +294,11 @@ public static class MetadataV2GraphSnapshotExtensions
             }
         }
     }
+}
+
+public readonly record struct MetadataV2StorageResourceResolution(
+    MetadataV2Resource? Resource,
+    string? ConflictDetail)
+{
+    public bool IsAmbiguous => ConflictDetail is not null;
 }

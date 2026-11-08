@@ -204,7 +204,7 @@ internal static partial class LayerValidationHelpers
             return CreateProblemJsonError(context, AccessPolicyHelpers.AuthRequiredMessage, StatusCodes.Status401Unauthorized);
         }
 
-        return AccessPolicyHelpers.CreateAccessDeniedResult(context, AccessDecision.RequiresAuth());
+        return ChallengeTenantHiddenPublication(context, hidden);
     }
 
     public static Task<MetadataV2ValidationResult> ValidateLayerWithAccessV2Async(
@@ -528,28 +528,35 @@ internal static partial class LayerValidationHelpers
         AccessScope scope = AccessScope.Read,
         int? storageLayerId = null,
         CancellationToken cancellationToken = default)
+        => await ResolveStorageCollectionsWithAccessV2Async(snapshot,
+            new StorageCollectionAccess(new(context, AccessPolicyHelpers.DefaultOperationForScope(scope), cancellationToken))
+            {
+                RequiredProtocol = requiredProtocol,
+                StorageLayerId = storageLayerId,
+            }).ConfigureAwait(false);
+
+    private static async Task<IReadOnlyDictionary<int, MetadataV2ValidationResult>> ResolveStorageCollectionsWithAccessV2Async(
+        MetadataV2GraphSnapshot snapshot,
+        StorageCollectionAccess request)
     {
         var collections = new Dictionary<int, MetadataV2ValidationResult>();
         foreach (var publication in snapshot.Graph.Publications)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            request.Access.CancellationToken.ThrowIfCancellationRequested();
             var id = snapshot.ResolveStorageLayerId(publication);
-            if (!id.HasValue || (storageLayerId.HasValue && id.Value != storageLayerId.Value))
+            if (!id.HasValue || (request.StorageLayerId.HasValue && id.Value != request.StorageLayerId.Value)
+                || (request.ResourceId is not null && publication.ResourceId != request.ResourceId))
             {
                 continue;
             }
-
-            var service = ResolveVisibleProtocolService(context, snapshot, publication, requiredProtocol);
+            var service = ResolveVisibleProtocolService(request.Access.Context, snapshot, publication, request.RequiredProtocol);
             if (service is null)
             {
                 continue;
             }
-
             var resource = snapshot.ResolveResource(publication)!;
-            var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
-                context, resource, service, scope, cancellationToken).ConfigureAwait(false);
-            var candidate = new MetadataV2ValidationResult(
-                accessError is null, publication, resource, service, accessError, snapshot);
+            var candidate = await AuthorizeResolvedResourceAsync(request.Access,
+                new(true, publication, resource, service, null, snapshot)).ConfigureAwait(false);
             if (!collections.TryGetValue(id.Value, out var existing) ||
                 (candidate.IsValid && !existing.IsValid) ||
                 (candidate.IsValid == existing.IsValid && publication.IsPrimary && !existing.Publication!.IsPrimary))
@@ -557,7 +564,6 @@ internal static partial class LayerValidationHelpers
                 collections[id.Value] = candidate;
             }
         }
-
         return collections;
     }
 

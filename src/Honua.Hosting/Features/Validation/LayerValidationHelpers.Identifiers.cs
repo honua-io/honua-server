@@ -19,28 +19,20 @@ internal static partial class LayerValidationHelpers
         var snapshot = await GetV2SnapshotAsync(context, context.RequestAborted).ConfigureAwait(false);
         if (!snapshot.Index.PublicationsById.TryGetValue(publicationId, out var publication) || !snapshot.IsRoutable(publication))
         {
-            return new MetadataV2ValidationResult(false, null, null, null,
+            return new(false, null, null, null,
                 StandardErrorHelpers.CreateNotFound(context, $"Publication '{publicationId}' not found."));
         }
-
         var resource = snapshot.ResolveResource(publication)!;
         var service = ResolveVisibleProtocolService(context, snapshot, publication, null);
         if (service is null)
         {
-            var error = context.User.Identity?.IsAuthenticated != true
-                ? AccessPolicyHelpers.CreateAccessDeniedResult(context, AccessDecision.RequiresAuth())
-                : StandardErrorHelpers.CreateNotFound(context, $"Publication '{publicationId}' not found.");
-            return new MetadataV2ValidationResult(false, null, null, null, error);
+            return new(false, null, null, null,
+                ChallengeTenantHiddenPublication(context, publication)
+                    ?? StandardErrorHelpers.CreateNotFound(context, $"Publication '{publicationId}' not found."));
         }
-
-        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
-            context, resource, operation, service, context.RequestAborted).ConfigureAwait(false);
-        if (accessError is null)
-        {
-            ValidatedMetadataSnapshot.Remember(context, resource, snapshot);
-        }
-
-        return new MetadataV2ValidationResult(accessError is null, publication, resource, service, accessError, snapshot);
+        return await AuthorizeResolvedResourceAsync(
+            new(context, operation, context.RequestAborted),
+            new(true, publication, resource, service, null, snapshot)).ConfigureAwait(false);
     }
 
     public static async Task<MetadataV2ValidationResult> ValidateStorageLayerWithAccessV2Async(
@@ -49,30 +41,59 @@ internal static partial class LayerValidationHelpers
         AuthorizationOperation operation)
     {
         var snapshot = await GetV2SnapshotAsync(context, context.RequestAborted).ConfigureAwait(false);
-        var resource = snapshot.ResolveStorageResource(storageLayerId,
+        var target = snapshot.ResolveStorageResource(storageLayerId,
             publication => ResolveVisibleProtocolService(context, snapshot, publication, null) is not null);
-        if (resource is null)
+        if (target.IsAmbiguous)
         {
-            var error = context.User.Identity?.IsAuthenticated != true && snapshot.PublicationsForStorageLayer(storageLayerId).Any()
-                ? AccessPolicyHelpers.CreateAccessDeniedResult(context, AccessDecision.RequiresAuth())
-                : StandardErrorHelpers.CreateNotFound(context, $"Storage layer {storageLayerId} not found.");
-            return new MetadataV2ValidationResult(false, null, null, null, error);
+            return new(false, null, null, null,
+                StandardErrorHelpers.CreateConflict(context, target.ConflictDetail!));
         }
-
-        var publication = snapshot.PublicationsForStorageLayer(storageLayerId)
-            .Where(candidate => candidate.ResourceId == resource.Metadata.Id &&
-                ResolveVisibleProtocolService(context, snapshot, candidate, null) is not null)
-            .OrderByDescending(static candidate => candidate.IsPrimary)
-            .First();
-        var service = snapshot.Index.ServicesById[publication.ServiceId];
-        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
-            context, resource, operation, service, context.RequestAborted).ConfigureAwait(false);
-        if (accessError is null)
+        if (target.Resource is not null)
         {
-            ValidatedMetadataSnapshot.Remember(context, resource, snapshot);
+            var collections = await ResolveStorageCollectionsWithAccessV2Async(snapshot,
+                new StorageCollectionAccess(new(context, operation, context.RequestAborted))
+                {
+                    StorageLayerId = storageLayerId,
+                    ResourceId = target.Resource.Metadata.Id,
+                }).ConfigureAwait(false);
+            if (collections.TryGetValue(storageLayerId, out var candidate))
+            {
+                return candidate;
+            }
         }
-
-        return new MetadataV2ValidationResult(accessError is null, publication, resource, service, accessError, snapshot);
+        return new(false, null, null, null,
+            ChallengeTenantHiddenPublication(context, snapshot.PublicationsForStorageLayer(storageLayerId).FirstOrDefault())
+                ?? StandardErrorHelpers.CreateNotFound(context, $"Storage layer {storageLayerId} not found."));
     }
 
+    private static IResult? ChallengeTenantHiddenPublication(HttpContext context, MetadataV2Publication? publication)
+        => context.User.Identity?.IsAuthenticated != true && publication is not null
+            ? AccessPolicyHelpers.CreateAccessDeniedResult(context, AccessDecision.RequiresAuth())
+            : null;
+
+    private static async Task<MetadataV2ValidationResult> AuthorizeResolvedResourceAsync(
+        ResourceAccessContext access,
+        MetadataV2ValidationResult candidate)
+    {
+        var resource = candidate.Resource ?? throw new InvalidOperationException("A resolved resource is required.");
+        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+            access.Context, resource, access.Operation, candidate.Service, access.CancellationToken).ConfigureAwait(false);
+        if (accessError is null)
+        {
+            ValidatedMetadataSnapshot.Remember(access.Context, resource, candidate.Snapshot!);
+        }
+        return candidate with { IsValid = accessError is null, ErrorResult = accessError };
+    }
+
+    private readonly record struct ResourceAccessContext(
+        HttpContext Context,
+        AuthorizationOperation Operation,
+        CancellationToken CancellationToken);
+
+    private sealed record StorageCollectionAccess(ResourceAccessContext Access)
+    {
+        public string? RequiredProtocol { get; init; }
+        public string? ResourceId { get; init; }
+        public int? StorageLayerId { get; init; }
+    }
 }

@@ -79,11 +79,16 @@ public static class ResourceValidationResult
 
     public static ResourceValidationResult<T> InvalidIdentifier<T>(string message) =>
         new(false, default, ResourceValidationError.InvalidIdentifier, message);
+
+    public static ResourceValidationResult<T> AmbiguousIdentifier<T>(string message) =>
+        new(false, default, ResourceValidationError.AmbiguousIdentifier, message);
 }
 
 public enum ResourceValidationError
 {
     NotFound,
 
-    InvalidIdentifier
+    InvalidIdentifier,
+
+    AmbiguousIdentifier
 }

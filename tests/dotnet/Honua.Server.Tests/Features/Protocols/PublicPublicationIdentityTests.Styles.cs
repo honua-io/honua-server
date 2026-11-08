@@ -61,7 +61,9 @@ public sealed partial class PublicPublicationIdentityTests
         using var client = authenticated ? _fixture.CreateAdminClient() : _fixture.CreateClient();
         using var response = await client.GetAsync($"/api/styles/{Uri.EscapeDataString(PublicationId)}.json");
 
-        response.StatusCode.Should().Be(authenticated ? HttpStatusCode.NotFound : HttpStatusCode.Unauthorized);
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(authenticated ? HttpStatusCode.NotFound : HttpStatusCode.Unauthorized,
+            $"body: {body}; challenge: {response.Headers.WwwAuthenticate.Any()}; path: {response.RequestMessage?.RequestUri?.AbsolutePath}");
         await _styles.DidNotReceive().GetStyleAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
     }
 
@@ -78,9 +80,10 @@ public sealed partial class PublicPublicationIdentityTests
         _styles.GetStyleAsync(Arg.Is<MetadataV2Resource>(candidate => candidate.Metadata.Id == secondResourceId),
             Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(new LayerStyleSnapshot(secondStyle, null));
 
+        using var client = _fixture.CreateClient();
         foreach (var publicationId in new[] { PublicationId, SecondPublicationId, PublicationId })
         {
-            using var response = await _fixture.Client.GetAsync($"/api/styles/{Uri.EscapeDataString(publicationId)}.json");
+            using var response = await client.GetAsync($"/api/styles/{Uri.EscapeDataString(publicationId)}.json");
             var body = await response.Content.ReadAsStringAsync();
             response.StatusCode.Should().Be(HttpStatusCode.OK, body);
             using var style = JsonDocument.Parse(body);

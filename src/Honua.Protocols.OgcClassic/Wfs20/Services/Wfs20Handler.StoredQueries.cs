@@ -796,14 +796,7 @@ internal sealed partial class Wfs20Handler
         if (lastDot > 0)
         {
             var typeName = trimmedFeatureId[..lastDot];
-            var localName = typeName.Contains(':', StringComparison.Ordinal)
-                ? typeName[(typeName.LastIndexOf(':') + 1)..]
-                : typeName;
-
-            return descriptors.FirstOrDefault(descriptor =>
-                descriptor.QualifiedName.Equals(typeName, StringComparison.OrdinalIgnoreCase) ||
-                descriptor.LocalName.Equals(typeName, StringComparison.OrdinalIgnoreCase) ||
-                descriptor.LocalName.Equals(localName, StringComparison.OrdinalIgnoreCase));
+            return descriptors.FirstOrDefault(descriptor => MatchesRequestedType(descriptor, typeName));
         }
 
         return descriptors.Count == 1

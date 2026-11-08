@@ -23,8 +23,12 @@ public sealed class ResourceValidator : IResourceValidator
         CancellationToken cancellationToken = default)
     {
         var snapshot = await RequireV2SnapshotAsync(cancellationToken).ConfigureAwait(false);
-        var resource = snapshot.ResolveStorageResource(storageLayerId);
-
+        var target = snapshot.ResolveStorageResource(storageLayerId);
+        if (target.IsAmbiguous)
+        {
+            return ResourceValidationResult.AmbiguousIdentifier<MetadataV2Resource>(target.ConflictDetail!);
+        }
+        var resource = target.Resource;
         return resource is null
             ? ResourceValidationResult.NotFound<MetadataV2Resource>(
                 ErrorMessages.NotFound.FormatLayer(storageLayerId))

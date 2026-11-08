@@ -35,7 +35,8 @@ internal sealed class LayerValidationService(
         }
 
         var snapshot = await metadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(storageLayerId, out var resource))
+        var resource = snapshot.ResolveStorageResource(storageLayerId).Resource;
+        if (resource is null)
         {
             return null;
         }

@@ -8,6 +8,7 @@ using Honua.Core.Features.Styling.Abstractions;
 using Honua.Core.Features.Styling.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Styling;
 using Microsoft.AspNetCore.Mvc;
@@ -48,11 +49,7 @@ internal static class AdminStyleSuggestionEndpoints
         var resourceResult = await resourceValidator.ValidateStorageLayerV2Async(storageLayerId, cancellationToken).ConfigureAwait(false);
         if (!resourceResult.IsValid || resourceResult.Resource == null)
         {
-            var statusCode = resourceResult.ErrorCode == Core.Features.Validation.Abstractions.ResourceValidationError.InvalidIdentifier
-                ? StatusCodes.Status400BadRequest
-                : StatusCodes.Status404NotFound;
-            var message = resourceResult.ErrorMessage ?? $"Layer {storageLayerId} not found.";
-            return ProblemDetailsHelpers.CreateAdminProblem(context, statusCode, message);
+            return ServiceResourceValidationHelpers.CreateAdminValidationProblem(context, resourceResult, $"Layer {storageLayerId} not found.");
         }
 
         var resource = resourceResult.Resource;

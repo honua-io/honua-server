@@ -8,6 +8,7 @@ using Honua.Core.Features.Validation.Abstractions;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 
@@ -316,11 +317,7 @@ internal static partial class AdminLayerAuthoringEndpoints
         var layerResult = await resourceValidator.ValidateStorageLayerV2Async(storageLayerId, cancellationToken).ConfigureAwait(false);
         if (!layerResult.IsValid || layerResult.Resource == null)
         {
-            var statusCode = layerResult.ErrorCode == ResourceValidationError.InvalidIdentifier
-                ? StatusCodes.Status400BadRequest
-                : StatusCodes.Status404NotFound;
-            return (null, ProblemDetailsHelpers.CreateAdminProblem(
-                context, statusCode, layerResult.ErrorMessage ?? $"Layer {storageLayerId} not found."));
+            return (null, ServiceResourceValidationHelpers.CreateAdminValidationProblem(context, layerResult, $"Layer {storageLayerId} not found."));
         }
 
         return (layerResult.Resource, null);

@@ -71,7 +71,7 @@ public sealed class ExportLayerIdentityTests : IAsyncLifetime
         var body = await response.Content.ReadAsStringAsync();
 
         Assert.True(response.StatusCode == HttpStatusCode.Accepted, body);
-        await _jobs.Received(1).StartAsync(Arg.Is<ExportJob>(job => job.LayerId == StorageLayerId), Arg.Any<CancellationToken>());
+        await _jobs.Received(1).StartAsync(Arg.Is<ExportJob>(job => job.StorageLayerId == StorageLayerId && job.ServiceLayerIndex == ServiceLayerIndex), Arg.Any<CancellationToken>());
         await _reader.Received(1).CountAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
         var queuedJob = _jobs.ReceivedCalls().Single(call => call.GetMethodInfo().Name == "StartAsync")
             .GetArguments()[0] as ExportJob;

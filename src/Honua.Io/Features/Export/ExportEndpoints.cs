@@ -212,7 +212,10 @@ internal static class ExportEndpoints
                 httpContext.RequestServices.GetRequiredService<IOptions<RbacOptions>>().Value,
                 httpContext.RequestServices.GetService<ITenantContext>());
             var job = new ExportJob(jobId, serviceName, storageLayerId, layerName, format,
-                query, selectedFields, outputSrid, count, geometryType, submitter);
+                query, selectedFields, outputSrid, count, geometryType, submitter)
+            {
+                ServiceLayerIndex = serviceLayerIndex,
+            };
 
             try
             {
@@ -578,7 +581,7 @@ internal static class ExportEndpoints
 internal sealed record ExportJob(
     string JobId,
     string ServiceName,
-    int LayerId,
+    int StorageLayerId,
     string LayerName,
     string Format,
     FeatureQuery Query,
@@ -586,4 +589,7 @@ internal sealed record ExportJob(
     int OutputSrid,
     long TotalFeatures,
     ExportGeometryType GeometryType,
-    JobSecurityContext? Submitter = null);
+    JobSecurityContext? Submitter = null)
+{
+    public required int ServiceLayerIndex { get; init; }
+}

@@ -9,6 +9,7 @@ using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
+using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 using PermanentFilterLanguages = Honua.Core.Features.Metadata.Domain.V2.MetadataV2PermanentFilterLanguages;
@@ -207,11 +208,7 @@ internal static class AdminLayerFilterConfigurationEndpoints
         var layerResult = await resourceValidator.ValidateStorageLayerV2Async(storageLayerId, cancellationToken).ConfigureAwait(false);
         if (!layerResult.IsValid || layerResult.Resource == null)
         {
-            var statusCode = layerResult.ErrorCode == ResourceValidationError.InvalidIdentifier
-                ? StatusCodes.Status400BadRequest
-                : StatusCodes.Status404NotFound;
-            var message = layerResult.ErrorMessage ?? $"Layer {storageLayerId} not found.";
-            return (null, ProblemDetailsHelpers.CreateAdminProblem(context, statusCode, message));
+            return (null, ServiceResourceValidationHelpers.CreateAdminValidationProblem(context, layerResult, $"Layer {storageLayerId} not found."));
         }
 
         return (layerResult.Resource, null);
