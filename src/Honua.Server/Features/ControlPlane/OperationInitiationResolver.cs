@@ -22,8 +22,7 @@ internal sealed class OperationInitiationResolver(IHttpContextAccessor requests)
         var actor = CanonicalSecurityActor.Resolve(context.User);
         if (actor is not null
             && string.Equals(actor.AuthenticationScheme, OidcAuthenticationExtensions.AdminSessionScheme, StringComparison.OrdinalIgnoreCase)
-            && !context.Request.Headers.ContainsKey("Authorization")
-            && !context.Request.Headers.ContainsKey("X-API-Key"))
+            && !RequestCredentialCatalog.HasExplicitCredential(context.Request))
         {
             var sessions = context.RequestServices.GetService<AdminAuthSessionStore>();
             var session = sessions is null ? null : await sessions.GetInteractiveSessionForApprovalAsync(

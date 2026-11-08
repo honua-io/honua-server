@@ -150,9 +150,7 @@ internal sealed partial class OperationHumanApprovalAuthority(
     public static void RefuseNonHumanTransport(HttpContext context)
     {
         if (context.Request.Path.StartsWithSegments("/mcp", StringComparison.OrdinalIgnoreCase)
-            || context.Request.Headers.ContainsKey("Authorization")
-            || context.Request.Headers.ContainsKey("X-API-Key")
-            || context.Request.Query.ContainsKey("token")
+            || RequestCredentialCatalog.HasExplicitCredential(context.Request)
             || string.IsNullOrEmpty(context.Request.Cookies[AdminAuthSessionStore.AuthSessionCookieName])
             || AdminSessionCrossSiteRequestGuard.IsCrossSiteUnsafeRequest(context.Request))
         {

@@ -54,6 +54,10 @@ public sealed class OperationHumanApprovalAuthorityTests
     [InlineData("key")]
     [InlineData("mcp")]
     [InlineData("query-token")]
+    [InlineData("query-key")]
+    [InlineData("esri")]
+    [InlineData("embed")]
+    [InlineData("token-header")]
     public async Task OpenReviewAsync_NonHumanTransportWithLiveCookie_RefusesCapability(string transport)
     {
         using var host = new OperationHumanApprovalTestHost();
@@ -64,6 +68,10 @@ public sealed class OperationHumanApprovalAuthorityTests
             case "bearer": host.Context.Request.Headers.Authorization = "Bearer noninteractive"; break;
             case "key": host.Context.Request.Headers["X-API-Key"] = "noninteractive"; break;
             case "mcp": host.Context.Request.Path = "/mcp"; break;
+            case "query-key": host.Context.Request.QueryString = new("?key=noninteractive"); break;
+            case "esri": host.Context.Request.Headers["X-Esri-Authorization"] = "noninteractive"; break;
+            case "embed": host.Context.Request.Headers["X-Honua-Embed-Key"] = "noninteractive"; break;
+            case "token-header": host.Context.Request.Headers["X-Honua-Token"] = "noninteractive"; break;
             case "query-token": host.Context.Request.QueryString = new("?token=noninteractive"); break;
         }
 
