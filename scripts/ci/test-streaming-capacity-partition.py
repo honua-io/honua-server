@@ -5,32 +5,21 @@ import importlib.util
 import json
 from pathlib import Path
 
+from shard_capacity_partition import PartitionSource, check_method_partition
+
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("coverage", REPOSITORY_ROOT / "scripts/ci/check-server-test-shard-coverage.py")
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
-KNOWN = MODULE.DEFAULT_CSPROJ
-
 config = json.loads((REPOSITORY_ROOT / ".github/ci-shards.json").read_text())
 original = json.loads((REPOSITORY_ROOT / "scripts/ci/fixtures/streaming-capacity-contract.json").read_text())["originalShard"]
 names = ["Server Features Streaming Transports", original["name"]]
 children = [next(shard for shard in config["shards"] if shard["name"] == name) for name in names]
-parent = MODULE._FilterParser(original["filter"]).parse()
 classes = MODULE.enumerate_test_classes()
-methods = MODULE.selection_pool(classes, original["csproj"] or KNOWN)
-expected = {method for method in methods if MODULE._eval(parent, method)}
-assert expected
 
 def verify(shards):
+    owners = check_method_partition(PartitionSource(MODULE, classes), original, shards)
     parsed = {shard["name"]: MODULE._FilterParser(shard["filter"]).parse() for shard in shards}
-    owners = [{method for method in methods if MODULE._eval(parsed[name], method)} for name in names]
-    assert all(owners)
-    assert set.union(*owners) == expected
-    assert sum(map(len, owners)) == len(expected)
-    for shard in shards:
-        for field in ("paths", "csproj", "test_timeout_minutes", "timeout_minutes", "max_cpu_count",
-                      "upload_operator_eval_report", "upload_odata_evidence"):
-            assert shard[field] == original[field], field
     endpoint = "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests"
     for method, owner in (("Sse_FutureCase", names[0]), ("WebSocket_FutureCase", names[0]),
                           ("FutureCase_Sse_WebSocket", names[1])):
@@ -66,4 +55,3 @@ for mutation in ("missing", "duplicate", "foreign", "budget", "trigger"):
     else:
         raise AssertionError(f"Accepted {mutation} streaming partition.")
 print(f"streaming-capacity-partition=ok methods={list(map(len, selected))} negatives=5")
-
