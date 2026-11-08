@@ -63,7 +63,7 @@ jobs:
         run: dotnet build tests/dotnet/Honua.ProviderSmoke.Tests/Honua.ProviderSmoke.Tests.csproj --no-restore --configuration Release
 
       - name: Create Test Results Directory
-        run: mkdir -p ./tests/TestResults
+        run: mkdir -p ./artifacts/test-results
 
       - name: Run provider-smoke suite (DuckDB in-process, MySql + SQL Server via Testcontainers)
         run: |
@@ -73,12 +73,12 @@ jobs:
             --configuration Release \
             --logger "trx;LogFileName=ProviderSmoke.trx" \
             --logger "console;verbosity=normal" \
-            --results-directory ./tests/TestResults
+            --results-directory ./artifacts/test-results
 
       - name: Surface pass/fail/skip counts in summary
         if: always()
         run: |
-          trx="./tests/TestResults/ProviderSmoke.trx"
+          trx="./artifacts/test-results/ProviderSmoke.trx"
           if [[ -f "$trx" ]]; then
             passed=$(grep -o 'outcome="Passed"' "$trx" | wc -l)
             failed=$(grep -o 'outcome="Failed"' "$trx" | wc -l)
@@ -101,7 +101,7 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: provider-http-smoke-${{ github.run_id }}
-          path: tests/TestResults/
+          path: artifacts/test-results/
           retention-days: 14
 
   oracle-real-db:
@@ -126,7 +126,7 @@ jobs:
         run: dotnet build tests/dotnet/Honua.Db.Oracle.Tests/Honua.Oracle.Tests.csproj --no-restore --configuration Release
 
       - name: Create Test Results Directory
-        run: mkdir -p ./tests/TestResults
+        run: mkdir -p ./artifacts/test-results
 
       - name: Run Oracle real-database lane (gvenzl/oracle-free via Testcontainers)
         run: |
@@ -137,12 +137,12 @@ jobs:
             --filter "Category=Oracle" \
             --logger "trx;LogFileName=OracleRealDb.trx" \
             --logger "console;verbosity=normal" \
-            --results-directory ./tests/TestResults
+            --results-directory ./artifacts/test-results
 
       - name: Surface pass/fail/skip counts in summary
         if: always()
         run: |
-          trx="./tests/TestResults/OracleRealDb.trx"
+          trx="./artifacts/test-results/OracleRealDb.trx"
           if [[ -f "$trx" ]]; then
             passed=$(grep -o 'outcome="Passed"' "$trx" | wc -l)
             failed=$(grep -o 'outcome="Failed"' "$trx" | wc -l)
@@ -163,5 +163,5 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: oracle-real-db-${{ github.run_id }}
-          path: tests/TestResults/
+          path: artifacts/test-results/
           retention-days: 14

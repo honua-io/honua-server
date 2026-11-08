@@ -180,8 +180,9 @@ jobs:
 
       - name: Start server
         run: |
-          dotnet run --project src/Honua.Server -c Release --no-build --no-launch-profile > server.log 2>&1 &
-          echo $! > server.pid
+          mkdir -p artifacts/load-soak
+          dotnet run --project src/Honua.Server -c Release --no-build --no-launch-profile > artifacts/load-soak/server.log 2>&1 &
+          echo $! > artifacts/load-soak/server.pid
 
       - name: Wait for readiness
         run: |
@@ -195,7 +196,7 @@ jobs:
             sleep 2
           done
           echo "Server did not become ready in time."
-          cat server.log
+          cat artifacts/load-soak/server.log
           exit 1
 
       # SEED AFTER THE SERVER HAS MIGRATED (#3812). tests/seed/server.yaml is the
@@ -260,10 +261,10 @@ jobs:
           # afterwards is invisible until it is recompiled; restarting picks up the snapshot the
           # seed wrote. Nothing queries the catalogue between startup and the seed, so there is no
           # negative cache entry to clear.
-          kill "$(cat server.pid)" >/dev/null 2>&1 || true
-          for _ in {1..30}; do kill -0 "$(cat server.pid)" 2>/dev/null || break; sleep 1; done
-          dotnet run --project src/Honua.Server -c Release --no-build --no-launch-profile >> server.log 2>&1 &
-          echo $! > server.pid
+          kill "$(cat artifacts/load-soak/server.pid)" >/dev/null 2>&1 || true
+          for _ in {1..30}; do kill -0 "$(cat artifacts/load-soak/server.pid)" 2>/dev/null || break; sleep 1; done
+          dotnet run --project src/Honua.Server -c Release --no-build --no-launch-profile >> artifacts/load-soak/server.log 2>&1 &
+          echo $! > artifacts/load-soak/server.pid
           for _ in {1..90}; do
             if curl -sf "$BASE_URL/healthz/ready" >/dev/null; then break; fi
             sleep 2
@@ -271,7 +272,7 @@ jobs:
           # A load run against an empty catalogue measures 404s, not the server. Fail here instead.
           count="$(curl -fsS "$BASE_URL/rest/services/test/FeatureServer/0/query?f=json&where=1%3D1&returnCountOnly=true")"
           echo "seeded layer 0: $count"
-          case "$count" in *'"count"'*) ;; *) echo "seeded catalogue is not being served"; cat server.log; exit 1;; esac
+          case "$count" in *'"count"'*) ;; *) echo "seeded catalogue is not being served"; cat artifacts/load-soak/server.log; exit 1;; esac
 
       - name: Run load/soak tests
         env:
@@ -279,8 +280,8 @@ jobs:
         run: |
           PROFILE="${{ github.event.inputs.profile || 'nightly' }}"
           DURATION="${{ github.event.inputs.duration || '' }}"
-          export HONUA_PROCESS_PID=$(cat server.pid)
-          ARGS=(--base-url "$BASE_URL" --profile "$PROFILE" --report-dir load-test-reports)
+          export HONUA_PROCESS_PID=$(cat artifacts/load-soak/server.pid)
+          ARGS=(--base-url "$BASE_URL" --profile "$PROFILE" --report-dir artifacts/load-test-reports)
           if [[ -n "$DURATION" ]]; then
             ARGS+=(--duration "$DURATION")
           fi
@@ -289,8 +290,8 @@ jobs:
       - name: Stop server
         if: always()
         run: |
-          if [[ -f server.pid ]]; then
-            kill "$(cat server.pid)" >/dev/null 2>&1 || true
+          if [[ -f artifacts/load-soak/server.pid ]]; then
+            kill "$(cat artifacts/load-soak/server.pid)" >/dev/null 2>&1 || true
           fi
 
       - name: Upload load test reports
@@ -298,7 +299,7 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: load-soak-reports-${{ github.run_number }}
-          path: load-test-reports/
+          path: artifacts/load-test-reports/
           retention-days: 14
 
       - name: Upload server logs
@@ -306,5 +307,5 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: load-soak-logs-${{ github.run_number }}
-          path: server.log
+          path: artifacts/load-soak/server.log
           retention-days: 14

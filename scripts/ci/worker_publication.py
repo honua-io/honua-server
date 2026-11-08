@@ -246,7 +246,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("prepare", "publish", "finish", "resolve-source"))
     parser.add_argument("--bundle", type=Path, default=Path("artifacts/worker-publication"))
-    parser.add_argument("--results", type=Path, default=Path("tests/TestResults"))
+    parser.add_argument("--results", type=Path, default=Path("artifacts/test-results"))
     parser.add_argument("--scan", type=Path, default=Path("trivy-worker-gdal.sarif"))
     args = parser.parse_args()
     if args.action == "prepare":

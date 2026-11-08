@@ -3,7 +3,7 @@
 Local validation can start the longest selected shard first, using retained timing
 reports from ordinary successful runs. It does not add workers or change the
 canonical selection, effective filters, coverage checks, or resource admission.
-`pre-pr-check.sh` and `local-test-feedback.py` use `tests/TestResults` by default;
+`pre-pr-check.sh` and `local-test-feedback.py` use `artifacts/test-results` by default;
 set `HONUA_LOCAL_CI_TIMINGS` to a directory of retained reports, or pass
 `local-test-feedback.py --timings-dir <directory>`.
 

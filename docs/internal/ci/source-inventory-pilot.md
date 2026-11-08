@@ -143,7 +143,7 @@ build reference projects solely to manufacture pilot parity.
   uses: actions/upload-artifact@v7
   with:
     name: source-inventory-pilot-${{ github.run_attempt }}
-    path: tests/TestResults/source-inventory-pilot/
+    path: artifacts/test-results/source-inventory-pilot/
     if-no-files-found: warn
 ```
 
