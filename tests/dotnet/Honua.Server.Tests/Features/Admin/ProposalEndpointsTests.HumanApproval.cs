@@ -42,6 +42,7 @@ public sealed partial class ProposalEndpointsTests
         Enum.GetValues<OperationClass>().Select(kind => new object[] { kind });
 
     [IntegrationTheory]
+    [Endpoint("GET /api/v1/admin/proposals/{id}")]
     [MemberData(nameof(ProposalKinds))]
     public async Task ApplyApprovedProposalAsync_ActorContextWithoutHumanProof_DoesNotReleaseAuthority(OperationClass kind)
     {
@@ -59,6 +60,10 @@ public sealed partial class ProposalEndpointsTests
         (await _proposalStore.GetAsync(proposal.ProposalId)).Should().BeEquivalentTo(proposal);
         _executor.ExecutionCount.Should().Be(0);
         _notifier.ResolvedCount.Should().Be(0);
+        using var response = await _client.GetAsync($"/api/v1/admin/proposals/{proposal.ProposalId}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var visible = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        visible.RootElement.GetProperty("status").GetString().Should().Be(nameof(OperationProposalStatus.AwaitingApproval));
     }
 
     [IntegrationTheory]

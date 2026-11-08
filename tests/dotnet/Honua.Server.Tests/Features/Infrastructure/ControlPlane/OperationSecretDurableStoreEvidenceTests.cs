@@ -133,7 +133,6 @@ public sealed partial class OperationSecretDurableStoreEvidenceTests(RedisFixtur
             var gateway = new OperationGateway(
                 new ApprovalGuardrailLadder(),
                 proposalStore,
-                [],
                 services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(),
                 new NullProposalNotifier(),
                 NullLogger<OperationGateway>.Instance);

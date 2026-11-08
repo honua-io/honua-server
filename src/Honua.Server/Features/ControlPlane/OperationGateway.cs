@@ -42,7 +42,6 @@ internal sealed partial class OperationGateway : IOperationGateway
     public OperationGateway(
         IGuardrailLadder ladder,
         IOperationProposalStore proposalStore,
-        IEnumerable<IOperationExecutor> executors,
         IServiceScopeFactory scopeFactory,
         IProposalNotifier notifier,
         ILogger<OperationGateway> logger,
@@ -51,7 +50,6 @@ internal sealed partial class OperationGateway : IOperationGateway
         IOperationHumanApprovalVerifier? humanApprovalVerifier = null,
         OperationInitiationResolver? initiationResolver = null)
     {
-        ArgumentNullException.ThrowIfNull(executors);
         _ladder = ladder;
         _proposalStore = proposalStore;
         _scopeFactory = scopeFactory;

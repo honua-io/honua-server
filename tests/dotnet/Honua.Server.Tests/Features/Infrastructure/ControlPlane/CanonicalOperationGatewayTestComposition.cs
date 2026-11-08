@@ -70,7 +70,6 @@ internal static class CanonicalOperationGatewayTestComposition
         var gateway = new OperationGateway(
             ladder,
             proposalStore,
-            actuatorArray,
             provider.GetRequiredService<IServiceScopeFactory>(),
             notifier ?? new NullProposalNotifier(),
             NullLogger<OperationGateway>.Instance,

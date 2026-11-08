@@ -141,7 +141,7 @@ public sealed class OperationProposerApiKeyAuthorityTests
         await using var services = new ServiceCollection().AddScoped<IAuditLog>(_ => audit)
             .BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         var scopes = services.GetRequiredService<IServiceScopeFactory>();
-        var gateway = new OperationGateway(Substitute.For<IGuardrailLadder>(), store, [], scopes,
+        var gateway = new OperationGateway(Substitute.For<IGuardrailLadder>(), store, scopes,
             Substitute.For<IProposalNotifier>(), NullLogger<OperationGateway>.Instance,
             humanApprovalVerifier: new CanonicalOperationGatewayTestComposition.StateMachineHumanApprovalVerifier());
         var act = () => gateway.ApplyApprovedProposalAsync("synthetic", new OperationProposalApprovalContext { ApprovedBy = "distinct-approver", TenantId = string.Empty });

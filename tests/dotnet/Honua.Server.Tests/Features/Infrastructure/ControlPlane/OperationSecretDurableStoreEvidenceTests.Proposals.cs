@@ -53,7 +53,7 @@ public sealed partial class OperationSecretDurableStoreEvidenceTests
         var issued = await credentialStore.CreateAsync("proposer-6662", ["admin:*"], null, "fixture-operator", default);
         services.AddSingleton<IAdminApiKeyStore>(credentialStore);
         var executor = new ContradictoryProposalExecutor(BuildAccessExecutor(operationId, client, secrets, credentialStore));
-        services.AddSingleton<IOperationGateway>(sp => new OperationGateway(ladder, proposals, [],
+        services.AddSingleton<IOperationGateway>(sp => new OperationGateway(ladder, proposals,
             sp.GetRequiredService<IServiceScopeFactory>(), new NullProposalNotifier(), NullLogger<OperationGateway>.Instance,
             proposerKeyAuthority: new OperationProposerApiKeyAuthority(TimeProvider.System, credentialStore),
             humanApprovalVerifier: new CanonicalOperationGatewayTestComposition.StateMachineHumanApprovalVerifier()));

@@ -261,7 +261,6 @@ public sealed class ControlPlane5625Tests
         var gateway = new OperationGateway(
             Substitute.For<IGuardrailLadder>(),
             store,
-            Array.Empty<IOperationExecutor>(),
             Substitute.For<IServiceScopeFactory>(),
             notifier,
             NullLogger<OperationGateway>.Instance);

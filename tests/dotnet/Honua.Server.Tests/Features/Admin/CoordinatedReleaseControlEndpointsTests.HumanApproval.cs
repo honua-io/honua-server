@@ -91,6 +91,7 @@ public sealed partial class CoordinatedReleaseControlEndpointsTests
     }
 
     [IntegrationTheory]
+    [Endpoint("POST /api/v1/admin/metadata/coordinated-releases/operations")]
     [InlineData(CoordinatedReleaseStep.ContainerRollout)]
     [InlineData(CoordinatedReleaseStep.MetadataAndSchema)]
     public async Task ApproveGateAsync_ActorStringWithoutHumanSession_RefusesBeforeGateWrite(
@@ -106,6 +107,7 @@ public sealed partial class CoordinatedReleaseControlEndpointsTests
     }
 
     [IntegrationTheory]
+    [Endpoint("POST /api/v1/admin/metadata/coordinated-releases/operations")]
     [InlineData(CoordinatedReleaseStep.ContainerRollout)]
     [InlineData(CoordinatedReleaseStep.MetadataAndSchema)]
     public async Task ReconcileAsync_UnclaimedLegacyGateBoolean_RequiresFreshHumanReview(
@@ -132,6 +134,7 @@ public sealed partial class CoordinatedReleaseControlEndpointsTests
     }
 
     [IntegrationTheory]
+    [Endpoint("POST /api/v1/admin/metadata/coordinated-releases/operations")]
     [InlineData(CoordinatedReleaseStep.ContainerRollout)]
     [InlineData(CoordinatedReleaseStep.MetadataAndSchema)]
     public async Task ReconcileAsync_ClaimedLegacyChild_DrainsWithoutNewApprovalEvidence(
