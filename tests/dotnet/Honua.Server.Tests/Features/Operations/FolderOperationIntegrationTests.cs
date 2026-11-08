@@ -70,6 +70,7 @@ public sealed partial class FolderOperationIntegrationTests(RedisFixture redis) 
 
     public async Task DisposeAsync()
     {
+        await DeletePublishConnectionAsync();
         _proposer.Dispose();
         _approver.Dispose();
         await _fixture.DisposeAsync();

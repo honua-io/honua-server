@@ -23,7 +23,9 @@ public sealed partial class McpPublishedCatalogReadbackTests
                 Folders = [new() { Metadata = new() { Id = "folder", Name = "Public" } }],
                 Services = graph.Services.Select(service => service with
                 {
-                    FolderId = "folder", PublicName = "Parcels", Metadata = service.Metadata with { Title = "Field parcels" }
+                    FolderId = "folder",
+                    PublicName = "Parcels",
+                    Metadata = service.Metadata with { Title = "Field parcels" }
                 }).ToArray()
             };
         }
@@ -42,6 +44,12 @@ public sealed partial class McpPublishedCatalogReadbackTests
                 projected.GetProperty("folderId").GetString().Should().Be("folder");
                 projected.GetProperty("folderName").GetString().Should().Be("Public");
                 projected.GetProperty("title").GetString().Should().Be("Field parcels");
+            }
+            else
+            {
+                projected.TryGetProperty("folderId", out _).Should().BeFalse();
+                projected.TryGetProperty("folderName", out _).Should().BeFalse();
+                projected.TryGetProperty("title", out _).Should().BeFalse();
             }
         }
     }

@@ -3,6 +3,10 @@
 
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Security.Domain;
+using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
 using Honua.Server.Tests.Admin;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -11,6 +15,7 @@ namespace Honua.Server.Tests.Features.OperationsToolset;
 
 public sealed partial class FolderOperationIntegrationTests
 {
+    private Guid? _publishingConnectionId;
     [IntegrationTheory]
     [Protocol(TestProtocols.Mcp)]
     [Endpoint("POST /mcp tools/call")]
@@ -22,7 +27,7 @@ public sealed partial class FolderOperationIntegrationTests
         var initial = await SnapshotAsync();
         var folderParameters = new Dictionary<string, string?> { ["name"] = "Publish", ["If-Match"] = initial.Etag };
         if (publicationNamespace is not null) folderParameters["namespace"] = publicationNamespace;
-        await ApplyAsync("folder.create", folderParameters);
+        await ApplyFolderToolAsync("honua_create_folder", folderParameters);
         var folder = (await SnapshotAsync()).Graph.Folders.Single();
         var arguments = await PublishArgumentsAsync(publicationNamespace);
         arguments["folderId"] = folder.Metadata.Id;
@@ -90,8 +95,7 @@ public sealed partial class FolderOperationIntegrationTests
     private async Task<Dictionary<string, string?>> PublishArgumentsAsync(string? publicationNamespace)
     {
         await McpPublicationFixtureSetup.InstallPromotionStoresAsync(_fixture);
-        var connection = await _fixture.GetTestSecureConnectionIdAsync();
-        connection.Should().NotBeNull();
+        var connection = await CreatePublishConnectionAsync();
         var suffix = Guid.NewGuid().ToString("N");
         var table = "mcp_publish_" + suffix;
         await _fixture.Postgres.ExecuteDdlUnderLockAsync($"""
@@ -100,7 +104,7 @@ public sealed partial class FolderOperationIntegrationTests
             """);
         var arguments = new Dictionary<string, string?>
         {
-            ["connectionId"] = connection!.Value.ToString("D"),
+            ["connectionId"] = connection.ToString("D"),
             ["schema"] = _fixture.CurrentSchema,
             ["table"] = table,
             ["layerName"] = "Published points",
@@ -112,6 +116,32 @@ public sealed partial class FolderOperationIntegrationTests
         };
         if (publicationNamespace is not null) arguments["namespace"] = publicationNamespace;
         return arguments;
+    }
+
+    private async Task<Guid> CreatePublishConnectionAsync()
+    {
+        using var scope = _fixture.Services.CreateScope();
+        var registry = scope.ServiceProvider.GetRequiredService<ISecureConnectionRegistry>();
+        var encryption = scope.ServiceProvider.GetRequiredService<IConnectionEncryptionService>();
+        var connection = new NpgsqlConnectionStringBuilder(_fixture.Postgres.ConnectionString)
+        {
+            SearchPath = $"{_fixture.CurrentSchema},public"
+        };
+        var encrypted = await encryption.EncryptConnectionStringAsync(connection.ConnectionString);
+        var dataConnection = DataConnection.CreateWithEncryptedCredentials(
+            "mcp-publish-" + Guid.NewGuid().ToString("N"), connection.Host!, connection.Port,
+            connection.Database!, connection.Username!, encrypted, await encryption.GetCurrentKeyVersionAsync(),
+            nameof(FolderOperationIntegrationTests), sslRequired: false, sslMode: Honua.Core.Features.Security.Domain.SslMode.Disable);
+        var created = await registry.CreateConnectionAsync(dataConnection);
+        _publishingConnectionId = created.ConnectionId;
+        return created.ConnectionId;
+    }
+
+    private async Task DeletePublishConnectionAsync()
+    {
+        if (_publishingConnectionId is not { } connectionId) return;
+        using var scope = _fixture.Services.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<ISecureConnectionRegistry>().DeleteConnectionAsync(connectionId);
     }
 
     private async Task ApprovePublishToolAsync(Dictionary<string, string?> arguments)

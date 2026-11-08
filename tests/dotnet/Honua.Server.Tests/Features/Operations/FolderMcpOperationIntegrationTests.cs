@@ -22,12 +22,15 @@ public sealed partial class FolderOperationIntegrationTests
         var listed = await CallMcpToolAsync("honua_list_folders", []);
         listed.GetProperty("status").GetString().Should().Be("Completed");
         listed.GetProperty("details").GetProperty("etag").GetString().Should().Be(initial.Etag);
-        await ApplyFolderToolAsync("honua_create_folder", new() { ["name"] = "Survey", ["If-Match"] = initial.Etag });
+        await ApplyFolderToolAsync("honua_create_folder", new() { ["name"] = "Survey",
+            ["If-Match"] = initial.Etag });
         var created = await SnapshotAsync();
         var folder = created.Graph.Folders.Should().ContainSingle().Subject;
         await ApplyFolderToolAsync("honua_move_service", new()
         {
-            ["serviceName"] = "test", ["folderId"] = folder.Metadata.Id, ["If-Match"] = created.Etag
+            ["serviceName"] = "test",
+            ["folderId"] = folder.Metadata.Id,
+            ["If-Match"] = created.Etag
         });
         var moved = await SnapshotAsync();
         moved.Graph.Services.Where(service => service.Metadata.Name == "test").Should()
@@ -45,20 +48,25 @@ public sealed partial class FolderOperationIntegrationTests
             .Should().NotContain(service => service.GetProperty("serviceName").GetString() == "test");
         await ApplyFolderToolAsync("honua_update_folder", new()
         {
-            ["id"] = folder.Metadata.Id, ["name"] = "Survey2", ["If-Match"] = moved.Etag
+            ["id"] = folder.Metadata.Id,
+            ["name"] = "Survey2",
+            ["If-Match"] = moved.Etag
         });
         var renamed = await SnapshotAsync();
         renamed.Graph.Folders.Single().PreviousNames.Should().Contain("Survey");
         await ApplyFolderToolAsync("honua_move_service", new()
         {
-            ["serviceName"] = "test", ["folderId"] = null, ["If-Match"] = renamed.Etag
+            ["serviceName"] = "test",
+            ["folderId"] = null,
+            ["If-Match"] = renamed.Etag
         });
         var returned = await SnapshotAsync();
         returned.Graph.Services.Where(service => service.Metadata.Name == "test").Should()
             .OnlyContain(service => service.FolderId == null);
         await ApplyFolderToolAsync("honua_delete_folder", new()
         {
-            ["id"] = folder.Metadata.Id, ["If-Match"] = returned.Etag
+            ["id"] = folder.Metadata.Id,
+            ["If-Match"] = returned.Etag
         });
         (await SnapshotAsync()).Graph.Folders.Single().Deleted.Should().BeTrue();
     }
@@ -69,12 +77,14 @@ public sealed partial class FolderOperationIntegrationTests
     public async Task FolderMcpTools_DeniedService_DoesNotAcceptMoveProposal()
     {
         var initial = await SnapshotAsync();
-        await ApplyAsync("folder.create", new() { ["name"] = "Destination", ["If-Match"] = initial.Etag });
+        await ApplyAsync("folder.create", new() { ["name"] = "Destination",
+            ["If-Match"] = initial.Etag });
         var before = await SnapshotAsync();
         _authorization.DeniedService = "test";
         var result = await CallMcpToolAsync("honua_move_service", new()
         {
-            ["serviceName"] = "test", ["folderId"] = before.Graph.Folders.Single().Metadata.Id,
+            ["serviceName"] = "test",
+            ["folderId"] = before.Graph.Folders.Single().Metadata.Id,
             ["If-Match"] = before.Etag
         });
         result.GetProperty("status").GetString().Should().Be("Denied");
@@ -99,7 +109,10 @@ public sealed partial class FolderOperationIntegrationTests
     {
         using var response = await _proposer.PostAsJsonAsync("/mcp", new
         {
-            jsonrpc = "2.0", id = 1, method = "tools/call", @params = new { name, arguments }
+            jsonrpc = "2.0",
+            id = 1,
+            method = "tools/call",
+            @params = new { name, arguments }
         });
         var payload = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, payload);

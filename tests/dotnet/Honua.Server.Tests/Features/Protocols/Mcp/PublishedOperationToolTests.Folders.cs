@@ -56,6 +56,9 @@ public sealed partial class PublishedOperationToolTests
         bridge.Calls.Should().Be(1);
         bridge.Context!.ApprovedProposalId.Should().BeNull();
         bridge.Context.ApprovedPlanHash.Should().BeNull();
+        bridge.Request!.Parameters.Should().NotContainKey("approvedProposalId");
+        bridge.Request.Parameters.Should().NotContainKey("approvedPlanHash");
+        bridge.Request.Parameters["If-Match"].Should().Be("etag");
         executor.SubmitCount.Should().Be(0);
     }
 }

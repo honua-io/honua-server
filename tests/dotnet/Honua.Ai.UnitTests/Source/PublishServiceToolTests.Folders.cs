@@ -24,9 +24,12 @@ public sealed partial class PublishServiceToolTests
             captured = request;
             return new OperationHandle
             {
-                OperationInstanceId = "publish-folder-test", OperationId = request.OperationId,
-                Status = OperationHandleStatus.Completed, CorrelationId = "publish-folder-test",
-                CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow
+                OperationInstanceId = "publish-folder-test",
+                OperationId = request.OperationId,
+                Status = OperationHandleStatus.Completed,
+                CorrelationId = "publish-folder-test",
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow
             };
         });
         var arguments = McpTestFactory.ParseJson($$"""
