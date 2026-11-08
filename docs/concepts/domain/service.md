@@ -23,7 +23,7 @@ relations:
 ---
 
 # Service
-A Service is a named group of [Layers](layer.md) with one list of enabled protocols, settings, and an access policy. It belongs to one [Folder](folder.md) or to the root of its [Environment](environment.md). Protocols present different URLs and response shapes over the shared published resources.[^contract]
+A Service is a named group of [Layers](layer.md) with one list of enabled protocols, settings, and an access policy. It belongs to one [Folder](folder.md) or to the root of its [Environment](environment.md). Protocols present different URLs and response shapes over the shared Datasets and Layers.[^contract]
 
 “Publish a service” concerns server exposure. “Deploy the service” can instead mean start the Honua process or roll out infrastructure: see [deployment](deployment.md). “Map service” is not the same object as a saved [map](map.md).
 

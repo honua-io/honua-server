@@ -485,4 +485,4 @@ needs a dedicated PR with namespace updates. `Styling/` has since moved to
 
 ## Product vocabulary
 
-Review user-facing names against the [Honua vocabulary and retired-term rules](../../concepts/domain/README.md#vocabulary-review-rules). Keep resource, storage binding, and publication as model terms. Preserve protocol wire contracts; document exact compatibility exceptions and their reasons.
+Review UI labels, model types, database names, API fields, MCP schemas, and SDK names against the [Honua vocabulary and retired-term rules](../../concepts/domain/README.md#vocabulary-review-rules). Dataset, Layer, Map, and App name the same concepts throughout the system. Only storage binding and principal are internal-only vocabulary. Preserve protocol wire contracts; document exact compatibility exceptions and their reasons.

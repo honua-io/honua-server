@@ -17,7 +17,7 @@ relations:
 ---
 
 # Identity and credentials
-Authentication establishes the actor represented by a request. A User is a person with an authenticated identity. A token or [API key](api-key.md) is a credential; [Roles and permissions](permissions.md) determine what that actor may do. Honua presents a single-tenant product surface: select an [Environment](environment.md) to choose the server being managed. Internal authorization still resolves each credential against its isolation scope.[^contract]
+Authentication establishes the actor represented by a request. A User is a person with an authenticated identity. A token or [API key](api-key.md) is a credential; [Roles and permissions](permissions.md) determine what that actor may do. Honua presents a single-tenant product surface: select an [Environment](environment.md) to choose the server being managed. The internal principal is the authenticated identity used for authorization and audit; it can represent a User or automation. Internal authorization resolves each request against its isolation scope.[^contract]
 
 “Give the agent access” requires a scoped credential for the intended actor and environment. Possessing a key does not establish approval authority or access beyond its resolved isolation scope, including access to another Environment. Key issuance and revocation are administrative actions with their own policy.
 

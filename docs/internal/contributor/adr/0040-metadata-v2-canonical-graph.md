@@ -58,13 +58,13 @@ OGC API Features + STAC) without duplication.
 
 ### Service organization and product vocabulary
 
-The [Honua vocabulary](../../../concepts/domain/README.md) defines the user terms for this graph. Dataset maps to a data-bearing resource, Layer to its exposure within a Service, and Connection to a registered database or file. Resource, storage binding, and publication remain model terms for contributor use.
+The [Honua vocabulary](../../../concepts/domain/README.md) defines one vocabulary for users and the system: Dataset owns data identity and semantics; Layer exposes it in a Service; Connection registers a database or file. The types, fields, and table names in this ADR describe the current implementation. Resource is being renamed Dataset, publication is being renamed Layer, and Studio content-item identities become Map or App. Only storage binding and principal remain internal-only concepts. Persisted metadata requires N-1 readers during that transition; this documentation changes no runtime contract.
 
 A Folder is a first-class organization object (`MetadataV2Folder`), separate from catalog discovery. Services reference its stable ID through `folderId`; a null ID selects the root. Folders do not nest. Protocol facets of the same logical Service must agree on Folder, public name, and internal tenant scope. Folder membership does not grant permissions or change storage ownership.
 
 Folder names, previous names, and Service path aliases reserve public paths across renames and moves. Validation rejects colliding names, orphan memberships, and attempts to reuse another Service's reserved path. Nonempty Folders cannot be deleted. This organization is distinct from the rejected generic Catalog hierarchy below.
 
-An Environment is one Honua server managed by a Console. Its profile identifies endpoints and authentication configuration; the graph's `environment` value partitions metadata snapshots. Map and App are Studio content with Draft, Version, and Released states. Studio activation is a separate lifecycle from a Metadata v2 publication.
+An Environment is one Honua server managed by a Console. Its profile identifies endpoints and authentication configuration; the graph's `environment` value partitions metadata snapshots. Map and App are Studio content with Draft, Version, and Released states. Activating a saved Version is distinct from exposing a Dataset as a Layer in a Service.
 
 ### Principle 2: Layered semantic vocabulary
 

@@ -6,7 +6,7 @@ description: "Connections reach Datasets; Layers expose them through Services, o
 
 # Data model
 
-The [Honua vocabulary](domain/README.md) defines the names used across the Console, Studio, SDKs, and guides. An **Environment** is one Honua server managed by a Console. Within it, **Connections** reach **Datasets**, **Layers** expose those Datasets through **Services**, and **Folders** group Services. **Maps** and **Apps** reference served Layers and have their own saved-content lifecycle.
+The [Honua vocabulary](domain/README.md) defines one set of names for the Console, Studio, SDKs, APIs, database schema, and model. An **Environment** is one Honua server managed by a Console. Within it, **Connections** reach **Datasets**, **Layers** expose those Datasets through **Services**, and **Folders** group Services. **Maps** and **Apps** reference served Layers and have their own saved-content lifecycle.
 
 ```text
 Environment
@@ -50,7 +50,7 @@ A [Style](domain/style.md) describes drawing and label rules. Shared Layer style
 
 A [Map](domain/map.md) combines ordered drawing layers, data references, styles, labels, and view state. An [App](domain/app.md) adds controls, widgets, and interactions. A drawing layer is Map-local rendering configuration; several drawing layers can reference one served Layer.
 
-Studio content starts as a mutable [Draft](domain/content-version.md). Saving creates an immutable Version. **Released** means a saved Version is active at its governed route; **Go live** means activate that Version. Previewing or saving does not activate a route or grant access to dependent data. The [current publication and approval contract](domain/publication.md) and [Studio release boundary](../studio/README.md#release-boundary) determine what the deployed system permits and what has been qualified.
+Studio content starts as a mutable [Draft](domain/content-version.md). Saving creates an immutable Version. **Released** means a saved Version is active at its governed route; **Go live** means activate that Version. Previewing or saving does not activate a route or grant access to dependent data. The [current activation and Approval contract](domain/publication.md) and [Studio release boundary](../studio/README.md#release-boundary) determine what the deployed system permits and what has been qualified.
 
 ## Catalog, authority, and background work
 
@@ -58,22 +58,17 @@ The [Catalog](domain/catalog.md) is the browsable listing of Services, Layers, a
 
 A [Proposal](domain/approval.md) records a requested change; Approval is the authorized decision on it. An [Operation](domain/task.md) is a typed control-plane action. A [Job](domain/job.md) records one accepted background execution, such as import, export, or process, with status, progress, and results. Acceptance is not completion. Consult each API contract for its current routes and payloads.
 
-## Contributor view of the same graph
+## The same graph inside the system
 
-The user terms above describe the Metadata v2 graph:
+A Dataset owns logical identity and data semantics. An internal [storage binding](domain/storage-binding.md) connects it to a Connection and locator. A Layer links that Dataset to a Service, optionally selects a binding, and carries its Service-local identifier. Folder membership organizes the Service. Maps and Apps reference Layers and retain their own Drafts, Versions, and Released state.
 
-| User concept | Internal representation |
-| --- | --- |
-| Dataset | A data-bearing resource owns logical identity, schema, spatial metadata, policy, and style references. |
-| Physical access to a Dataset | A storage binding connects that resource to a Connection and locator. |
-| Layer in a Service | A publication connects the resource to a Service, optionally selecting a binding, and carries its Service-local identifier. |
-| Service grouping | A Folder referenced by Service membership; current protocol facets agree on Folder and public name. |
+An internal [principal](domain/identity.md) identifies the User or automation for authorization and audit. Credentials authenticate that principal. Storage binding and principal are the only internal-only concepts in the vocabulary; the model uses Dataset, Layer, Map, and App just as users do.
 
-[Resource](domain/resource.md), [storage binding](domain/storage-binding.md), and [publication](domain/publication.md) are model terms for contributor discussion. Product labels use Dataset, Connection, Layer, and Service. Protocol adapters translate the graph into their specified wire names. Declarative metadata export, diff, approval, and apply operate on this same graph.
+The current implementation still uses legacy resource, publication, and content-item names in some types, stored metadata, and APIs. Those names are being migrated with N-1 readers for persisted metadata; they do not define additional concepts. Use current API references for exact fields and routes until the changes land. Protocol adapters preserve required protocol wire names. Declarative metadata export, diff, Approval, and apply operate on this same graph.
 
 ## Where to go next
 
-- [Honua vocabulary](domain/README.md) — definitions and model mappings
+- [Honua vocabulary](domain/README.md) — canonical definitions
 - [Quickstart](../get-started/quickstart.md) — publish your first Layer
 - [Publish Layers](../guides/publish/publish-layers.md) — registration, publishing, and verification
 - [Protocols](protocols.md) — supported exposure surfaces
