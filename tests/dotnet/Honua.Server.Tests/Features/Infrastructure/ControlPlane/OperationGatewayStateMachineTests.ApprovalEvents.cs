@@ -100,9 +100,9 @@ public sealed partial class OperationGatewayStateMachineTests
         var instances = new VolatileOperationInstanceStore();
         var accepted = new OperationHandle
         {
-            OperationInstanceId = proposal.Audit.OperationInstanceId!,
+            OperationInstanceId = Assert.IsType<string>(proposal.Audit.OperationInstanceId),
             OperationId = "test.legacy-approved-proposal",
-            CorrelationId = proposal.Audit.CorrelationId,
+            CorrelationId = Assert.IsType<string>(proposal.Audit.CorrelationId),
             ProposalId = proposal.ProposalId,
             Status = OperationHandleStatus.RequiresApproval,
             CreatedAt = proposal.CreatedAt,
