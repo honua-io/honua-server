@@ -19,6 +19,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Xunit;
+using IOperationInstanceStore = Honua.Core.Features.Operations.Abstractions.IOperationInstanceStore;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
@@ -98,21 +99,16 @@ public sealed partial class OperationGatewayStateMachineTests
         var proposal = CreateProposal("p-approval-audit-failed", OperationClass.Deploy, OperationProposalStatus.AwaitingApproval);
         var store = new InMemoryProposalStore(proposal);
         var instances = new VolatileOperationInstanceStore();
-        var accepted = new OperationHandle
-        {
-            OperationInstanceId = Assert.IsType<string>(proposal.Audit.OperationInstanceId),
-            OperationId = "test.legacy-approved-proposal",
-            CorrelationId = Assert.IsType<string>(proposal.Audit.CorrelationId),
-            ProposalId = proposal.ProposalId,
-            Status = OperationHandleStatus.RequiresApproval,
-            CreatedAt = proposal.CreatedAt,
-            UpdatedAt = proposal.UpdatedAt,
-        };
+        var accepted = CreateApprovalHandle(proposal);
         Assert.True(await instances.TryCreateAsync(accepted));
         var executor = new PendingApprovalExecutor();
         executor.Completion.SetResult("execution-id");
         var gateway = CanonicalOperationGatewayTestComposition.Build(store, Substitute.For<IGuardrailLadder>(), [executor],
-            configure: services => services.AddSingleton(audit), operationInstanceStore: instances);
+            configure: services =>
+            {
+                services.AddSingleton(audit);
+                services.AddSingleton<IOperationInstanceStore>(instances);
+            });
 
         var result = await gateway.ApplyApprovedProposalAsync(proposal.ProposalId, "human-approver");
 
@@ -129,6 +125,54 @@ public sealed partial class OperationGatewayStateMachineTests
         Assert.Equal(accepted.OperationInstanceId, handle.OperationInstanceId);
         Assert.Equal(proposal.ProposalId, handle.ProposalId);
     }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task ApplyApprovedProposal_ApprovalAuditAndCanonicalPersistenceFail_ProposalRemainsFailedWithoutActuating()
+    {
+        var proposal = CreateProposal("p-approval-canonical-store-failed", OperationClass.Deploy,
+            OperationProposalStatus.AwaitingApproval);
+        var store = new InMemoryProposalStore(proposal);
+        var instances = Substitute.For<IOperationInstanceStore>();
+        instances.GetAsync(proposal.Audit.OperationInstanceId!, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<OperationHandle?>(CreateApprovalHandle(proposal)));
+        instances.SetAsync(Arg.Any<OperationHandle>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new IOException("Canonical store unavailable")));
+        var audit = Substitute.For<IAuditLog>();
+        audit.RecordAsync(Arg.Any<AuditEvent>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<string?>(new IOException("Audit unavailable")));
+        var executor = new PendingApprovalExecutor();
+        executor.Completion.SetResult("execution-id");
+        var gateway = CanonicalOperationGatewayTestComposition.Build(store, Substitute.For<IGuardrailLadder>(), [executor],
+            configure: services =>
+            {
+                services.AddSingleton(audit);
+                services.AddSingleton(instances);
+            });
+
+        var error = await Record.ExceptionAsync(() =>
+            gateway.ApplyApprovedProposalAsync(proposal.ProposalId, "human-approver"));
+
+        var persisted = await store.GetAsync(proposal.ProposalId);
+        Assert.Equal(OperationProposalStatus.Failed, persisted!.Status);
+        Assert.False(executor.Entered.Task.IsCompleted);
+        Assert.Contains("actuation did not begin", persisted.ResolutionReason, StringComparison.Ordinal);
+        Assert.IsType<IOException>(error);
+        await instances.Received(1).SetAsync(Arg.Is<OperationHandle>(handle =>
+            handle.Status == OperationHandleStatus.Failed && handle.ProposalId == proposal.ProposalId),
+            Arg.Any<CancellationToken>());
+    }
+
+    private static OperationHandle CreateApprovalHandle(OperationProposal proposal) => new()
+    {
+        OperationInstanceId = Assert.IsType<string>(proposal.Audit.OperationInstanceId),
+        OperationId = "test.legacy-approved-proposal",
+        CorrelationId = Assert.IsType<string>(proposal.Audit.CorrelationId),
+        ProposalId = proposal.ProposalId,
+        Status = OperationHandleStatus.RequiresApproval,
+        CreatedAt = proposal.CreatedAt,
+        UpdatedAt = proposal.UpdatedAt,
+    };
 
     private static LocalOperateEventFeed ApprovalEventFeed(RecordingAuditLog audit)
     {
