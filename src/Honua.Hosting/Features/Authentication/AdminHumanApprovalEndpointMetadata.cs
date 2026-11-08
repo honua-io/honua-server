@@ -5,6 +5,7 @@ namespace Honua.Infrastructure.Authentication;
 
 internal sealed class AdminHumanApprovalEndpointMetadata
 {
+    public const string CapabilityHeaderName = "X-Honua-Approval-Capability";
     public static readonly AdminHumanApprovalEndpointMetadata Review = new();
     public static readonly AdminHumanApprovalEndpointMetadata Approve = new();
 

@@ -28,7 +28,7 @@ internal sealed partial class OperationHumanApprovalAuthority(
     TimeProvider timeProvider,
     IHttpContextAccessor requestContext) : IOperationHumanApprovalVerifier
 {
-    internal const string CapabilityHeader = "X-Honua-Approval-Capability";
+    internal const string CapabilityHeader = AdminHumanApprovalEndpointMetadata.CapabilityHeaderName;
     private const int MaximumCapabilityLength = 16384;
     private static readonly TimeSpan CapabilityLifetime = TimeSpan.FromMinutes(5);
     private readonly IDataProtector _protector = protection.CreateProtector("Honua.OperationHumanApproval.v1");

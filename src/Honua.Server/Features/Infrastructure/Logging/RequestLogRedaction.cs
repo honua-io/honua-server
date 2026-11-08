@@ -7,6 +7,8 @@ using Serilog;
 using Serilog.Core;
 using Serilog.Events;
 
+using Honua.Infrastructure.Authentication;
+
 namespace Honua.Infrastructure.Logging;
 
 internal static class RequestLogConfiguration
@@ -86,6 +88,8 @@ internal sealed partial class RequestLogRedaction : ILogEventEnricher
     }
 
     private static bool IsCredentialName(string name) =>
+        name.Equals(AdminHumanApprovalEndpointMetadata.CapabilityHeaderName, StringComparison.OrdinalIgnoreCase) ||
+        name.Equals("capability", StringComparison.OrdinalIgnoreCase) ||
         name.Contains("key", StringComparison.OrdinalIgnoreCase) ||
         name.Contains("token", StringComparison.OrdinalIgnoreCase) ||
         name.Contains("secret", StringComparison.OrdinalIgnoreCase) ||
