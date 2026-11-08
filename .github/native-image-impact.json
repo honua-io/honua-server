@@ -67,6 +67,7 @@
     "serving_workflow": ".github/workflows/serving-image-boundary.yml",
     "serving_common_patterns": [
       ".dockerignore",
+      "docker/runtime/**",
       "scripts/docker/restore-dotnet-with-github-packages.sh",
       "scripts/ci/verify-serving-image-boundary.py",
       "scripts/ci/serving-image-reuse.py",
@@ -89,6 +90,7 @@
     },
     "serving_patterns": [
       ".dockerignore",
+      "docker/runtime/**",
       "docker/Dockerfile.aot",
       "docker/Dockerfile.lambda.aot",
       "docker/Dockerfile.functions.aot",
