@@ -1,0 +1,117 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "serving-target",
+      "literal": "serving target",
+      "replacement": "Layer"
+    },
+    {
+      "id": "content-item",
+      "literal": "content item",
+      "replacement": "the actual kind (Map, App, Dashboard, Report, Form, Process, Query, Workflow, GP, ETL or Document)"
+    },
+    {
+      "id": "hosted-layer",
+      "literal": "hosted layer",
+      "replacement": "Layer"
+    },
+    {
+      "id": "hosted-map",
+      "literal": "HostedMap",
+      "replacement": "Map"
+    },
+    {
+      "id": "map-envelope",
+      "literal": "MapPackage",
+      "replacement": "Map"
+    },
+    {
+      "id": "app-envelope",
+      "literal": "AppPackage",
+      "replacement": "App"
+    },
+    {
+      "id": "api-key",
+      "literal": "HonuaApiToken",
+      "replacement": "ApiKey"
+    },
+    {
+      "id": "graph-resource",
+      "literal": "MetadataV2Resource",
+      "replacement": "the actual kind; Dataset only for data"
+    },
+    {
+      "id": "graph-publication",
+      "literal": "MetadataV2Publication",
+      "replacement": "Layer"
+    },
+    {
+      "id": "layer-membership",
+      "literal": "publicationIds",
+      "replacement": "layerIds"
+    },
+    {
+      "id": "layer-type",
+      "literal": "publicationType",
+      "replacement": "layerType"
+    },
+    {
+      "id": "workspace-grouping",
+      "literal": "workspace grouping",
+      "replacement": "Folder"
+    },
+    {
+      "id": "graph-resource-index",
+      "literal": "metadata_v2_resources_idx",
+      "replacement": "typed kind indexes"
+    },
+    {
+      "id": "graph-layer-index",
+      "literal": "metadata_v2_publications_idx",
+      "replacement": "metadata_v2_layers_idx"
+    },
+    {
+      "id": "sharing-index",
+      "literal": "portal_item_shares",
+      "replacement": "kind-aware sharing"
+    },
+    {
+      "id": "dataset-reference",
+      "literal": "resourceId",
+      "replacement": "the actual kind ID (datasetId for data)"
+    }
+  ],
+  "reviewRules": [
+    {
+      "literal": "resource",
+      "replacement": "Dataset for data; otherwise the actual kind",
+      "exceptions": "HTTP/MCP protocol resources and generic operating-system usage"
+    },
+    {
+      "literal": "publication",
+      "replacement": "Layer for a data exposure; Release for a saved Version activation",
+      "exceptions": "Protocol-required wire fields and immutable historical migrations"
+    },
+    {
+      "literal": "slot",
+      "replacement": "Environment when referring to a server connection",
+      "exceptions": "Build scheduling and other non-domain allocation"
+    },
+    {
+      "literal": "projection",
+      "replacement": "Layer when referring to a Dataset exposure",
+      "exceptions": "Coordinate projections and technical query projections"
+    },
+    {
+      "literal": "workspace",
+      "replacement": "Folder when grouping Services or data",
+      "exceptions": "Actual agent collaboration workspaces and filesystem/build workspaces"
+    },
+    {
+      "literal": "package",
+      "replacement": "The actual saved kind (Map, App, Form, Workflow, and so on)",
+      "exceptions": "Dependency distributions, signed release archives and protocol-required wire names"
+    }
+  ]
+}
