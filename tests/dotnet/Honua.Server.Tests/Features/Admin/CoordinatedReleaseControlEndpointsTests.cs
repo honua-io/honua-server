@@ -13,6 +13,10 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.AspNetCore.Hosting;
+using Honua.Infrastructure.Authentication;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Admin;
@@ -40,8 +44,18 @@ public sealed partial class CoordinatedReleaseControlEndpointsTests : IAsyncLife
     public CoordinatedReleaseControlEndpointsTests()
     {
         _fixture = HumanApprovalHttpClient.Configure(new WebAppFixture(), _identity)
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+            })
             .ConfigureServices(services =>
             {
+                services.RemoveAll<AdminAuthSessionStore>();
+                services.AddSingleton(provider => new AdminAuthSessionStore(
+                    provider.GetRequiredService<IMemoryCache>(), provider.GetRequiredService<ILogger<AdminAuthSessionStore>>(),
+                    CreateSessionCache()));
                 services.RemoveAll<IWorkflowOperationStore>();
                 services.AddSingleton<IWorkflowOperationStore>(_workflowStore);
 
@@ -65,7 +79,8 @@ public sealed partial class CoordinatedReleaseControlEndpointsTests : IAsyncLife
     public async Task DisposeAsync()
     {
         _human?.Dispose();
-        await _fixture.DisposeAsync();
+        try { await _fixture.DisposeAsync(); }
+        finally { _identity.Dispose(); _sharedSessions.Dispose(); }
     }
 
     [IntegrationTest]
