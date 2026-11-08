@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using Honua.Infrastructure.Models;
+using Honua.Core.Features.Admin.Domain;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Startup;
@@ -15,6 +16,24 @@ namespace Honua.Server.Tests.Admin;
 
 public sealed class LayerPublishWireContractTests
 {
+    [UnitTest]
+    public void PublishedLayer_SourceGeneratedJson_LabelsStorageHandle()
+    {
+        var layer = new PublishedLayerSummary
+        {
+            LayerId = 741,
+            LayerName = "Roads",
+            Schema = "public",
+            Table = "roads",
+            GeometryType = "Point",
+            ServiceName = "public-roads",
+        };
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(layer, LayerPublishingJsonContext.Default.PublishedLayerSummary));
+
+        Assert.Equal(741, document.RootElement.GetProperty("storageLayerId").GetInt32());
+        Assert.False(document.RootElement.TryGetProperty("layerId", out _));
+    }
+
     [UnitTheory]
     [InlineData("", true)]
     [InlineData(",\"enabled\":true", true)]

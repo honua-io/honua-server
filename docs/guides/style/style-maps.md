@@ -32,11 +32,11 @@ A MapLibre client may paint `text-field` from the style document it fetches. Tha
 
 1. Read the layer's current style. Layers that have never been styled return a deterministic default with `styleVersion: 0`:
 
-   In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `GET /api/v1/admin/metadata/layers/{layerId}/style`.
+   In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `GET /api/v1/admin/metadata/layers/{storageLayerId}/style`.
 
 2. Update the style with a MapLibre document. The body is validated against the MapLibre v8 schema (400 on errors), and each successful write increments `styleVersion`:
 
-   Run `PUT /api/v1/admin/metadata/layers/{layerId}/style` with this body, replacing the host and layer id in the tile URL:
+   Run `PUT /api/v1/admin/metadata/layers/{storageLayerId}/style` with this body, replacing the host and layer id in the tile URL:
 
    ```json
    {
@@ -67,25 +67,25 @@ A MapLibre client may paint `text-field` from the style document it fetches. Tha
 
 3. Ask the server to suggest a style instead of writing one by hand. The suggestion is advisory — apply it with the PUT above:
 
-   Run `POST /api/v1/admin/metadata/layers/{layerId}/suggest-style` with `{"preferredMethod":"Quantile","preferredPalette":"Viridis","classCount":5}`.
+   Run `POST /api/v1/admin/metadata/layers/{storageLayerId}/suggest-style` with `{"preferredMethod":"Quantile","preferredPalette":"Viridis","classCount":5}`.
 
    The response contains a ready-to-apply `mapLibreStyle`, a matching `drawingInfo`, and legend metadata. All request fields are optional (`preferredField`, `preferredMethod` of `EqualInterval`/`Quantile`/`NaturalBreaks`/`UniqueValue`, `preferredPalette` of `Viridis`/`CartoBold`/`RdBu`, `classCount` 2–12). Field-based classification requires the Pro `styling.auto-suggest` entitlement; Community editions get geometry-aware defaults.
 
 4. Serve themed variants from the public style endpoint. Themes are derived on read — the stored style is untouched:
 
-   Open `http://localhost:8080/api/styles/{layerId}.json?theme=dark` in a browser.
+   Open the `style` URL advertised by TileJSON and append `?theme=dark`. Its `publicationId` is the graph Layer ID, independent of the numeric tile selector.
 
    Supported themes are `default`, `dark`, `colorblind-safe`, and `print`; an unknown value returns 400. The layerId-keyed path is a deprecated alias of the OGC API Styles surface — `GET /ogc/styles/{styleId}` serves the same document (and derived SLD via `Accept` negotiation), where `styleId` is the layer's collection id.
 
 5. Point clients at the one style. Nothing else to configure per protocol:
 
-   - MapLibre/MVT clients fetch `GET /api/styles/{layerId}.json` and render tiles from `/tiles/{layerId}/{z}/{x}/{y}.mvt` client-side.
+   - MapLibre/MVT clients fetch `GET /api/styles/{publicationId}.json` and render tiles from `/tiles/{layerId}/{z}/{x}/{y}.mvt` client-side.
    - WMS GetMap, static maps, and MapServer `export` render server-side from the canonical document (themes are not applied on these raster paths).
    - FeatureServer clients receive a `drawingInfo` renderer derived from fill, line, and circle paint when no author-supplied document is stored. That derived document does not include `labelingInfo`. An authored document, including `labelingInfo`, is returned unchanged. See [Feature labeling is not served](#feature-labeling-is-not-served).
 
 ## Verify
 
-Run `GET /api/v1/admin/metadata/layers/{layerId}/style` again in the explorer.
+Run `GET /api/v1/admin/metadata/layers/{storageLayerId}/style` again in the explorer.
 
 Expected (trimmed): the document you wrote plus revision metadata.
 
@@ -100,7 +100,7 @@ Expected (trimmed): the document you wrote plus revision metadata.
 - **200 but `unsupportedSymbolizers[]` is non-empty** — a submitted `drawingInfo` used a renderer outside `simple`/`uniqueValue`/`classBreaks` (code `RENDERER_TYPE_UNSUPPORTED`); the layer falls back to a default style. Submit MapLibre directly for those cases.
 - **`?theme=` returns 400** — only `default`, `dark`, `colorblind-safe`, and `print` are valid theme values.
 - **Suggestion ignores `preferredField`** — field-based classification needs the Pro `styling.auto-suggest` entitlement; Community responses say so in `observations`.
-- **Style changes do not show up in tiles** — caches are tag-invalidated on write, but browsers may cache `/api/styles/{layerId}.json`; hard-reload the client. See [troubleshooting](../deploy/troubleshooting.md).
+- **Style changes do not show up in tiles** — caches are tag-invalidated on write, but browsers may cache `/api/styles/{publicationId}.json`; hard-reload the client. See [troubleshooting](../deploy/troubleshooting.md).
 
 ## Next steps
 

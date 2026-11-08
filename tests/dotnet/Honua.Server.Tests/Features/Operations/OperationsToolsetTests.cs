@@ -917,7 +917,7 @@ public sealed class OperationsToolsetTests
             ConnectionId = "connection-1",
             Parameters = new Dictionary<string, string?>
             {
-                ["layerId"] = "7",
+                ["storageLayerId"] = "7",
                 ["enabled"] = "true"
             }
         };
@@ -980,7 +980,7 @@ public sealed class OperationsToolsetTests
             ConnectionId = "connection-1",
             Parameters = new Dictionary<string, string?>
             {
-                ["layerId"] = "7",
+                ["storageLayerId"] = "7",
                 ["enabled"] = "true"
             }
         }, new OperationPolicyContext
@@ -1702,7 +1702,7 @@ public sealed class OperationsToolsetTests
         handle.Status.Should().Be(OperationHandleStatus.Completed);
         handle.MetadataRevision.Should().Be(expectedRevision);
         handle.Result.Should().NotBeNull();
-        handle.Result!.Details["layerId"].Should().Be("7");
+        handle.Result!.Details["storageLayerId"].Should().Be("7");
         handle.Result.Details["metadataRevision"].Should().Be("42");
         await graphProvider.DidNotReceive().GetCurrentAsync(Arg.Any<CancellationToken>());
 

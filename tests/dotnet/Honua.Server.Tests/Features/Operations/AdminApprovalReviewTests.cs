@@ -23,7 +23,7 @@ public sealed class AdminApprovalReviewTests
             OperationId = definition.OperationId,
             Parameters = new Dictionary<string, string?>
             {
-                ["layerId"] = "123",
+                ["storageLayerId"] = "123",
                 ["permanentFilter"] = """{"expression":"status = 'open'","language":"arcgis-sql"}"""
             }
         }, new OperationPolicyContext { PrincipalId = "requester", TenantId = "tenant-a" },
@@ -41,7 +41,7 @@ public sealed class AdminApprovalReviewTests
     {
         var plan = Map("admin.layer.filter.set", new Dictionary<string, string?>
         {
-            ["layerId"] = "123",
+            ["storageLayerId"] = "123",
             ["permanentFilter"] = """{"expression":"status = 'open'","language":"arcgis-sql","token":"nested-secret"}"""
         });
         var review = Review(plan);
@@ -49,7 +49,7 @@ public sealed class AdminApprovalReviewTests
         review.Should().Contain("connection-a").And.Contain("service-a").And.NotContain("nested-secret");
         var different = Map("admin.layer.filter.set", new Dictionary<string, string?>
         {
-            ["layerId"] = "456",
+            ["storageLayerId"] = "456",
             ["permanentFilter"] = """{"expression":"status = 'closed'","language":"arcgis-sql"}"""
         });
         Review(different).Should().NotBe(review);

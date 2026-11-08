@@ -215,7 +215,7 @@ internal sealed class AdminApiOperationExecutor : IOperationExecutor, IOperation
             }
 
             resources["serviceName"] = published.ServiceName;
-            resources["layerId"] = published.LayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            resources["storageLayerId"] = published.LayerId.ToString(System.Globalization.CultureInfo.InvariantCulture);
         }
         catch (JsonException)
         {

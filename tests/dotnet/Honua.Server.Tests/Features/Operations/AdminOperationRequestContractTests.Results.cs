@@ -37,7 +37,7 @@ public sealed partial class AdminOperationRequestContractTests
         handle.ResourceIds.Should().BeEquivalentTo(new Dictionary<string, string>
         {
             ["serviceName"] = "published-roads",
-            ["layerId"] = layerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["storageLayerId"] = layerId.ToString(System.Globalization.CultureInfo.InvariantCulture),
         });
         handle.Result!.Details["response"].Should().Be(payload);
         (await executor.GetStatusAsync(handle)).ResourceIds.Should().BeEquivalentTo(handle.ResourceIds);
@@ -69,11 +69,11 @@ public sealed partial class AdminOperationRequestContractTests
     }
 
     [UnitTheory]
-    [InlineData("layerId", "-1")]
-    [InlineData("layerId", "1.5")]
-    [InlineData("layerId", "2147483648")]
-    [InlineData("layerId", "\"1\"")]
-    [InlineData("layerId", "null")]
+    [InlineData("storageLayerId", "-1")]
+    [InlineData("storageLayerId", "1.5")]
+    [InlineData("storageLayerId", "2147483648")]
+    [InlineData("storageLayerId", "\"1\"")]
+    [InlineData("storageLayerId", "null")]
     [InlineData("serviceName", "\" \"")]
     [InlineData("serviceName", "null")]
     [InlineData("serviceName", "7")]
@@ -117,7 +117,7 @@ public sealed partial class AdminOperationRequestContractTests
         {
             OperationId = operationId,
             ConnectionId = "11111111-1111-1111-1111-111111111111",
-            Parameters = new Dictionary<string, string?> { ["layerId"] = "42" },
+            Parameters = new Dictionary<string, string?> { ["storageLayerId"] = "42" },
             DryRun = dryRun,
         }, new OperationPolicyContext());
 

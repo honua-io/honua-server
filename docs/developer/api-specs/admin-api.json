@@ -24554,7 +24554,7 @@
       "PublishedLayerSummary": {
         "type": "object",
         "properties": {
-          "layerId": {
+          "storageLayerId": {
             "type": "integer",
             "format": "int32",
             "description": "Layer ID"
@@ -24638,7 +24638,8 @@
             "nullable": true,
             "description": "Capability tokens declared on the layer's feature publication. Set on publish responses; null on listings."
           }
-        }
+        },
+        "required": []
       },
       "PublishLayerRequest": {
         "type": "object",

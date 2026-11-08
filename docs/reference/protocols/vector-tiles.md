@@ -15,7 +15,7 @@ Honua serves Mapbox Vector Tiles (MVT) per layer with TileJSON metadata and a ge
 | GET | `/tiles/{layerId}/{z}/{x}/{y}.mvt` | Vector tile for a layer (XYZ scheme, WebMercator). |
 | GET | `/tiles/{layerId}/h3/{z}/{x}/{y}.mvt` | H3 hexagon-aggregated vector tile. |
 | GET | `/tiles/{layerId}/tile.json` | TileJSON 3.0 metadata for the layer. |
-| GET | `/api/styles/{layerId}.json` | Generated MapLibre style document for the layer. |
+| GET | `/api/styles/{publicationId}.json` | Generated MapLibre style document for the layer. |
 | GET, HEAD | `/api/v1/tiles/pmtiles/{*artifactId}` | Range-proxied access to a published PMTiles artifact. |
 
 OGC API Tiles offers the standards-based equivalent of the XYZ routes — see [OGC APIs](ogc-apis.md). Cached raster tiles for GeoServices clients are served at `/rest/services/{serviceId}/MapServer/tile/{z}/{y}/{x}` ([GeoServices REST](geoservices-rest.md)).
@@ -65,7 +65,7 @@ to local physical files or independent cloud-provider qualification.
 
 > Open `https://server.example.com/tiles/0/h3/8/40/98.mvt?resolution=7` in a browser.
 
-> Open `https://server.example.com/api/styles/0.json` in a browser.
+> Open the `style` URL returned by TileJSON. It contains the graph Layer ID, which can differ from the numeric tile selector.
 
 ## Conformance
 

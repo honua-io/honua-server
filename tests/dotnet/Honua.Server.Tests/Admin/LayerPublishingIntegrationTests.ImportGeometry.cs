@@ -194,7 +194,7 @@ public sealed partial class LayerPublishingIntegrationTests
         }
 
         var catalog = await CallGeometryCatalogAsync("honua_list_layers", new { filter = _serviceName });
-        var layer = catalog.GetProperty("layers").EnumerateArray().Single(layer => layer.GetProperty("layerId").GetInt32() == _layerId);
+        var layer = catalog.GetProperty("layers").EnumerateArray().Single(layer => layer.GetProperty("storageLayerId").GetInt32() == _layerId);
         layer.GetProperty("geometryType").GetString().Should().Be(canonicalType);
         layer.GetProperty("srid").GetInt32().Should().Be(targetSrid);
         var described = await CallGeometryCatalogAsync("honua_describe_layer", new { serviceId = _serviceName, layerId = _layerId });
