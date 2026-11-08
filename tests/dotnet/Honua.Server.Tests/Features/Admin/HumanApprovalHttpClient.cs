@@ -11,7 +11,9 @@ using Honua.ControlPlane;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.Models;
 using Honua.TestKit;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -28,12 +30,12 @@ internal sealed class HumanApprovalHttpClient(HttpClient client, string actorId)
         AdminAuthEndpointsTests.ConfigureGenericOidcFixture(fixture, provider)
             .ConfigureWebHost(builder =>
             {
-                builder.UseSetting("RateLimiting:KeyPrefix", $"honua:test:human-approval:{Guid.NewGuid():N}:");
                 if (string.IsNullOrWhiteSpace(builder.GetSetting("Public:BaseUrl")))
                     builder.UseSetting("Public:BaseUrl", "http://localhost");
             })
             .ConfigureServices(services =>
             {
+                services.AddSingleton<IStartupFilter>(new IsolatedApprovalClientAddress());
                 services.RemoveAll<IHttpClientFactory>();
                 services.AddHttpClient(AdminAuthEndpoints.AdminAuthHttpClient)
                     .ConfigurePrimaryHttpMessageHandler(provider.CreateMessageHandler);
@@ -121,4 +123,19 @@ internal sealed class HumanApprovalHttpClient(HttpClient client, string actorId)
     }
 
     public void Dispose() => Client.Dispose();
+    private sealed class IsolatedApprovalClientAddress : IStartupFilter
+    {
+        private readonly IPAddress _address = new(Guid.NewGuid().ToByteArray());
+
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => application =>
+        {
+            application.Use((HttpContext context, RequestDelegate continueRequest) =>
+            {
+                context.Connection.RemoteIpAddress = _address;
+                return continueRequest(context);
+            });
+            next(application);
+        };
+    }
+
 }

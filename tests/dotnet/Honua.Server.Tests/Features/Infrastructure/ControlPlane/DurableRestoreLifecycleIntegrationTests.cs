@@ -60,7 +60,7 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             backend.PlanAsync(Arg.Any<DeployOperationSpec>(), Arg.Any<CancellationToken>()).Returns(new DeployPlan { IsReadyToSubmit = true });
             backend.StartAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>()).Returns(new DeploySubmissionResult { Status = WorkflowOperationStatus.Reconciling });
             var service = new DeployWorkflowService(targets, [workflows], [backend], Substitute.For<IOperatorApprovalEvaluator>(),
-                NullLogger<DeployWorkflowService>.Instance, monitor);
+                NullLogger<DeployWorkflowService>.Instance, monitor, proposalStore: proposals);
             var compose = Substitute.For<IComposeExecutorClient>();
             compose.ExecuteAsync(Arg.Any<ComposeExecutorRequest>(), Arg.Any<CancellationToken>())
                 .Returns<Task<ComposeExecutorResponse>>(_ => throw new IOException("Status unavailable"));
@@ -468,7 +468,7 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             backend.PlanAsync(Arg.Any<DeployOperationSpec>(), Arg.Any<CancellationToken>()).Returns(new DeployPlan { IsReadyToSubmit = true });
             backend.StartAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>()).Returns(new DeploySubmissionResult { Status = WorkflowOperationStatus.Reconciling });
             var service = new DeployWorkflowService(targets, [workflows], [backend], Substitute.For<IOperatorApprovalEvaluator>(),
-                NullLogger<DeployWorkflowService>.Instance, monitor);
+                NullLogger<DeployWorkflowService>.Instance, monitor, proposalStore: proposals);
             var worker = new DurableRestoreWorker(workflows, proposals, null!, new DeployOperationExecutor(service), null!, null!,
                 NullLogger<DurableRestoreWorker>.Instance, monitor, Substitute.For<IComposeExecutorClient>());
             var now = DateTimeOffset.UtcNow;
