@@ -807,6 +807,10 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
             {
                 ["HONUA_DEV_AUTH"] = "false",
                 ["Oidc:Enabled"] = "true",
+                ["Oidc:Generic:Enabled"] = "true",
+                ["Oidc:Generic:Authority"] = "https://identity.example.test",
+                ["Oidc:Generic:ClientId"] = "emulated-approval",
+                ["Oidc:Generic:DisplayName"] = "Emulated approval fixture",
                 ["Public:BaseUrl"] = "http://localhost",
                 ["HONUA_ADMIN_PASSWORD"] = AdminPassword,
                 ["ConnectionStrings:redis"] = redisConnectionString,
