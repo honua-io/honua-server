@@ -132,7 +132,6 @@ public sealed partial class ProposalEndpointsTests : IAsyncLifetime
             ExecutionPayload = executionPayload,
         };
         var policy = _ladder.Resolve(kind);
-        var planHash = Honua.Server.Features.Operations.OperationApprovalPlanSeal.Compute(plan);
         var proposal = new OperationProposal
         {
             ProposalId = $"proposal-{Guid.NewGuid():N}",
@@ -143,7 +142,7 @@ public sealed partial class ProposalEndpointsTests : IAsyncLifetime
             AutonomyMetadata = autonomyMetadata,
             OperationId = operationId,
             Plan = plan,
-            SealedPlanHash = planHash,
+            SealedPlanHash = Honua.Server.Features.Operations.OperationApprovalPlanSeal.Compute(plan),
             GuardrailDecision = policy,
             CreatedAt = now,
             UpdatedAt = now,
