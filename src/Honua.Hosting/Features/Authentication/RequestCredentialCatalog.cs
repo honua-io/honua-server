@@ -14,17 +14,23 @@ internal static class RequestCredentialCatalog
     ];
     private static readonly string[] CredentialQueryParameters = ["token", "key"];
 
-    internal static bool HasExplicitCredential(HttpRequest request, bool requireNonEmptyValue = false)
+    internal static bool HasExplicitCredential(HttpRequest request)
+        => HasCredential(request, static _ => true);
+
+    internal static bool HasNonEmptyCredential(HttpRequest request)
+        => HasCredential(request, static value => !StringValues.IsNullOrEmpty(value));
+
+    private static bool HasCredential(HttpRequest request, Func<StringValues, bool> accept)
     {
         foreach (var header in CredentialHeaders)
         {
             if (request.Headers.TryGetValue(header, out var value)
-                && (!requireNonEmptyValue || !StringValues.IsNullOrEmpty(value))) return true;
+                && accept(value)) return true;
         }
         foreach (var parameter in CredentialQueryParameters)
         {
             if (request.Query.TryGetValue(parameter, out var value)
-                && (!requireNonEmptyValue || !StringValues.IsNullOrEmpty(value))) return true;
+                && accept(value)) return true;
         }
         return false;
     }

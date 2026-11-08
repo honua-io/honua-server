@@ -58,7 +58,7 @@ internal sealed class BypassOutputCacheOnCredentialedRequestPolicy : IOutputCach
     {
         var request = context.Request;
 
-        if (RequestCredentialCatalog.HasExplicitCredential(request, requireNonEmptyValue: true)) return true;
+        if (RequestCredentialCatalog.HasNonEmptyCredential(request)) return true;
 
         foreach (var cookieName in CredentialCookies)
         {
