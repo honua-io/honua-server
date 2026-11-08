@@ -405,7 +405,7 @@ public sealed class OgcRecordsEndpointTests : IClassFixture<OgcRecordsEndpointTe
         json.RootElement.GetProperty("properties").GetProperty("geometryType").GetString().Should().Be("Point");
 
         var links = json.RootElement.GetProperty("links").EnumerateArray().ToArray();
-        links.Should().Contain(link => HasRel(link, "self") && HrefContains(link, "layer%3A0"));
+        links.Should().Contain(link => HasRel(link, "self") && HrefContains(link, recordId));
         links.Should().Contain(link => HrefEndsWith(link, $"/ogc/features/collections/{WebAppFixture.TestLayerId}"));
         links.Should().Contain(link => HrefEndsWith(link, $"/ogc/features/collections/{WebAppFixture.TestLayerId}/items"));
         links.Should().Contain(link => HrefEndsWith(link, $"/stac/collections/{WebAppFixture.TestLayerId}"));
