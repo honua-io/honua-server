@@ -5,6 +5,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text.Json;
 using System.Threading.Channels;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Authorization;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -647,9 +648,11 @@ internal sealed class ExportJobService(
             {
                 progress = await _progressStore.GetProgressAsync<ExportProgress>(jobId, cancellationToken).ConfigureAwait(false);
             }
-            catch (InvalidDataException exception)
+            catch (InvalidPersistedExportProgressException exception)
             {
                 ExportJobServiceLog.InvalidRecoveryProgress(_logger, jobId, exception);
+                await MarkMissingRequestAsync(jobId, progress: null, CancellationToken.None).ConfigureAwait(false);
+                await _progressStore.QuarantineProgressAsync(jobId, OperationType.Export, CancellationToken.None).ConfigureAwait(false);
                 continue;
             }
             if (progress == null || progress.Status is not (OperationStatus.Queued or OperationStatus.Processing))

@@ -15,4 +15,6 @@ Use matching rc.2 server and client contracts. This is a breaking change before 
 5. Use the style URL advertised by TileJSON or an OGC Features collection. Public MapLibre style URLs use the graph Layer ID as `publicationId`; numeric storage handles no longer select styles.
 6. Rebind a test Layer to another storage handle and verify that its WFS, WMS, Records and style identities remain unchanged. Qualify external clients and executable documentation against the matching candidate.
 
+Exports queued by earlier evaluation builds must be submitted again. The server accepts no legacy selector alias in saved export requests. Readable progress becomes a terminal missing-request failure. Unreadable export progress is quarantined from active listings and recovery; status and cancel return a conflict explaining that a new request is required. Other operations remain available.
+
 See the [rc.2 breaking release note](../../reference/release-notes/2026.1-rc.2.md) for old-to-new mappings and the [Layer glossary](../../concepts/domain/layer.md) for identity definitions.

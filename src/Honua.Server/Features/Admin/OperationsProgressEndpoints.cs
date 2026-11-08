@@ -864,11 +864,10 @@ internal static partial class OperationsProgressEndpoints
         var operationIds = await progressStore.GetActiveOperationIdsAsync(operationType, cancellationToken);
         var operations = new List<JsonElement>();
 
-        foreach (var operationId in operationIds)
+        await foreach (var progress in ProgressStoreReader.ReadAvailableAsync(
+            progressStore, operationIds, cancellationToken))
         {
-            var progress = await progressStore.GetProgressAsync(operationId, cancellationToken);
-            if (progress != null &&
-                progress.Status is OperationStatus.Queued or OperationStatus.Processing)
+            if (progress.Status is OperationStatus.Queued or OperationStatus.Processing)
             {
                 operations.Add(SerializeOperationToElement(progress));
             }
@@ -900,10 +899,10 @@ internal static partial class OperationsProgressEndpoints
         var operationIds = await progressStore.GetActiveOperationIdsAsync(parsedType, cancellationToken);
         var operations = new List<JsonElement>(operationIds.Count);
 
-        foreach (var operationId in operationIds)
+        await foreach (var progress in ProgressStoreReader.ReadAvailableAsync(
+            progressStore, operationIds, cancellationToken))
         {
-            var progress = await progressStore.GetProgressAsync(operationId, cancellationToken);
-            if (progress != null && progress.Type == parsedType)
+            if (progress.Type == parsedType)
             {
                 operations.Add(SerializeOperationToElement(progress));
             }

@@ -5,6 +5,7 @@
 using System.Text.Json;
 using System.Threading.Channels;
 using FluentAssertions;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Infrastructure.Progress;
@@ -36,7 +37,7 @@ public sealed partial class ExportJobServiceTests
         progressStore.GetActiveOperationIdsAsync(OperationType.Export, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IReadOnlyList<string>>(["invalid-export", job.JobId]));
         progressStore.GetProgressAsync<ExportProgress>("invalid-export", Arg.Any<CancellationToken>())
-            .Returns(Task.FromException<ExportProgress?>(new InvalidDataException("Persisted export progress is invalid.")));
+            .Returns(Task.FromException<ExportProgress?>(new InvalidPersistedExportProgressException()));
         progressStore.GetProgressAsync<ExportProgress>(job.JobId, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<ExportProgress?>(ExportProgress.CreateInitial(
                 job.JobId, job.Format, job.ServiceName, job.ServiceLayerIndex, job.TotalFeatures)));

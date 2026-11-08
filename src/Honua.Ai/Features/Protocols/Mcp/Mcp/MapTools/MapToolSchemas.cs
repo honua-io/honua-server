@@ -64,7 +64,7 @@ internal static class MapToolSchemas
             "serviceLayerIndex": {
               "type": "integer",
               "minimum": 0,
-              "description": "Service-local index from honua_list_layers.serviceLayerIndex."
+              "description": "Service-local index from honua_list_layers."
             },
             "where": {
               "type": "string",
@@ -151,7 +151,7 @@ internal static class MapToolSchemas
                   "serviceLayerIndex": {
                     "type": "integer",
                     "minimum": 0,
-                    "description": "Service-local index from honua_list_layers.serviceLayerIndex."
+                    "description": "Service-local index from honua_list_layers."
                   }
                 }
               }
@@ -223,7 +223,7 @@ internal static class MapToolSchemas
             "serviceLayerIndex": {
               "type": "integer",
               "minimum": 0,
-              "description": "Service-local index from honua_list_layers. Pair with serviceId when styleId is omitted."
+              "description": "Service-local index from honua_list_layers; used when styleId is omitted."
             },
             "encoding": {
               "type": "string",

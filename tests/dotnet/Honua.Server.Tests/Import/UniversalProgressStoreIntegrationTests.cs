@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Deployment.Domain;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Import;
@@ -66,7 +67,7 @@ public sealed class UniversalProgressStoreIntegrationTests
         try
         {
             var read = () => store.GetProgressAsync(operationId);
-            await read.Should().ThrowAsync<InvalidDataException>().WithMessage("Persisted export progress is invalid.*");
+            await read.Should().ThrowAsync<InvalidPersistedExportProgressException>().WithMessage("Persisted export progress is invalid.*");
             store.IsUsingFallback.Should().BeFalse();
             (await store.GetProgressAsync<PrintProgress>(healthyId))!.JobId.Should().Be(healthyId);
         }

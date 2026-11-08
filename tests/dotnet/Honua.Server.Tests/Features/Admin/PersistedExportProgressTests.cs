@@ -6,10 +6,10 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading.Channels;
 using FluentAssertions;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
-using Honua.Core.Features.Shared.Models;
 using Honua.Infrastructure.Progress;
 using Honua.Io.Export;
 using Honua.Migration;
@@ -152,11 +152,13 @@ public sealed class PersistedExportProgressTests : IAsyncLifetime
         var job = new ExportJob(healthyId, "svc", 741, "roads", "csv", new FeatureQuery(), [],
             4326, 1, ExportGeometryType.None, null) { ServiceLayerIndex = 3 };
         await _store.SetProgressAsync(healthyId, ExportProgress.CreateInitial(healthyId, "csv", "svc", 3, 1));
-        await SeedRequestAsync(job);
-        var oldRequest = JsonNode.Parse(JsonSerializer.Serialize(
-            new ExportJobService.PersistedExportJobRequest { Job = job with { JobId = invalidId } },
-            ExportJsonContext.Default.PersistedExportJobRequest))!;
+        var requestJson = JsonSerializer.Serialize(
+            new ExportJobService.PersistedExportJobRequest { Job = job },
+            ExportJsonContext.Default.PersistedExportJobRequest);
+        await _cache.SetStringAsync($"export:request:{healthyId}", requestJson);
+        var oldRequest = JsonNode.Parse(requestJson)!;
         var oldJob = oldRequest["job"]!.AsObject();
+        oldJob["jobId"] = invalidId;
         oldJob.Remove("storageLayerId").Should().BeTrue();
         oldJob.Remove("serviceLayerIndex").Should().BeTrue();
         oldJob["layerId"] = 3;
@@ -184,15 +186,10 @@ public sealed class PersistedExportProgressTests : IAsyncLifetime
             call.GetArguments()[2]?.ToString()?.Contains(invalidId, StringComparison.Ordinal) == true)
             .Should().Be(1);
         var read = () => _store.GetProgressAsync(invalidId);
-        await read.Should().ThrowAsync<InvalidDataException>().WithMessage("Persisted export progress is invalid.*");
+        await read.Should().ThrowAsync<InvalidPersistedExportProgressException>().WithMessage("Persisted export progress is invalid.*");
         (await _cache.GetStringAsync($"export:request:{healthyId}")).Should().NotBeNull();
         _store.IsUsingFallback.Should().BeFalse();
     }
-
-    private Task SeedRequestAsync(ExportJob job)
-        => _cache.SetStringAsync($"export:request:{job.JobId}", JsonSerializer.Serialize(
-            new ExportJobService.PersistedExportJobRequest { Job = job },
-            ExportJsonContext.Default.PersistedExportJobRequest));
 
     private string NewId()
     {

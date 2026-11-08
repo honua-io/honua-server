@@ -328,7 +328,7 @@ internal static class McpToolOutputSchemas
             },
             "serviceLayerIndex": {
               "type": ["string", "null"],
-              "description": "Service-local numeric index used by service routes and MCP map tools."
+              "description": "Service-local index for routes and MCP map tools."
             },
             "serviceName": { "type": ["string", "null"] },
             "metadataRevision": {

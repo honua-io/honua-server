@@ -31,6 +31,10 @@ public interface IUniversalProgressStore
 
     Task<IOperationProgress?> GetProgressAsync(string operationId, CancellationToken cancellationToken = default);
 
+    // Preserve the unreadable record for status reads while removing it from recovery and shared listings.
+    Task QuarantineProgressAsync(string operationId, OperationType operationType, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("Progress quarantine is required for unreadable persisted records.");
+
     Task DeleteProgressAsync(string operationId, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<string>> GetActiveOperationIdsAsync(OperationType? operationType = null, CancellationToken cancellationToken = default);
