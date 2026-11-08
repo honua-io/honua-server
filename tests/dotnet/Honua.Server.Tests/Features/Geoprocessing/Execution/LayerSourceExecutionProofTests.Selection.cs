@@ -384,7 +384,7 @@ public sealed partial class LayerSourceExecutionProofTests
 
         // Published layers assign their own sequence object ids, so resolve them from the store
         // instead of assuming they equal the table's primary key.
-        var seeded = await _fixture.GetService<IFeatureReader>().QueryAsync(published.LayerId, new FeatureQuery());
+        var seeded = await _fixture.GetService<IFeatureReader>().QueryAsync(published.StorageLayerId, new FeatureQuery());
         var objectIdByPop = seeded.Items.ToDictionary(
             feature => Convert.ToInt32(feature.Attributes["pop"], CultureInfo.InvariantCulture),
             feature => feature.Id);
@@ -395,7 +395,7 @@ public sealed partial class LayerSourceExecutionProofTests
         // Make the layer time-aware on 'observed' through the canonical temporal extension.
         var graphStore = _fixture.GetService<IMetadataV2GraphStore>();
         var snapshot = await graphStore.GetCurrentAsync();
-        var temporal = snapshot.Index.ResourcesByStorageLayerId[published.LayerId];
+        var temporal = snapshot.Index.ResourcesByStorageLayerId[published.StorageLayerId];
         if (timeAware)
         {
             var observed = new MetadataV2Field { Name = "observed", Type = MetadataV2FieldType.DateTime, Nullable = false };
@@ -424,8 +424,8 @@ public sealed partial class LayerSourceExecutionProofTests
 
         _selectionRowPolicy = policy.SqlFilter;
         _selectionResourceId = temporal.Metadata.Id;
-        _selectionLayerId = published.LayerId;
-        return published.LayerId;
+        _selectionLayerId = published.StorageLayerId;
+        return published.StorageLayerId;
     }
 
     private static async Task<JobExecutionResult> ExecuteRaw(LayerSimplifyExecutor executor, string id, params (string Key, string Value)[] inputs)

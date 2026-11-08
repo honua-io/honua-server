@@ -34,9 +34,9 @@ public sealed partial class LayerPublishingIntegrationTests
             ServiceName = _serviceName,
             Enabled = true
         });
-        _layerId = published.LayerId;
+        _layerId = published.StorageLayerId;
         var graph = _fixture.GetCurrentV2GraphSnapshot();
-        var binding = graph.Graph.StorageBindings.Single(candidate => candidate.StorageLayerId == published.LayerId);
+        var binding = graph.Graph.StorageBindings.Single(candidate => candidate.StorageLayerId == published.StorageLayerId);
         binding.Options["postgresSmallintColumn:population"].GetBoolean().Should().BeTrue();
         graph.Index.ResourcesById[binding.ResourceId].SchemaFields.Single(field => field.Name == "population")
             .Type.Should().Be(MetadataV2FieldType.Integer);

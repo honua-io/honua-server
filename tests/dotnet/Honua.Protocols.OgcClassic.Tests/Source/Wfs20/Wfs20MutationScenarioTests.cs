@@ -175,7 +175,7 @@ public sealed class Wfs20MutationScenarioTests : IAsyncLifetime
             Publications = graph.Publications.Select(candidate => candidate == publication
                 ? candidate with { Metadata = candidate.Metadata with { Id = publicationId, Name = publicationId } }
                 : candidate).ToArray(),
-        }, schema: _fixture.MetadataGraphSchema);
+        }, schema: _fixture.CurrentSchema);
         _typeName = XmlConvert.EncodeLocalName(publicationId);
     }
 
