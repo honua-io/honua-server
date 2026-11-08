@@ -284,9 +284,8 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
                     break;
 
                 case "content_block_start" when frame.ContentBlock?.Type == "text":
-                case "content_block_stop" when stoppedContentBlockType == "text":
+                case "content_block_stop" when stoppedContentBlockType is "text" or "thinking":
                 case "content_block_start" when frame.ContentBlock?.Type == "thinking" && state.SawMessageStart:
-                case "content_block_stop" when stoppedContentBlockType == "thinking":
                 case "ping":
                     break;
 
