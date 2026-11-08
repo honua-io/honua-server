@@ -4,6 +4,8 @@ from pathlib import Path
 import sqlite3
 from PIL import Image
 
+LEGEND_LABEL_START_X = 34
+
 
 def verify_import(result, feature_count):
     if result.get('success') is not True or result.get('featureCount') != feature_count:
@@ -14,7 +16,7 @@ def verify_legend(path):
     with Image.open(path) as image:
         alpha = image.convert('RGBA').getchannel('A')
         # The requested swatch ends at x=28; only label glyphs can paint x>=34.
-        if image.width <= 34 or alpha.crop((34, 0, image.width, image.height)).getbbox() is None:
+        if image.width <= LEGEND_LABEL_START_X or alpha.crop((LEGEND_LABEL_START_X, 0, image.width, image.height)).getbbox() is None:
             raise ValueError('Legend label glyphs did not render')
 
 

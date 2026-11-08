@@ -42,7 +42,6 @@ services:
     networks:
       - cite-processes-network
     healthcheck:
-      test: ["CMD", "/app/honua-healthcheck", "--ready"]
       interval: 10s
       timeout: 5s
       retries: 18

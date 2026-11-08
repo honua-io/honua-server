@@ -79,7 +79,6 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "/app/honua-healthcheck", "--ready"]
       interval: 2s
       timeout: 3s
       retries: 90
@@ -97,7 +96,6 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "/app/honua-healthcheck", "--ready"]
       interval: 2s
       timeout: 3s
       retries: 90

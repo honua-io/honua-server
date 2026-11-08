@@ -154,15 +154,31 @@ public sealed class DataStoreBuildPolicyTests
         await start.Should().NotThrowAsync();
     }
 
+    [UnitTheory]
+    [InlineData(MetadataV2ConnectionType.ObjectStorage, "s3")]
+    [InlineData(MetadataV2ConnectionType.FileSystem, "filesystem")]
+    [InlineData(MetadataV2ConnectionType.Stac, "stac")]
+    [InlineData(MetadataV2ConnectionType.HttpApi, "ogc-api-features")]
+    public async Task ValidatePostgisConnectionsAsync_FileAndFormatSources_Accepts(
+        MetadataV2ConnectionType connectionType, string providerName)
+    {
+        var (registry, graph) = StoredConnections("postgis", providerName, connectionType);
+
+        var start = () => DataStoreBuildPolicy.ValidatePostgisConnectionsAsync(registry, graph);
+
+        await start.Should().NotThrowAsync();
+    }
+
     private static (ISecureConnectionRegistry, IMetadataV2GraphProvider) StoredConnections(
-        string securedProvider, string? graphProviderName)
+        string securedProvider, string? graphProviderName,
+        MetadataV2ConnectionType connectionType = MetadataV2ConnectionType.Managed)
     {
         var registry = Substitute.For<ISecureConnectionRegistry>();
         registry.GetAllConnectionsAsync().Returns(Task.FromResult<IEnumerable<DataConnection>>(
             [new DataConnection { Provider = securedProvider }]));
         var graph = new MetadataV2Graph
         {
-            Connections = graphProviderName is null ? [] : [new MetadataV2Connection { Provider = graphProviderName }]
+            Connections = graphProviderName is null ? [] : [new MetadataV2Connection { Provider = graphProviderName, Type = connectionType }]
         };
         var provider = Substitute.For<IMetadataV2GraphProvider>();
         provider.GetCurrentAsync().Returns(

@@ -30,7 +30,6 @@ services:
     networks:
       - cite-wps20-network
     healthcheck:
-      test: ["CMD", "/app/honua-healthcheck", "--ready"]
       interval: 10s
       timeout: 5s
       retries: 12

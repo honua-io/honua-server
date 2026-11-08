@@ -1900,6 +1900,21 @@ catch (InvalidOperationException ex) when (Honua.Server.Hosting.GatedBootShutdow
     return;
 }
 
+#if HONUA_POSTGIS_ONLY
+try
+{
+    await using var startupScope = app.Services.CreateAsyncScope();
+    await DataStoreBuildPolicy.ValidatePostgisConnectionsAsync(
+        startupScope.ServiceProvider.GetRequiredService<Honua.Core.Features.Security.Abstractions.ISecureConnectionRegistry>(),
+        startupScope.ServiceProvider.GetRequiredService<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider>());
+}
+catch (ExcludedDataStoreException ex)
+{
+    await Honua.Server.Hosting.GatedBootShutdown.StopRefusedHostAsync(app, ex.Message);
+    return;
+}
+#endif
+
 // Configure health endpoints
 app.MapHealthEndpoints();
 app.MapPrometheusEndpoint(endpoint =>

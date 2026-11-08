@@ -47,13 +47,15 @@ store sections can remain in shared configuration. This does not change the defa
 PostGIS connection settings or enable experimental stores in the full variant.
 
 Custom image builds use `HONUA_STORE_PROFILE=postgis` (default) or `full`. This axis
-is independent of `HONUA_BUILD_PROFILE` and `HONUA_PROTOCOL_PROFILE`. Local source
+is independent of `HONUA_BUILD_PROFILE` and `HONUA_PROTOCOL_PROFILE`. Local `dotnet`
 builds and existing provider tests retain the full store profile; an MSBuild publish can
 select `-p:HonuaStoreProfile=postgis` explicitly.
 
 The shell-free image provides `/app/honua-healthcheck`; use `--ready` for readiness
 or omit it for liveness. `HONUA_HEALTH_PORT` selects the loopback port (default 8080).
-Deployment probes must use direct execution. Older images lack this executable;
+Deployment probes must use direct execution. Pull-only Compose stacks inherit the
+image health check, so pinned images retain their own probe. Older images lack the
+new executable;
 retain their existing probe when pinning a pre-change image, and update the image
 and probe together. The ECS module exposes `health_check_command` and
 `health_check_port` for that transition.
