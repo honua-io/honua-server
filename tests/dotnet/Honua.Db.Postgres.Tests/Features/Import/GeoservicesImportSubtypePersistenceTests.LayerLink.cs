@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using FluentAssertions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -148,7 +149,7 @@ public sealed partial class GeoservicesImportSubtypePersistenceTests
             }
             else
             {
-                layer.Should().BeEquivalentTo(previous, options => options.ComparingRecordsByMembers());
+                AssertUnchangedMetadata(previous, layer, MetadataV2JsonContext.Default.MetadataV2Publication);
             }
         }
         foreach (var layer in after.Publications.Where(candidate => before.Publications.All(
@@ -162,9 +163,19 @@ public sealed partial class GeoservicesImportSubtypePersistenceTests
             AssertRetainedStatus(previous.Status, after.Resources.Single(
                 dataset => dataset.Metadata.Id == previous.Metadata.Id).Status);
         }
-        after.StorageBindings.Where(candidate => candidate.Metadata.Id != binding.Metadata.Id)
-            .Should().BeEquivalentTo(before.StorageBindings.Where(candidate => candidate.Metadata.Id != binding.Metadata.Id));
+        after.StorageBindings.Should().HaveCount(before.StorageBindings.Count);
+        foreach (var previous in before.StorageBindings.Where(candidate => candidate.Metadata.Id != binding.Metadata.Id))
+        {
+            var unchanged = after.StorageBindings.Single(candidate => candidate.Metadata.Id == previous.Metadata.Id);
+            AssertUnchangedMetadata(previous, unchanged, MetadataV2JsonContext.Default.MetadataV2StorageBinding);
+        }
     }
+
+    private static void AssertUnchangedMetadata<T>(T expected, T actual, JsonTypeInfo<T> typeInfo)
+        => JsonElement.DeepEquals(
+                JsonSerializer.SerializeToElement(expected, typeInfo),
+                JsonSerializer.SerializeToElement(actual, typeInfo))
+            .Should().BeTrue("unrelated metadata must retain every known and unknown field");
 
     private static void AssertRetainedStatus(MetadataV2Status expected, MetadataV2Status actual)
     {
