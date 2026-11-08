@@ -45,7 +45,9 @@ public sealed partial class FolderOperationIntegrationTests
         layers.Should().OnlyContain(layer => layer.Metadata.Namespace == publicationNamespace &&
             layer.Metadata.Tenant == service.Metadata.Tenant);
 
-        arguments.Remove("folderId");
+        arguments = await PublishArgumentsAsync(publicationNamespace);
+        arguments["serviceName"] = serviceName;
+        arguments["publicName"] = service.PublicName;
         await ApprovePublishToolAsync(arguments);
         var repeated = (await SnapshotAsync()).Graph.Services.Single(candidate => candidate.Metadata.Id == service.Metadata.Id);
         repeated.FolderId.Should().Be(folder.Metadata.Id);
@@ -107,7 +109,7 @@ public sealed partial class FolderOperationIntegrationTests
             ["connectionId"] = connection.ToString("D"),
             ["schema"] = _fixture.CurrentSchema,
             ["table"] = table,
-            ["layerName"] = "Published points",
+            ["layerName"] = "Published points " + suffix,
             ["serviceName"] = "mcp-identity-" + suffix,
             ["publicName"] = "McpPublic-" + suffix,
             ["geometryColumn"] = "geom",
@@ -120,6 +122,7 @@ public sealed partial class FolderOperationIntegrationTests
 
     private async Task<Guid> CreatePublishConnectionAsync()
     {
+        if (_publishingConnectionId is { } existing) return existing;
         using var scope = _fixture.Services.CreateScope();
         var registry = scope.ServiceProvider.GetRequiredService<ISecureConnectionRegistry>();
         var encryption = scope.ServiceProvider.GetRequiredService<IConnectionEncryptionService>();
@@ -148,7 +151,7 @@ public sealed partial class FolderOperationIntegrationTests
     {
         var before = await SnapshotAsync();
         var result = await CallMcpToolAsync("honua_publish_service", arguments);
-        result.GetProperty("status").GetString().Should().Be("RequiresApproval");
+        result.GetProperty("status").GetString().Should().Be("RequiresApproval", result.GetRawText());
         var proposalId = result.GetProperty("proposalId").GetString()!;
         (await _proposals.GetAsync(proposalId))!.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
         (await SnapshotAsync()).Etag.Should().Be(before.Etag);
