@@ -33,7 +33,12 @@ class ClientCompatBootstrapTests(unittest.TestCase):
         launcher = (ROOT / "docker/client-compat/r-sf/run.sh").read_text(encoding="utf-8")
         driver = re.search(r"^Rscript (\S+)", launcher, re.MULTILINE)
         self.assertIsNotNone(driver)
-        required = [driver.group(1), "/workspace/tests/seed/client-compat-v1.sql",
+        suite_setting = re.search(r"^export HONUA_R_CERT_DIR=(\S+)", launcher, re.MULTILINE)
+        self.assertIsNotNone(suite_setting)
+        suite_directory = PurePosixPath(suite_setting.group(1))
+        required = [driver.group(1), suite_directory / "cert_envelope.R",
+                    suite_directory / "canonical_fixture.R",
+                    "/workspace/tests/seed/client-compat-v1.sql",
                     "/workspace/tests/config/client-compat-server-v1.json"]
         for target in map(PurePosixPath, required):
             with self.subTest(target=str(target)):

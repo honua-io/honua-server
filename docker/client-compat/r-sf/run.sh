@@ -26,8 +26,7 @@ done
 
 mkdir -p /output
 
-# tests/ is bind-mounted read-only, so the suite must never write beside itself:
-# HONUA_R_SF_OUTPUT_DIR points the envelope writer at /output instead.
+# The suite and receipt inputs are read-only; envelopes belong in /output.
 export HONUA_R_SF_BASE_URL="${HONUA_BASE_URL}"
 export HONUA_R_SF_OUTPUT_DIR=/output
 export HONUA_R_SF_SERVICE_ID

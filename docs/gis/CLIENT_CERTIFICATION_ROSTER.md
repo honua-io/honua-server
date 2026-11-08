@@ -533,7 +533,7 @@ Named so nobody re-litigates them, and so an absent lane never reads as an overs
 - **Fixture projection**: not-yet-assigned - Fixture projection is assigned when the lane is implemented (#3392); the canonical fixture contract is #3393.
 - **Evidence producer**: (none)
 - **Owning issue**: https://github.com/honua-io/honua-server/issues/3392
-- **Notes**: The government and academic baseline. `docker/client-compat/r-sf` and `docker/client-compat/r-sf/certification` were filled in by #3392; the lane emits committed envelopes for OGC API Features and WFS.
+- **Notes**: The government and academic baseline. The `docker/client-compat/r-sf` lane emits envelopes for OGC API Features and WFS.
 
 ### `jupyter-papermill` - Jupyter end-to-end notebook (papermill)
 

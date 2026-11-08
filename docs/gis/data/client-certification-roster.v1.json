@@ -1436,7 +1436,7 @@
         "inputs": [],
         "note": "Fixture projection is assigned when the lane is implemented (#3392); the canonical fixture contract is #3393."
       },
-      "evidenceProducer": "docker/client-compat/r-sf + docker/client-compat/r-sf/certification",
+      "evidenceProducer": "docker/client-compat/r-sf",
       "laneBinding": {
         "matrixLaneId": "r-sf",
         "role": "lane"
@@ -1445,7 +1445,7 @@
       "needsOwningIssue": false,
       "exclusionRationale": null,
       "coveredAlternative": null,
-      "notes": "The government and academic baseline. `docker/client-compat/r-sf` and `docker/client-compat/r-sf/certification` were filled in by #3392; the lane emits committed envelopes for OGC API Features and WFS."
+      "notes": "The government and academic baseline. The `docker/client-compat/r-sf` lane emits envelopes for OGC API Features and WFS."
     },
     {
       "id": "jupyter-papermill",

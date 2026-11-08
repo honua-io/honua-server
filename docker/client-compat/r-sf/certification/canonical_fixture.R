@@ -10,7 +10,7 @@
 # `docs/gis/data/client-certification-fixture.v1.json` change first and this
 # file follows.
 
-# Repository-relative anchors. `TESTS_ROOT` resolves from this file's location so
+# Repository-relative anchors. `cf_tests_root()` resolves from this file's location so
 # the same script works from a checkout and from the container bind mounts.
 # `cert_script_dir()` is defined in cert_envelope.R; source that file first.
 cf_tests_root <- function() {
