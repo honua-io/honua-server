@@ -10,9 +10,15 @@ import tarfile
 STORE_FILES = (
     'Honua.DuckDB.dll', 'DuckDB.NET.Data.dll', 'DuckDB.NET.Bindings.dll', 'libduckdb.so',
     'Honua.SqlServer.dll', 'Microsoft.Data.SqlClient.dll',
+    'Microsoft.SqlServer.Server.dll', 'System.Configuration.ConfigurationManager.dll',
     'Honua.MySql.dll', 'MySqlConnector.dll',
     'Honua.Oracle.dll', 'Oracle.ManagedDataAccess.dll',
+    'System.Diagnostics.PerformanceCounter.dll', 'System.DirectoryServices.Protocols.dll',
     'Honua.Redshift.dll', 'Honua.Snowflake.dll', 'Snowflake.Data.dll',
+    'Google.Api.Gax.dll', 'Google.Api.Gax.Rest.dll', 'Google.Apis.dll', 'Google.Apis.Auth.dll',
+    'Google.Apis.Core.dll', 'Google.Apis.Storage.v1.dll', 'Google.Cloud.Storage.V1.dll',
+    'Mono.Unix.dll', 'libMono.Unix.so', 'libsf_mini_core.so',
+    'System.CodeDom.dll', 'System.Management.dll', 'TimeZoneConverter.dll', 'Tomlyn.Signed.dll',
     'Honua.Databricks.dll', 'Honua.GeoServicesRest.dll',
 )
 FORMAT_FILES = (

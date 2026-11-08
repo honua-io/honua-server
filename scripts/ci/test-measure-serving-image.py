@@ -23,6 +23,14 @@ class ServingImageMeasurementTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'libduckdb.so'):
             self.measurement.verify_files(files, 'postgis')
 
+    def test_default_image_rejects_provider_only_transitive_files(self):
+        for name in ('Google.Cloud.Storage.V1.dll', 'libsf_mini_core.so'):
+            with self.subTest(file=name):
+                files = {name: 1 for name in self.measurement.FORMAT_FILES}
+                files['app/' + name] = 20
+                with self.assertRaises(ValueError):
+                    self.measurement.verify_files(files, 'postgis')
+
     def test_default_image_keeps_file_format_libraries(self):
         files = {name: 1 for name in self.measurement.FORMAT_FILES}
         self.measurement.verify_files(files, 'postgis')
