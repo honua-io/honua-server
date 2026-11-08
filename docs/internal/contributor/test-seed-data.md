@@ -90,18 +90,8 @@ runner.apply(postgis.get_connection(schema), schema=schema, profile="core")
 
 The current snapshot seeds anonymous access for service `test_service`, layer/collection `0`, and layer title `Test Layer` so the Windows client compatibility transcripts and manual follow-through remain repeatable. It also enables `postgis_raster`, creates the raster metadata tables expected by raster-aware startup paths in the Docker client-interop stack, and owns the Metadata v2 compatibility snapshot tables plus `honua.seed_metadata_v2_compat_snapshot()` helper for the Docker client-compat seed order. The browser-specific service and layers are applied separately from `tests/seed/browser-compat.yaml`, which calls that helper after layers `2000`-`2002` are present so the compatibility snapshot includes the FeatureServer and MapServer browser layers.
 
-For a local admin UI sample service, reset the shared test schema and apply the admin sample fixture:
-
-```bash
-bash scripts/dev/seed-admin-sample.sh
-```
-
-The script uses the same connection defaults as the other seed helpers:
-`PGHOST=localhost`, `PGPORT=5432`, `PGUSER=honua`, `PGPASSWORD=honua`,
-and `PGDATABASE=honua_test`. Override those environment variables for a
-different local database.
-
-To run the steps manually:
+For a local admin UI sample service, reset the shared test schema and apply the admin sample fixture
+using the connection settings for your local test database:
 
 ```bash
 psql -f tests/seed/base-schema.sql
