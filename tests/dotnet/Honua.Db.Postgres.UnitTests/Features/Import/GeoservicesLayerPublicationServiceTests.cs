@@ -406,7 +406,7 @@ public sealed class GeoservicesLayerPublicationServiceTests
 
     private static PublishedLayerSummary PublishedParcels() => new()
     {
-        LayerId = 27,
+        StorageLayerId = 27,
         LayerName = "Parcels",
         Schema = "honua_data",
         Table = "parcels",
