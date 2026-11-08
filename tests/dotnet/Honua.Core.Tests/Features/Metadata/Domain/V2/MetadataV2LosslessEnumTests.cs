@@ -29,6 +29,12 @@ public sealed class MetadataV2LosslessEnumTests
             {
                 cases.Add(path, token);
             }
+            cases.Add(path, "-1");
+            if (path is not "resources/0/status/state" and not "resources/0/schemaFields/0/type")
+            {
+                cases.Add(path, "\"UNKNOWN\"");
+                cases.Add(path, "\"un\\u006bnown\"");
+            }
         }
         return cases;
     }
@@ -74,6 +80,7 @@ public sealed class MetadataV2LosslessEnumTests
 
         JsonNode.Parse(json)!["resources"]![0]!["type"]!.GetValue<string>().Should().Be("table");
     }
+
     [UnitTest]
     public void Serialize_ExplicitUnknownEdit_ReplacesRawToken()
     {
@@ -99,4 +106,32 @@ public sealed class MetadataV2LosslessEnumTests
         persisted.RootElement.GetProperty("storageBindings")[0].GetProperty("capabilities").GetRawText().Should().Be("[\"query\"]");
     }
 
+    [UnitTheory]
+    [InlineData("\"1\"", "table")]
+    [InlineData("\"+1\"", "table")]
+    [InlineData("1", "table")]
+    public void Serialize_KnownDatasetKind_PreservesExistingCanonicalEncoding(string token, string expected)
+    {
+        var graph = JsonSerializer.Deserialize("{\"resources\":[{\"type\":" + token + "}]}",
+            MetadataV2JsonContext.Default.MetadataV2Graph)!;
+
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(graph, MetadataV2JsonContext.Default.MetadataV2Graph));
+
+        graph.Resources.Single().Type.Should().Be(MetadataV2ResourceType.Table);
+        json.RootElement.GetProperty("resources")[0].GetProperty("type").GetString().Should().Be(expected);
+    }
+
+    [UnitTheory]
+    [InlineData("0")]
+    [InlineData("\"UNKNOWN\"")]
+    public void Serialize_KnownUnknownFieldType_PreservesCanonicalEncoding(string token)
+    {
+        var field = JsonSerializer.Deserialize("{\"type\":" + token + "}",
+            MetadataV2JsonContext.Default.MetadataV2Field)!;
+
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(field, MetadataV2JsonContext.Default.MetadataV2Field));
+
+        field.Type.Should().Be(MetadataV2FieldType.Unknown);
+        json.RootElement.GetProperty("type").GetString().Should().Be("unknown");
+    }
 }

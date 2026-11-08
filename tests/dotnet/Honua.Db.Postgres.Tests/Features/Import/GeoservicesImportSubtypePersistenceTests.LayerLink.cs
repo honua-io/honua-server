@@ -14,12 +14,14 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 
 public sealed partial class GeoservicesImportSubtypePersistenceTests
 {
+    public enum TargetServicePresence { New, Existing }
+
     [Theory]
-    [InlineData(false, false)]
-    [InlineData(false, true)]
-    [InlineData(true, false)]
-    [InlineData(true, true)]
-    public async Task LinkExistingLayerToServiceAsync_StatusExtensions_SurviveColdReload(bool existingTarget, bool enabled)
+    [InlineData(TargetServicePresence.New, MetadataV2LifecycleStatus.Retired)]
+    [InlineData(TargetServicePresence.New, MetadataV2LifecycleStatus.Active)]
+    [InlineData(TargetServicePresence.Existing, MetadataV2LifecycleStatus.Retired)]
+    [InlineData(TargetServicePresence.Existing, MetadataV2LifecycleStatus.Active)]
+    public async Task LinkExistingLayerToServiceAsync_StatusExtensions_SurviveColdReload(TargetServicePresence targetPresence, MetadataV2LifecycleStatus lifecycle)
     {
         var schema = await fixture.CreateIsolatedSchemaAsync("LinkStatus");
         var sourceService = $"link_source_{Guid.NewGuid():N}";
@@ -33,7 +35,7 @@ public sealed partial class GeoservicesImportSubtypePersistenceTests
             var publisher = CreateLayerPublisher(store,
                 new PostgresSchemaConfiguration("honua", schema, [schema, "public"]), null);
             var layer = await PublishLinkSourcesAsync(publisher, schema, sourceService);
-            if (existingTarget)
+            if (targetPresence == TargetServicePresence.Existing)
             {
                 await publisher.LinkExistingLayerToServiceAsync(fixture.ConnectionString, layer.LayerId, targetService, true);
             }
@@ -42,13 +44,12 @@ public sealed partial class GeoservicesImportSubtypePersistenceTests
             var before = await CreateLinkGraphStore(environment).GetCurrentAsync();
 
             var result = await publisher.LinkExistingLayerToServiceAsync(
-                fixture.ConnectionString, layer.LayerId, targetService, enabled);
+                fixture.ConnectionString, layer.LayerId, targetService, lifecycle == MetadataV2LifecycleStatus.Active);
 
             result.Should().NotBeNull();
             var after = await CreateLinkGraphStore(environment).GetCurrentAsync();
             after.Revision.Should().BeGreaterThan(before.Revision);
             AssertLinkedStatusRetention(before.Graph, after.Graph, layer.LayerId);
-            var lifecycle = enabled ? MetadataV2LifecycleStatus.Active : MetadataV2LifecycleStatus.Retired;
             after.Graph.StorageBindings.Single(binding => binding.StorageLayerId == layer.LayerId)
                 .Status.Lifecycle.Should().Be(lifecycle);
         }
@@ -140,7 +141,7 @@ public sealed partial class GeoservicesImportSubtypePersistenceTests
             }
             else
             {
-                layer.Should().Be(previous);
+                layer.Should().BeEquivalentTo(previous, options => options.ComparingRecordsByMembers());
             }
         }
         foreach (var layer in after.Publications.Where(candidate => before.Publications.All(
@@ -160,7 +161,13 @@ public sealed partial class GeoservicesImportSubtypePersistenceTests
 
     private static void AssertRetainedStatus(MetadataV2Status expected, MetadataV2Status actual)
     {
-        actual.AdditionalProperties.Should().BeEquivalentTo(expected.AdditionalProperties);
+        actual.AdditionalProperties.Should().NotBeNull();
+        actual.AdditionalProperties!.Keys.Should().BeEquivalentTo(expected.AdditionalProperties!.Keys);
+        foreach (var property in expected.AdditionalProperties)
+        {
+            JsonElement.DeepEquals(actual.AdditionalProperties[property.Key], property.Value)
+                .Should().BeTrue($"status property {property.Key} must retain its own entity value");
+        }
         actual.Conditions.Should().Equal(expected.Conditions);
     }
 }

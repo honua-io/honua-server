@@ -12,6 +12,23 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 [Trait("Tier", "Fast")]
 public sealed class PublishedLayerFieldRewriteTests
 {
+    [Theory]
+    [InlineData("\"future-\\u0076alue\"")]
+    [InlineData("\"\"")]
+    [InlineData("18446744073709551616")]
+    public void ApplyReplacementFieldMetadata_UnknownDatasetKind_RetainsToken(string token)
+    {
+        var resource = JsonSerializer.Deserialize("{\"type\":" + token + "}",
+            MetadataV2JsonContext.Default.MetadataV2Resource)!;
+        var request = new LayerPublishRequest { Schema = "public", Table = "source", LayerName = "Source" };
+
+        var updated = PostgreSqlLayerPublishingService.ApplyReplacementFieldMetadata(
+            resource, [], request, "objectid", null, null, DateTimeOffset.UnixEpoch);
+
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(updated, MetadataV2JsonContext.Default.MetadataV2Resource));
+        json.RootElement.GetProperty("type").GetRawText().Should().Be(token);
+    }
+
     [Fact]
     public void ApplyReplacementFieldMetadata_DropsDanglingReferencesAndKeepsTheNewSchema()
     {
