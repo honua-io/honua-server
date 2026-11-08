@@ -340,7 +340,7 @@ public sealed class RedisStaleAttemptFencingIntegrationTests(
                 var directory = Environment.GetEnvironmentVariable("HONUA_SERVER_TEST_RESULTS_DIR");
                 if (string.IsNullOrWhiteSpace(directory))
                 {
-                    directory = RepositoryPaths.Resolve("tests", "TestResults");
+                    directory = RepositoryPaths.Resolve("artifacts", "test-results");
                 }
 
                 Directory.CreateDirectory(directory);

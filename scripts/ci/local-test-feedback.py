@@ -124,7 +124,7 @@ def execute(root, plan, run=subprocess.run, results_directory=None):
     if not plan['projects']:
         print('No affected tests selected; no validation verdict was produced.', file=sys.stderr)
         return None
-    results_root = (Path(results_directory) if results_directory else root / 'tests/TestResults/local-feedback').resolve()
+    results_root = (Path(results_directory) if results_directory else root / 'artifacts/test-results/local-feedback').resolve()
     results = results_root / uuid.uuid4().hex
     results.mkdir(parents=True, exist_ok=False)
     (results / 'plan.json').write_text(json.dumps(plan, indent=2) + '\n')
@@ -199,7 +199,7 @@ def main():
     routing = route(root, changed)
     result = make_plan(catalog, unit_plan, routing, json.loads((root / '.github/ci-shards.json').read_text()), changed)
     try:
-        order_shards(root, result, args.timings_dir or Path(os.environ.get('HONUA_LOCAL_CI_TIMINGS', str(root / 'tests/TestResults'))))
+        order_shards(root, result, args.timings_dir or Path(os.environ.get('HONUA_LOCAL_CI_TIMINGS', str(root / 'artifacts/test-results'))))
     except (ValueError, OSError, KeyError):
         result['ordering'] = {'changed': False, 'reason': 'timing hints unavailable; canonical order retained'}
     result['source'] = {'base': args.base,

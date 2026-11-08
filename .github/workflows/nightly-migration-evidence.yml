@@ -47,7 +47,7 @@ jobs:
 
       - name: Run data-source apply tests (Postgres harness)
         run: |
-          mkdir -p tests/TestResults
+          mkdir -p artifacts/test-results
           dotnet test tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj \
             --no-build \
             --no-restore \
@@ -55,7 +55,7 @@ jobs:
             --filter "FullyQualifiedName~GeoServerImportServiceDataSourceApplyTests" \
             --logger "trx;LogFileName=geoserver-apply-fixtures.trx" \
             --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults
+            --results-directory ./artifacts/test-results
 
       - name: Run isolated plan and style apply tests
         run: |
@@ -66,7 +66,7 @@ jobs:
             --filter "FullyQualifiedName~GeoServerImportServiceApplyPlanTests|FullyQualifiedName~GeoServerImportServiceStyleApplyTests" \
             --logger "trx;LogFileName=geoserver-apply-unit-fixtures.trx" \
             --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults
+            --results-directory ./artifacts/test-results
 
       - name: Require all three migration apply classes to execute and pass
         run: |
@@ -81,7 +81,7 @@ jobs:
                   'GeoServerImportServiceApplyPlanTests', 'GeoServerImportServiceStyleApplyTests'],
           }
           for filename, classes in required.items():
-              root = ET.parse(Path('tests/TestResults') / filename).getroot()
+              root = ET.parse(Path('artifacts/test-results') / filename).getroot()
               definitions = {test.attrib['id']: test.find('t:TestMethod', ns).attrib['className']
                              for test in root.findall('t:TestDefinitions/t:UnitTest', ns)}
               results = root.findall('t:Results/t:UnitTestResult', ns)
@@ -106,7 +106,7 @@ jobs:
             --filter "FullyQualifiedName~MigrationEvidencePackBuilderTests.EmitNightlyEvidencePack_WhenEnvVarSet_WritesDeterministicArtifact" \
             --logger "trx;LogFileName=migration-evidence-pack.trx" \
             --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults
+            --results-directory ./artifacts/test-results
 
       - name: Summarize evidence pack
         if: always()
@@ -143,6 +143,6 @@ jobs:
           name: geoserver-migration-evidence-${{ github.run_id }}
           path: |
             artifacts/migration-evidence/
-            tests/TestResults/geoserver-apply-fixtures.trx
-            tests/TestResults/geoserver-apply-unit-fixtures.trx
-            tests/TestResults/migration-evidence-pack.trx
+            artifacts/test-results/geoserver-apply-fixtures.trx
+            artifacts/test-results/geoserver-apply-unit-fixtures.trx
+            artifacts/test-results/migration-evidence-pack.trx

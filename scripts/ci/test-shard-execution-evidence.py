@@ -125,11 +125,43 @@ sys.exit(int(os.environ['CHILD_EXIT']))
             self.assertEqual('failed', timing['status'])
             self.assertEqual('passed', timing['execution']['status'])
 
+    def test_injected_failure_reaches_the_required_gate_despite_successful_job_claim(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run, timing, _ = self.run_supervisor(directory, mode='failed', child_exit=1)
+            self.assertEqual(1, run.returncode)
+            self.assertEqual(1, timing['execution']['counts']['failed'])
+            env = {**os.environ, 'MODE': 'enforce', 'SELECT_RESULT': 'success',
+                   'SELECT_SKIP': 'false', 'SELECT_REASON': 'targeted', 'SELECT_COUNT': '1',
+                   'SELECT_MATRIX': json.dumps([{'shard_name': timing['shard']}]),
+                   'SHARDS_RESULT': 'success', 'GITHUB_STEP_SUMMARY': str(root / 'summary.md')}
+            aggregate = subprocess.run(
+                [sys.executable, str(ROOT / 'scripts/ci/affected-shard-verdict.py'),
+                 '--timings', directory, '--receipt', str(root / 'verdict.json')],
+                env=env, capture_output=True, text=True, timeout=30)
+            self.assertEqual(1, aggregate.returncode, aggregate.stdout + aggregate.stderr)
+            self.assertFalse(json.loads((root / 'verdict.json').read_text())['test_pass'])
+            self.assertIn('| 0 | 1 | 0 | 1 |', (root / 'summary.md').read_text())
+
     def test_count_provenance_survives_without_jq(self):
         with tempfile.TemporaryDirectory() as directory:
             run, timing, _ = self.run_supervisor(directory, no_jq=True)
             self.assertEqual(0, run.returncode, run.stdout + run.stderr)
             self.assertEqual(1, timing['execution']['counts']['executed'])
+
+    def test_foundation_security_failure_is_gating(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            stub = root / 'dotnet'
+            stub.write_text('#!/bin/bash\n'
+                            'if [[ "$1" == test && "$2" == *Honua.Postgres.Security.Tests.csproj ]]; '
+                            'then exit 1; fi\n')
+            stub.chmod(0o755)
+            env = {**os.environ, 'PATH': str(root) + os.pathsep + os.environ['PATH'],
+                   'FOUNDATION_RESULTS_DIR': str(root / 'results')}
+            run = subprocess.run(['bash', str(ROOT / 'scripts/ci/run-foundation-family.sh'), 'run', 'providers'],
+                                 env=env, capture_output=True, text=True, timeout=30)
+            self.assertNotEqual(0, run.returncode, run.stdout + run.stderr)
 
     def test_evidence_io_does_not_reclassify_early_kill_as_timeout(self):
         with tempfile.TemporaryDirectory() as directory:

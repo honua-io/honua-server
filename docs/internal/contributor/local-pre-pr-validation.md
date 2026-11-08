@@ -78,7 +78,7 @@ the safety fallbacks.
 
 These modes are iteration tools, not PR validation receipts. Run the normal pre-PR gate before
 publishing, and keep the full architecture, native and hosted gates. Affected-test logs, TRX
-files and selection details are kept in unique directories under `tests/TestResults/`. See
+files and selection details are kept in unique directories under `artifacts/test-results/`. See
 [modular test feedback](../ci/modular-test-feedback.md) for resource ownership and cleanup.
 
 ## What the default run does

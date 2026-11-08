@@ -3,7 +3,7 @@
 
 using Honua.Core.Features.FeatureStore.Domain;
 
-namespace Honua.GeoServicesRest.Tests;
+namespace Honua.Db.GeoServicesRest.Tests;
 
 public class DataProviderNameNormalizationTests
 {

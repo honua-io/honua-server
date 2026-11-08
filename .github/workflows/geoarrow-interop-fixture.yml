@@ -40,7 +40,7 @@ env:
   DOTNET_VERSION: '10.0.x'
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   DOTNET_NOLOGO: true
-  HONUA_GEOARROW_FIXTURE_OUTPUT_DIR: ${{ github.workspace }}/tests/TestResults/geoarrow-interop
+  HONUA_GEOARROW_FIXTURE_OUTPUT_DIR: ${{ github.workspace }}/artifacts/test-results/geoarrow-interop
   HONUA_GEOARROW_PRODUCER_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
 
 jobs:
@@ -66,15 +66,15 @@ jobs:
             --configuration Release \
             --filter 'FullyQualifiedName~GeoArrowQueryFormatterTests' \
             --logger 'console;verbosity=minimal' \
-            --results-directory ./tests/TestResults
+            --results-directory ./artifacts/test-results
 
       - name: Retain exact fixture, digest, and provenance
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: honua-server-geoarrow-02-${{ env.HONUA_GEOARROW_PRODUCER_COMMIT }}
           path: |
-            tests/TestResults/geoarrow-interop/honua-server-geoarrow-02-point.arrow
-            tests/TestResults/geoarrow-interop/honua-server-geoarrow-02-point.arrow.sha256
-            tests/TestResults/geoarrow-interop/honua-server-geoarrow-02-point.arrow.provenance.json
+            artifacts/test-results/geoarrow-interop/honua-server-geoarrow-02-point.arrow
+            artifacts/test-results/geoarrow-interop/honua-server-geoarrow-02-point.arrow.sha256
+            artifacts/test-results/geoarrow-interop/honua-server-geoarrow-02-point.arrow.provenance.json
           if-no-files-found: error
           retention-days: 30

@@ -50,7 +50,7 @@ jobs:
         run: dotnet build tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --no-restore --configuration Release
 
       - name: Create Test Results Directory
-        run: mkdir -p ./tests/TestResults
+        run: mkdir -p ./artifacts/test-results
 
       - name: Run pgRouting integration tests
         id: routing-tests
@@ -63,14 +63,14 @@ jobs:
             --filter "Category=Routing" \
             --logger "trx;LogFileName=routing-tests.trx" \
             --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults
+            --results-directory ./artifacts/test-results
 
       - name: Upload routing test results
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: routing-nightly-results-${{ github.run_id }}
-          path: tests/TestResults/
+          path: artifacts/test-results/
           retention-days: 14
 
       - name: Fail on routing test failure

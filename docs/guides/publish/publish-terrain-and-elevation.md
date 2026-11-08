@@ -8,6 +8,8 @@ resources:
 ---
 # Publish terrain and elevation
 
+See the [Honua vocabulary](../../concepts/domain/README.md) for the meanings of Connection, Dataset, Layer, Service, Folder, and Environment.
+
 You'll have a DEM served as Terrain-RGB tiles for MapLibre 3D terrain, plus numeric elevation queries, in about 10 minutes.
 
 **Prerequisites:** A running server ([quickstart](../../get-started/quickstart.md)), admin credentials ([authentication](../secure/authentication.md)), and a single-band DEM GeoTIFF.

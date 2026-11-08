@@ -77,7 +77,7 @@ internal static class Program
 
         var baseUrl = NormalizeBaseUrl(options.BaseUrl);
         var reportFolder = string.IsNullOrWhiteSpace(options.ReportFolder)
-            ? "load-test-reports"
+            ? Path.Join("artifacts", "load-test-reports")
             : options.ReportFolder;
 
         Console.WriteLine($"Running load tests against {baseUrl} (profile: {options.Profile})");
@@ -488,7 +488,7 @@ internal sealed class LoadTestOptions
     public string CollectionId { get; private set; } = "0";
     public string TileMatrixSet { get; private set; } = "WebMercatorQuad";
     public string[] TargetScenarios { get; private set; } = Array.Empty<string>();
-    public string ReportFolder { get; private set; } = "load-test-reports";
+    public string ReportFolder { get; private set; } = Path.Join("artifacts", "load-test-reports");
     public double? MaxFailureRate { get; private set; }
     public string? StatsOut { get; private set; }
 
