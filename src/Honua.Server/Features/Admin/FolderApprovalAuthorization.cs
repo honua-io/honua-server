@@ -76,11 +76,11 @@ internal static class FolderApprovalAuthorization
             ServiceIds = mutation.AffectedServices(snapshot.Graph).Select(service => service.Metadata.Id).Order(StringComparer.Ordinal).ToArray(),
             ExpiresAt = await EvidenceExpiryAsync(context).ConfigureAwait(false)
         };
-        var revision = await PolicyRevisionAsync(context.RequestServices, authorization, cancellationToken, context.User).ConfigureAwait(false);
+        var revision = await PolicyRevisionAsync(context.RequestServices, authorization, context.User, cancellationToken).ConfigureAwait(false);
         var authorizationContext = CreateAuthorizationContext(context, request, cancellationToken);
         if (await FolderEndpoints.AuthorizeAffectedServices(authorizationContext, snapshot.Graph, mutation).ConfigureAwait(false) is not null)
             throw new FolderProposalRefusal("The requester does not have access to every affected service.");
-        if (revision != await PolicyRevisionAsync(context.RequestServices, authorization, cancellationToken, context.User).ConfigureAwait(false))
+        if (revision != await PolicyRevisionAsync(context.RequestServices, authorization, context.User, cancellationToken).ConfigureAwait(false))
             throw new FolderProposalRefusal(FreshProposalRequired);
         return plan with { FolderAuthorization = authorization with { PolicyRevision = revision } };
     }
@@ -114,7 +114,7 @@ internal static class FolderApprovalAuthorization
                 .GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             if (snapshot.Etag != authorization.SnapshotEtag ||
                 payload.Parameters.GetValueOrDefault("If-Match") != snapshot.Etag ||
-                authorization.PolicyRevision != await PolicyRevisionAsync(services, authorization, cancellationToken).ConfigureAwait(false)) return false;
+                authorization.PolicyRevision != await PolicyRevisionAsync(services, authorization, null, cancellationToken).ConfigureAwait(false)) return false;
             var affected = BuildMutation(snapshot.Graph, payload.ToOperationRequest(), proposal.TenantId)
                 .AffectedServices(snapshot.Graph).Select(service => service.Metadata.Id).Order(StringComparer.Ordinal);
             return authorization.ServiceIds.SequenceEqual(affected, StringComparer.Ordinal);
@@ -184,7 +184,7 @@ internal static class FolderApprovalAuthorization
     }
 
     private static async Task WriteMembershipPolicyAsync(Utf8JsonWriter writer, IServiceProvider services,
-        FolderRequesterAuthorization authorization, CancellationToken cancellationToken, ClaimsPrincipal? requester)
+        FolderRequesterAuthorization authorization, ClaimsPrincipal? requester, CancellationToken cancellationToken)
     {
         writer.WriteStartArray();
         writer.WriteStringValue(authorization.SubjectId);
@@ -222,7 +222,7 @@ internal static class FolderApprovalAuthorization
     }
 
     private static async Task<string> PolicyRevisionAsync(IServiceProvider services, FolderRequesterAuthorization authorization,
-        CancellationToken cancellationToken, ClaimsPrincipal? requester = null)
+        ClaimsPrincipal? requester, CancellationToken cancellationToken)
     {
         using var bytes = new MemoryStream();
         using (var writer = new Utf8JsonWriter(bytes))
@@ -238,7 +238,7 @@ internal static class FolderApprovalAuthorization
             if (OperationProposerApiKeyAuthority.IsApiKeyActor(authorization.RequesterId))
                 await WriteCredentialPolicyAsync(writer, services, authorization.RequesterId, cancellationToken).ConfigureAwait(false);
             writer.WriteBooleanValue(LicenseGate.HasLiveEntitlement(services, FeatureCatalog.OidcClaimsMappingKey));
-            await WriteMembershipPolicyAsync(writer, services, authorization, cancellationToken, requester).ConfigureAwait(false);
+            await WriteMembershipPolicyAsync(writer, services, authorization, requester, cancellationToken).ConfigureAwait(false);
             var store = services.GetService<IRoleStore>();
             writer.WriteBooleanValue(store is not null);
             if (store is not null)
