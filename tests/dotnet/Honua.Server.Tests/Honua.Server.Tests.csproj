@@ -53,7 +53,6 @@
     <ProjectReference Include="..\..\..\src\Honua.Scene\Honua.Scene.csproj" />
     <!-- License-mint round-trip tests prove minted envelopes are accepted by the
          runtime verifier (FileBackedLicenseService) and rejected when tampered. -->
-    <ProjectReference Include="..\..\..\src\Honua.LicenseMint\Honua.LicenseMint.csproj" />
   </ItemGroup>
 
   <ItemGroup>

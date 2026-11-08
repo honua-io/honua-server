@@ -69,7 +69,7 @@ variants exactly as `src/**` does, and the legacy workflow already routes
 variant-only Dockerfile edits per variant. Avoidance is only possible for the
 6 of 33 `src/**` projects outside the serving closure (`Honua.AppHost`,
 `Honua.ControlPlane.Lambda`, `Honua.Geoprocessing.Cli`,
-`Honua.Geoprocessing.Testing`, `Honua.LicenseMint`, `Honua.Worker.Gdal`), and no
+`Honua.Geoprocessing.Testing`, `Honua.Worker.Gdal`), and no
 observed head touched only those.
 
 Enforcing this router today would therefore change nothing except the risk

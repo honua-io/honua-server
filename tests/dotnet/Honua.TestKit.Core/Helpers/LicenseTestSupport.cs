@@ -33,9 +33,10 @@ public static class LicenseTestSupport
         string[]? entitlements = null,
         string? keyId = null,
         bool tamperSignature = false,
-        LicenseCapacityTerms? capacity = null)
+        LicenseCapacityTerms? capacity = null,
+        byte[]? signingSeed = null)
     {
-        var privateKey = new Ed25519PrivateKeyParameters(SigningSeed, 0);
+        var privateKey = new Ed25519PrivateKeyParameters(signingSeed ?? SigningSeed, 0);
         var publicKey = privateKey.GeneratePublicKey().GetEncoded();
         var payload = JsonSerializer.Serialize(
             new

@@ -406,20 +406,10 @@ jobs:
         working-directory: producer
         run: |
           set -euo pipefail
-          # Licensing:DevGrantEdition is refused under the Production startup policy by design, and
-          # the soak keeps a real signed license on the same verification path a customer uses. The
-          # key pair is generated here, used once, and never leaves the runner.
           mkdir -p "$RUNNER_TEMP/license"
-          dotnet run --project src/Honua.LicenseMint -c Release -- keygen --key-id soak \
-            --private-out "$RUNNER_TEMP/license/soak.key" | tee "$RUNNER_TEMP/license/keygen.txt"
-          trusted="$(grep -oE 'base64url:[A-Za-z0-9_-]+' "$RUNNER_TEMP/license/keygen.txt" | head -1)"
-          dotnet run --project src/Honua.LicenseMint -c Release -- mint --key-id soak \
-            --license-id "capacity-soak-${{ github.run_id }}" \
-            --licensed-to "Honua capacity soak (honua-release#235)" \
-            --edition Pro --expires "$(date -u -d '+2 days' +%Y-%m-%d)" \
-            --private-key-file "$RUNNER_TEMP/license/soak.key" \
-            --out "$RUNNER_TEMP/license/license.json" >/dev/null
-          rm -f "$RUNNER_TEMP/license/soak.key"
+          trusted="$(dotnet run --project tests/dotnet/Honua.LoadTests -c Release -- \
+            --write-soak-license "$RUNNER_TEMP/license/license.json" \
+            | grep -E '^base64url:[A-Za-z0-9_-]+$')"
           echo "::add-mask::$trusted"
           echo "trusted_key=$trusted" >> "$GITHUB_OUTPUT"
 
