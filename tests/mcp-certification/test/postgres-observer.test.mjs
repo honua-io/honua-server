@@ -37,3 +37,15 @@ test("observer diagnostics preserve only bounded SQLSTATE or fixed fixture codes
   assert.equal(JSON.stringify(error).includes("synthetic-secret"), false);
   assert.equal(error.message.includes("synthetic-secret"), false);
 });
+
+test("physical binding rejects obsolete or non-authored service selectors", async () => {
+  const observer = new PostgresCancellationObserver({});
+  let reads = 0;
+  observer.sql = async () => { reads++; return []; };
+  const { serviceLayerIndex, ...withoutSelector } = fixture;
+  for (const candidate of [{ ...withoutSelector, layerId: 0 },
+    { ...fixture, serviceLayerIndex: 41 }, { ...fixture, serviceName: "other-service" }]) {
+    await assert.rejects(observer.bind(candidate), (error) => error.observationCode === "FIXTURE_BINDING");
+  }
+  assert.equal(reads, 0);
+});

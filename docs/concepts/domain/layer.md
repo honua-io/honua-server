@@ -23,6 +23,14 @@ A Layer exposes a [Dataset](dataset.md) within a [Service](service.md), with fie
 
 A Layer links the Dataset to the Service and may select a [storage binding](storage-binding.md). The Dataset ID, backing-store handle, and Service-local Layer identifier have different scopes and must not be substituted for one another. The [glossary transition note](README.md#implementation-transition) explains legacy names in current APIs and stored metadata.
 
+The API distinguishes three identifiers:
+
+- `storageLayerId` is the internal integer backing-store handle. Global connection and metadata administration use it to address stored data.
+- `serviceLayerIndex` is an integer within one Service. Service-scoped administration and MCP tools require the Service together with this index; another Service can use the same index for different data.
+- The graph Layer ID is the author-chosen, globally unique string currently stored as `MetadataV2Publication.Metadata.Id`. Public protocol identifiers derive from the Layer, so changing its storage binding preserves its identity. The Service-local string identifier is currently stored as `MetadataV2Publication.Identifier.Value`.
+
+The [2026.1-rc.2 identifier changes](../../reference/release-notes/2026.1-rc.2.md) map these identities to each protocol.
+
 A source-backed Layer keeps the source table authoritative and does not offer feature writes through that binding. A managed Layer copies records into Honua's managed store, which becomes authoritative for that layer. Edit capabilities must be supported and permitted; a PostGIS source alone does not imply write-through editing.
 
 A renderer's “layer” is different: it describes how features are drawn inside a [map](map.md). Several drawing layers can use one source. An OGC collection or GeoServices REST layer can be a protocol projection of a published layer, but resolve the returned identifier instead of assuming names match across protocols.
