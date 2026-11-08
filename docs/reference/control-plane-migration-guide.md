@@ -160,6 +160,15 @@ the spec prevents generated clients from emitting calls that cannot succeed.
 | `GET`/`POST` `/api/v1/admin/metadata/resources`, `GET`/`PUT`/`DELETE` `/api/v1/admin/metadata/resources/{kind}/{namespace}/{name}` (`ApiResponseMetadataResource`, `ApiResponseMetadataResourceArray`, `MetadataResource`, `MetadataResourceIdentifier`, `ResourceMetadata`) | Metadata v2 release packages and the layer authoring routes under `/api/v1/admin/metadata/layers/**` |
 
 
+## Folder proposal authorization
+
+Folder proposals check the requester's current access to every affected Service
+before acceptance. The server seals evidence of that check without retaining
+caller role claims and revalidates it before execution. Changed or expired
+authority requires a fresh proposal; refresh the catalog and submit again.
+Role-policy changes conservatively invalidate pending Folder proposals, and
+previously stored Folder proposals without this evidence must be submitted again.
+
 ## Deprecation rules
 
 Deprecations follow the [versioning and support policy](versioning-and-support.md):

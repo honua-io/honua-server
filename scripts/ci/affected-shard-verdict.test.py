@@ -212,15 +212,27 @@ class AffectedShardVerdictTests(unittest.TestCase):
         command = step["run"].replace("scripts/ci/assert-trx-executed.py", str(ROOT / "scripts/ci/assert-trx-executed.py"))
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            results = root / "tests/TestResults"
+            download = next(step for step in job["steps"]
+                            if step.get("with", {}).get("pattern") == "foundation-test-results-*")
+            self.assertEqual(download["with"]["path"], "artifacts/test-results")
+            results = root / "artifacts/test-results" / "family"
             results.mkdir(parents=True)
-            path, _ = write_passing_receipt(results)
+            write_passing_receipt(results)
+            path = results / "outcome.trx"
+            obsolete = root / "tests/TestResults"
+            obsolete.mkdir(parents=True)
+            write_passing_receipt(obsolete)
             env = {**os.environ, "GITHUB_STEP_SUMMARY": str(root / "summary.md")}
-            for outcome in ("Passed", "Failed"):
-                path.write_text(f'<TestRun><Results><UnitTestResult testName="control" outcome="{outcome}" /></Results></TestRun>')
-                run = subprocess.run(["bash", "-e", "-o", "pipefail", "-c", command],
-                                     cwd=root, env=env, capture_output=True, text=True)
-                self.assertEqual(run.returncode == 0, outcome == "Passed", run.stdout + run.stderr)
+            for outcome in ("Passed", "Failed", "missing"):
+                with self.subTest(outcome=outcome):
+                    if outcome == "missing":
+                        for trx in results.glob("*.trx"):
+                            trx.unlink()
+                    else:
+                        path.write_text(f'<TestRun><Results><UnitTestResult testName="control" outcome="{outcome}" /></Results></TestRun>')
+                    run = subprocess.run(["bash", "-e", "-o", "pipefail", "-c", command],
+                                         cwd=root, env=env, capture_output=True, text=True)
+                    self.assertEqual(run.returncode == 0, outcome == "Passed", run.stdout + run.stderr)
 
     def test_skipped_selection_is_not_a_test_pass_in_either_mode(self) -> None:
         for mode in ("report", "enforce"):

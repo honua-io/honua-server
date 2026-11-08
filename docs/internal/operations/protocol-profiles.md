@@ -42,7 +42,7 @@ Pass the same profile to restore, build, and publish. Unknown names fail. An exp
 
 `all` keeps the ordinary `bin/` and `obj/` paths. The other profiles write `src/Honua.Server/bin/protocol-<name>/` and `obj/protocol-<name>/`, so concurrent profiles do not share intermediates. Identical inputs still reuse their own tree.
 
-Docker accepts `HONUA_PROTOCOL_PROFILE` (default `all`) on the root Dockerfile and on docker/Dockerfile.aot. Restore and publish receive the same `-p:HonuaProtocolProfile`. A publish writes `honua-protocol-profile.json`. docker/Dockerfile.protocol-profile-runtime copies that directory and checks the receipt. It does not compile. It is a packaging shim, not the production read-only image.
+Docker accepts `HONUA_PROTOCOL_PROFILE` (default `all`) on the root Dockerfile and on docker/Dockerfile.aot. Restore and publish receive the same `-p:HonuaProtocolProfile`. A publish writes `honua-protocol-profile.json`.
 
 The receipt identity is `honua.protocol-profile/v1|<profile>|<modules>|build=<HonuaBuildProfile>`. A consumer rejects a receipt whose profile or module list does not match. Do not reuse a publish output across profiles.
 

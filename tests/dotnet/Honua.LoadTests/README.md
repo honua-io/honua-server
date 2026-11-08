@@ -6,6 +6,11 @@ and a two-minute ramp-down. The candidate receipt is produced by
 [capacity-soak-candidate.yml](../../../.github/workflows/capacity-soak-candidate.yml);
 see its [operator instructions](../../../docs/ops/capacity-soak-receipt.md).
 
+The candidate producer runs `--write-soak-license <path>` alone to create its
+two-day Pro test license. Each invocation uses a fresh signing key held in memory
+and prints only the trusted public key setting. The normal server verifier checks
+the resulting license during the soak; this helper lives only in the test harness.
+
 Bare numeric duration arguments are **seconds**: `--ramp-up 300` is five
 minutes, just like `--ramp-up 300s`, `--ramp-up 5m`, or `--ramp-up 00:05:00`.
 This matters because the candidate producer exports `RAMP_UP=300` and the

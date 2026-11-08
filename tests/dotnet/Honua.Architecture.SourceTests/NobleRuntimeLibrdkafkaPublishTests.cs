@@ -17,10 +17,8 @@ public sealed class NobleRuntimeLibrdkafkaPublishTests
     private static readonly string[] OtherServerPublishDockerfiles =
     [
         "docker/Dockerfile.lambda",
-        "docker/Dockerfile.lambda.aot.simple",
         "docker/Dockerfile.functions",
         "docker/Dockerfile.functions.aot",
-        "docker/Dockerfile.controlplane-lambda",
     ];
 
     [ArchitectureTest]
