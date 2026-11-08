@@ -6,9 +6,11 @@ using Honua.Ai.StudioAiProxy;
 using Honua.Ai.StudioAiProxy.Abstractions;
 using Honua.Ai.StudioAiProxy.Adapters;
 using Honua.Ai.StudioAiProxy.Domain;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Tests.Features.StudioAiProxy.Fakes;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Features.StudioAiProxy;
 
@@ -52,7 +54,15 @@ public sealed partial class StudioAiProxyServiceTests
     }
 
     private static StudioAiProxyService CreateAnthropicSigningService(IHttpClientFactory clients)
-        => CreateSigningService(ConfigWithOneAnthropicProvider("claude", true),
-            new AnthropicStudioAiProxyAdapter(clients, new StudioAiProxyApiKeyResolver(),
+    {
+        const string secretReference = "secret://studio-ai/provider-key";
+        var configuration = ConfigWithOneAnthropicProvider("claude", true);
+        configuration.Providers["claude"].ApiKey = secretReference;
+        var secrets = Substitute.For<ISecretProvider>();
+        secrets.IsSecretReference(secretReference).Returns(true);
+        secrets.GetSecretOrDefaultAsync(secretReference, null, Arg.Any<CancellationToken>()).Returns("test-key");
+        return CreateSigningService(configuration,
+            new AnthropicStudioAiProxyAdapter(clients, new StudioAiProxyApiKeyResolver(secrets),
                 NullLogger<AnthropicStudioAiProxyAdapter>.Instance));
+    }
 }
