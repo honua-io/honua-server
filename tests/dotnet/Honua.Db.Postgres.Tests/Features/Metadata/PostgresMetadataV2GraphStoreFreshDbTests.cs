@@ -3,7 +3,6 @@
 
 using System.Data;
 using System.Data.Common;
-using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
@@ -16,7 +15,6 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
-using NpgsqlTypes;
 
 namespace Honua.Db.Postgres.Tests.Features.Metadata;
 
@@ -26,7 +24,7 @@ namespace Honua.Db.Postgres.Tests.Features.Metadata;
 /// failure and prove ordinary reads/writes never self-apply the migration (#3899).
 /// </summary>
 [Collection("Database")]
-public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fixture)
+public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fixture)
 {
     [IntegrationTest]
     public async Task GetCurrentAsync_WhenMigration031Missing_FailsWithTypedSchemaFloorError()
@@ -742,55 +740,6 @@ public sealed class PostgresMetadataV2GraphStoreFreshDbTests(PostgresFixture fix
         {
             await fixture.DropSchemaAsync(schema);
         }
-    }
-
-    [IntegrationTest]
-    public async Task ActivateRevisionAsync_StoreProfile_RefusesExcludedRetainedConnectionsBeforeChangingCurrent()
-    {
-        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreFreshDbTests));
-        try
-        {
-            await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
-            var provider = new TestConnectionProvider(fixture.DataSource, schema);
-            var store = new PostgresMetadataV2GraphStore(provider, "Test", FixtureBypassDatabaseSchemaGuard.Instance, schema);
-            var retained = await store.SaveAsync(new MetadataV2Graph { Environment = "Test" }, null);
-            var current = await store.SaveAsync(retained.Graph, retained.Etag);
-            await AddRetainedStoreConnectionAsync(schema, retained);
-
-            var postgisOnly = Environment.GetEnvironmentVariable("HONUA_EXPECTED_STORE_PROFILE") == "postgis";
-            Func<Task> activate = () => store.ActivateRevisionAsync(retained.Revision, current.Etag);
-            if (postgisOnly)
-                await activate.Should().ThrowAsync<InvalidOperationException>().WithMessage("*-full*");
-            else
-                await activate.Should().NotThrowAsync();
-
-            var fresh = new PostgresMetadataV2GraphStore(provider, "Test", FixtureBypassDatabaseSchemaGuard.Instance, schema);
-            (await fresh.GetCurrentAsync()).Revision.Should().Be(postgisOnly ? current.Revision : retained.Revision);
-        }
-        finally
-        {
-            await fixture.DropSchemaAsync(schema);
-        }
-    }
-
-    private async Task AddRetainedStoreConnectionAsync(string schema, MetadataV2GraphSnapshot retained)
-    {
-        var graph = retained.Graph with
-        {
-            Connections = [new MetadataV2Connection
-            {
-                Metadata = new MetadataV2ObjectMetadata { Id = "retained-store", Name = "retained-store" },
-                Type = MetadataV2ConnectionType.Database,
-                Provider = "mysql"
-            }]
-        };
-        await using var connection = await fixture.DataSource.OpenConnectionAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = $"UPDATE \"{schema}\".metadata_v2_snapshots SET document = @document WHERE environment = 'Test' AND revision = @revision";
-        command.Parameters.AddWithValue("document", NpgsqlDbType.Jsonb,
-            JsonSerializer.Serialize(graph, MetadataV2JsonContext.Default.MetadataV2Graph));
-        command.Parameters.AddWithValue("revision", retained.Revision);
-        await command.ExecuteNonQueryAsync();
     }
 
     private static PostgresCoreSchemaGuard CreateGuard(string schema)

@@ -22,8 +22,6 @@ public partial class SecureConnectionEndpointsTests
     public async Task CreateConnection_StoreProfileRefusal_ReturnsBadRequestWithFullVariant()
     {
         var registry = Substitute.For<ISecureConnectionRegistry>();
-        registry.CreateConnectionAsync(Arg.Any<DataConnection>(), Arg.Any<CancellationToken>())
-            .Returns(_ => Task.FromException<DataConnection>(new DataStoreProviderUnavailableException()));
         var request = new CreateSecureConnectionRequest
         {
             Name = "profile-fixture",
@@ -38,6 +36,8 @@ public partial class SecureConnectionEndpointsTests
 
         await WithRegistryFixtureAsync(registry, async client =>
         {
+            registry.CreateConnectionAsync(Arg.Any<DataConnection>(), Arg.Any<CancellationToken>())
+                .Returns(_ => Task.FromException<DataConnection>(new DataStoreProviderUnavailableException()));
             using var response = await client.PostAsJsonAsync("/api/v1/admin/connections", request, _jsonOptions);
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             (await response.Content.ReadAsStringAsync()).Should().Contain("-full");
@@ -62,11 +62,11 @@ public partial class SecureConnectionEndpointsTests
             SslMode = SslMode.Require
         };
         registry.GetConnectionAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(connection);
-        registry.UpdateConnectionAsync(Arg.Any<DataConnection>(), Arg.Any<CancellationToken>())
-            .Returns(_ => Task.FromException<DataConnection>(new DataStoreProviderUnavailableException()));
 
         await WithRegistryFixtureAsync(registry, async client =>
         {
+            registry.UpdateConnectionAsync(Arg.Any<DataConnection>(), Arg.Any<CancellationToken>())
+                .Returns(_ => Task.FromException<DataConnection>(new DataStoreProviderUnavailableException()));
             using var response = await client.PutAsJsonAsync($"/api/v1/admin/connections/{connection.ConnectionId}",
                 new UpdateSecureConnectionRequest { Description = "fixture" }, _jsonOptions);
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);

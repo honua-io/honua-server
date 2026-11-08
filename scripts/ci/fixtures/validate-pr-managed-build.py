@@ -104,7 +104,9 @@ class PrManagedBuildTests(unittest.TestCase):
         # These executable proofs must remain consumers of the producer build.
         for name in ['Prove remote source execution with real HTTP and PostGIS', 'PDAL']:
             self.assertIn(name,consumer)
-        commands = re.findall(r'^          dotnet test (.*?)(?=\n\s*\n|\n\s*- name:|\Z)',consumer,re.S | re.M)
+        full_profile_proofs, separator, _ = consumer.partition('- name: Verify default PostGIS store profile')
+        self.assertTrue(separator, 'PostGIS proof must follow the full-profile runtime proofs')
+        commands = re.findall(r'^          dotnet test (.*?)(?=\n\s*\n|\n\s*- name:|\Z)',full_profile_proofs,re.S | re.M)
         self.assertEqual(len(commands), 8, 'All eight existing direct runtime proof invocations must remain')
         for command in commands:
             self.assertIn('--no-build',command)
