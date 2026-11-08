@@ -317,7 +317,8 @@ runs:
             --filter "Tier=Fast" \
             --logger "trx;LogFileName=${{ inputs.trx-prefix }}-server-fast.trx" \
             --logger "console;verbosity=minimal" \
-            --results-directory ./artifacts/test-results
+            --results-directory ./artifacts/test-results \
+            -- xUnit.MaxParallelThreads=4 xUnit.ParallelAlgorithm=conservative
 
     # Migrated pure Fast cases retain the required smoke they had in Server.Tests.
     # Their catalogued projects were included in the one combined build above.
