@@ -739,18 +739,7 @@ internal sealed class WorkflowPackageService(
             });
         }
 
-        if (target is WorkflowPublicationTarget.Job or WorkflowPublicationTarget.ProcessEndpoint
-            && (graph.Nodes.Any(node => node.RetryPolicy is not null || node.FailurePolicy != WorkflowStepFailurePolicy.Fail
-                || node.TimeoutSeconds is not null || node.Condition is not null || node.ForEach is not null)
-                || graph.Edges.Any(edge => edge.Kind == WorkflowEdgeKind.Failure)))
-        {
-            failures.Add(new WorkflowPackageValidationFailure
-            {
-                Code = "UNSUPPORTED_EXECUTION_TARGET",
-                Message = $"Publication target '{target}' cannot honour node execution settings or Failure edges; use a Schedule target.",
-                FieldPath = "graph"
-            });
-        }
+        ValidateExecutionTarget(graph, target.Value, failures);
 
         foreach (var node in graph.Nodes)
         {
@@ -777,6 +766,26 @@ internal sealed class WorkflowPackageService(
                 });
             }
         }
+    }
+
+    private static void ValidateExecutionTarget(
+        WorkflowGraph graph,
+        WorkflowPublicationTarget target,
+        List<WorkflowPackageValidationFailure> failures)
+    {
+        if (target is WorkflowPublicationTarget.Job or WorkflowPublicationTarget.ProcessEndpoint
+            && (graph.Nodes.Any(node => node.RetryPolicy is not null || node.FailurePolicy != WorkflowStepFailurePolicy.Fail
+                || node.TimeoutSeconds is not null || node.Condition is not null || node.ForEach is not null)
+                || graph.Edges.Any(edge => edge.Kind == WorkflowEdgeKind.Failure)))
+        {
+            failures.Add(new WorkflowPackageValidationFailure
+            {
+                Code = "UNSUPPORTED_EXECUTION_TARGET",
+                Message = $"Publication target '{target}' cannot honour node execution settings or Failure edges; use a Schedule target.",
+                FieldPath = "graph"
+            });
+        }
+
     }
 
     private async Task<IReadOnlyDictionary<string, WorkflowNodeDefinition>> GetNodeDefinitionLookupAsync(

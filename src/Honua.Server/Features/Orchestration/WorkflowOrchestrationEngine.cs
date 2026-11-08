@@ -1148,51 +1148,43 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
                 return false;
             }
 
-            if (stepDefinition.FailureDependsOn.Contains(dependency, StringComparer.Ordinal))
+            if (!IsStepTerminal(upstream.Status))
             {
-                if (!IsStepTerminal(upstream.Status))
-                {
-                    return false;
-                }
-                if (upstream.Status == WorkflowStepStatus.Failed)
-                {
-                    continue;
-                }
-                cascade = new CascadeReason(WorkflowStepStatus.Skipped, $"Failure branch from '{dependency}' was not taken.");
                 return false;
             }
 
-            switch (upstream.Status)
+            cascade = DependencyCascade(stepDefinition, upstream, ResolveUpstreamPolicy(definitionById, dependency));
+            if (cascade is not null)
             {
-                case WorkflowStepStatus.Succeeded:
-                    continue;
-                case WorkflowStepStatus.Skipped:
-                    // Per the design contract, a Skip-policy upstream only cascades to dependents
-                    // that actually consume its artifacts. Structural DependsOn alone is not enough
-                    // to trigger a cascade skip; the downstream step proceeds as if satisfied.
-                    if (!HasBindingFrom(stepDefinition, dependency))
-                    {
-                        continue;
-                    }
-
-                    cascade = new CascadeReason(WorkflowStepStatus.Skipped, $"Upstream step '{dependency}' was skipped.");
-                    return false;
-                case WorkflowStepStatus.Failed:
-                    // A Fail-policy upstream cancels non-terminal dependents so the run records them
-                    // as cancelled (not skipped), while the run itself derives Failed from the upstream.
-                    cascade = new CascadeReason(
-                        WorkflowStepStatus.Cancelled,
-                        $"Upstream step '{dependency}' failed under {ResolveUpstreamPolicy(definitionById, dependency)} policy.");
-                    return false;
-                case WorkflowStepStatus.Cancelled:
-                    cascade = new CascadeReason(WorkflowStepStatus.Cancelled, $"Upstream step '{dependency}' was cancelled.");
-                    return false;
-                default:
-                    return false;
+                return false;
             }
         }
 
         return true;
+    }
+
+    private static CascadeReason? DependencyCascade(
+        WorkflowStepDefinition step,
+        WorkflowStepState upstream,
+        string failurePolicy)
+    {
+        if (step.FailureDependsOn.Contains(upstream.StepId, StringComparer.Ordinal))
+        {
+            return upstream.Status == WorkflowStepStatus.Failed
+                ? null
+                : new CascadeReason(WorkflowStepStatus.Skipped, $"Failure branch from '{upstream.StepId}' was not taken.");
+        }
+
+        return upstream.Status switch
+        {
+            WorkflowStepStatus.Skipped when HasBindingFrom(step, upstream.StepId)
+                => new CascadeReason(WorkflowStepStatus.Skipped, $"Upstream step '{upstream.StepId}' was skipped."),
+            WorkflowStepStatus.Failed
+                => new CascadeReason(WorkflowStepStatus.Cancelled, $"Upstream step '{upstream.StepId}' failed under {failurePolicy} policy."),
+            WorkflowStepStatus.Cancelled
+                => new CascadeReason(WorkflowStepStatus.Cancelled, $"Upstream step '{upstream.StepId}' was cancelled."),
+            _ => null
+        };
     }
 
     private static bool HasBindingFrom(WorkflowStepDefinition stepDefinition, string upstreamStepId)

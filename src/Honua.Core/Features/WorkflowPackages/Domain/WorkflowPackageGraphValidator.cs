@@ -170,6 +170,28 @@ public static class WorkflowPackageGraphValidator
             }
         }
 
+        ValidateExecutionSettings(graph, nodeIds, failures);
+
+        if (nodeIds.Count == graph.Nodes.Count && HasCycle(graph))
+        {
+            failures.Add(new WorkflowPackageValidationFailure
+            {
+                Code = "DEPENDENCY_CYCLE",
+                Message = "Workflow graph contains a dependency cycle.",
+                FieldPath = "graph.edges"
+            });
+        }
+
+        return failures.Count == 0
+            ? WorkflowPackageValidationResult.Success(packageHash, warnings)
+            : WorkflowPackageValidationResult.Failed(failures, packageHash, warnings);
+    }
+
+    private static void ValidateExecutionSettings(
+        WorkflowGraph graph,
+        HashSet<string> nodeIds,
+        List<WorkflowPackageValidationFailure> failures)
+    {
         var forEachNodeIds = graph.Nodes.Where(node => node.ForEach is not null)
             .Select(node => node.NodeId).ToHashSet(StringComparer.Ordinal);
         foreach (var node in graph.Nodes)
@@ -207,19 +229,6 @@ public static class WorkflowPackageGraphValidator
             }
         }
 
-        if (nodeIds.Count == graph.Nodes.Count && HasCycle(graph))
-        {
-            failures.Add(new WorkflowPackageValidationFailure
-            {
-                Code = "DEPENDENCY_CYCLE",
-                Message = "Workflow graph contains a dependency cycle.",
-                FieldPath = "graph.edges"
-            });
-        }
-
-        return failures.Count == 0
-            ? WorkflowPackageValidationResult.Success(packageHash, warnings)
-            : WorkflowPackageValidationResult.Failed(failures, packageHash, warnings);
     }
 
     private static HashSet<string> WiredInputPorts(WorkflowGraph graph, string nodeId)

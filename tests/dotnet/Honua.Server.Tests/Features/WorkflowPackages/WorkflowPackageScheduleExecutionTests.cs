@@ -16,6 +16,30 @@ namespace Honua.Server.Tests.Features.WorkflowPackages;
 public sealed partial class WorkflowPackageSchedulePublicationTests
 {
     [UnitTest]
+    public void ReadGraph_OmittedRetryBackoff_UsesDeclaredDefaults()
+    {
+        var graph = ReadGraph("""
+            {"nodes":[{"nodeId":"work","nodeTypeId":"process:test.echo",
+            "retryPolicy":{"maxAttempts":2,"initialDelaySeconds":0}}]}
+            """);
+        Assert.Equal(2.0, graph.Nodes[0].RetryPolicy!.BackoffMultiplier);
+        Assert.Equal(300, graph.Nodes[0].RetryPolicy!.MaxDelaySeconds);
+    }
+
+    [Theory]
+    [Trait("Tier", "Fast")]
+    [InlineData("[]")]
+    [InlineData("{}")]
+    [InlineData("{\"maxAttempts\":2}")]
+    [InlineData("{\"maxAttempts\":\"two\",\"initialDelaySeconds\":0}")]
+    [InlineData("{\"maxAttempts\":2,\"initialDelaySeconds\":0,\"backoffMultiplier\":null}")]
+    [InlineData("{\"maxAttempts\":2,\"initialDelaySeconds\":0,\"maxDelaySeconds\":1.5}")]
+    public void ReadGraph_MalformedRetryOption_ReturnsJsonValidation(string retry)
+    {
+        Assert.Throws<JsonException>(() => ReadGraph("{\"nodes\":[{\"nodeId\":\"work\",\"nodeTypeId\":\"process:test.echo\",\"retryPolicy\":" + retry + "}]}"));
+    }
+
+    [UnitTest]
     public async Task PublishVersion_ExecutableNodeFields_SurviveWireStorageAndCompilation()
     {
         var graph = ExecutionGraph();
