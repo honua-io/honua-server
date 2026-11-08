@@ -1369,7 +1369,7 @@ assert_descriptor \
   "false" \
   "OData Core"
 
-# #1963 oauth: the GeoServices Sharing source (src/Honua.Protocols/GeoServices/
+# oauth: the GeoServices Sharing source (src/Honua.Protocols/GeoServices/
 # Sharing/) is owned by the Server Features Miscellaneous catch-all (Features.Sharing.*),
 # the Admin OAuth endpoints by the Admin & Console shard (Features.Admin.*), and
 # the Hosting/Features/Authentication override routes to the auth/security
