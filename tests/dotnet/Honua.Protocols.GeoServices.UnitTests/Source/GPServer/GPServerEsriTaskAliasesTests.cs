@@ -161,7 +161,7 @@ public sealed class GPServerEsriTaskAliasesTests
         // The GeoServices parity claim (docs/gis/data/geoservices-parity-judgment.json:
         // "40 unambiguous aliases ... are published alongside canonical process IDs")
         // counts this contract. Changing one without the other is the drift #4781 filed:
-        // update the judgement source and rerun scripts/generate-geoservices-parity.sh.
+        // update the judgement source and rerun scripts/ci/generate-geoservices-parity.sh.
         GPServerEsriTaskAliases.Contract.Should().HaveCount(40);
     }
 
