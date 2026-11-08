@@ -3,7 +3,7 @@
 This experiment compares the existing OData test assembly with the narrow
 OData unit/component projects and runtime test host. The eighty existing unit
 cases move to a dedicated OData Units shard so normal CI retains their coverage.
-The new minimal-host component tests, image, and performance measurements remain
+The new minimal-host component tests and performance measurements remain
 opt-in. Full solution validation, provider coverage, and AOT/image release gates
 remain required. A green pilot is evidence for this composition only.
 
@@ -23,12 +23,11 @@ The same exclusion holds for `Honua.OData.TestHost` and the OData component test
 project. The baseline integration project still references `Honua.Server`, and the
 unit candidate closure is at least 50% smaller. `scripts/ci/odata-pilot/test_pilot.py`
 locks this static boundary. It is not the harness's evaluated MSBuild graph,
-timings, peak memory, disk size, or image size. Component measured runs and the
-managed image builder are not implemented, and the Flow reservation parser still
+timings, peak memory, or disk size. Component measured runs are not implemented,
+and the Flow reservation parser still
 rejects `-getItem:` and `-getProperty:`. Until those are available, `compare`
 cannot qualify this pilot and it stays opt-in. Do not extend this isolation
-pattern past OData. The runtime image copies a verified publish directory and
-does not compile.
+pattern past OData.
 
 ```bash
 python3 scripts/ci/odata-pilot/pilot.py plan \
@@ -50,8 +49,6 @@ graph is the union of the full server and contract runner; the candidate graph
 is the contract runner and its minimal-host closure. Restore, clean/warm-up, and
 build cover every selected entry project. The tool never compares unrelated old
 integration cases with the new contracts.
-The image baseline publishes `Honua.Server`; the candidate publishes
-`tests/dotnet/Honua.OData.TestHost/Honua.OData.TestHost.csproj`.
 
 For each selection, collect three paired repetitions of each scenario below.
 Alternate which variant runs first between repetitions. Serialize runs so shared
@@ -107,8 +104,7 @@ this closure does not invalidate the key; a shared build property or linked seed
 change does. Multi-target graphs fail closed until per-framework evaluation is
 implemented.
 
-The harness always invokes the selected build before executing tests or
-publishing. It does not restore an external build-output cache or trust another
+The harness always invokes the selected build before executing tests. It does not restore an external build-output cache or trust another
 receipt as proof that current outputs match. Consequently an artifact-key
 mismatch never takes a `--no-build` shortcut: the current selected graph is built
 first. Keep output artifacts alongside their receipt; any future cache consumer
@@ -123,8 +119,7 @@ python3 scripts/ci/odata-pilot/pilot.py identity \
   --output /tmp/odata-component-identity
 ```
 
-Timings cover restore, graph evaluation, warm-up/clean, build, test, publish, and
-image stages. Build-to-first-test is the earliest identified TRX UTC start minus
+Timings cover restore, graph evaluation, warm-up/clean, build and test stages. Build-to-first-test is the earliest identified TRX UTC start minus
 the harness UTC build start, with clock consistency checks; its wall-clock basis
 is recorded. TRX records retain qualified class/method and data-case identity,
 result, start and duration. A smaller or different test set cannot qualify.
@@ -138,8 +133,8 @@ Promotion requires explicit zero queue wait for every build/test stage and
 wall-clock versus monotonic-stage agreement within 100 ms. Unknown or nonzero
 waits make the comparison ineligible rather than count as compilation time.
 Flow ledger waits have whole-second resolution; retain this limitation when
-interpreting very small incremental differences. Do not subtract guessed waits. Disk output bytes cover the selected closure's bin/obj trees. Runtime
-image size comes from Docker inspect.
+interpreting very small incremental differences. Do not subtract guessed waits.
+Disk output bytes cover the selected closure's bin/obj trees.
 
 ```bash
 python3 scripts/ci/odata-pilot/pilot.py compare --selection unit \
@@ -174,59 +169,6 @@ substitute. Completing that lifecycle implementation is an unfinished slice of
 this pilot. Only unit paired measurements are independently executable today;
 ordinary component validation remains available through its normal test project.
 
-## Runtime-only image
-
-The image selection publishes before invoking Docker. Its build context contains
-only published runtime output and the pilot Dockerfile. It reads the ASP.NET
-runtime digest directly from the main Dockerfile; no second pin is maintained.
-The runtime context excludes environment-specific `appsettings.*.json` files
-(including the baseline's development-only database password); excluded filenames
-are recorded. Production defaults and runtime environment remain available.
-The context rejects SDK/compiler files, nonempty JSON credential fields or
-password-bearing connection strings, NuGet/npm credential configuration,
-private keys and certificates. Plain `docker build` is deliberately not invoked:
-`--builder-json` must name a managed builder argv array, and
-`--builder-receipt` must name its new, service-generated evidence file.
-The argv may substitute `{context}`, `{tag}`, `{runtime}`, `{assembly}`,
-`{inputKey}`, and `{receipt}`; it is executed without shell evaluation.
-The managed builder must use existing shared admission and a bounded BuildKit
-worker, not an unrestricted host Docker daemon. Its receipt schema is
-`honua.odata-pilot-managed-builder/v1`, with matching `inputKey`/`image`, a
-`reservationId`, `sharedAdmission: true`, `boundedBuildKit: true`, successful
-`exitCode`, measured positive `peakJobMemoryBytes`, start/end epochs within the
-managed-command stage, and `limits` containing actual `memoryMaxBytes` ≤8 GiB,
-`cpuQuotaPercent` ≤400, and `pidsMax` ≤512. These fields must come from the owned
-service/cgroup and reservation evidence; manually writing asserted values is not
-qualification. No builder adapter is installed or enabled by this pilot. A
-missing adapter/receipt blocks image execution.
-
-It copies no source, package cache, SDK, Docker
-socket, or build-time credentials. The ASP.NET base supplies the runtime; user
-1654 owns the application files. An image-build receipt alone is not component
-or runtime qualification and is never accepted by the test comparison.
-
-```bash
-python3 scripts/ci/odata-pilot/pilot.py run \
-  --root /path/to/candidate --variant candidate --selection image \
-  --scenario cold-build-warm-packages --pair 1 \
-  --builder-json /path/to/managed-builder-command.json \
-  --builder-receipt /tmp/odata-evidence/image-builder-receipt.json \
-  --output /tmp/odata-evidence/image/candidate
-```
-
-Provision canonical seeds, Postgres and Redis externally using the existing test
-fixture/bootstrap surface. The pilot image does not seed databases. For a runtime
-probe, set `HONUA_ODATA_PILOT_IMAGE`, `HONUA_ODATA_PILOT_CONNECTION`,
-`HONUA_ODATA_PILOT_REDIS`, `HONUA_ODATA_PILOT_ADMIN_PASSWORD`, and
-`HONUA_ODATA_PILOT_NETWORK` outside the image, then
-use `docker compose -f docker/odata-pilot/compose.yaml up -d`. This requires an
-existing isolated external network and caps the runtime at two CPUs, 1 GiB RAM
-with no extra swap, and 128 PIDs. The filesystem is read-only except a 64 MiB
-non-executable temporary directory; capabilities are dropped and privilege
-escalation is disabled. Exercise the host through the component test/SDK surface,
-retain that separate receipt, and remove only this pilot composition afterward.
-Do not interpret image creation as a healthy route or seeded-store proof.
-
 Run the lightweight tool tests without Docker or .NET:
 
 ```bash
@@ -236,10 +178,9 @@ python3 -m unittest discover -s scripts/ci/odata-pilot -p 'test_*.py'
 
 ### Orchestration adapter boundary
 
-The current pilot has no qualified image builder or component host controller.
-The interfaces above are acceptance contracts, not evidence that an installed
-adapter already exists. Unit measurements can run independently; image and
-component promotion stay blocked until their actual lifecycle receipts exist.
+The current pilot has no qualified component host controller. Unit measurements
+can run independently; component promotion stays blocked until actual lifecycle
+receipts exist.
 
 Flow exposes generic command supervision in
 `honua-flow-work/tools/lib/build-reservation.py run` and canonical fair admission
@@ -255,7 +196,7 @@ Docker workers are processes of the Docker daemon, outside those descendants.
 If a wrapper starts a detached BuildKit worker or host container and then dies,
 the guardian can finish while that container still consumes resources. A shell
 trap does not repair this failure mode. Therefore the existing primitive alone
-cannot produce a genuine image or host receipt for this pilot.
+cannot produce a genuine host receipt for this pilot.
 
 A usable managed adapter needs these additional interfaces:
 
@@ -264,12 +205,6 @@ A usable managed adapter needs these additional interfaces:
   IDs. Capacity must remain reserved until those containers have stopped, even
   after the requesting client disappears. Host and WSL available memory must
   remain separate measurements under the existing admission policy.
-- An owned BuildKit worker with inspected memory/swap, CPU and PID limits before
-  any build starts, a measured cgroup memory peak, immutable input/image binding,
-  and verified teardown before recording completion. The supervisor's current
-  `ImageBuild` requires a running image job and creates a 16 GiB worker; it does
-  not implement this pilot's 8 GiB/PID/peak receipt contract. Cooperative admission
-  currently rejects image jobs, so invoking that path is not an available bridge.
 - A host controller that uses that same durable ownership model for the full
   baseline or minimal candidate runtime. It must accept an externally provisioned
   isolated canonical `odata.yaml` store, verify the matching runtime artifact,
@@ -283,8 +218,7 @@ The shared component runner accepts `HONUA_ODATA_TEST_BASE_URL` and
 its full server graph as well as that identical runner. The seed fixture and
 standalone minimal host are not a durable container owner or generic reservation
 service. Do not substitute manually asserted receipt fields for these missing
-interfaces. Runtime Compose is a bounded manual probe and does not qualify as a
-managed lifecycle receipt.
+interfaces.
 
 
 ### Developer component tests without promotion measurements
@@ -319,7 +253,7 @@ complete 18-run component comparison cannot currently execute or promote. This
 does not block direct developer component tests or unit measurements.
 
 
-Pilot evaluation, restore, build and publish explicitly use
+Pilot evaluation, restore and build explicitly use
 `IncludeSourceRevisionInInformationalVersion=false`,
 `EnableSourceControlManagerQueries=false`, and `EnableSourceLink=false` in both
 variants. These exact command properties are included in the artifact identity.
@@ -329,17 +263,6 @@ Git-derived metadata for the closure experiment: unrelated commits must not
 silently change compiler outputs while retaining the same input key. Production
 build properties are unchanged. The pilot still rebuilds before execution; it
 does not claim byte-for-byte reproducibility or restore external binary caches.
-
-
-For the Production runtime probe, provide a fresh connection-encryption master
-key through `HONUA_ODATA_PILOT_MASTER_KEY` outside the image (mapped to
-`Security__ConnectionEncryption__MasterKey`). Generate an ephemeral key using the
-existing fixture/bootstrap surface and do not retain it in publish output or
-receipts. Provide a strong, unique `HONUA_ODATA_PILOT_ADMIN_PASSWORD`; Production
-requires at least 12 characters and rejects shipped placeholder passwords. The
-runtime context check rejects nonempty JSON admin passwords, master keys,
-private/signing/encryption keys, and the other recognized credential fields,
-including nested objects and flattened configuration names.
 
 
 Baseline unit comparisons require exactly the same selected cases as candidate,
@@ -380,18 +303,6 @@ python3 scripts/ci/odata-pilot/pilot.py cleanup-receipt \
 for retry and is not a successful completion receipt. Do not hand-write a success
 receipt before that commit is on trunk. Unmerged branches and foreign worktrees
 are not cleanup targets.
-
-Image selection defaults to `--runtime linux-x64`; `--runtime linux-arm64` is
-also supported. The image-only RID and `SelfContained=false` are applied
-consistently to restore, graph evaluation, build and publish, and included in the
-artifact identity. Publish remains `--no-build`; there is no second compilation.
-Unit and component commands remain portable and reject `--runtime`.
-The managed-builder argv supports `{platform}` (`linux/amd64` or `linux/arm64`)
-and its receipt must record that same `platform`. The driver independently
-checks the loaded image's Docker OS/architecture before accepting it. This avoids
-packaging all RIDs' native assets or accepting an image built for a different
-architecture; it does not unblock the missing managed builder implementation.
-
 
 On the shared Flow worker, identity/run first use the canonical reservation
 helper's read-only `key` operation to check MSBuild query argument support before

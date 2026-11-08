@@ -3,6 +3,7 @@
 
 using System.Security.Claims;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Operations.Policy;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
@@ -20,12 +21,13 @@ internal sealed class FolderReplayAuthorizationFilter : IEndpointFilter
         var context = invocation.HttpContext;
         if (!context.User.IsInRole(AdminApiKeyPermission.ApprovedOperationRole))
             return await next(invocation).ConfigureAwait(false);
-        if (!await IsApprovedReplayAsync(invocation).ConfigureAwait(false))
-            return Results.Problem(statusCode: StatusCodes.Status403Forbidden, detail: "Folder operation replay authorization failed.");
+        var proposal = await ApprovedReplayAsync(invocation).ConfigureAwait(false);
+        if (proposal is null)
+            return Results.Problem(statusCode: StatusCodes.Status403Forbidden, detail: "Folder operation replay authorization failed. Submit a fresh proposal.");
         var transportPrincipal = context.User;
         var identity = new ClaimsIdentity(transportPrincipal.Identity as ClaimsIdentity);
         foreach (var role in identity.FindAll(ClaimTypes.Role).ToArray()) identity.RemoveClaim(role);
-        context.Features.Set(new FolderReplayServicePrincipal(new ClaimsPrincipal(new ClaimsIdentity(identity))));
+        context.Features.Set(new FolderReplayServicePrincipal(new ClaimsPrincipal(new ClaimsIdentity(identity)), proposal));
         // The sealed proposal delegates operator authority, never service-policy grants.
         identity.AddClaim(new Claim(ClaimTypes.Role, OperationPolicyBuiltInRules.FullAdministratorRole));
         context.User = new ClaimsPrincipal(identity);
@@ -40,7 +42,7 @@ internal sealed class FolderReplayAuthorizationFilter : IEndpointFilter
         }
     }
 
-    private static async Task<bool> IsApprovedReplayAsync(EndpointFilterInvocationContext invocation)
+    private static async Task<OperationProposal?> ApprovedReplayAsync(EndpointFilterInvocationContext invocation)
     {
         var context = invocation.HttpContext;
         var proposalId = context.Request.Headers[OperationLineageHeaders.ProposalId].ToString();
@@ -50,7 +52,7 @@ internal sealed class FolderReplayAuthorizationFilter : IEndpointFilter
             OperationId(context.Request.Method) is not { } operationId ||
             !context.User.HasClaim(AdminApiKeyPermission.PermissionClaimType, FolderOperationCredential.ProposalGrant(proposalId)) ||
             !AdminApiKeyPermission.IsAuthorized(context.User, context.Request.Method, context.Request.Path.Value))
-            return false;
+            return null;
         var proposal = await context.RequestServices.GetRequiredService<IOperationProposalStore>()
             .GetAsync(proposalId, context.RequestAborted).ConfigureAwait(false);
         if (proposal is null || proposal.OperationId != operationId ||
@@ -59,11 +61,11 @@ internal sealed class FolderReplayAuthorizationFilter : IEndpointFilter
                 context.User.FindFirstValue(AdminApiKeyPermission.ApprovedOperationTenantClaim)) ||
             !MetadataV2ServicePaths.SameTenant(proposal.TenantId,
                 context.RequestServices.GetRequiredService<ITenantContext>().TenantId))
-            return false;
+            return null;
         var verifier = context.RequestServices.GetRequiredService<IOperationApprovalReplayVerifier>();
         return await verifier.VerifyAsync(proposalId,
             context.Request.Headers[OperationLineageHeaders.OperationInstanceId].ToString(),
-            proposal.SealedPlanHash ?? string.Empty, context.RequestAborted).ConfigureAwait(false);
+            proposal.SealedPlanHash ?? string.Empty, context.RequestAborted).ConfigureAwait(false) ? proposal : null;
     }
 
     private static string? OperationId(string method) => method switch
@@ -76,4 +78,4 @@ internal sealed class FolderReplayAuthorizationFilter : IEndpointFilter
     };
 }
 
-internal sealed record FolderReplayServicePrincipal(ClaimsPrincipal Principal);
+internal sealed record FolderReplayServicePrincipal(ClaimsPrincipal Principal, OperationProposal Proposal);

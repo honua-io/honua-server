@@ -5,7 +5,6 @@
     <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.Ai.UnitTests/Honua.Ai.UnitTests.csproj" />
     <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.Aws.UnitTests/Honua.Aws.UnitTests.csproj" />
     <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.Azure.UnitTests/Honua.Azure.UnitTests.csproj" />
-    <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.ControlPlane.Lambda.Tests/Honua.ControlPlane.Lambda.Tests.csproj" />
     <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.Core.Security.Tests/Honua.Core.Security.Tests.csproj" />
     <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj" />
     <ProjectReference Include="$(MSBuildThisFileDirectory)../tests/dotnet/Honua.Db.Databricks.UnitTests/Honua.Databricks.UnitTests.csproj" />
