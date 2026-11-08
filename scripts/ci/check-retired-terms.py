@@ -27,6 +27,7 @@ def git(root, *arguments, **options):
     index_file = options.pop("index_file", None)
     if index_file is not None:
         environment["GIT_INDEX_FILE"] = str(index_file)
+        arguments = ("-c", "core.splitIndex=false", *arguments)
     return subprocess.run(
         ["git", "-c", "diff.relative=false", "-C", str(root), *arguments],
         check=True, capture_output=True, env=environment, **options,

@@ -349,9 +349,12 @@ class RetiredTermsTests(RetiredTermsTestCase):
         index_file = Path(self.run_git("rev-parse", "--git-path", "index").decode().strip())
         if not index_file.is_absolute():
             index_file = self.root / index_file
+        self.run_git("config", "core.splitIndex", "true")
         self.write("page.md", "new retired phrase\n")
         self.run_git("add", ".")
         index_before = index_file.read_bytes()
+        shared_indexes_before = set(index_file.parent.glob("sharedindex.*"))
+        self.assertTrue(shared_indexes_before)
         temporary_indexes = []
         actual_git = checker.git
 
@@ -365,6 +368,7 @@ class RetiredTermsTests(RetiredTermsTestCase):
         self.assertEqual(index_file.read_bytes(), index_before)
         self.assertTrue(temporary_indexes)
         self.assertTrue(all(not path.exists() for path in temporary_indexes))
+        self.assertEqual(set(index_file.parent.glob("sharedindex.*")), shared_indexes_before)
 
     def test_safe_sibling_of_protected_leaf_is_still_scanned(self):
         directory = "certification/ai-arc/heldout-notes"
