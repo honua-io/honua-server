@@ -32,7 +32,6 @@ WIDEN_EXACT = {
     "src/Honua.Server/Startup/JsonContextRegistration.cs",
     "Dockerfile",
     "docker/Dockerfile.aot",
-    "docker/Dockerfile.protocol-profile-runtime",
     "scripts/ci/protocol-profile-selection.py",
     "scripts/ci/build-selected-protocol-profiles.py",
     "scripts/ci/prune-protocol-profile-outputs.py",

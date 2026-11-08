@@ -3,7 +3,6 @@ Honua.Ai.Tests.dll
 Honua.Ai.UnitTests.dll
 Honua.Aws.UnitTests.dll
 Honua.Azure.UnitTests.dll
-Honua.ControlPlane.Lambda.Tests.dll
 Honua.Core.Security.Tests.dll
 Honua.Core.Tests.dll
 Honua.Databricks.UnitTests.dll

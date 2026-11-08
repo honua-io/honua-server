@@ -1120,7 +1120,7 @@ jobs:
           trx_args=()
           while IFS= read -r -d '' trx; do
             trx_args+=(--trx "${trx}")
-          done < <(find tests/TestResults -name '*.trx' -print0)
+          done < <(find artifacts/test-results -name '*.trx' -print0)
           python3 scripts/ci/assert-trx-executed.py --label 'Foundation test results' "${trx_args[@]}"
 
       # Republish under the pre-split artifact names so anything pointing at

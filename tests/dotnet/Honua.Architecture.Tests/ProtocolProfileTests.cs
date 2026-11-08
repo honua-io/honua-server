@@ -141,13 +141,6 @@ public sealed class ProtocolProfileTests
             contents.Should().Contain("COPY eng/Honua.ProtocolProfiles.props eng/");
             contents.Should().Contain("-p:HonuaProtocolProfile=${HONUA_PROTOCOL_PROFILE:-all}");
         }
-
-        var shim = string.Join('\n', File.ReadLines(Path.Combine(repositoryRoot, "docker", "Dockerfile.protocol-profile-runtime"))
-            .Where(line => !line.TrimStart().StartsWith('#')));
-        shim.Should().Contain("honua-protocol-profile.json");
-        shim.Should().NotContain("dotnet publish");
-        shim.Should().NotContain("dotnet build");
-        shim.Should().NotContain("security.read-only-root");
     }
 
     [ArchitectureTest]
