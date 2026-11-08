@@ -12,6 +12,47 @@ namespace Honua.Server.Tests.Features.Protocols.Stac;
 public sealed class StacResourceExtensionsTests
 {
     [UnitTest]
+    public void ResolveKeywords_DatasetKeywordsDeclared_PrefersNormalizedDatasetKeywords()
+    {
+        var dataset = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Keywords = [" coastal ", "", "COASTAL", "survey"],
+                Labels = new Dictionary<string, string> { ["old-label"] = "operations" }
+            },
+            Extensions = new Dictionary<string, JsonElement>
+            {
+                ["stac"] = JsonSerializer.SerializeToElement(new { keywords = new[] { "old-extension" } })
+            }
+        };
+
+        dataset.ResolveKeywords()!.Value.Should().Equal("coastal", "survey");
+    }
+
+    [UnitTest]
+    public void ResolveKeywords_DatasetKeywordsEmpty_PreservesExtensionThenLabelFallbacks()
+    {
+        var dataset = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata
+            {
+                Keywords = ["", " "],
+                Labels = new Dictionary<string, string> { ["operations"] = "internal" }
+            },
+            Extensions = new Dictionary<string, JsonElement>
+            {
+                ["stac"] = JsonSerializer.SerializeToElement(new { keywords = new[] { " imagery ", "IMAGERY" } })
+            }
+        };
+
+        dataset.ResolveKeywords()!.Value.Should().Equal("imagery");
+        (dataset with { Extensions = new Dictionary<string, JsonElement>() })
+            .ResolveKeywords()!.Value.Should().Equal("operations");
+        new MetadataV2Resource().ResolveKeywords().Should().BeNull();
+    }
+
+    [UnitTest]
     public void ResolveLicense_PrefersEveryResourceDeclarationBeforeServiceFallback()
     {
         var stacExtension = JsonDocument.Parse("""{ "license": "CC0-1.0" }""").RootElement.Clone();
