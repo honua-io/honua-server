@@ -18,6 +18,9 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
 {
     private const string AnthropicVersion = "2023-06-01";
     private const string ProviderLabel = "anthropic";
+    private const int MaxMetadataLabelLength = 64;
+    internal const string UnsupportedContentBlockCode = "studio_ai/unsupported_content_block";
+    internal const string ProviderStreamErrorCode = "studio_ai/provider_error";
 
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly StudioAiProxyApiKeyResolver _apiKeyResolver;
@@ -75,9 +78,7 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
     {
         await permit.EnsureCurrentAsync(cancellationToken).ConfigureAwait(false);
         var options = invocation.CopyOptions();
-        var model = invocation.Model;
-        int? promptTokens = null;
-        int? completionTokens = null;
+        var state = new AnthropicStreamState(invocation.Model, _logger);
         string? apiKey = null;
         var credentialUnavailable = false;
         try
@@ -91,12 +92,12 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
 
         if (credentialUnavailable)
         {
-            yield return StreamError("Provider credentials are unavailable.", errorCode: StudioAiProxyApiKeyResolver.CredentialUnavailableCode);
+            yield return state.Error("Provider credentials are unavailable.", errorCode: StudioAiProxyApiKeyResolver.CredentialUnavailableCode);
             yield break;
         }
         if (string.IsNullOrWhiteSpace(apiKey))
         {
-            yield return StreamError("Anthropic API key is not configured.");
+            yield return state.Error("Anthropic API key is not configured.");
             yield break;
         }
 
@@ -121,14 +122,14 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
         if (sendTimedOut)
         {
             StudioAiProxyLog.ProviderTimeout(_logger, ProviderLabel);
-            yield return StreamError("Provider request timed out.");
+            yield return state.Error("Provider request timed out.");
             yield break;
         }
 
         if (requestError is not null)
         {
             StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, "send", requestError.GetType().Name);
-            yield return StreamError("Provider request failed.");
+            yield return state.Error("Provider request failed.");
             yield break;
         }
 
@@ -141,19 +142,19 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
             if (bodyTimedOut)
             {
                 StudioAiProxyLog.ProviderTimeout(_logger, ProviderLabel);
-                yield return StreamError("Provider request timed out.", stopwatch.ElapsedMilliseconds);
+                yield return state.Error("Provider request timed out.", stopwatch.ElapsedMilliseconds);
                 yield break;
             }
 
             if (bodyFailure is not null)
             {
                 StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, "error-body", bodyFailure.GetType().Name);
-                yield return StreamError("Provider response failed.", stopwatch.ElapsedMilliseconds);
+                yield return state.Error("Provider response failed.", stopwatch.ElapsedMilliseconds);
                 yield break;
             }
 
             StudioAiProxyLog.ProviderHttpError(_logger, ProviderLabel, (int)successResponse.StatusCode);
-            yield return StreamError($"Provider returned HTTP {(int)successResponse.StatusCode}.");
+            yield return state.Error($"Provider returned HTTP {(int)successResponse.StatusCode}.");
             yield break;
         }
 
@@ -163,26 +164,19 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
         if (openTimedOut)
         {
             StudioAiProxyLog.ProviderTimeout(_logger, ProviderLabel);
-            yield return StreamError("Provider request timed out.", stopwatch.ElapsedMilliseconds);
+            yield return state.Error("Provider request timed out.", stopwatch.ElapsedMilliseconds);
             yield break;
         }
 
         if (openFailure is not null)
         {
             StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, "open-stream", openFailure.GetType().Name);
-            yield return StreamError("Provider response failed.", stopwatch.ElapsedMilliseconds);
+            yield return state.Error("Provider response failed.", stopwatch.ElapsedMilliseconds);
             yield break;
         }
 
         await using var responseStream = stream!;
         using var reader = new StreamReader(responseStream, Encoding.UTF8);
-
-        string? toolCallId = null;
-        StringBuilder? toolArgsBuffer = null;
-        var stopReason = StudioAiStopReason.EndTurn;
-        var sawStopReason = false;
-        var sawMessageStop = false;
-        var openContentBlocks = new Dictionary<int, string>();
 
         while (true)
         {
@@ -193,14 +187,14 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
             if (readTimedOut)
             {
                 StudioAiProxyLog.ProviderTimeout(_logger, ProviderLabel);
-                yield return StreamError("Provider request timed out.", stopwatch.ElapsedMilliseconds);
+                yield return state.Error("Provider request timed out.", stopwatch.ElapsedMilliseconds);
                 yield break;
             }
 
             if (ioError is not null)
             {
                 StudioAiProxyLog.ProviderRequestFailed(_logger, ProviderLabel, "read-stream", ioError.GetType().Name);
-                yield return StreamError("Provider stream ended unexpectedly.", stopwatch.ElapsedMilliseconds);
+                yield return state.Error("Provider stream ended unexpectedly.", stopwatch.ElapsedMilliseconds);
                 yield break;
             }
 
@@ -234,34 +228,26 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
 
             if (parseFailed || frame is null)
             {
-                yield return StreamError("Provider returned a malformed stream frame.", stopwatch.ElapsedMilliseconds,
+                yield return state.Error("Provider returned a malformed stream frame.", stopwatch.ElapsedMilliseconds,
                     StudioAiStreamGrammarValidator.InvalidStreamCode);
                 yield break;
-            }
-
-            StudioAiChatEvent RejectFrame(string errorCode, string message)
-            {
-                StudioAiProxyLog.ProviderStreamFrameRejected(
-                    _logger, ProviderLabel, StreamMetadataLabel(frame.Type),
-                    StreamMetadataLabel(frame.ContentBlock?.Type), StreamMetadataLabel(frame.Error?.Type), payload.Length);
-                return StreamError(message, stopwatch.ElapsedMilliseconds, errorCode);
             }
 
             string? stoppedContentBlockType = null;
             if (frame.Type == "content_block_start"
                 && (frame.Index is not { } startIndex
-                    || !openContentBlocks.TryAdd(startIndex, frame.ContentBlock?.Type ?? string.Empty)))
+                    || !state.OpenContentBlocks.TryAdd(startIndex, frame.ContentBlock?.Type ?? string.Empty)))
             {
-                yield return StreamError("Provider returned an invalid content block start.", stopwatch.ElapsedMilliseconds,
+                yield return state.Error("Provider returned an invalid content block start.", stopwatch.ElapsedMilliseconds,
                     StudioAiStreamGrammarValidator.InvalidStreamCode);
                 yield break;
             }
 
             if (frame.Type == "content_block_stop"
                 && (frame.Index is not { } stopIndex
-                    || !openContentBlocks.Remove(stopIndex, out stoppedContentBlockType)))
+                    || !state.OpenContentBlocks.Remove(stopIndex, out stoppedContentBlockType)))
             {
-                yield return StreamError("Provider returned an unmatched content block stop.", stopwatch.ElapsedMilliseconds,
+                yield return state.Error("Provider returned an unmatched content block stop.", stopwatch.ElapsedMilliseconds,
                     StudioAiStreamGrammarValidator.InvalidStreamCode);
                 yield break;
             }
@@ -269,8 +255,9 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
             switch (frame.Type)
             {
                 case "message_start":
-                    promptTokens = frame.Message?.Usage?.InputTokens ?? promptTokens;
-                    completionTokens = frame.Message?.Usage?.OutputTokens ?? completionTokens;
+                    state.SawMessageStart = true;
+                    state.PromptTokens = frame.Message?.Usage?.InputTokens ?? state.PromptTokens;
+                    state.CompletionTokens = frame.Message?.Usage?.OutputTokens ?? state.CompletionTokens;
                     yield return new StudioAiChatEvent
                     {
                         Type = StudioAiChatEventType.MessageStart,
@@ -279,12 +266,12 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
                     break;
 
                 case "content_block_start" when frame.ContentBlock?.Type == "tool_use":
-                    toolCallId = frame.ContentBlock.Id;
-                    toolArgsBuffer = new StringBuilder();
+                    state.ToolCallId = frame.ContentBlock.Id;
+                    state.ToolArgsBuffer = new StringBuilder();
                     yield return new StudioAiChatEvent
                     {
                         Type = StudioAiChatEventType.ToolCallStart,
-                        ToolCallId = toolCallId,
+                        ToolCallId = state.ToolCallId,
                         ToolName = frame.ContentBlock.Name
                     };
                     break;
@@ -294,13 +281,8 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
                 case "ping":
                     break;
 
-                case "content_block_start":
-                    yield return RejectFrame("studio_ai/unsupported_content_block",
-                        $"Provider returned unsupported content block type '{StreamMetadataLabel(frame.ContentBlock?.Type)}'.");
-                    yield break;
-
                 case "content_block_delta" when frame.Delta?.Type == "text_delta" && frame.Delta.Text is ""
-                    && frame.Index is { } emptyTextIndex && openContentBlocks.GetValueOrDefault(emptyTextIndex) == "text":
+                    && state.SawMessageStart && frame.Index is { } emptyTextIndex && state.OpenContentBlocks.GetValueOrDefault(emptyTextIndex) == "text":
                     break;
 
                 case "content_block_delta" when frame.Delta?.Type == "text_delta" && frame.Delta.Text is { Length: > 0 } text:
@@ -308,20 +290,20 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
                     break;
 
                 case "content_block_delta" when frame.Delta?.Type == "input_json_delta" && frame.Delta.PartialJson is { } partial:
-                    toolArgsBuffer?.Append(partial);
+                    state.ToolArgsBuffer?.Append(partial);
                     yield return new StudioAiChatEvent
                     {
                         Type = StudioAiChatEventType.ToolCallDelta,
-                        ToolCallId = toolCallId,
+                        ToolCallId = state.ToolCallId,
                         ToolArgumentsDelta = partial
                     };
                     break;
 
-                case "content_block_stop" when stoppedContentBlockType == "tool_use" && toolCallId is not null:
-                    var arguments = TryParse(toolArgsBuffer?.ToString());
+                case "content_block_stop" when stoppedContentBlockType == "tool_use" && state.ToolCallId is not null:
+                    var arguments = TryParse(state.ToolArgsBuffer?.ToString());
                     if (arguments is null)
                     {
-                        yield return StreamError("Provider returned invalid or incomplete tool arguments.", stopwatch.ElapsedMilliseconds,
+                        yield return state.Error("Provider returned invalid or incomplete tool arguments.", stopwatch.ElapsedMilliseconds,
                             StudioAiStreamGrammarValidator.InvalidStreamCode);
                         yield break;
                     }
@@ -329,75 +311,58 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
                     yield return new StudioAiChatEvent
                     {
                         Type = StudioAiChatEventType.ToolCallStop,
-                        ToolCallId = toolCallId,
+                        ToolCallId = state.ToolCallId,
                         ToolArguments = arguments
                     };
-                    toolCallId = null;
-                    toolArgsBuffer = null;
+                    state.ToolCallId = null;
+                    state.ToolArgsBuffer = null;
                     break;
 
                 case "message_delta":
-                    completionTokens = frame.Usage?.OutputTokens ?? completionTokens;
+                    state.CompletionTokens = frame.Usage?.OutputTokens ?? state.CompletionTokens;
                     if (!string.IsNullOrWhiteSpace(frame.Delta?.StopReason))
                     {
-                        sawStopReason = true;
-                        stopReason = MapStopReason(frame.Delta.StopReason);
+                        state.SawStopReason = true;
+                        state.StopReason = MapStopReason(frame.Delta.StopReason);
                     }
                     break;
 
                 case "message_stop":
-                    if (openContentBlocks.Count != 0)
+                    if (state.OpenContentBlocks.Count != 0)
                     {
-                        yield return StreamError("Provider ended the message with an open content block.", stopwatch.ElapsedMilliseconds,
+                        yield return state.Error("Provider ended the message with an open content block.", stopwatch.ElapsedMilliseconds,
                             StudioAiStreamGrammarValidator.InvalidStreamCode);
                         yield break;
                     }
 
-                    if (!sawStopReason)
+                    if (!state.SawStopReason)
                     {
-                        yield return StreamError("Provider ended the stream without a stop reason.", stopwatch.ElapsedMilliseconds,
+                        yield return state.Error("Provider ended the stream without a stop reason.", stopwatch.ElapsedMilliseconds,
                             StudioAiStreamGrammarValidator.InvalidStreamCode);
                         yield break;
                     }
 
-                    sawMessageStop = true;
+                    state.SawMessageStop = true;
                     yield return new StudioAiChatEvent
                     {
                         Type = StudioAiChatEventType.MessageStop,
-                        StopReason = stopReason,
-                        PromptTokens = promptTokens,
-                        CompletionTokens = completionTokens,
+                        StopReason = state.StopReason,
+                        PromptTokens = state.PromptTokens,
+                        CompletionTokens = state.CompletionTokens,
                         LatencyMs = stopwatch.ElapsedMilliseconds
                     };
                     break;
 
-                case "error":
-                    yield return RejectFrame("studio_ai/provider_error",
-                        $"Provider stream error type '{StreamMetadataLabel(frame.Error?.Type)}', code '{StreamMetadataLabel(frame.Error?.Code)}'.");
-                    yield break;
-
                 default:
-                    yield return RejectFrame("studio_ai/unknown_provider_event",
-                        $"Provider returned unknown stream event type '{StreamMetadataLabel(frame.Type)}'.");
+                    yield return state.RejectFrame(frame, payload.Length, stopwatch.ElapsedMilliseconds, stoppedContentBlockType);
                     yield break;
             }
         }
 
-        if (!sawMessageStop)
+        if (!state.SawMessageStop)
         {
-            yield return StreamError("Provider stream ended before message_stop.", stopwatch.ElapsedMilliseconds);
+            yield return state.Error("Provider stream ended before message_stop.", stopwatch.ElapsedMilliseconds);
         }
-
-        StudioAiChatEvent StreamError(string message, long? latencyMs = null, string? errorCode = null) => new()
-        {
-            Type = StudioAiChatEventType.Error,
-            Model = model,
-            ErrorCode = errorCode,
-            ErrorMessage = message,
-            LatencyMs = latencyMs,
-            PromptTokens = promptTokens,
-            CompletionTokens = completionTokens
-        };
     }
 
     private static AnthropicProxyRequest BuildRequest(
@@ -529,6 +494,56 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
         }
     }
 
+    private sealed class AnthropicStreamState(string model, ILogger<AnthropicStudioAiProxyAdapter> logger)
+    {
+        public int? PromptTokens { get; set; }
+        public int? CompletionTokens { get; set; }
+        public string? ToolCallId { get; set; }
+        public StringBuilder? ToolArgsBuffer { get; set; }
+        public StudioAiStopReason StopReason { get; set; } = StudioAiStopReason.EndTurn;
+        public bool SawMessageStart { get; set; }
+        public bool SawStopReason { get; set; }
+        public bool SawMessageStop { get; set; }
+        public Dictionary<int, string> OpenContentBlocks { get; } = new();
+
+        public StudioAiChatEvent Error(string message, long? latencyMs = null, string? errorCode = null) => new()
+        {
+            Type = StudioAiChatEventType.Error,
+            Model = model,
+            ErrorCode = errorCode,
+            ErrorMessage = message,
+            LatencyMs = latencyMs,
+            PromptTokens = PromptTokens,
+            CompletionTokens = CompletionTokens
+        };
+
+        public StudioAiChatEvent RejectFrame(
+            AnthropicStreamFrame frame, int payloadCharacters, long latencyMs, string? stoppedContentBlockType)
+        {
+            var eventType = StreamMetadataLabel(frame.Type);
+            var blockType = StreamMetadataLabel(frame.ContentBlock?.Type ?? stoppedContentBlockType
+                ?? (frame.Index is { } index ? OpenContentBlocks.GetValueOrDefault(index) : null));
+            var deltaType = StreamMetadataLabel(frame.Delta?.Type);
+            var errorType = StreamMetadataLabel(frame.Error?.Type);
+            var (errorCode, message) = frame.Type switch
+            {
+                "content_block_start" => (UnsupportedContentBlockCode,
+                    $"Provider returned unsupported content block type '{blockType}'."),
+                "error" => (ProviderStreamErrorCode, string.IsNullOrEmpty(frame.Error?.Code)
+                    ? $"Provider stream error type '{errorType}'."
+                    : $"Provider stream error type '{errorType}', code '{StreamMetadataLabel(frame.Error?.Code)}'."),
+                "content_block_delta" or "content_block_stop" => (StudioAiStreamGrammarValidator.InvalidStreamCode,
+                    $"Provider returned invalid stream event type '{eventType}' (delta type '{deltaType}', block type '{blockType}')."),
+                _ => (StudioAiStreamGrammarValidator.InvalidStreamCode,
+                    $"Provider returned unknown stream event type '{eventType}'.")
+            };
+
+            StudioAiProxyLog.ProviderStreamFrameRejected(
+                logger, ProviderLabel, eventType, blockType, deltaType, errorType, payloadCharacters);
+            return Error(message, latencyMs, errorCode);
+        }
+    }
+
     private static string StreamMetadataLabel(string? value)
     {
         if (string.IsNullOrEmpty(value))
@@ -536,9 +551,8 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
             return "missing";
         }
 
-        return value.Length <= 64 && value.All(character => char.IsAsciiLetterOrDigit(character) || character is '_' or '-')
+        return value.Length <= MaxMetadataLabelLength && value.All(character => char.IsAsciiLetterOrDigit(character) || character is '_' or '-')
             ? value
             : "invalid";
     }
-
 }

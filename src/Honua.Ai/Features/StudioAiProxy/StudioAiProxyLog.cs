@@ -53,7 +53,7 @@ internal static partial class StudioAiProxyLog
     [LoggerMessage(
         EventId = 6757,
         Level = LogLevel.Warning,
-        Message = "Studio AI proxy stream frame rejected: Provider={Provider}, EventType={EventType}, BlockType={BlockType}, ProviderErrorType={ProviderErrorType}, PayloadCharacters={PayloadCharacters}")]
+        Message = "Studio AI proxy stream frame rejected: Provider={Provider}, EventType={EventType}, BlockType={BlockType}, DeltaType={DeltaType}, ProviderErrorType={ProviderErrorType}, PayloadCharacters={PayloadCharacters}")]
     public static partial void ProviderStreamFrameRejected(
-        ILogger logger, string provider, string eventType, string blockType, string providerErrorType, int payloadCharacters);
+        ILogger logger, string provider, string eventType, string blockType, string deltaType, string providerErrorType, int payloadCharacters);
 }

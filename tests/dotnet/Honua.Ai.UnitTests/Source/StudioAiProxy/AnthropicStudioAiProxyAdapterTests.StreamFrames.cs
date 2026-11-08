@@ -53,15 +53,37 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
         events[0].ErrorMessage.Should().Be($"Provider returned unsupported content block type '{blockType}'.");
     }
 
-    [UnitTest]
-    public async Task StreamAsync_EmptyTextDeltaBeforeMessageStart_FailsClosed()
+    [UnitTheory]
+    [InlineData("", "missing")]
+    [InlineData("data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\"}}\n\n", "text")]
+    public async Task StreamAsync_EmptyTextDeltaBeforeMessageStart_FailsClosed(string prelude, string expectedBlockType)
     {
-        var fixture = "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"\"}}\n\n"
+        var fixture = prelude + "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"\"}}\n\n"
             + TextTurnFixture;
 
         var events = await CollectAsync(CreateAdapter(fixture), ToolFreeRequest());
 
-        events.Should().ContainSingle().Which.Type.Should().Be(StudioAiChatEventType.Error);
+        var failure = events.Should().ContainSingle().Subject;
+        failure.ErrorCode.Should().Be(StudioAiStreamGrammarValidator.InvalidStreamCode);
+        failure.ErrorMessage.Should().Be($"Provider returned invalid stream event type 'content_block_delta' (delta type 'text_delta', block type '{expectedBlockType}').");
+    }
+
+    [UnitTest]
+    public async Task StreamAsync_EmptyTextDeltaInToolBlock_FailsClosed()
+    {
+        var fixture = """
+            data: {"type":"message_start","message":{"model":"claude-opus-5-5"}}
+            data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"tool_1","name":"example_tool"}}
+            data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":""}}
+            data: {"type":"message_stop"}
+            """;
+
+        var events = await CollectAsync(CreateAdapter(fixture), ToolFreeRequest());
+
+        var failure = events.Should().ContainSingle(e => e.Type == StudioAiChatEventType.Error).Subject;
+        failure.ErrorCode.Should().Be(StudioAiStreamGrammarValidator.InvalidStreamCode);
+        failure.ErrorMessage.Should().Be("Provider returned invalid stream event type 'content_block_delta' (delta type 'text_delta', block type 'tool_use').");
+        events.Should().NotContain(e => e.Type == StudioAiChatEventType.MessageStop);
     }
 
     [UnitTest]
@@ -92,7 +114,7 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
     {
         var events = await CollectAsync(CreateAdapter($"data: {frame}\n\n"), ToolFreeRequest());
 
-        events.Should().ContainSingle().Which.ErrorCode.Should().Be("studio_ai/unknown_provider_event");
+        events.Should().ContainSingle().Which.ErrorCode.Should().Be(StudioAiStreamGrammarValidator.InvalidStreamCode);
         events[0].ErrorMessage.Should().Be($"Provider returned unknown stream event type '{eventType}'.");
         events[0].PromptTokens.Should().BeNull();
         events[0].CompletionTokens.Should().BeNull();
@@ -122,20 +144,24 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
     [InlineData("{\"type\":\"error\",\"error\":{\"type\":\"PRIVATE_CANARY\\n\",\"code\":\"https://PRIVATE_CANARY\"}}", "invalid")]
     [InlineData("{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"PRIVATE_CANARY\"}}", "thinking")]
     [InlineData("{\"type\":\"PRIVATE_CANARY\\n\",\"body\":\"PRIVATE_CANARY\"}", "invalid")]
-    public async Task StreamAsync_RejectedFrame_LogsOnlyBoundedMetadata(string frame, string expectedMetadata)
+    [InlineData("{\"type\":\"message_start\",\"message\":{\"model\":\"claude-opus-5-5\"}}\n\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\"}}\n\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"citations_delta\",\"body\":\"PRIVATE_CANARY\"}}", "BlockType=text, DeltaType=citations_delta")]
+    [InlineData("{\"type\":\"message_start\",\"message\":{\"model\":\"claude-opus-5-5\"}}\n\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"name\":\"example_tool\"}}\n\ndata: {\"type\":\"content_block_stop\",\"index\":0}", "BlockType=tool_use, DeltaType=missing")]
+    public async Task StreamAsync_RejectedFrame_LogsOnlyBoundedMetadata(string providerFrames, string expectedMetadata)
     {
         var logger = Substitute.For<ILogger<AnthropicStudioAiProxyAdapter>>();
         logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
-        using var clients = new StudioAiProxyMockHttpClientFactory(new StudioAiProxyMockHttpMessageHandler($"data: {frame}\n\n"));
+        using var clients = new StudioAiProxyMockHttpClientFactory(new StudioAiProxyMockHttpMessageHandler($"data: {providerFrames}\n\n"));
         var adapter = new AnthropicStudioAiProxyAdapter(clients, new StudioAiProxyApiKeyResolver(), logger);
 
         var events = await CollectAsync(adapter, ToolFreeRequest());
 
         var log = logger.ReceivedCalls().Where(call => call.GetMethodInfo().Name == "Log").Should().ContainSingle().Subject;
         var arguments = log.GetArguments();
+        ((EventId)arguments[1]!).Id.Should().Be(6757);
         arguments[2]!.ToString().Should().Contain(expectedMetadata).And.NotContain("PRIVATE_CANARY");
         arguments[3].Should().BeNull();
-        events.Single().ErrorMessage.Should().NotContain("PRIVATE_CANARY");
+        events.Should().ContainSingle(e => e.Type == StudioAiChatEventType.Error).Subject.ErrorMessage.Should().NotContain("PRIVATE_CANARY");
+        events.Should().NotContain(e => e.Type == StudioAiChatEventType.MessageStop);
     }
 
     [UnitTheory]
@@ -151,5 +177,53 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
         var expectedLabel = acceptedMetadata ? eventType : "invalid";
         events.Should().ContainSingle().Which.ErrorMessage.Should()
             .Be($"Provider returned unknown stream event type '{expectedLabel}'.");
+    }
+
+    [UnitTheory]
+    [InlineData("{\"type\":\"text_delta\",\"text\":null}", "text_delta")]
+    [InlineData("{\"type\":\"citations_delta\",\"body\":\"private body\"}", "citations_delta")]
+    [InlineData("{\"type\":\"input_json_delta\"}", "input_json_delta")]
+    public async Task StreamAsync_KnownInvalidDelta_NamesDeltaAndOpenBlockType(string delta, string expectedDeltaType)
+    {
+        var fixture = """
+            data: {"type":"message_start","message":{"model":"claude-opus-5-5"}}
+            data: {"type":"content_block_start","index":0,"content_block":{"type":"text"}}
+            """ + $"\ndata: {{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{delta}}}\n";
+
+        var events = await CollectAsync(CreateAdapter(fixture), ToolFreeRequest());
+
+        var failure = events.Should().ContainSingle(e => e.Type == StudioAiChatEventType.Error).Subject;
+        failure.ErrorCode.Should().Be(StudioAiStreamGrammarValidator.InvalidStreamCode);
+        failure.ErrorMessage.Should().Be($"Provider returned invalid stream event type 'content_block_delta' (delta type '{expectedDeltaType}', block type 'text').");
+        events.Should().NotContain(e => e.Type == StudioAiChatEventType.MessageStop);
+    }
+
+    [UnitTest]
+    public async Task StreamAsync_ProviderErrorWithoutCode_OmitsCodeClause()
+    {
+        var fixture = """
+            data: {"type":"error","error":{"type":"overloaded_error","message":"private provider message"}}
+            """;
+
+        var events = await CollectAsync(CreateAdapter(fixture), ToolFreeRequest());
+
+        events.Should().ContainSingle().Which.ErrorMessage.Should().Be("Provider stream error type 'overloaded_error'.");
+    }
+
+    [UnitTest]
+    public async Task StreamAsync_MessageDeltaWithoutUsage_PreservesMessageStartCounters()
+    {
+        var fixture = """
+            data: {"type":"message_start","message":{"model":"claude-opus-5-5","usage":{"input_tokens":12,"output_tokens":1}}}
+            data: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}
+            data: {"type":"message_stop"}
+            """;
+
+        var events = await CollectAsync(CreateAdapter(fixture), ToolFreeRequest());
+
+        var completed = events.Should().ContainSingle(e => e.Type == StudioAiChatEventType.MessageStop).Subject;
+        completed.PromptTokens.Should().Be(12);
+        completed.CompletionTokens.Should().Be(1);
+        events.Should().NotContain(e => e.Type == StudioAiChatEventType.Error);
     }
 }
