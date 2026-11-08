@@ -395,7 +395,7 @@ internal static class McpToolOutputSchemas
             },
             "serviceLayerIndex": {
               "type": ["string", "null"],
-              "description": "Published service layer index; pass to honua_query_features / honua_render_map as serviceLayerIndex."
+              "description": "Service-local index for honua_query_features and honua_render_map."
             },
             "metadataRevision": {
               "type": ["integer", "null"],

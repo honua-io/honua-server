@@ -719,7 +719,8 @@ public sealed class McpStyleToolTests
         }
         var activity = recorded.Should().ContainSingle().Subject;
         activity.GetTagItem("service.id").Should().Be(ServiceId);
-        activity.GetTagItem("layer.id").Should().Be(LayerIndex.ToString(CultureInfo.InvariantCulture));
+        activity.GetTagItem("layer.service_index").Should().Be(LayerIndex.ToString(CultureInfo.InvariantCulture));
+        activity.GetTagItem("layer.id").Should().BeNull();
         activity.GetTagItem("style.id").Should().Be(PresetStyleId);
         activity.GetTagItem("storage.layer.id").Should().Be(StorageLayerId);
         activity.GetTagItem("operation.result").Should().Be(outcome);
