@@ -23,7 +23,7 @@ namespace Honua.Server.Tests.Features.StudioAiProxy;
 /// start/delta/stop assembly, usage capture, and the HTTP-error / not-configured paths.
 /// </summary>
 [Protocol(TestProtocols.TestQuality)]
-public sealed class AnthropicStudioAiProxyAdapterTests
+public sealed partial class AnthropicStudioAiProxyAdapterTests
 {
     private const string TextTurnFixture = """
         event: message_start
