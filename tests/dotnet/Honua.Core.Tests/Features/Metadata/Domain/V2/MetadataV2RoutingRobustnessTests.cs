@@ -69,6 +69,8 @@ public sealed class MetadataV2RoutingRobustnessTests
     [InlineData("{\"lifecycle\":\"future-status\",\"state\":\"future-state\"}")]
     [InlineData("{\"lifecycle\":987,\"state\":987}")]
     [InlineData("{\"lifecycle\":2147483648,\"state\":9223372036854775808}")]
+    [InlineData("{\"lifecycle\":18446744073709551616,\"state\":-9223372036854775809}")]
+    [InlineData("{\"lifecycle\":-9223372036854775809,\"state\":18446744073709551616}")]
     [InlineData("{\"lifecycle\":\"1\",\"state\":\"3\"}")]
     public void Deserialize_UnsupportedStatus_PreservesExplicitUnknown(string json)
     {

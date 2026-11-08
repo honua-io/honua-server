@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Core.Serialization;
 
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
@@ -104,7 +105,7 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
         {
             if (!reader.TryGetInt32(out var number))
             {
-                if (reader.TryGetInt64(out _) || reader.TryGetUInt64(out _))
+                if (JsonIntegerToken.IsInteger(ref reader))
                 {
                     return MetadataV2LifecycleStatus.Unknown;
                 }
@@ -147,7 +148,7 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
         {
             if (!reader.TryGetInt32(out var number))
             {
-                if (reader.TryGetInt64(out _) || reader.TryGetUInt64(out _))
+                if (JsonIntegerToken.IsInteger(ref reader))
                 {
                     return MetadataV2OperationalState.Unknown;
                 }

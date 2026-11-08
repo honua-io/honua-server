@@ -25,7 +25,7 @@ internal class TolerantStringEnumJsonConverter<TEnum> : JsonConverter<TEnum>
             return KnownOrUnknown(_knownValues.Read(ref reader, typeToConvert, options));
         }
         catch (JsonException) when (reader.TokenType == JsonTokenType.String ||
-            reader.TokenType == JsonTokenType.Number && (reader.TryGetInt64(out _) || reader.TryGetUInt64(out _)))
+            JsonIntegerToken.IsInteger(ref reader))
         {
             return UnknownValue;
         }

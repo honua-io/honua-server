@@ -25,7 +25,11 @@ public sealed class MetadataV2EnumRobustnessTests
         var cases = new TheoryData<Type, string>();
         foreach (var type in EnumTypes)
         {
-            foreach (var json in new[] { "\"future-value\"", "\"\"", "987", "-987", "2147483648", "-2147483649", "9223372036854775808", "\"987\"" })
+            foreach (var json in new[]
+            {
+                "\"future-value\"", "\"\"", "987", "-987", "2147483648", "-2147483649",
+                "9223372036854775808", "18446744073709551616", "-9223372036854775809", "\"987\""
+            })
             {
                 cases.Add(type, json);
             }
