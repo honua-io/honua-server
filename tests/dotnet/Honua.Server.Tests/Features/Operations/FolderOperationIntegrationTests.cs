@@ -27,7 +27,7 @@ namespace Honua.Server.Tests.Features.OperationsToolset;
 [Collection(RedisFixture.CollectionName)]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
-public sealed class FolderOperationIntegrationTests(RedisFixture redis) : IAsyncLifetime
+public sealed partial class FolderOperationIntegrationTests(RedisFixture redis) : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
     private ReplayServiceAuthorization _authorization = null!;
