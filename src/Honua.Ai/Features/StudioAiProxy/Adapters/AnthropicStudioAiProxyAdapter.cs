@@ -285,8 +285,18 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
 
                 case "content_block_start" when frame.ContentBlock?.Type == "text":
                 case "content_block_stop" when stoppedContentBlockType == "text":
+                case "content_block_start" when frame.ContentBlock?.Type == "thinking" && state.SawMessageStart:
+                case "content_block_stop" when stoppedContentBlockType == "thinking":
                 case "ping":
                     break;
+
+                case "content_block_delta" when frame.Delta?.Type is "thinking_delta" or "signature_delta"
+                    && state.SawMessageStart && frame.Index is { } thinkingIndex && state.OpenContentBlocks.GetValueOrDefault(thinkingIndex) == "thinking":
+                    break;
+
+                case "content_block_delta" when frame.Index is { } blockIndex && state.OpenContentBlocks.GetValueOrDefault(blockIndex) == "thinking":
+                    yield return state.RejectFrame(frame, payload.Length, stoppedContentBlockType);
+                    yield break;
 
                 case "content_block_delta" when frame.Delta?.Type == "text_delta" && frame.Delta.Text is ""
                     && state.SawMessageStart && frame.Index is { } emptyTextIndex && state.OpenContentBlocks.GetValueOrDefault(emptyTextIndex) == "text":

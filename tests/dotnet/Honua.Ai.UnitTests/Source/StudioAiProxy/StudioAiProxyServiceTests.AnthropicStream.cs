@@ -53,6 +53,25 @@ public sealed partial class StudioAiProxyServiceTests
         summary.Succeeded.Should().BeTrue();
     }
 
+    [UnitTest]
+    public async Task StreamChatAsync_ThinkingInterleavedWithTextAndTool_ReleasesSuccessAndProvenance()
+    {
+        using var clients = new StudioAiProxyMockHttpClientFactory(
+            new StudioAiProxyMockHttpMessageHandler(AnthropicStudioAiProxyAdapterTests.InterleavedThinkingFixture));
+        var service = CreateAnthropicSigningService(clients);
+        var summary = new StudioAiProxyCallSummary();
+
+        var events = await CollectAsync(service, CertifiedRequest(), summary);
+
+        events.Should().NotContain(e => e.Type == StudioAiChatEventType.Error);
+        events.Should().ContainSingle(e => e.Type == StudioAiChatEventType.ToolCallStop);
+        events.Should().ContainSingle(e => e.Type == StudioAiChatEventType.TranscriptProvenance);
+        var completed = events.Should().ContainSingle(e => e.Type == StudioAiChatEventType.MessageStop).Subject;
+        completed.PromptTokens.Should().Be(12);
+        completed.CompletionTokens.Should().Be(8);
+        summary.Succeeded.Should().BeTrue();
+    }
+
     private static StudioAiProxyService CreateAnthropicSigningService(IHttpClientFactory clients)
     {
         const string secretReference = "secret://studio-ai/provider-key";
