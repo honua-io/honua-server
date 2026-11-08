@@ -71,7 +71,7 @@ public sealed class DuplicateMethodRatchetTests
         string.Join('\n', added).Should().BeEmpty();
     }
 
-    private static string CanonicalPair(string pair)
+    internal static string CanonicalPair(string pair)
         => string.Join('|', pair.Split('|').Order(StringComparer.Ordinal));
 
     private static string BaselinePath()

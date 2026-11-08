@@ -29,11 +29,8 @@ internal static class SourceTextRatchet
             .ToArray();
     }
 
-    /// <summary>
-    /// Entries of <paramref name="relativePath"/> on the first parent of HEAD.
-    /// Returns null when that parent does not contain the file, which is the
-    /// seed commit of the ratchet.
-    /// </summary>
+    // Map detected source renames so a squashed move does not add debt.
+    // Undetected renames from content rewrites or Git limits retain old paths and fail closed.
     internal static string[]? ReadParentEntries(string repositoryRoot, string relativePath)
     {
         var parent = RunGit(repositoryRoot, "rev-parse", "--verify", "HEAD^1^{commit}").Trim();
