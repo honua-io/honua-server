@@ -139,9 +139,9 @@ public sealed class RecordsLandingAndLimitTests : IClassFixture<OgcRecordsEndpoi
         using var json = await ReadJsonAsync(response);
         var layerIds = json.RootElement.GetProperty("properties").GetProperty("layerIds")
             .EnumerateArray()
-            .Select(value => value.GetInt32())
+            .Select(value => value.GetString())
             .ToArray();
-        layerIds.Should().Contain(WebAppFixture.TestLayerId);
+        layerIds.Should().Contain("pub-test-ogc-0");
         layerIds.Should().OnlyHaveUniqueItems();
     }
 

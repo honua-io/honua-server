@@ -439,23 +439,13 @@ internal static class OgcRecordsEndpoints
                     .Where(snapshot.IsRoutable)
                     .ToArray();
                 var primary = publications.FirstOrDefault(p => p.IsPrimary) ?? publications.FirstOrDefault();
-                var storageLayerId = primary is not null ? snapshot.ResolveStorageLayerId(primary) : null;
-                var layerSort = primary is not null
-                    ? storageLayerId ?? primary.LayerIndex ?? int.MaxValue
-                    : int.MaxValue;
-                return (Resource: resource, Publications: publications, Primary: primary, LayerSort: layerSort, HasStorageLayer: storageLayerId.HasValue);
+                return (Resource: resource, Primary: primary);
             })
             .Where(item => item.Primary is not null)
-            .OrderByDescending(item => item.HasStorageLayer)
-            .ThenBy(item => item.LayerSort)
-            // Multiple protocol resources may share one legacy storage-layer id.
-            // Keep the feature dataset as the canonical layer:{id} catalog record.
-            .ThenBy(item => item.Resource.Type == MetadataV2ResourceType.FeatureDataset ? 0 : 1)
-            .ThenBy(item => item.Resource.Metadata.Id, StringComparer.OrdinalIgnoreCase);
+            .OrderBy(item => item.Primary!.Metadata.Id, StringComparer.Ordinal);
         var resourceRecordIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var item in resourceRecords)
         {
-            // Pick the primary publication if any (prefer IsPrimary, else first).
             var resource = item.Resource;
             var primary = item.Primary!;
             MetadataV2Service? primaryService = snapshot.Index.ServicesById.TryGetValue(primary.ServiceId, out var svc)
@@ -501,13 +491,10 @@ internal static class OgcRecordsEndpoints
             links.Add(Link.Create($"{servicePath}/MapServer", RelationTypes.Alternate, MediaTypes.Json, "MapServer"));
         }
 
-        // External-facing layer ids are the storage layer ids (the v1 catalog's layer.Id).
         var layerIds = visiblePublications
-            .Select(p => snapshot.ResolveStorageLayerId(p.Publication))
-            .Where(id => id.HasValue)
-            .Select(id => id!.Value)
-            // Several protocol-specific service rows can publish the same storage layer (#5510).
-            .Distinct()
+            .Select(static item => item.Publication.Metadata.Id)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
             .ToImmutableArray();
 
         var properties = new OgcRecordProperties
@@ -550,7 +537,6 @@ internal static class OgcRecordsEndpoints
         var publicationId = publication.Metadata.Id;
         var collectionId = Uri.EscapeDataString(
             LayerValidationHelpers.AdvertisedCollectionId(publication, resource) ?? resource.Metadata.Id);
-        var serviceLayerIndex = Uri.EscapeDataString(publication.Identifier.Value);
 
         var links = ImmutableArray.CreateBuilder<Link>();
         links.Add(Link.Create($"{baseUrl}/ogc/records/collections/{CatalogCollectionId}/items/{Uri.EscapeDataString($"layer:{publicationId}")}", RelationTypes.Self, MediaTypes.GeoJson, resource.Metadata.Name));
@@ -567,7 +553,8 @@ internal static class OgcRecordsEndpoints
         }
 
         if (service is { } featureServerService &&
-            IsProtocolEnabled(featureServerService, FeatureServerProtocolName))
+            IsProtocolEnabled(featureServerService, FeatureServerProtocolName) &&
+            publication.LayerIndex is int serviceLayerIndex)
         {
             links.Add(Link.Create($"{baseUrl}{GeoServicesServiceUrls.CanonicalPath(snapshot.Graph, featureServerService)}/FeatureServer/{serviceLayerIndex}", RelationTypes.Alternate, MediaTypes.Json, "FeatureServer layer"));
         }

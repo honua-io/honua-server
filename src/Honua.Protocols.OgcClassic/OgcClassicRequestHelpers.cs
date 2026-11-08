@@ -113,6 +113,9 @@ internal static class OgcClassicRequestHelpers
         return false;
     }
 
+    internal static string? GetServiceLayerIdentifier(MetadataV2Publication publication)
+        => publication.ServiceLocalId ?? publication.LayerIndex?.ToString(CultureInfo.InvariantCulture);
+
     internal static string GetWmsLayerName(MetadataV2Resource resource, MetadataV2Publication? publication = null)
     {
         ArgumentNullException.ThrowIfNull(resource);

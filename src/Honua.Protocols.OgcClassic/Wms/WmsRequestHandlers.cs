@@ -286,11 +286,18 @@ internal static partial class WmsRequestHandlers
                 continue;
             }
 
-            var identifier = publication.Identifier.Value;
+            var identifier = GetServiceLayerIdentifier(publication);
+            if (string.IsNullOrWhiteSpace(identifier))
+            {
+                continue;
+            }
             layers.Add(new WmsLayer(routableResource, publication, storageLayerId.Value, identifier, snapshot));
         }
 
-        return layers.OrderBy(static layer => layer.Identifier, StringComparer.Ordinal).ToArray();
+        return layers.GroupBy(static layer => layer.Resource.Metadata.Id, StringComparer.Ordinal)
+            .Select(group => group.OrderByDescending(static layer => layer.Publication.IsPrimary)
+                .ThenBy(static layer => layer.Publication.Metadata.Id, StringComparer.Ordinal).First())
+            .OrderBy(static layer => layer.Identifier, StringComparer.Ordinal).ToArray();
     }
 
     private static async Task<IFeatureReader> ResolveLayerReaderAsync(
@@ -424,7 +431,9 @@ internal static partial class WmsRequestHandlers
             return true;
         }
 
-        var byId = accessibleLayers.ToDictionary(static layer => layer.Identifier, StringComparer.Ordinal);
+        var byId = accessibleLayers.GroupBy(static layer => layer.Identifier, StringComparer.Ordinal)
+            .Where(static group => group.Count() == 1)
+            .ToDictionary(static group => group.Key, static group => group.Single(), StringComparer.Ordinal);
 
         var resolved = new List<WmsLayer>(requestedTokens.Length);
         foreach (var token in requestedTokens)
