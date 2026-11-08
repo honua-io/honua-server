@@ -44,7 +44,7 @@ length, SHA-256 digest, and base64 content. Validation rejects extra members or
 fields, paths outside the allowlist, duplicates, traversal, symlinks,
 non-regular modes, encryption, invalid UTF-8/JSON, duplicate JSON keys,
 non-finite numbers, bad base64/digests, and bounded-size violations.
-Before publishing even an observation status, the trusted consumer fetches
+Before publishing an observation summary, the trusted consumer fetches
 every allowlisted generator as a Git blob from the exact PR commit and compares
 its SHA-256 digest with the envelope. Generator evidence authored by PR code is
 therefore never trusted on its own.
@@ -67,8 +67,10 @@ It also requires the producer workflow, the local .NET setup action, and the
 envelope builder at the PR head to be byte-identical to the checked-out
 default-branch recipe. A pull request that changes this security boundary must
 land that contract independently before later heads can produce admissible
-normalization evidence; an unprivileged PR workflow cannot silently skip or
-replace the declared generation steps.
+normalization evidence. This checks the declared orchestration, not every
+transitive setup executable. Outputs remain PR-authored data confined to the
+three allowlisted paths on the contributor's own writable branch. Independent
+PR Gate drift checks determine whether those bytes are correct.
 
 ## Observe mode
 
@@ -88,7 +90,7 @@ success alone never counts. Only then may a separate reviewed change add the
 narrow write credential and Git-object compare-and-swap transition described in
 #3219.
 
-## Shadow audit 2026-08-16
+## Superseded shadow audit 2026-08-16
 
 Window: producer runs `31766587889` (2026-08-14T03:22Z) through `31992987252`
 (2026-08-17T04:00Z), reconstructed from the retained envelope artifacts rather
@@ -148,9 +150,10 @@ window contains roughly 48 `PR Gate` failures on
 `docs/gis/data/capability-matrix.v1.json` — the single largest real (non-flake)
 per-PR failure cause, each paid for after minutes of build time.
 
-The audit therefore satisfies the documented promotion criteria: at least 20
-independently corroborated heads, every would-change candidate byte-identical
-to canonical output, and every no-op empty.
+This historical audit used an earlier schema and recipe. Its 29 corroborated
+heads do not count toward promotion of the v3 contract. A fresh window of at
+least 20 independently corroborated v3 heads is required before a separate
+reviewed change enables enforcement. No current v3 window is claimed here.
 
 ## Enforce mode
 
@@ -189,7 +192,7 @@ observe-mode candidate directly:
 
 The mutation itself lives in `scripts/ci/normalization-mutation.js`, a
 default-branch module covered by `scripts/ci/normalization-mutation.test.js`
-(33 cases: no-op, one-file, three-file, fork, moved head, closed/draft PR,
+(no-op, one-file, three-file, fork, moved head, closed/draft PR,
 unsafe ref, non-allowlisted or duplicate path, missing digest, missing
 credential, replay/squash/merge trailer handling, blob→tree→commit ordering,
 compare-and-swap rejection, ref read-back mismatch, unresolvable repository id,
@@ -197,8 +200,16 @@ missing payload, review re-request, and credential probe). The workflow only
 decides and delegates; the validator rejects inline `createBlob`/`createTree`/
 `createCommit`/`updateRef` calls in YAML so this logic stays tested.
 
+The read-only consumer binds the producer's head repository and branch to the
+current PR and requires its base to remain the repository default branch.
+Before minting, branch protection and ruleset reads must succeed. The default
+branch, release namespaces, merge-train namespaces, protected branches and
+ruleset-governed branches are ineligible. The mutation rechecks the same identity
+and policy before any Git writes.
+
 The write sequence is: create blobs for the changed paths only, build a tree
-from `base_tree` = the exact head tree with `100644` blob entries, create a
+from `base_tree` = the exact head tree with `100644` blob entries, and stop
+without a commit or review request if the resulting tree is unchanged. Otherwise create a
 commit whose only parent is the envelope source SHA, then advance the branch
 with the GraphQL `updateRefs` mutation using `beforeOid` = that same source SHA
 and `force: false`. `beforeOid` is a true compare-and-swap: the update applies

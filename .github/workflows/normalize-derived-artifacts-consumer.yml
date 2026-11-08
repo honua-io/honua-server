@@ -21,10 +21,9 @@ concurrency:
   group: normalization-consumer-${{ github.event.workflow_run.head_sha }}
   cancel-in-progress: false
 
-# The #3219 shadow audit (docs/internal/ci/derived-artifact-normalization.md)
-# passed on 2026-08-16. Enforcement is implemented and credential-gated; the
-# mode stays `observe` until the scoped normalization App credential is
-# provisioned. Rollback is the inverse one-value change back to `observe`.
+# Observe until the current recipe has 20 independently corroborated heads and
+# the dedicated scoped App credential is provisioned. A separate reviewed mode
+# change enables writes; reverting that value disables them.
 env:
   NORMALIZATION_MODE: observe
 
@@ -84,6 +83,10 @@ jobs:
             if (pr.state !== 'open' || pr.draft || pr.head.sha !== run.head_sha) {
               throw new Error('PR closed, draft, or moved after normalization production.');
             }
+            const { inspectNormalizationTarget } = require('./scripts/ci/normalization-mutation');
+            const branchPolicy = await inspectNormalizationTarget({
+              octokit: github, repo: context.repo, run, pullRequest: pr,
+            });
             const sameRepository = pr.head.repo.full_name === pr.base.repo.full_name;
             const eventBaseSha = eventAssociated[0]?.base?.sha || '';
             // Skipping the untrusted producer leaves no envelope. Independently
@@ -166,6 +169,7 @@ jobs:
             core.setOutput('run_attempt', String(run.run_attempt));
             core.setOutput('run_id', String(run.id));
             core.setOutput('same_repository', String(sameRepository));
+            core.setOutput('branch_writable', String(branchPolicy.writable));
             core.setOutput('tree_sha', commit.tree.sha);
 
       - name: Validate archive and data envelope with trusted policy
@@ -246,10 +250,9 @@ jobs:
             };
 
             // The pull_request workflow is intentionally unprivileged, but its
-            // recipe is still PR-authored. Authenticate every executable
-            // orchestration component against the checked-out default-branch
-            // policy before accepting output provenance. Generator scripts are
-            // allowed PR inputs and are bound separately below.
+            // recipe is still PR-authored. Bind the declared orchestration to
+            // default-branch policy. Transitive setup and generators remain PR
+            // inputs; independent drift gates decide output correctness.
             const trustedRecipePaths = [
               '.github/workflows/normalize-derived-artifacts.yml',
               '.github/actions/setup-dotnet-ci/action.yml',
@@ -312,8 +315,8 @@ jobs:
           env.NORMALIZATION_MODE == 'enforce' &&
           env.NORMALIZATION_CREDENTIAL_PRESENT == 'true' &&
           steps.artifact.outputs.same_repository == 'true' &&
+          steps.artifact.outputs.branch_writable == 'true' &&
           steps.compare.outputs.change_count != '0'
-        # actions/create-github-app-token v2, pinned by commit.
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           app-id: ${{ secrets.NORMALIZATION_APP_ID }}
@@ -327,6 +330,7 @@ jobs:
           env.NORMALIZATION_MODE == 'enforce' &&
           env.NORMALIZATION_CREDENTIAL_PRESENT == 'true' &&
           steps.artifact.outputs.same_repository == 'true' &&
+          steps.artifact.outputs.branch_writable == 'true' &&
           steps.compare.outputs.change_count != '0'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
@@ -342,6 +346,7 @@ jobs:
             const fs = require('fs');
             const {
               applyNormalizationMutation,
+              inspectNormalizationTarget,
               planNormalizationMutation,
               probeNormalizationCredential,
             } = require('./scripts/ci/normalization-mutation');
@@ -370,7 +375,11 @@ jobs:
               return { path, sha256: output.sha256 };
             });
 
+            const branchPolicy = await inspectNormalizationTarget({
+              octokit: github, repo: context.repo, run: context.payload.workflow_run, pullRequest: pr,
+            });
             const decision = planNormalizationMutation({
+              branchPolicy,
               mode: process.env.NORMALIZATION_MODE,
               credentialPresent: process.env.NORMALIZATION_CREDENTIAL_PRESENT === 'true',
               sameRepository: process.env.SAME_REPOSITORY === 'true',
@@ -427,6 +436,10 @@ jobs:
               log: message => core.info(message),
             });
 
+            if (!result.commitSha) {
+              core.notice('Normalization tree is unchanged; no commit or review request was created.');
+              return;
+            }
             await core.summary
               .addHeading('Derived-artifact normalization commit')
               .addRaw('Only validated derived blobs were written. Exact-head review was ' +

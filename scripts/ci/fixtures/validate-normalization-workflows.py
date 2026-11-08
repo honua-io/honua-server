@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import re
+
+import yaml
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -25,6 +27,46 @@ def consumer_steps(consumer: str) -> list[tuple[str, str]]:
     return [(parts[index].strip(), parts[index + 1]) for index in range(1, len(parts), 2)]
 
 
+class WorkflowLoader(yaml.SafeLoader):
+    def construct_mapping(self, node, **options):
+        pairs = self.construct_pairs(node, **options)
+        mapping = dict(pairs)
+        if len(mapping) != len(pairs):
+            raise AssertionError("workflow permission policy cannot contain duplicate YAML keys")
+        return mapping
+
+
+def validate_permissions(workflow: str, allowed: set[str], label: str) -> dict:
+    try:
+        document = yaml.load(workflow, Loader=WorkflowLoader)
+    except yaml.YAMLError as error:
+        raise AssertionError("workflow permission policy is invalid YAML") from error
+    expected = {permission: "read" for permission in allowed}
+    if not isinstance(document, dict) or document.get("permissions") != expected:
+        raise AssertionError(f"{label} must never gain a write permission or change its permission allowlist")
+    jobs = document.get("jobs")
+    if not isinstance(jobs, dict):
+        raise AssertionError(f"{label} jobs must be a mapping")
+    for job in jobs.values():
+        if "permissions" not in job:
+            continue
+        permissions = job["permissions"]
+        if not isinstance(permissions, dict) or any(
+                key not in allowed or value != "read" for key, value in permissions.items()):
+            raise AssertionError(f"{label} job permission must remain read-only and allowlisted")
+    return document
+
+
+def validate_checkout_credentials(document: dict) -> None:
+    for job in document["jobs"].values():
+        for step in job.get("steps", []):
+            if "permissions" in step:
+                raise AssertionError("step permission overrides are not supported")
+            if str(step.get("uses", "")).startswith("actions/checkout@"):
+                if step.get("with", {}).get("persist-credentials") is not False:
+                    raise AssertionError("every checkout must disable persisted credentials")
+
+
 def validate(
     producer: str,
     consumer: str,
@@ -34,6 +76,10 @@ def validate(
 ) -> str:
     """Check the normalization security contract and return the declared mode."""
 
+    producer_document = validate_permissions(producer, {"actions", "contents", "packages"}, "untrusted producer")
+    consumer_document = validate_permissions(consumer, {"actions", "contents", "pull-requests"}, "consumer GITHUB_TOKEN")
+    validate_checkout_credentials(producer_document)
+    validate_checkout_credentials(consumer_document)
     require(producer, "name: Derived Artifact Normalization", "producer identity changed")
     require(producer, "  pull_request:\n", "producer must use an unprivileged pull_request event")
     require(
@@ -99,8 +145,6 @@ def validate(
         '--source-tree-sha "${TREE_SHA}"',
         "producer must bind the complete exact-head Git tree",
     )
-    if re.search(r"^\s+(?:actions|contents|pull-requests|statuses):\s+write\s*$", producer, re.MULTILINE):
-        raise AssertionError("untrusted producer gained a write permission")
     if "secrets." in producer or "pull_request_target" in producer:
         raise AssertionError("untrusted producer must receive no secret or trusted event")
 
@@ -144,9 +188,6 @@ def validate(
     if re.search(r"secrets\s*[.\[]", outside, re.IGNORECASE) or re.search(
             r"(?:to|from)JSON\s*\(\s*secrets", outside, re.IGNORECASE):
         raise AssertionError("the consumer must reference secrets only inside allowlisted expressions")
-    if re.search(r"^\s+(?:actions|contents|pull-requests|statuses|issues):\s+write\s*$",
-                 consumer, re.MULTILINE):
-        raise AssertionError("consumer GITHUB_TOKEN must never gain a write permission")
 
     require(consumer, "  actions: read", "consumer needs bounded artifact read permission")
     require(consumer, "  contents: read", "consumer GITHUB_TOKEN must stay read-only")
@@ -240,6 +281,13 @@ def validate(
     mint_block = blocks[mint_name]
     mutation_block = blocks[mutation_name]
 
+    for target_step in ("Resolve exact PR and download artifact as bytes", mutation_name):
+        require(blocks[target_step], "await inspectNormalizationTarget({",
+                "target inspection is required before minting and mutating")
+    require(blocks["Resolve exact PR and download artifact as bytes"],
+            "core.setOutput('branch_writable', String(branchPolicy.writable))",
+            "target inspection must gate credential minting")
+
     minted_before = "".join(
         block for name, block in steps if names.index(name) < names.index(mint_name))
     if re.search(r"secrets", minted_before, re.IGNORECASE):
@@ -263,6 +311,7 @@ def validate(
         "env.NORMALIZATION_MODE == 'enforce'",
         "env.NORMALIZATION_CREDENTIAL_PRESENT == 'true'",
         "steps.artifact.outputs.same_repository == 'true'",
+        "steps.artifact.outputs.branch_writable == 'true'",
         "steps.compare.outputs.change_count != '0'",
     ):
         for block, label in ((mint_block, "mint"), (mutation_block, "mutation")):
@@ -273,7 +322,7 @@ def validate(
         "require('./scripts/ci/normalization-mutation')",
         "mutation must use the tested default-branch module",
     )
-    for call in ("planNormalizationMutation({", "probeNormalizationCredential({", "applyNormalizationMutation({"):
+    for call in ("inspectNormalizationTarget({", "planNormalizationMutation({", "probeNormalizationCredential({", "applyNormalizationMutation({"):
         require(mutation_block, call, f"mutation must call {call.rstrip('({')}")
     require(mutation_block, "decision.action === 'fail'", "an inadmissible decision must fail the run")
     require(mutation_block, "if (decision.action !== 'commit')", "only a commit decision may mutate")
