@@ -64,8 +64,6 @@ def plan(root, variant, selection, configuration, composition, test_filter):
     project = PROJECTS[variant][selection]
     test_filter = test_filter or (UNIT_FILTER if selection == "unit" else COMPONENT_FILTER)
     blockers = [] if (root / project).is_file() else [f"Missing extracted project: {project}"]
-    if not test_filter:
-        blockers.append("Explicit comparable test filter required for baseline and candidate")
     return {"schema": SCHEMA, "variant": variant, "selection": selection, "project": project,
             "configuration": configuration, "composition": composition, "filter": test_filter,
             "blockers": blockers, "optIn": True, "fullGatesUnchanged": True,
