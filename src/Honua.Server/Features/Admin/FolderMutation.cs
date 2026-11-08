@@ -15,8 +15,10 @@ internal sealed record FolderMutation(MetadataV2Graph Graph, MetadataV2Folder? F
         {
             Metadata = new MetadataV2ObjectMetadata
             {
-                Id = Guid.NewGuid().ToString("N"), Name = request.Name ?? string.Empty,
-                Title = request.Title, Tenant = tenant
+                Id = Guid.NewGuid().ToString("N"),
+                Name = request.Name ?? string.Empty,
+                Title = request.Title,
+                Tenant = tenant
             }
         };
         return new(MetadataV2FolderMutations.Create(graph, folder), folder, StatusCodes.Status201Created);

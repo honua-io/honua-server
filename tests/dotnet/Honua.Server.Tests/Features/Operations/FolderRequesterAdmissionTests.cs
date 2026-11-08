@@ -30,19 +30,24 @@ public sealed partial class FolderOperationIntegrationTests
         var before = await SnapshotAsync();
         var payload = new AdminApiOperationApprovalPayload
         {
-            OperationId = "folder.create", TenantId = "public", SchemaName = _fixture.CurrentSchema,
+            OperationId = "folder.create",
+            TenantId = "public",
+            SchemaName = _fixture.CurrentSchema,
             Parameters = new() { ["name"] = "InvalidPlan", ["If-Match"] = before.Etag }
         };
         await WithRequesterContextAsync(payload, async context =>
         {
             var invalid = payload with
             {
-                DryRun = mismatch == "dry-run", TenantId = mismatch == "tenant" ? "other" : payload.TenantId,
+                DryRun = mismatch == "dry-run",
+                TenantId = mismatch == "tenant" ? "other" : payload.TenantId,
                 OperationId = mismatch == "operation" ? "folder.delete" : payload.OperationId
             };
             var result = await _fixture.Services.GetRequiredService<IOperationGateway>().CreateApprovalProposalAsync("invalid-" + Guid.NewGuid().ToString("N"), new()
             {
-                OperationId = payload.OperationId, Kind = OperationClass.AdminConfigChange, TenantId = payload.TenantId,
+                OperationId = payload.OperationId,
+                Kind = OperationClass.AdminConfigChange,
+                TenantId = payload.TenantId,
                 RequestedBy = CanonicalSecurityActor.Resolve(context.User)!.ActorId,
                 Plan = new OperationProposalPlan
                 {
@@ -63,7 +68,9 @@ public sealed partial class FolderOperationIntegrationTests
         var before = await SnapshotAsync();
         var payload = new AdminApiOperationApprovalPayload
         {
-            OperationId = "folder.create", TenantId = "public", SchemaName = _fixture.CurrentSchema,
+            OperationId = "folder.create",
+            TenantId = "public",
+            SchemaName = _fixture.CurrentSchema,
             Parameters = new() { ["name"] = "Revoked", ["If-Match"] = before.Etag }
         };
         await WithRequesterContextAsync(payload, async context =>
@@ -73,7 +80,9 @@ public sealed partial class FolderOperationIntegrationTests
             (await keys.RevokeAsync(validation!.Record.Id, CancellationToken.None)).Should().NotBeNull();
             var result = await _fixture.Services.GetRequiredService<IOperationGateway>().CreateApprovalProposalAsync("revoked-" + Guid.NewGuid().ToString("N"), new()
             {
-                OperationId = payload.OperationId, Kind = OperationClass.AdminConfigChange, TenantId = payload.TenantId,
+                OperationId = payload.OperationId,
+                Kind = OperationClass.AdminConfigChange,
+                TenantId = payload.TenantId,
                 RequestedBy = CanonicalSecurityActor.Resolve(context.User)!.ActorId,
                 Plan = new OperationProposalPlan
                 {
@@ -94,7 +103,9 @@ public sealed partial class FolderOperationIntegrationTests
         var before = await SnapshotAsync();
         var payload = new AdminApiOperationApprovalPayload
         {
-            OperationId = "folder.create", TenantId = "public", SchemaName = _fixture.CurrentSchema,
+            OperationId = "folder.create",
+            TenantId = "public",
+            SchemaName = _fixture.CurrentSchema,
             Parameters = new() { ["name"] = "ReadOnly", ["If-Match"] = before.Etag }
         };
         await WithRequesterContextAsync(payload, async context =>
@@ -110,7 +121,9 @@ public sealed partial class FolderOperationIntegrationTests
             };
             var prepare = () => FolderApprovalAuthorization.PrepareAsync(new OperationGatewayRequest
             {
-                OperationId = payload.OperationId, Kind = OperationClass.AdminConfigChange, TenantId = payload.TenantId,
+                OperationId = payload.OperationId,
+                Kind = OperationClass.AdminConfigChange,
+                TenantId = payload.TenantId,
                 RequestedBy = CanonicalSecurityActor.Resolve(context.User)!.ActorId
             }, plan, context, CancellationToken.None);
             var refused = (await prepare.Should().ThrowAsync<FolderProposalRefusal>()).Which;
@@ -126,7 +139,8 @@ public sealed partial class FolderOperationIntegrationTests
     {
         var prepare = () => FolderApprovalAuthorization.PrepareAsync(new OperationGatewayRequest
         {
-            OperationId = "folder.create", Kind = OperationClass.AdminConfigChange
+            OperationId = "folder.create",
+            Kind = OperationClass.AdminConfigChange
         }, new OperationProposalPlan(), null, CancellationToken.None);
         var refused = (await prepare.Should().ThrowAsync<FolderProposalRefusal>()).Which;
         refused.Outcome.Should().Be(OperationGatewayOutcome.Blocked);

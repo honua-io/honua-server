@@ -66,8 +66,12 @@ internal static class FolderApprovalAuthorization
         var mutation = BuildMutation(snapshot.Graph, request, operation.TenantId);
         var authorization = new FolderRequesterAuthorization
         {
-            RequesterId = actor.ActorId, SubjectId = actor.SubjectId, SubjectIssuer = actor.SubjectIssuer,
-            OperationId = operation.OperationId!, SnapshotEtag = snapshot.Etag, PolicyRevision = string.Empty,
+            RequesterId = actor.ActorId,
+            SubjectId = actor.SubjectId,
+            SubjectIssuer = actor.SubjectIssuer,
+            OperationId = operation.OperationId!,
+            SnapshotEtag = snapshot.Etag,
+            PolicyRevision = string.Empty,
             ServiceIds = mutation.AffectedServices(snapshot.Graph).Select(service => service.Metadata.Id).Order(StringComparer.Ordinal).ToArray(),
             ExpiresAt = await EvidenceExpiryAsync(context).ConfigureAwait(false)
         };

@@ -80,7 +80,8 @@ public sealed partial class FolderOperationIntegrationTests
         var before = await SnapshotAsync();
         var proposalId = await ProposeAsync("service.move", new()
         {
-            ["folderId"] = before.Graph.Folders.Single().Metadata.Id, ["If-Match"] = before.Etag
+            ["folderId"] = before.Graph.Folders.Single().Metadata.Id,
+            ["If-Match"] = before.Etag
         });
         var proposal = (await _proposals.GetAsync(proposalId))!;
         proposal.Plan.FolderAuthorization.Should().NotBeNull();
@@ -149,7 +150,8 @@ public sealed partial class FolderOperationIntegrationTests
         var before = await SnapshotAsync();
         var pending = await ProposeAsync("service.move", new()
         {
-            ["folderId"] = before.Graph.Folders.Single().Metadata.Id, ["If-Match"] = before.Etag
+            ["folderId"] = before.Graph.Folders.Single().Metadata.Id,
+            ["If-Match"] = before.Etag
         });
         var original = (await _proposals.GetAsync(pending))!;
         var restricted = await RestrictLastServiceFacetAsync();
@@ -160,7 +162,8 @@ public sealed partial class FolderOperationIntegrationTests
         {
             var result = await _fixture.Services.GetRequiredService<IOperationGateway>().CreateApprovalProposalAsync(original.Audit.OperationInstanceId!, new()
             {
-                OperationId = "service.move", Kind = OperationClass.AdminConfigChange,
+                OperationId = "service.move",
+                Kind = OperationClass.AdminConfigChange,
                 RequestedBy = CanonicalSecurityActor.Resolve(context.User)!.ActorId,
                 TenantId = original.TenantId,
                 Plan = original.Plan with
@@ -190,14 +193,18 @@ public sealed partial class FolderOperationIntegrationTests
         var before = await SnapshotAsync();
         var payload = new AdminApiOperationApprovalPayload
         {
-            OperationId = "folder.create", TenantId = "public", SchemaName = _fixture.CurrentSchema,
+            OperationId = "folder.create",
+            TenantId = "public",
+            SchemaName = _fixture.CurrentSchema,
             Parameters = new() { ["name"] = "SubjectFolder", ["If-Match"] = before.Etag }
         };
         await WithRequesterContextAsync(payload, async context =>
         {
             var result = await _fixture.Services.GetRequiredService<IOperationGateway>().CreateApprovalProposalAsync("subject-" + Guid.NewGuid().ToString("N"), new()
             {
-                OperationId = payload.OperationId, Kind = OperationClass.AdminConfigChange, TenantId = payload.TenantId,
+                OperationId = payload.OperationId,
+                Kind = OperationClass.AdminConfigChange,
+                TenantId = payload.TenantId,
                 RequestedBy = CanonicalSecurityActor.Resolve(context.User)!.ActorId,
                 Plan = new OperationProposalPlan
                 {
@@ -239,7 +246,9 @@ public sealed partial class FolderOperationIntegrationTests
         var before = await SnapshotAsync();
         var payload = new AdminApiOperationApprovalPayload
         {
-            OperationId = "folder.create", TenantId = "public", SchemaName = _fixture.CurrentSchema,
+            OperationId = "folder.create",
+            TenantId = "public",
+            SchemaName = _fixture.CurrentSchema,
             Parameters = new() { ["name"] = "First", ["If-Match"] = before.Etag }
         };
         await WithRequesterContextAsync(payload, async context =>
@@ -247,7 +256,9 @@ public sealed partial class FolderOperationIntegrationTests
             var gateway = _fixture.Services.GetRequiredService<IOperationGateway>();
             var request = new OperationGatewayRequest
             {
-                OperationId = payload.OperationId, Kind = OperationClass.AdminConfigChange, TenantId = payload.TenantId,
+                OperationId = payload.OperationId,
+                Kind = OperationClass.AdminConfigChange,
+                TenantId = payload.TenantId,
                 RequestedBy = CanonicalSecurityActor.Resolve(context.User)!.ActorId,
                 IdempotencyKey = "folder-" + Guid.NewGuid().ToString("N"),
                 Plan = new OperationProposalPlan

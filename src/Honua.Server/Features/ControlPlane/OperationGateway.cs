@@ -590,7 +590,8 @@ internal sealed partial class OperationGateway : IOperationGateway
             !FolderApprovalAuthorization.MatchesExisting(existing, request.RequestedBy, plan)
             ? new OperationGatewayResult
             {
-                Outcome = OperationGatewayOutcome.Blocked, Decision = decision,
+                Outcome = OperationGatewayOutcome.Blocked,
+                Decision = decision,
                 Message = FolderApprovalAuthorization.NewIdempotencyKeyRequired
             }
             : ExistingProposalResult(existing, decision, request.IdempotencyKey!);
@@ -620,7 +621,8 @@ internal sealed partial class OperationGateway : IOperationGateway
             {
                 return new OperationGatewayResult
                 {
-                    Outcome = OperationGatewayOutcome.Failed, Decision = decision,
+                    Outcome = OperationGatewayOutcome.Failed,
+                    Decision = decision,
                     Message = FolderMutationFailure.From(exception).Detail
                 };
             }
