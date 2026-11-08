@@ -20,17 +20,12 @@ internal class TolerantStringEnumJsonConverter<TEnum> : JsonConverter<TEnum>
 
     public override TEnum Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
-        if (reader.TokenType == JsonTokenType.Number && !reader.TryGetInt32(out _) &&
-            (reader.TryGetInt64(out _) || reader.TryGetUInt64(out _)))
-        {
-            return UnknownValue;
-        }
-
         try
         {
             return KnownOrUnknown(_knownValues.Read(ref reader, typeToConvert, options));
         }
-        catch (JsonException) when (reader.TokenType == JsonTokenType.String)
+        catch (JsonException) when (reader.TokenType == JsonTokenType.String ||
+            reader.TokenType == JsonTokenType.Number && (reader.TryGetInt64(out _) || reader.TryGetUInt64(out _)))
         {
             return UnknownValue;
         }

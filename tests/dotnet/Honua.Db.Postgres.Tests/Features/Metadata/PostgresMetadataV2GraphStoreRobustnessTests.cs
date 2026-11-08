@@ -13,10 +13,10 @@ namespace Honua.Db.Postgres.Tests.Features.Metadata;
 public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
 {
     [IntegrationTheory]
-    [InlineData("future-dataset-kind", "future-lifecycle")]
-    [InlineData("feature-dataset", "active")]
+    [InlineData("future-dataset-kind", "future-lifecycle", "future-state")]
+    [InlineData("feature-dataset", "active", "ready")]
     public async Task SaveAsync_FutureSnapshotValues_PreservesUnknownPropertiesAfterKnownEdit(
-        string datasetKind, string lifecycle)
+        string datasetKind, string lifecycle, string operationalState)
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreFreshDbTests));
         try
@@ -41,7 +41,7 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
                         "metadata": {"id": "future-dataset", "name": "future", "futureMetadata": "retained"},
                         "type": "{{{datasetKind}}}",
                         "futureDataset": ["retained"],
-                        "status": {"lifecycle": "{{{lifecycle}}}", "state": "future-state", "futureStatus": false,
+                        "status": {"lifecycle": "{{{lifecycle}}}", "state": "{{{operationalState}}}", "futureStatus": false,
                           "conditions": [{"type": "future", "status": "True", "futureCondition": {"value": 7}}]}
                       }]
                     }
