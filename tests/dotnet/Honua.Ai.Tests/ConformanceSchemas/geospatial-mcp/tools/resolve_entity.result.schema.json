@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/resolve_entity.result.schema.json",
+  "title": "resolve_entity result payload",
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "required": [
+    "query",
+    "entityType",
+    "matchCount",
+    "matches"
+  ],
+  "properties": {
+    "query": {
+      "type": "string"
+    },
+    "entityType": {
+      "enum": [
+        "any",
+        "service",
+        "layer"
+      ]
+    },
+    "matchCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "matches": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/match"
+      }
+    }
+  },
+  "$defs": {
+    "match": {
+      "type": "object",
+      "required": [
+        "kind",
+        "serviceId",
+        "name",
+        "score"
+      ],
+      "not": {
+        "required": [
+          "layerId"
+        ]
+      },
+      "properties": {
+        "kind": {
+          "enum": [
+            "service",
+            "layer"
+          ]
+        },
+        "serviceId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string"
+        },
+        "score": {
+          "type": "number"
+        },
+        "serviceLayerIndex": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      },
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "layer"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "$ref": "../common/service-layer-reference.schema.json"
+      },
+      "else": {
+        "properties": {
+          "serviceLayerIndex": {
+            "type": "null"
+          }
+        }
+      }
+    }
+  },
+  "x-honua-extension": true,
+  "description": "Ranked service and layer matches grounded in the catalog. Layer matches carry a service-local selector; service matches omit the index or return null."
+}

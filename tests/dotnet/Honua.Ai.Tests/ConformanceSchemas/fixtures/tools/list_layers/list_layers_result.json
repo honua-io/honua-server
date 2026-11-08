@@ -1,0 +1,20 @@
+{
+  "id": "list_layers.service_layer_index_result",
+  "schemaRef": "tools/list_layers.result.schema.json",
+  "validates": "inputs",
+  "inputs": {
+    "layerCount": 1,
+    "layers": [
+      {
+        "serviceId": "county_parcels",
+        "serviceLayerIndex": 3,
+        "name": "Parcels"
+      }
+    ]
+  },
+  "expected": "tool_result",
+  "canonicalRefs": [
+    "CapabilityCatalog",
+    "LayerRef"
+  ]
+}

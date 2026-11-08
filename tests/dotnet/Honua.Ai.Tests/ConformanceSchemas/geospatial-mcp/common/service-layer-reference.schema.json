@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/common/service-layer-reference.schema.json",
+  "title": "Service-scoped layer reference",
+  "type": "object",
+  "description": "A published layer selected by service identity and its nonnegative service-local index. The index is independent of the internal storage layer id.",
+  "required": [
+    "serviceId",
+    "serviceLayerIndex"
+  ],
+  "not": {
+    "required": [
+      "layerId"
+    ]
+  },
+  "properties": {
+    "serviceId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "serviceLayerIndex": {
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}

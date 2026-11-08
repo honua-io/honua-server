@@ -42,7 +42,7 @@ internal sealed class McpListLayersOutput
     public IReadOnlyList<McpLayerSummary> Layers { get; set; } = [];
 }
 
-internal sealed class McpLayerSummary
+internal class McpLayerSummary
 {
     [JsonPropertyName("serviceId")]
     public string ServiceId { get; set; } = string.Empty;
@@ -107,38 +107,8 @@ internal sealed class McpDescribeLayerArgument
     public bool? IncludeRowCount { get; set; }
 }
 
-internal sealed class McpDescribeLayerOutput
+internal sealed class McpDescribeLayerOutput : McpLayerSummary
 {
-    [JsonPropertyName("serviceId")]
-    public string ServiceId { get; set; } = string.Empty;
-
-    [JsonPropertyName("serviceName")]
-    public string ServiceName { get; set; } = string.Empty;
-
-    [JsonPropertyName("serviceLayerIndex")]
-    public int ServiceLayerIndex { get; set; }
-
-    [JsonPropertyName("studioSourceId")]
-    public string StudioSourceId => StudioCatalogSourceIdentity.Create(ServiceId, ServiceLayerIndex);
-
-    [JsonPropertyName("name")]
-    public string Name { get; set; } = string.Empty;
-
-    [JsonPropertyName("type")]
-    public string Type { get; set; } = string.Empty;
-
-    [JsonPropertyName("geometryType")]
-    public string GeometryType { get; set; } = string.Empty;
-
-    [JsonPropertyName("srid")]
-    public int? Srid { get; set; }
-
-    [JsonPropertyName("extent")]
-    public McpExtent? Extent { get; set; }
-
-    [JsonPropertyName("description")]
-    public string? Description { get; set; }
-
     [JsonPropertyName("rowCount")]
     public long? RowCount { get; set; }
 
