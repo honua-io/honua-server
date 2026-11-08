@@ -39,28 +39,7 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
         try
         {
             var workflows = new RedisWorkflowOperationStore(connection, NullLogger<RedisWorkflowOperationStore>.Instance);
-            var monitor = Substitute.For<IOptionsMonitor<ControlPlaneOptions>>();
-            monitor.CurrentValue.Returns(new ControlPlaneOptions
-            {
-                DeployTargets = [new DeployTargetOptions { TargetId = "local", TargetKind = DeployTargetKind.LocalCompose }]
-            });
-            var targets = Substitute.For<IDeployTargetRegistry>();
-            targets.GetAsync("local", Arg.Any<CancellationToken>()).Returns(new DeployTargetDefinition
-            {
-                TargetId = "local",
-                TargetKind = DeployTargetKind.LocalCompose,
-                Backend = "test",
-                Environment = "local",
-                TargetName = "honua"
-            });
-            var backend = Substitute.For<IDeployBackend>();
-            backend.BackendName.Returns("test");
-            backend.TargetKind.Returns(DeployTargetKind.LocalCompose);
-            backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(new DeployBackendCapabilities());
-            backend.PlanAsync(Arg.Any<DeployOperationSpec>(), Arg.Any<CancellationToken>()).Returns(new DeployPlan { IsReadyToSubmit = true });
-            backend.StartAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>()).Returns(new DeploySubmissionResult { Status = WorkflowOperationStatus.Reconciling });
-            var service = new DeployWorkflowService(targets, [workflows], [backend], Substitute.For<IOperatorApprovalEvaluator>(),
-                NullLogger<DeployWorkflowService>.Instance, monitor, proposalStore: proposals);
+            var (service, backend, monitor) = CreateLocalDeployFixture(workflows, proposals);
             var compose = Substitute.For<IComposeExecutorClient>();
             compose.ExecuteAsync(Arg.Any<ComposeExecutorRequest>(), Arg.Any<CancellationToken>())
                 .Returns<Task<ComposeExecutorResponse>>(_ => throw new IOException("Status unavailable"));
@@ -447,28 +426,7 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
         try
         {
             var workflows = new RedisWorkflowOperationStore(connection, NullLogger<RedisWorkflowOperationStore>.Instance);
-            var monitor = Substitute.For<IOptionsMonitor<ControlPlaneOptions>>();
-            monitor.CurrentValue.Returns(new ControlPlaneOptions
-            {
-                DeployTargets = [new DeployTargetOptions { TargetId = "local", TargetKind = DeployTargetKind.LocalCompose }]
-            });
-            var targets = Substitute.For<IDeployTargetRegistry>();
-            targets.GetAsync("local", Arg.Any<CancellationToken>()).Returns(new DeployTargetDefinition
-            {
-                TargetId = "local",
-                TargetKind = DeployTargetKind.LocalCompose,
-                Backend = "test",
-                Environment = "local",
-                TargetName = "honua"
-            });
-            var backend = Substitute.For<IDeployBackend>();
-            backend.BackendName.Returns("test");
-            backend.TargetKind.Returns(DeployTargetKind.LocalCompose);
-            backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(new DeployBackendCapabilities());
-            backend.PlanAsync(Arg.Any<DeployOperationSpec>(), Arg.Any<CancellationToken>()).Returns(new DeployPlan { IsReadyToSubmit = true });
-            backend.StartAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>()).Returns(new DeploySubmissionResult { Status = WorkflowOperationStatus.Reconciling });
-            var service = new DeployWorkflowService(targets, [workflows], [backend], Substitute.For<IOperatorApprovalEvaluator>(),
-                NullLogger<DeployWorkflowService>.Instance, monitor, proposalStore: proposals);
+            var (service, backend, monitor) = CreateLocalDeployFixture(workflows, proposals);
             var worker = new DurableRestoreWorker(workflows, proposals, null!, new DeployOperationExecutor(service), null!, null!,
                 NullLogger<DurableRestoreWorker>.Instance, monitor, Substitute.For<IComposeExecutorClient>());
             var now = DateTimeOffset.UtcNow;
@@ -524,6 +482,34 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
                 await proposals.TrySetAsync(proposal with { Status = OperationProposalStatus.Cancelled });
             await database.KeyDeleteAsync("controlplane:workflow:restore-cell-exclusive-owner");
         }
+    }
+
+    private static (DeployWorkflowService Service, IDeployBackend Backend, IOptionsMonitor<ControlPlaneOptions> Options)
+        CreateLocalDeployFixture(IWorkflowOperationStore workflows, IOperationProposalStore proposals)
+    {
+        var monitor = Substitute.For<IOptionsMonitor<ControlPlaneOptions>>();
+        monitor.CurrentValue.Returns(new ControlPlaneOptions
+        {
+            DeployTargets = [new DeployTargetOptions { TargetId = "local", TargetKind = DeployTargetKind.LocalCompose }]
+        });
+        var targets = Substitute.For<IDeployTargetRegistry>();
+        targets.GetAsync("local", Arg.Any<CancellationToken>()).Returns(new DeployTargetDefinition
+        {
+            TargetId = "local",
+            TargetKind = DeployTargetKind.LocalCompose,
+            Backend = "test",
+            Environment = "local",
+            TargetName = "honua"
+        });
+        var backend = Substitute.For<IDeployBackend>();
+        backend.BackendName.Returns("test");
+        backend.TargetKind.Returns(DeployTargetKind.LocalCompose);
+        backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>()).Returns(new DeployBackendCapabilities());
+        backend.PlanAsync(Arg.Any<DeployOperationSpec>(), Arg.Any<CancellationToken>()).Returns(new DeployPlan { IsReadyToSubmit = true });
+        backend.StartAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>()).Returns(new DeploySubmissionResult { Status = WorkflowOperationStatus.Reconciling });
+        var service = new DeployWorkflowService(targets, [workflows], [backend], Substitute.For<IOperatorApprovalEvaluator>(),
+            NullLogger<DeployWorkflowService>.Instance, monitor, proposalStore: proposals);
+        return (service, backend, monitor);
     }
 
     private static OperationProposal CreateClaimedLegacyApproval(OperationGatewayRequest request, string payload, string id)
