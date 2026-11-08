@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Core.Features.Security.Admission;
 
 namespace Honua.Ai.StudioAiProxy.Domain;
 
@@ -12,12 +13,14 @@ internal sealed class StudioAiHttpInvocation
     private readonly byte[] _body;
 
     internal StudioAiHttpInvocation(StudioAiProxyProviderOptions options, StudioAiChatRequest request, string suffix,
-        Func<StudioAiProxyProviderOptions, StudioAiChatRequest, string, byte[]> serialize)
+        Func<StudioAiProxyProviderOptions, StudioAiChatRequest, string, byte[]> serialize,
+        AiExecutionContext? executionContext = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(request);
         _options = SnapshotOptions(options);
         Request = CopyRequest(request);
+        ExecutionContext = executionContext ?? request.ExecutionContext;
         Model = string.IsNullOrWhiteSpace(Request.Model) ? _options.Model : Request.Model!;
         // Append exactly as the existing adapters do; resolving a rooted suffix
         // against a base URI would silently discard an operator's base path.
@@ -31,6 +34,7 @@ internal sealed class StudioAiHttpInvocation
     }
 
     internal StudioAiChatRequest Request { get; }
+    internal AiExecutionContext? ExecutionContext { get; }
     internal string Model { get; }
     internal Uri Destination { get; }
     internal byte[] CopyBody() => (byte[])_body.Clone();
