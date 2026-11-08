@@ -472,7 +472,7 @@ public sealed class McpMapToolTests
     [Operation(Operations.Query)]
     [Endpoint("POST /mcp tools/call honua_describe_layer")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
-    public async Task ToolsCall_DescribeLayer_ReturnsFieldSchemaRowCountAndCrs()
+    public async Task ToolsCall_DescribeLayer_StorageBindingDiffers_UsesServiceLayerIndex()
     {
         var reader = Substitute.For<IFeatureReader>();
         reader.CountAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
@@ -482,7 +482,7 @@ public sealed class McpMapToolTests
         var response = await surface.DispatchAsync(
             AuthenticatedContext(BuildServices(reader: reader)),
             ToolCall("describe-1", DescribeLayerTool.ToolName, $$"""
-                {"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}}}
+                {"serviceId":"{{ServiceId}}","serviceLayerIndex":{{LayerIndex}}}
                 """),
             CancellationToken.None);
 
@@ -491,7 +491,8 @@ public sealed class McpMapToolTests
         result.GetProperty("isError").GetBoolean().Should().BeFalse();
         var structured = result.GetProperty("structuredContent");
         structured.GetProperty("serviceId").GetString().Should().Be(ServiceId);
-        structured.GetProperty("layerId").GetInt32().Should().Be(LayerIndex);
+        structured.GetProperty("serviceLayerIndex").GetInt32().Should().Be(LayerIndex);
+        structured.TryGetProperty("layerId", out _).Should().BeFalse();
         structured.GetProperty("studioSourceId").GetString().Should().Be("svc-parcels/0");
         StructuredContentShouldMatchOutputSchema(result, new DescribeLayerTool(_jobService,
             NullLogger<DescribeLayerTool>.Instance).Describe().OutputSchema!.Value);
