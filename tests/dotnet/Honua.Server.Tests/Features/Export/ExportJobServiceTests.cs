@@ -36,6 +36,35 @@ public sealed class ExportJobServiceTests
 {
     [UnitTest]
     [Operation(Operations.Export)]
+    public async Task ReadQueuedJobIdsAsync_InvalidProgress_DoesNotPreventHealthyJobRecovery()
+    {
+        var progressStore = Substitute.For<IUniversalProgressStore>();
+        var requestCache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
+        var channel = Channel.CreateUnbounded<string>();
+        using var services = new ServiceCollection().BuildServiceProvider();
+        var sut = new ExportJobService(progressStore, requestCache, channel,
+            services.GetRequiredService<IServiceScopeFactory>(), NullLogger<ExportJobService>.Instance);
+        var job = CreateJob("healthy-export");
+        progressStore.GetActiveOperationIdsAsync(OperationType.Export, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<string>>(["invalid-export", job.JobId]));
+        progressStore.GetProgressAsync<ExportProgress>("invalid-export", Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<ExportProgress?>(new InvalidDataException("Persisted export progress is invalid.")));
+        progressStore.GetProgressAsync<ExportProgress>(job.JobId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<ExportProgress?>(ExportProgress.CreateInitial(
+                job.JobId, job.Format, job.ServiceName, job.ServiceLayerIndex, job.TotalFeatures)));
+        await requestCache.SetStringAsync($"export:request:{job.JobId}", JsonSerializer.Serialize(
+            new ExportJobService.PersistedExportJobRequest { Job = job },
+            ExportJsonContext.Default.PersistedExportJobRequest));
+
+        await using var enumerator = sut.ReadQueuedJobIdsAsync().GetAsyncEnumerator();
+
+        (await enumerator.MoveNextAsync()).Should().BeTrue();
+        enumerator.Current.Should().Be(job.JobId);
+        (await requestCache.GetStringAsync($"export:request:{job.JobId}")).Should().NotBeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
     public async Task ReadQueuedJobIdsAsync_LegacyRequest_MarksOnlyThatJobFailed()
     {
         var progressStore = new InMemoryUniversalProgressStore();
