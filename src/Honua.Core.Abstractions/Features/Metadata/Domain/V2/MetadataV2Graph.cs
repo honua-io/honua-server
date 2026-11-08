@@ -356,7 +356,7 @@ public sealed record MetadataV2StorageBinding : ExtensibleJsonRecord
 
     public bool Supports(MetadataV2StorageBindingCapability capability)
     {
-        return Capabilities.Contains(capability);
+        return CapabilityValues.Any(value => value.Value == capability);
     }
 }
 
