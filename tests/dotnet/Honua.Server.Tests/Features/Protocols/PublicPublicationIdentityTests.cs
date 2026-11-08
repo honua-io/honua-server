@@ -204,6 +204,30 @@ public sealed class PublicPublicationIdentityTests : IAsyncLifetime
         names.Select(XmlConvert.DecodeName).Should().BeEquivalentTo(ids);
     }
 
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Protocol(TestProtocols.OgcApiStyles)]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /api/styles/{publicationId}.json")]
+    public async Task Style_PrivatePublication_ConcealsOrChallengesBeforeStyleRead(bool authenticated)
+    {
+        var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        SetGraph(graph with
+        {
+            Revision = graph.Revision + 1,
+            Publications = graph.Publications.Select(publication => publication with
+            {
+                Metadata = publication.Metadata with { Tenant = "private-tenant" },
+            }).ToArray(),
+        });
+        using var client = authenticated ? _fixture.CreateAdminClient() : _fixture.CreateClient();
+        using var response = await client.GetAsync($"/api/styles/{Uri.EscapeDataString(PublicationId)}.json");
+
+        response.StatusCode.Should().Be(authenticated ? HttpStatusCode.NotFound : HttpStatusCode.Unauthorized);
+        await _styles.DidNotReceive().GetStyleAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+    }
+
     private async Task<string[]> WfsNamesAsync()
     {
         var xml = await ReadXmlAsync("/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=2.0.0");
