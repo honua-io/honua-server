@@ -28,8 +28,8 @@ public sealed class MetadataV2StatusJsonConverterTests
 
         status!.Lifecycle.Should().Be(MetadataV2LifecycleStatus.Active);
         status.State.Should().Be(MetadataV2OperationalState.Degraded);
-        var act = () => JsonSerializer.Deserialize<MetadataV2Status>("""{"lifecycle":"1"}""");
-        act.Should().Throw<JsonException>();
+        var unsupported = JsonSerializer.Deserialize<MetadataV2Status>("""{"lifecycle":"1"}""");
+        unsupported!.Lifecycle.ToString().Should().Be("Unknown");
     }
 
     [UnitTest]

@@ -12,8 +12,11 @@ namespace Honua.Db.Postgres.Tests.Features.Metadata;
 
 public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
 {
-    [IntegrationTest]
-    public async Task SaveAsync_FutureSnapshotValues_PreservesUnknownPropertiesAfterKnownEdit()
+    [IntegrationTheory]
+    [InlineData("future-dataset-kind", "future-lifecycle")]
+    [InlineData("feature-dataset", "active")]
+    public async Task SaveAsync_FutureSnapshotValues_PreservesUnknownPropertiesAfterKnownEdit(
+        string datasetKind, string lifecycle)
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreFreshDbTests));
         try
@@ -31,14 +34,14 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
                     SET document = document || $1::jsonb
                     WHERE environment = 'Test';
                     """;
-                command.Parameters.AddWithValue("""
+                command.Parameters.AddWithValue($$$"""
                     {
                       "futureRoot": {"values": [1, null, {"enabled": true}]},
                       "resources": [{
                         "metadata": {"id": "future-dataset", "name": "future", "futureMetadata": "retained"},
-                        "type": "future-dataset-kind",
+                        "type": "{{{datasetKind}}}",
                         "futureDataset": ["retained"],
-                        "status": {"lifecycle": "future-lifecycle", "state": "future-state", "futureStatus": false,
+                        "status": {"lifecycle": "{{{lifecycle}}}", "state": "future-state", "futureStatus": false,
                           "conditions": [{"type": "future", "status": "True", "futureCondition": {"value": 7}}]}
                       }]
                     }
@@ -49,8 +52,8 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
             var loaded = await new PostgresMetadataV2GraphStore(provider, "Test",
                 schemaGuard: FixtureBypassDatabaseSchemaGuard.Instance, schemaName: schema).GetCurrentAsync();
             var dataset = loaded.Graph.Resources.Should().ContainSingle().Subject;
-            dataset.Type.ToString().Should().Be("Unknown");
-            dataset.Status.Lifecycle.ToString().Should().Be("Unknown");
+            dataset.Type.ToString().Should().Be(datasetKind == "feature-dataset" ? "FeatureDataset" : "Unknown");
+            dataset.Status.Lifecycle.ToString().Should().Be(lifecycle == "active" ? "Active" : "Unknown");
             var saved = await store.SaveAsync(loaded.Graph with
             {
                 Resources = [dataset with { Metadata = dataset.Metadata with { Title = "Edited title" } }]
