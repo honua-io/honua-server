@@ -435,7 +435,7 @@ public sealed class ServingImageBoundaryTests
                      "Honua.Db/Redshift",
                      "Honua.Db/Snowflake",
                      "Honua.Db/Databricks",
-                     "Honua.Protocols.SensorThings"
+                     "Honua.Protocols/SensorThings"
                  })
         {
             functionsDockerfile.Should().Contain($"COPY src/{project}/*.csproj src/{project}/");
