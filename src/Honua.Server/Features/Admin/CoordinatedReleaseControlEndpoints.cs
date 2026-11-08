@@ -254,6 +254,10 @@ internal static class CoordinatedReleaseControlEndpoints
         {
             return HumanApprovalDenied(exception);
         }
+        catch (ServiceUnavailableException)
+        {
+            return Results.Problem(detail: ControlUnavailableMessage, statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
         catch (InvalidOperationException)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
@@ -279,10 +283,10 @@ internal static class CoordinatedReleaseControlEndpoints
         context.Response.Headers.CacheControl = "no-store";
         if (PlatformDeployAuthority.Deny(context) is { } denied) return denied;
         if (!TryParseGate(gate, out var step)) return Results.BadRequest();
-        var operation = await controlService.GetAsync(operationId, context.RequestAborted).ConfigureAwait(false);
-        if (operation is null) return Results.NotFound();
         try
         {
+            var operation = await controlService.GetAsync(operationId, context.RequestAborted).ConfigureAwait(false);
+            if (operation is null) return Results.NotFound();
             var review = await context.RequestServices.GetRequiredService<OperationHumanApprovalAuthority>()
                 .OpenGateReviewAsync(operation, step, context).ConfigureAwait(false);
             return Results.Json(new CoordinatedReleaseHumanReviewResponse
@@ -295,6 +299,14 @@ internal static class CoordinatedReleaseControlEndpoints
         catch (HumanApprovalRequiredException exception)
         {
             return HumanApprovalDenied(exception);
+        }
+        catch (ServiceUnavailableException)
+        {
+            return Results.Problem(detail: ControlUnavailableMessage, statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+        catch (InvalidOperationException)
+        {
+            return Results.Problem(detail: ControlUnavailableMessage, statusCode: StatusCodes.Status503ServiceUnavailable);
         }
     }
 
