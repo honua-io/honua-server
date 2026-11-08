@@ -11,17 +11,14 @@
 # file follows.
 
 # Repository-relative anchors. `TESTS_ROOT` resolves from this file's location so
-# the same script works from a checkout and from the container bind mount
-# (/workspace/tests/r/certification/...).
+# the same script works from a checkout and from the container bind mounts.
 # `cert_script_dir()` is defined in cert_envelope.R; source that file first.
 cf_tests_root <- function() {
-  normalizePath(file.path(cert_script_dir(), "..", ".."), mustWork = TRUE)
+  normalizePath(file.path(cf_project_root(), "tests"), mustWork = TRUE)
 }
 
 cf_project_root <- function() {
-  # tests/ -> repository root. Inside the lane container only `tests/` is
-  # mounted, so this may not exist; callers must tolerate that.
-  normalizePath(file.path(cf_tests_root(), ".."), mustWork = FALSE)
+  normalizePath(file.path(cert_script_dir(), "..", "..", "..", ".."), mustWork = TRUE)
 }
 
 cf_seed_path <- function() file.path(cf_tests_root(), "seed", "client-compat-v1.sql")
