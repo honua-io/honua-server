@@ -37,7 +37,7 @@ namespace Honua.Server.Tests.Features.Admin;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.ApprovalManagement)]
-public sealed class ProposalEndpointsTests : IAsyncLifetime
+public sealed partial class ProposalEndpointsTests : IAsyncLifetime
 {
     private const string AdminPassword = "proposal-admin-bootstrap-key";
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -132,7 +132,6 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
             ExecutionPayload = executionPayload,
         };
         var policy = _ladder.Resolve(kind);
-        var planHash = Honua.Server.Features.Operations.OperationApprovalPlanSeal.Compute(plan);
         var proposal = new OperationProposal
         {
             ProposalId = $"proposal-{Guid.NewGuid():N}",
@@ -143,23 +142,14 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
             AutonomyMetadata = autonomyMetadata,
             OperationId = operationId,
             Plan = plan,
-            SealedPlanHash = planHash,
+            SealedPlanHash = Honua.Server.Features.Operations.OperationApprovalPlanSeal.Compute(plan),
             GuardrailDecision = policy,
-            Initiation = new OperationInitiationEvidence
-            {
-                Version = OperationInitiationEvidence.CurrentVersion,
-                Kind = OperationInitiationKind.Agent,
-                Channel = OperationInitiationChannel.InternalAgent,
-                PrincipalId = requestedBy,
-                TenantId = "public",
-                PlanHash = planHash,
-                PolicyRevision = Honua.ControlPlane.OperationGateway.ComputePolicyRevision(policy),
-                AcceptedAt = now,
-            },
             CreatedAt = now,
             UpdatedAt = now,
             Evidence = evidence,
         };
+        proposal = Honua.Server.Tests.Features.Infrastructure.ControlPlane.CanonicalOperationGatewayTestComposition
+            .WithVersionedInitiation(proposal);
         await _proposalStore.TryCreateAsync(proposal);
         return (await _proposalStore.GetAsync(proposal.ProposalId))!;
     }
@@ -455,8 +445,8 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
     public async Task ApproveProposal_RequesterInteractiveSession_ExecutesOnce()
     {
-        var proposal = await SeedProposalAsync(requestedBy: "requester");
         using var human = await HumanApprovalHttpClient.AuthenticateAsync(_fixture, _identityProvider, "requester");
+        var proposal = await SeedProposalAsync(requestedBy: human.ActorId);
 
         using var response = await human.ApproveAsync(proposal.ProposalId);
 
@@ -467,6 +457,7 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
         resolved.HumanApproval!.Channel.Should().Be(OperationHumanApprovalEvidence.InteractiveOidcChannel);
         resolved.HumanApproval.PlanHash.Should().Be(proposal.SealedPlanHash);
         resolved.ResolvedBy.Should().Be(resolved.HumanApproval.ActorId);
+        resolved.ResolvedBy.Should().Be(proposal.RequestedBy);
     }
 
     [IntegrationTest]
@@ -632,91 +623,6 @@ public sealed class ProposalEndpointsTests : IAsyncLifetime
 
         result.Outcome.Should().Be(OperationGatewayOutcome.Executed);
         _executor.Executed.Should().BeTrue();
-    }
-
-    public static IEnumerable<object[]> NonHumanApprovalCases =>
-        Enum.GetValues<OperationClass>().SelectMany(kind => new[]
-        {
-            new object[] { kind, "admin:write" },
-            new object[] { kind, "admin:approve" }
-        });
-
-    public static IEnumerable<object[]> ProposalKinds =>
-        Enum.GetValues<OperationClass>().Select(kind => new object[] { kind });
-
-    [IntegrationTheory]
-    [MemberData(nameof(ProposalKinds))]
-    public async Task ApplyApprovedProposalAsync_ActorContextWithoutHumanProof_DoesNotReleaseAuthority(OperationClass kind)
-    {
-        var proposal = await SeedProposalAsync(requestedBy: "agent:proposer", kind: kind);
-        var gateway = _fixture.Services.GetRequiredService<IOperationGateway>();
-        var approval = new OperationProposalApprovalContext
-        {
-            ApprovedBy = "different-person",
-            TenantId = "public",
-        };
-
-        var apply = () => gateway.ApplyApprovedProposalAsync(proposal.ProposalId, approval);
-
-        await apply.Should().ThrowAsync<InvalidOperationException>().WithMessage("*human*");
-        (await _proposalStore.GetAsync(proposal.ProposalId)).Should().BeEquivalentTo(proposal);
-        _executor.ExecutionCount.Should().Be(0);
-        _notifier.ResolvedCount.Should().Be(0);
-    }
-
-    [IntegrationTheory]
-    [MemberData(nameof(NonHumanApprovalCases))]
-    [Endpoint("POST /api/v1/admin/api-keys")]
-    [Endpoint("GET /api/v1/admin/proposals/{id}")]
-    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
-    [Endpoint("GET /api/v1/admin/proposals/{id}/approval-review")]
-    public async Task ApproveProposal_ApiKeyWithDecisionGrant_RequiresHumanSession(
-        OperationClass kind, string grant)
-    {
-        var key = await CreateApiKeyAsync("noninteractive-decision", ["admin:read", grant]);
-        var proposal = await SeedProposalAsync(requestedBy: "agent:proposer", kind: kind);
-        using var client = CreateApiKeyClient(key.Key);
-        await AssertNonHumanDecisionDeniedAsync(client, proposal);
-    }
-
-    [IntegrationTheory]
-    [InlineData("admin:write")]
-    [InlineData("admin:approve")]
-    [Endpoint("POST /api/v1/admin/api-keys")]
-    [Endpoint("GET /api/v1/admin/proposals/{id}")]
-    [Endpoint("GET /api/v1/admin/proposals/{id}/approval-review")]
-    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
-    public async Task ApproveProposal_RegisteredOperatorGatedDescriptors_RefusesApiKeyForEveryOperation(string grant)
-    {
-        var catalog = _fixture.Services.GetRequiredService<Honua.Core.Features.Operations.Abstractions.IOperationCatalog>();
-        var operations = (await catalog.GetSnapshotAsync()).Operations
-            .Where(operation => operation.ApprovalModel == OperationApprovalModel.OperatorGate).ToArray();
-        operations.Should().NotBeEmpty().And.Contain(operation => operation.OperationId.EndsWith("folder.create", StringComparison.Ordinal));
-        var key = await CreateApiKeyAsync("registered-operation-decision", ["admin:read", grant]);
-        using var client = CreateApiKeyClient(key.Key);
-        foreach (var operation in operations)
-        {
-            var proposal = await SeedProposalAsync(requestedBy: "agent:proposer", operationId: operation.OperationId);
-            await AssertNonHumanDecisionDeniedAsync(client, proposal);
-        }
-    }
-
-    private async Task AssertNonHumanDecisionDeniedAsync(HttpClient client, OperationProposal proposal)
-    {
-        using var read = await client.GetAsync($"/api/v1/admin/proposals/{proposal.ProposalId}");
-        read.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        using var response = await client.PostAsync($"/api/v1/admin/proposals/{proposal.ProposalId}/approve", null);
-        using var review = await client.GetAsync($"/api/v1/admin/proposals/{proposal.ProposalId}/approval-review");
-
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        review.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        (await review.Content.ReadAsStringAsync()).Should().NotContain("capability\":");
-        var body = await response.Content.ReadAsStringAsync();
-        body.Should().ContainEquivalentOf("human").And.Contain("Console").And.Contain("MCP");
-        (await _proposalStore.GetAsync(proposal.ProposalId)).Should().BeEquivalentTo(proposal);
-        _executor.ExecutionCount.Should().Be(0);
-        _notifier.ResolvedCount.Should().Be(0);
     }
 
     [IntegrationTest]

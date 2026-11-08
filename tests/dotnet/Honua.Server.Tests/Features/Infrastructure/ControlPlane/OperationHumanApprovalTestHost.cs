@@ -79,7 +79,11 @@ internal sealed class OperationHumanApprovalTestHost : IDisposable
             new() { Type = "sid", Value = "claimed-interactive-session" },
         ];
         var id = await Sessions.CreateAuthenticatedSessionAsync(
-            "oidc", "access-token", "id-token", claims, Clock.GetUtcNow().AddMinutes(30), CancellationToken.None, origin);
+            new AdminAuthAuthenticatedSession
+            {
+                ProviderKey = "oidc", AccessToken = "access-token", IdToken = "id-token", Claims = claims,
+                ExpiresAt = Clock.GetUtcNow().AddMinutes(30), Origin = origin
+            }, CancellationToken.None);
         return new ApprovalTestHuman(id, AdminAuthClaimsProjector.CreatePrincipal(
             claims, OidcAuthenticationExtensions.AdminSessionScheme));
     }

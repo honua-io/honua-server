@@ -77,8 +77,12 @@ public sealed class AdminAuthSessionApprovalTests
         using var memory = new MemoryCache(new MemoryCacheOptions());
         var store = CreateStore(memory);
         var id = await store.CreateAuthenticatedSessionAsync(
-            "oidc", "access-token", "id-token", [new() { Type = "sub", Value = "person" }],
-            DateTimeOffset.UtcNow.AddSeconds(-1), CancellationToken.None, AdminAuthSessionOrigin.InteractiveOidc);
+            new AdminAuthAuthenticatedSession
+            {
+                ProviderKey = "oidc", AccessToken = "access-token", IdToken = "id-token",
+                Claims = [new() { Type = "sub", Value = "person" }],
+                ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(-1), Origin = AdminAuthSessionOrigin.InteractiveOidc
+            }, CancellationToken.None);
 
         (await store.GetInteractiveSessionForApprovalAsync(id, CancellationToken.None)).Should().BeNull();
     }
@@ -88,6 +92,10 @@ public sealed class AdminAuthSessionApprovalTests
 
     private static Task<string> CreateInteractiveSessionAsync(AdminAuthSessionStore store) =>
         store.CreateAuthenticatedSessionAsync(
-            "oidc", "access-token", "id-token", [new() { Type = "sub", Value = "person" }],
-            DateTimeOffset.UtcNow.AddMinutes(10), CancellationToken.None, AdminAuthSessionOrigin.InteractiveOidc);
+            new AdminAuthAuthenticatedSession
+            {
+                ProviderKey = "oidc", AccessToken = "access-token", IdToken = "id-token",
+                Claims = [new() { Type = "sub", Value = "person" }],
+                ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(10), Origin = AdminAuthSessionOrigin.InteractiveOidc
+            }, CancellationToken.None);
 }
