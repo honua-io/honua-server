@@ -10,6 +10,7 @@ using Honua.Infrastructure.Security;
 using Honua.Server.Features.Operations;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Infrastructure.ControlPlane;
@@ -75,6 +76,78 @@ public sealed class DeployHumanApprovalReplayTests
             Request(original), original.Plan.ExecutionPayload!, CancellationToken.None));
 
         await store.DidNotReceive().TryCreateAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ReconcileAsync_ClaimedHumanApproval_RecoversRequesterOrAnotherHuman(bool requesterApproves)
+    {
+        using var host = new OperationHumanApprovalTestHost();
+        var proposal = await ApprovedAsync(host, requesterApproves);
+        var proposals = Substitute.For<IOperationProposalStore>();
+        proposals.GetAsync(proposal.ProposalId, Arg.Any<CancellationToken>()).Returns(proposal);
+        var worker = WorkerFor(proposal, proposals);
+
+        await worker.ReconcileAsync(proposal.ExecutionOperationId!, CancellationToken.None);
+
+        await proposals.Received(1).TrySetAsync(Arg.Is<OperationProposal>(recovered =>
+            recovered.Status == OperationProposalStatus.Submitted &&
+            recovered.HumanApproval == proposal.HumanApproval), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTheory]
+    [InlineData("proof")]
+    [InlineData("binding")]
+    [InlineData("instance")]
+    public async Task ReconcileAsync_ChangedHumanEvidence_DoesNotAdvanceExecutionClaim(string change)
+    {
+        using var host = new OperationHumanApprovalTestHost();
+        var original = await ApprovedAsync(host, requesterApproves: false);
+        var changed = change switch
+        {
+            "proof" => original with { HumanApproval = null },
+            "binding" => original with { HumanApproval = original.HumanApproval! with { BindingDigest = new string('0', 64) } },
+            "instance" => original with { Audit = original.Audit with { OperationInstanceId = "different-instance" } },
+            _ => throw new ArgumentOutOfRangeException(nameof(change)),
+        };
+        var proposals = Substitute.For<IOperationProposalStore>();
+        proposals.GetAsync(original.ProposalId, Arg.Any<CancellationToken>()).Returns(changed);
+        var worker = WorkerFor(original, proposals);
+
+        await worker.ReconcileAsync(original.ExecutionOperationId!, CancellationToken.None);
+
+        await proposals.DidNotReceive().TrySetAsync(
+            Arg.Any<OperationProposal>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    private static DurableRestoreWorker WorkerFor(OperationProposal proposal, IOperationProposalStore proposals)
+    {
+        var record = new WorkflowOperationRecord
+        {
+            OperationId = proposal.ExecutionOperationId!,
+            Kind = WorkflowOperationKind.PreMigrationRestore,
+            Status = WorkflowOperationStatus.Submitted,
+            CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-6),
+            UpdatedAt = DateTimeOffset.UtcNow.AddMinutes(-6),
+            Audit = new OperationAuditInfo
+            {
+                ProposalId = proposal.ProposalId,
+                OperationInstanceId = proposal.Audit.OperationInstanceId,
+                RequestedBy = proposal.RequestedBy,
+                TenantId = proposal.TenantId,
+            },
+            PreMigrationRestore = new PreMigrationRestoreContext
+            {
+                Phase = "queued", Payload = proposal.Plan.ExecutionPayload!, ApprovedBy = proposal.ResolvedBy,
+            },
+        };
+        var store = Substitute.For<IWorkflowOperationStore>();
+        store.TryAcquireLeaseAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>()).Returns(true);
+        store.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(record);
+        var audit = Substitute.For<Honua.Core.Features.ControlPlane.Restore.IPreMigrationRestoreAudit>();
+        audit.AppendAsync(Arg.Any<Honua.Core.Features.ControlPlane.Restore.PreMigrationRestoreAuditLine>(), Arg.Any<CancellationToken>()).Returns(true);
+        return new DurableRestoreWorker(store, proposals, null!, null!, null!, audit, NullLogger<DurableRestoreWorker>.Instance);
     }
 
     private static OperationGatewayRequest Request(OperationProposal proposal) => new()
