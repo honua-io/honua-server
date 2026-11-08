@@ -21,11 +21,12 @@
 #   run-foundation-family.sh run <family>          # dotnet test each project
 #
 # Spec record (one per line, `|`-separated):
-#   csproj | trx-basename | filter | env (k=v,k=v) | flags (coverage,separate-build)
+#   csproj | trx-basename | filter | env (k=v,k=v) | flags (coverage,separate-build,crash-diagnostics)
 #
 # `coverage` adds the Coverlet XPlat collector + coverlet.runsettings, matching
 # the pre-split job where ONLY Honua.Core.Tests collected coverage.
 # `separate-build` isolates a project build so other suites can still publish diagnostics.
+# `crash-diagnostics` captures mini dumps for the separate short-retention artifact.
 set -euo pipefail
 
 # Every path below (csproj paths, Honua.sln, coverlet.runsettings, the generated
@@ -182,6 +183,9 @@ foundation_run() {
       cmd+=(--collect:"XPlat Code Coverage" --settings coverlet.runsettings)
     fi
     local -a envprefix=() kvs=()
+    if [[ ",${flags}," == *,crash-diagnostics,* ]]; then
+      envprefix=(-u NuGetPackageSourceCredentials_github-honua)
+    fi
     if [[ -n "${envs}" ]]; then
       local kv
       IFS=',' read -ra kvs <<<"${envs}"

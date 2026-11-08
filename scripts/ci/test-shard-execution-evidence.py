@@ -155,22 +155,26 @@ sys.exit(int(os.environ['CHILD_EXIT']))
             stub = root / 'dotnet'
             stub.write_text('#!' + sys.executable + '\n'
                             'import json, os, sys\n'
-                            'with open(os.environ["CAPTURE"], "a") as out: out.write(json.dumps(sys.argv[1:]) + "\\n")\n'
+                            'with open(os.environ["CAPTURE"], "a") as out: out.write(json.dumps({"args": sys.argv[1:], "credentialPresent": "NuGetPackageSourceCredentials_github-honua" in os.environ}) + "\\n")\n'
                             'sys.exit(139 if "Honua.Protocols.GeoServices.Tests.csproj" in sys.argv[2] else 0)\n')
             stub.chmod(0o755)
             capture = root / 'args.jsonl'
             env = {**os.environ, 'PATH': str(root) + os.pathsep + os.environ['PATH'],
-                   'CAPTURE': str(capture), 'FOUNDATION_RESULTS_DIR': str(root / 'results')}
+                   'CAPTURE': str(capture), 'FOUNDATION_RESULTS_DIR': str(root / 'results'),
+                   'NuGetPackageSourceCredentials_github-honua': 'synthetic-test-credential'}
             run = subprocess.run(['bash', str(ROOT / 'scripts/ci/run-foundation-family.sh'), 'run', 'protocols'],
                                  env=env, capture_output=True, text=True, timeout=30)
             self.assertNotEqual(0, run.returncode, run.stdout + run.stderr)
             calls = [json.loads(line) for line in capture.read_text().splitlines()]
             self.assertEqual(7, len(calls))
-            for args in calls:
+            for call in calls:
+                args = call['args']
                 with self.subTest(project=args[1]):
                     self.assertEqual('--blame-crash' in args, 'Honua.Protocols.GeoServices.Tests.csproj' in args[1])
                     if '--blame-crash' in args:
+                        self.assertFalse(call['credentialPresent'])
                         self.assertEqual('mini', args[args.index('--blame-crash-dump-type') + 1])
+                    self.assertEqual('Tier=Fast', args[args.index('--filter') + 1])
 
     def test_protocol_crash_artifact_has_short_retention_outside_normal_results(self):
         import yaml
@@ -186,6 +190,7 @@ sys.exit(int(os.environ['CHILD_EXIT']))
         self.assertIn('artifacts/test-results/**/Sequence*.xml', upload['with']['path'])
         results = next(step for step in steps if step.get('name') == 'Upload foundation family test results')
         self.assertIn('!artifacts/test-results/**/*.dmp', results['with']['path'])
+        self.assertIn('!artifacts/test-results/**/Sequence*.xml', results['with']['path'])
 
     def test_foundation_security_failure_is_gating(self):
         with tempfile.TemporaryDirectory() as directory:
