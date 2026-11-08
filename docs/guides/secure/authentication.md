@@ -262,6 +262,44 @@ Existing cached registrations keep their original expiration. Renew access token
 
 Redis shares replay registrations across nodes. When a configured Redis connection is disconnected or faults, the default fallback is per-node memory; `Oidc:TokenValidation:ReplayProtectionFailClosed=true` refuses that fallback. Without a Redis connection, memory tracks registrations on the current node. Independent replicas need the same shared replay store for cross-node isolation.
 
+#### Human operation approval
+
+A pending operation proposal requires one authorized person using a live
+interactive OIDC session in Console. The requester may approve their own proposal.
+Sign in to the server that owns the proposal, open its current review, and use
+**Approve**. Existing operation permissions, tenant restrictions and the original
+requester's current authority remain required. API keys, generic or operator
+bearers, service credentials and model transports cannot approve, even when they
+have an approval grant or name the same user.
+
+Console keeps its upstream server session and the short-lived review capability
+in its private server-side session partition. The browser receives the review
+and decision controls. A review binds the exact proposal version, plan, actor,
+tenant and server; the capability expires within five minutes and no later than
+the session or applicable proposal evidence. Changing environment, changing the
+plan, logging out or losing authority requires a new review. A lost decision
+response requires reading the durable proposal status before deciding again.
+
+Configure the server's canonical `Public:BaseUrl`, the existing OIDC provider,
+and shared protected keys and session storage for replicas. Approval refuses
+when live shared-session authority cannot be verified. Copying bearer claims
+such as an authentication-method or session claim does not create an interactive
+session. Keep capability values, upstream cookies and one-time operation secrets
+out of browser storage, model context, logs and transcripts.
+
+For rollout, drain older proposal writers and workers before enabling the new
+approval boundary. Deploy Server first, then the matching Console. Earlier
+Console versions and bearer-only approval clients refuse safely until upgraded.
+The declared `operation-initiation` and `operation-human-approval` schemas are
+versioned independently. Pending legacy proposals without the new initiation
+binding need fresh proposals; retain the old records as history. Already claimed
+legacy executions keep their recorded recovery authority, and resolved history
+is not rewritten to claim a new approval channel. Do not roll old writers or
+workers back into the active approval deployment.
+
+This flow does not establish MRTR or installed-client interoperability. A client
+accepting an elicitation or opening a URL grants no approval by itself.
+
 ### 4. Issue GeoServices REST-compatible tokens
 
 GeoServices REST clients, including desktop GIS applications and native client SDKs, authenticate against the portal token endpoint, which is always available:
