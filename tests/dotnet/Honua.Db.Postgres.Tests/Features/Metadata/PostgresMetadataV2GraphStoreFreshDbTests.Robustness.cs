@@ -34,7 +34,7 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
                     WHERE environment = 'Test';
                     """;
                 command.Parameters.AddWithValue($$"""
-                    {"resources":[{"metadata":{"id":"dataset","name":"dataset"},
+                    {"resources":[{"metadata":{"id":"dataset","name":"dataset"},"status":{},
                       "spatial":{"primaryGeometryField":"shape"},
                       "temporal":{"startTimeField":"start","endTimeField":"end"},
                       "schemaFields":[{"name":"shape","type":{{token}}},
