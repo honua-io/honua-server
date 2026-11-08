@@ -264,6 +264,19 @@ public sealed class DurableRestoreWorkerTests
                     RestoredHostHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(host))).ToLowerInvariant()
                 }
             };
+            Restore = Restore with
+            {
+                Audit = new OperationAuditInfo { ProposalId = "legacy-proposal", RequestedBy = "requester" },
+            };
+            var plan = new OperationProposalPlan { Summary = "Claimed restore", ExecutionPayload = payload };
+            Proposals.GetAsync("legacy-proposal", Arg.Any<CancellationToken>()).Returns(new OperationProposal
+            {
+                ProposalId = "legacy-proposal", Kind = OperationClass.Deploy,
+                Status = phase == "queued" ? OperationProposalStatus.Executing : OperationProposalStatus.Submitted,
+                RequestedBy = "requester", ResolvedBy = "approver", ExecutionOperationId = RestoreId,
+                Plan = plan, SealedPlanHash = Honua.Server.Features.Operations.OperationApprovalPlanSeal.Compute(plan),
+                CreatedAt = Restore.CreatedAt, UpdatedAt = Restore.UpdatedAt,
+            });
             Deployment = new WorkflowOperationRecord
             {
                 OperationId = "deploy-test",

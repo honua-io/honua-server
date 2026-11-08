@@ -143,6 +143,16 @@ internal sealed partial class DurableRestoreWorker(
                 await FailAsync(record, PreMigrationRestoreCodes.RestoreIncomplete, lostLease.Token).ConfigureAwait(false);
                 return;
             }
+            var proposal = string.IsNullOrWhiteSpace(record.Audit.ProposalId)
+                ? null : await proposals.GetAsync(record.Audit.ProposalId, lostLease.Token).ConfigureAwait(false);
+            if (context.Phase is "awaiting-local-deploy" or "awaiting-rds" or "awaiting-compatible-deploy" or "awaiting-deploy")
+            {
+                if (proposal is null || !MatchesResumedApproval(proposal, record))
+                {
+                    await FailAsync(record, PreMigrationRestoreCodes.RestoreIncomplete, lostLease.Token).ConfigureAwait(false);
+                    return;
+                }
+            }
             if (context.Phase == "awaiting-local-deploy")
             {
                 await CompleteLocalAsync(record, lostLease.Token).ConfigureAwait(false);
@@ -168,9 +178,6 @@ internal sealed partial class DurableRestoreWorker(
                 await FailAsync(record, PreMigrationRestoreCodes.RestoreIncomplete, lostLease.Token).ConfigureAwait(false);
                 return;
             }
-            // Approval and the operation id must be durable before the side effects begin.
-            var proposal = string.IsNullOrWhiteSpace(record.Audit.ProposalId)
-                ? null : await proposals.GetAsync(record.Audit.ProposalId, lostLease.Token).ConfigureAwait(false);
             if (proposal is { Status: OperationProposalStatus.Executing } &&
                 DateTimeOffset.UtcNow - record.CreatedAt > TimeSpan.FromMinutes(5))
             {
@@ -271,6 +278,22 @@ internal sealed partial class DurableRestoreWorker(
         proposal.ExecutionOperationId == record.OperationId
         && OperationHumanApprovalEvidenceValidation.MatchesExecutionRequest(
             proposal, ExecutionRequest(record), record.PreMigrationRestore!.Payload);
+
+    private static bool MatchesResumedApproval(OperationProposal proposal, WorkflowOperationRecord record)
+    {
+        if (proposal.ExecutionOperationId != record.OperationId
+            || proposal.Plan.ExecutionPayload is not { } approvedPayload
+            || !OperationHumanApprovalEvidenceValidation.MatchesExecutionRequest(proposal, ExecutionRequest(record), approvedPayload))
+            return false;
+        if (record.PreMigrationRestore!.Payload == approvedPayload) return true;
+
+        var approved = DeployExecutionPayload.Parse(approvedPayload);
+        var checkpoint = DeployExecutionPayload.Parse(record.PreMigrationRestore.Payload);
+        // Local forward convergence records the observed baseline after approval and before submission.
+        return record.PreMigrationRestore.Phase == "awaiting-local-deploy"
+            && approved is { Rollback: false } && checkpoint is not null
+            && (checkpoint with { CurrentRevision = approved.CurrentRevision }).Serialize() == approved.Serialize();
+    }
 
     private static OperationGatewayRequest ExecutionRequest(WorkflowOperationRecord record) => new()
     {
