@@ -21,12 +21,11 @@
 #   run-foundation-family.sh run <family>          # dotnet test each project
 #
 # Spec record (one per line, `|`-separated):
-#   csproj | trx-basename | filter | env (k=v,k=v) | flags (coverage,advisory)
+#   csproj | trx-basename | filter | env (k=v,k=v) | flags (coverage,separate-build)
 #
 # `coverage` adds the Coverlet XPlat collector + coverlet.runsettings, matching
 # the pre-split job where ONLY Honua.Core.Tests collected coverage.
-# `advisory` mirrors the pre-split `continue-on-error: true` step: the project
-# runs and its failures stay visible, but they do not fail the job (#2949).
+# `separate-build` isolates a project build so other suites can still publish diagnostics.
 set -euo pipefail
 
 # Every path below (csproj paths, Honua.sln, coverlet.runsettings, the generated
@@ -74,8 +73,7 @@ tests/dotnet/Honua.Protocols.Stac.Tests/Honua.Protocols.Stac.Tests.csproj|Honua.
 tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj|Honua.Ai-fast-tier|Tier=Fast||
 SPEC
       ;;
-    # The #2943 orphan-revival provider units, the #2949 advisory Postgres
-    # security suite and the Testcontainers MySQL suite. Extracted provider units
+    # Provider security and Testcontainers MySQL suites. Extracted provider units
     # run in their canonical UnitTests shards; retained SQL/warehouse live tests
     # keep their existing opt-in lanes. MySQL retains its full HTTP host case.
     providers)
@@ -83,7 +81,7 @@ SPEC
 tests/dotnet/Honua.Db.DuckDB.Tests/Honua.DuckDB.Tests.csproj|Honua.DuckDB-tests||HONUA_TEST_POSTGRES=1|
 tests/dotnet/Honua.Plugins.Tests/Honua.Plugins.Tests.csproj|Honua.Plugins-tests|||
 tests/dotnet/Honua.GeoServicesRest.Tests/Honua.GeoServicesRest.Tests.csproj|Honua.GeoServicesRest-tests|||
-tests/dotnet/Honua.Db.Postgres.Security.Tests/Honua.Postgres.Security.Tests.csproj|postgres-security-tests|||advisory
+tests/dotnet/Honua.Db.Postgres.Security.Tests/Honua.Postgres.Security.Tests.csproj|postgres-security-tests|||separate-build
 tests/dotnet/Honua.Db.MySql.Tests/Honua.MySql.Tests.csproj|mysql-tests||HONUA_TEST_MYSQL=1|
 SPEC
       ;;
@@ -103,14 +101,9 @@ foundation_projects() {
   foundation_family_specs "$1" | cut -d'|' -f1
 }
 
-# Projects the FAMILY-WIDE build may contain. Advisory projects are deliberately
-# excluded: the pre-split workflow wrapped the advisory suite's build AND test in
-# one `continue-on-error: true` step (#2949), so a compile break there was
-# non-gating. Folding it into the shared build would have quietly promoted it to
-# a gate — and taken the rest of the family down with it. It is built inside
-# foundation_run instead, where the advisory flag still applies.
+# Separately built projects must not stop the shared build before other suites run.
 foundation_build_projects() {
-  foundation_family_specs "$1" | awk -F'|' '$5 !~ /advisory/ { print $1 }'
+  foundation_family_specs "$1" | awk -F'|' '$5 !~ /separate-build/ { print $1 }'
 }
 
 foundation_filter() {
@@ -193,19 +186,17 @@ foundation_run() {
       for kv in "${kvs[@]}"; do envprefix+=("${kv}"); done
     fi
 
-    # Advisory projects are not in the family build (see foundation_build_projects),
-    # so build them here where a failure is swallowed exactly as the pre-split
-    # `continue-on-error` step swallowed it.
-    if [[ ",${flags}," == *,advisory,* ]]; then
+    if [[ ",${flags}," == *,separate-build,* ]]; then
       local build_rc=0
-      echo "::group::dotnet build ${csproj} (advisory)"
+      echo "::group::dotnet build ${csproj} (separate build)"
       scripts/ci/dotnet-restore-retry.sh "${csproj}" --property:Configuration="${CONFIGURATION}" || build_rc=$?
       if ((build_rc == 0)); then
         dotnet build "${csproj}" --no-restore --configuration "${CONFIGURATION}" -graphBuild /p:RunAnalyzers=false || build_rc=$?
       fi
       echo "::endgroup::"
       if ((build_rc != 0)); then
-        echo "::warning::${csproj} failed to BUILD (advisory, non-gating — see #2949); skipping its tests"
+        echo "::error::${csproj} failed to build (exit ${build_rc})"
+        failures=$((failures + 1))
         continue
       fi
     fi
@@ -220,12 +211,8 @@ foundation_run() {
     echo "::endgroup::"
 
     if ((rc != 0)); then
-      if [[ ",${flags}," == *,advisory,* ]]; then
-        echo "::warning::${csproj} failed (advisory, non-gating — see #2949)"
-      else
-        echo "::error::${csproj} failed (exit ${rc})"
-        failures=$((failures + 1))
-      fi
+      echo "::error::${csproj} failed (exit ${rc})"
+      failures=$((failures + 1))
     fi
   done < <(foundation_family_specs "${family}")
   return "${failures}"
