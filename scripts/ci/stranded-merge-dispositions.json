@@ -52,7 +52,7 @@
         "src/Honua.Core/Features/Geoprocessing/Raster/RasterEngineCapabilityJson.cs",
         "src/Honua.Core/Features/Geoprocessing/Raster/RasterEngineCapabilityRegistry.cs",
         "src/Honua.Core/Features/Geoprocessing/Raster/RasterEngineExecutorCoverageValidator.cs",
-        "src/Honua.Geoprocessing/Core/Features/Geoprocessing/BuiltInProcessCatalog.cs",
+        "src/Honua.Geoprocessing/Features/Geoprocessing/BuiltInProcessCatalog.cs",
         "src/Honua.Worker.Gdal/Execution/GdalHardeningOptions.cs",
         "src/Honua.Worker.Gdal/Execution/GdalRasterFormatConvertJobExecutor.cs",
         "tests/dotnet/Honua.Core.Tests/Features/Geoprocessing/RasterEngineCapabilityRegistryTests.cs",
