@@ -10,6 +10,8 @@
 
 **Cloud-native geospatial server.** One container exposes the same PostGIS-backed data through every major GIS protocol — GeoServices REST (FeatureServer, MapServer, ImageServer, Geometry, GPServer), OGC API (Features, Maps, Tiles, Coverages, Processes), classic OGC WMS/WFS/WMTS/WCS, STAC, OData v4, vector tiles (MVT/TileJSON), Terrain-RGB and elevation APIs, 3D Tiles, MCP for AI agents, and gRPC. Honua provides protocol-level compatibility for the selected, operation-scoped client workflows listed in the certification matrices; support is bounded by the published [GeoServices parity matrix](docs/reference/compatibility/geoservices-parity.md) and [cross-client certification matrix](docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md). QGIS, MapLibre, Excel, and Power BI use the same layers — no ETL, no duplication, no GDAL toolchain to install.
 
+See the [Honua vocabulary](docs/concepts/domain/README.md) for the meanings of Connection, Dataset, Layer, Service, Folder, and Environment.
+
 ## Status
 
 Honua Server is source-available under the [Fair Core License, Version 1.0, ALv2 Future License](LICENSE) (FCL-1.0-ALv2); each version converts to Apache-2.0 two years after release. Current source and nightly images are **evaluation builds**. A supported versioned server release has not yet been published; 2026.1 release qualification is in progress. See [server releases](https://github.com/honua-io/honua-server/releases) for published artifacts and release notes, and [versioning and support](docs/reference/versioning-and-support.md) for the compatibility and recovery policy. Feature requests and priorities go in [issues](https://github.com/honua-io/honua-server/issues).

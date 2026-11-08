@@ -1,9 +1,9 @@
 ---
 type: concept
-title: "Publication"
-description: "Making a specified resource or saved version available through its governed serving surface."
+title: "Go live and activation"
+description: "Activating a saved Map or App Version at its governed route, with the current authority contract."
 tags: [gis, domain-language]
-aliases: ["publish","make available","release a map","activate"]
+aliases: ["go live","activate","release a map","released"]
 sources:
   - id: contract
     resource: "/guides/connect/ai-agents-mcp.md"
@@ -24,15 +24,15 @@ relations:
     target: "/studio/README.md"
 ---
 
-# Publication
+# Go live and activation
 
-Interpret "publish this" using the current object and previously established destination and audience. A map draft and a database table lead to different publication workflows. Ask only about unresolved choices that change the outcome; preserve existing access unless the user requests a change. Understanding the phrase does not bypass the selected interface's operational policy. See [contextual interpretation](intent-interpretation.md).
+**Go live** means activate a saved [Map](map.md) or [App](app.md) Version at its governed route. That Version is **Released**. Saving and previewing do not activate a route. The [Version lifecycle](content-version.md) defines the authoring states.
 
-“Publish” has several concrete meanings: register a [layer](layer.md), expose it through a [service](service.md), or activate a saved [map](map.md) version. Name the object, version, route, and intended audience.
+Interpret “publish this” using the current object, destination, and audience. Exposing a [Dataset](dataset.md) creates a [Layer](layer.md) in a [Service](service.md); activating a saved Map or App Version releases it. These are separate actions. Preserve existing access unless the user requests a change. Ask only about unresolved choices that change the outcome; see [contextual interpretation](intent-interpretation.md).
 
-In the canonical Metadata v2 graph, a publication links a [resource](resource.md) to a service, optionally selecting a [storage binding](storage-binding.md). Its protocol-facing identifier is service-local, distinct from the storage-layer handle. Several publications can expose one resource without copying its data. Studio saved-content activation is a separate lifecycle use of the word publication.
+Publication is a retired object name. The existing Metadata v2 `MetadataV2Publication` links a Dataset to a Service and is being renamed Layer. The Studio API also uses publication in existing route and response names for activation. Consult current API references for those literals until the [model and API transition](README.md#implementation-transition) lands. This page retains the current activation authority contract while that work is pending.
 
-For a connection or data source, “publish” usually means register, validate, bind, and then expose the intended resource; it does not publish credential material. For a style, it means make the style resource available and bind its intended scope, not change source features. Resolve the actual object kind and runtime contract rather than applying one generic publish operation to all nouns.
+A Connection registration exposes no data or credential material. A Style change affects drawing rules, not source features. Resolve the actual object and supported action rather than applying one generic publish operation to every noun.
 
 For Studio publication through MCP, the current saved version supplies the
 version identifier and content hash. An authorized admin publishes in the call
@@ -42,7 +42,7 @@ approve before activation. Inspect the returned state rather than treating the
 word “propose” as a guarantee of no immediate effect. A pending proposal is not
 an active publication, and a preview is not a published artifact.[^contract]
 
-Publication and [sharing](sharing.md) are related but distinct. “Public” must refer to the effective audience, including access to dependent data; it cannot be inferred from a URL. An internal publication can require authentication.
+Activation and [sharing](sharing.md) are related but distinct. “Public” must refer to the effective audience, including access to dependent data; it cannot be inferred from a URL. A Released Map or App can require authentication.
 
 Use [publish and share a map](../../guides/workflows/publish-share-map.md). Recheck the resulting status and route. The [Studio release boundary](../../studio/README.md#release-boundary) remains a separate qualification statement.
 
