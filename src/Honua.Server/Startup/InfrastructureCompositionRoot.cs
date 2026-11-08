@@ -32,7 +32,7 @@ internal static class InfrastructureCompositionRoot
     public static void RegisterInfrastructureServices(IServiceCollection services, IConfiguration configuration)
     {
         RenamedConfigurationSections.ThrowIfRetiredSectionPresent(configuration);
-        DataStoreBuildPolicy.Validate(configuration, DataStoreBuildPolicy.AdditionalStoresIncluded);
+        DataStoreBuildPolicy.Validate(configuration);
         var warehouseProviders = new WarehouseProviderDecisions(configuration);
         warehouseProviders.MarkInfrastructureCompositionApplied();
         services.TryAddSingleton(warehouseProviders);

@@ -35,7 +35,21 @@ internal sealed record CapabilityManifestDocument
 
     public required CapabilityManifestDeploymentProfile DeploymentProfile { get; init; }
 
+    public CapabilityManifestDataStores? DataStores { get; init; }
+
     public required CapabilityManifestLink[] Links { get; init; }
+}
+
+internal sealed record CapabilityManifestDataStores
+{
+    public required string Profile { get; init; }
+
+    public required string[] InstalledProviders { get; init; }
+
+    public string FullImageTagSuffix { get; init; } = "-full";
+
+    public string DocumentationHref { get; init; } =
+        "https://github.com/honua-io/honua-server/blob/trunk/docs/ops/nightly-images.md";
 }
 
 internal sealed record CapabilityManifestDeploymentProfile

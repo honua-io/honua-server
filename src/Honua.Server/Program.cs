@@ -144,7 +144,7 @@ if (Honua.Server.Hosting.ComposeExecutor.ComposeExecutorMode.Resolve(builder.Con
     return;
 }
 
-DataStoreBuildPolicy.Validate(builder.Configuration, DataStoreBuildPolicy.AdditionalStoresIncluded);
+DataStoreBuildPolicy.Validate(builder.Configuration);
 Honua.Infrastructure.Hosting.ProtocolProfile.ValidateRuntime(builder.Configuration);
 
 // Typed composition switch (resolved once, never consulted by services): a process a batch compute

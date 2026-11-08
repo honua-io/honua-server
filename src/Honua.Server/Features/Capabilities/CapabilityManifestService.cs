@@ -152,6 +152,11 @@ internal sealed class CapabilityManifestService(
             Limits = BuildLimits(batchCapabilities),
             Policies = BuildPolicies(snapshot, callerCapabilities),
             DeploymentProfile = options.DeploymentProfile,
+            DataStores = request.Authenticated ? new CapabilityManifestDataStores
+            {
+                Profile = Honua.Server.Startup.DataStoreBuildPolicy.Profile,
+                InstalledProviders = Honua.Server.Startup.DataStoreBuildPolicy.InstalledProviders
+            } : null,
             Links = BuildLinks()
         };
 

@@ -119,7 +119,7 @@ public sealed class RuntimeImageCveTests
             }
         }
 
-        offenders.Should().BeEmpty("Honua server containers no longer install wget; probe with bash /dev/tcp");
+        offenders.Should().BeEmpty("Honua server health checks use the compiled HTTP probe");
     }
 
     private static bool IsHonuaServerImage(string image)

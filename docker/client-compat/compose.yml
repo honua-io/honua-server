@@ -132,6 +132,7 @@ services:
       # a real signed license may override this to Production.
       ASPNETCORE_ENVIRONMENT: ${HONUA_CLIENT_COMPAT_ENVIRONMENT:-Development}
       ASPNETCORE_URLS: http://+:5000
+      HONUA_HEALTH_PORT: "5000"
       Kestrel__Endpoints__Http__Url: http://+:5000
       Kestrel__Endpoints__Http__Protocols: Http1
       Kestrel__Endpoints__Grpc__Url: http://+:5001
@@ -192,9 +193,7 @@ services:
     networks:
       - compat
     healthcheck:
-      # Published server images are Ubuntu and do not install an HTTP client
-      # (CVE-2021-31879). Probe with bash /dev/tcp. Health routes accept GET only.
-      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/5000 && printf 'GET /healthz/ready HTTP/1.0\\r\\nHost: 127.0.0.1\\r\\nConnection: close\\r\\n\\r\\n' >&3 && IFS= read -r status <&3 && case \"$$status\" in *' 200 '*) exit 0 ;; *) exit 1 ;; esac"]
+      test: ["CMD", "/app/honua-healthcheck", "--ready"]
       interval: 10s
       timeout: 5s
       retries: 30

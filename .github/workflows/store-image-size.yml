@@ -8,9 +8,13 @@ on:
       - 'docker/Dockerfile.aot'
       - 'docker/runtime/**'
       - 'eng/Honua.BuildProfiles.props'
-      - 'src/Honua.Server/Honua.Server.csproj'
+      - 'src/**/*.csproj'
+      - 'Directory.*.props'
+      - 'Directory.*.targets'
       - 'src/Honua.Server/Startup/DataStoreBuildPolicy.cs'
       - 'scripts/ci/*measure-serving-image.py'
+      - 'scripts/ci/test-health-probe.py'
+      - 'scripts/ci/smoke-aot-geoparquet.sh'
       - '.github/workflows/store-image-size.yml'
   workflow_dispatch:
 

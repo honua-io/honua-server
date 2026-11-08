@@ -437,6 +437,32 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_AsAdmin_ReportsInstalledStoresAndFullVariant()
+    {
+        using var response = await _adminClient.GetAsync("/api/v1/capabilities/manifest");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadDocumentAsync(response);
+        var stores = document.RootElement.GetProperty("dataStores");
+        stores.GetProperty("profile").GetString().Should().Be("full");
+        stores.GetProperty("installedProviders").EnumerateArray()
+            .Select(provider => provider.GetString()).Should().Contain(
+                "postgis", "duckdb", "mysql", "sqlserver", "oracle", "redshift", "snowflake", "databricks");
+        stores.GetProperty("fullImageTagSuffix").GetString().Should().Be("-full");
+        stores.GetProperty("documentationHref").GetString().Should().EndWith("/docs/ops/nightly-images.md");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_AsAnonymous_OmitsInstalledStoreInventory()
+    {
+        using var response = await _anonymousClient.GetAsync("/api/v1/capabilities/manifest");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = await ReadDocumentAsync(response);
+        document.RootElement.TryGetProperty("dataStores", out _).Should().BeFalse();
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
     public async Task GetManifest_AsAnonymous_ReturnsPublicTenantManifestAndNoStoreHeaders()
     {
         using var response = await _anonymousClient.GetAsync("/api/v1/capabilities/manifest");

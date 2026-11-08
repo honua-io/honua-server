@@ -18,11 +18,13 @@ public sealed class DataStoreBuildPolicyTests
     [InlineData("redshift")]
     [InlineData("snowflakedb")]
     [InlineData("dbsql")]
-    public void Validate_ExcludedPrimaryProvider_RefusesStartupAndNamesFullVariant(string provider)
+    [InlineData("featureserver")]
+    [InlineData("unknown-provider")]
+    public void ValidatePostgisConfiguration_ExcludedPrimaryProvider_RefusesStartupAndNamesFullVariant(string provider)
     {
         var configuration = Configuration(("DataSource:Provider", provider));
 
-        var start = () => DataStoreBuildPolicy.Validate(configuration, additionalStoresIncluded: false);
+        var start = () => DataStoreBuildPolicy.ValidatePostgisConfiguration(configuration);
 
         start.Should().Throw<InvalidOperationException>().WithMessage("*PostGIS*-full*");
     }
@@ -39,11 +41,11 @@ public sealed class DataStoreBuildPolicyTests
     [InlineData("Experimental:Features:RedshiftProvider", "true")]
     [InlineData("Experimental:Features:SnowflakeProvider", "true")]
     [InlineData("Experimental:Features:DatabricksProvider", "true")]
-    public void Validate_ExcludedSecondaryProvider_RefusesStartupWithoutExposingSettings(string key, string value)
+    public void ValidatePostgisConfiguration_ExcludedSecondaryProvider_RefusesStartupWithoutExposingSettings(string key, string value)
     {
         var configuration = Configuration((key, value));
 
-        var start = () => DataStoreBuildPolicy.Validate(configuration, additionalStoresIncluded: false);
+        var start = () => DataStoreBuildPolicy.ValidatePostgisConfiguration(configuration);
 
         start.Should().Throw<InvalidOperationException>().WithMessage("*-full*")
             .Which.Message.Should().NotContain(value);
@@ -54,21 +56,43 @@ public sealed class DataStoreBuildPolicyTests
     [InlineData("postgis")]
     [InlineData("postgresql")]
     [InlineData("pgsql")]
-    public void Validate_PostgisOnly_Accepts(string? provider)
+    [InlineData("postgres")]
+    [InlineData(" POST_GIS ")]
+    public void ValidatePostgisConfiguration_PostgisOnly_Accepts(string? provider)
     {
         var configuration = Configuration(("DataSource:Provider", provider));
 
-        var start = () => DataStoreBuildPolicy.Validate(configuration, additionalStoresIncluded: false);
+        var start = () => DataStoreBuildPolicy.ValidatePostgisConfiguration(configuration);
+
+        start.Should().NotThrow();
+    }
+
+    [UnitTheory]
+    [InlineData("DuckDB")]
+    [InlineData("MySql")]
+    [InlineData("SqlServer")]
+    [InlineData("Oracle")]
+    [InlineData("GeoServicesRest")]
+    [InlineData("Redshift")]
+    [InlineData("Snowflake")]
+    [InlineData("Databricks")]
+    public void ValidatePostgisConfiguration_ExplicitlyDisabledStore_AcceptsDormantConfiguration(string section)
+    {
+        var configuration = Configuration(($"{section}:Enabled", "false"), ($"{section}:ConnectionString", "configured"));
+
+        var start = () => DataStoreBuildPolicy.ValidatePostgisConfiguration(configuration);
 
         start.Should().NotThrow();
     }
 
     [UnitTest]
-    public void Validate_ExplicitlyDisabledStore_AcceptsDormantConfiguration()
+    public void ValidatePostgisConfiguration_DisabledWarehouseGates_Accepts()
     {
-        var configuration = Configuration(("SqlServer:Enabled", "false"), ("SqlServer:ConnectionString", "configured"));
+        var configuration = Configuration(("Experimental:Features:RedshiftProvider", "false"),
+            ("Experimental:Features:SnowflakeProvider", "false"),
+            ("Experimental:Features:DatabricksProvider", "false"));
 
-        var start = () => DataStoreBuildPolicy.Validate(configuration, additionalStoresIncluded: false);
+        var start = () => DataStoreBuildPolicy.ValidatePostgisConfiguration(configuration);
 
         start.Should().NotThrow();
     }
@@ -78,7 +102,7 @@ public sealed class DataStoreBuildPolicyTests
     {
         var configuration = Configuration(("DataSource:Provider", "duckdb"), ("Oracle:Enabled", "true"));
 
-        var start = () => DataStoreBuildPolicy.Validate(configuration, additionalStoresIncluded: true);
+        var start = () => DataStoreBuildPolicy.Validate(configuration);
 
         start.Should().NotThrow();
     }

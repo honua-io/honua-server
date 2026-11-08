@@ -20,10 +20,10 @@ class HealthProbeTests(unittest.TestCase):
     def tearDownClass(cls):
         cls.directory.cleanup()
 
-    def probe_status(self, status):
+    def probe_status(self, status, path):
         class Handler(http.server.BaseHTTPRequestHandler):
             def do_GET(self):
-                self.send_response(status if self.path == '/healthz/ready' else 404)
+                self.send_response(status if self.path == path else 404)
                 self.end_headers()
 
             def log_message(self, *args):
@@ -33,17 +33,20 @@ class HealthProbeTests(unittest.TestCase):
             thread = threading.Thread(target=server.serve_forever)
             thread.start()
             try:
-                return subprocess.run([self.binary, '--ready'], env={**os.environ, 'HONUA_HEALTH_PORT': str(server.server_port)},
+                return subprocess.run([self.binary, *(['--ready'] if path == '/healthz/ready' else [])], env={**os.environ, 'HONUA_HEALTH_PORT': str(server.server_port)},
                                       capture_output=True, timeout=8).returncode
             finally:
                 server.shutdown()
                 thread.join()
 
     def test_ready_succeeds(self):
-        self.assertEqual(self.probe_status(200), 0)
+        self.assertEqual(self.probe_status(200, '/healthz/ready'), 0)
+
+    def test_live_succeeds(self):
+        self.assertEqual(self.probe_status(200, '/healthz/live'), 0)
 
     def test_degraded_fails(self):
-        self.assertNotEqual(self.probe_status(503), 0)
+        self.assertNotEqual(self.probe_status(503, '/healthz/ready'), 0)
 
     def test_refused_connection_fails(self):
         with socket.socket() as listener:

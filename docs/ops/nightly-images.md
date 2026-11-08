@@ -51,6 +51,13 @@ is independent of `HONUA_BUILD_PROFILE` and `HONUA_PROTOCOL_PROFILE`. Local sour
 builds and existing provider tests retain the full store profile; an MSBuild publish can
 select `-p:HonuaStoreProfile=postgis` explicitly.
 
+Authenticated callers can read `dataStores` from `/api/v1/capabilities/manifest`.
+`profile` is `postgis` or `full`; `installedProviders` lists canonical provider identifiers
+compiled into that image, including stores whose experimental gates are disabled.
+`fullImageTagSuffix` is `-full` and `documentationHref` links to this guide. Anonymous
+responses omit `dataStores`. Clients must use this inventory, rather than infer support
+from a tag; an absent inventory does not establish support for any additional store.
+
 The Store Image Size workflow measures both JIT variants and the default AOT image.
 Its artifacts contain before/after byte counts, publish file manifests, startup-refusal
 logs, format smoke evidence and scan results. It verifies that default publish output
