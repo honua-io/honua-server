@@ -76,7 +76,7 @@ internal sealed partial class OperationHumanApprovalAuthority(
             || !HttpMethods.IsGet(context.Request.Method))
             throw new HumanApprovalRequiredException();
         RefuseNonHumanTransport(context);
-        var tenant = context.RequestServices.GetService<ITenantContext>()?.TenantId;
+        var tenant = ResolveRequestTenant(target, context);
         if (!string.Equals(target.TenantId, tenant, StringComparison.Ordinal))
             throw new HumanApprovalRequiredException();
         var human = await LoadHumanAsync(context.Request.Cookies[AdminAuthSessionStore.AuthSessionCookieName],
@@ -128,7 +128,7 @@ internal sealed partial class OperationHumanApprovalAuthority(
             || capability.TargetId != target.Id || capability.TargetVersion != target.Version
             || capability.BindingDigest != target.BindingDigest || capability.TenantId != target.TenantId
             || capability.TenantId != (string.IsNullOrEmpty(approval.TenantId) ? null : approval.TenantId)
-            || capability.TenantId != context.RequestServices.GetService<ITenantContext>()?.TenantId)
+            || capability.TenantId != ResolveRequestTenant(target, context))
             throw new HumanApprovalRequiredException();
         var human = await LoadHumanAsync(context.Request.Cookies[AdminAuthSessionStore.AuthSessionCookieName],
             target, cancellationToken).ConfigureAwait(false);
@@ -140,6 +140,14 @@ internal sealed partial class OperationHumanApprovalAuthority(
             throw new HumanApprovalRequiredException();
         return new VerifiedHumanDecision(human.ActorId, human.SessionReference,
             Hash(Encoding.UTF8.GetBytes(capability.Nonce)), now);
+    }
+
+    private static string? ResolveRequestTenant(HumanApprovalTarget target, HttpContext context)
+    {
+        var requestTenant = context.RequestServices.GetService<ITenantContext>();
+        // A platform-owned workflow stays global when middleware supplied only the anonymous default.
+        return target.TenantId is null && requestTenant?.Source == TenantContextSource.Default
+            ? null : requestTenant?.TenantId;
     }
 
     private static HumanApprovalTarget ProposalTarget(OperationProposal proposal) => new(
