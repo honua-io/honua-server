@@ -18,16 +18,16 @@ internal sealed class DurableRestoreQueue(IWorkflowOperationStore store, IOperat
     public async Task<string> EnqueueAsync(OperationGatewayRequest request, string payload, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.RequestedBy) || string.IsNullOrWhiteSpace(request.ApprovedBy)
-            || string.IsNullOrWhiteSpace(request.ApprovedProposalId)
-            || string.Equals(request.RequestedBy, request.ApprovedBy, StringComparison.OrdinalIgnoreCase))
+            || string.IsNullOrWhiteSpace(request.ApprovedProposalId))
         {
-            throw new InvalidOperationException("A separate principal must approve the restore.");
+            throw new InvalidOperationException("A durable human approval must authorize the restore.");
         }
 
         // The gateway persists a fresh nonce when it claims approval. Read it back rather
         // than deriving identity from a caller key shared by later operations or other cells.
         var proposal = await proposals.GetAsync(request.ApprovedProposalId!, cancellationToken).ConfigureAwait(false);
         if (proposal?.Kind != OperationClass.Deploy || string.IsNullOrWhiteSpace(proposal.ExecutionOperationId)
+            || !OperationHumanApprovalEvidenceValidation.HasExecutionAuthority(proposal)
             || proposal.RequestedBy != request.RequestedBy || proposal.ResolvedBy != request.ApprovedBy
             || proposal.TenantId != request.TenantId || proposal.Audit.OperationInstanceId != request.OperationInstanceId
             || proposal.Plan.ExecutionPayload != payload)
@@ -53,6 +53,7 @@ internal sealed class DurableRestoreQueue(IWorkflowOperationStore store, IOperat
             {
                 OperationInstanceId = request.OperationInstanceId,
                 RequestedBy = request.RequestedBy,
+                ApprovedBy = request.ApprovedBy,
                 ProposalId = request.ApprovedProposalId,
                 IdempotencyKey = id,
                 CorrelationId = request.CorrelationId,

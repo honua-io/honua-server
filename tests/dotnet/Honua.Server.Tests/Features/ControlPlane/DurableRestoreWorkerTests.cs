@@ -51,7 +51,7 @@ public sealed class DurableRestoreWorkerTests
                     IdempotencyKey = "converge:rc2:compose-local"
                 };
                 var payload = new DeployExecutionPayload { TargetId = "compose-local", DesiredRevision = "candidate" }.Serialize();
-                claims[request.ApprovedProposalId] = new OperationProposal
+                var claim = new OperationProposal
                 {
                     ProposalId = request.ApprovedProposalId,
                     Kind = OperationClass.Deploy,
@@ -63,6 +63,10 @@ public sealed class DurableRestoreWorkerTests
                     Plan = new OperationProposalPlan { Summary = $"Converge {slot}", ExecutionPayload = payload },
                     CreatedAt = DateTimeOffset.UtcNow,
                     UpdatedAt = DateTimeOffset.UtcNow
+                };
+                claims[request.ApprovedProposalId] = claim with
+                {
+                    SealedPlanHash = Honua.Server.Features.Operations.OperationApprovalPlanSeal.Compute(claim.Plan)
                 };
                 var id = await queue.EnqueueAsync(request, payload, CancellationToken.None);
                 Assert.True(ids.Add(id), "A new approved operation must not reuse another restore record.");
