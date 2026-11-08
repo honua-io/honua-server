@@ -56,7 +56,7 @@ public sealed class LambdaJitDockerfileTests
         sourceLayer.Should().Contain("--runtime \"$RUNTIME_ID\"");
         sourceLayer.Should().Contain("--force");
         sourceLayer.Should().Contain("-p:RuntimeIdentifier=\"$RUNTIME_ID\"");
-        sourceLayer.Should().Contain("-p:HonuaIncludeStacOpsDemo=false");
+        sourceLayer.Should().NotContain("HonuaIncludeStacOpsDemo");
         sourceLayer.Should().Contain("-p:PublishAot=false");
         sourceLayer.Should().Contain("-p:SelfContained=true");
         sourceLayer.Should().Contain("--no-restore");

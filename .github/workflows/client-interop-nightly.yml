@@ -141,7 +141,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set +e
-          mkdir -p docker/client-compat/output/${{ matrix.lane }}
+          mkdir -p artifacts/client-interop/${{ matrix.lane }}
 
           DOCKER_BUILDKIT=1 docker build \
             --secret id=github_actor,env=GITHUB_ACTOR \
@@ -196,7 +196,7 @@ jobs:
           if [[ "$build_exit" -ne 0 ]]; then
             exit_code="$build_exit"
           else
-            lane_log="docker/client-compat/output/${{ matrix.lane }}/lane.log"
+            lane_log="artifacts/client-interop/${{ matrix.lane }}/lane.log"
             # NOTE: do not pass --no-build to `docker compose run`. The flag was
             # rejected by the docker compose plugin shipped on ubuntu-24.04
             # runners ("unknown flag: --no-build"), causing every lane to exit
@@ -220,12 +220,12 @@ jobs:
               echo "lane=${{ matrix.lane }}"
               echo "exit_code=${exit_code}"
               echo "run_url=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-            } > docker/client-compat/output/${{ matrix.lane }}/lane-exit-code.txt
+            } > artifacts/client-interop/${{ matrix.lane }}/lane-exit-code.txt
             docker compose -f docker/client-compat/compose.yml \
               --profile ${{ matrix.lane }} \
               logs --no-color \
               postgres seed honua ${{ matrix.lane }} \
-              > docker/client-compat/output/${{ matrix.lane }}/compose.log 2>&1 || true
+              > artifacts/client-interop/${{ matrix.lane }}/compose.log 2>&1 || true
           fi
 
           docker compose -f docker/client-compat/compose.yml down --remove-orphans || true
@@ -239,7 +239,7 @@ jobs:
         with:
           kind: evidence
           suffix: client-compat-${{ matrix.lane }}
-          path: docker/client-compat/output/${{ matrix.lane }}
+          path: artifacts/client-interop/${{ matrix.lane }}
           tier: nightly
 
       - name: Fail failed lane after preserving evidence
@@ -269,7 +269,7 @@ jobs:
       - name: Download all lane artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          path: artifacts
+          path: artifacts/client-interop-downloads
           # Match only the per-lane evidence artifacts (suffix
           # `evidence-client-compat-<lane>`). The earlier `*-client-compat-*`
           # pattern also captured the SBOM artifacts
@@ -285,8 +285,8 @@ jobs:
         env:
           EXPECTED_LANES: ${{ join(fromJSON(needs.prepare.outputs.lanes), ',') }}
         run: |
-          scripts/client-compat/stage-artifacts.sh artifacts docker/client-compat/output "$EXPECTED_LANES"
-          python3 scripts/client-compat/validate-envelope-source.py docker/client-compat/output "${{ github.sha }}"
+          scripts/client-compat/stage-artifacts.sh artifacts/client-interop-downloads artifacts/client-interop "$EXPECTED_LANES"
+          python3 scripts/client-compat/validate-envelope-source.py artifacts/client-interop "${{ github.sha }}"
 
       - name: Compare against baselines and refresh gap report
         id: diff
@@ -304,22 +304,12 @@ jobs:
           # failure.
           python3 scripts/client-compat/diff-baselines.py \
             --baselines tests/baselines/client-compat \
-            --current docker/client-compat/output \
-            --gap-report docs/gis/gap-report.md \
+            --current artifacts/client-interop \
+            --gap-report artifacts/client-interop/gap-report.md \
             --client-lanes "$CLIENT_LANES" \
             --strict
           echo "exit_code=$?" >> "$GITHUB_OUTPUT"
           exit 0
-
-      # NOTE: the refreshed gap report is NOT committed back to the repo.
-      # A scheduled nightly cannot push to the protected `trunk` branch
-      # (branch protection requires status checks the bot cannot satisfy,
-      # so `git push origin HEAD:trunk` is rejected with GH006). Instead the
-      # report is published as a workflow artifact and appended to the job
-      # step summary by the "Upload gap report" step below — the same
-      # evidence-artifact convention every other nightly in this repo uses.
-      # docs/gis/gap-report.md remains a checked-in snapshot that is updated
-      # by hand (or via a reviewed PR) when the baselines change.
 
       - name: Upload gap report
         if: always()
@@ -327,12 +317,12 @@ jobs:
         with:
           kind: evidence
           suffix: gap-report
-          path: docs/gis/gap-report.md
+          path: artifacts/client-interop/gap-report.md
           tier: nightly
-          summary-file: docs/gis/gap-report.md
+          summary-file: artifacts/client-interop/gap-report.md
 
       - name: Fail on regressions
         if: steps.diff.outputs.exit_code != '0'
         run: |
-          echo "::error::Client-interop matrix detected regressions; see docs/gis/gap-report.md"
+          echo "::error::Client-interop matrix detected regressions; see artifacts/client-interop/gap-report.md"
           exit 1

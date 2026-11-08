@@ -10,7 +10,7 @@ your process. This stack needs no cloud account. For direct function development
 without a server or Redis, start with [the authoring guide](gp-devkit-authoring.md).
 
 For Python or .NET custom-code breakpoints, start with the
-[filesystem sample](../../../samples/gp-custom-local/README.md), then return here
+[Python](https://github.com/honua-io/honua-samples/tree/4efc272e58789ec17ebec2125cec06304b2ce4e4/templates/gp-python/README.md) and [.NET](https://github.com/honua-io/honua-samples/tree/4efc272e58789ec17ebec2125cec06304b2ce4e4/templates/gp-dotnet/README.md) templates, then return here
 to verify server authorization, queues, worker dispatch, and result retrieval.
 A local function run does not exercise those integration boundaries.
 
@@ -20,9 +20,11 @@ Run from the repository root with Docker Compose v2 and Python 3.11 or newer.
 Use a virtual environment for the published Python SDK:
 
 ```bash
+git clone https://github.com/honua-io/honua-samples.git ../honua-samples
+git -C ../honua-samples checkout 4efc272e58789ec17ebec2125cec06304b2ce4e4
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install honua-sdk
+python -m pip install -r ../honua-samples/samples/gp-local-dev/requirements.txt
 ```
 
 The .NET 10 SDK is also needed when running the devkit from source.
@@ -42,7 +44,7 @@ so local Redis wiring works without a signed license file.
 ## 2. Submit and verify a buffer
 
 ```bash
-python samples/gp-local-dev/submit-buffer.py
+python ../honua-samples/samples/gp-local-dev/submit-buffer.py
 ```
 
 The sample discovers `geometry.buffer`, submits it through the installed SDK,
@@ -53,7 +55,7 @@ The sample prints the job ID and complete result for inspection.
 
 To target a different local port or identity, set `BASE` and `KEY`. The defaults
 are `http://localhost:8080` and Compose's `quickstart-admin-password`.
-The shell wrapper `./samples/gp-local-dev/submit-buffer.sh` runs the same sample
+The shell wrapper `../honua-samples/samples/gp-local-dev/submit-buffer.sh` runs the same sample
 and accepts a `PYTHON` interpreter override.
 
 The SDK lifecycle is:
@@ -262,7 +264,7 @@ execute through the canonical `honua-geoprocessing` plan process. See
 For AI clients, connect to this server's `/mcp` endpoint and follow
 [geoprocessing with AI](geoprocessing-with-ai.md). For GeoServices REST clients, the
 [GPServer adapter](run-geoprocessing.md) exposes service-scoped tasks over the
-same runtime. The [sample README](../../../samples/gp-local-dev/README.md)
+same runtime. The [sample README](https://github.com/honua-io/honua-samples/tree/4efc272e58789ec17ebec2125cec06304b2ce4e4/samples/gp-local-dev/README.md)
 links the SDK, native, and MCP examples.
 
 ## Stop or diagnose the stack

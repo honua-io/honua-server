@@ -471,8 +471,8 @@ internal static class McpServiceCollectionExtensions
         // refreshed-token request that session accepted) may be reused on that session
         // under token replay protection; reuse anywhere else stays a replay.
         services.TryAddEnumerable(ServiceDescriptor.Singleton<
-            Honua.Infrastructure.Authentication.ITokenReplayContinuationResolver,
-            McpTokenReplayContinuationResolver>());
+            Honua.Infrastructure.Authentication.ITokenReplayScopeResolver,
+            McpTokenReplayScopeResolver>());
 
         // Server-push notifications over the session SSE stream (honua-server#1954):
         // the publisher builds notifications/progress + */list_changed frames and

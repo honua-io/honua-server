@@ -742,16 +742,22 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
         return request;
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
     [Endpoint("POST /mcp")]
-    public async Task Post_WithInvalidSignatureBearer_Returns401WithChallengeAndStructuredError()
+    [InterfaceOperation(TestProtocols.Mcp, "initialize")]
+    [InterfaceOperation(TestProtocols.Mcp, "server/discover")]
+    public async Task Post_WithInvalidSignatureBearer_Returns401WithChallengeAndStructuredError(bool modern)
     {
         // A token signed with the wrong key fails signature validation. A presented
         // token that fails validation is an RFC 6750 invalid_token rejection: HTTP 401
         // with the RFC 9728 WWW-Authenticate challenge and an MCP-structured body.
         var token = CreateToken(subject: "operator-123", signingKey: "a-different-wrong-signing-key-also-32-characters");
 
-        using var request = BuildInitialize(bearer: token);
+        using var request = modern
+            ? McpModernBearerAuthenticationTests.BuildModernDiscovery(token)
+            : BuildInitialize(bearer: token);
         var response = await _client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
@@ -766,6 +772,8 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
 
         using var document = await ReadJsonAsync(response);
         var error = document.RootElement.GetProperty("error");
+        error.GetProperty("message").GetString().Should().Contain("X-API-Key").And.Contain("administrator")
+            .And.Contain("Authorization: Bearer").And.Contain("identity provider");
         error.GetProperty("data").GetProperty("code").GetString().Should().Be("unauthenticated");
         error.GetProperty("data").GetProperty("requiresReauthentication").GetBoolean().Should().BeTrue();
     }
@@ -1231,15 +1239,17 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
         string audience = Audience,
         string signingKey = SigningKey,
         int expiresInMinutes = 60,
-        IReadOnlyList<Claim>? additionalClaims = null)
+        IReadOnlyList<Claim>? additionalClaims = null,
+        string? tokenId = null)
     {
         var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey));
         var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
 
-        var claims = new List<Claim>
+        var claims = new List<Claim>();
+        if (tokenId != string.Empty)
         {
-            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
-        };
+            claims.Add(new Claim(JwtRegisteredClaimNames.Jti, tokenId ?? Guid.NewGuid().ToString()));
+        }
         if (!string.IsNullOrWhiteSpace(subject))
         {
             claims.Insert(0, new Claim("sub", subject));

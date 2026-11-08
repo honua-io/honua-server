@@ -18,12 +18,10 @@ internal static class McpModernResults
         {
             writer.WriteStartObject();
             writer.WriteString("resultType", "complete");
-            foreach (var property in result.EnumerateObject())
+            foreach (var property in result.EnumerateObject().Where(static property =>
+                property.Name is not ("resultType" or "_meta" or "ttlMs" or "cacheScope")))
             {
-                if (property.Name is not ("resultType" or "_meta" or "ttlMs" or "cacheScope"))
-                {
-                    property.WriteTo(writer);
-                }
+                property.WriteTo(writer);
             }
 
             WriteMetadata(writer, result);
@@ -45,12 +43,10 @@ internal static class McpModernResults
         writer.WriteStartObject("_meta");
         if (result.TryGetProperty("_meta", out var meta) && meta.ValueKind == JsonValueKind.Object)
         {
-            foreach (var property in meta.EnumerateObject())
+            foreach (var property in meta.EnumerateObject().Where(static property =>
+                property.Name != "io.modelcontextprotocol/serverInfo"))
             {
-                if (property.Name != "io.modelcontextprotocol/serverInfo")
-                {
-                    property.WriteTo(writer);
-                }
+                property.WriteTo(writer);
             }
         }
 

@@ -57,7 +57,7 @@ Against an already-running server, using the lane image directly:
 docker build -f docker/client-compat/r-sf/Dockerfile -t honua-clientcompat-r-sf:dev .
 docker run --rm --network client-compat_compat \
   -v "$PWD/tests:/workspace/tests:ro" \
-  -v "$PWD/docker/client-compat/output/r-sf:/output" \
+  -v "$PWD/artifacts/client-interop/r-sf:/output" \
   -e HONUA_BASE_URL=http://honua:5000 \
   honua-clientcompat-r-sf:dev
 ```
@@ -67,7 +67,7 @@ installed:
 
 ```bash
 HONUA_R_SF_BASE_URL=http://localhost:5000 \
-HONUA_R_SF_OUTPUT_DIR="$PWD/tests/TestResults" \
+HONUA_R_SF_OUTPUT_DIR="$PWD/artifacts/test-results" \
 Rscript tests/r/certification/run_sf_lane.R
 ```
 
@@ -76,7 +76,7 @@ Rscript tests/r/certification/run_sf_lane.R
 | Variable | Meaning |
 |---|---|
 | `HONUA_R_SF_BASE_URL` / `HONUA_BASE_URL` | **Required.** Server base URL; the lane has no local-server fallback and fails clearly when neither is set. |
-| `HONUA_R_SF_OUTPUT_DIR` | Envelope output directory (the container sets `/output`). Defaults to `tests/TestResults`. |
+| `HONUA_R_SF_OUTPUT_DIR` | Envelope output directory (the container sets `/output`). Defaults to `artifacts/test-results`. |
 | `HONUA_R_SF_SERVICE_ID` / `HONUA_R_SF_COLLECTION_ID` | Override the seeded service / collection (`test_service` / `0`). |
 | `HONUA_R_SF_SERVER_COMMIT` / `HONUA_R_SF_SERVER_VERSION` | Override the receipt fields instead of probing `git` / `/api/v1/admin/version`. |
 | `HONUA_R_CERT_DIR` | Directory holding this suite; only needed when the driver is not launched via `Rscript <path>`. |

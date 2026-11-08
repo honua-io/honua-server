@@ -6,6 +6,8 @@ resource: "https://github.com/honua-io/honua-server/pkgs/container/honua-server"
 ---
 # Quickstart: install, publish, and query
 
+See the [Honua vocabulary](../concepts/domain/README.md) for the meanings of Connection, Dataset, Layer, Service, Folder, and Environment.
+
 The customer Compose package runs Honua beside PostGIS and Redis, plus a stable
 management service and a separate Compose executor. The executor only executes
 approved proposals; a different principal must approve the proposer's request.
@@ -21,7 +23,7 @@ extract it into a dedicated local directory, and run `python3 quickstart.py` the
 Docker Compose, Python 3.11+, and OpenSSL 3 are required; use WSL on Windows.
 No compiler or host Docker CLI bind mounts are needed.
 
-The archive contains `compose.yaml`, `compose.executor.yaml`, `quickstart.py`,
+The archive contains `compose.yaml`, `compose.executor.yaml`, `compose.console.yaml`, `quickstart.py`,
 `images.json`, a README, and `AGENTS.md`, the operating rules for AI coding agents
 working in the install directory (also published as
 [Work with AI coding agents](../guides/connect/working-with-ai-agents.md)). `images.json` pins the serving and executor images as
@@ -62,6 +64,32 @@ Rollback across an incompatible migration requires the verified pre-migration
 backup; unknown schemas and unsupported configuration changes fail closed. The
 executor retains backups under `backups/`; file storage needs its own backup.
 See [upgrade and rollback](../guides/deploy/upgrade-and-rollback.md).
+
+For customer settings, add relative override files to `COMPOSE_FILE` in `.env`
+and run `python3 quickstart.py` to apply the list to the serving stack and its
+executor. Keep `compose.yaml` and `compose.executor.yaml` in that list. The
+executor preserves the customer's file order on upgrade and rollback, then
+applies `compose.executor.image.yaml` last so the approved image stays pinned.
+Files must remain inside the install directory and be readable by its project
+group so the executor can read them; unsupported paths fail closed.
+`COMPOSE_PATH_SEPARATOR` is forwarded when a custom separator is configured.
+
+### Add Console and embedded Studio
+
+Run `python3 quickstart.py --profile console` in the extracted install directory.
+The package must contain a `console` image digest in `images.json` from the same
+release lock as the server. Release packaging supplies it with
+`package_quickstart.py --console-image <immutable-reference>`; initialization
+refuses Console activation when that pin is missing or mutable.
+
+The command adds the shipped `compose.console.yaml` overlay to the saved
+`COMPOSE_FILE`, preserving customer files, the executor, and its serving-image
+override. It enables the Console profile for subsequent quickstart runs. Console
+is available at `http://localhost:18083`; set `HONUA_CONSOLE_PORT` in `.env` before
+activation to choose another local port. Console reads the serving admin key from
+`secrets/honua_admin_password` through its entrypoint; the key remains outside
+Compose interpolation and rendered configuration. The overlay enables embedded
+Studio and the server's Studio end-user authorization.
 
 ### Install operating skills
 
@@ -172,6 +200,7 @@ services:
       - "127.0.0.1:${HONUA_GRPC_PORT:-18081}:8081"
     environment:
       ASPNETCORE_ENVIRONMENT: Production
+      LayerPublishing__MaterializationTimeoutSeconds: ${LayerPublishing__MaterializationTimeoutSeconds:-300}
       Mcp__WorkflowViews__DefaultView: ${HONUA_MCP_DEFAULT_VIEW:-default}
       Licensing__Mode: Disabled
       AllowedHosts: "localhost;127.0.0.1"
@@ -524,10 +553,11 @@ a backup.
 
 ## Use Studio in Console without the assistant
 
-The customer package above does not include Console. Studio in Console runs from
-the repository development stack. From this install directory, clone the
-repository and start that stack on the serving image you installed, so nothing is
-built from source:
+For a customer installation, follow [Add Console and embedded Studio](#add-console-and-embedded-studio)
+and open Console at `http://localhost:18083` (or your configured port).
+
+For a separate development environment, clone the repository from this install
+directory and start its development stack on the serving image you installed:
 
 <!-- docs-validation:studio.console mode=skip reason="Repository development stack; the public install replay uses the customer package" -->
 ```bash
@@ -541,7 +571,7 @@ publishes `127.0.0.1` ports `8080`, `8081`, `5432`, `6379` and `5174`, so those 
 be free; the quickstart above keeps `18080` and `18081`. Its admin password is the
 public development default, which is why every port binds to loopback only.
 
-Open Console at `http://localhost:5174` (or your configured `HONUA_CONSOLE_PORT`)
+Open the development Console at `http://localhost:5174` (or its configured `HONUA_CONSOLE_PORT`)
 and use Studio to author maps, save and reopen versions, and request publication.
 The repository's `docker-compose.yml` sets `Studio__EmbedJsStudio=true` on Console
 and `Studio__EndUserAuthorization__Enabled=true` on Server. Customer sign-in,

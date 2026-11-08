@@ -54,7 +54,8 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
                 SourceLayerId = spec.LayerId,
                 TableName = spec.TableName,
                 TargetSchema = spec.TargetSchema,
-                ServiceName = spec.ServiceName,
+                ServiceName = spec.Target?.ServiceName ?? spec.ServiceName,
+                Target = spec.Target,
                 DependsOn = spec.DependsOn,
                 Status = MigrationBatchChildStatus.Pending,
                 UpdatedAt = now
@@ -428,7 +429,8 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
             TableName = child.TableName,
             TargetSchema = child.TargetSchema,
             AutoPublish = true,
-            ServiceName = child.ServiceName
+            ServiceName = child.ServiceName,
+            Target = child.Target
         };
 
         var progress = GeoservicesImportProgress.CreateInitial(

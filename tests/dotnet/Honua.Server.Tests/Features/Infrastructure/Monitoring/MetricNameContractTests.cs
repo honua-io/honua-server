@@ -15,32 +15,9 @@ using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 
-/// <summary>
-/// Repo-wide sibling of <see cref="SloMetricContractTests"/> (honua-server#3323).
-/// <para>
-/// #3322 fixed the three SLO instruments. This guard covers EVERY instrument the repository
-/// declares, because the mechanism that broke those three is not specific to them: the OTel
-/// Prometheus exporter derives the exported series name from the instrument name AND its
-/// <c>unit</c>, mapping the unit through the UCUM table and appending it when the name does not
-/// already end in the mapped form. A declared unit therefore renames the series out from under
-/// every dashboard, alert rule and runbook <b>without breaking a single build</b>. In PromQL an
-/// absent series is not an error: <c>rate()</c> over it is an empty vector, a ratio against it is
-/// empty, the panel renders blank and the alert never fires. The failure mode is SILENCE.
-/// </para>
-/// <para>
-/// Three assertions close the loop, and all three have to pass for the loop to be closed:
-/// <list type="number">
-/// <item><description>the checked-in inventory <c>observability/metric-name-contract.json</c>
-/// still describes the instruments the source tree actually declares (a new instrument, or a
-/// changed unit, reddens here);</description></item>
-/// <item><description>every series name in that inventory is the name a reader would derive from
-/// the instrument name, i.e. no entry launders a mangled name into the contract;</description></item>
-/// <item><description>the REAL Prometheus exposition of a REAL running server agrees, for every
-/// instrument, that the declared unit produces that series name — reasoning about the UCUM table
-/// is exactly the step that failed before.</description></item>
-/// </list>
-/// </para>
-/// </summary>
+// Prometheus appends unit and counter suffixes, so a renamed series can silently empty alerts.
+// Validate all three: source instruments match the inventory, inventory names remain unmangled,
+// and real exposition exports those names. Agreement between only two can preserve the same error.
 [Protocol(TestProtocols.TestQuality)]
 [Collection("Performance")]
 public sealed class MetricNameContractTests : IClassFixture<TestWebApplicationFactory>
@@ -97,13 +74,13 @@ public sealed class MetricNameContractTests : IClassFixture<TestWebApplicationFa
         var contractKeys = contract.Select(c => c.Key).ToHashSet(StringComparer.Ordinal);
 
         contractKeys.Except(declaredKeys).Should().BeEmpty(
-            "observability/metric-name-contract.json lists instruments the source tree no longer "
+            "eng/telemetry/metric-name-contract.v1.json lists instruments the source tree no longer "
             + "declares. A removed instrument means every consumer of its series is now querying an "
             + "empty vector; delete the entry only after the consumers are gone.");
 
         declaredKeys.Except(contractKeys).Should().BeEmpty(
             "every instrument this repository declares must be recorded in "
-            + "observability/metric-name-contract.json with the Prometheus series it exports. An "
+            + "eng/telemetry/metric-name-contract.v1.json with the Prometheus series it exports. An "
             + "unrecorded instrument is exactly how a unit-mangled name reaches production unnoticed: "
             + "nothing fails, the series is simply named something no dashboard asks for. Add an entry "
             + "(instrument, kind, unit, series, source).");
@@ -195,7 +172,7 @@ public sealed class MetricNameContractTests : IClassFixture<TestWebApplicationFa
                     break;
                 default:
                     throw new InvalidOperationException(
-                        $"observability/metric-name-contract.json declares instrument kind "
+                        $"eng/telemetry/metric-name-contract.v1.json declares instrument kind "
                         + $"'{entry.Kind}' for '{entry.Name}', which this guard cannot probe. Teach "
                         + "the guard the new kind rather than dropping the entry.");
             }
@@ -231,7 +208,7 @@ public sealed class MetricNameContractTests : IClassFixture<TestWebApplicationFa
 
         drifted.Should().BeEmpty(
             "the running server's real /metrics exposition disagrees with "
-            + "observability/metric-name-contract.json. This is the assertion that a declared "
+            + "eng/telemetry/metric-name-contract.v1.json. This is the assertion that a declared "
             + "OpenTelemetry `unit` cannot slip past: the exporter appends the UCUM-mapped unit to "
             + "the series name, so the metric consumers query stops existing and every PromQL "
             + "expression over it silently returns an empty vector.{0}Drift:{0}  {1}",
@@ -277,7 +254,7 @@ public sealed class MetricNameContractTests : IClassFixture<TestWebApplicationFa
             "a committed dashboard panel or alert rule references a series name the server does not "
             + "export. Prometheus returns an empty vector for it: the panel renders blank, the alert "
             + "never fires, and nothing anywhere reports the problem. Point the expression at the "
-            + "exported name in observability/metric-name-contract.json, or record the gap under "
+            + "exported name in eng/telemetry/metric-name-contract.v1.json, or record the gap under "
             + "`not_emitted` if the instrument genuinely does not exist yet.{0}Unresolved:{0}  {1}",
             Environment.NewLine,
             string.Join(Environment.NewLine + "  ", unresolved.Distinct(StringComparer.Ordinal)));
@@ -339,7 +316,7 @@ public sealed class MetricNameContractTests : IClassFixture<TestWebApplicationFa
 
     private static ContractEntry[] LoadContract()
     {
-        var path = RepositoryPaths.Resolve("observability", "metric-name-contract.json");
+        var path = RepositoryPaths.Resolve("eng", "telemetry", "metric-name-contract.v1.json");
         File.Exists(path).Should().BeTrue("the metric-name contract is the inventory of record at {0}", path);
 
         using var document = JsonDocument.Parse(File.ReadAllText(path));
@@ -634,7 +611,7 @@ public sealed class MetricNameContractTests : IClassFixture<TestWebApplicationFa
 
     private static string[] ContractStringArray(params string[] propertyPath)
     {
-        var path = RepositoryPaths.Resolve("observability", "metric-name-contract.json");
+        var path = RepositoryPaths.Resolve("eng", "telemetry", "metric-name-contract.v1.json");
         using var document = JsonDocument.Parse(File.ReadAllText(path));
         var element = document.RootElement;
         foreach (var segment in propertyPath)
@@ -647,7 +624,7 @@ public sealed class MetricNameContractTests : IClassFixture<TestWebApplicationFa
 
     private static string[] ContractNotEmittedSeries()
     {
-        var path = RepositoryPaths.Resolve("observability", "metric-name-contract.json");
+        var path = RepositoryPaths.Resolve("eng", "telemetry", "metric-name-contract.v1.json");
         using var document = JsonDocument.Parse(File.ReadAllText(path));
         return [.. document.RootElement.GetProperty("not_emitted").EnumerateArray()
             .Select(entry => entry.GetProperty("series").GetString() ?? string.Empty)];

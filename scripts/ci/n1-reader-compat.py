@@ -688,7 +688,7 @@ def execute(args: argparse.Namespace, receipt: dict, output: Path) -> Evidence:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--output", type=Path, default=REPO_ROOT / "tests/TestResults/n1-reader-compat")
+    parser.add_argument("--output", type=Path, default=REPO_ROOT / "artifacts/test-results/n1-reader-compat")
     parser.add_argument("--candidate-dll", help="built Honua.Server.dll; default builds src/Honua.Server Release")
     parser.add_argument("--candidate-sha", help="recorded candidate SHA (default: git HEAD)")
     parser.add_argument("--candidate-head-sha", help="pull-request head SHA when HEAD is a merge ref")

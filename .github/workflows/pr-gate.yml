@@ -1167,10 +1167,8 @@ jobs:
       - name: Create Test Results Directory
         run: mkdir -p ./artifacts/test-results
 
-      # Preserve receipts after failures; the required aggregate owns the verdict.
       - name: Run affected shard
         id: shard
-        continue-on-error: true
         env:
           HONUA_SERVER_TEST_SHARD_NAME: ${{ matrix.shard_name }}
           HONUA_SERVER_TEST_FILTER: ${{ matrix.filter }}

@@ -205,35 +205,10 @@ if (operateObservabilityFixtureEnabled &&
         builder.Configuration.AddInMemoryCollection(operateFixtureHostDefaults);
     }
 }
-var serveStacOpsDemo = builder.Configuration.GetValue(
-    "ServeStacOpsDemo",
-    builder.Configuration.GetValue(
-        "HONUA_SERVE_STAC_DEMO",
-        builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Test")));
 var serveApiDocs = builder.Configuration.GetValue(
     "ServeApiDocs",
     builder.Configuration.GetValue("HONUA_SERVE_API_DOCS", builder.Environment.IsDevelopment()));
 var requiresDurableDistributedEvents = !builder.Environment.IsDevelopment() && !isTestEnvironment;
-var stacOpsDemoPathPrefix = new PathString("/samples/stac-ops");
-// ASP.NET's static-web-assets loader eagerly opens every content root listed in the runtime
-// manifest — including obj/<Config>/<tfm>/compressed/ (the hosted Blazor demo's precompressed
-// assets). In the sharded Release *test* build that directory is not reliably materialized, so
-// the loader throws DirectoryNotFoundException at host construction and fails every test in the
-// shard before any test logic runs (honua-server#2904). API integration tests do not need the
-// hosted Blazor assets, so the Test host skips the loader by default; the few tests that assert
-// the hosted STAC ops demo shell opt back in with HONUA_TEST_HOSTED_BLAZOR_ASSETS=true (loaded
-// through the resilient path below, which pre-creates any missing content roots).
-var loadHostedBlazorStaticWebAssets = serveStacOpsDemo && !builder.Environment.IsDevelopment();
-if (isTestEnvironment)
-{
-    loadHostedBlazorStaticWebAssets =
-        builder.Configuration.GetValue("HONUA_TEST_HOSTED_BLAZOR_ASSETS", false);
-}
-if (loadHostedBlazorStaticWebAssets)
-{
-    StartupConfigurationHelpers.LoadHostedBlazorStaticWebAssets(builder);
-}
-
 // The AWS serverless module injects these values as aws:secretsmanager: references. Validate the
 // admin credential while preserving its refreshable reference, and snapshot the encryption master
 // key and audit-chain key before their direct consumers can mistake the reference text for key
@@ -611,7 +586,7 @@ Honua.Db.Oracle.Features.Security.OracleConnectionDriverServiceCollectionExtensi
 // The Native AOT publish (HonuaSkipSnowflakeForAotVerification) drops the Honua.Snowflake
 // ProjectReference and defines HONUA_SKIP_SNOWFLAKE, so this registration is compiled out
 // (Snowflake.Data is not single-file/AOT safe — see Honua.Server.csproj).
-Honua.Snowflake.Features.Security.SnowflakeConnectionDriverServiceCollectionExtensions.AddSnowflakeConnectionDriver(builder.Services);
+Honua.Db.Snowflake.Features.Security.SnowflakeConnectionDriverServiceCollectionExtensions.AddSnowflakeConnectionDriver(builder.Services);
 #endif
 // Databricks speaks HTTPS to the SQL Statement Execution API (no ADO.NET driver) and stays
 // registered beside Redshift and Snowflake so admin connection tests resolve the provider
@@ -1053,9 +1028,13 @@ builder.Services.AddSingleton<Honua.Core.Features.EmbedGovernance.Abstractions.I
 // V2 admin UX (epic #1046) edits the canonical MetadataV2Graph document directly via IMetadataV2GraphStore.
 
 // Console metadata v2 content + RBAC baseline (#1162). Persistent store lands in #1163.
-builder.Services.AddSingleton<Honua.Core.Features.Console.Abstractions.IConsoleContentStore>(sp =>
+builder.Services.AddSingleton<Honua.Server.Features.Console.Services.InMemoryConsoleContentStore>(sp =>
     new Honua.Server.Features.Console.Services.InMemoryConsoleContentStore(
         sp.GetService<TimeProvider>() ?? TimeProvider.System));
+builder.Services.AddSingleton<Honua.Core.Features.Console.Abstractions.IConsoleContentStore>(sp =>
+    sp.GetRequiredService<Honua.Server.Features.Console.Services.InMemoryConsoleContentStore>());
+builder.Services.AddScoped<Honua.Server.Features.Console.Services.PublishedConsoleContent>();
+builder.Services.AddScoped<Honua.Server.Features.Console.Services.ProjectedConsoleContentStore>();
 builder.Services.AddScoped<Honua.Core.Features.Console.Abstractions.IConsoleActionEvaluator,
     Honua.Server.Features.Console.Services.ConsoleActionEvaluator>();
 // Console Share access: public-link + embed state (#1215). In-memory store
@@ -1375,9 +1354,7 @@ if (hostComposition.IsExecutionWorker)
     return;
 }
 
-HostedBlazorAssetHelpers.FilterHostedBlazorStaticAssetEndpoints(
-    app,
-    allowStacOpsDemoAssets: serveStacOpsDemo);
+HostedBlazorAssetHelpers.FilterHostedBlazorStaticAssetEndpoints(app);
 
 var activeDbConnectionTracker = app.Services.GetService<IActiveDbConnectionTracker>();
 if (activeDbConnectionTracker != null)
@@ -1542,20 +1519,6 @@ app.UseWebSockets();
 // as a standalone Blazor WebAssembly app. This server only exposes the backing
 // `/api/v1/admin/*` REST + gRPC surface; the `/admin` static-asset prefix is no
 // longer served in-process.
-
-if (serveStacOpsDemo)
-{
-    HostedBlazorAssetHelpers.ConfigureHostedBlazorAssets(app, stacOpsDemoPathPrefix);
-    app.MapGet("/samples/stac-ops", () => Results.Redirect("/samples/stac-ops/index.html"))
-        .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
-        .ExcludeFromDescription();
-    HostedBlazorAssetHelpers.MapHostedBlazorFallback(app, stacOpsDemoPathPrefix)
-        .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
-}
-else
-{
-    HostedBlazorAssetHelpers.MapDisabledHostedBlazorPrefix(app, stacOpsDemoPathPrefix);
-}
 
 // Map interactive API explorer (Scalar) at /docs when enabled
 if (serveApiDocs)

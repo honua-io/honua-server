@@ -227,7 +227,7 @@ internal static class McpBearerAuthenticationEndpointExtensions
         return new ClaimsPrincipal(identity);
     }
 
-    private static IResult BuildInvalidTokenResult()
+    internal static IResult BuildInvalidTokenResult()
     {
         var response = new McpJsonRpcResponse
         {

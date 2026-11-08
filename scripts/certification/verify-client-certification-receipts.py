@@ -37,7 +37,7 @@ Usage::
 
     python3 scripts/certification/verify-client-certification-receipts.py
     python3 scripts/certification/verify-client-certification-receipts.py \
-        --mode release --receipts docker/client-compat/output \
+        --mode release --receipts artifacts/client-interop \
         --source-sha <40-hex> --image-digest sha256:<64-hex> \
         --cut-at 2026-09-01T00:00:00Z --producer-source-sha <40-hex>
 """

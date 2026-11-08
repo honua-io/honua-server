@@ -28,7 +28,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../../src/Honua.Protocols.GeoServices/Honua.Protocols.GeoServices.csproj" />
-    <ProjectReference Include="../../../src/Honua.GeoServicesRest/Honua.GeoServicesRest.csproj" />
+    <ProjectReference Include="../../../src/Honua.Db/GeoServicesRest/Honua.GeoServicesRest.csproj" />
     <ProjectReference Include="../Honua.TestKit.Abstractions/Honua.TestKit.Abstractions.csproj" />
     <ProjectReference Include="../Honua.TestKit.Core/Honua.TestKit.Core.csproj" />
     <ProjectReference Include="../../../src/Honua.Hosting/Honua.Hosting.csproj" />

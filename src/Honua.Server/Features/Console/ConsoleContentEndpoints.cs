@@ -4,9 +4,10 @@
 using System.ComponentModel.DataAnnotations;
 using Honua.Core.Features.Console.Abstractions;
 using Honua.Core.Features.Console.Domain;
-using Honua.Server.Features.Console.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Honua.Server.Features.Console.Models;
+using Honua.Server.Features.Console.Services;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 
@@ -70,7 +71,7 @@ internal static class ConsoleContentEndpoints
     }
 
     private static async Task<Results<Ok<ApiResponse<ConsoleContentListResponse>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>> HandleList(
-        [FromServices] IConsoleContentStore store,
+        [FromServices] ProjectedConsoleContentStore store,
         [FromServices] IConsoleActionEvaluator evaluator,
         [FromServices] ILogger<ConsoleContentEndpointsLog> logger,
         HttpContext context,
@@ -135,7 +136,7 @@ internal static class ConsoleContentEndpoints
     }
 
     private static Task<Results<Ok<ApiResponse<ConsoleContentListResponse>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>> HandleSearch(
-        [FromServices] IConsoleContentStore store,
+        [FromServices] ProjectedConsoleContentStore store,
         [FromServices] IConsoleActionEvaluator evaluator,
         [FromServices] ILogger<ConsoleContentEndpointsLog> logger,
         HttpContext context,
@@ -148,7 +149,7 @@ internal static class ConsoleContentEndpoints
 
     private static async Task<Results<Ok<ApiResponse<ConsoleContentItem>>, NotFound<ApiResponse<object>>, ProblemHttpResult>> HandleGet(
         string id,
-        [FromServices] IConsoleContentStore store,
+        [FromServices] ProjectedConsoleContentStore store,
         [FromServices] IConsoleActionEvaluator evaluator,
         [FromServices] ILogger<ConsoleContentEndpointsLog> logger,
         HttpContext context)
@@ -180,7 +181,7 @@ internal static class ConsoleContentEndpoints
 
     private static async Task<Results<Created<ApiResponse<ConsoleContentItem>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>> HandleCreate(
         CreateConsoleContentItemRequest request,
-        [FromServices] IConsoleContentStore store,
+        [FromServices] ProjectedConsoleContentStore store,
         [FromServices] IConsoleActionEvaluator evaluator,
         [FromServices] ILogger<ConsoleContentEndpointsLog> logger,
         HttpContext context)
@@ -237,7 +238,7 @@ internal static class ConsoleContentEndpoints
     private static async Task<Results<Ok<ApiResponse<ConsoleContentItem>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, Conflict<ApiResponse<object>>, ProblemHttpResult>> HandleUpdate(
         string id,
         UpdateConsoleContentItemRequest request,
-        [FromServices] IConsoleContentStore store,
+        [FromServices] ProjectedConsoleContentStore store,
         [FromServices] IConsoleActionEvaluator evaluator,
         [FromServices] ILogger<ConsoleContentEndpointsLog> logger,
         HttpContext context)
@@ -309,7 +310,7 @@ internal static class ConsoleContentEndpoints
     private static async Task<Results<Ok<ApiResponse<ConsoleContentItem>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>> HandlePatch(
         string id,
         PatchConsoleContentItemRequest request,
-        [FromServices] IConsoleContentStore store,
+        [FromServices] ProjectedConsoleContentStore store,
         [FromServices] IConsoleActionEvaluator evaluator,
         [FromServices] ILogger<ConsoleContentEndpointsLog> logger,
         HttpContext context)
@@ -382,7 +383,7 @@ internal static class ConsoleContentEndpoints
 
     private static async Task<Results<Ok<ApiResponse<object>>, NotFound<ApiResponse<object>>, ProblemHttpResult>> HandleDelete(
         string id,
-        [FromServices] IConsoleContentStore store,
+        [FromServices] ProjectedConsoleContentStore store,
         [FromServices] ILogger<ConsoleContentEndpointsLog> logger,
         HttpContext context)
     {
@@ -413,7 +414,7 @@ internal static class ConsoleContentEndpoints
 
     private static async Task<Results<Ok<ApiResponse<ConsoleProvenanceChainResponse>>, NotFound<ApiResponse<object>>, ProblemHttpResult>> HandleGetProvenance(
         string id,
-        [FromServices] IConsoleContentStore store,
+        [FromServices] ProjectedConsoleContentStore store,
         [FromServices] IConsoleActionEvaluator evaluator,
         [FromServices] ILogger<ConsoleContentEndpointsLog> logger,
         HttpContext context,

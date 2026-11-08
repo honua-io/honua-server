@@ -1,17 +1,17 @@
 ---
 type: concept
-title: "Studio design workspace"
+title: "Studio editor"
 description: "The working context for immediate map and app iteration, with bounded edits and recoverable history."
 tags: [gis, domain-language]
-aliases: ["design workspace","creative workspace","git workspace","live preview"]
+aliases: ["editor","canvas","live preview"]
 sources:
   - id: contract
     resource: "https://github.com/honua-io/honua-studio/blob/8a658c7f75887df8842fabb50cd2585be64ce48d/src/composition/history.ts"
 ---
 
-# Studio design workspace
+# Studio editor
 
-A Studio design workspace contains the editable [map](map.md) or [app](app.md), selection, current design state, preview, and history. Routine creative changes follow prompt, direct scoped edit, preview, refine, and undo/redo. They do not require publication approval.
+The Studio editor contains the editable [map](map.md) or [app](app.md), selection, current design state, preview, and history. Routine creative changes follow prompt, direct scoped edit, preview, refine, and undo/redo. They do not require publication approval.
 
 The current Studio implementation uses a typed reducer and client revision history synchronized with server drafts. Undo restores a prior composition and resynchronizes it; a new edit clears redo history.[^contract]
 

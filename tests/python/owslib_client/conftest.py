@@ -88,7 +88,6 @@ MODULE_PROTOCOL: dict[str, str] = {
     "test_wmts": "wmts",
 }
 
-TESTS_ROOT = canonical_fixture.TESTS_ROOT
 
 _collectors: dict[str, CertificationEvidenceCollector] = {}
 
@@ -402,7 +401,7 @@ def _write_cert_evidence(
     """
     yield
     override = os.environ.get("HONUA_OWSLIB_OUTPUT_DIR")
-    results_dir = Path(override) if override else TESTS_ROOT / "TestResults"
+    results_dir = Path(override) if override else canonical_fixture.TEST_RESULTS_ROOT
     results_dir.mkdir(parents=True, exist_ok=True)
     run_id = cert_envelope.utc_now_compact()
     worker_id = os.environ.get("PYTEST_XDIST_WORKER")

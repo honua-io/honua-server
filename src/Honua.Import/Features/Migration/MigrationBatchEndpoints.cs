@@ -2,6 +2,8 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Core.Features.Import.Domain;
@@ -160,6 +162,24 @@ internal static partial class MigrationBatchEndpoints
         }
 
         var orchestrator = context.RequestServices.GetRequiredService<IMigrationBatchOrchestrator>();
+        IReadOnlyList<GeoservicesImportTarget> targets;
+        try
+        {
+            targets = await GeoservicesImportPlanning.PlanAsync(context, request.Layers.Select(layer => new GeoservicesImportSelection
+            {
+                ServiceUrl = layer.ServiceUrl!,
+                ServiceName = layer.ServiceName,
+                PublicName = layer.PublicName,
+                FolderId = layer.FolderId,
+                Namespace = layer.Namespace,
+                Plan = layer.Plan
+            }).ToArray()).ConfigureAwait(false);
+        }
+        catch (LayerPublishingException ex)
+        {
+            await GeoservicesImportPlanning.WriteErrorAsync(context, ex).ConfigureAwait(false);
+            return;
+        }
         var startRequest = new MigrationBatchStartRequest
         {
             SourceKind = request.SourceKind,
@@ -168,14 +188,15 @@ internal static partial class MigrationBatchEndpoints
             ManifestBody = request.ManifestBody,
             ApplyRelationships = request.ApplyRelationships ?? false,
             RequireFullFidelity = request.RequireFullFidelity ?? false,
-            Layers = request.Layers.Select(static l => new MigrationBatchLayerSpec
+            Layers = request.Layers.Select((l, index) => new MigrationBatchLayerSpec
             {
                 SourceResourceId = l.SourceResourceId!,
                 ServiceUrl = l.ServiceUrl!,
                 LayerId = l.LayerId,
                 TableName = l.TableName!,
                 TargetSchema = l.TargetSchema,
-                ServiceName = l.ServiceName,
+                ServiceName = targets[index].ServiceName,
+                Target = targets[index],
                 DependsOn = l.DependsOn ?? []
             }).ToArray()
         };
@@ -376,6 +397,15 @@ public sealed record MigrationBatchRefusedResponse
 /// </summary>
 public sealed record MigrationBatchLayerApiSpec
 {
+    public GeoservicesImportPlan? Plan { get; init; }
+
+    public string? PublicName { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public MetadataV2FolderSelection FolderId { get; init; }
+
+    public string? Namespace { get; init; }
+
     /// <summary>Stable source resource id (must match manifest ids for relationship-apply).</summary>
     public string? SourceResourceId { get; init; }
 

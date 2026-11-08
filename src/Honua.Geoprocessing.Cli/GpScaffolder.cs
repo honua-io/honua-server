@@ -56,7 +56,7 @@ public sealed record GpScaffoldPlan(
 /// that declares its process id + typed param schema and returns a trivial valid result so
 /// it compiles, auto-registers, and runs immediately; (2) the one-line DI registration that
 /// wires it into the managed/native executor set; (3) a catalog entry so it has a title and
-/// is plannable; and (4) a P6 golden-test fixture under <c>samples/gp/&lt;id&gt;</c> so
+/// is plannable; and (4) a golden-test fixture under <c>tests/fixtures/gp/&lt;id&gt;</c> so
 /// <c>gp test &lt;id&gt;</c> passes out of the box.
 ///
 /// <para>
@@ -78,7 +78,7 @@ public static class GpScaffolder
         "src/Honua.Worker.Gdal/Execution";
 
     /// <summary>Repo-relative root the golden fixtures live under (P6 convention).</summary>
-    public const string FixtureRoot = "samples/gp";
+    public const string FixtureRoot = "tests/fixtures/gp";
 
     /// <summary>
     /// Validates <paramref name="processId"/> as a canonical dotted geoprocessing id:
@@ -191,7 +191,7 @@ public static class GpScaffolder
     /// <summary>
     /// The conventional fixture id for a process id: the dotted id with dots replaced by
     /// hyphens (e.g. <c>geometry.buffer</c> becomes <c>geometry-buffer</c>), matching the
-    /// existing <c>samples/gp/&lt;id&gt;</c> directories.
+    /// existing <c>tests/fixtures/gp/&lt;id&gt;</c> directories.
     /// </summary>
     /// <param name="processId">A validated process id.</param>
     /// <returns>The fixture id / directory name.</returns>

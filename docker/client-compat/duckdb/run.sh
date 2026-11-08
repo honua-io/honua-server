@@ -4,7 +4,7 @@
 #
 # Required mounts (docker/client-compat/compose.yml):
 #   ../../tests:/workspace/tests:ro
-#   ./output/duckdb:/output
+#   ../../artifacts/client-interop/duckdb:/output
 set -uo pipefail
 
 : "${HONUA_BASE_URL:=http://honua:5000}"

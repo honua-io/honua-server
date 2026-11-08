@@ -5,9 +5,9 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
-using Honua.GeoServicesRest.Features.FeatureStore;
-using Honua.GeoServicesRest.Features.FeatureStore.Models;
-using Honua.GeoServicesRest.Features.FeatureStore.Services;
+using Honua.Db.GeoServicesRest.Features.FeatureStore;
+using Honua.Db.GeoServicesRest.Features.FeatureStore.Models;
+using Honua.Db.GeoServicesRest.Features.FeatureStore.Services;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
@@ -15,7 +15,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Honua.GeoServicesRest.Tests;
+namespace Honua.Db.GeoServicesRest.Tests;
 
 /// <summary>
 /// Regression coverage for #2011: the federated provider must page across the

@@ -168,10 +168,10 @@ jobs:
             --configuration Release \
             --filter 'FullyQualifiedName~NativeEntryQualificationTests' \
             --logger 'trx;LogFileName=native-entry-managed.trx' \
-            --results-directory tests/TestResults
+            --results-directory artifacts/test-results
           python3 - <<'PY'
           import xml.etree.ElementTree as ET
-          root = ET.parse('tests/TestResults/native-entry-managed.trx').getroot()
+          root = ET.parse('artifacts/test-results/native-entry-managed.trx').getroot()
           cases = root.findall('.//{*}UnitTestResult')
           passed = sum(case.get('outcome') == 'Passed' for case in cases)
           nonpassing = len(cases) - passed
@@ -184,7 +184,7 @@ jobs:
         run: >-
           python3 scripts/qualification/verify_native_entry_image.py
           --image honua-worker-gdal:boundary --source-sha "${{ steps.source.outputs.source_sha }}"
-          --output tests/TestResults/native-entry-image.json
+          --output artifacts/test-results/native-entry-image.json
 
       - name: Start attested Redis for worker smoke test
         run: >-
@@ -213,7 +213,7 @@ jobs:
           --filter FullyQualifiedName~ProductionWorkerContainerHandoffTests
           --logger "console;verbosity=normal"
           --logger "trx;LogFileName=worker-container-handoff.trx"
-          --results-directory tests/TestResults
+          --results-directory artifacts/test-results
 
       - name: Prove the container handoff cases ran, not skipped
         # honua-server#4401. ProductionWorkerContainerHandoffTests is a
@@ -225,7 +225,7 @@ jobs:
         if: ${{ !cancelled() && steps.worker-handoff.conclusion != 'skipped' }}
         run: |
           set -euo pipefail
-          trx=tests/TestResults/worker-container-handoff.trx
+          trx=artifacts/test-results/worker-container-handoff.trx
           if [[ ! -f "${trx}" ]]; then
             echo "::error::no TRX produced for ProductionWorkerContainerHandoffTests"
             exit 1
@@ -284,13 +284,13 @@ jobs:
             --filter "Category=PDAL" \
             --logger "console;verbosity=normal" \
             --logger "trx;LogFileName=worker-pdal-proof.trx" \
-            --results-directory tests/TestResults
+            --results-directory artifacts/test-results
 
       - name: Prove the PDAL cases ran, not skipped
         if: ${{ !cancelled() && steps.pdal-proof.conclusion != 'skipped' }}
         run: |
           set -euo pipefail
-          trx=tests/TestResults/worker-pdal-proof.trx
+          trx=artifacts/test-results/worker-pdal-proof.trx
           if [[ ! -f "${trx}" ]]; then
             echo "::error::no TRX produced for the Category=PDAL subset"
             exit 1
@@ -323,10 +323,10 @@ jobs:
             --configuration Release -maxcpucount:4 \
             --filter 'Category=NativePublicApi' \
             --logger 'trx;LogFileName=native-public-api.trx' \
-            --results-directory tests/TestResults
+            --results-directory artifacts/test-results
           python3 - <<'PY'
           import xml.etree.ElementTree as ET
-          root = ET.parse('tests/TestResults/native-public-api.trx').getroot()
+          root = ET.parse('artifacts/test-results/native-public-api.trx').getroot()
           cases = root.findall('.//{*}UnitTestResult')
           passed = sum(case.get('outcome') == 'Passed' for case in cases)
           nonpassing = len(cases) - passed
@@ -341,8 +341,8 @@ jobs:
         with:
           name: worker-gdal-certification
           path: |
-            tests/TestResults/*.trx
-            tests/TestResults/native-entry-image.json
+            artifacts/test-results/*.trx
+            artifacts/test-results/native-entry-image.json
           if-no-files-found: warn
 
       - name: Create worker vulnerability report

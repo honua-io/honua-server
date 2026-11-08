@@ -6,6 +6,8 @@ resource: "https://github.com/honua-io/honua-server/releases"
 ---
 # Linux: install published packages
 
+See the [Honua vocabulary](../concepts/domain/README.md) for the meanings of Connection, Dataset, Layer, Service, Folder, and Environment.
+
 Use Docker Engine with Compose 2.23.1 or later, Python 3.11 or later with venv and pip 22.3+,
 OpenSSL 3, and a Bash terminal. The configuration runs the same Production image, registry
 clients and two-feature journey as the [Windows install](windows-packages.md).

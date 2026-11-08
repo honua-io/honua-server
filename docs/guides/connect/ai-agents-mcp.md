@@ -26,7 +26,7 @@ that also runs shell commands on the install host should follow
 [Work with AI coding agents](working-with-ai-agents.md), which the Compose
 package ships as `AGENTS.md`.
 
-The handshake methods (`initialize`, `tools/list`, `resources/list`, `resources/templates/list`) are open; `tools/call` and `resources/read` require an authenticated principal plus the matching operator grant. Authentication accepts `X-API-Key` and OAuth bearer tokens (`Authorization: Bearer`); when both are present, the bearer token is evaluated first.
+The handshake methods (`initialize`, `tools/list`, `resources/list`, `resources/templates/list`) are open. Anonymous `tools/list` requests return an empty tools array with the selected view's metadata; the explicit `full` export requires authentication. Authenticate before discovering tools. `tools/call` and `resources/read` require an authenticated principal plus the matching operator grant. Obtain a scoped API key from your Honua administrator and send it in `X-API-Key`, or obtain an OAuth access token from the configured identity provider and send it in `Authorization: Bearer`. When both are present, the bearer token is evaluated first.
 
 Layer references also require tenant-visible publications and shared resource access for the requested operation. Entity resolution and grounding rank only readable publications and omit services without readable publications or service metadata access. A layer-specific grant preserves the layer candidate while service candidates require service metadata access. `honua_render_map` checks every requested layer before invoking the renderer; layer-specific style operations use the same checked resolver. Rendering checks query access, catalog and layer discovery check metadata access, and applying a style preset checks administrative resource access in addition to its operation authorization.
 
@@ -36,7 +36,11 @@ Modern clients can call `server/discover` without initializing a session. Each r
 
 Modern requests ignore protocol session and event-replay headers. They return complete result envelopes, and catalog/resource responses include private caching hints with a zero freshness lifetime. Legacy clients retain initialize, sessions, batching and the optional server notification stream.
 
-Bearer clients should use legacy initialize sessions: with default OIDC replay protection, reusing a bearer token on a modern sessionless request returns 401. Modern governed proposal calls also retain the existing session-bound evidence requirement. This transport upgrade does not establish multi-request bearer interoperability, MRTR approval support or Skills extension conformance. Use the file installation route for operating skills where available.
+With OIDC replay protection enabled, a validated OIDC bearer token is reusable across modern requests on `/mcp`. Its registration binds the exact validated token. Use separate access tokens for modern MCP, legacy MCP sessions and ordinary HTTP: reuse across those surfaces returns 401. Legacy bearer tokens remain bound to their issued session, and ordinary HTTP tokens remain reusable on that API. Token expiry, audience, scopes, tenant and operator grants are checked for every request.
+
+Replay registrations retain their original expiration through the token's expiry plus configured clock skew. The configured retention maximum can refuse longer-lived tokens; see [bearer replay retention](../secure/authentication.md#bearer-replay-retention) for settings and shared-store behavior.
+
+Modern governed proposal calls retain the existing session-bound evidence requirement. Real-client interoperability, MRTR approval support and Skills extension conformance require their own verification. Use the file installation route for operating skills where available.
 
 ## API-key proposals
 
@@ -284,7 +288,7 @@ The curated prompts select `configure` or `analyze`, not `setup`. Each view is b
 | `configure` | The closed admin roster (server status, API-key reads, connection create and test, import from URL, layer publish, access policy), inline ingest, service publish, layer reads, style and render, and the Studio composition, save, get-version, and publication tools. |
 | `operate` | Health, findings, events, alerts, platform-release status, deploy operations, and `honua_propose_finding`. |
 | `analyze` | Grounding, geocoding, layer reads, and the plan / validate / execute / job tools. A published-layer buffer is process `analytics.buffer-aggregate` (`layerId`). `geometry.buffer` accepts one WKB and does not read a published layer. |
-| `review` | Read-only package review (`review.v1`): `honua_validate_package` and `honua_preview_package`. Listing still refuses an anonymous caller. These two descriptors are not on `setup`; together they exceed that view's 128 KiB aggregate ceiling. |
+| `review` | Read-only package review (`review.v1`): `honua_validate_package` and `honua_preview_package`. Anonymous listing returns an empty tools array. These two descriptors are not on `setup`; together they exceed that view's 128 KiB aggregate ceiling. |
 | `setup` | The bounded terminal path (`setup.v6`): readiness, inline ingest and completed job-artifact ingest, publish, verify, style and render, bounded GP, Studio composition and lifecycle (including `honua_studio_get_version`), map and app package composition (`honua_create_map_package`, `honua_create_app_package`; anonymous calls are still refused), and publication submit. `honua_studio_propose_publication` stays in the publication stage. Curated prompts select `configure` or `analyze` instead, because those views also carry the admin roster or the analysis path. |
 | `default` | The 12-tool discovery surface. It does not contain the admin roster. |
 
@@ -456,7 +460,7 @@ Layer discovery, layer descriptions, feature pages, and counts use the shared RE
 
 ## Troubleshoot
 
-- **`unauthenticated` on `tools/call` or `resources/read`** — handshake methods work anonymously but tool calls do not; attach the `X-API-Key` header (or token) to the client config. See [troubleshooting](../deploy/troubleshooting.md).
+- **Empty anonymous `tools/list`, or `unauthenticated` on `tools/call` or `resources/read`** — obtain a scoped API key from your Honua administrator and attach it in `X-API-Key`, or obtain an OAuth access token from your configured identity provider and attach it in `Authorization: Bearer`. Discover the provider through `/.well-known/oauth-protected-resource/mcp`. See [troubleshooting](../deploy/troubleshooting.md).
 - **`permission_denied`** — the identity authenticates but lacks the operator grant for that tool family; grant the relevant operator permission to the calling identity.
 - **`insufficient_scope`** — distinct from `permission_denied`: the identity *is* authorized by grant, but the OAuth bearer token's scopes do not cover the operation (or the token carries no recognized `honua.mcp.*` scope, which is fail-closed). Mint a token whose `scope` claim includes the scope for that operation — see [OAuth scopes](#oauth-21-bearer-tokens-and-scope-mapping). Does not apply to X-API-Key callers.
 - **HTTP 202 with an empty body** — not an error: MCP notifications (`notifications/*` without an `id`) are acknowledged with 202 by design.

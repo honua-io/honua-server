@@ -48,6 +48,9 @@ public static class MigrationApplyPlanBuilder
                 Action = disposition == ReadyDisposition ? "stage-catalog-resource" : ManualReviewDisposition,
                 Disposition = disposition,
                 TargetServiceName = resource.TargetServiceName,
+                TargetPublicName = resource.Identity?.TargetPublicName,
+                TargetFolderPath = resource.Identity?.TargetFolderPath,
+                ImportPlan = resource.Identity?.ImportPlan,
                 TargetResourceName = resource.TargetResourceName,
                 StyleIds = Order(resource.StyleIds),
                 ExternalDependencyIds = Order(resource.ExternalDependencyIds),
@@ -206,6 +209,10 @@ public static class MigrationApplyPlanBuilder
             writer.WriteString("action", step.Action);
             writer.WriteString("disposition", step.Disposition);
             WriteNullableString(writer, "targetServiceName", step.TargetServiceName);
+            WriteNullableString(writer, "targetPublicName", step.TargetPublicName);
+            WriteNullableString(writer, "targetFolderPath", step.TargetFolderPath);
+            writer.WritePropertyName("importPlan");
+            JsonSerializer.Serialize(writer, step.ImportPlan, MigrationEvidencePackJsonContext.Default.GeoservicesImportPlan);
             WriteNullableString(writer, "targetResourceName", step.TargetResourceName);
             WriteStringArray(writer, "styleIds", step.StyleIds);
             WriteStringArray(writer, "externalDependencyIds", step.ExternalDependencyIds);

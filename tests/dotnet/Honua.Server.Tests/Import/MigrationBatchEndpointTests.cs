@@ -77,6 +77,31 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
         doc.RootElement.GetProperty("totalChildren").GetInt32().Should().Be(2);
         _orchestrator.LastRequest.Should().NotBeNull();
         _orchestrator.LastRequest!.Layers.Should().HaveCount(2);
+        _orchestrator.LastRequest.Layers[0].Target.Should().NotBeNull();
+        _orchestrator.LastRequest.Layers[1].Target.Should().BeEquivalentTo(_orchestrator.LastRequest.Layers[0].Target);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/migrations")]
+    public async Task StartBatch_DuplicatePublicLeavesInDifferentFolders_RecordsOneTargetPerSource()
+    {
+        var response = await _client.PostAsJsonAsync("/api/v1/admin/import/migrations", new
+        {
+            sourceKind = "geoservices-rest",
+            layers = new[]
+            {
+                new { sourceResourceId = "internal:0", serviceUrl = "https://example.com/rest/services/Internal/Parcels/FeatureServer", layerId = 0, tableName = "internal_parcels" },
+                new { sourceResourceId = "internal:1", serviceUrl = "https://example.com/rest/services/Internal/Parcels/FeatureServer", layerId = 1, tableName = "internal_photos" },
+                new { sourceResourceId = "public:0", serviceUrl = "https://example.com/rest/services/Public/Parcels/FeatureServer", layerId = 0, tableName = "public_parcels" }
+            }
+        });
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted, await response.Content.ReadAsStringAsync());
+        var layers = _orchestrator.LastRequest!.Layers;
+        layers[0].Target.Should().BeEquivalentTo(layers[1].Target);
+        layers[0].Target!.ServiceName.Should().NotBe(layers[2].Target!.ServiceName);
+        layers[0].Target!.FolderName.Should().Be("Internal");
+        layers[2].Target!.FolderName.Should().Be("Public");
+        layers.Should().OnlyContain(layer => layer.Target!.PublicName == "Parcels" && layer.Target.TenantId == null);
     }
 
     [IntegrationTest]
@@ -89,6 +114,42 @@ public sealed class MigrationBatchEndpointTests : IAsyncLifetime
         using var response = await _client.PostAsync("/api/v1/admin/import/migrations", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTheory]
+    [InlineData("invalid", HttpStatusCode.BadRequest)]
+    [InlineData("nested", HttpStatusCode.BadRequest)]
+    [InlineData("missing", HttpStatusCode.NotFound)]
+    [InlineData("stale", HttpStatusCode.Conflict)]
+    [Endpoint("POST /api/v1/admin/import/migrations")]
+    public async Task StartBatch_InvalidTargetMapping_RefusesBeforeStartingOrCreatingRun(string mapping, HttpStatusCode expected)
+    {
+        var sourceFolder = mapping switch { "invalid" => "Bad.Folder", "nested" => "Outer/Inner", _ => "Survey" };
+        var url = $"https://example.com/rest/services/{sourceFolder}/Parcels/FeatureServer";
+        var layer = new Dictionary<string, object?>
+        {
+            ["sourceResourceId"] = "resource:parcels:0",
+            ["serviceUrl"] = url,
+            ["layerId"] = 0,
+            ["tableName"] = "refused_target"
+        };
+        if (mapping == "missing") layer["folderId"] = "missing-folder";
+        if (mapping == "stale")
+        {
+            layer["plan"] = GeoservicesImportTargetPlanner.Plan(new(), new() { ServiceUrl = url }, null)
+                .ToPlan(url) with
+            { ExistingService = true };
+        }
+
+        using var response = await _client.PostAsJsonAsync("/api/v1/admin/import/migrations", new
+        {
+            sourceKind = "geoservices-rest",
+            layers = new[] { layer }
+        });
+
+        response.StatusCode.Should().Be(expected, await response.Content.ReadAsStringAsync());
+        _orchestrator.LastRequest.Should().BeNull();
+        _catalog.BatchCount.Should().Be(0);
     }
 
     /// <summary>

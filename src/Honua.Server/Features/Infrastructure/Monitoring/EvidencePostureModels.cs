@@ -113,6 +113,8 @@ public static class EvidencePostureVocabulary
     public static class ReasonCodes
     {
         public const string SourceUnavailable = "sourceUnavailable";
+        public const string TargetUnready = "targetUnready";
+        public const string ReadbackIncomplete = "readbackIncomplete";
         public const string NeverSucceeded = "neverSucceeded";
         public const string Stale = "stale";
         public const string MissingObservationTime = "missingObservationTime";

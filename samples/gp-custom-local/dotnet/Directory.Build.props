@@ -1,3 +1,0 @@
-<Project>
-  <Import Project="../../../docker/worker-customcode-dotnet/harness/Directory.Build.props" />
-</Project>
