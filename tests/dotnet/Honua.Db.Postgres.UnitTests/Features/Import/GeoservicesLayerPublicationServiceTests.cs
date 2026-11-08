@@ -162,7 +162,7 @@ public sealed class GeoservicesLayerPublicationServiceTests
         const string connectionString = "Host=unused";
         var existing = new PublishedLayerSummary
         {
-            LayerId = 27,
+            StorageLayerId = 27,
             LayerName = "Parcels",
             Schema = "honua_data",
             Table = "parcels",
@@ -179,7 +179,7 @@ public sealed class GeoservicesLayerPublicationServiceTests
             .ThrowsAsync(new LayerPublishingException(
                 LayerPublishingErrorKind.Conflict,
                 "Layer already exists.",
-                existing.LayerId));
+                existing.StorageLayerId));
         publishing.Setup(service => service.RefreshMaterializedFeaturesForSourceTableAsync(
                 connectionString,
                 existing.Schema,
@@ -187,7 +187,7 @@ public sealed class GeoservicesLayerPublicationServiceTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync([new MaterializedFeatureRefreshResult
             {
-                LayerId = existing.LayerId,
+                StorageLayerId = existing.StorageLayerId,
                 LayerName = existing.LayerName,
                 Schema = existing.Schema,
                 Table = existing.Table,
@@ -195,7 +195,7 @@ public sealed class GeoservicesLayerPublicationServiceTests
             }]);
         publishing.Setup(service => service.RewritePublishedLayerFieldsAsync(
                 connectionString,
-                existing.LayerId,
+                existing.StorageLayerId,
                 It.IsAny<LayerPublishRequest>(),
                 It.IsAny<CancellationToken>()))
             .Returns(Task.FromResult<PublishedLayerSummary?>(null));
@@ -250,7 +250,7 @@ public sealed class GeoservicesLayerPublicationServiceTests
         const string connectionString = "Host=unused";
         var rewritten = new PublishedLayerSummary
         {
-            LayerId = 27,
+            StorageLayerId = 27,
             LayerName = "Parcels",
             Schema = "honua_data",
             Table = "parcels",
@@ -263,9 +263,9 @@ public sealed class GeoservicesLayerPublicationServiceTests
         var publishing = new Mock<ILayerPublishingService>(MockBehavior.Strict);
         publishing.Setup(service => service.PublishLayerAsync(
                 connectionString, It.IsAny<LayerPublishRequest>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new LayerPublishingException(LayerPublishingErrorKind.Conflict, "Already published.", rewritten.LayerId));
+            .ThrowsAsync(new LayerPublishingException(LayerPublishingErrorKind.Conflict, "Already published.", rewritten.StorageLayerId));
         publishing.Setup(service => service.RewritePublishedLayerFieldsAsync(
-                connectionString, rewritten.LayerId, It.IsAny<LayerPublishRequest>(), It.IsAny<CancellationToken>()))
+                connectionString, rewritten.StorageLayerId, It.IsAny<LayerPublishRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(rewritten);
         publishing.Setup(service => service.RefreshMaterializedFeaturesForSourceTableAsync(
                 connectionString, rewritten.Schema, rewritten.Table, It.IsAny<CancellationToken>()))
@@ -285,7 +285,7 @@ public sealed class GeoservicesLayerPublicationServiceTests
         result.Should().BeSameAs(rewritten);
         result!.FieldCount.Should().Be(4);
         warnings.Should().BeEmpty();
-        store.LayerId.Should().Be(rewritten.LayerId);
+        store.LayerId.Should().Be(rewritten.StorageLayerId);
         store.SourceObjectIds.Should().BeEquivalentTo(sourceObjectIds);
         publishing.Verify(service => service.ListPublishedLayersAsync(
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
@@ -300,9 +300,9 @@ public sealed class GeoservicesLayerPublicationServiceTests
         var publishing = new Mock<ILayerPublishingService>(MockBehavior.Strict);
         publishing.Setup(service => service.PublishLayerAsync(
                 connectionString, It.IsAny<LayerPublishRequest>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new LayerPublishingException(LayerPublishingErrorKind.Conflict, "Already published.", existing.LayerId));
+            .ThrowsAsync(new LayerPublishingException(LayerPublishingErrorKind.Conflict, "Already published.", existing.StorageLayerId));
         publishing.Setup(service => service.RewritePublishedLayerFieldsAsync(
-                connectionString, existing.LayerId, It.IsAny<LayerPublishRequest>(), It.IsAny<CancellationToken>()))
+                connectionString, existing.StorageLayerId, It.IsAny<LayerPublishRequest>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("Field catalog rejected the replacement."));
         publishing.Setup(service => service.RefreshMaterializedFeaturesForSourceTableAsync(
                 connectionString, existing.Schema, existing.Table, It.IsAny<CancellationToken>()))
@@ -363,9 +363,9 @@ public sealed class GeoservicesLayerPublicationServiceTests
         var publishing = new Mock<ILayerPublishingService>(MockBehavior.Strict);
         publishing.Setup(service => service.PublishLayerAsync(
                 connectionString, It.IsAny<LayerPublishRequest>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new LayerPublishingException(LayerPublishingErrorKind.Conflict, "Already published.", rewritten.LayerId));
+            .ThrowsAsync(new LayerPublishingException(LayerPublishingErrorKind.Conflict, "Already published.", rewritten.StorageLayerId));
         publishing.Setup(service => service.RewritePublishedLayerFieldsAsync(
-                connectionString, rewritten.LayerId, It.IsAny<LayerPublishRequest>(), It.IsAny<CancellationToken>()))
+                connectionString, rewritten.StorageLayerId, It.IsAny<LayerPublishRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(rewritten);
         publishing.Setup(service => service.RefreshMaterializedFeaturesForSourceTableAsync(
                 connectionString, rewritten.Schema, rewritten.Table, It.IsAny<CancellationToken>()))

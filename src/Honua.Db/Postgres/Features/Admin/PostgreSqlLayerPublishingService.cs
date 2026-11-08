@@ -149,7 +149,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         ListedLayerScope scope,
         CancellationToken cancellationToken)
     {
-        var layerIds = scope.Layers.Select(layer => layer.LayerId).ToHashSet();
+        var layerIds = scope.Layers.Select(layer => layer.StorageLayerId).ToHashSet();
         var storageScope = await ResolveLayerStorageScopeAsync(
             scope.Connection, null, layerIds, scope.ConnectionId, cancellationToken).ConfigureAwait(false);
         await ValidateTenantAccessAsync(
@@ -600,7 +600,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
         return new PublishedLayerSummary
         {
-            LayerId = layerId,
+            StorageLayerId = layerId,
             LayerName = request.LayerName.Trim(),
             Description = request.Description,
             License = request.SourceGovernance?.License,

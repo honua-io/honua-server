@@ -890,7 +890,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
         return new PublishedLayerSummary
         {
-            LayerId = reader.GetInt32(0),
+            StorageLayerId = reader.GetInt32(0),
             LayerName = reader.GetString(1),
             Description = reader.IsDBNull(2) ? null : reader.GetString(2),
             Schema = reader.GetString(3),
@@ -949,7 +949,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
         return new PublishedLayerSummary
         {
-            LayerId = reader.GetInt32(0),
+            StorageLayerId = reader.GetInt32(0),
             LayerName = reader.GetString(1),
             Description = reader.IsDBNull(2) ? null : reader.GetString(2),
             Schema = reader.GetString(3),
@@ -986,7 +986,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
     {
         return new PublishedLayerSummary
         {
-            LayerId = layer.LayerId,
+            StorageLayerId = layer.StorageLayerId,
             LayerName = layer.LayerName,
             Description = layer.Description,
             Schema = layer.Schema,

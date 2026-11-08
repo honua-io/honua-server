@@ -129,7 +129,7 @@ public sealed partial class LayerPublishingIntegrationTests
             return;
         }
         var published = await PublishLayerAsync(publishRequest);
-        _layerId = published.LayerId;
+        _layerId = published.StorageLayerId;
         published.GeometryType.Should().Be(canonicalType);
 
         using var featureMetadata = await GetGeometryJsonAsync($"/rest/services/{_serviceName}/FeatureServer/{_layerId}?f=json");

@@ -1681,7 +1681,7 @@ public sealed class OperationsToolsetTests
             .PublishLayerAsync(Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>())
             .Returns(new PublishedLayerSummary
             {
-                LayerId = 7,
+                StorageLayerId = 7,
                 LayerName = "Parcels",
                 Schema = "public",
                 Table = "parcels",
@@ -1722,7 +1722,7 @@ public sealed class OperationsToolsetTests
         publishing.PublishLayerAsync(Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>())
             .Returns(new PublishedLayerSummary
             {
-                LayerId = 7,
+                StorageLayerId = 7,
                 LayerName = "Parcels",
                 Schema = "public",
                 Table = "parcels",

@@ -388,7 +388,7 @@ public sealed class RedisOffDirectPublishTests
             .PublishLayerAsync(Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>())
             .Returns(new PublishedLayerSummary
             {
-                LayerId = 123,
+                StorageLayerId = 123,
                 LayerName = "Parcels",
                 Schema = "public",
                 Table = "parcels",

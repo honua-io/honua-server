@@ -65,7 +65,7 @@ public sealed class LayerPublishJobTests
             .SubmitAsync(Connection, Guid.NewGuid(), DomainRequest(), "roads", request.Token);
 
         Assert.Equal(LayerPublishAdmissionKind.Completed, admission.Kind);
-        Assert.Equal(7, admission.Layer!.LayerId);
+        Assert.Equal(7, admission.Layer!.StorageLayerId);
         Assert.False(observed.CanBeCanceled);
     }
 

@@ -130,7 +130,7 @@ public sealed partial class AdminOperationRequestContractTests
     private static string SerializePublishedLayer(int layerId)
         => JsonSerializer.Serialize(ApiResponse<PublishedLayerSummary>.CreateSuccess(new PublishedLayerSummary
         {
-            LayerId = layerId,
+            StorageLayerId = layerId,
             LayerName = "Roads",
             Schema = "public",
             Table = "roads",

@@ -287,7 +287,7 @@ internal sealed class ServicePublishExecutor
             .ConfigureAwait(false);
         var resultDetails = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            ["storageLayerId"] = summary.LayerId.ToString(CultureInfo.InvariantCulture),
+            ["storageLayerId"] = summary.StorageLayerId.ToString(CultureInfo.InvariantCulture),
             ["layerName"] = summary.LayerName,
             ["geometryType"] = summary.GeometryType,
         };
@@ -319,16 +319,16 @@ internal sealed class ServicePublishExecutor
             ResourceIds = promotionReadback != PromotionReadback.Available
                 ? new Dictionary<string, string>(StringComparer.Ordinal)
                 {
-                    ["storageLayerId"] = summary.LayerId.ToString(CultureInfo.InvariantCulture),
+                    ["storageLayerId"] = summary.StorageLayerId.ToString(CultureInfo.InvariantCulture),
                 }
                 : new Dictionary<string, string>(StringComparer.Ordinal)
                 {
-                    ["storageLayerId"] = summary.LayerId.ToString(CultureInfo.InvariantCulture),
+                    ["storageLayerId"] = summary.StorageLayerId.ToString(CultureInfo.InvariantCulture),
                     ["serviceName"] = summary.ServiceName,
                 },
             Result = new OperationResultSummary
             {
-                Summary = $"Published storage layer '{summary.LayerName}' (handle {summary.LayerId}) to service '{summary.ServiceName}'.",
+                Summary = $"Published storage layer '{summary.LayerName}' (handle {summary.StorageLayerId}) to service '{summary.ServiceName}'.",
                 Details = resultDetails
             }
         };

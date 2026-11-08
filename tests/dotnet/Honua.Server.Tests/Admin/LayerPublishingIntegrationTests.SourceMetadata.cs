@@ -51,7 +51,7 @@ public sealed partial class LayerPublishingIntegrationTests
         var payload = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.Created, payload);
         var published = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(payload, _jsonOptions);
-        _layerId = published!.Data!.LayerId;
+        _layerId = published!.Data!.StorageLayerId;
 
         var metadataResponse = await _client.GetAsync($"/rest/services/{_serviceName}/FeatureServer/{_layerId}?f=json");
         var metadataPayload = await metadataResponse.Content.ReadAsStringAsync();

@@ -29,15 +29,15 @@ public sealed partial class CopyFeaturesExecutionProofTests
             new FeatureQuery(), Guid.NewGuid().ToString("N"), 1_000_000, CancellationToken.None);
         result.FeatureCount.Should().Be(3);
         var snapshot = await _fixture.GetService<IMetadataV2GraphProvider>().GetCurrentAsync();
-        var target = snapshot.Index.ResourcesByStorageLayerId[result.LayerId];
+        var target = snapshot.Index.ResourcesByStorageLayerId[result.StorageLayerId];
         target.SchemaFields.Select(f => f.Name).Should().BeEquivalentTo(
             _sourceResource.SchemaFields.Select(f => f.Name));
         target.SchemaFields.Single(f => f.Name == "label").Nullable.Should().BeTrue();
         target.SchemaFields.Single(f => f.Name == "score").Nullable.Should().BeFalse();
         var publication = snapshot.Graph.Publications.First(p => p.ResourceId == target.Metadata.Id && snapshot.IsRoutable(p));
         var reader = await _fixture.GetService<FeatureProviderQueryRouter>().ResolveReaderAsync(snapshot,
-            snapshot.Index.ServicesById[publication.ServiceId], target, publication, result.LayerId, FeatureProviderReadOperation.Query);
-        var rows = (await reader.QueryAsync(result.LayerId, new FeatureQuery { IncludeZ = true })).Items;
+            snapshot.Index.ServicesById[publication.ServiceId], target, publication, result.StorageLayerId, FeatureProviderReadOperation.Query);
+        var rows = (await reader.QueryAsync(result.StorageLayerId, new FeatureQuery { IncludeZ = true })).Items;
         rows.Select(r => r.Id).Should().BeEquivalentTo(new long[] { 11, 13, 15 });
         foreach (var row in rows)
         {
@@ -148,20 +148,20 @@ public sealed partial class CopyFeaturesExecutionProofTests
             new FeatureQuery { Where = where, ObjectIds = objectIds?.ToImmutableArray() }, Guid.NewGuid().ToString("N"), 1_000_000, CancellationToken.None);
         result.FeatureCount.Should().Be(expectedCount);
         var after = await store.GetCurrentAsync();
-        var target = after.Index.ResourcesByStorageLayerId[result.LayerId];
+        var target = after.Index.ResourcesByStorageLayerId[result.StorageLayerId];
         target.Temporal!.StartTimeField.Should().Be("observed");
         target.Temporal.Extent.Should().BeNull("the canonical metadata resolver must derive the selected live extent");
         var publication = after.Graph.Publications.First(p => p.ResourceId == target.Metadata.Id && after.IsRoutable(p));
         var reader = await _fixture.GetService<FeatureProviderQueryRouter>().ResolveReaderAsync(after,
-            after.Index.ServicesById[publication.ServiceId], target, publication, result.LayerId, FeatureProviderReadOperation.Query);
-        var range = await TemporalExtentHelpers.TryResolveTemporalRangeV2Async(target, result.LayerId, reader, CancellationToken.None);
+            after.Index.ServicesById[publication.ServiceId], target, publication, result.StorageLayerId, FeatureProviderReadOperation.Query);
+        var range = await TemporalExtentHelpers.TryResolveTemporalRangeV2Async(target, result.StorageLayerId, reader, CancellationToken.None);
         range.Should().NotBeNull();
         var resolved = range!.Value;
         resolved.Min.Should().Be(expectedCount == 0 || maskTime ? null : new DateTimeOffset(2026, 1, 3, 0, 0, 0, TimeSpan.Zero));
         resolved.Max.Should().Be(expectedCount == 0 || maskTime ? null : new DateTimeOffset(2026, 1, objectIds is null ? 5 : 3, 0, 0, 0, TimeSpan.Zero));
         _masks.ResolveAsync(Arg.Is<MetadataV2Resource>(r => r.Metadata.Id == target.Metadata.Id), Arg.Any<CancellationToken>())
             .Returns(ImmutableArray.Create("observed"));
-        var redactedRange = await TemporalExtentHelpers.TryResolveTemporalRangeV2Async(target, result.LayerId, reader, CancellationToken.None);
+        var redactedRange = await TemporalExtentHelpers.TryResolveTemporalRangeV2Async(target, result.StorageLayerId, reader, CancellationToken.None);
         redactedRange.Should().NotBeNull();
         var resolvedRedacted = redactedRange!.Value;
         resolvedRedacted.Min.Should().BeNull("a masked temporal field must not disclose its lower bound");

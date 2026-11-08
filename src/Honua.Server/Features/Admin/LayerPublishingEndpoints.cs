@@ -295,10 +295,10 @@ internal static class LayerPublishingEndpoints
             await InvalidateServiceCatalogCacheAsync(
                 context,
                 result.ServiceName,
-                [result.LayerId],
+                [result.StorageLayerId],
                 logger).ConfigureAwait(false);
 
-            var location = $"/api/v1/admin/connections/{id}/layers/{result.LayerId}";
+            var location = $"/api/v1/admin/connections/{id}/layers/{result.StorageLayerId}";
             return TypedResults.Created(location, ApiResponse<PublishedLayerSummary>.CreateSuccess(result));
         }
         catch (LayerPublishingException ex) when (ex.ErrorKind == LayerPublishingErrorKind.Conflict)
@@ -511,7 +511,7 @@ internal static class LayerPublishingEndpoints
             await InvalidateServiceCatalogCacheAsync(
                 context,
                 result.ServiceName,
-                result.Layers.Select(layer => layer.LayerId),
+                result.Layers.Select(layer => layer.StorageLayerId),
                 logger).ConfigureAwait(false);
 
             return Results.Json(
@@ -685,7 +685,7 @@ internal static class LayerPublishingEndpoints
             await InvalidateServiceCatalogCacheAsync(
                 context,
                 result.ServiceName,
-                [result.LayerId],
+                [result.StorageLayerId],
                 logger).ConfigureAwait(false);
 
             return TypedResults.Ok(ApiResponse<PublishedLayerSummary>.CreateSuccess(result));
@@ -766,7 +766,7 @@ internal static class LayerPublishingEndpoints
             await InvalidateServiceCatalogCacheAsync(
                 context,
                 cacheServiceName,
-                result.Select(layer => layer.LayerId),
+                result.Select(layer => layer.StorageLayerId),
                 logger).ConfigureAwait(false);
 
             return TypedResults.Ok(ApiResponse<IReadOnlyList<PublishedLayerSummary>>.CreateSuccess(result));

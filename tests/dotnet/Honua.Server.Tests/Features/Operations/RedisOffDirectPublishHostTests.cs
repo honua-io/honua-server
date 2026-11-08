@@ -63,7 +63,7 @@ public sealed class RedisOffDirectPublishHostTests : IAsyncLifetime
             .PublishLayerAsync(Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>())
             .Returns(new PublishedLayerSummary
             {
-                LayerId = 321,
+                StorageLayerId = 321,
                 LayerName = "Parcels",
                 Schema = "public",
                 Table = "parcels",

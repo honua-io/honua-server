@@ -21,7 +21,7 @@ public sealed class LayerPublishWireContractTests
     {
         var layer = new PublishedLayerSummary
         {
-            LayerId = 741,
+            StorageLayerId = 741,
             LayerName = "Roads",
             Schema = "public",
             Table = "roads",

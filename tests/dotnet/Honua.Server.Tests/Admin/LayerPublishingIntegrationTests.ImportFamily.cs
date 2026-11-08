@@ -79,7 +79,7 @@ public sealed partial class LayerPublishingIntegrationTests
             Enabled = true,
             CreateEditableCopy = true
         }, _connectionName);
-        _layerId = published.LayerId;
+        _layerId = published.StorageLayerId;
         published.GeometryType.Should().Be("MultiPolygon");
         using var serverMetadata = await GetGeometryJsonAsync($"/rest/services/{_serviceName}/FeatureServer/{_layerId}?f=json");
         serverMetadata.RootElement.GetProperty("geometryType").GetString().Should().Be("esriGeometryPolygon");

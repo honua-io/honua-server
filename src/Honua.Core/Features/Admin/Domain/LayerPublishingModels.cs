@@ -186,8 +186,7 @@ public sealed class TablePublishValidationCheck
 
 public sealed class PublishedLayerSummary
 {
-    [JsonPropertyName("storageLayerId")]
-    public required int LayerId { get; init; }
+    public required int StorageLayerId { get; init; }
 
     public required string LayerName { get; init; }
 
@@ -243,8 +242,7 @@ public sealed class LayerExtentRefreshResult
 
 public sealed class LayerExtentRefreshLayerResult
 {
-    [JsonPropertyName("storageLayerId")]
-    public int LayerId { get; init; }
+    public int StorageLayerId { get; init; }
 
     public required string LayerName { get; init; }
 
@@ -255,8 +253,7 @@ public sealed class LayerExtentRefreshLayerResult
 
 public sealed class MaterializedFeatureRefreshResult
 {
-    [JsonPropertyName("storageLayerId")]
-    public int LayerId { get; init; }
+    public int StorageLayerId { get; init; }
 
     public required string LayerName { get; init; }
 

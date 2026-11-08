@@ -325,7 +325,7 @@ public sealed partial class GeoservicesImportServiceAttachmentImportTests(Postgr
             CancellationToken cancellationToken = default)
             => Task.FromResult(new PublishedLayerSummary
             {
-                LayerId = publishedLayerId,
+                StorageLayerId = publishedLayerId,
                 LayerName = request.LayerName,
                 Schema = request.Schema,
                 Table = request.Table,

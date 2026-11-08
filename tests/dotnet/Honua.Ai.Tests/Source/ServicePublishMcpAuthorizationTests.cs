@@ -339,7 +339,7 @@ public sealed class ServicePublishMcpAuthorizationTests
                 Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>())
             .Returns(new PublishedLayerSummary
             {
-                LayerId = 7,
+                StorageLayerId = 7,
                 LayerName = "Parcels",
                 Schema = "public",
                 Table = "parcels",

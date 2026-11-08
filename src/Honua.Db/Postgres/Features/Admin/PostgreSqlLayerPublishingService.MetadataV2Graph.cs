@@ -300,7 +300,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var updatedGraph = BuildLinkedLayerMetadataV2Graph(
             graph,
             serviceName,
-            layer.LayerId,
+            layer.StorageLayerId,
             layer.LayerName,
             layer.Srid,
             DateTimeOffset.UtcNow,

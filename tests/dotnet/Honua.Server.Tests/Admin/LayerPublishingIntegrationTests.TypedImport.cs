@@ -104,7 +104,7 @@ public sealed partial class LayerPublishingIntegrationTests
             ServiceName = _serviceName,
             Enabled = true
         });
-        _layerId = published.LayerId;
+        _layerId = published.StorageLayerId;
         published.GeometryType.Should().Be("Point");
 
         var sortedPayload = await ReadOgcItemsAsync("sortby=-population");
@@ -232,7 +232,7 @@ public sealed partial class LayerPublishingIntegrationTests
             ServiceName = _serviceName,
             Enabled = true
         });
-        _layerId = published.LayerId;
+        _layerId = published.StorageLayerId;
 
         var payload = await ReadOgcItemsAsync("limit=10");
         using var document = JsonDocument.Parse(payload);

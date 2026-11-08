@@ -115,7 +115,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
         return new PublishedLayerSummary
         {
-            LayerId = layer.LayerId,
+            StorageLayerId = layer.StorageLayerId,
             LayerName = layer.LayerName,
             Description = layer.Description,
             Schema = layer.Schema,
