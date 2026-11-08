@@ -36,7 +36,7 @@ public sealed partial class CoordinatedReleaseControlEndpointsTests : IAsyncLife
     private readonly InMemoryWorkflowOperationStore _workflowStore = new();
     private readonly FakeContainerStep _container = new();
     private readonly FakeMetadataStep _metadata = new();
-    private readonly AdminAuthEndpointsTests.StubHttpClientFactory _identity = new();
+    private readonly AdminAuthEndpointsTests.StubHttpClientFactory _identity = AdminAuthEndpointsTests.CreateStubFactory();
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
     private HumanApprovalHttpClient? _human;

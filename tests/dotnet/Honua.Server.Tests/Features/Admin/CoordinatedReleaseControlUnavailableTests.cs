@@ -25,19 +25,26 @@ public sealed class CoordinatedReleaseControlUnavailableTests
     [InlineData("POST", "approve")]
     public async Task Gate_DurableStoreUnavailable_Returns503(string method, string route)
     {
-        await using var fixture = new WebAppFixture().ConfigureServices(services =>
+        var fixture = new WebAppFixture().ConfigureServices(services =>
         {
             services.RemoveAll<IWorkflowOperationStore>();
             services.RemoveAll<CoordinatedReleaseControlService>();
             services.AddSingleton<CoordinatedReleaseControlService>();
         });
-        await fixture.InitializeAsync();
-        using var client = fixture.CreateAdminClient();
-        using var request = new HttpRequestMessage(new HttpMethod(method),
-            $"/api/v1/admin/metadata/coordinated-releases/operations/unavailable/{route}/container");
-
-        using var response = await client.SendAsync(request);
-
-        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        try
+        {
+            await fixture.InitializeAsync();
+            using var client = fixture.CreateAdminClient();
+            using var request = new HttpRequestMessage(new HttpMethod(method),
+                $"/api/v1/admin/metadata/coordinated-releases/operations/unavailable/{route}/container");
+    
+            using var response = await client.SendAsync(request);
+    
+            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 }

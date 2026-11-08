@@ -290,6 +290,62 @@ public sealed class CoordinatedReleaseReconcilerTests
 
     // ---- helpers ---------------------------------------------------------
 
+    [UnitTheory]
+    [InlineData(CoordinatedReleaseStep.ContainerRollout)]
+    [InlineData(CoordinatedReleaseStep.MetadataAndSchema)]
+    public async Task Reconcile_ChildStartLosesCasToRollback_RetainsTheChildForCompensation(CoordinatedReleaseStep gate)
+    {
+        var store = new InMemoryWorkflowOperationStore();
+        var operation = await CreateAsync(store);
+        operation = operation with
+        {
+            Status = WorkflowOperationStatus.AwaitingApproval,
+            CoordinatedRelease = operation.CoordinatedRelease! with { CurrentStep = gate },
+        };
+        await store.SetAsync(operation);
+        await CoordinatedGateTestApproval.ApproveAsync(store, operation);
+        store.RollbackOnNextWrite = true;
+        var container = new FakeContainerStep();
+        var metadata = new FakeMetadataStep();
+        var reconciler = CreateReconciler(store, container, metadata);
+
+        await reconciler.ReconcileCoordinatedReleaseAsync(operation.OperationId);
+
+        var checkpoint = (await store.GetAsync(operation.OperationId))!;
+        checkpoint.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
+        checkpoint.CoordinatedRelease!.CurrentStep.Should().Be(CoordinatedReleaseStep.RollingBack);
+        (gate == CoordinatedReleaseStep.ContainerRollout ? checkpoint.CoordinatedRelease.ContainerOperationId
+            : checkpoint.CoordinatedRelease.MetadataOperationId).Should().Be(gate == CoordinatedReleaseStep.ContainerRollout
+                ? "deploy-child" : "metadata-child");
+        await reconciler.ReconcileCoordinatedReleaseAsync(operation.OperationId);
+        (gate == CoordinatedReleaseStep.ContainerRollout ? container.RollbackCalls : metadata.RollbackCalls).Should().Be(1);
+        (gate == CoordinatedReleaseStep.ContainerRollout ? container.StartCalls : metadata.StartCalls).Should().Be(1);
+    }
+
+    [UnitTest]
+    public async Task Reconcile_ContainerBaselineRecordedAfterStart_ObservesTheClaimedChildWithoutAnotherReview()
+    {
+        var store = new InMemoryWorkflowOperationStore();
+        var operation = await CreateAsync(store);
+        operation = operation with
+        {
+            Status = WorkflowOperationStatus.AwaitingApproval,
+            CoordinatedRelease = operation.CoordinatedRelease! with { CurrentStep = CoordinatedReleaseStep.ContainerRollout },
+        };
+        await store.SetAsync(operation);
+        await CoordinatedGateTestApproval.ApproveAsync(store, operation);
+        var container = new FakeContainerStep { PriorRevision = "observed-baseline" };
+        var reconciler = CreateReconciler(store, container, new FakeMetadataStep());
+
+        await reconciler.ReconcileCoordinatedReleaseAsync(operation.OperationId);
+        await reconciler.ReconcileCoordinatedReleaseAsync(operation.OperationId);
+
+        var progressed = (await store.GetAsync(operation.OperationId))!;
+        progressed.Status.Should().Be(WorkflowOperationStatus.Reconciling);
+        progressed.CoordinatedRelease!.CurrentStep.Should().Be(CoordinatedReleaseStep.MetadataAndSchema);
+        container.StartCalls.Should().Be(1);
+    }
+
     private static CoordinatedReleaseReconciler CreateReconciler(
         IWorkflowOperationStore store,
         ICoordinatedContainerStepExecutor container,
@@ -427,6 +483,7 @@ public sealed class CoordinatedReleaseReconcilerTests
         public bool ThrowOnRollback { get; init; }
         public int RollbackPollsBeforeTerminal { get; init; }
         public int ObserveRollbackCalls { get; private set; }
+        public string? PriorRevision { get; init; }
         public string RolledBackRevision { get; init; } = "honua/server:v20";
         public CoordinatedStepOutcome RollbackOutcome { get; init; } = CoordinatedStepOutcome.Pending;
 
@@ -438,6 +495,7 @@ public sealed class CoordinatedReleaseReconcilerTests
             {
                 Outcome = CoordinatedStepOutcome.Pending,
                 ChildOperationId = "deploy-child",
+                ExpectedRevision = PriorRevision,
                 Detail = "container submitted"
             });
         }
@@ -525,6 +583,7 @@ public sealed class CoordinatedReleaseReconcilerTests
 
     private sealed class InMemoryWorkflowOperationStore : IWorkflowOperationStore
     {
+        public bool RollbackOnNextWrite { get; set; }
         private readonly ConcurrentDictionary<string, WorkflowOperationRecord> _operations = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, string> _leases = new(StringComparer.Ordinal);
 
@@ -557,6 +616,18 @@ public sealed class CoordinatedReleaseReconcilerTests
 
         public Task<bool> TrySetAsync(WorkflowOperationRecord operation, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
         {
+            if (RollbackOnNextWrite)
+            {
+                RollbackOnNextWrite = false;
+                var pending = _operations[operation.OperationId];
+                _operations[operation.OperationId] = pending with
+                {
+                    Version = pending.Version + 1, Status = WorkflowOperationStatus.RollbackRequested,
+                    CoordinatedRelease = pending.CoordinatedRelease! with { CurrentStep = CoordinatedReleaseStep.RollingBack },
+                };
+                return Task.FromResult(false);
+            }
+
             if (!_operations.TryGetValue(operation.OperationId, out var current) || current.Version != operation.Version)
                 return Task.FromResult(false);
             return Task.FromResult(_operations.TryUpdate(operation.OperationId, operation with { Version = operation.Version + 1 }, current));
