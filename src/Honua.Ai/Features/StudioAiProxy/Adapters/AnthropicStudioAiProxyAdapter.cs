@@ -25,15 +25,18 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly StudioAiProxyApiKeyResolver _apiKeyResolver;
     private readonly ILogger<AnthropicStudioAiProxyAdapter> _logger;
+    private readonly AnthropicContinuationStore _continuations;
 
     public AnthropicStudioAiProxyAdapter(
         IHttpClientFactory httpClientFactory,
         StudioAiProxyApiKeyResolver apiKeyResolver,
-        ILogger<AnthropicStudioAiProxyAdapter> logger)
+        ILogger<AnthropicStudioAiProxyAdapter> logger,
+        TimeProvider? timeProvider = null)
     {
         _httpClientFactory = httpClientFactory;
         _apiKeyResolver = apiKeyResolver;
         _logger = logger;
+        _continuations = new AnthropicContinuationStore(timeProvider ?? TimeProvider.System);
     }
 
     public string Kind => StudioAiProxyConfiguration.AnthropicKind;
@@ -67,10 +70,11 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
             yield return evt;
     }
 
-    public StudioAiHttpInvocation Prepare(StudioAiProxyProviderOptions options, StudioAiChatRequest request)
+    public StudioAiHttpInvocation Prepare(StudioAiProxyProviderOptions options, StudioAiChatRequest request,
+        AiExecutionContext? executionContext = null)
         => new(options, request, "/v1/messages", (snapshot, original, model) =>
-            JsonSerializer.SerializeToUtf8Bytes(BuildRequest(snapshot, original, model),
-                StudioAiProxyJsonContext.Default.AnthropicProxyRequest));
+            JsonSerializer.SerializeToUtf8Bytes(BuildRequest(snapshot, original, model, executionContext ?? original.ExecutionContext),
+                StudioAiProxyJsonContext.Default.AnthropicProxyRequest), executionContext);
 
     public async IAsyncEnumerable<StudioAiChatEvent> StreamPreparedAsync(
         StudioAiHttpInvocation invocation, IAiExecutionPermit permit,
@@ -79,6 +83,7 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
         await permit.EnsureCurrentAsync(cancellationToken).ConfigureAwait(false);
         var options = invocation.CopyOptions();
         var state = new AnthropicStreamState(invocation.Model, _logger);
+        var turn = new AnthropicAssistantTurn();
         string? apiKey = null;
         var credentialUnavailable = false;
         try
@@ -221,40 +226,24 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
                 yield break;
             }
 
-            AnthropicStreamFrame? frame = null;
-            var parseFailed = false;
-            try
-            {
-                frame = JsonSerializer.Deserialize(payload, StudioAiProxyJsonContext.Default.AnthropicStreamFrame);
-            }
-            catch (JsonException ex)
-            {
-                parseFailed = true;
-                StudioAiProxyLog.ProviderResponseParseFailed(_logger, ProviderLabel, ex.GetType().Name);
-            }
-
-            if (parseFailed || frame is null)
+            var frame = ParseFrame(payload);
+            if (frame is null)
             {
                 yield return state.Error("Provider returned a malformed stream frame.", state.Timer.ElapsedMilliseconds,
                     StudioAiStreamGrammarValidator.InvalidStreamCode);
                 yield break;
             }
 
-            string? stoppedContentBlockType = null;
-            if (frame.Type == "content_block_start"
-                && (frame.Index is not { } startIndex
-                    || !state.OpenContentBlocks.TryAdd(startIndex, frame.ContentBlock?.Type ?? string.Empty)))
+            var (trackingError, stoppedContentBlockType) = state.TrackContentBlock(frame);
+            if (trackingError is not null)
             {
-                yield return state.Error("Provider returned an invalid content block start.", state.Timer.ElapsedMilliseconds,
+                yield return state.Error(trackingError, state.Timer.ElapsedMilliseconds,
                     StudioAiStreamGrammarValidator.InvalidStreamCode);
                 yield break;
             }
-
-            if (frame.Type == "content_block_stop"
-                && (frame.Index is not { } stopIndex
-                    || !state.OpenContentBlocks.Remove(stopIndex, out stoppedContentBlockType)))
+            if (!turn.TryAccept(frame, payload))
             {
-                yield return state.Error("Provider returned an unmatched content block stop.", state.Timer.ElapsedMilliseconds,
+                yield return state.Error("Provider continuation exceeded its capture limit.", state.Timer.ElapsedMilliseconds,
                     StudioAiStreamGrammarValidator.InvalidStreamCode);
                 yield break;
             }
@@ -284,8 +273,8 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
                     break;
 
                 case "content_block_start" when frame.ContentBlock?.Type == "text":
-                case "content_block_stop" when stoppedContentBlockType is "text" or "thinking":
-                case "content_block_start" when frame.ContentBlock?.Type == "thinking" && state.SawMessageStart:
+                case "content_block_stop" when stoppedContentBlockType is "text" or "thinking" or "redacted_thinking":
+                case "content_block_start" when frame.ContentBlock?.Type is "thinking" or "redacted_thinking" && state.SawMessageStart:
                 case "ping":
                     break;
 
@@ -293,7 +282,8 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
                     && frame.Index is { } thinkingIndex && state.OpenContentBlocks.GetValueOrDefault(thinkingIndex) == "thinking":
                     break;
 
-                case "content_block_delta" when frame.Index is { } blockIndex && state.OpenContentBlocks.GetValueOrDefault(blockIndex) == "thinking":
+                case "content_block_delta" when frame.Index is { } blockIndex
+                    && state.OpenContentBlocks.GetValueOrDefault(blockIndex) is "thinking" or "redacted_thinking":
                     yield return state.RejectFrame(frame, payload.Length, stoppedContentBlockType);
                     yield break;
 
@@ -379,13 +369,33 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
         {
             yield return state.Error("Provider stream ended before message_stop.", state.Timer.ElapsedMilliseconds);
         }
+        else if (state.StopReason == StudioAiStopReason.ToolCall && !cancellationToken.IsCancellationRequested)
+        {
+            var content = turn.Content();
+            var key = AnthropicContinuationStore.Key(options, invocation.Request, invocation.Model,
+                invocation.ExecutionContext, invocation.Request.Messages.Count, AnthropicAssistantTurn.VisibleMessage(content));
+            _continuations.Save(key, content);
+        }
     }
 
-    private static AnthropicProxyRequest BuildRequest(
+    private AnthropicStreamFrame? ParseFrame(string payload)
+    {
+        try { return JsonSerializer.Deserialize(payload, StudioAiProxyJsonContext.Default.AnthropicStreamFrame); }
+        catch (JsonException exception)
+        {
+            StudioAiProxyLog.ProviderResponseParseFailed(_logger, ProviderLabel, exception.GetType().Name);
+            return null;
+        }
+    }
+
+    private AnthropicProxyRequest BuildRequest(
         StudioAiProxyProviderOptions options,
         StudioAiChatRequest request,
-        string model)
+        string model,
+        AiExecutionContext? executionContext)
     {
+        var currentTurnStart = request.Messages.Select((message, index) => (message, index))
+            .LastOrDefault(item => item.message.Role == StudioAiRole.User).index;
         var proxyRequest = new AnthropicProxyRequest
         {
             Model = model,
@@ -393,11 +403,15 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
             Temperature = request.Temperature,
             System = BuildSystemPrompt(request),
             Messages = request.Messages
-                .Where(m => m.Role != StudioAiRole.System)
-                .Select(m => new AnthropicProxyMessage
+                .Select((message, index) => (Message: message, Index: index))
+                .Where(item => item.Message.Role != StudioAiRole.System)
+                .Select(item => new AnthropicProxyMessage
                 {
-                    Role = m.Role == StudioAiRole.Tool ? "user" : m.Role.ToString().ToLowerInvariant(),
-                    Content = BuildMessageContent(m)
+                    Role = item.Message.Role == StudioAiRole.Tool ? "user" : item.Message.Role.ToString().ToLowerInvariant(),
+                    Content = item.Message is { Role: StudioAiRole.Assistant, ToolCalls.Count: > 0 }
+                        ? _continuations.Restore(AnthropicContinuationStore.Key(options, request, model,
+                            executionContext, item.Index, item.Message), item.Index >= currentTurnStart) ?? BuildMessageContent(item.Message)
+                        : BuildMessageContent(item.Message)
                 })
                 .ToArray()
         };
@@ -512,6 +526,18 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
 
     private sealed class AnthropicStreamState(string model, ILogger<AnthropicStudioAiProxyAdapter> logger)
     {
+        public (string? Error, string? StoppedType) TrackContentBlock(AnthropicStreamFrame frame)
+        {
+            if (frame.Type == "content_block_start"
+                && (frame.Index is not { } startIndex || !OpenContentBlocks.TryAdd(startIndex, frame.ContentBlock?.Type ?? string.Empty)))
+                return ("Provider returned an invalid content block start.", null);
+            string? stoppedType = null;
+            if (frame.Type == "content_block_stop"
+                && (frame.Index is not { } stopIndex || !OpenContentBlocks.Remove(stopIndex, out stoppedType)))
+                return ("Provider returned an unmatched content block stop.", null);
+            return (null, stoppedType);
+        }
+
         public Stopwatch Timer { get; } = new();
         public int? PromptTokens { get; set; }
         public int? CompletionTokens { get; set; }

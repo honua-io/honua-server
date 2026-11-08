@@ -216,16 +216,24 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
     [UnitTest]
     public async Task StreamAsync_AssistantToolCallAndResult_UsesAnthropicWireShape()
     {
-        var handler = new StudioAiProxyMockHttpMessageHandler(TextTurnFixture);
+        var handler = new StudioAiProxySequenceHttpMessageHandler(
+            () => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(ToolCallFixture.Replace("toolu_1", "toolu_123", StringComparison.Ordinal)) },
+            () => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(TextTurnFixture) });
         var adapter = new AnthropicStudioAiProxyAdapter(
             new StudioAiProxyMockHttpClientFactory(handler),
             new StudioAiProxyApiKeyResolver(),
             NullLogger<AnthropicStudioAiProxyAdapter>.Instance);
+        var first = new StudioAiChatRequest
+        {
+            ExecutionContext = RecordingAiAdmission.Context(), Messages = ToolRequest().Messages, Tools = ToolRequest().Tools
+        };
+        await CollectAsync(adapter, first);
         var request = new StudioAiChatRequest
         {
             ExecutionContext = RecordingAiAdmission.Context(),
             Messages =
             [
+                first.Messages[0],
                 new StudioAiMessage
                 {
                     Role = StudioAiRole.Assistant,
@@ -255,11 +263,11 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
 
         using var payload = JsonDocument.Parse(handler.CapturedRequestBody!);
         var messages = payload.RootElement.GetProperty("messages");
-        var replayedCall = messages[0].GetProperty("content")[0];
+        var replayedCall = messages[1].GetProperty("content")[0];
         replayedCall.GetProperty("type").GetString().Should().Be("tool_use");
         replayedCall.GetProperty("id").GetString().Should().Be("toolu_123");
         replayedCall.GetProperty("input").GetProperty("status").GetString().Should().Be("open");
-        var result = messages[1].GetProperty("content")[0];
+        var result = messages[2].GetProperty("content")[0];
         result.GetProperty("type").GetString().Should().Be("tool_result");
         result.GetProperty("tool_use_id").GetString().Should().Be("toolu_123");
     }
