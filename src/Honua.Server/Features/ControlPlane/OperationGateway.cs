@@ -442,21 +442,21 @@ internal sealed partial class OperationGateway : IOperationGateway
         };
 
         using var completionTimeout = new CancellationTokenSource(CompletionPersistenceTimeout);
+        await PersistResolutionAsync(resolved, OperationProposalStatus.Executing, completionTimeout.Token).ConfigureAwait(false);
         if (!approvalAuditRecorded)
         {
             await PersistCanonicalResolutionAsync(resolved, OperationHandleStatus.Failed, completionTimeout.Token)
                 .ConfigureAwait(false);
         }
-        await PersistApprovedResolutionAsync(resolved, approvedBy, completionTimeout.Token).ConfigureAwait(false);
+        await PublishApprovedResolutionAsync(resolved, approvedBy, completionTimeout.Token).ConfigureAwait(false);
         return resolved;
     }
 
-    private async Task PersistApprovedResolutionAsync(
+    private async Task PublishApprovedResolutionAsync(
         OperationProposal resolved,
         string approvedBy,
         CancellationToken cancellationToken)
     {
-        await PersistResolutionAsync(resolved, OperationProposalStatus.Executing, cancellationToken).ConfigureAwait(false);
         await RecordAutonomyProposalResolutionAsync(
                 resolved,
                 OpsAutonomyProposalResolution.Approved,
