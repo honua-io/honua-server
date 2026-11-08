@@ -191,7 +191,7 @@ new dialect.
 ### Snowflake — already shipped; reconcile the parking-lot stance
 
 #951 lists Snowflake as parked ("no Snowflake support now"), but a **read-only
-Snowflake provider already shipped** under #1713 (`src/Honua.Snowflake/`,
+Snowflake provider already shipped** under #1713 (`src/Honua.Db/Snowflake/`,
 `docs/reference/configuration/data-sources/snowflake.md`). It supports native
 `GEOGRAPHY`/`GEOMETRY` via `ST_ASWKB`, the same read/spatial-filter/paging
 surface as Redshift, Entra-independent connection-string auth (account / user /
@@ -260,7 +260,7 @@ Official docs reviewed (issue #950 source seeds):
 Codebase grounding: ADR-0025 (multi-provider operation architecture),
 ADR-0035 (provider-ready data source binding); provider seam under
 `src/Honua.Core(.Abstractions)/Features/FeatureStore/`; shipped warehouse
-providers `src/Honua.Db/Redshift/`, `src/Honua.Snowflake/`, `src/Honua.Db/Databricks/`
+providers `src/Honua.Db/Redshift/`, `src/Honua.Db/Snowflake/`, `src/Honua.Db/Databricks/`
 and their docs under `docs/reference/configuration/data-sources/`.
 </content>
 </invoke>

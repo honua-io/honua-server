@@ -42,9 +42,9 @@ COPY src/Honua.Db/DuckDB/*.csproj src/Honua.Db/DuckDB/
 COPY src/Honua.Db/SqlServer/*.csproj src/Honua.Db/SqlServer/
 COPY src/Honua.Db/MySql/*.csproj src/Honua.Db/MySql/
 COPY src/Honua.Db/Redshift/*.csproj src/Honua.Db/Redshift/
-COPY src/Honua.Snowflake/*.csproj src/Honua.Snowflake/
+COPY src/Honua.Db/Snowflake/*.csproj src/Honua.Db/Snowflake/
 COPY src/Honua.Db/Databricks/*.csproj src/Honua.Db/Databricks/
-COPY src/Honua.GeoServicesRest/*.csproj src/Honua.GeoServicesRest/
+COPY src/Honua.Db/GeoServicesRest/*.csproj src/Honua.Db/GeoServicesRest/
 COPY src/Honua.Db/Oracle/*.csproj src/Honua.Db/Oracle/
 COPY src/Honua.Hosting/*.csproj src/Honua.Hosting/
 COPY src/Honua.Jobs/*.csproj src/Honua.Jobs/

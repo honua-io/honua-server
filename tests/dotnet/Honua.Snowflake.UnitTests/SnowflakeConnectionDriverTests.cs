@@ -4,10 +4,10 @@
 using System.Data.Common;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
-using Honua.Snowflake.Features.Security;
+using Honua.Db.Snowflake.Features.Security;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Honua.Snowflake.Tests;
+namespace Honua.Db.Snowflake.Tests;
 
 /// <summary>
 /// SEC-23: the Snowflake connection string carries exactly the account, user, password and
