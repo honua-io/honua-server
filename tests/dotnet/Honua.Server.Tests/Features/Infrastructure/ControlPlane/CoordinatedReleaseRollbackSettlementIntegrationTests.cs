@@ -305,7 +305,7 @@ public sealed class CoordinatedReleaseRollbackSettlementIntegrationTests(ITestOu
             if (operation.Status == WorkflowOperationStatus.AwaitingApproval)
             {
                 await CoordinatedGateTestApproval.ApproveAsync(store, operation);
-                await ledger.CaptureAsync(store, operationId, $"approved-{operation.CoordinatedRelease.CurrentStep}");
+                await ledger.CaptureAsync(store, operationId, $"approved-{operation.CoordinatedRelease!.CurrentStep}");
                 continue;
             }
 

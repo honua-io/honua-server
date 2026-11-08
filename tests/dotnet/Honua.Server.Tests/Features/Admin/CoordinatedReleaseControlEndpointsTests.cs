@@ -80,7 +80,7 @@ public sealed partial class CoordinatedReleaseControlEndpointsTests : IAsyncLife
     {
         _human?.Dispose();
         try { await _fixture.DisposeAsync(); }
-        finally { _identity.Dispose(); _sharedSessions.Dispose(); }
+        finally { _identity.Dispose(); }
     }
 
     [IntegrationTest]
