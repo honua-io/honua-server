@@ -209,6 +209,7 @@ internal static class ContractVersionsStartupCheck
         {
             ["operation-initiation"] = "v" + OperationInitiationEvidence.CurrentVersion.ToString(CultureInfo.InvariantCulture),
             ["operation-human-approval"] = "v" + OperationHumanApprovalEvidence.CurrentVersion.ToString(CultureInfo.InvariantCulture),
+            ["coordinated-release-human-approval"] = "v" + CoordinatedReleaseHumanApproval.CurrentVersion.ToString(CultureInfo.InvariantCulture),
         };
         Validate(declared.Where(entry => required.ContainsKey(entry.Key))
             .ToDictionary(entry => entry.Key, entry => entry.Value, StringComparer.Ordinal), required);

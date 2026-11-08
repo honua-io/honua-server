@@ -170,16 +170,11 @@ public sealed class ControlPlane5625Tests
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<CancellationToken>())
             .Returns(true);
-        var service = new CoordinatedReleaseControlService([store]);
-
-        var approved = await service.ApproveGateAsync(
-            operation.OperationId,
-            CoordinatedReleaseStep.ContainerRollout,
-            "approver",
-            "ship it");
+        var approved = await CoordinatedGateTestApproval.ApproveAsync(store, operation, "ship it");
 
         approved!.Audit.RequestedBy.Should().Be("requester");
-        approved.CoordinatedRelease!.GateApprovedBy.Should().Be("approver");
+        approved.CoordinatedRelease!.GateApprovedBy.Should().Be(approved.CoordinatedRelease.ContainerHumanApproval!.ActorId);
+        approved.CoordinatedRelease.ContainerHumanApproval.ActorId.Should().NotBeNullOrWhiteSpace();
         approved.Status.Should().Be(WorkflowOperationStatus.Reconciling);
         written!.Audit.RequestedBy.Should().Be("requester");
     }

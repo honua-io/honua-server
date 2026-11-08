@@ -16,6 +16,61 @@ namespace Honua.Server.Tests.Features.Admin;
 public sealed partial class CoordinatedReleaseControlEndpointsTests
 {
     [IntegrationTheory]
+    [Endpoint("GET /api/v1/admin/metadata/coordinated-releases/operations/{operationId}/approval-review/{gate}")]
+    [Endpoint("POST /api/v1/admin/metadata/coordinated-releases/operations/{operationId}/approve/{gate}")]
+    [InlineData(CoordinatedReleaseStep.ContainerRollout, "container")]
+    [InlineData(CoordinatedReleaseStep.MetadataAndSchema, "data")]
+    public async Task ApproveGate_ConcurrentHumanReviews_OnlyOneVersionWins(CoordinatedReleaseStep gate, string route)
+    {
+        var operation = await PrepareHumanGateAsync(gate);
+        using var human = await HumanApprovalHttpClient.AuthenticateAsync(_fixture, _identity);
+        var first = await human.OpenGateReviewAsync(operation.OperationId, route);
+        var second = await human.OpenGateReviewAsync(operation.OperationId, route);
+        first.Plan.MetadataPlan.Should().BeEquivalentTo(operation.CoordinatedRelease!.MetadataPlan);
+        first.Review.WorkflowVersion.Should().Be(operation.Version);
+        first.Review.PlanHash.Should().Be(CoordinatedReleaseApprovalBinding.ComputePlanHash(operation, gate));
+
+        var responses = await Task.WhenAll(human.SubmitGateReviewAsync(operation.OperationId, route, first),
+            human.SubmitGateReviewAsync(operation.OperationId, route, second));
+        try
+        {
+            responses.Count(response => response.StatusCode == HttpStatusCode.OK).Should().Be(1);
+            responses.Count(response => response.IsSuccessStatusCode).Should().Be(1);
+        }
+        finally
+        {
+            foreach (var response in responses) response.Dispose();
+        }
+        var stored = (await _workflowStore.GetAsync(operation.OperationId))!;
+        stored.Version.Should().Be(operation.Version + 1);
+        CoordinatedReleaseApprovalBinding.HasExecutionAuthority(stored, gate).Should().BeTrue();
+        _container.StartCalls.Should().Be(0);
+        _metadata.StartCalls.Should().Be(0);
+    }
+
+    [IntegrationTheory]
+    [Endpoint("GET /api/v1/admin/metadata/coordinated-releases/operations/{operationId}/approval-review/{gate}")]
+    [Endpoint("POST /api/v1/admin/metadata/coordinated-releases/operations/{operationId}/approve/{gate}")]
+    [InlineData(CoordinatedReleaseStep.ContainerRollout, "container")]
+    [InlineData(CoordinatedReleaseStep.MetadataAndSchema, "data")]
+    public async Task ApproveGate_ApprovalPersistenceFails_StartsNeitherChild(CoordinatedReleaseStep gate, string route)
+    {
+        var operation = await PrepareHumanGateAsync(gate);
+        using var human = await HumanApprovalHttpClient.AuthenticateAsync(_fixture, _identity);
+        var review = await human.OpenGateReviewAsync(operation.OperationId, route);
+        _workflowStore.RefuseWrites = true;
+
+        using var response = await human.SubmitGateReviewAsync(operation.OperationId, route, review);
+
+        response.IsSuccessStatusCode.Should().BeFalse();
+        (await _workflowStore.GetAsync(operation.OperationId)).Should().BeEquivalentTo(operation);
+        await _fixture.Services.GetRequiredService<ICoordinatedReleaseReconciler>()
+            .ReconcileCoordinatedReleaseAsync(operation.OperationId);
+        _container.StartCalls.Should().Be(0);
+        _metadata.StartCalls.Should().Be(0);
+    }
+
+    [IntegrationTheory]
     [Endpoint("POST /api/v1/admin/metadata/coordinated-releases/operations/{operationId}/approve/{gate}")]
     [InlineData(CoordinatedReleaseStep.ContainerRollout, "container")]
     [InlineData(CoordinatedReleaseStep.MetadataAndSchema, "data")]

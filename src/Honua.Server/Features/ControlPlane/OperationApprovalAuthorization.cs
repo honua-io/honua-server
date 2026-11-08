@@ -39,26 +39,31 @@ internal sealed class OperationApprovalAuthorization(
     }
 
     public static bool PermitsOperationScope(ClaimsPrincipal principal, OperationProposal proposal)
+        => PermitsOperationScope(principal, proposal.Kind, proposal.OperationId,
+            proposal.ActionDiscriminator ?? proposal.AutonomyMetadata?.ActionDiscriminator);
+
+    public static bool PermitsOperationScope(
+        ClaimsPrincipal principal, OperationClass kind, string? operationId, string? actionDiscriminator)
     {
         if (!OperatorScopeCatalog.IsScopeGoverned(principal))
         {
             return true;
         }
 
-        var legacyId = proposal.Kind is OperationClass.Deploy or OperationClass.Seed
+        var legacyId = kind is OperationClass.Deploy or OperationClass.Seed
             or OperationClass.AdminConfigChange or OperationClass.MetadataRelease
             or OperationClass.Geoprocess or OperationClass.ServicePublish
-            ? LegacyOperationIds.For(proposal.Kind)
+            ? LegacyOperationIds.For(kind)
             : null;
-        var operationId = proposal.OperationId ?? legacyId ?? string.Empty;
+        operationId ??= legacyId ?? string.Empty;
         var request = new OperationRequest
         {
             OperationId = operationId,
             GatewayRequest = legacyId is not null && string.Equals(operationId, legacyId, StringComparison.Ordinal)
                 ? new OperationGatewayRequest
                 {
-                    Kind = proposal.Kind,
-                    ActionDiscriminator = proposal.ActionDiscriminator ?? proposal.AutonomyMetadata?.ActionDiscriminator,
+                    Kind = kind,
+                    ActionDiscriminator = actionDiscriminator,
                 }
                 : null,
         };

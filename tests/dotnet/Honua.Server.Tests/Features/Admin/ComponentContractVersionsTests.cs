@@ -63,6 +63,8 @@ public sealed class ComponentContractVersionsTests
     [InlineData("operation-initiation", true)]
     [InlineData("operation-human-approval", false)]
     [InlineData("operation-human-approval", true)]
+    [InlineData("coordinated-release-human-approval", false)]
+    [InlineData("coordinated-release-human-approval", true)]
     public void ApprovalSchemas_MissingOrStaleDeclaration_RefusesStartup(string name, bool missing)
     {
         var declared = ComponentVersionsDeclaration.Embedded.SchemaVersions.ToDictionary(

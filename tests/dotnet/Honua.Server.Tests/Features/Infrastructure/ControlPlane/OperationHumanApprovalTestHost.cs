@@ -96,6 +96,23 @@ internal sealed class OperationHumanApprovalTestHost : IDisposable
         Context.Request.Headers[OperationHumanApprovalAuthority.CapabilityHeader] = review.Capability;
     }
 
+    public void GateReviewRequest(ApprovalTestHuman human, WorkflowOperationRecord operation)
+    {
+        SetRequest(human, AdminHumanApprovalEndpointMetadata.Review);
+        _services.GetRequiredService<RequestTenantContext>().Set(operation.Audit.TenantId, TenantContextSource.Claim);
+        var gate = operation.CoordinatedRelease!.CurrentStep == CoordinatedReleaseStep.ContainerRollout ? "container" : "data";
+        Context.Request.Path = $"/api/v1/admin/metadata/coordinated-releases/operations/{operation.OperationId}/approval-review/{gate}";
+    }
+
+    public void GateApproveRequest(ApprovalTestHuman human, WorkflowOperationRecord operation, CoordinatedReleaseHumanReview review)
+    {
+        SetRequest(human, AdminHumanApprovalEndpointMetadata.Approve);
+        _services.GetRequiredService<RequestTenantContext>().Set(operation.Audit.TenantId, TenantContextSource.Claim);
+        var gate = operation.CoordinatedRelease!.CurrentStep == CoordinatedReleaseStep.ContainerRollout ? "container" : "data";
+        Context.Request.Path = $"/api/v1/admin/metadata/coordinated-releases/operations/{operation.OperationId}/approve/{gate}";
+        Context.Request.Headers[OperationHumanApprovalAuthority.CapabilityHeader] = review.Capability;
+    }
+
     public static OperationProposalApprovalContext Approval(ApprovalTestHuman human) => new()
     {
         ApprovedBy = CanonicalSecurityActor.Resolve(human.Principal)!.ActorId,

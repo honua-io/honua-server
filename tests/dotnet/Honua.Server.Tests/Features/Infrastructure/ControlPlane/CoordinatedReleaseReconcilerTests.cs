@@ -210,8 +210,7 @@ public sealed class CoordinatedReleaseReconcilerTests
             pending = await store.GetAsync(operation.OperationId);
             if (pending!.Status == WorkflowOperationStatus.AwaitingApproval)
             {
-                var service = new CoordinatedReleaseControlService([(IWorkflowOperationStore)store]);
-                await service.ApproveGateAsync(operation.OperationId, pending.CoordinatedRelease!.CurrentStep, "operator", "approved", default);
+                await CoordinatedGateTestApproval.ApproveAsync(store, pending);
             }
 
             var containerState = pending.CoordinatedRelease!.Steps.Single(s => s.Step == CoordinatedReleaseStep.ContainerRollout);
@@ -347,7 +346,6 @@ public sealed class CoordinatedReleaseReconcilerTests
         CoordinatedReleaseReconciler reconciler,
         bool autoApprove)
     {
-        var service = new CoordinatedReleaseControlService(new[] { (IWorkflowOperationStore)store });
         for (var i = 0; i < 40; i++)
         {
             await reconciler.ReconcileCoordinatedReleaseAsync(operationId);
@@ -359,7 +357,7 @@ public sealed class CoordinatedReleaseReconcilerTests
 
             if (autoApprove && op.Status == WorkflowOperationStatus.AwaitingApproval)
             {
-                await service.ApproveGateAsync(operationId, op.CoordinatedRelease!.CurrentStep, "operator", "approved", default);
+                await CoordinatedGateTestApproval.ApproveAsync(store, op);
                 continue;
             }
 
@@ -380,7 +378,6 @@ public sealed class CoordinatedReleaseReconcilerTests
         string operationId,
         CoordinatedReleaseReconciler reconciler)
     {
-        var service = new CoordinatedReleaseControlService(new[] { (IWorkflowOperationStore)store });
         for (var i = 0; i < 40; i++)
         {
             try
@@ -401,7 +398,7 @@ public sealed class CoordinatedReleaseReconcilerTests
 
             if (op.Status == WorkflowOperationStatus.AwaitingApproval)
             {
-                await service.ApproveGateAsync(operationId, op.CoordinatedRelease!.CurrentStep, "operator", "approved", default);
+                await CoordinatedGateTestApproval.ApproveAsync(store, op);
                 continue;
             }
 
@@ -560,8 +557,9 @@ public sealed class CoordinatedReleaseReconcilerTests
 
         public Task<bool> TrySetAsync(WorkflowOperationRecord operation, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
         {
-            _operations[operation.OperationId] = operation;
-            return Task.FromResult(true);
+            if (!_operations.TryGetValue(operation.OperationId, out var current) || current.Version != operation.Version)
+                return Task.FromResult(false);
+            return Task.FromResult(_operations.TryUpdate(operation.OperationId, operation with { Version = operation.Version + 1 }, current));
         }
 
         public Task<IReadOnlyList<WorkflowOperationRecord>> ListActiveAsync(WorkflowOperationKind? kind = null, CancellationToken cancellationToken = default)

@@ -52,8 +52,8 @@ internal sealed partial class CoordinatedReleaseReconciler(
 
             if (!ReferenceEquals(updated, operation) && !Equals(updated, operation))
             {
-                await workflowStore.SetAsync(updated, cancellationToken: token).ConfigureAwait(false);
-                Log.CoordinatedReleaseReconciled(logger, operationId, updated.CoordinatedRelease!.CurrentStep.ToString(), updated.Status.ToString());
+                if (await workflowStore.TrySetAsync(updated, cancellationToken: token).ConfigureAwait(false))
+                    Log.CoordinatedReleaseReconciled(logger, operationId, updated.CoordinatedRelease!.CurrentStep.ToString(), updated.Status.ToString());
             }
         }
         catch (OperationCanceledException) when (reconciliationCancellation.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
@@ -128,8 +128,7 @@ internal sealed partial class CoordinatedReleaseReconciler(
     {
         var context = operation.CoordinatedRelease!;
 
-        // Gate at the container-swap boundary: require explicit approval before submitting the rollout.
-        if (context.Container.RequiresExplicitApproval && !context.ContainerGateApproved)
+        if (!CoordinatedReleaseApprovalBinding.HasExecutionAuthority(operation, CoordinatedReleaseStep.ContainerRollout))
         {
             return AwaitApproval(operation, CoordinatedReleaseStep.ContainerRollout,
                 "Awaiting explicit approval to swap the running container image.");
@@ -169,8 +168,7 @@ internal sealed partial class CoordinatedReleaseReconciler(
     {
         var context = operation.CoordinatedRelease!;
 
-        // Gate at the data-affecting boundary: require explicit approval before mutating schema/metadata.
-        if (!context.DataGateApproved)
+        if (!CoordinatedReleaseApprovalBinding.HasExecutionAuthority(operation, CoordinatedReleaseStep.MetadataAndSchema))
         {
             return AwaitApproval(operation, CoordinatedReleaseStep.MetadataAndSchema,
                 "Awaiting explicit approval to apply the DB schema change and activate the new metadata revision.");

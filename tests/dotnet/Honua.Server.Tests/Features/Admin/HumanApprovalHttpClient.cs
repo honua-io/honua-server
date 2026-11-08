@@ -87,6 +87,30 @@ internal sealed class HumanApprovalHttpClient(HttpClient client, string actorId)
     public async Task<HttpResponseMessage> ApproveAsync(string proposalId) =>
         await SubmitReviewAsync(proposalId, await OpenReviewAsync(proposalId));
 
+    public async Task<HttpResponseMessage> ApproveGateAsync(string workflowId, string gate)
+        => await SubmitGateReviewAsync(workflowId, gate, await OpenGateReviewAsync(workflowId, gate));
+
+    public async Task<CoordinatedReleaseHumanReviewResponse> OpenGateReviewAsync(string workflowId, string gate)
+    {
+        using var response = await Client.GetAsync(
+            $"/api/v1/admin/metadata/coordinated-releases/operations/{workflowId}/approval-review/{gate}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.CacheControl!.NoStore.Should().BeTrue();
+        var snapshot = await response.Content.ReadFromJsonAsync(
+            CoordinatedReleaseJsonContext.Default.CoordinatedReleaseHumanReviewResponse);
+        snapshot!.Review.WorkflowId.Should().Be(workflowId);
+        return snapshot;
+    }
+
+    public async Task<HttpResponseMessage> SubmitGateReviewAsync(
+        string workflowId, string gate, CoordinatedReleaseHumanReviewResponse snapshot)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            $"/api/v1/admin/metadata/coordinated-releases/operations/{workflowId}/approve/{gate}");
+        request.Headers.Add(OperationHumanApprovalAuthority.CapabilityHeader, snapshot.Review.Capability);
+        return await Client.SendAsync(request);
+    }
+
     public async Task<HttpResponseMessage> SubmitReviewAsync(
         string proposalId, OperationHumanApprovalReview review, CancellationToken cancellationToken = default)
     {

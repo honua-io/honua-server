@@ -21,8 +21,9 @@ internal sealed class OperationHumanApprovalCapability
     public required int Version { get; init; }
     public required string Decision { get; init; }
     public required string Audience { get; init; }
-    public required string ProposalId { get; init; }
-    public required long ProposalVersion { get; init; }
+    public required string TargetKind { get; init; }
+    public required string TargetId { get; init; }
+    public required long TargetVersion { get; init; }
     public required string BindingDigest { get; init; }
     public required string ActorId { get; init; }
     public required string? TenantId { get; init; }

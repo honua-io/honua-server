@@ -32,12 +32,14 @@ public sealed partial class CoordinatedReleaseControlEndpointsTests : IAsyncLife
     private readonly InMemoryWorkflowOperationStore _workflowStore = new();
     private readonly FakeContainerStep _container = new();
     private readonly FakeMetadataStep _metadata = new();
+    private readonly AdminAuthEndpointsTests.StubHttpClientFactory _identity = new();
     private readonly WebAppFixture _fixture;
     private HttpClient _client = null!;
+    private HumanApprovalHttpClient? _human;
 
     public CoordinatedReleaseControlEndpointsTests()
     {
-        _fixture = new WebAppFixture()
+        _fixture = HumanApprovalHttpClient.Configure(new WebAppFixture(), _identity)
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IWorkflowOperationStore>();
@@ -60,7 +62,11 @@ public sealed partial class CoordinatedReleaseControlEndpointsTests : IAsyncLife
         _client = _fixture.CreateAdminClient();
     }
 
-    public Task DisposeAsync() => _fixture.DisposeAsync();
+    public async Task DisposeAsync()
+    {
+        _human?.Dispose();
+        await _fixture.DisposeAsync();
+    }
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/metadata/coordinated-releases/operations")]
@@ -153,9 +159,7 @@ public sealed partial class CoordinatedReleaseControlEndpointsTests : IAsyncLife
             {
                 var step = root.GetProperty("currentStep").GetString();
                 var gate = step == "ContainerRollout" ? "container" : "data";
-                var approve = await _client.PostAsJsonAsync(
-                    $"/api/v1/admin/metadata/coordinated-releases/operations/{operationId}/approve/{gate}",
-                    new { reason = "approved" });
+                using var approve = await ApproveGateAsHumanAsync(operationId, gate);
                 approve.StatusCode.Should().Be(HttpStatusCode.OK);
                 continue;
             }
@@ -189,9 +193,8 @@ public sealed partial class CoordinatedReleaseControlEndpointsTests : IAsyncLife
             if (root.GetProperty("status").GetString() == "AwaitingApproval" &&
                 root.GetProperty("currentStep").GetString() == "ContainerRollout")
             {
-                await _client.PostAsJsonAsync(
-                    $"/api/v1/admin/metadata/coordinated-releases/operations/{operationId}/approve/container",
-                    new { reason = "approved" });
+                using var approve = await ApproveGateAsHumanAsync(operationId, "container");
+                approve.StatusCode.Should().Be(HttpStatusCode.OK);
                 break;
             }
         }
@@ -229,9 +232,8 @@ public sealed partial class CoordinatedReleaseControlEndpointsTests : IAsyncLife
             {
                 var step = root.GetProperty("currentStep").GetString();
                 var gate = step == "ContainerRollout" ? "container" : "data";
-                await _client.PostAsJsonAsync(
-                    $"/api/v1/admin/metadata/coordinated-releases/operations/{operationId}/approve/{gate}",
-                    new { reason = "approved" });
+                using var approve = await ApproveGateAsHumanAsync(operationId, gate);
+                approve.StatusCode.Should().Be(HttpStatusCode.OK);
                 continue;
             }
 
@@ -248,6 +250,12 @@ public sealed partial class CoordinatedReleaseControlEndpointsTests : IAsyncLife
         root.GetProperty("status").GetString().Should().Be("ManualInterventionRequired");
         _container.RollbackCalls.Should().Be(0);
         _metadata.RollbackCalls.Should().Be(1);
+    }
+
+    private async Task<HttpResponseMessage> ApproveGateAsHumanAsync(string workflowId, string gate)
+    {
+        _human ??= await HumanApprovalHttpClient.AuthenticateAsync(_fixture, _identity);
+        return await _human.ApproveGateAsync(workflowId, gate);
     }
 
     private Task<HttpResponseMessage> CreateAsync(string packageId)
@@ -317,6 +325,7 @@ public sealed partial class CoordinatedReleaseControlEndpointsTests : IAsyncLife
 
     private sealed class InMemoryWorkflowOperationStore : IWorkflowOperationStore
     {
+        public bool RefuseWrites { get; set; }
         private readonly ConcurrentDictionary<string, WorkflowOperationRecord> _operations = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, string> _leases = new(StringComparer.Ordinal);
 
@@ -349,8 +358,10 @@ public sealed partial class CoordinatedReleaseControlEndpointsTests : IAsyncLife
 
         public Task<bool> TrySetAsync(WorkflowOperationRecord operation, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
         {
-            _operations[operation.OperationId] = operation;
-            return Task.FromResult(true);
+            if (RefuseWrites) return Task.FromResult(false);
+            if (!_operations.TryGetValue(operation.OperationId, out var current) || current.Version != operation.Version)
+                return Task.FromResult(false);
+            return Task.FromResult(_operations.TryUpdate(operation.OperationId, operation with { Version = operation.Version + 1 }, current));
         }
 
         public Task<IReadOnlyList<WorkflowOperationRecord>> ListActiveAsync(WorkflowOperationKind? kind = null, CancellationToken cancellationToken = default)

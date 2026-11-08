@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -20,7 +21,7 @@ using Microsoft.AspNetCore.DataProtection;
 
 namespace Honua.ControlPlane;
 
-internal sealed class OperationHumanApprovalAuthority(
+internal sealed partial class OperationHumanApprovalAuthority(
     IServiceScopeFactory scopes,
     IDataProtectionProvider protection,
     IConfiguration configuration,
@@ -35,112 +36,116 @@ internal sealed class OperationHumanApprovalAuthority(
     public async Task<OperationHumanApprovalReview> OpenReviewAsync(
         OperationProposal proposal, HttpContext context)
     {
-        if (!ReferenceEquals(context, requestContext.HttpContext)
-            || context.GetEndpoint()?.Metadata.GetMetadata<AdminHumanApprovalEndpointMetadata>() != AdminHumanApprovalEndpointMetadata.Review
-            || !HttpMethods.IsGet(context.Request.Method))
-        {
-            throw new HumanApprovalRequiredException();
-        }
-        RefuseNonHumanTransport(context);
         ValidateBoundProposal(proposal);
-        var tenant = context.RequestServices.GetService<Honua.Core.Features.MultiTenancy.Abstractions.ITenantContext>()?.TenantId;
-        if (!string.Equals(proposal.TenantId, tenant, StringComparison.Ordinal))
-        {
-            throw new HumanApprovalRequiredException();
-        }
-
-        var human = await LoadHumanAsync(
-            context.Request.Cookies[AdminAuthSessionStore.AuthSessionCookieName], proposal, context.RequestAborted)
-            .ConfigureAwait(false);
-        if (CanonicalSecurityActor.Resolve(context.User)?.ActorId != human.ActorId) throw new HumanApprovalRequiredException();
-        var now = timeProvider.GetUtcNow();
-        var expiresAt = now + CapabilityLifetime;
-        if (human.ExpiresAt < expiresAt) expiresAt = human.ExpiresAt;
-        if (proposal.Evidence is { } evidence && evidence.ExpiresAt < expiresAt) expiresAt = evidence.ExpiresAt;
-        if (expiresAt <= now) throw new HumanApprovalRequiredException();
-
-        var capability = new OperationHumanApprovalCapability
-        {
-            Version = OperationHumanApprovalEvidence.CurrentVersion,
-            Decision = "approve",
-            Audience = ResolveAudience(),
-            ProposalId = proposal.ProposalId,
-            ProposalVersion = proposal.Version,
-            BindingDigest = ComputeBindingDigest(proposal),
-            ActorId = human.ActorId,
-            TenantId = proposal.TenantId,
-            SessionReference = human.SessionReference,
-            ClaimsDigest = human.ClaimsDigest,
-            Nonce = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)),
-            IssuedAt = now,
-            ExpiresAt = expiresAt,
-        };
+        var grant = await OpenCapabilityAsync(ProposalTarget(proposal), context).ConfigureAwait(false);
         return new OperationHumanApprovalReview
         {
             ProposalId = proposal.ProposalId,
             ProposalVersion = proposal.Version,
             PlanHash = proposal.SealedPlanHash!,
-            ExpiresAt = expiresAt,
-            Capability = _protector.Protect(JsonSerializer.Serialize(
-                capability, OperationHumanApprovalJsonContext.Default.OperationHumanApprovalCapability)),
+            ExpiresAt = grant.ExpiresAt,
+            Capability = grant.Capability,
         };
     }
 
     public async Task<OperationHumanApprovalEvidence> VerifyAsync(
         OperationProposal proposal, OperationProposalApprovalContext approval, CancellationToken cancellationToken = default)
     {
+        ValidateBoundProposal(proposal);
+        var verified = await VerifyCapabilityAsync(
+            ProposalTarget(proposal), approval, cancellationToken).ConfigureAwait(false);
+        return new OperationHumanApprovalEvidence
+        {
+            Version = OperationHumanApprovalEvidence.CurrentVersion,
+            ActorId = verified.ActorId,
+            Channel = OperationHumanApprovalEvidence.InteractiveOidcChannel,
+            SessionReference = verified.SessionReference,
+            CapabilityReference = verified.CapabilityReference,
+            PlanHash = proposal.SealedPlanHash!,
+            InitiationDigest = ComputeInitiationDigest(proposal.Initiation!),
+            BindingDigest = ComputeBindingDigest(proposal),
+            ProposalVersion = proposal.Version,
+            ApprovedAt = verified.ApprovedAt,
+        };
+    }
+
+    private async Task<HumanApprovalGrant> OpenCapabilityAsync(HumanApprovalTarget target, HttpContext context)
+    {
+        if (!ReferenceEquals(context, requestContext.HttpContext)
+            || context.GetEndpoint()?.Metadata.GetMetadata<AdminHumanApprovalEndpointMetadata>() != AdminHumanApprovalEndpointMetadata.Review
+            || !HttpMethods.IsGet(context.Request.Method))
+            throw new HumanApprovalRequiredException();
+        RefuseNonHumanTransport(context);
+        var tenant = context.RequestServices.GetService<ITenantContext>()?.TenantId;
+        if (!string.Equals(target.TenantId, tenant, StringComparison.Ordinal))
+            throw new HumanApprovalRequiredException();
+        var human = await LoadHumanAsync(context.Request.Cookies[AdminAuthSessionStore.AuthSessionCookieName],
+            target, context.RequestAborted).ConfigureAwait(false);
+        if (CanonicalSecurityActor.Resolve(context.User)?.ActorId != human.ActorId)
+            throw new HumanApprovalRequiredException();
+        var now = timeProvider.GetUtcNow();
+        var expiresAt = now + CapabilityLifetime;
+        if (human.ExpiresAt < expiresAt) expiresAt = human.ExpiresAt;
+        if (target.ExpiresAt is { } targetExpiry && targetExpiry < expiresAt) expiresAt = targetExpiry;
+        if (expiresAt <= now) throw new HumanApprovalRequiredException();
+        var capability = new OperationHumanApprovalCapability
+        {
+            Version = OperationHumanApprovalEvidence.CurrentVersion,
+            Decision = "approve",
+            Audience = ResolveAudience(),
+            TargetKind = target.Kind,
+            TargetId = target.Id,
+            TargetVersion = target.Version,
+            BindingDigest = target.BindingDigest,
+            ActorId = human.ActorId,
+            TenantId = target.TenantId,
+            SessionReference = human.SessionReference,
+            ClaimsDigest = human.ClaimsDigest,
+            Nonce = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)),
+            IssuedAt = now,
+            ExpiresAt = expiresAt,
+        };
+        return new HumanApprovalGrant(expiresAt, _protector.Protect(JsonSerializer.Serialize(
+            capability, OperationHumanApprovalJsonContext.Default.OperationHumanApprovalCapability)));
+    }
+
+    private async Task<VerifiedHumanDecision> VerifyCapabilityAsync(
+        HumanApprovalTarget target, OperationProposalApprovalContext approval, CancellationToken cancellationToken)
+    {
         var context = requestContext.HttpContext ?? throw new HumanApprovalRequiredException();
         if (context.GetEndpoint()?.Metadata.GetMetadata<AdminHumanApprovalEndpointMetadata>() != AdminHumanApprovalEndpointMetadata.Approve
             || !HttpMethods.IsPost(context.Request.Method))
-        {
             throw new HumanApprovalRequiredException();
-        }
         RefuseNonHumanTransport(context);
-        ValidateBoundProposal(proposal);
         var tokens = context.Request.Headers[CapabilityHeader];
         if (tokens.Count != 1) throw new HumanApprovalRequiredException();
         var capability = ReadCapability(tokens[0]);
         var now = timeProvider.GetUtcNow();
         if (capability.Version != OperationHumanApprovalEvidence.CurrentVersion
-            || capability.Decision != "approve"
-            || capability.ExpiresAt <= now
-            || capability.IssuedAt > now
+            || capability.Decision != "approve" || capability.ExpiresAt <= now || capability.IssuedAt > now
             || capability.ExpiresAt - capability.IssuedAt > CapabilityLifetime
-            || capability.Audience != ResolveAudience()
-            || capability.ProposalId != proposal.ProposalId
-            || capability.ProposalVersion != proposal.Version
-            || capability.BindingDigest != ComputeBindingDigest(proposal)
-            || capability.TenantId != proposal.TenantId
-            || capability.TenantId != (string.IsNullOrEmpty(approval.TenantId) ? null : approval.TenantId))
-        {
+            || capability.Audience != ResolveAudience() || capability.TargetKind != target.Kind
+            || capability.TargetId != target.Id || capability.TargetVersion != target.Version
+            || capability.BindingDigest != target.BindingDigest || capability.TenantId != target.TenantId
+            || capability.TenantId != (string.IsNullOrEmpty(approval.TenantId) ? null : approval.TenantId)
+            || capability.TenantId != context.RequestServices.GetService<ITenantContext>()?.TenantId)
             throw new HumanApprovalRequiredException();
-        }
-
-        var human = await LoadHumanAsync(
-            context.Request.Cookies[AdminAuthSessionStore.AuthSessionCookieName], proposal, cancellationToken).ConfigureAwait(false);
+        var human = await LoadHumanAsync(context.Request.Cookies[AdminAuthSessionStore.AuthSessionCookieName],
+            target, cancellationToken).ConfigureAwait(false);
         if (capability.ActorId != human.ActorId || capability.ActorId != approval.ApprovedBy
             || CanonicalSecurityActor.Resolve(context.User)?.ActorId != human.ActorId
             || capability.SessionReference != human.SessionReference || capability.ClaimsDigest != human.ClaimsDigest
             || capability.ExpiresAt > human.ExpiresAt
-            || (proposal.Evidence is { } evidence && capability.ExpiresAt > evidence.ExpiresAt))
-        {
+            || (target.ExpiresAt is { } targetExpiry && capability.ExpiresAt > targetExpiry))
             throw new HumanApprovalRequiredException();
-        }
-
-        return new OperationHumanApprovalEvidence
-        {
-            Version = OperationHumanApprovalEvidence.CurrentVersion,
-            ActorId = human.ActorId,
-            Channel = OperationHumanApprovalEvidence.InteractiveOidcChannel,
-            SessionReference = human.SessionReference,
-            CapabilityReference = Hash(Encoding.UTF8.GetBytes(capability.Nonce)),
-            PlanHash = proposal.SealedPlanHash!,
-            InitiationDigest = ComputeInitiationDigest(proposal.Initiation!),
-            BindingDigest = ComputeBindingDigest(proposal),
-            ProposalVersion = proposal.Version,
-            ApprovedAt = now,
-        };
+        return new VerifiedHumanDecision(human.ActorId, human.SessionReference,
+            Hash(Encoding.UTF8.GetBytes(capability.Nonce)), now);
     }
+
+    private static HumanApprovalTarget ProposalTarget(OperationProposal proposal) => new(
+        "operation-proposal", proposal.ProposalId, proposal.Version, proposal.TenantId,
+        ComputeBindingDigest(proposal), proposal.Evidence?.ExpiresAt,
+        principal => OperationApprovalAuthorization.PermitsOperationScope(principal, proposal));
 
     public static void RefuseNonHumanTransport(HttpContext context)
     {
@@ -156,7 +161,7 @@ internal sealed class OperationHumanApprovalAuthority(
     }
 
     private async Task<VerifiedHumanSession> LoadHumanAsync(
-        string? sessionId, OperationProposal proposal, CancellationToken cancellationToken)
+        string? sessionId, HumanApprovalTarget target, CancellationToken cancellationToken)
     {
         await using var scope = scopes.CreateAsyncScope();
         var services = scope.ServiceProvider;
@@ -164,7 +169,7 @@ internal sealed class OperationHumanApprovalAuthority(
             .GetInteractiveSessionForApprovalAsync(sessionId, cancellationToken).ConfigureAwait(false);
         if (session is null || session.Claims.Length == 0) throw new HumanApprovalRequiredException();
 
-        services.GetService<RequestTenantContext>()?.Set(proposal.TenantId, TenantContextSource.Claim);
+        services.GetService<RequestTenantContext>()?.Set(target.TenantId, TenantContextSource.Claim);
         var principal = AdminAuthClaimsProjector.CreatePrincipal(session.Claims, OidcAuthenticationExtensions.AdminSessionScheme);
         principal = await services.GetRequiredService<IClaimsTransformation>().TransformAsync(principal).ConfigureAwait(false);
         var actor = CanonicalSecurityActor.Resolve(principal);
@@ -172,7 +177,7 @@ internal sealed class OperationHumanApprovalAuthority(
             services.GetRequiredService<IPermissionResolver>(), services.GetRequiredService<IAuthorizationService>());
         if (actor is not { IsDurablyRevalidatable: true }
             || !await authorization.CanDecideAsync(principal, cancellationToken).ConfigureAwait(false)
-            || !OperationApprovalAuthorization.PermitsOperationScope(principal, proposal))
+            || !target.PermitsScope(principal))
         {
             throw new HumanApprovalRequiredException();
         }
@@ -227,6 +232,11 @@ internal sealed class OperationHumanApprovalAuthority(
 
     private static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
 
+    private sealed record HumanApprovalTarget(string Kind, string Id, long Version, string? TenantId,
+        string BindingDigest, DateTimeOffset? ExpiresAt, Func<ClaimsPrincipal, bool> PermitsScope);
+    private sealed record HumanApprovalGrant(DateTimeOffset ExpiresAt, string Capability);
+    private sealed record VerifiedHumanDecision(string ActorId, string SessionReference,
+        string CapabilityReference, DateTimeOffset ApprovedAt);
     private sealed record VerifiedHumanSession(string ActorId, string SessionReference, string ClaimsDigest, DateTimeOffset ExpiresAt);
 }
 

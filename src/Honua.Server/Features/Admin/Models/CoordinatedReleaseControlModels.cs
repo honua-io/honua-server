@@ -3,6 +3,13 @@
 
 namespace Honua.Server.Features.Admin.Models;
 
+internal sealed class CoordinatedReleaseHumanReviewResponse
+{
+    public required CoordinatedReleaseOperationResponse Operation { get; init; }
+    public required Honua.ControlPlane.CoordinatedReleaseApprovalBinding Plan { get; init; }
+    public required Honua.ControlPlane.CoordinatedReleaseHumanReview Review { get; init; }
+}
+
 public sealed record CreateCoordinatedReleaseOperationRequest
 {
     public string? PackageId { get; init; }

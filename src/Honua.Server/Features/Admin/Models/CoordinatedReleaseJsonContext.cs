@@ -14,6 +14,7 @@ namespace Honua.Server.Features.Admin.Models;
 [JsonSerializable(typeof(CoordinatedReleaseOperationResponse))]
 [JsonSerializable(typeof(CoordinatedReleaseArtifactResponse))]
 [JsonSerializable(typeof(CoordinatedReleaseStepResponse))]
+[JsonSerializable(typeof(CoordinatedReleaseHumanReviewResponse))]
 internal sealed partial class CoordinatedReleaseJsonContext : JsonSerializerContext
 {
 }
