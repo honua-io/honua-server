@@ -194,6 +194,29 @@ public sealed class OutputCacheInvalidationServiceTests
 
     [UnitTest]
     [Operation(Operations.Cache)]
+    public async Task InvalidateLayerAsync_StorageHandleDiffersFromServiceIndex_EvictsOwningService()
+    {
+        var graph = CreateFeatureServerGraph(("alpha", [7]), ("beta", [41]));
+        graph = graph with
+        {
+            StorageBindings = graph.StorageBindings.Select(binding => binding.StorageLayerId == 7
+                ? binding with { StorageLayerId = 741 }
+                : binding).ToArray(),
+        };
+        var outputCacheStore = Substitute.For<IOutputCacheStore>();
+        var responseCache = Substitute.For<IResponseCache>();
+        var sut = new OutputCacheInvalidationService(outputCacheStore, responseCache, null,
+            CreateScopeFactory(graph), null, NullLogger<OutputCacheInvalidationService>.Instance);
+
+        await sut.InvalidateLayerAsync(null, 741, CancellationToken.None);
+
+        await outputCacheStore.Received(1).EvictByTagAsync("service:alpha", Arg.Any<CancellationToken>());
+        await outputCacheStore.DidNotReceive().EvictByTagAsync("service:beta", Arg.Any<CancellationToken>());
+        await responseCache.Received(1).RemoveByPatternAsync("response:query:featureserver:service:alpha:*", Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
     public async Task InvalidateLayerAsync_WithoutServiceId_ResolvesOwningServices()
     {
         var outputCacheStore = Substitute.For<IOutputCacheStore>();
