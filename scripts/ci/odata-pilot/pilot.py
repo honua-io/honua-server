@@ -22,11 +22,9 @@ import xml.etree.ElementTree as ET
 
 PROJECTS = {
     "baseline": {"unit": "tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj",
-                 "component": "tests/dotnet/Honua.Protocols.OData.ComponentTests/Honua.Protocols.OData.ComponentTests.csproj",
-                 "image": "src/Honua.Server/Honua.Server.csproj"},
+                 "component": "tests/dotnet/Honua.Protocols.OData.ComponentTests/Honua.Protocols.OData.ComponentTests.csproj"},
     "candidate": {"unit": "tests/dotnet/Honua.Protocols.OData.UnitTests/Honua.Protocols.OData.UnitTests.csproj",
-                  "component": "tests/dotnet/Honua.Protocols.OData.ComponentTests/Honua.Protocols.OData.ComponentTests.csproj",
-                  "image": "tests/dotnet/Honua.OData.TestHost/Honua.OData.TestHost.csproj"},
+                  "component": "tests/dotnet/Honua.Protocols.OData.ComponentTests/Honua.Protocols.OData.ComponentTests.csproj"},
 }
 UNIT_CLASSES = ('ODataCloudNativeRegressionTests', 'ODataFeatureProviderResolverTests', 'ODataSearchServiceSqlTests', 'ODataQueryParameterAdapterOrderByTests', 'ODataGeometryConverterTests', 'ODataCrsUtilitiesTests', 'ODataApplyPipelineTests', 'ODataEtagSerializationTests', 'ODataSqlFragmentMergeHelperTests', 'ODataPageSizeClampTests', 'ODataSkipTokenServiceTests', 'ODataCrudServiceStorageLayerTests', 'ODataComputeServiceTests')
 COMPONENT_FILTER = "FullyQualifiedName~Honua.Protocols.OData.ComponentTests.ODataContractTests"
@@ -50,13 +48,6 @@ def command(args, root):
     return subprocess.check_output(args, cwd=root, text=True).strip()
 
 
-def runtime_pin(root):
-    match = re.search(r"^ARG DOTNET_ASPNET_IMAGE=(\S+@sha256:[0-9a-f]{64})$", (root / "Dockerfile").read_text(), re.M)
-    if not match:
-        raise ValueError("Main Dockerfile must supply one digest-pinned ASP.NET runtime")
-    return match[1]
-
-
 PILOT_METADATA_PROPERTIES = {
     "IncludeSourceRevisionInInformationalVersion": "false",
     "EnableSourceControlManagerQueries": "false",
@@ -64,33 +55,25 @@ PILOT_METADATA_PROPERTIES = {
 }
 
 
-def props(configuration, composition, runtime=None):
+def props(configuration, composition):
     return [f"-p:Configuration={configuration}", f"-p:HonuaBuildProfile={composition}", "-p:TreatWarningsAsErrors=true", "-p:UseSharedCompilation=false",
-            *[f"-p:{key}={value}" for key, value in PILOT_METADATA_PROPERTIES.items()],
-            *([f"-p:RuntimeIdentifier={runtime}", "-p:SelfContained=false"] if runtime else [])]
+            *[f"-p:{key}={value}" for key, value in PILOT_METADATA_PROPERTIES.items()]]
 
 
-def plan(root, variant, selection, configuration, composition, test_filter, runtime=None):
-    if runtime and selection != "image":
-        raise ValueError("--runtime applies only to image selection")
-    runtime = (runtime or "linux-x64") if selection == "image" else None
-    if runtime not in (None, "linux-x64", "linux-arm64"):
-        raise ValueError("Image runtime must be linux-x64 or linux-arm64")
+def plan(root, variant, selection, configuration, composition, test_filter):
     project = PROJECTS[variant][selection]
-    test_filter = test_filter or (UNIT_FILTER if selection == "unit" else COMPONENT_FILTER if selection == "component" else "")
+    test_filter = test_filter or (UNIT_FILTER if selection == "unit" else COMPONENT_FILTER)
     blockers = [] if (root / project).is_file() else [f"Missing extracted project: {project}"]
-    if selection != "image" and not test_filter:
+    if not test_filter:
         blockers.append("Explicit comparable test filter required for baseline and candidate")
     return {"schema": SCHEMA, "variant": variant, "selection": selection, "project": project,
             "configuration": configuration, "composition": composition, "filter": test_filter,
             "blockers": blockers, "optIn": True, "fullGatesUnchanged": True,
             "entryProjects": [project, "src/Honua.Server/Honua.Server.csproj"] if variant == "baseline" and selection == "component" else [project],
-            "externalPrerequisites": ["Orchestrated full/minimal host receipt and external URL/admin key; canonical odata.yaml seeds, page limit2, edit payload4096"] if selection == "component" else ["Managed bounded builder argv and matching fresh shared-admission receipt"] if selection == "image" else [],
-            "commands": [["dotnet", "restore", project, *props(configuration, composition, runtime)],
-                         ["dotnet", "build", project, "--no-restore", *props(configuration, composition, runtime)],
-                         ["dotnet", "publish" if selection == "image" else "test", project, "--no-build", "--no-restore", *props(configuration, composition, runtime)]],
-            "runtimeIdentifier": runtime, "dockerPlatform": {"linux-x64": "linux/amd64", "linux-arm64": "linux/arm64"}.get(runtime),
-            "runtimeImage": runtime_pin(root) if selection == "image" else None}
+            "externalPrerequisites": ["Orchestrated full/minimal host receipt and external URL/admin key; canonical odata.yaml seeds, page limit2, edit payload4096"] if selection == "component" else [],
+            "commands": [["dotnet", "restore", project, *props(configuration, composition)],
+                         ["dotnet", "build", project, "--no-restore", *props(configuration, composition)],
+                         ["dotnet", "test", project, "--no-build", "--no-restore", *props(configuration, composition)]]}
 
 
 def normalize(value, root):
@@ -124,7 +107,7 @@ def flow_reservation_helper():
     return helper if helper.is_file() else None
 
 
-def evaluation_preflight(root, project, configuration, composition, runtime=None, helper=None):
+def evaluation_preflight(root, project, configuration, composition, helper=None):
     # The canonical helper's key operation is read-only: it validates argument
     # parsing without acquiring capacity or starting MSBuild.
     helper = Path(helper) if helper else flow_reservation_helper()
@@ -133,7 +116,7 @@ def evaluation_preflight(root, project, configuration, composition, runtime=None
     if not helper.is_file():
         raise ValueError("Configured Flow reservation helper is missing")
     query = ["msbuild", str(root / project), f"-getItem:{ITEMS}", f"-getProperty:{PROPERTIES}",
-             *props(configuration, composition, runtime)]
+             *props(configuration, composition)]
     checked = subprocess.run([sys.executable, str(helper), "key", *query], cwd=root,
                              capture_output=True, text=True, timeout=10)
     if checked.returncode:
@@ -142,7 +125,7 @@ def evaluation_preflight(root, project, configuration, composition, runtime=None
                          "No restore or build started. " + checked.stderr.strip()[-1000:])
 
 
-def evaluated_inputs(root, project, configuration, composition, evidence, measure=None, runtime=None):
+def evaluated_inputs(root, project, configuration, composition, evidence, measure=None):
     def invoke(name, argv):
         if measure is None:
             return command(argv, root)
@@ -153,7 +136,7 @@ def evaluated_inputs(root, project, configuration, composition, evidence, measur
     for index, entry in enumerate(entries):
         graph_file = evidence / f"restore-graph-{index}.json"
         invoke(f"evaluate-graph-{index}", ["dotnet", "msbuild", entry, "-t:GenerateRestoreGraphFile", f"-p:RestoreGraphOutputPath={graph_file}",
-                 "/verbosity:quiet", *props(configuration, composition, runtime)])
+                 "/verbosity:quiet", *props(configuration, composition)])
         restored = json.loads(graph_file.read_text())
         graph["projects"].update(restored["projects"])
     projects = sorted(Path(p).resolve() for p in graph["projects"])
@@ -163,7 +146,7 @@ def evaluated_inputs(root, project, configuration, composition, evidence, measur
         if not path.is_file() or not path.is_relative_to(root):
             raise ValueError(f"Project closure requires an existing project inside the source root: {path}")
         raw = invoke(f"evaluate-{index:03d}", ["dotnet", "msbuild", str(path), f"-getItem:{ITEMS}", f"-getProperty:{PROPERTIES}",
-                       *props(configuration, composition, runtime)])
+                       *props(configuration, composition)])
         evaluated = json.loads(raw)
         if evaluated["Properties"].get("TargetFrameworks"):
             raise ValueError(f"Multi-target graph needs explicit per-framework evaluation: {path}")
@@ -230,7 +213,7 @@ def evaluated_inputs(root, project, configuration, composition, evidence, measur
                         del item[key]
     evaluated = normalize({"graph": graph, "evaluations": stable_evaluations}, root)
     identity = {"sdk": command(["dotnet", "--version"], root), "os": platform.system(), "osVersion": platform.release(), "architecture": platform.machine(),
-                "configuration": configuration, "composition": composition, "buildProperties": props(configuration, composition, runtime), "evaluatedGraph": evaluated, "inputs": inputs}
+                "configuration": configuration, "composition": composition, "buildProperties": props(configuration, composition), "evaluatedGraph": evaluated, "inputs": inputs}
     return {"key": digest(identity), "identity": identity, "projectCount": len(projects),
             "compileItemCount": sum(len(e["Items"].get("Compile", [])) for e in evaluations.values()),
             "projects": [str(p.relative_to(root)) for p in projects]}
@@ -413,68 +396,6 @@ def edit_source(root, scenario, relative, pair):
         path.write_bytes(original)
 
 
-def ensure_runtime_only(directory):
-    for path in directory.rglob("*"):
-        name = path.name.lower()
-        if path.is_symlink() or name in {"nuget.config", ".npmrc", ".env", "sdk", "roslyn"} or name.startswith(("microsoft.build", "microsoft.codeanalysis", "csc.", "vbc.")) or name.endswith((".pfx", ".pem", ".key")):
-            raise ValueError(f"Compiler/SDK/credential input prohibited in runtime context: {path.name}")
-        if path.is_file() and path.suffix.lower() == ".json":
-            try:
-                value = json.loads(path.read_text())
-            except (UnicodeDecodeError, json.JSONDecodeError):
-                continue
-            def contains_credentials(item):
-                if isinstance(item, dict):
-                    for key, child in item.items():
-                        field = re.sub(r"[^a-z0-9]", "", re.split(r":|__", key.lower())[-1])
-                        if isinstance(child, str) and child and (field in {"password", "adminpassword", "masterkey", "clientsecret", "apikey", "secretaccesskey", "accesskey", "token", "signingkey", "privatesigningkey", "privatekey", "encryptionkey", "symmetricsecuritykey"}
-                            or re.search(r"(?:Password|Pwd)\s*=\s*[^;]+", child, re.I)):
-                            return True
-                        if contains_credentials(child):
-                            return True
-                if isinstance(item, list):
-                    return any(contains_credentials(child) for child in item)
-                return False
-            if contains_credentials(value):
-                raise ValueError(f"Embedded credentials prohibited in runtime context: {path.name}")
-
-
-def managed_builder(config_path, receipt_path, context, tag, pin, assembly, input_key, root, evidence, timeout, platform="linux/amd64"):
-    config = json.loads(config_path.read_text())
-    argv = config.get("argv")
-    if not isinstance(argv, list) or not argv or any(not isinstance(value, str) for value in argv):
-        raise ValueError("Managed builder config requires an argv array")
-    if receipt_path.exists():
-        raise ValueError("Builder receipt path must be new")
-    substitutions = {"{context}": str(context), "{tag}": tag, "{runtime}": pin, "{assembly}": assembly,
-                     "{inputKey}": input_key, "{receipt}": str(receipt_path), "{platform}": platform}
-    expanded = []
-    for value in argv:
-        for key, replacement in substitutions.items():
-            value = value.replace(key, replacement)
-        expanded.append(value)
-    measured = stage("image", expanded, root, evidence, timeout)
-    receipt = json.loads(receipt_path.read_text())
-    limits = receipt.get("limits", {})
-    if (receipt.get("schema") != "honua.odata-pilot-managed-builder/v1"
-        or receipt.get("inputKey") != input_key or receipt.get("image") != tag
-        or receipt.get("platform") != platform
-        or receipt.get("sharedAdmission") is not True or receipt.get("boundedBuildKit") is not True
-        or not receipt.get("reservationId") or receipt.get("exitCode") != 0
-        or not isinstance(receipt.get("peakJobMemoryBytes"), int) or isinstance(receipt.get("peakJobMemoryBytes"), bool) or receipt["peakJobMemoryBytes"] <= 0
-        or not finite_between(limits.get("memoryMaxBytes"), 1, 8 * 1024**3)
-        or not finite_between(limits.get("cpuQuotaPercent"), 1, 400)
-        or not finite_between(limits.get("pidsMax"), 1, 512)
-        or not bounded_interval(receipt.get("startedEpochSeconds"), receipt.get("finishedEpochSeconds"), measured["startedEpochSeconds"], measured["finishedEpochSeconds"])):
-        raise ValueError("Managed builder lacks fresh matching bounds, shared reservation, BuildKit ownership, or job-memory evidence")
-    measured["managedBuilderReceipt"] = receipt
-    measured["peakJobMemoryBytes"] = receipt["peakJobMemoryBytes"]
-    measured["jobMemoryUnavailableReason"] = None
-    measured["jobMemoryScope"] = "Owned bounded BuildKit job only"
-    write(evidence / "image/stage.json", measured)
-    return measured
-
-
 def run(args):
     if args.selection == "component":
         raise ValueError("Measured component runs require an implemented managed host lifecycle controller; precreated host receipts cannot bind a live host to this execution. Run the component project directly for developer validation.")
@@ -483,18 +404,16 @@ def run(args):
     if evidence.exists():
         raise ValueError("Evidence destination must be new; never overwrite a measured run")
     evidence.mkdir(parents=True)
-    planned = plan(root, args.variant, args.selection, args.configuration, args.composition, args.filter, getattr(args, "runtime", None))
+    planned = plan(root, args.variant, args.selection, args.configuration, args.composition, args.filter)
     write(evidence / "plan.json", planned)
     if planned["blockers"]:
         raise ValueError("; ".join(planned["blockers"]))
     project = planned["project"]
-    evaluation_preflight(root, project, args.configuration, args.composition, planned["runtimeIdentifier"])
+    evaluation_preflight(root, project, args.configuration, args.composition)
     validate_scenario(args.selection, args.scenario)
     if args.selection == "component" and (not args.host_receipt or not os.environ.get("HONUA_ODATA_TEST_BASE_URL") or not os.environ.get("HONUA_ODATA_TEST_ADMIN_KEY")):
         raise ValueError("Component comparison requires orchestrated host receipt and external host URL/admin key for both variants")
-    if args.selection == "image" and (not args.builder_json or not args.builder_receipt):
-        raise ValueError("Image build requires an explicit managed bounded builder and fresh shared-admission receipt")
-    common = props(args.configuration, args.composition, planned["runtimeIdentifier"])
+    common = props(args.configuration, args.composition)
     stages = []
     receipt = {**planned, "scenario": args.scenario, "pair": args.pair, "qualified": False, "stages": stages,
                "sourceCommit": command(["git", "rev-parse", "HEAD"], root),
@@ -520,7 +439,7 @@ def run(args):
                 result = stage(name, argv, root, evidence, args.timeout)
                 stages.append(result)
                 return result
-            inputs = evaluated_inputs(root, planned["entryProjects"], args.configuration, args.composition, evidence, measure, planned["runtimeIdentifier"])
+            inputs = evaluated_inputs(root, planned["entryProjects"], args.configuration, args.composition, evidence, measure)
             receipt["artifact"] = inputs
             host_build = None
             if args.selection == "component" and args.variant == "baseline":
@@ -528,64 +447,36 @@ def run(args):
                 stages.append(host_build)
             build = stage("build", ["dotnet", "build", project, "--no-restore", *common], root, evidence, args.timeout)
             stages.append(build)
-            if args.selection == "image":
-                publish = evidence / "publish"
-                stages.append(stage("publish", ["dotnet", "publish", project, "--no-build", "--no-restore", "--output", str(publish), *common], root, evidence, args.timeout))
-                context = evidence / "image-context"
-                context.mkdir()
-                removed_configs = [p.relative_to(publish).as_posix() for p in publish.rglob("appsettings.*.json")]
-                shutil.copytree(publish, context / "publish", ignore=shutil.ignore_patterns("appsettings.*.json"))
-                receipt["excludedEnvironmentConfigs"] = sorted(removed_configs)
-                ensure_runtime_only(context / "publish")
-                shutil.copyfile(Path(__file__).resolve().parents[3] / "docker/odata-pilot/Dockerfile", context / "Dockerfile")
-                pin = runtime_pin(root)
-                receipt["artifact"]["runtimeImage"] = pin
-                receipt["artifact"]["key"] = digest({"publishIdentity": inputs["key"], "runtimeImage": pin,
-                    "dockerfile": hashlib.sha256((context / "Dockerfile").read_bytes()).hexdigest()})
-                tag = "honua-odata-pilot:" + receipt["artifact"]["key"][:16]
-                assembly = "Honua.Server" if args.variant == "baseline" else "Honua.OData.TestHost"
-                stages.append(managed_builder(args.builder_json, args.builder_receipt, context, tag, pin, assembly,
-                    receipt["artifact"]["key"], root, evidence, args.timeout, planned["dockerPlatform"]))
-                receipt["imageBytes"] = int(command(["docker", "image", "inspect", tag, "--format", "{{.Size}}"], root))
-                inspected_platform = json.loads(command(["docker", "image", "inspect", tag, "--format", "{{json .}}"], root))
-                actual_platform = inspected_platform["Os"] + "/" + inspected_platform["Architecture"]
-                if actual_platform != planned["dockerPlatform"]:
-                    raise ValueError("Built image platform differs from publish runtime")
-                receipt["imagePlatform"] = actual_platform
-                receipt["image"] = tag
-                receipt["tests"] = []
-                receipt["firstTestSeconds"] = None
+            host = None
+            if args.selection == "component":
+                host = json.loads(args.host_receipt.read_text())
+                expected_mode = "full" if args.variant == "baseline" else "minimal"
+                if (host.get("inputKey") != inputs["key"] or host.get("mode") != expected_mode
+                    or host.get("bounded") is not True or host.get("ready") is not True
+                    or host.get("seedManifest") != "odata.yaml" or not isinstance(host.get("startupSeconds"), (int, float))
+                    or not finite_between(host["startupSeconds"], 0, args.timeout) or host.get("pageLimit") != 2 or host.get("editPayloadLimit") != 4096):
+                    raise ValueError("Orchestrated host receipt does not match current graph, seed/config, bounded readiness, or startup timing")
+                receipt["host"] = host
+            trx = evidence / "trx"
+            stages.append(stage("test", ["dotnet", "test", project, "--no-build", "--no-restore", "--configuration", args.configuration,
+                "--filter", planned["filter"], "--logger", "trx;LogFileName=tests.trx", "--results-directory", str(trx), *common], root, evidence, args.timeout))
+            receipt["tests"] = trx_results(trx)
+            receipt["buildToTestsCompleteSeconds"] = build["seconds"] + stages[-1]["seconds"]
+            first_build = host_build or build
+            starts = [datetime.datetime.fromisoformat(r["startedAt"].replace("Z", "+00:00")).timestamp()
+                      for r in receipt["tests"] if r["startedAt"]]
+            first = min(starts) if len(starts) == len(receipt["tests"]) else None
+            if first is not None and stages[-1]["startedEpochSeconds"] <= first <= stages[-1]["finishedEpochSeconds"]:
+                receipt["firstTestSeconds"] = stages[-1]["startedMonotonicSeconds"] - first_build["startedMonotonicSeconds"] + first - stages[-1]["startedEpochSeconds"] + (host["startupSeconds"] if host else 0)
+                receipt["firstTestClock"] = "Monotonic build-to-test-stage span plus TRX UTC offset within checked test-stage clock"
+                if host:
+                    receipt["firstTestClock"] += "; plus separately measured external host startup (not part of the stage span)"
             else:
-                host = None
-                if args.selection == "component":
-                    host = json.loads(args.host_receipt.read_text())
-                    expected_mode = "full" if args.variant == "baseline" else "minimal"
-                    if (host.get("inputKey") != inputs["key"] or host.get("mode") != expected_mode
-                        or host.get("bounded") is not True or host.get("ready") is not True
-                        or host.get("seedManifest") != "odata.yaml" or not isinstance(host.get("startupSeconds"), (int, float))
-                        or not finite_between(host["startupSeconds"], 0, args.timeout) or host.get("pageLimit") != 2 or host.get("editPayloadLimit") != 4096):
-                        raise ValueError("Orchestrated host receipt does not match current graph, seed/config, bounded readiness, or startup timing")
-                    receipt["host"] = host
-                trx = evidence / "trx"
-                stages.append(stage("test", ["dotnet", "test", project, "--no-build", "--no-restore", "--configuration", args.configuration,
-                    "--filter", planned["filter"], "--logger", "trx;LogFileName=tests.trx", "--results-directory", str(trx), *common], root, evidence, args.timeout))
-                receipt["tests"] = trx_results(trx)
-                receipt["buildToTestsCompleteSeconds"] = build["seconds"] + stages[-1]["seconds"]
-                first_build = host_build or build
-                starts = [datetime.datetime.fromisoformat(r["startedAt"].replace("Z", "+00:00")).timestamp()
-                          for r in receipt["tests"] if r["startedAt"]]
-                first = min(starts) if len(starts) == len(receipt["tests"]) else None
-                if first is not None and stages[-1]["startedEpochSeconds"] <= first <= stages[-1]["finishedEpochSeconds"]:
-                    receipt["firstTestSeconds"] = stages[-1]["startedMonotonicSeconds"] - first_build["startedMonotonicSeconds"] + first - stages[-1]["startedEpochSeconds"] + (host["startupSeconds"] if host else 0)
-                    receipt["firstTestClock"] = "Monotonic build-to-test-stage span plus TRX UTC offset within checked test-stage clock"
-                    if host:
-                        receipt["firstTestClock"] += "; plus separately measured external host startup (not part of the stage span)"
-                else:
-                    receipt["firstTestSeconds"] = None
-                    receipt["firstTestUnavailableReason"] = "Missing TRX start times or clock mismatch"
+                receipt["firstTestSeconds"] = None
+                receipt["firstTestUnavailableReason"] = "Missing TRX start times or clock mismatch"
             receipt["diskOutputBytes"] = output_size(root, inputs["projects"])
             receipt["peakProcessTreeRssBytes"] = max((s["peakProcessTreeRssBytes"] or 0 for s in stages), default=0) or None
-            receipt["qualified"] = args.selection != "image" and all(r["outcome"] == "Passed" for r in receipt["tests"])
+            receipt["qualified"] = all(r["outcome"] == "Passed" for r in receipt["tests"])
     finally:
         write(evidence / "receipt.json", receipt)
     return receipt
@@ -594,11 +485,6 @@ def run(args):
 def validate_scenario(selection, scenario):
     if selection == "component" and scenario == "odata-only-edit":
         raise ValueError("Component odata-only-edit requires a controller callback after the edited build; prebuilt host receipts cannot match its changed input key")
-
-
-def bounded_interval(start, end, outer_start, outer_end):
-    return (finite_between(start, outer_start, outer_end)
-            and finite_between(end, outer_start, outer_end) and start <= end)
 
 
 def finite_between(value, low, high):
@@ -721,11 +607,10 @@ def main():
         child = sub.add_parser(operation)
         child.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[3])
         child.add_argument("--variant", choices=PROJECTS, required=True)
-        child.add_argument("--selection", choices=("unit", "component", "image"), required=True)
+        child.add_argument("--selection", choices=("unit", "component"), required=True)
         child.add_argument("--configuration", default="Release")
         child.add_argument("--composition", choices=("full", "no-cloud", "slim"), default="full")
         child.add_argument("--filter", default="")
-        child.add_argument("--runtime", choices=("linux-x64", "linux-arm64"))
         child.add_argument("--output", type=Path, required=True)
         if operation == "run":
             child.add_argument("--scenario", choices=SCENARIOS, required=True)
@@ -733,8 +618,6 @@ def main():
             child.add_argument("--edit-file")
             child.add_argument("--timeout", type=int, default=2400)
             child.add_argument("--host-receipt", type=Path)
-            child.add_argument("--builder-json", type=Path)
-            child.add_argument("--builder-receipt", type=Path)
     child = sub.add_parser("compare")
     child.add_argument("--receipt", type=Path, action="append", required=True)
     child.add_argument("--selection", choices=("unit", "component"), required=True)
@@ -753,23 +636,23 @@ def main():
             write(args.output, result)
             return 0 if result["success"] else 2
         if args.operation == "plan":
-            result = plan(args.root.resolve(), args.variant, args.selection, args.configuration, args.composition, args.filter, getattr(args, "runtime", None))
+            result = plan(args.root.resolve(), args.variant, args.selection, args.configuration, args.composition, args.filter)
             write(args.output, result)
             return 0 if not result["blockers"] else 2
         if args.operation == "identity":
             root = args.root.resolve()
-            planned = plan(root, args.variant, args.selection, args.configuration, args.composition, args.filter, getattr(args, "runtime", None))
+            planned = plan(root, args.variant, args.selection, args.configuration, args.composition, args.filter)
             if planned["blockers"]:
                 raise ValueError("; ".join(planned["blockers"]))
-            evaluation_preflight(root, planned["project"], args.configuration, args.composition, planned["runtimeIdentifier"])
+            evaluation_preflight(root, planned["project"], args.configuration, args.composition)
             if args.output.exists():
                 raise ValueError("Identity evidence destination must be new")
             args.output.mkdir(parents=True)
             for index, entry in enumerate(planned["entryProjects"]):
-                stage(f"restore-{index}", ["dotnet", "restore", entry, *props(args.configuration, args.composition, planned["runtimeIdentifier"])], root, args.output, 2400)
+                stage(f"restore-{index}", ["dotnet", "restore", entry, *props(args.configuration, args.composition)], root, args.output, 2400)
             def measured(name, argv):
                 return stage(name, argv, root, args.output, 2400)
-            identity = evaluated_inputs(root, planned["entryProjects"], args.configuration, args.composition, args.output, measured, planned["runtimeIdentifier"])
+            identity = evaluated_inputs(root, planned["entryProjects"], args.configuration, args.composition, args.output, measured)
             write(args.output / "artifact.json", identity)
             return 0
         if args.operation == "run":
