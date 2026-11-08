@@ -2,12 +2,23 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Guardrails.Domain;
 using Honua.Server.Features.Operations;
 
 namespace Honua.ControlPlane;
 
 internal static class OperationHumanApprovalEvidenceValidation
 {
+    public static bool MatchesExecutionRequest(OperationProposal proposal, OperationGatewayRequest request, string payload) =>
+        proposal.Kind == OperationClass.Deploy
+        && HasExecutionAuthority(proposal)
+        && proposal.ProposalId == request.ApprovedProposalId
+        && proposal.RequestedBy == request.RequestedBy
+        && proposal.ResolvedBy == request.ApprovedBy
+        && proposal.TenantId == request.TenantId
+        && proposal.Audit.OperationInstanceId == request.OperationInstanceId
+        && proposal.Plan.ExecutionPayload == payload;
+
     public static bool HasExecutionAuthority(OperationProposal proposal)
     {
         if (proposal.Status is not (OperationProposalStatus.Executing or OperationProposalStatus.Submitted
