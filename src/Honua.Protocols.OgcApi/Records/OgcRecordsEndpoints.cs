@@ -376,6 +376,44 @@ internal static class OgcRecordsEndpoints
             return result;
         }
 
+        // Resource-level records: one per resource, attributed to its primary publication's service.
+        var resourceRecords = snapshot.Graph.Resources
+            .Select(resource =>
+            {
+                var publications = TenantScopeHelpers.FilterVisiblePublications(
+                        context, snapshot, snapshot.Index.PublicationsByResource[resource.Metadata.Id])
+                    .Where(snapshot.IsRoutable)
+                    .ToArray();
+                var primary = publications.FirstOrDefault(p => p.IsPrimary) ?? publications.FirstOrDefault();
+                return (Resource: resource, Primary: primary);
+            })
+            .Where(item => item.Primary is not null)
+            .OrderBy(item => item.Primary!.Metadata.Id, StringComparer.Ordinal);
+        var resourceRecordIds = new HashSet<string>(StringComparer.Ordinal);
+        var recordPublications = new Dictionary<string, MetadataV2Publication>(StringComparer.Ordinal);
+        foreach (var item in resourceRecords)
+        {
+            var resource = item.Resource;
+            var primary = item.Primary!;
+            MetadataV2Service? primaryService = snapshot.Index.ServicesById.TryGetValue(primary.ServiceId, out var svc)
+                ? svc
+                : null;
+
+            if (!AccessPolicyHelpers.IsResourceAccessible(context, resource, primaryService))
+            {
+                continue;
+            }
+
+            var record = CreateResourceRecord(resource, primary, primaryService, snapshot, baseUrl,
+                await GetBboxAsync(resource).ConfigureAwait(false));
+            if (resourceRecordIds.Add(record.Feature.Id))
+            {
+                records.Add(record);
+                recordPublications.Add(resource.Metadata.Id, primary);
+            }
+        }
+
+
         // Service-level records: one public record per service name. The V2 graph can
         // contain multiple protocol-specific service rows with the same public name
         // (for example FeatureServer/MapServer/STAC views), but Records should expose
@@ -423,47 +461,15 @@ internal static class OgcRecordsEndpoints
 
             records.Add(CreateServiceRecord(
                 representative,
-                visiblePublications.Select(t => (t.Publication, t.Resource)).ToArray()!,
+                visiblePublications
+                    .Where(item => recordPublications.ContainsKey(item.Resource!.Metadata.Id))
+                    .Select(item => (recordPublications[item.Resource!.Metadata.Id], item.Resource)).ToArray()!,
                 snapshot,
                 baseUrl,
                 mergedModified,
                 CombineBboxes(visiblePublications.Select(p => resourceBboxes[p.Resource!.Metadata.Id]))));
         }
 
-        // Resource-level records: one per resource, attributed to its primary publication's service.
-        var resourceRecords = snapshot.Graph.Resources
-            .Select(resource =>
-            {
-                var publications = TenantScopeHelpers.FilterVisiblePublications(
-                        context, snapshot, snapshot.Index.PublicationsByResource[resource.Metadata.Id])
-                    .Where(snapshot.IsRoutable)
-                    .ToArray();
-                var primary = publications.FirstOrDefault(p => p.IsPrimary) ?? publications.FirstOrDefault();
-                return (Resource: resource, Primary: primary);
-            })
-            .Where(item => item.Primary is not null)
-            .OrderBy(item => item.Primary!.Metadata.Id, StringComparer.Ordinal);
-        var resourceRecordIds = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var item in resourceRecords)
-        {
-            var resource = item.Resource;
-            var primary = item.Primary!;
-            MetadataV2Service? primaryService = snapshot.Index.ServicesById.TryGetValue(primary.ServiceId, out var svc)
-                ? svc
-                : null;
-
-            if (!AccessPolicyHelpers.IsResourceAccessible(context, resource, primaryService))
-            {
-                continue;
-            }
-
-            var record = CreateResourceRecord(resource, primary, primaryService, snapshot, baseUrl,
-                await GetBboxAsync(resource).ConfigureAwait(false));
-            if (resourceRecordIds.Add(record.Feature.Id))
-            {
-                records.Add(record);
-            }
-        }
 
         return records;
     }

@@ -11,6 +11,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Server.Features.Admin.Models;
+using Honua.Core.Features.Validation.Abstractions;
 using PermanentFilterLanguages = Honua.Core.Features.Metadata.Domain.V2.MetadataV2PermanentFilterLanguages;
 
 namespace Honua.Server.Features.Admin.Services;
@@ -25,20 +26,25 @@ internal sealed class LayerValidationService(
     private const string SeverityWarning = "warning";
     private const string SeverityError = "error";
 
-    public async Task<LayerValidationResponse?> ValidateLayerAsync(
+    public async Task<ResourceValidationResult<LayerValidationResponse>> ValidateLayerAsync(
         int storageLayerId,
         CancellationToken cancellationToken = default)
     {
         if (storageLayerId < 0)
         {
-            return null;
+            return ResourceValidationResult.NotFound<LayerValidationResponse>($"Layer {storageLayerId} not found.");
         }
 
         var snapshot = await metadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var resource = snapshot.ResolveStorageResource(storageLayerId).Resource;
+        var resolution = snapshot.ResolveStorageResource(storageLayerId);
+        if (resolution.IsAmbiguous)
+        {
+            return ResourceValidationResult.AmbiguousIdentifier<LayerValidationResponse>(resolution.ConflictDetail!);
+        }
+        var resource = resolution.Resource;
         if (resource is null)
         {
-            return null;
+            return ResourceValidationResult.NotFound<LayerValidationResponse>($"Layer {storageLayerId} not found.");
         }
 
         var checks = new List<LayerValidationCheck>
@@ -53,13 +59,13 @@ internal sealed class LayerValidationService(
                 "storage-mapping",
                 "Layer does not define a metadata v2 storage binding."));
 
-            return BuildResponse(storageLayerId, resource, null, checks);
+            return ResourceValidationResult.Success(BuildResponse(storageLayerId, resource, null, checks));
         }
 
         var storageMapping = ResolveStorageMapping(resource, storageBinding, checks);
         if (storageMapping == null)
         {
-            return BuildResponse(storageLayerId, resource, null, checks);
+            return ResourceValidationResult.Success(BuildResponse(storageLayerId, resource, null, checks));
         }
 
         checks.Add(Pass(
@@ -87,7 +93,7 @@ internal sealed class LayerValidationService(
                 storageMapping.QualifiedName,
                 null));
 
-            return BuildResponse(storageLayerId, resource, storageMapping, checks);
+            return ResourceValidationResult.Success(BuildResponse(storageLayerId, resource, storageMapping, checks));
         }
 
         checks.Add(Pass(
@@ -99,7 +105,7 @@ internal sealed class LayerValidationService(
         ValidateSrid(storageMapping, table, checks);
         ValidateDeclaredFields(resource, table, checks);
 
-        return BuildResponse(storageLayerId, resource, storageMapping, checks);
+        return ResourceValidationResult.Success(BuildResponse(storageLayerId, resource, storageMapping, checks));
     }
 
     private static TableInfo? FindTable(

@@ -366,9 +366,10 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
             return null;
         }
 
+        string? json;
         try
         {
-            var json = await RedisClientFault.RetryCompletedReaderAsync(
+            json = await RedisClientFault.RetryCompletedReaderAsync(
                 () => _cache.GetStringAsync(key, cancellationToken),
                 cancellationToken).ConfigureAwait(false);
             if (json == null)
@@ -377,7 +378,6 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
                 return null;
             }
 
-            return DeserializeProgress(json);
         }
         // Intentional: see the "set progress" catch above — same translate-to-typed-exception
         // pattern for the Redis boundary.
@@ -386,6 +386,8 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
             HandleRedisFailure(ex, "get progress");
             throw CreateDistributedStateUnavailableException("get progress", ex);
         }
+
+        return DeserializeProgress(json);
     }
 
     public async Task DeleteProgressAsync(string operationId, CancellationToken cancellationToken = default)
@@ -479,7 +481,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
             nameof(UploadProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.UploadProgress),
             nameof(IngestProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.IngestProgress),
             nameof(TileOperationProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.TileOperationProgress),
-            nameof(ExportProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.ExportProgress),
+            nameof(ExportProgress) => DeserializeExportProgress(wrapper.Data),
             nameof(PrintProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.PrintProgress),
             nameof(RasterImportProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.RasterImportProgress),
             nameof(GeoprocessingProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.GeoprocessingProgress),
@@ -490,6 +492,18 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
             nameof(LayerPublishJobProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.LayerPublishJobProgress),
             _ => null
         };
+    }
+
+    private static ExportProgress? DeserializeExportProgress(JsonElement data)
+    {
+        try
+        {
+            return data.Deserialize(UniversalProgressJsonContext.Default.ExportProgress);
+        }
+        catch (JsonException exception)
+        {
+            throw new InvalidDataException("Persisted export progress is invalid. Submit a new export request.", exception);
+        }
     }
 
     private static JsonElement SerializeProgressData(IOperationProgress progress)

@@ -540,7 +540,16 @@ internal sealed class ExportJobService(
             return null;
         }
 
-        var persistedRequest = JsonSerializer.Deserialize(json, ExportJsonContext.Default.PersistedExportJobRequest);
+        PersistedExportJobRequest? persistedRequest;
+        try
+        {
+            persistedRequest = JsonSerializer.Deserialize(json, ExportJsonContext.Default.PersistedExportJobRequest);
+        }
+        catch (JsonException)
+        {
+            await RemovePersistedJobRequestAsync(jobId, cancellationToken).ConfigureAwait(false);
+            return null;
+        }
         if (persistedRequest?.Job == null)
         {
             await RemovePersistedJobRequestAsync(jobId, cancellationToken).ConfigureAwait(false);

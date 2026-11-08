@@ -3,6 +3,8 @@
 
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Validation.Abstractions;
+using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Models;
@@ -48,15 +50,17 @@ internal static class AdminDiscoveryMetadataEndpoints
         WriteAsync(context, request, snapshot => DiscoveryMetadataTarget.ForService(snapshot, serviceName));
 
     private static async Task<IResult> ReadAsync(HttpContext context, IMetadataV2GraphProvider provider,
-        Func<MetadataV2GraphSnapshot, DiscoveryMetadataTarget?> resolve)
+        Func<MetadataV2GraphSnapshot, ResourceValidationResult<DiscoveryMetadataTarget>> resolve)
     {
         var snapshot = await provider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
         var target = resolve(snapshot);
-        return target is null ? Problem(context, 404, "Metadata target not found.") : Respond(snapshot, target);
+        return target.IsValid
+            ? Respond(snapshot, target.Resource!)
+            : ServiceResourceValidationHelpers.CreateAdminValidationProblem(context, target, "Metadata target not found.");
     }
 
     private static async Task<IResult> WriteAsync(HttpContext context, DiscoveryMetadataUpdateRequest request,
-        Func<MetadataV2GraphSnapshot, DiscoveryMetadataTarget?> resolve)
+        Func<MetadataV2GraphSnapshot, ResourceValidationResult<DiscoveryMetadataTarget>> resolve)
     {
         var error = Validate(request);
         if (error is not null)
@@ -64,14 +68,14 @@ internal static class AdminDiscoveryMetadataEndpoints
         var store = context.RequestServices.GetRequiredService<IMetadataV2GraphStore>();
         var snapshot = await store.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
         var target = resolve(snapshot);
-        if (target is null)
-            return Problem(context, 404, "Metadata target not found.");
+        if (!target.IsValid)
+            return ServiceResourceValidationHelpers.CreateAdminValidationProblem(context, target, "Metadata target not found.");
         if (!string.Equals(snapshot.Etag, request.Etag, StringComparison.Ordinal))
             return Problem(context, 409, "Metadata changed. Reload before saving.");
         MetadataV2GraphSnapshot saved;
         try
         {
-            saved = await store.SaveAsync(target.Apply(snapshot.Graph, request),
+            saved = await store.SaveAsync(target.Resource!.Apply(snapshot.Graph, request),
                 snapshot.Etag, context.RequestAborted).ConfigureAwait(false);
         }
         catch (MetadataV2GraphConcurrencyException)
@@ -80,7 +84,7 @@ internal static class AdminDiscoveryMetadataEndpoints
         }
         var cache = context.RequestServices.GetRequiredService<OutputCacheInvalidationService>();
         await cache.InvalidateServiceCatalogAsync(null, null, context.RequestAborted).ConfigureAwait(false);
-        return Respond(saved, resolve(saved)!);
+        return Respond(saved, resolve(saved).Resource!);
     }
 
     private static string? Validate(DiscoveryMetadataUpdateRequest request)

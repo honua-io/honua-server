@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Server.Features.Admin.Models;
+using Honua.Infrastructure.Helpers;
 using Honua.Server.Features.Admin.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
@@ -40,15 +41,12 @@ internal static class AdminLayerValidationEndpoints
         }
 
         var validation = await validationService.ValidateLayerAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
-        if (validation == null)
+        if (!validation.IsValid)
         {
-            return ProblemDetailsHelpers.CreateAdminProblem(
-                context,
-                StatusCodes.Status404NotFound,
-                $"Layer {storageLayerId} not found.");
+            return ServiceResourceValidationHelpers.CreateAdminValidationProblem(context, validation, $"Layer {storageLayerId} not found.");
         }
 
-        var payload = ApiResponse<LayerValidationResponse>.CreateSuccess(validation);
+        var payload = ApiResponse<LayerValidationResponse>.CreateSuccess(validation.Resource!);
         return Results.Json(payload, LayerValidationJsonContext.Default.ApiResponseLayerValidationResponse);
     }
 }
