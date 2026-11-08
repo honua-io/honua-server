@@ -13,7 +13,7 @@ using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
-namespace Honua.Server.Tests.Infrastructure.ControlPlane;
+namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
 [SecurityTest]
 [Protocol(TestProtocols.Admin)]

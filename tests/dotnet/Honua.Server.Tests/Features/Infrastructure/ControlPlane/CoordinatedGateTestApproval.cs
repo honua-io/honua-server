@@ -5,7 +5,7 @@ using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Infrastructure.Security;
-using Honua.Server.Tests.Infrastructure.ControlPlane;
+using Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 

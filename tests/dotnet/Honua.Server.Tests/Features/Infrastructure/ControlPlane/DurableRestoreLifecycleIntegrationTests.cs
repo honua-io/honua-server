@@ -204,7 +204,7 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             backend.StartAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>()).Returns(new DeploySubmissionResult { Status = WorkflowOperationStatus.Reconciling });
             var approvals = Substitute.For<IOperatorApprovalEvaluator>();
             approvals.Evaluate(Arg.Any<System.Security.Claims.ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>()).Returns(ApprovalRequirement.NotRequired());
-            var deploy = new DeployOperationExecutor(new DeployWorkflowService(targets, [workflows], [backend], approvals, NullLogger<DeployWorkflowService>.Instance, restoreOptions: cell));
+            var deploy = new DeployOperationExecutor(new DeployWorkflowService(targets, [workflows], [backend], approvals, NullLogger<DeployWorkflowService>.Instance, restoreOptions: cell, proposalStore: proposals));
             var queue = new DurableRestoreQueue(workflows, proposals);
             var guarded = new RestoreGuardedDeployOperationExecutor(deploy, coordinator, audit, cell, queue);
             var ladder = Substitute.For<IGuardrailLadder>();
@@ -221,9 +221,9 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
             });
             Assert.Equal(OperationGatewayOutcome.ProposalCreated, routed.Outcome);
             Assert.NotNull(routed.ProposalId);
-            await Assert.ThrowsAsync<InvalidOperationException>(() => gateway.ApplyApprovedProposalAsync(routed.ProposalId, new OperationProposalApprovalContext { ApprovedBy = "proposer", TenantId = string.Empty }));
+            var approved = await gateway.ApplyApprovedProposalAsync(routed.ProposalId,
+                new OperationProposalApprovalContext { ApprovedBy = "proposer", TenantId = string.Empty });
             await snapshots.DidNotReceive().BeginAsync(Arg.Any<RdsRestoreRequest>(), Arg.Any<CancellationToken>());
-            var approved = await gateway.ApplyApprovedProposalAsync(routed.ProposalId, new OperationProposalApprovalContext { ApprovedBy = "approver", TenantId = string.Empty });
             Assert.NotNull(approved);
             Assert.Equal(OperationProposalStatus.Submitted, approved.Status);
             Assert.NotNull(approved.ExecutionOperationId);

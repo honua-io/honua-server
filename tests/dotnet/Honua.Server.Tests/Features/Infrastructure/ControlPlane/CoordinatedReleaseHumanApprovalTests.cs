@@ -5,7 +5,7 @@ using FluentAssertions;
 using Honua.ControlPlane;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Infrastructure.Security;
-using Honua.Server.Tests.Infrastructure.ControlPlane;
+using Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
@@ -63,6 +63,8 @@ public sealed class CoordinatedReleaseHumanApprovalTests
     [InlineData("container")]
     [InlineData("script")]
     [InlineData("requester")]
+    [InlineData("requester-name")]
+    [InlineData("tenant-claim-type")]
     [InlineData("package")]
     public async Task VerifyGateAsync_ReviewedTargetChanged_RefusesDecision(string change)
     {
@@ -155,6 +157,8 @@ public sealed class CoordinatedReleaseHumanApprovalTests
         {
             "workflow" => operation with { OperationId = "different-workflow" },
             "version" => operation with { Version = operation.Version + 1 },
+            "requester-name" => operation with { CoordinatedRelease = context with { RequesterName = "changed-name" } },
+            "tenant-claim-type" => operation with { CoordinatedRelease = context with { RequesterTenantClaimType = "changed-claim" } },
             "requester" => operation with { Audit = operation.Audit with { RequestedBy = "different-requester" } },
             "tenant" => operation with { Audit = operation.Audit with { TenantId = "tenant-b" },
                 CoordinatedRelease = context with { RequesterTenantId = "tenant-b" } },

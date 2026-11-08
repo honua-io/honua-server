@@ -23,7 +23,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 
-namespace Honua.Server.Tests.Infrastructure.ControlPlane;
+namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
 internal sealed class OperationHumanApprovalTestHost : IDisposable
 {

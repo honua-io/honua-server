@@ -11,7 +11,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using NSubstitute;
 
-namespace Honua.Server.Tests.Infrastructure.ControlPlane;
+namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
 [SecurityTest]
 [Protocol(TestProtocols.Admin)]

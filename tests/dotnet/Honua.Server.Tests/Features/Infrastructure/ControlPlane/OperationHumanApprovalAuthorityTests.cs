@@ -17,7 +17,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using NSubstitute;
 
-namespace Honua.Server.Tests.Infrastructure.ControlPlane;
+namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 
 [SecurityTest]
 [Protocol(TestProtocols.Admin)]

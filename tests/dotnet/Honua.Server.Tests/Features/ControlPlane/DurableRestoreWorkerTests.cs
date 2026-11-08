@@ -11,6 +11,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.ControlPlane.Restore;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.TestKit.Attributes;
+using Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -190,44 +191,40 @@ public sealed class DurableRestoreWorkerTests
         Assert.Equal(WorkflowOperationStatus.Succeeded, harness.Restore.Status);
     }
 
-    [UnitTest]
+    [UnitTheory]
+    [InlineData(true)]
+    [InlineData(false)]
     [Operation(Operations.TestInfrastructure)]
-    public async Task Reconcile_ModernRecoveryWithoutHumanProof_DoesNotReportSuccess()
+    public async Task Reconcile_ModernRecovery_RequiresDurableHumanProof(bool validProof)
     {
+        using var host = new OperationHumanApprovalTestHost();
         var harness = new Harness("awaiting-deploy");
-        harness.Deployment = harness.Deployment with { Status = WorkflowOperationStatus.Succeeded };
+        var approved = await DeployHumanApprovalReplayTests.CreateApprovedProposalAsync(host, true);
+        var proposal = approved with
+        {
+            ExecutionOperationId = harness.RestoreId,
+            Status = OperationProposalStatus.Submitted,
+            HumanApproval = validProof ? approved.HumanApproval : null,
+        };
         harness.Restore = harness.Restore with
         {
-            Audit = new OperationAuditInfo { ProposalId = "modern-proposal", OperationInstanceId = "modern-instance" },
-        };
-        var plan = new OperationProposalPlan
-        {
-            Summary = "Reviewed restore",
-            ExecutionPayload = harness.Restore.PreMigrationRestore!.Payload,
-        };
-        harness.Proposals.GetAsync("modern-proposal", Arg.Any<CancellationToken>()).Returns(new OperationProposal
-        {
-            ProposalId = "modern-proposal",
-            Kind = OperationClass.Deploy,
-            Status = OperationProposalStatus.Submitted,
-            Plan = plan,
-            SealedPlanHash = Honua.Server.Features.Operations.OperationApprovalPlanSeal.Compute(plan),
-            Initiation = new OperationInitiationEvidence
+            Audit = new OperationAuditInfo
             {
-                Version = OperationInitiationEvidence.CurrentVersion,
-                Kind = OperationInitiationKind.Agent,
-                PlanHash = Honua.Server.Features.Operations.OperationApprovalPlanSeal.Compute(plan),
-                PolicyRevision = "review-policy",
-                AcceptedAt = DateTimeOffset.UtcNow,
+                ProposalId = proposal.ProposalId, OperationInstanceId = proposal.Audit.OperationInstanceId,
+                RequestedBy = proposal.RequestedBy, TenantId = proposal.TenantId,
             },
-            CreatedAt = DateTimeOffset.UtcNow,
-            UpdatedAt = DateTimeOffset.UtcNow,
-        });
+            PreMigrationRestore = harness.Restore.PreMigrationRestore! with
+            {
+                Payload = proposal.Plan.ExecutionPayload!, ApprovedBy = proposal.ResolvedBy!,
+            },
+        };
+        harness.Proposals.GetAsync(proposal.ProposalId, Arg.Any<CancellationToken>()).Returns(proposal);
+        harness.Deployment = harness.Deployment with { Status = WorkflowOperationStatus.Succeeded };
 
         await harness.Worker.ReconcileAsync(harness.RestoreId, CancellationToken.None);
 
-        Assert.Equal(WorkflowOperationStatus.Failed, harness.Restore.Status);
-        await harness.Customer.DidNotReceive().SucceededAsync(Arg.Any<CancellationToken>());
+        Assert.Equal(validProof ? WorkflowOperationStatus.Succeeded : WorkflowOperationStatus.Failed, harness.Restore.Status);
+        await harness.Customer.Received(validProof ? 1 : 0).SucceededAsync(Arg.Any<CancellationToken>());
     }
 
     private sealed class Harness

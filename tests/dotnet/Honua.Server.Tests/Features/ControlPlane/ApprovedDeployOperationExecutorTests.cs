@@ -8,7 +8,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.TestKit.Attributes;
-using Honua.Server.Tests.Infrastructure.ControlPlane;
+using Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
