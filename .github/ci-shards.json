@@ -3365,7 +3365,7 @@
     {
       "name": "Server Features Streaming Transports",
       "shard_name": "Server Features Streaming Transports",
-      "dispatch_rank": 15.4,
+      "dispatch_rank": 10.049,
       "artifact_suffix": "server-features-streaming-transports",
       "log_name": "server-tests-server-features-streaming-transports",
       "timeout_minutes": 42,
@@ -3443,7 +3443,7 @@
     {
       "name": "Server Features Streaming Endpoints",
       "shard_name": "Server Features Streaming Endpoints",
-      "dispatch_rank": 15.5,
+      "dispatch_rank": 11.393,
       "artifact_suffix": "server-features-streaming-endpoints",
       "log_name": "server-tests-server-features-streaming-endpoints",
       "timeout_minutes": 42,
