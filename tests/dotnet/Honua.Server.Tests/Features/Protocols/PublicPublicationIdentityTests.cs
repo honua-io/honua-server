@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Xml;
 using System.Xml.Linq;
 using FluentAssertions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Styling;
 using Honua.TestKit;
@@ -32,7 +33,7 @@ public sealed partial class PublicPublicationIdentityTests : IAsyncLifetime
         builder.UseSetting("HONUA_DEV_AUTH", "false");
         builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false");
         builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
-    });
+    }).WithTestLicense(HonuaEdition.Pro);
     private readonly ILayerStyleService _styles = Substitute.For<ILayerStyleService>();
 
     public async Task InitializeAsync()
