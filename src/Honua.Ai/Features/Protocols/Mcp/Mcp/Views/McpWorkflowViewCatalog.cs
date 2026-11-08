@@ -222,6 +222,11 @@ internal static class McpWorkflowViewCatalog
                 Description = "Read server status and API-key grants, then create, test, import, publish, and set access.",
                 Rules =
                 [
+                    McpWorkflowViewMemberRule.Exact("honua_list_folders"),
+                    McpWorkflowViewMemberRule.Exact("honua_create_folder"),
+                    McpWorkflowViewMemberRule.Exact("honua_update_folder"),
+                    McpWorkflowViewMemberRule.Exact("honua_delete_folder"),
+                    McpWorkflowViewMemberRule.Exact("honua_move_service"),
                     McpWorkflowViewMemberRule.Exact("honua_admin_server_status"),
                     McpWorkflowViewMemberRule.Exact("honua_admin_api_key_list"),
                     McpWorkflowViewMemberRule.Exact("honua_admin_api_key_effective_permissions"),

@@ -28,7 +28,7 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 /// into a structured Completed / RequiresApproval / unavailable result.
 /// </summary>
 [Protocol(TestProtocols.Mcp)]
-public sealed class PublishServiceToolTests
+public sealed partial class PublishServiceToolTests
 {
     private static DefaultHttpContext ContextWithInvoker(IOperationInvoker? invoker)
     {
