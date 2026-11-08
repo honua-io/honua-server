@@ -3,7 +3,7 @@ type: concept
 title: "Deployment and execution target"
 description: "Where Honua serves requests and where background work executes."
 tags: [gis, domain-language]
-aliases: ["install","host","environment","ECS","EKS","Lambda","Batch"]
+aliases: ["install","host","ECS","EKS","Lambda","Batch"]
 sources:
   - id: contract
     resource: "/guides/deploy/cloud-deployments.md"
@@ -21,7 +21,7 @@ relations:
 ---
 
 # Deployment and execution target
-A deployment combines the serving artifact, configuration, network, secrets, persistent services, and operational identity. Installing a process is not the same as [publishing data](publication.md).
+A deployment combines the serving artifact, configuration, network, secrets, persistent services, and operational identity behind an [Environment](environment.md). An Environment is the Honua server selected in the Console; a deployment describes how that server runs. Installing a process is not the same as [publishing data](publication.md).
 
 ECS/Fargate runs the serving container; EKS runs it in Kubernetes. Lambda uses its target-specific serving image and request lifecycle. AWS Batch is a job execution backend, not the HTTP map server. A serving host can submit work to a separate Batch runner.[^contract]
 

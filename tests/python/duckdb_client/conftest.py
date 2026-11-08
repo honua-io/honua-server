@@ -67,7 +67,6 @@ NOT_APPLICABLE_REASON = (
     "rendering facets are structurally not applicable."
 )
 
-TESTS_ROOT = Path(__file__).resolve().parents[2]
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -235,7 +234,7 @@ def _write_cert_evidence(
     """
     yield
     override = os.environ.get("HONUA_DUCKDB_OUTPUT_DIR")
-    results_dir = Path(override) if override else TESTS_ROOT / "TestResults"
+    results_dir = Path(override) if override else canonical_fixture.TEST_RESULTS_ROOT
     results_dir.mkdir(parents=True, exist_ok=True)
     run_id = utc_now_compact()
     evidence.write_envelope(

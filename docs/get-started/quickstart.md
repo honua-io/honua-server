@@ -6,6 +6,8 @@ resource: "https://github.com/honua-io/honua-server/pkgs/container/honua-server"
 ---
 # Quickstart: install, publish, and query
 
+See the [Honua vocabulary](../concepts/domain/README.md) for the meanings of Connection, Dataset, Layer, Service, Folder, and Environment.
+
 The customer Compose package runs Honua beside PostGIS and Redis, plus a stable
 management service and a separate Compose executor. The executor only executes
 approved proposals; a different principal must approve the proposer's request.

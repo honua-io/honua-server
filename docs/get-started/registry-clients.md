@@ -6,6 +6,8 @@ resource: "https://github.com/honua-io/honua-server/pkgs/container/honua-server"
 ---
 # Client packages and registries
 
+See the [Honua vocabulary](../concepts/domain/README.md) for the meanings of Connection, Dataset, Layer, Service, Folder, and Environment.
+
 **Every Honua client package is public and installs with no credentials**, and so
 does the server image. Nothing on this page needs a token.
 

@@ -39,7 +39,7 @@ class ManagedWorkflowTests(unittest.TestCase):
         self.assertNotIn('dotnet-restore-retry.sh Honua.sln', family)
         self.assertLess(family.index('Regenerate foundation projections'), family.index('Run source architecture'))
         self.assertEqual(WORKFLOW.count('dotnet test tests/dotnet/Honua.Architecture.SourceTests/'), 1)
-        self.assertIn('! -f tests/TestResults/source-architecture-tests.trx', job('dotnet-foundation-tests'))
+        self.assertIn('! -f artifacts/test-results/source-architecture-tests.trx', job('dotnet-foundation-tests'))
 
     def test_shard_managed_first_cache_compatibility_and_missing_only(self):
         shard = job('server-tests')
@@ -49,7 +49,7 @@ class ManagedWorkflowTests(unittest.TestCase):
         self.assertIn('managed-test-build.py fallback --projects-file', shard)
         self.assertIn('actions/cache/restore@', shard)
         self.assertIn('matrix.advisory != true', shard)
-        self.assertIn("continue-on-error: ${{ matrix.advisory == true }}", shard)
+        self.assertNotIn("continue-on-error: ${{ matrix.advisory == true }}", shard)
 
     def test_package_prerequisites_precede_both_materializers(self):
         for name, lane in [('dotnet-foundation-family-tests', 'foundation'), ('server-tests', 'shard')]:

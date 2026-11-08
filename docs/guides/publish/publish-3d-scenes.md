@@ -6,6 +6,8 @@ resource: "honua://capability/scene.catalog"
 ---
 # Publish 3D scenes
 
+See the [Honua vocabulary](../../concepts/domain/README.md) for the meanings of Connection, Dataset, Layer, Service, Folder, and Environment.
+
 You'll have a 3D Tiles tileset served from Honua — generated from a PostGIS layer or hosted from existing files — and rendering in CesiumJS in about 15 minutes.
 
 **Prerequisites:** A running server ([quickstart](../../get-started/quickstart.md)) and admin credentials ([authentication](../secure/authentication.md)).

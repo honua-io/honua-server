@@ -5,6 +5,8 @@ description: "Register a database connection and publish its spatial tables thro
 ---
 # Publish layers
 
+See the [Honua vocabulary](../../concepts/domain/README.md) for the meanings of Connection, Dataset, Layer, Service, Folder, and Environment.
+
 Register a database connection and publish its spatial tables through Honua's supported control-plane SDK. Each published layer is immediately available through every enabled protocol.
 
 **Prerequisites:** a running server, an admin API key, a reachable database, and Python with

@@ -80,10 +80,10 @@
     <ProjectReference Include="..\Honua.Db\SqlServer\Honua.SqlServer.csproj" Condition="'$(HonuaStoreProfile)' == 'full'" />
     <ProjectReference Include="..\Honua.Db\MySql\Honua.MySql.csproj" Condition="'$(HonuaStoreProfile)' == 'full'" />
     <ProjectReference Include="..\Honua.Db\Redshift\Honua.Redshift.csproj" Condition="'$(HonuaStoreProfile)' == 'full'" />
-    <ProjectReference Include="..\Honua.GeoServicesRest\Honua.GeoServicesRest.csproj" Condition="'$(HonuaStoreProfile)' == 'full'" />
+    <ProjectReference Include="..\Honua.Db\GeoServicesRest\Honua.GeoServicesRest.csproj" Condition="'$(HonuaStoreProfile)' == 'full'" />
     <ProjectReference Include="..\Honua.Db\Databricks\Honua.Databricks.csproj" Condition="'$(HonuaStoreProfile)' == 'full'" />
     <ProjectReference Include="..\Honua.Db\Oracle\Honua.Oracle.csproj" Condition="'$(HonuaIncludeOracle)' == 'true' and '$(HonuaStoreProfile)' == 'full'" />
-    <ProjectReference Include="..\Honua.Snowflake\Honua.Snowflake.csproj" Condition="'$(HonuaIncludeSnowflake)' == 'true' and '$(HonuaStoreProfile)' == 'full'" />
+    <ProjectReference Include="..\Honua.Db\Snowflake\Honua.Snowflake.csproj" Condition="'$(HonuaIncludeSnowflake)' == 'true' and '$(HonuaStoreProfile)' == 'full'" />
     <ProjectReference Include="..\Honua.ServiceDefaults\Honua.ServiceDefaults.csproj" />
     <ProjectReference Include="..\Honua.Hosting\Honua.Hosting.csproj" />
     <ProjectReference Include="..\Honua.Jobs\Honua.Jobs.csproj" />

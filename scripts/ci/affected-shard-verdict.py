@@ -18,8 +18,7 @@ UNAFFECTED_SKIP_REASONS = {
 observe_execution = runpy.run_path(str(Path(__file__).with_name("shard-execution-evidence.py")))["observe"]
 RED_ANNOTATION = (
     "HONUA_AFFECTED_SHARD_RED shard='{shard}' status='{status}' — "
-    "this shard family is red on the pull-request head. The trailing matrix "
-    "will report the same failure on trunk after this merges."
+    "this shard family has failing execution evidence for this run."
 )
 
 
@@ -67,7 +66,7 @@ def decide(
 ) -> dict[str, Any]:
     """Return the aggregate verdict. Exit 0 in report mode is not a test pass."""
     enforcing = mode == "enforce"
-    lines = ["### PR Gate / Affected shards", ""]
+    lines = ["### Server test shards", ""]
     if enforcing:
         lines.append(f"- Mode: `{mode}` (enforcing; selected execution receipts gate merging)")
     else:
@@ -174,16 +173,18 @@ def decide(
 
     lines.extend([
         "",
-        "| Shard | Status | Duration | Budget used | Capacity |",
-        "|---|---|---:|---:|---|",
+        "| Shard | Status | Duration | Budget used | Capacity | Passed | Failed | Skipped | Executed |",
+        "|---|---|---:|---:|---|---:|---:|---:|---:|",
     ])
     for timing in timings:
         shard = _cell(timing.get("shard"))
         status = _cell(timing.get("status"))
         duration = _cell(timing.get("duration_seconds"))
+        cases = (timing.get("execution") or {}).get("counts") or {}
+        case_cells = " | ".join(str(cases.get(key, "n/a")) for key in ("passed", "failed", "skipped", "executed"))
         lines.append(
             f"| {shard} | `{status}` | {duration}s | {_budget(timing.get('headroom_ratio'))} | "
-            f"`{_cell(timing.get('capacity_status'))}` |"
+            f"`{_cell(timing.get('capacity_status'))}` | {case_cells} |"
         )
         if status != "passed":
             counts["red"] += 1
@@ -204,6 +205,12 @@ def decide(
             "cannot substitute for missing evidence.",
         )
     if red == 0:
+        if shards_result != "success":
+            return unavailable(
+                "shard_jobs_not_successful",
+                f"execution receipts are green but shard jobs concluded `{shards_result}`.",
+                f"shard jobs concluded '{shards_result}'.",
+            )
         annotations.append((
             "notice",
             f"HONUA_AFFECTED_SHARD_GREEN {received} selected shard families passed.",
@@ -221,7 +228,7 @@ def decide(
     if enforcing:
         annotations.append((
             "error",
-            f"PR Gate / Affected shards: {red} shard families are red on this head.",
+            f"Server test shards: {red} shard families are red on this head.",
         ))
         return finish("red", exit_code=1, shards_passed=False, extra=extra)
     extra.extend([
@@ -233,18 +240,20 @@ def decide(
 
 
 def _verify_execution(timing: dict[str, Any], directory: Path) -> None:
-    if timing.get("status") != "passed":
-        return
     execution = timing.get("execution") or {}
     trx_name = f"{timing.get('log_name')}.trx"
     if Path(trx_name).name != trx_name or execution.get("trxFile") != trx_name:
-        timing["status"] = "invalid_execution"
+        if timing.get("status") == "passed":
+            timing["status"] = "invalid_execution"
+        timing["execution"] = {}
         return
     measured = observe_execution(directory / trx_name, timing.get("shard"), execution.get("project"))
     if (execution.get("status") != "passed" or measured["status"] != "passed"
             or execution.get("trxSha256") != measured["trxSha256"]
             or execution.get("counts") != measured["counts"]):
-        timing["status"] = "invalid_execution"
+        if timing.get("status") == "passed":
+            timing["status"] = "invalid_execution"
+    timing["execution"] = measured
 
 
 def _load_timings(directory: Path) -> list[dict[str, Any]]:

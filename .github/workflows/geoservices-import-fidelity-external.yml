@@ -58,7 +58,7 @@ jobs:
           HONUA_TEST_ESRI_PARITY: '1'
           HONUA_TEST_ESRI_GEOPORTAL: '1'
         run: |
-          mkdir -p tests/TestResults
+          mkdir -p artifacts/test-results
           dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
             --no-build \
             --no-restore \
@@ -66,7 +66,7 @@ jobs:
             --filter "FullyQualifiedName~GeoservicesImportFidelityIntegrationTests|FullyQualifiedName~GeoservicesGeoportalImportIntegrationTests" \
             --logger "trx;LogFileName=geoservices-parity.trx" \
             --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults
+            --results-directory ./artifacts/test-results
 
       - name: Collect scorecard artifact
         id: collect
@@ -121,4 +121,4 @@ jobs:
           name: geoservices-parity-artifacts-${{ github.run_id }}
           path: |
             artifacts/parity/
-            tests/TestResults/geoservices-parity.trx
+            artifacts/test-results/geoservices-parity.trx

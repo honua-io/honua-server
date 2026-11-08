@@ -141,7 +141,7 @@ internal static class RasterBaseline
         var rootMeanSquareError = Math.Sqrt(squaredError / (actual.Width * (double)actual.Height * 4d));
         if (rootMeanSquareError > tolerance.MaximumRootMeanSquareError || changedPixels > tolerance.MaximumChangedPixels)
         {
-            var diagnosticsDirectory = Path.Join(AppContext.BaseDirectory, "TestResults", "raster-baseline-diffs");
+            var diagnosticsDirectory = RepositoryPaths.Resolve("artifacts", "test-results", "raster-baseline-diffs");
             Directory.CreateDirectory(diagnosticsDirectory);
             var actualPath = Path.Join(diagnosticsDirectory, $"{name}.actual.png");
             var diffPath = Path.Join(diagnosticsDirectory, $"{name}.diff.png");

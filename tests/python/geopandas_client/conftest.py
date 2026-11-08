@@ -65,7 +65,7 @@ NOT_APPLICABLE_REASON = (
     "facets are structurally not applicable."
 )
 
-DEFAULT_OUTPUT_DIR = canonical_fixture.TESTS_ROOT / "TestResults"
+DEFAULT_OUTPUT_DIR = canonical_fixture.TEST_RESULTS_ROOT
 
 
 # ---------------------------------------------------------------------------

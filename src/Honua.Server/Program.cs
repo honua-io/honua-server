@@ -588,7 +588,7 @@ Honua.Db.Oracle.Features.Security.OracleConnectionDriverServiceCollectionExtensi
 // The Native AOT publish (HonuaSkipSnowflakeForAotVerification) drops the Honua.Snowflake
 // ProjectReference and defines HONUA_SKIP_SNOWFLAKE, so this registration is compiled out
 // (Snowflake.Data is not single-file/AOT safe — see Honua.Server.csproj).
-Honua.Snowflake.Features.Security.SnowflakeConnectionDriverServiceCollectionExtensions.AddSnowflakeConnectionDriver(builder.Services);
+Honua.Db.Snowflake.Features.Security.SnowflakeConnectionDriverServiceCollectionExtensions.AddSnowflakeConnectionDriver(builder.Services);
 #endif
 // Databricks speaks HTTPS to the SQL Statement Execution API (no ADO.NET driver) and stays
 // registered beside Redshift and Snowflake so admin connection tests resolve the provider

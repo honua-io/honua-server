@@ -131,7 +131,7 @@ jobs:
           TESTCONTAINERS_RYUK_DISABLED: false
           TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: ""
         run: |
-          mkdir -p ./tests/TestResults
+          mkdir -p ./artifacts/test-results
           # Per ADR-0037 this workflow runs the emulator subfamily of Tier=Slow
           # (LocalStack S3 + Azurite + Postgres). The Scale/Cloud/External
           # subfamilies need additional fixtures (multi-node compose, real
@@ -145,12 +145,12 @@ jobs:
             --filter "Tier=Slow&Category=Emulator" \
             --logger "trx;LogFileName=slow-tier-${{ matrix.project }}.trx" \
             --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults
+            --results-directory ./artifacts/test-results
 
       - name: Upload slow-tier results
         if: ${{ always() && steps.gate.outputs.skipped != 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: slow-tier-${{ matrix.project }}-results
-          path: tests/TestResults/
+          path: artifacts/test-results/
           retention-days: 14
