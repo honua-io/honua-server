@@ -149,20 +149,20 @@ policies, field masks and row-level filters apply to wildcard reads exactly as t
 a named `read:` grant. The full grammar is in
 [Users, roles and licensing](../../reference/admin-api/users-roles-licensing.md#grant-grammar).
 
-For the focused Console read/approve client, mint a named key with:
+For a focused read/reject automation client, mint a named key with:
 
 ```json
 {
-  "name": "console-read-approve",
+  "name": "proposal-read-reject",
   "permissions": ["admin:read", "admin:approve"],
   "expiresAt": null
 }
 ```
 
-`admin:approve` remains read-level on the general admin surface and adds only
-`POST /api/v1/admin/proposals/{proposalId}/approve` and
-`POST /api/v1/admin/proposals/{proposalId}/reject`. It does not grant other
-mutations. In particular, some read-like workflows use POST and are unavailable
+`admin:approve` remains read-level on the general admin surface and permits
+`POST /api/v1/admin/proposals/{proposalId}/reject`. The approval route additionally
+requires a verified interactive human session and private review capability;
+an API key cannot approve. This grant does not permit other mutations. In particular, some read-like workflows use POST and are unavailable
 to this key: `connections/test`, `external-services/discover`, and
 `import/geoservices/start`. It also grants no service or layer data reads; add
 `read:{service}` or `read:*` grants if the client must read data. This scope
@@ -172,8 +172,9 @@ policies for composite sign-in but preserves scoped API-key permission
 enforcement. Console users who sign in with an operator bearer
 token are authorized by operator RBAC instead of this API-key recipe.
 
-Approval and execution remain separate authorities. The Console sends the
-read/approve key only to the proposal decision endpoint. After approval, Honua
+Approval and execution remain separate authorities. Console uses its private
+verified human session and review capability for approval, retaining ordinary
+read/reject grants for those actions. After approval, Honua
 mints a short-lived, single-use credential bound to the exact approved Admin API
 method, path, and sealed tenant, uses it for the replay, and revokes it immediately.
 The tenant binding is restored from the persisted credential during authentication
@@ -182,7 +183,7 @@ issuer-supplied copy of the internal tenant claim is removed; a caller-supplied
 tenant header cannot change the binding. Credentials without an explicit
 tenant binding are rejected. An explicit empty binding preserves an invocation
 accepted with tenant resolution disabled. The
-approver's key and identity headers are never forwarded as execution authority;
+approver's session, capability and identity headers are never forwarded as execution authority;
 `admin:operation:*` grants are server-reserved and cannot be requested through
 the API-key creation endpoint. Internal replay credentials are excluded from
 public key listings and permission inspection, and cannot be rotated into a

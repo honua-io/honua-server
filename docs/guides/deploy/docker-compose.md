@@ -479,5 +479,7 @@ The private installation folder remains for deliberate retention or deletion.
 The [customer quickstart package](../../get-started/quickstart.md#install-the-customer-package)
 includes the stable manager and dedicated executor image by default.
 Only the executor has Docker access. It targets the configured local project and
-executes only proposals approved by a different principal. Preserve the image lock,
+executes only proposals approved by one authorized human through the
+[interactive review flow](../secure/authentication.md#human-operation-approval).
+The requester may approve. Preserve the image lock,
 private locally generated credentials, management volumes, and verified backups.
