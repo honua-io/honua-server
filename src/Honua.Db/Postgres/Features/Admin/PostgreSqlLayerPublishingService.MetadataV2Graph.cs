@@ -2843,16 +2843,18 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 layerId);
         }
 
-        var lifecycle = enabled ? MetadataV2LifecycleStatus.Active : MetadataV2LifecycleStatus.Retired;
-        binding = binding with { Status = WithReadyLifecycle(binding.Status, lifecycle, now) };
+        var readyStatus = LayerReadyStatus(enabled, now);
+        binding = binding with { Status = WithReadyStatus(binding.Status, readyStatus) };
         var storageBindings = UpsertById(
             graph.StorageBindings,
             binding,
             static item => item.Metadata.Id);
         resource = resource with
         {
-            Status = WithReadyLifecycle(resource.Status,
-                DeriveResourceLifecycleFromBindings(storageBindings, resource.Metadata.Id), now),
+            Status = WithReadyStatus(resource.Status, readyStatus with
+            {
+                Lifecycle = DeriveResourceLifecycleFromBindings(storageBindings, resource.Metadata.Id)
+            }),
         };
 
         var service = ResolveUniquePublishedFeatureService(graph, serviceName, layerId);
@@ -2867,7 +2869,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         {
             featurePublication = existingFeaturePublication with
             {
-                Status = WithReadyLifecycle(existingFeaturePublication.Status, lifecycle, now)
+                Status = WithReadyStatus(existingFeaturePublication.Status, readyStatus)
             };
         }
         else
@@ -2918,7 +2920,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 }
 
                 return string.Equals(publicationBindingId, binding.Metadata.Id, StringComparison.Ordinal)
-                    ? publication with { Status = WithReadyLifecycle(publication.Status, lifecycle, now) }
+                    ? publication with { Status = WithReadyStatus(publication.Status, readyStatus) }
                     : publication;
             })
             .ToArray();
@@ -2949,9 +2951,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             return graph;
         }
 
-        var lifecycle = enabled
-            ? MetadataV2LifecycleStatus.Active
-            : MetadataV2LifecycleStatus.Retired;
+        var readyStatus = LayerReadyStatus(enabled, now);
         var changed = false;
         var storageBindings = graph.StorageBindings
             .Select(binding =>
@@ -2962,7 +2962,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 }
 
                 changed = true;
-                return binding with { Status = WithReadyLifecycle(binding.Status, lifecycle, now) };
+                return binding with { Status = WithReadyStatus(binding.Status, readyStatus) };
             })
             .ToArray();
         var affectedResourceIds = storageBindings
@@ -2981,7 +2981,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 var resourceLifecycle = DeriveResourceLifecycleFromBindings(
                     storageBindings,
                     resource.Metadata.Id);
-                return resource with { Status = WithReadyLifecycle(resource.Status, resourceLifecycle, now) };
+                return resource with { Status = WithReadyStatus(resource.Status, readyStatus with { Lifecycle = resourceLifecycle }) };
             })
             .ToArray();
         var resourcesById = graph.Resources.ToDictionary(resource => resource.Metadata.Id, StringComparer.Ordinal);
@@ -3001,7 +3001,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 }
 
                 changed = true;
-                return publication with { Status = WithReadyLifecycle(publication.Status, lifecycle, now) };
+                return publication with { Status = WithReadyStatus(publication.Status, readyStatus) };
             })
             .ToArray();
         if (!changed)
@@ -3387,8 +3387,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             // fire on the shared edit path (FeatureServer applyEdits). Calculation rules
             // whose target column was not published are dropped (honua-server#1271).
             AttributeRules = ResolveAttributeRulesForPublish(request.AttributeRules, fields),
-            Status = ReadyStatus(
-                request.Enabled ? MetadataV2LifecycleStatus.Active : MetadataV2LifecycleStatus.Retired, now)
+            Status = LayerReadyStatus(request.Enabled, now)
         };
     }
 
@@ -3585,8 +3584,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                     MetadataV2StorageBindingCapability.Aggregate
                 ],
             Options = options,
-            Status = ReadyStatus(
-                request.Enabled ? MetadataV2LifecycleStatus.Active : MetadataV2LifecycleStatus.Retired, now)
+            Status = LayerReadyStatus(request.Enabled, now)
         };
     }
 
@@ -3626,8 +3624,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             IsPrimary = isPrimary,
             SupportedFormats = _defaultFormats,
             Capabilities = capabilities ?? _defaultCapabilities,
-            Status = ReadyStatus(
-                enabled ? MetadataV2LifecycleStatus.Active : MetadataV2LifecycleStatus.Retired, now)
+            Status = LayerReadyStatus(enabled, now)
         };
     }
 
@@ -3729,18 +3726,25 @@ internal sealed partial class PostgreSqlLayerPublishingService
         };
 
     private static MetadataV2Status ActiveReadyStatus(DateTimeOffset now)
-        => ReadyStatus(MetadataV2LifecycleStatus.Active, now);
+        => LayerReadyStatus(enabled: true, now);
 
-    private static MetadataV2Status ReadyStatus(MetadataV2LifecycleStatus lifecycle, DateTimeOffset now)
-        => WithReadyLifecycle(new MetadataV2Status(), lifecycle, now);
-
-    private static MetadataV2Status WithReadyLifecycle(
-        MetadataV2Status status, MetadataV2LifecycleStatus lifecycle, DateTimeOffset now)
-        => status with
+    private static MetadataV2Status LayerReadyStatus(bool enabled, DateTimeOffset now)
+        => new()
         {
-            Lifecycle = lifecycle,
+            Lifecycle = enabled
+                ? MetadataV2LifecycleStatus.Active
+                : MetadataV2LifecycleStatus.Retired,
             State = MetadataV2OperationalState.Ready,
             ObservedAt = now
+        };
+
+    private static MetadataV2Status WithReadyStatus(
+        MetadataV2Status status, MetadataV2Status readyStatus)
+        => status with
+        {
+            LifecycleValue = readyStatus.LifecycleValue,
+            StateValue = readyStatus.StateValue,
+            ObservedAt = readyStatus.ObservedAt
         };
 
     private static MetadataV2LifecycleStatus DeriveResourceLifecycleFromBindings(

@@ -735,6 +735,7 @@ internal static partial class FeatureStreamEndpoints
             {
                 continue;
             }
+
             var service = publication is not null &&
                 snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var resolvedService)
                     ? resolvedService

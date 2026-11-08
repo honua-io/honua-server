@@ -26,9 +26,7 @@ internal class TolerantEnumJsonConverter<TEnum> : JsonConverter<TEnum>
         try
         {
             var value = _knownValues.Read(ref reader, typeof(TEnum), options);
-            if (Enum.IsDefined(value) &&
-                (!EqualityComparer<TEnum>.Default.Equals(value, PreservedEnumValue<TEnum>.UnknownValue) ||
-                 Convert.ToInt64(value, System.Globalization.CultureInfo.InvariantCulture) >= 0))
+            if (IsRecognizedValue(value))
             {
                 return new PreservedEnumValue<TEnum>(value);
             }
@@ -43,6 +41,11 @@ internal class TolerantEnumJsonConverter<TEnum> : JsonConverter<TEnum>
 
     public override void Write(Utf8JsonWriter writer, TEnum value, JsonSerializerOptions options)
         => _knownValues.Write(writer, KnownOrUnknown(value), options);
+
+    internal static bool IsRecognizedValue(TEnum value)
+        => Enum.IsDefined(value) &&
+           (!PreservedEnumValue<TEnum>.UnknownIsNegativeSentinel ||
+            !EqualityComparer<TEnum>.Default.Equals(value, PreservedEnumValue<TEnum>.UnknownValue));
 
     protected static TEnum KnownOrUnknown(TEnum value)
         => Enum.IsDefined(value) ? value : PreservedEnumValue<TEnum>.UnknownValue;

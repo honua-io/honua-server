@@ -9,6 +9,9 @@ public readonly record struct PreservedEnumValue<TEnum> where TEnum : struct, En
 {
     internal static TEnum UnknownValue { get; } = Enum.Parse<TEnum>("Unknown");
 
+    internal static bool UnknownIsNegativeSentinel { get; } =
+        Convert.ToInt64(UnknownValue, System.Globalization.CultureInfo.InvariantCulture) < 0;
+
     public TEnum Value { get; }
 
     internal string? RawToken { get; }

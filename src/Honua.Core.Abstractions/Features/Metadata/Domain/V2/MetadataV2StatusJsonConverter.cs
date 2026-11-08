@@ -105,9 +105,16 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
     private static PreservedEnumValue<TEnum> ReadStatusEnum<TEnum>(ref Utf8JsonReader reader)
         where TEnum : struct, Enum
     {
-        if (reader.TokenType == JsonTokenType.String && reader.GetString() is { Length: > 0 } name &&
-            (char.IsAsciiDigit(name[0]) || name[0] is '-' or '+'))
+        if (reader.TokenType == JsonTokenType.String)
         {
+            var name = reader.GetString()!.Trim();
+            if (name.Length > 0 && !char.IsAsciiDigit(name[0]) &&
+                name[0] is not '-' and not '+' && !name.Contains(',') &&
+                Enum.TryParse<TEnum>(name, ignoreCase: true, out var value) &&
+                TolerantEnumJsonConverter<TEnum>.IsRecognizedValue(value))
+            {
+                return new PreservedEnumValue<TEnum>(value);
+            }
             return PreservedEnumValue<TEnum>.FromUnknownToken(ref reader);
         }
         return PreservedEnumJsonConverter<TEnum>.Instance.Read(ref reader, typeof(PreservedEnumValue<TEnum>), JsonSerializerOptions.Default);

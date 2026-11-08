@@ -8,6 +8,7 @@ namespace Honua.Core.Serialization;
 
 public abstract record ExtensibleJsonRecord
 {
+    // Source generation binds init-only members as constructor arguments, which extension data cannot use.
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? AdditionalProperties { get; set; }
 
