@@ -445,8 +445,8 @@ public sealed partial class ProposalEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
     public async Task ApproveProposal_RequesterInteractiveSession_ExecutesOnce()
     {
-        var proposal = await SeedProposalAsync(requestedBy: "requester");
         using var human = await HumanApprovalHttpClient.AuthenticateAsync(_fixture, _identityProvider, "requester");
+        var proposal = await SeedProposalAsync(requestedBy: human.ActorId);
 
         using var response = await human.ApproveAsync(proposal.ProposalId);
 
@@ -457,6 +457,7 @@ public sealed partial class ProposalEndpointsTests : IAsyncLifetime
         resolved.HumanApproval!.Channel.Should().Be(OperationHumanApprovalEvidence.InteractiveOidcChannel);
         resolved.HumanApproval.PlanHash.Should().Be(proposal.SealedPlanHash);
         resolved.ResolvedBy.Should().Be(resolved.HumanApproval.ActorId);
+        resolved.ResolvedBy.Should().Be(proposal.RequestedBy);
     }
 
     [IntegrationTest]
