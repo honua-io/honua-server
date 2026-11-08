@@ -26,7 +26,9 @@ internal class TolerantEnumJsonConverter<TEnum> : JsonConverter<TEnum>
         try
         {
             var value = _knownValues.Read(ref reader, typeof(TEnum), options);
-            if (Enum.IsDefined(value))
+            if (Enum.IsDefined(value) &&
+                (!EqualityComparer<TEnum>.Default.Equals(value, PreservedEnumValue<TEnum>.UnknownValue) ||
+                 Convert.ToInt64(value, System.Globalization.CultureInfo.InvariantCulture) >= 0))
             {
                 return new PreservedEnumValue<TEnum>(value);
             }

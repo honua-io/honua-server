@@ -731,6 +731,10 @@ internal static partial class FeatureStreamEndpoints
             }
 
             var publication = ResolvePrimaryStreamPublication(snapshot, resource);
+            if (publication is null && snapshot.Index.PublicationsByResource[resource.Metadata.Id].Any())
+            {
+                continue;
+            }
             var service = publication is not null &&
                 snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var resolvedService)
                     ? resolvedService

@@ -821,8 +821,7 @@ internal sealed partial class Wcs20Handler
         var visible = new List<(MetadataV2Resource Resource, MetadataV2Service Service)>();
         foreach (var publication in snapshot.Graph.Publications)
         {
-            if (!string.Equals(publication.ResourceId, resource.Metadata.Id, StringComparison.Ordinal) ||
-                !snapshot.IsRoutable(publication))
+            if (!string.Equals(publication.ResourceId, resource.Metadata.Id, StringComparison.Ordinal))
             {
                 continue;
             }
@@ -831,7 +830,7 @@ internal sealed partial class Wcs20Handler
                 IsCoverageProtocol(service))
             {
                 hasCoveragePublication = true;
-                if (!TenantScopeHelpers.IsPublicationVisible(context, publication, resource, service))
+                if (!snapshot.IsRoutable(publication) || !TenantScopeHelpers.IsPublicationVisible(context, publication, resource, service))
                 {
                     continue;
                 }

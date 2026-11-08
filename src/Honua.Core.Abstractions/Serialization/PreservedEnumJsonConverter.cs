@@ -11,7 +11,16 @@ internal class PreservedEnumJsonConverter<TEnum> : JsonConverter<PreservedEnumVa
 {
     internal static PreservedEnumJsonConverter<TEnum> Instance { get; } = new();
 
-    private readonly TolerantEnumJsonConverter<TEnum> _values = new();
+    private readonly TolerantEnumJsonConverter<TEnum> _values;
+
+    public PreservedEnumJsonConverter() : this(new TolerantEnumJsonConverter<TEnum>())
+    {
+    }
+
+    protected PreservedEnumJsonConverter(TolerantEnumJsonConverter<TEnum> values)
+    {
+        _values = values;
+    }
 
     public override PreservedEnumValue<TEnum> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         => _values.ReadPreserved(ref reader, options);
@@ -24,21 +33,14 @@ internal class PreservedEnumJsonConverter<TEnum> : JsonConverter<PreservedEnumVa
             return;
         }
 
-        WriteKnownValue(writer, value.Value, options);
+        _values.Write(writer, value.Value, options);
     }
-
-    protected virtual void WriteKnownValue(Utf8JsonWriter writer, TEnum value, JsonSerializerOptions options)
-        => _values.Write(writer, value, options);
 }
 
 internal sealed class PreservedNumericEnumJsonConverter<TEnum> : PreservedEnumJsonConverter<TEnum>
     where TEnum : struct, Enum
 {
-    private readonly TolerantNumericEnumJsonConverter<TEnum> _values = new();
-
-    public override PreservedEnumValue<TEnum> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
-        => _values.ReadPreserved(ref reader, options);
-
-    protected override void WriteKnownValue(Utf8JsonWriter writer, TEnum value, JsonSerializerOptions options)
-        => _values.Write(writer, value, options);
+    public PreservedNumericEnumJsonConverter() : base(new TolerantNumericEnumJsonConverter<TEnum>())
+    {
+    }
 }

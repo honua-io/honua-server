@@ -128,7 +128,6 @@ public sealed record MetadataV2Status : ExtensibleJsonRecord
     }
 
     [JsonPropertyName("lifecycle")]
-    [JsonConverter(typeof(PreservedEnumJsonConverter<MetadataV2LifecycleStatus>))]
     public PreservedEnumValue<MetadataV2LifecycleStatus> LifecycleValue { get; init; } = MetadataV2LifecycleStatus.Active;
 
     [JsonIgnore]
@@ -139,7 +138,6 @@ public sealed record MetadataV2Status : ExtensibleJsonRecord
     }
 
     [JsonPropertyName("state")]
-    [JsonConverter(typeof(PreservedEnumJsonConverter<MetadataV2OperationalState>))]
     public PreservedEnumValue<MetadataV2OperationalState> StateValue { get; init; } = MetadataV2OperationalState.Unknown;
 
     [JsonPropertyName("conditions")]
