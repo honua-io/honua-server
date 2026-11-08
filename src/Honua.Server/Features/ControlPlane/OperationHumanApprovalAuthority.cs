@@ -226,7 +226,8 @@ internal sealed partial class OperationHumanApprovalAuthority(
         OperationHumanApprovalBinding.From(proposal), OperationHumanApprovalJsonContext.Default.OperationHumanApprovalBinding));
 
     internal static string ComputeInitiationDigest(OperationInitiationEvidence initiation) => Hash(
-        JsonSerializer.SerializeToUtf8Bytes(initiation, OperationProposalJsonContext.Default.OperationInitiationEvidence));
+        JsonSerializer.SerializeToUtf8Bytes(OperationInitiationEvidenceV1.From(initiation),
+            OperationHumanApprovalJsonContext.Default.OperationInitiationEvidenceV1));
 
     private static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
 

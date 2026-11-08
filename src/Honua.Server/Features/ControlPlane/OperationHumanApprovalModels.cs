@@ -47,8 +47,8 @@ internal sealed class OperationHumanApprovalBinding
     public required string? PlanHash { get; init; }
     public required bool ScopeGoverned { get; init; }
     public required IReadOnlyList<string> RecognizedScopes { get; init; }
-    public required OperationInitiationEvidence? Initiation { get; init; }
-    public required OperationProposalEvidence? Evidence { get; init; }
+    public required OperationInitiationEvidenceV1? Initiation { get; init; }
+    public required OperationProposalEvidenceV1? Evidence { get; init; }
 
     public static OperationHumanApprovalBinding From(OperationProposal proposal) => new()
     {
@@ -63,8 +63,8 @@ internal sealed class OperationHumanApprovalBinding
         PlanHash = proposal.SealedPlanHash,
         ScopeGoverned = proposal.ScopeGoverned,
         RecognizedScopes = proposal.RecognizedScopes,
-        Initiation = proposal.Initiation,
-        Evidence = proposal.Evidence,
+        Initiation = OperationInitiationEvidenceV1.From(proposal.Initiation),
+        Evidence = OperationProposalEvidenceV1.From(proposal.Evidence),
     };
 }
 
@@ -72,4 +72,5 @@ internal sealed class OperationHumanApprovalBinding
 [JsonSerializable(typeof(OperationHumanApprovalReview))]
 [JsonSerializable(typeof(OperationHumanApprovalCapability))]
 [JsonSerializable(typeof(OperationHumanApprovalBinding))]
+[JsonSerializable(typeof(OperationInitiationEvidenceV1))]
 internal sealed partial class OperationHumanApprovalJsonContext : JsonSerializerContext;
