@@ -3,7 +3,7 @@ type: concept
 title: "Go live and activation"
 description: "Activating a saved Map or App Version at its governed route, with the current authority contract."
 tags: [gis, domain-language]
-aliases: ["resource exposure","service membership"]
+aliases: ["go live","activate","release a map","released"]
 sources:
   - id: contract
     resource: "/guides/connect/ai-agents-mcp.md"
