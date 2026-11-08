@@ -122,9 +122,11 @@ public sealed class StacCollectionsTests : IAsyncLifetime
             stacExtension: JsonSerializer.SerializeToElement(new
             {
                 license = "CC-BY-4.0",
-                keywords = ExpectedCollectionKeywords,
                 extensions = ExpectedCollectionExtensions
             }));
+        _fixture.MutateV2ResourceObjectMetadata(
+            WebAppFixture.TestLayerId,
+            metadata => metadata with { Keywords = ExpectedCollectionKeywords });
 
         var collectionId = WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture);
         var response = await _fixture.Client.GetAsync($"/stac/collections/{collectionId}");
@@ -148,13 +150,15 @@ public sealed class StacCollectionsTests : IAsyncLifetime
     }
 
     [IntegrationTheory]
-    [InlineData("/stac/collections")]
-    [InlineData("/stac/collections/0")]
+    [InlineData("/stac/collections", "coastal")]
+    [InlineData("/stac/collections/0", "coastal")]
+    [InlineData("/stac/collections", null)]
+    [InlineData("/stac/collections/0", null)]
     [Operation(Operations.Query)]
     [Operation(Operations.GetById)]
     [Endpoint("GET /stac/collections")]
     [Endpoint("GET /stac/collections/{collectionId}")]
-    public async Task GetCollections_EditedDatasetKeywords_OverrideExtensionAndLabels(string path)
+    public async Task GetCollections_EditedDatasetKeywords_OverrideExtensionAndLabels(string path, string? keyword)
     {
         _fixture.UpdateV2ResourceMetadata(
             WebAppFixture.TestLayerId,
@@ -163,7 +167,7 @@ public sealed class StacCollectionsTests : IAsyncLifetime
             WebAppFixture.TestLayerId,
             metadata => metadata with
             {
-                Keywords = [" coastal ", "", "COASTAL", "survey"],
+                Keywords = keyword is null ? [] : [keyword],
                 Labels = new Dictionary<string, string> { ["old-label"] = "operations" }
             });
 
@@ -175,8 +179,16 @@ public sealed class StacCollectionsTests : IAsyncLifetime
             ? collections.EnumerateArray().Single(candidate =>
                 candidate.GetProperty("id").GetString() == WebAppFixture.TestLayerId.ToString(CultureInfo.InvariantCulture))
             : json.RootElement;
-        collection.GetProperty("keywords").EnumerateArray()
-            .Select(keyword => keyword.GetString()).Should().Equal("coastal", "survey");
+        if (keyword is null)
+        {
+            (collection.TryGetProperty("keywords", out var emittedKeywords) &&
+                emittedKeywords.ValueKind != JsonValueKind.Null).Should().BeFalse();
+        }
+        else
+        {
+            collection.GetProperty("keywords").EnumerateArray()
+                .Select(value => value.GetString()).Should().Equal(keyword);
+        }
     }
 
     [IntegrationTest]

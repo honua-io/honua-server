@@ -31,7 +31,7 @@ public sealed class StacResourceExtensionsTests
     }
 
     [UnitTest]
-    public void ResolveKeywords_DatasetKeywordsEmpty_PreservesExtensionThenLabelFallbacks()
+    public void ResolveKeywords_DatasetKeywordsEmpty_DoesNotResurrectExtensionOrLabelKeywords()
     {
         var dataset = new MetadataV2Resource
         {
@@ -46,9 +46,11 @@ public sealed class StacResourceExtensionsTests
             }
         };
 
-        dataset.ResolveKeywords()!.Value.Should().Equal("imagery");
+        dataset.ResolveKeywords().Should().BeNull();
         (dataset with { Extensions = new Dictionary<string, JsonElement>() })
-            .ResolveKeywords()!.Value.Should().Equal("operations");
+            .ResolveKeywords().Should().BeNull();
+        (dataset with { Metadata = dataset.Metadata with { Keywords = [] } })
+            .ResolveKeywords().Should().BeNull();
         new MetadataV2Resource().ResolveKeywords().Should().BeNull();
     }
 
