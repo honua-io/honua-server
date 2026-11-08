@@ -193,11 +193,10 @@ public sealed partial class LayerPublishingIntegrationTests
                 .ThrowAsync<Npgsql.PostgresException>().Where(error => error.SqlState == Npgsql.PostgresErrorCodes.CheckViolation);
         }
 
-        var catalog = await CallGeometryCatalogAsync("honua_list_layers", new { filter = _serviceName });
-        var layer = catalog.GetProperty("layers").EnumerateArray().Single(layer => layer.GetProperty("storageLayerId").GetInt32() == _layerId);
+        var layer = await ReadImportedGeometryCatalogLayerAsync();
         layer.GetProperty("geometryType").GetString().Should().Be(canonicalType);
         layer.GetProperty("srid").GetInt32().Should().Be(targetSrid);
-        var described = await CallGeometryCatalogAsync("honua_describe_layer", new { serviceId = _serviceName, layerId = _layerId });
+        var described = await CallGeometryCatalogAsync("honua_describe_layer", new { serviceId = _serviceName, serviceLayerIndex = layer.GetProperty("serviceLayerIndex").GetInt32() });
         described.GetProperty("geometryType").GetString().Should().Be(canonicalType);
         described.GetProperty("srid").GetInt32().Should().Be(targetSrid);
     }
@@ -208,6 +207,16 @@ public sealed partial class LayerPublishingIntegrationTests
         var payload = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, payload);
         return JsonDocument.Parse(payload);
+    }
+
+    private async Task<JsonElement> ReadImportedGeometryCatalogLayerAsync()
+    {
+        var catalog = await CallGeometryCatalogAsync("honua_list_layers", new { filter = _serviceName });
+        var layer = catalog.GetProperty("layers").EnumerateArray().Single();
+        layer.GetProperty("serviceId").GetString().Should().Be(_serviceName);
+        layer.TryGetProperty("layerId", out _).Should().BeFalse();
+        layer.TryGetProperty("storageLayerId", out _).Should().BeFalse();
+        return layer;
     }
 
     private async Task<JsonElement> CallGeometryCatalogAsync(string name, object arguments)
