@@ -76,6 +76,12 @@ public sealed partial class PublishServiceToolTests
         descriptor.Annotations.DestructiveHint.Should().BeFalse("publish creates a layer rather than destroying state");
         descriptor.Annotations.IdempotentHint.Should().BeFalse("service.publish does not honor an idempotency key");
 
+        var inputs = descriptor.InputSchema.GetProperty("properties");
+        inputs.GetProperty("folderId").GetProperty("type").EnumerateArray().Select(value => value.GetString())
+            .Should().ContainInOrder("string", "null");
+        inputs.GetProperty("publicName").GetProperty("type").GetString().Should().Be("string");
+        inputs.GetProperty("namespace").GetProperty("type").GetString().Should().Be("string");
+
         descriptor.OutputSchema.Should().NotBeNull();
         var schema = descriptor.OutputSchema!.Value;
         schema.GetProperty("type").GetString().Should().Be("object");

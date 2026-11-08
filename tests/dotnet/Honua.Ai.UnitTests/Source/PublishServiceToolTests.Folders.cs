@@ -11,8 +11,8 @@ public sealed partial class PublishServiceToolTests
 {
     [UnitTheory]
     [InlineData("", false, null)]
-    [InlineData(",\"folderId\":null,\"publicName\":\"Parcels\"", true, null)]
-    [InlineData(",\"folderId\":\"folder\",\"publicName\":\"Parcels\"", true, "folder")]
+    [InlineData(",\"folderId\":null,\"publicName\":\"Parcels\",\"namespace\":\"workspace\"", true, null)]
+    [InlineData(",\"folderId\":\"folder\",\"publicName\":\"Parcels\",\"namespace\":\"workspace\"", true, "folder")]
     public async Task PublishService_ForwardsFolderPresenceAndPublicName(string selection, bool specified, string? folderId)
     {
         OperationRequest? captured = null;
@@ -37,7 +37,8 @@ public sealed partial class PublishServiceToolTests
         {
             captured.Parameters["folderId"].Should().Be(folderId);
             captured.Parameters["publicName"].Should().Be("Parcels");
+            captured.Parameters["namespace"].Should().Be("workspace");
         }
-        else captured.Parameters.Should().NotContainKey("publicName");
+        else captured.Parameters.Should().NotContainKey("publicName").And.NotContainKey("namespace");
     }
 }

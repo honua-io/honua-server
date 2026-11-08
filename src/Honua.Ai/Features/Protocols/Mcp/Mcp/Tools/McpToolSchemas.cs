@@ -77,6 +77,16 @@ internal static class McpToolSchemas
               "type": "string",
               "description": "Target service name. Defaults to the canonical default service when omitted."
             },
+            "folderId": {
+              "type": ["string", "null"],
+              "minLength": 1,
+              "description": "Destination Folder identifier. Null selects Root; omission preserves existing membership."
+            },
+            "publicName": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Immutable public Service leaf name, separate from its logical serviceName and display title."
+            },
             "description": {
               "type": "string",
               "description": "Optional layer description."

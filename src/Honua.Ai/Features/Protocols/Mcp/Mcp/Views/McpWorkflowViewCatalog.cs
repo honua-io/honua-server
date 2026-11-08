@@ -219,6 +219,7 @@ internal static class McpWorkflowViewCatalog
                 Rules =
                 [
                     McpWorkflowViewMemberRule.Exact("honua_list_folders"),
+                    McpWorkflowViewMemberRule.Exact("honua_admin_services_list"),
                     McpWorkflowViewMemberRule.Exact("honua_create_folder"),
                     McpWorkflowViewMemberRule.Exact("honua_update_folder"),
                     McpWorkflowViewMemberRule.Exact("honua_delete_folder"),

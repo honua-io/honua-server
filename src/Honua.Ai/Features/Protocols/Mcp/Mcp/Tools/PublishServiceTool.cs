@@ -104,6 +104,16 @@ internal sealed class PublishServiceTool : IMcpTool
             parameters["srid"] = srid.ToString(CultureInfo.InvariantCulture);
         }
 
+        if (argument.FolderId.IsSpecified)
+        {
+            parameters["folderId"] = argument.FolderId.Value;
+        }
+
+        if (argument.PublicName is not null)
+        {
+            parameters["publicName"] = argument.PublicName;
+        }
+
         return new OperationRequest
         {
             OperationId = PublishOperationId,

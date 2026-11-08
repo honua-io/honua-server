@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Ai.Protocols.Mcp.Models;
 
@@ -309,6 +310,13 @@ internal sealed class McpPublishServiceArgument
 
     [JsonPropertyName("serviceName")]
     public string? ServiceName { get; set; }
+
+    [JsonPropertyName("folderId")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public MetadataV2FolderSelection FolderId { get; set; }
+
+    [JsonPropertyName("publicName")]
+    public string? PublicName { get; set; }
 
     [JsonPropertyName("description")]
     public string? Description { get; set; }

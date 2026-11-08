@@ -24,11 +24,16 @@ internal static class PublishedMetadataCatalogProjection
     {
         public string ServiceName => Service.Metadata.Name;
         public string? CanonicalEndpoint { get; init; }
+        public string? FolderName { get; init; }
 
         public McpPublishedServiceView ToDetail() => new()
         {
             ServiceId = ServiceName,
             ResourceUri = McpResourceUris.PublishedServiceUri(ServiceName),
+            FolderId = Service.FolderId,
+            FolderName = FolderName,
+            PublicName = Service.EffectivePublicName,
+            Title = Service.Metadata.Title,
             MetadataServiceId = Service.Metadata.Id,
             LayerIds = LayerIds,
             ServingLayerIds = ServingLayerIds,
@@ -52,6 +57,10 @@ internal static class PublishedMetadataCatalogProjection
         {
             ServiceId = ServiceName,
             ResourceUri = McpResourceUris.PublishedServiceUri(ServiceName),
+            FolderId = Service.FolderId,
+            FolderName = FolderName,
+            PublicName = Service.EffectivePublicName,
+            Title = Service.Metadata.Title,
             Status = Service.Status?.Lifecycle.ToString() ?? MetadataV2LifecycleStatus.Active.ToString(),
             TargetKind = "FeatureService",
             UpdatedAt = UpdatedAt,
@@ -246,7 +255,8 @@ internal static class PublishedMetadataCatalogProjection
             updated,
             snapshot.Etag)
         {
-            CanonicalEndpoint = GeoServicesServiceUrls.CanonicalLocation(context, snapshot.Graph, service, ServiceProtocols.FeatureServer)
+            CanonicalEndpoint = GeoServicesServiceUrls.CanonicalLocation(context, snapshot.Graph, service, ServiceProtocols.FeatureServer),
+            FolderName = MetadataV2ServicePaths.FolderName(snapshot.Graph, service)
         };
     }
 }

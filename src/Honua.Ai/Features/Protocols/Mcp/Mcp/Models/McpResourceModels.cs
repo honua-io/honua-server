@@ -388,7 +388,7 @@ internal sealed class McpHostedProvenance
     public string? SupersededByDeploymentResourceUri { get; set; }
 }
 
-internal sealed class McpPublishedServiceView
+internal abstract class McpPublishedServiceMetadata
 {
     [JsonPropertyName("serviceId")]
     public string ServiceId { get; set; } = string.Empty;
@@ -396,6 +396,21 @@ internal sealed class McpPublishedServiceView
     [JsonPropertyName("resourceUri")]
     public string ResourceUri { get; set; } = string.Empty;
 
+    [JsonPropertyName("folderId")]
+    public string? FolderId { get; set; }
+
+    [JsonPropertyName("folderName")]
+    public string? FolderName { get; set; }
+
+    [JsonPropertyName("publicName")]
+    public string? PublicName { get; set; }
+
+    [JsonPropertyName("title")]
+    public string? Title { get; set; }
+}
+
+internal sealed class McpPublishedServiceView : McpPublishedServiceMetadata
+{
     [JsonPropertyName("metadataServiceId")]
     public string? MetadataServiceId { get; set; }
 
@@ -454,14 +469,8 @@ internal sealed class McpPublishedServiceView
     public McpHostedProvenance Provenance { get; set; } = new();
 }
 
-internal sealed class McpPublishedServiceSummary
+internal sealed class McpPublishedServiceSummary : McpPublishedServiceMetadata
 {
-    [JsonPropertyName("serviceId")]
-    public string ServiceId { get; set; } = string.Empty;
-
-    [JsonPropertyName("resourceUri")]
-    public string ResourceUri { get; set; } = string.Empty;
-
     [JsonPropertyName("status")]
     public string Status { get; set; } = string.Empty;
 
