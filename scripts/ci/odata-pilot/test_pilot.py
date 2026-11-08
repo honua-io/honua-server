@@ -324,7 +324,7 @@ class InputTests(unittest.TestCase):
 
     def test_source_edit_restores_original_even_on_failed_command(self):
         source = self.root / "src/Honua.Protocols/OData/Example.cs"
-        source.parent.mkdir()
+        source.parent.mkdir(parents=True)
         source.write_bytes(b"original\r\n")
         with self.assertRaisesRegex(ValueError, "stage failed"):
             with pilot.edit_source(self.root, "odata-only-edit", "src/Honua.Protocols/OData/Example.cs", 1):

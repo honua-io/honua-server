@@ -84,7 +84,10 @@ RECEIPT_SCHEMA = "honua.n1-reader-compat/v1"
 REFUSAL_CODE = "schema_reader_incompatible"
 READER_DECLARATIONS_MIGRATION = "135_RecordMigrationReaderCompatibility.sql"
 # The typed schema_reader_incompatible startup guard (#5333); images built before it never refuse.
-READER_GUARD_SOURCE = "src/Honua.Core/Core/Features/Infrastructure/Domain/DatabaseSchemaCompatibilityException.cs"
+READER_GUARD_SOURCES = (
+    "src/Honua.Core/Core/Features/Infrastructure/Domain/DatabaseSchemaCompatibilityException.cs",
+    "src/Honua.Core/Features/Infrastructure/Domain/DatabaseSchemaCompatibilityException.cs",
+)
 # The N-1 prior of record is the honua-server image the latest published platform release
 # pins: the image a customer actually runs. Trunk `nightly-aot` is scaffolding, used (and
 # labelled `nightly-scaffold`) only when no release pin can be resolved and pulled.
@@ -316,6 +319,10 @@ def added_migrations(base_ref: str) -> set[str]:
     merge_base = git("merge-base", base_ref, "HEAD", check=False) or base_ref
     out = git("diff", "--name-only", "--diff-filter=A", merge_base, "HEAD")
     return {Path(p).name for p in out.splitlines() if p.endswith(".sql") and "/Migrations/" in p}
+
+
+def revision_has_reader_guard(revision: str) -> bool:
+    return bool(git("ls-tree", "--name-only", revision, "--", *READER_GUARD_SOURCES))
 
 
 def migration_paths(revision: str) -> dict[str, str]:
@@ -607,7 +614,7 @@ def execute(args: argparse.Namespace, receipt: dict, output: Path) -> Evidence:
     candidate_scripts = migration_paths("HEAD")
     prior["schema"] = max((int(n[:3]) for n in prior_scripts if n[:3].isdigit() and "/Honua.Server/" in prior_scripts[n]), default=None)
     prior["has_reader_declarations"] = READER_DECLARATIONS_MIGRATION in prior_scripts
-    prior["has_reader_guard"] = bool(git("ls-tree", "--name-only", prior["revision"], "--", READER_GUARD_SOURCE))
+    prior["has_reader_guard"] = revision_has_reader_guard(prior["revision"])
     receipt["candidate_schema"] = max((int(n[:3]) for n in candidate_scripts if n[:3].isdigit() and "/Honua.Server/" in candidate_scripts[n]), default=None)
     pr_added = added_migrations(args.base_ref)
     receipt["pr_added"] = sorted(pr_added)

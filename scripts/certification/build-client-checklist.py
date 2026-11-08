@@ -375,7 +375,7 @@ def scope_contract() -> dict:
         },
         "additional_version_reviews": ["ArcGIS Pro 3.7.2.1904 UI", "ArcPy 3.7.2/build1901 (Pro executable 3.7.2.1904)"],
         "reviewed_maturity": {
-            "source": "src/Honua.Core/Core/Features/Capabilities/CapabilityRegistry.cs",
+            "source": "src/Honua.Core/Features/Capabilities/CapabilityRegistry.cs",
             "candidate_revision": "ab2e3ed3d58196658fbd98567de65eec4db7dc64",
             "capabilities": {
                 "serve.sensorthings": "preview",

@@ -28,8 +28,8 @@
     "_comment": "ADR-0037 finer-sharding: narrowed to the Wms namespace; Wmts was carved into OGC Classic WMTS. Wcs20 paths moved to the WFS shard (which now owns Wcs20 coverage). The GeoServices MapServer and StaticMap source paths also select this shard because RenderedRasterBaselineTests validates their shared rendered-map pipeline.",
     "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms)",
     "paths": [
-      "src/Honua.Core/Core/Features/Metadata/Domain/V2/",
-      "src/Honua.Core/Core/Features/Validation/",
+      "src/Honua.Core/Features/Metadata/Domain/V2/",
+      "src/Honua.Core/Features/Validation/",
       "src/Honua.Protocols.GeoServices/MapServer/",
       "src/Honua.Protocols.OgcClassic/Wms/",
       "src/Honua.Server/Features/StaticMap/",

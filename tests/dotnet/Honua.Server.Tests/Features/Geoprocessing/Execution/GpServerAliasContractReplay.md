@@ -26,7 +26,7 @@ issue reported. The pinned candidate's own
 `GPServerEsriTaskAliases.cs` still maps both:
 
 ```
-$ git show 548b7a5263da:src/Honua.Protocols/GeoServices/GPServer/GPServerEsriTaskAliases.cs \
+$ git show 548b7a5263da:src/Honua.Protocols.GeoServices/GPServer/GPServerEsriTaskAliases.cs \
     | grep -n "DeleteFeatures\|CalculateField"
 115:        ["data-management.delete-features"] = "DeleteFeatures",
 116:        ["data-management.calculate-field"] = "CalculateField",

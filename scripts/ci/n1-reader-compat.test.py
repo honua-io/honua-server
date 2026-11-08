@@ -5,8 +5,11 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 SPEC = importlib.util.spec_from_file_location("n1", Path(__file__).with_name("n1-reader-compat.py"))
 n1 = importlib.util.module_from_spec(SPEC)
@@ -205,6 +208,37 @@ class ReleasePin(unittest.TestCase):
                                     "tag_digest_now": "sha256:bb"})
         self.assertIn("now resolves to `sha256:bb`", text)
         self.assertEqual(n1.describe_release({}), "")
+
+
+class ReaderGuardLayout(unittest.TestCase):
+    def test_prior_guard_is_detected_before_and_after_source_move(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+
+            def repository_git(*arguments: str) -> str:
+                return subprocess.check_output(
+                    ["git", "-C", directory, *arguments], text=True).strip()
+
+            repository_git("init", "--quiet")
+            repository_git("config", "user.name", "Mike McDougall")
+            repository_git("config", "user.email", "mike@honua.io")
+            repository_git("commit", "--allow-empty", "--quiet", "-m", "empty layout")
+            empty_revision = repository_git("rev-parse", "HEAD")
+            original = root / "src/Honua.Core/Features/Infrastructure/Domain/DatabaseSchemaCompatibilityException.cs"
+            original.parent.mkdir(parents=True)
+            original.write_text("class DatabaseSchemaCompatibilityException {}")
+            repository_git("add", ".")
+            repository_git("commit", "--quiet", "-m", "original layout")
+            original_revision = repository_git("rev-parse", "HEAD")
+            relocated = root / "src/Honua.Core/Core/Features/Infrastructure/Domain/DatabaseSchemaCompatibilityException.cs"
+            relocated.parent.mkdir(parents=True)
+            original.rename(relocated)
+            repository_git("add", "--all")
+            repository_git("commit", "--quiet", "-m", "grouped layout")
+            with patch.object(n1, "git", side_effect=repository_git):
+                self.assertFalse(n1.revision_has_reader_guard(empty_revision))
+                self.assertTrue(n1.revision_has_reader_guard(original_revision))
+                self.assertTrue(n1.revision_has_reader_guard("HEAD"))
 
 
 class Summary(unittest.TestCase):
