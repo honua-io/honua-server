@@ -1318,7 +1318,7 @@ assert_excludes_shard \
   "src/Honua.Core/Core/Features/Capabilities/CapabilityRegistry.cs" \
   "Server Features Admin Runtime Operations"
 
-# #1939 raster: src/Honua.Core/Core/Features/Raster/ is the shared raster pipeline
+# src/Honua.Core/Core/Features/Raster/ is the shared raster pipeline
 # adapted by ImageServer + OGC API Coverages + Wcs(WFS). A raster change targets
 # those raster-rendering shards (incl. GeoServices ImageServer which runs the
 # ImageServer raster-sampling tests), NOT run_all.
