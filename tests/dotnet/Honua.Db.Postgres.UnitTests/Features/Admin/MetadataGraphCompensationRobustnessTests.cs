@@ -33,7 +33,9 @@ public sealed class MetadataGraphCompensationRobustnessTests
         new[] { "\"future-original\"", "\"future-failed\"", "\"future-failed\"", "\"future-original\"" },
         new[] { "\"future-original\"", "\"future-failed\"", "\"future-concurrent\"", "\"future-concurrent\"" },
         new[] { "\"future-original\"", "\"active\"", "\"active\"", "\"future-original\"" },
-        new[] { "\"active\"", "\"future-failed\"", "\"future-concurrent\"", "\"future-concurrent\"" }
+        new[] { "\"active\"", "\"future-failed\"", "\"future-concurrent\"", "\"future-concurrent\"" },
+        new[] { "\"future-original\"", "\"future-\\u0076alue\"", "\"future-value\"", "\"future-original\"" },
+        new[] { "\"future-original\"", "\"future-value\"", "\"future-\\u0076alue\"", "\"future-original\"" }
     };
 
     [UnitTheory]

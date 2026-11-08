@@ -71,6 +71,21 @@ public sealed class MetadataV2LosslessEnumTests
     }
 
     [UnitTest]
+    public void Equals_NormalizedUnknownToken_MatchesDictionaryKeyWithoutChangingEncoding()
+    {
+        var escaped = JsonSerializer.Deserialize("""{"resources":[{"type":"future-\u0076alue"}]}""",
+            MetadataV2JsonContext.Default.MetadataV2Graph)!;
+        var normalized = JsonSerializer.Deserialize("""{"resources":[{"type":"future-value"}]}""",
+            MetadataV2JsonContext.Default.MetadataV2Graph)!;
+        var index = new[] { escaped.Resources.Single().TypeValue }.ToDictionary(kind => kind);
+
+        index.ContainsKey(normalized.Resources.Single().TypeValue).Should().BeTrue();
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(escaped, MetadataV2JsonContext.Default.MetadataV2Graph));
+        json.RootElement.GetProperty("resources")[0].GetProperty("type").GetRawText()
+            .Should().Be("\"future-\\u0076alue\"");
+    }
+
+    [UnitTest]
     public void Serialize_ExplicitEnumEdit_ReplacesUnknownToken()
     {
         var graph = JsonSerializer.Deserialize("""{"resources":[{"type":"future-kind"}]}""",
