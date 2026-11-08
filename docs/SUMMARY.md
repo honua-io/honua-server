@@ -108,7 +108,7 @@
   - [Run geoprocessing](guides/query-analyze/run-geoprocessing.md)
   - [Author a geoprocessing process](guides/query-analyze/gp-devkit-authoring.md)
   - [Local geoprocessing dev quickstart](guides/query-analyze/gp-local-dev-quickstart.md)
-  - [Raster/vector GP in custom-code tools](customcode/raster-gp-pattern.md)
+  - [Raster/vector GP in custom-code tools](guides/raster-gp-pattern.md)
   - [Data enrichment API](operator/data-enrichment.md)
   - [Automate workflows](guides/query-analyze/automate-workflows.md)
   - [Work with time](guides/query-analyze/work-with-time.md)
@@ -135,7 +135,7 @@
   - [Attachments & related records](guides/edit/attachments-and-related-records.md)
   - [React to changes](guides/edit/react-to-changes.md)
   - [WFS 2.0 transaction receipts](guides/wfs-transaction-receipts.md)
-  - [Referenced GP output persistence](user/gp-output-store-attestation.md)
+  - [Referenced GP output persistence](guides/gp-output-store-attestation.md)
 - Secure
   - [Authentication](guides/secure/authentication.md)
   - [Access control](guides/secure/access-control.md)
@@ -160,8 +160,8 @@
   - [Upgrade & rollback](guides/deploy/upgrade-and-rollback.md)
   - [Troubleshooting](guides/deploy/troubleshooting.md)
   - [Capability deployment profiles](guides/deploy/capability-deployment-profiles.md)
-  - [Route geoprocessing to AWS Batch](operator/geoprocessing-aws-batch.md)
-  - [GP process release bindings](operator/geoprocessing-process-releases.md)
+  - [Route geoprocessing to AWS Batch](guides/deploy/geoprocessing-aws-batch.md)
+  - [GP process release bindings](guides/deploy/geoprocessing-process-releases.md)
 - Migrate
   - [From GeoServices REST](guides/migrate/from-geoservices-rest.md)
   - [GeoServices REST apps & SDKs](guides/migrate/geoservices-apps-and-sdks.md)
