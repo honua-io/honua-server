@@ -118,13 +118,11 @@ internal sealed partial class CoordinatedReleaseControlService(
         }
 
         var context = operation.CoordinatedRelease;
-        var evidence = approvalAuthority is null
-            ? throw new HumanApprovalRequiredException()
-            : await approvalAuthority.VerifyGateAsync(operation, gate, new OperationProposalApprovalContext
-            {
-                ApprovedBy = requestedBy ?? throw new HumanApprovalRequiredException(),
-                TenantId = operation.Audit.TenantId,
-            }, cancellationToken).ConfigureAwait(false);
+        var authority = approvalAuthority ?? throw new HumanApprovalRequiredException();
+        var actor = requestedBy ?? throw new HumanApprovalRequiredException();
+        var evidence = await authority.VerifyGateAsync(operation, gate,
+            new OperationProposalApprovalContext { ApprovedBy = actor, TenantId = operation.Audit.TenantId },
+            cancellationToken).ConfigureAwait(false);
         var updatedContext = gate switch
         {
             CoordinatedReleaseStep.ContainerRollout => context with
