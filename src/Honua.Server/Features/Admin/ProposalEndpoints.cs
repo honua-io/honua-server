@@ -214,17 +214,8 @@ internal static class ProposalEndpoints
 
         var proposal = await proposalStore.GetAsync(id, context.RequestAborted).ConfigureAwait(false);
         if (proposal is null) return Results.NotFound();
-        try
-        {
-            OperationHumanApprovalAuthority.RefuseNonHumanTransport(context);
-        }
-        catch (HumanApprovalRequiredException exception)
-        {
-            await OperationApprovalDenialRecorder.RecordAsync(
-                context.RequestServices.GetRequiredService<IServiceScopeFactory>(), proposal, actor!,
-                OperationApprovalDenialReason.HumanSessionRequired, context.RequestAborted).ConfigureAwait(false);
-            return Results.Problem(detail: exception.Message, statusCode: StatusCodes.Status403Forbidden);
-        }
+        var transportDenial = await DenyNonHumanApprovalAsync(proposal, actor!, context).ConfigureAwait(false);
+        if (transportDenial is not null) return transportDenial;
 
         var operationId = proposal?.OperationId ?? (proposal is null ? null : LegacyOperationIds.For(proposal.Kind));
         if (proposal != null &&
@@ -277,6 +268,24 @@ internal static class ProposalEndpoints
         {
             return Results.Problem(detail: ex.Message, statusCode: StatusCodes.Status409Conflict);
         }
+    }
+
+    private static async Task<IResult?> DenyNonHumanApprovalAsync(
+        OperationProposal proposal, string actor, HttpContext context)
+    {
+        try
+        {
+            OperationHumanApprovalAuthority.RefuseNonHumanTransport(context);
+        }
+        catch (HumanApprovalRequiredException exception)
+        {
+            await OperationApprovalDenialRecorder.RecordAsync(
+                context.RequestServices.GetRequiredService<IServiceScopeFactory>(), proposal, actor,
+                OperationApprovalDenialReason.HumanSessionRequired, context.RequestAborted).ConfigureAwait(false);
+            return Results.Problem(detail: exception.Message, statusCode: StatusCodes.Status403Forbidden);
+        }
+
+        return null;
     }
 
     private static async Task<IResult> HandleOpenApprovalReview(

@@ -436,15 +436,17 @@ internal static class AdminAuthEndpoints
             }
 
             var authSessionId = await sessionStore.CreateAuthenticatedSessionAsync(
-                provider.Key,
-                tokenResponse.AccessToken,
-                tokenResponse.IdToken,
-                sessionClaims,
-                sessionExpiresAt,
-                context.RequestAborted,
-                pendingSessionId is not null && codeVerifier is not null
-                    ? AdminAuthSessionOrigin.InteractiveOidc
-                    : AdminAuthSessionOrigin.Unknown).ConfigureAwait(false);
+                new AdminAuthAuthenticatedSession
+                {
+                    ProviderKey = provider.Key,
+                    AccessToken = tokenResponse.AccessToken,
+                    IdToken = tokenResponse.IdToken,
+                    Claims = sessionClaims.ToArray(),
+                    ExpiresAt = sessionExpiresAt,
+                    Origin = pendingSessionId is not null && codeVerifier is not null
+                        ? AdminAuthSessionOrigin.InteractiveOidc
+                        : AdminAuthSessionOrigin.Unknown
+                }, context.RequestAborted).ConfigureAwait(false);
 
             SetCookie(
                 context.Response,

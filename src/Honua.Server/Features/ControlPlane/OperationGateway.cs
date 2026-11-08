@@ -653,22 +653,9 @@ internal sealed partial class OperationGateway : IOperationGateway
             UpdatedAt = now,
         };
 
-        var initiation = _initiationResolver is null
-            ? (Kind: OperationInitiationKind.Unknown, Channel: OperationInitiationChannel.Unknown)
-            : await _initiationResolver.ResolveAsync(cancellationToken).ConfigureAwait(false);
         proposal = proposal with
         {
-            Initiation = new OperationInitiationEvidence
-            {
-                Version = OperationInitiationEvidence.CurrentVersion,
-                Kind = initiation.Kind,
-                Channel = initiation.Channel,
-                PrincipalId = proposal.RequestedBy,
-                TenantId = proposal.TenantId,
-                PlanHash = proposal.SealedPlanHash!,
-                PolicyRevision = ComputePolicyRevision(decision),
-                AcceptedAt = now,
-            },
+            Initiation = await CreateInitiationEvidenceAsync(proposal, cancellationToken).ConfigureAwait(false),
         };
 
         var created = await _proposalStore.TryCreateAsync(proposal, cancellationToken: cancellationToken)
@@ -906,6 +893,25 @@ internal sealed partial class OperationGateway : IOperationGateway
 
         throw new InvalidOperationException(
             $"Failed to persist resolution for proposal '{proposal.ProposalId}' after repeated version conflicts.");
+    }
+
+    private async Task<OperationInitiationEvidence> CreateInitiationEvidenceAsync(
+        OperationProposal proposal, CancellationToken cancellationToken)
+    {
+        var initiation = _initiationResolver is null
+            ? (Kind: OperationInitiationKind.Unknown, Channel: OperationInitiationChannel.Unknown)
+            : await _initiationResolver.ResolveAsync(cancellationToken).ConfigureAwait(false);
+        return new OperationInitiationEvidence
+        {
+            Version = OperationInitiationEvidence.CurrentVersion,
+            Kind = initiation.Kind,
+            Channel = initiation.Channel,
+            PrincipalId = proposal.RequestedBy,
+            TenantId = proposal.TenantId,
+            PlanHash = proposal.SealedPlanHash!,
+            PolicyRevision = ComputePolicyRevision(proposal.GuardrailDecision!),
+            AcceptedAt = proposal.CreatedAt,
+        };
     }
 
     private async Task<OperationHumanApprovalEvidence> VerifyHumanApprovalAsync(

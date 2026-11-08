@@ -55,7 +55,7 @@ internal sealed partial class AdminAuthSessionStore(
 
     public async Task<AdminAuthPendingSession?> GetPendingSessionAsync(string? sessionId, CancellationToken cancellationToken)
     {
-        return await GetAsync(
+        return await GetSessionWithFallbackAsync(
             PendingSessionKeyPrefix,
             sessionId,
             AdminAuthSessionStoreJsonContext.Default.AdminAuthPendingSession,
@@ -67,30 +67,31 @@ internal sealed partial class AdminAuthSessionStore(
         await RemoveAsync(PendingSessionKeyPrefix, sessionId, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<string> CreateAuthenticatedSessionAsync(
+    public Task<string> CreateAuthenticatedSessionAsync(
         string providerKey,
         string accessToken,
         string? idToken,
         IReadOnlyList<AdminAuthSessionClaim> claims,
         DateTimeOffset expiresAt,
-        CancellationToken cancellationToken,
-        AdminAuthSessionOrigin origin = AdminAuthSessionOrigin.Unknown)
-    {
-        var sessionId = CreateSessionId();
-        var session = new AdminAuthAuthenticatedSession
+        CancellationToken cancellationToken)
+        => CreateAuthenticatedSessionAsync(new AdminAuthAuthenticatedSession
         {
             ProviderKey = providerKey,
             AccessToken = accessToken,
             IdToken = idToken,
             Claims = claims.ToArray(),
-            ExpiresAt = expiresAt,
-            Origin = origin
-        };
+            ExpiresAt = expiresAt
+        }, cancellationToken);
+
+    public async Task<string> CreateAuthenticatedSessionAsync(
+        AdminAuthAuthenticatedSession session, CancellationToken cancellationToken)
+    {
+        var sessionId = CreateSessionId();
 
         await SetAsync(
             AuthSessionKeyPrefix + sessionId,
             session,
-            expiresAt,
+            session.ExpiresAt,
             AdminAuthSessionStoreJsonContext.Default.AdminAuthAuthenticatedSession,
             cancellationToken).ConfigureAwait(false);
 
@@ -99,7 +100,7 @@ internal sealed partial class AdminAuthSessionStore(
 
     public async Task<AdminAuthAuthenticatedSession?> GetAuthenticatedSessionAsync(string? sessionId, CancellationToken cancellationToken)
     {
-        return await GetAsync(
+        return await GetSessionWithFallbackAsync(
             AuthSessionKeyPrefix,
             sessionId,
             AdminAuthSessionStoreJsonContext.Default.AdminAuthAuthenticatedSession,
@@ -115,8 +116,7 @@ internal sealed partial class AdminAuthSessionStore(
         string? sessionId, CancellationToken cancellationToken)
     {
         var session = await GetAsync(
-            AuthSessionKeyPrefix,
-            sessionId,
+            CreateSessionKey(AuthSessionKeyPrefix, sessionId),
             AdminAuthSessionStoreJsonContext.Default.AdminAuthAuthenticatedSession,
             cancellationToken,
             SessionReadPolicy.Authoritative).ConfigureAwait(false);
@@ -160,20 +160,30 @@ internal sealed partial class AdminAuthSessionStore(
         }
     }
 
-    private async Task<T?> GetAsync<T>(
+    private async Task<T?> GetSessionWithFallbackAsync<T>(
         string keyPrefix,
         string? sessionId,
         JsonTypeInfo<T> typeInfo,
+        CancellationToken cancellationToken)
+        where T : AdminAuthSessionState
+        => await GetAsync(CreateSessionKey(keyPrefix, sessionId), typeInfo,
+            cancellationToken, SessionReadPolicy.MemoryFallback).ConfigureAwait(false);
+
+    private static string? CreateSessionKey(string prefix, string? sessionId)
+        => string.IsNullOrWhiteSpace(sessionId) ? null : prefix + sessionId;
+
+    private async Task<T?> GetAsync<T>(
+        string? key,
+        JsonTypeInfo<T> typeInfo,
         CancellationToken cancellationToken,
-        SessionReadPolicy readPolicy = SessionReadPolicy.MemoryFallback)
+        SessionReadPolicy readPolicy)
         where T : AdminAuthSessionState
     {
-        if (string.IsNullOrWhiteSpace(sessionId))
+        if (key is null)
         {
             return null;
         }
 
-        var key = keyPrefix + sessionId;
         byte[]? payload = null;
 
         if (_distributedCache is not null)
