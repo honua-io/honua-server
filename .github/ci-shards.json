@@ -2785,9 +2785,9 @@
       "upload_odata_evidence": false,
       "filter": "(((FullyQualifiedName~Honua.Server.Tests.Features.Admin.|FullyQualifiedName~Honua.Server.Tests.Features.Console.|FullyQualifiedName~Honua.Server.Tests.Features.Alerts.)&FullyQualifiedName!~RoleEndpointsTests&FullyQualifiedName!~Observability&FullyQualifiedName!~Operate&FullyQualifiedName!~Operations&FullyQualifiedName!~TileOperation&FullyQualifiedName!~Scene&FullyQualifiedName!~PMTiles&FullyQualifiedName!~Layer&FullyQualifiedName!~MetadataRelease&FullyQualifiedName!~CoordinatedRelease&FullyQualifiedName!~DeployControl&FullyQualifiedName!~Platform&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.Tenant&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.OperationTenant&FullyQualifiedName!~UserManagement&FullyQualifiedName!~OAuth&FullyQualifiedName!~Oidc&FullyQualifiedName!~ApiKey&FullyQualifiedName!~ClientCertificate&FullyQualifiedName!~OperatorBearerToken&FullyQualifiedName!~RowLevelSecurity&FullyQualifiedName!~SecureConnection&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.RateLimit&FullyQualifiedName!~Compliance&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.AdminAuth&FullyQualifiedName!~Federation&FullyQualifiedName!~Investigation&FullyQualifiedName!~Proposal&FullyQualifiedName!~Admin.Share.&FullyQualifiedName!~License)&(FullyQualifiedName~Honua.Server.Tests.Features.Console.|FullyQualifiedName~Honua.Server.Tests.Features.Alerts.))&FullyQualifiedName!~Honua.Server.Tests.Features.Console.ConsoleSessionEndpointTests&FullyQualifiedName!~Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Console.ConsoleOpenDataEndpointsTests",
       "paths": [
-        "src/Honua.Core/Features/Alerts/",
-        "src/Honua.Core/Features/Console/",
-        "src/Honua.Core/Features/Validation/",
+        "src/Honua.Core/Core/Features/Alerts/",
+        "src/Honua.Core/Core/Features/Console/",
+        "src/Honua.Core/Core/Features/Validation/",
         "src/Honua.Db/Postgres/Features/Alerts/",
         "src/Honua.Db/Postgres/Features/Console/",
         "src/Honua.Server/Features/Alerts/",
