@@ -228,16 +228,6 @@
       "coverageRequired": false,
       "shardRouted": false
     },
-    "tests/dotnet/Honua.ControlPlane.Lambda.Tests/Honua.ControlPlane.Lambda.Tests.csproj": {
-      "role": "unit",
-      "runtimeOwners": [
-        "src/Honua.ControlPlane.Lambda/Honua.ControlPlane.Lambda.csproj"
-      ],
-      "resources": [],
-      "isolated": true,
-      "coverageRequired": true,
-      "shardRouted": false
-    },
     "tests/dotnet/Honua.Core.Security.Tests/Honua.Core.Security.Tests.csproj": {
       "role": "unit",
       "runtimeOwners": [
