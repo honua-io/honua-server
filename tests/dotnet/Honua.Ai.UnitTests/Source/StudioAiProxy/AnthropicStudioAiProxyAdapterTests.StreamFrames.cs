@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Ai.StudioAiProxy;
 using Honua.Ai.StudioAiProxy.Adapters;
@@ -50,6 +51,17 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
 
         events.Should().ContainSingle().Which.ErrorCode.Should().Be("studio_ai/unsupported_content_block");
         events[0].ErrorMessage.Should().Be($"Provider returned unsupported content block type '{blockType}'.");
+    }
+
+    [UnitTest]
+    public async Task StreamAsync_EmptyTextDeltaBeforeMessageStart_FailsClosed()
+    {
+        var fixture = "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"\"}}\n\n"
+            + TextTurnFixture;
+
+        var events = await CollectAsync(CreateAdapter(fixture), ToolFreeRequest());
+
+        events.Should().ContainSingle().Which.Type.Should().Be(StudioAiChatEventType.Error);
     }
 
     [UnitTest]
@@ -124,5 +136,20 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
         arguments[2]!.ToString().Should().Contain(expectedMetadata).And.NotContain("PRIVATE_CANARY");
         arguments[3].Should().BeNull();
         events.Single().ErrorMessage.Should().NotContain("PRIVATE_CANARY");
+    }
+
+    [UnitTheory]
+    [InlineData(64, true)]
+    [InlineData(65, false)]
+    public async Task StreamAsync_UnknownEventMetadata_EnforcesLengthBoundary(int length, bool acceptedMetadata)
+    {
+        var eventType = new string('a', length);
+        var frame = JsonSerializer.Serialize(new { type = eventType });
+
+        var events = await CollectAsync(CreateAdapter($"data: {frame}\n\n"), ToolFreeRequest());
+
+        var expectedLabel = acceptedMetadata ? eventType : "invalid";
+        events.Should().ContainSingle().Which.ErrorMessage.Should()
+            .Be($"Provider returned unknown stream event type '{expectedLabel}'.");
     }
 }
