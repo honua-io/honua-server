@@ -7,6 +7,8 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Identity.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Security;
 using Honua.Infrastructure.Authentication;
@@ -20,6 +22,41 @@ namespace Honua.Server.Tests.Features.OperationsToolset;
 
 public sealed partial class FolderOperationIntegrationTests
 {
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/operations/{id}/submit")]
+    public async Task ServiceMove_MembershipChangesAfterAuthentication_DoesNotAcceptStaleAuthority()
+    {
+        var initial = await SnapshotAsync();
+        await ApplyAsync("folder.create", new() { ["name"] = "Destination", ["If-Match"] = initial.Etag });
+        var restricted = await RestrictLastServiceFacetAsync();
+        var payload = new AdminApiOperationApprovalPayload
+        {
+            OperationId = "service.move", ServiceName = "test", TenantId = "public", SchemaName = _fixture.CurrentSchema,
+            Parameters = new() { ["folderId"] = restricted.Graph.Folders.Single().Metadata.Id, ["If-Match"] = restricted.Etag }
+        };
+        _memberships.Current = new PrincipalMembership(true, ["admin", "service-owner"]);
+        await WithRequesterContextAsync(payload, async context =>
+        {
+            context.User.IsInRole("service-owner").Should().BeTrue();
+            var facet = restricted.Graph.Services.Last(service => service.Metadata.Name == "test");
+            (await FolderEndpoints.RequireServiceAccessAsync(context, facet)).Should().BeNull();
+            _memberships.Current = new PrincipalMembership(true, ["admin"]);
+            var result = await _fixture.Services.GetRequiredService<IOperationGateway>().CreateApprovalProposalAsync("stale-" + Guid.NewGuid().ToString("N"), new()
+            {
+                OperationId = payload.OperationId, Kind = OperationClass.AdminConfigChange, TenantId = payload.TenantId,
+                RequestedBy = CanonicalSecurityActor.Resolve(context.User)!.ActorId,
+                Plan = new OperationProposalPlan
+                {
+                    ExecutionPayload = JsonSerializer.Serialize(payload, AdminApiOperationApprovalJsonContext.Default.AdminApiOperationApprovalPayload)
+                }
+            });
+            result.Outcome.Should().Be(OperationGatewayOutcome.Blocked);
+            result.Message.Should().Be(FolderApprovalAuthorization.FreshProposalRequired);
+            result.ProposalId.Should().BeNull();
+        }, "folder-requester");
+        (await SnapshotAsync()).Etag.Should().Be(restricted.Etag);
+    }
+
     [IntegrationTheory]
     [Endpoint("POST /api/v1/operations/{id}/submit")]
     [InlineData("dry-run")]

@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Honua.Core.Features.Authorization.Abstractions;
@@ -75,11 +76,11 @@ internal static class FolderApprovalAuthorization
             ServiceIds = mutation.AffectedServices(snapshot.Graph).Select(service => service.Metadata.Id).Order(StringComparer.Ordinal).ToArray(),
             ExpiresAt = await EvidenceExpiryAsync(context).ConfigureAwait(false)
         };
-        var revision = await PolicyRevisionAsync(context.RequestServices, authorization, cancellationToken).ConfigureAwait(false);
+        var revision = await PolicyRevisionAsync(context.RequestServices, authorization, cancellationToken, context.User).ConfigureAwait(false);
         var authorizationContext = CreateAuthorizationContext(context, request, cancellationToken);
         if (await FolderEndpoints.AuthorizeAffectedServices(authorizationContext, snapshot.Graph, mutation).ConfigureAwait(false) is not null)
             throw new FolderProposalRefusal("The requester does not have access to every affected service.");
-        if (revision != await PolicyRevisionAsync(context.RequestServices, authorization, cancellationToken).ConfigureAwait(false))
+        if (revision != await PolicyRevisionAsync(context.RequestServices, authorization, cancellationToken, context.User).ConfigureAwait(false))
             throw new FolderProposalRefusal(FreshProposalRequired);
         return plan with { FolderAuthorization = authorization with { PolicyRevision = revision } };
     }
@@ -183,7 +184,7 @@ internal static class FolderApprovalAuthorization
     }
 
     private static async Task WriteMembershipPolicyAsync(Utf8JsonWriter writer, IServiceProvider services,
-        FolderRequesterAuthorization authorization, CancellationToken cancellationToken)
+        FolderRequesterAuthorization authorization, CancellationToken cancellationToken, ClaimsPrincipal? requester)
     {
         writer.WriteStartArray();
         writer.WriteStringValue(authorization.SubjectId);
@@ -197,12 +198,31 @@ internal static class FolderApprovalAuthorization
         if (membership is not null)
         {
             if (!membership.IsActive) throw new FolderProposalRefusal(FreshProposalRequired);
+            if (requester is not null)
+            {
+                var current = await ManagedMembershipRevalidation.ApplyAsync(requester,
+                    new CapturedMembershipSource(membership), cancellationToken).ConfigureAwait(false);
+                if (current.Identity?.IsAuthenticated != true ||
+                    CanonicalSecurityActor.ResolveAuthorityFingerprint(current) != CanonicalSecurityActor.ResolveAuthorityFingerprint(requester))
+                    throw new FolderProposalRefusal(FreshProposalRequired);
+            }
             foreach (var role in membership.Roles.Order(StringComparer.Ordinal)) writer.WriteStringValue(role);
         }
         writer.WriteEndArray();
     }
 
-    private static async Task<string> PolicyRevisionAsync(IServiceProvider services, FolderRequesterAuthorization authorization, CancellationToken cancellationToken)
+    // A second lookup could authorize a different membership snapshot than the one sealed.
+    private sealed class CapturedMembershipSource(PrincipalMembership membership) : IPrincipalMembershipSource
+    {
+        public Task<PrincipalMembership?> ResolveMembershipAsync(string principalId, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<PrincipalMembership?>(membership);
+        }
+    }
+
+    private static async Task<string> PolicyRevisionAsync(IServiceProvider services, FolderRequesterAuthorization authorization,
+        CancellationToken cancellationToken, ClaimsPrincipal? requester = null)
     {
         using var bytes = new MemoryStream();
         using (var writer = new Utf8JsonWriter(bytes))
@@ -218,7 +238,7 @@ internal static class FolderApprovalAuthorization
             if (OperationProposerApiKeyAuthority.IsApiKeyActor(authorization.RequesterId))
                 await WriteCredentialPolicyAsync(writer, services, authorization.RequesterId, cancellationToken).ConfigureAwait(false);
             writer.WriteBooleanValue(LicenseGate.HasLiveEntitlement(services, FeatureCatalog.OidcClaimsMappingKey));
-            await WriteMembershipPolicyAsync(writer, services, authorization, cancellationToken).ConfigureAwait(false);
+            await WriteMembershipPolicyAsync(writer, services, authorization, cancellationToken, requester).ConfigureAwait(false);
             var store = services.GetService<IRoleStore>();
             writer.WriteBooleanValue(store is not null);
             if (store is not null)
