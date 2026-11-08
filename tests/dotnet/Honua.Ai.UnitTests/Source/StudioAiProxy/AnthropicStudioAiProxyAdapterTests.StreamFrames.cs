@@ -15,6 +15,41 @@ namespace Honua.Server.Tests.Features.StudioAiProxy;
 
 public sealed partial class AnthropicStudioAiProxyAdapterTests
 {
+    public static IEnumerable<object[]> PostTerminalStreams => new[]
+    {
+        """{"type":"ping"}""",
+        """{"type":"message_start","message":{"model":"claude-opus-5-5"}}""",
+        """{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":99}}""",
+        """{"type":"message_stop"}""",
+        """{"type":"content_block_start","index":0,"content_block":{"type":"text"}}""",
+        """{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"tool_2","name":"example_tool"}}""",
+        """{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":""}}""",
+        """{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"late"}}""",
+        """{"type":"content_block_stop","index":0}""",
+        """{"type":"error","error":{"type":"overloaded_error","message":"private provider message"}}""",
+        """{"type":"future_event","body":"private body"}""",
+        """
+        {"type":"content_block_start","index":0,"content_block":{"type":"text"}}
+        data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":""}}
+        data: {"type":"content_block_stop","index":0}
+        """
+    }.Select(frame => new object[] { TextTurnFixture + "\ndata: " + frame + "\n" });
+
+    [UnitTheory]
+    [MemberData(nameof(PostTerminalStreams))]
+    public async Task StreamAsync_FrameAfterMessageStop_RejectsBeforeConsumingIt(string fixture)
+    {
+        var events = await CollectAsync(CreateAdapter(fixture), ToolFreeRequest());
+
+        var failure = events.Should().ContainSingle(e => e.Type == StudioAiChatEventType.Error).Subject;
+        failure.ErrorCode.Should().Be(StudioAiStreamGrammarValidator.InvalidStreamCode);
+        failure.ErrorMessage.Should().Be("Provider returned a stream frame after message_stop.");
+        failure.PromptTokens.Should().Be(12);
+        failure.CompletionTokens.Should().Be(5);
+        events.Should().ContainSingle(e => e.Type == StudioAiChatEventType.MessageStart);
+        events.Should().NotContain(e => e.Type == StudioAiChatEventType.ToolCallStart || e.Text == "late");
+    }
+
     [UnitTest]
     public async Task StreamAsync_EmptyTextDelta_IgnoresItAndPreservesCompletionAndUsage()
     {
