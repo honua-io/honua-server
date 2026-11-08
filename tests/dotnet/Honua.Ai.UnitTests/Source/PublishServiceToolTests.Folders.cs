@@ -19,7 +19,12 @@ public sealed partial class PublishServiceToolTests
         var invoker = new FakeInvoker((request, _) =>
         {
             captured = request;
-            return new OperationHandle { OperationId = request.OperationId, Status = OperationHandleStatus.Completed };
+            return new OperationHandle
+            {
+                OperationInstanceId = "publish-folder-test", OperationId = request.OperationId,
+                Status = OperationHandleStatus.Completed, CorrelationId = "publish-folder-test",
+                CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow
+            };
         });
         var arguments = McpTestFactory.ParseJson($$"""
             {"connectionId":"11111111-1111-1111-1111-111111111111","schema":"public","table":"points","layerName":"Points"{{selection}}}
