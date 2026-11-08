@@ -418,7 +418,7 @@ public static class MetadataV2GraphValidator
                 errors.Add(
                     $"resource '{resource.Metadata.Id}' primaryGeometryField '{spatial.PrimaryGeometryField}' is not declared in schemaFields.");
             }
-            else if (named.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography))
+            else if (named.Type != MetadataV2FieldType.Unknown && !MetadataV2FieldSemantics.SupportsGeometry(named.Type))
             {
                 errors.Add(
                     $"resource '{resource.Metadata.Id}' primaryGeometryField '{spatial.PrimaryGeometryField}' is type '{named.Type}' (must be Geometry or Geography).");
@@ -458,7 +458,7 @@ public static class MetadataV2GraphValidator
             return;
         }
 
-        if (field.Type is not (MetadataV2FieldType.Date or MetadataV2FieldType.DateTime or MetadataV2FieldType.Time))
+        if (field.Type != MetadataV2FieldType.Unknown && !MetadataV2FieldSemantics.SupportsTime(field.Type))
         {
             errors.Add(
                 $"resource '{resource.Metadata.Id}' temporal.{slot} '{fieldName}' is type '{field.Type}' (must be Date, DateTime, or Time).");
