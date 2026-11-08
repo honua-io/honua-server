@@ -45,7 +45,7 @@ To replace it, run `POST /rest/services/{service}/FeatureServer/{layerId}/{objec
 
 > Open `/rest/services/{service}/FeatureServer/{layerId}/queryRelatedRecords?objectIds={objectId}&relationshipId=0&outFields=*&f=json` in a browser.
 
-Relationships are defined per layer by the publisher (`GET /rest/services/{service}/FeatureServer/relationships` lists them; admins manage them via `PUT /api/v1/admin/metadata/layers/{layerId}/relationships`). The same operation is available on MapServer layers.
+Relationships are defined per layer by the publisher (`GET /rest/services/{service}/FeatureServer/relationships` lists them; admins manage them via `PUT /api/v1/admin/metadata/layers/{storageLayerId}/relationships`). The same operation is available on MapServer layers.
 
 ## Verify
 

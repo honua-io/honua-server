@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Net;
+using System.Text.Json;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -72,6 +73,13 @@ public sealed class ExportLayerIdentityTests : IAsyncLifetime
         Assert.True(response.StatusCode == HttpStatusCode.Accepted, body);
         await _jobs.Received(1).StartAsync(Arg.Is<ExportJob>(job => job.LayerId == StorageLayerId), Arg.Any<CancellationToken>());
         await _reader.Received(1).CountAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+        var queuedJob = _jobs.ReceivedCalls().Single(call => call.GetMethodInfo().Name == "StartAsync")
+            .GetArguments()[0] as ExportJob;
+        Assert.NotNull(queuedJob);
+        var payload = JsonSerializer.SerializeToElement(queuedJob, ExportJsonContext.Default.ExportJob);
+        Assert.Equal(StorageLayerId, payload.GetProperty("storageLayerId").GetInt32());
+        Assert.Equal(ServiceLayerIndex, payload.GetProperty("serviceLayerIndex").GetInt32());
+        Assert.False(payload.TryGetProperty("layerId", out _));
     }
 
     private string ExportPath() =>

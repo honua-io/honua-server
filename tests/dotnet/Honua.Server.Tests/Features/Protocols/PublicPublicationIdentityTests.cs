@@ -181,6 +181,29 @@ public sealed class PublicPublicationIdentityTests : IAsyncLifetime
         caseAlias.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    [IntegrationTest]
+    [Protocol(TestProtocols.Wfs20)]
+    [Operation(Operations.GetMetadata)]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetCapabilities")]
+    [Endpoint("GET /wfs")]
+    public async Task WfsCapabilities_EscapedPublicationId_DoesNotCollideWithLiteralEscape()
+    {
+        var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        var ids = new[] { "a:b", "a_x003A_b" };
+        SetGraph(graph with
+        {
+            Revision = graph.Revision + 1,
+            Publications = graph.Publications.Select((publication, index) => publication with
+            {
+                Metadata = publication.Metadata with { Id = ids[index], Name = ids[index] },
+            }).ToArray(),
+        });
+
+        var names = await WfsNamesAsync();
+        names.Should().OnlyHaveUniqueItems();
+        names.Select(XmlConvert.DecodeName).Should().BeEquivalentTo(ids);
+    }
+
     private async Task<string[]> WfsNamesAsync()
     {
         var xml = await ReadXmlAsync("/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=2.0.0");
