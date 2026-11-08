@@ -60,33 +60,29 @@ internal static class FolderEndpoints
         var denied = await AuthorizeMutation(context).ConfigureAwait(false);
         if (denied is not null) return denied;
         if (context.Request.Headers.IfMatch.Count != 1 || string.IsNullOrWhiteSpace(context.Request.Headers.IfMatch))
-            return Results.Problem(statusCode: 428, detail: "The current snapshot ETag is required in If-Match.");
+            return FolderMutationFailure.MissingPrecondition.ToResult();
         var store = context.RequestServices.GetService<IMetadataV2GraphStore>();
         if (store is null)
-            return Results.Problem(statusCode: 503, detail: "Folder mutations are unavailable on this read-only metadata catalog.");
+            return FolderMutationFailure.ReadOnlyCatalog.ToResult();
         try
         {
             return await CommitMutationAsync(context, mutation, store).ConfigureAwait(false);
         }
-        catch (MetadataV2GraphConcurrencyException) { return Results.Problem(statusCode: 412, detail: "The metadata snapshot has changed. Refresh and retry."); }
-        catch (KeyNotFoundException) { return Results.NotFound(); }
-        catch (ArgumentException)
+        catch (Exception exception) when (FolderMutationFailure.Handles(exception))
         {
-            return Results.Problem(statusCode: 400,
-                detail: "Invalid folder input. Use an unreserved ASCII folder name beginning with a letter, and supply folderId (null for root) when moving a service.");
+            return FolderMutationFailure.From(exception).ToResult();
         }
-        catch (InvalidOperationException) { return Results.Problem(statusCode: 409, detail: "Folder or public path conflicts with the current catalog or a permanent reservation."); }
     }
 
     private static async Task<IResult> CommitMutationAsync(
         HttpContext context, Func<MetadataV2Graph, FolderMutation> mutation, IMetadataV2GraphStore store)
     {
         if (context.Features.Get<FolderReplayServicePrincipal>() is { } replay &&
-            !await FolderApprovalAuthorization.IsCurrentAsync(replay.Proposal, context, context.RequestAborted).ConfigureAwait(false))
+            !await FolderApprovalAuthorization.IsCurrentAsync(replay.Proposal, context.RequestServices, context.RequestAborted).ConfigureAwait(false))
             return Results.Problem(statusCode: StatusCodes.Status403Forbidden, detail: FolderApprovalAuthorization.FreshProposalRequired);
         var snapshot = await store.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
         if (snapshot.Etag != context.Request.Headers.IfMatch.ToString())
-            return Results.Problem(statusCode: 412, detail: "The metadata snapshot has changed. Refresh and retry.");
+            return FolderMutationFailure.SnapshotChanged.ToResult();
         var changed = mutation(snapshot.Graph);
         var denial = await AuthorizeAffectedServices(context, snapshot.Graph, changed).ConfigureAwait(false);
         if (denial is not null) return denial;

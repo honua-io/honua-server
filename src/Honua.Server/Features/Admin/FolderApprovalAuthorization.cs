@@ -11,6 +11,9 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Identity.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.Infrastructure.Licensing;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Operations.Domain;
@@ -27,72 +30,85 @@ internal static class FolderApprovalAuthorization
 {
     internal const string FreshProposalRequired = "Folder requester authorization changed or is unavailable. Submit a fresh proposal.";
 
+    internal const string NewIdempotencyKeyRequired = "A proposal with this Idempotency-Key was sealed for a different request or authorization. Submit with a new Idempotency-Key.";
+    private static readonly TimeSpan MaximumEvidenceLifetime = TimeSpan.FromDays(30);
+
     internal static async Task<OperationProposalPlan> PrepareAsync(
-        string operationId, string? requesterId, string? tenantId, OperationProposalPlan plan,
-        HttpContext? context, CancellationToken cancellationToken)
+        OperationGatewayRequest operation, OperationProposalPlan plan, HttpContext? context, CancellationToken cancellationToken)
     {
-        if (context is null || context.User.Identity?.IsAuthenticated != true ||
+        if (context?.User.Identity?.IsAuthenticated != true)
+            throw new FolderProposalRefusal("Folder proposals require an active authenticated requester; background callers cannot create them.");
+        var actor = CanonicalSecurityActor.Resolve(context.User);
+        if (actor is null || !actor.IsDurablyRevalidatable || actor.ActorId != operation.RequestedBy ||
             context.User.IsInRole(AdminApiKeyPermission.ApprovedOperationRole) ||
-            CanonicalSecurityActor.Resolve(context.User)?.ActorId is not { } actor || actor != requesterId ||
-            !MetadataV2ServicePaths.SameTenant(tenantId, context.RequestServices.GetRequiredService<ITenantContext>().TenantId))
-            throw new FolderProposalRefusal(FreshProposalRequired);
-        var payload = ReadPayload(operationId, tenantId, plan);
+            !MetadataV2ServicePaths.SameTenant(operation.TenantId, context.RequestServices.GetRequiredService<ITenantContext>().TenantId))
+            throw new FolderProposalRefusal("Folder proposals require the authenticated requester's durable identity and tenant.");
+        var payload = FolderReplayRequest.ReadSealedPayload(plan, operation.OperationId, operation.TenantId);
         if (payload.SchemaName != context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema)
-            throw new FolderProposalRefusal(FreshProposalRequired);
+            throw new FolderProposalRefusal("The folder proposal schema does not match the authenticated request.");
         var request = payload.ToOperationRequest();
-        var snapshot = await context.RequestServices.GetRequiredService<IMetadataV2GraphStore>()
-            .GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        if (request.Parameters.GetValueOrDefault("If-Match") != snapshot.Etag)
-            throw new FolderProposalRefusal("The metadata snapshot has changed or If-Match is missing. Refresh and submit a fresh proposal.", OperationGatewayOutcome.Failed);
+        var store = context.RequestServices.GetService<IMetadataV2GraphStore>()
+            ?? throw new FolderProposalRefusal(FolderMutationFailure.ReadOnlyCatalog.Detail, OperationGatewayOutcome.Failed);
+        var snapshot = await store.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        if (!request.Parameters.TryGetValue("If-Match", out var etag) || string.IsNullOrWhiteSpace(etag))
+            throw new FolderProposalRefusal(FolderMutationFailure.MissingPrecondition.Detail, OperationGatewayOutcome.Failed);
+        if (etag != snapshot.Etag)
+            throw new FolderProposalRefusal(FolderMutationFailure.SnapshotChanged.Detail, OperationGatewayOutcome.Failed);
         if (await context.RequestServices.GetRequiredService<OperatorApprovalGate>().EvaluateAuthorizationAsync(context,
             OperatorResourceType.Catalog, OperatorOperation.Publish).ConfigureAwait(false) is not null)
             throw new FolderProposalRefusal("The requester does not have permission to change the folder catalog.");
-        var mutation = BuildMutation(snapshot.Graph, request, tenantId);
-        var policyRevision = await PolicyRevisionAsync(context.RequestServices, requesterId!, cancellationToken).ConfigureAwait(false);
+        var mutation = BuildMutation(snapshot.Graph, request, operation.TenantId);
+        var authorization = new FolderRequesterAuthorization
+        {
+            RequesterId = actor.ActorId, SubjectId = actor.SubjectId, SubjectIssuer = actor.SubjectIssuer,
+            OperationId = operation.OperationId!, SnapshotEtag = snapshot.Etag, PolicyRevision = string.Empty,
+            ServiceIds = mutation.AffectedServices(snapshot.Graph).Select(service => service.Metadata.Id).Order(StringComparer.Ordinal).ToArray(),
+            ExpiresAt = await EvidenceExpiryAsync(context).ConfigureAwait(false)
+        };
+        var revision = await PolicyRevisionAsync(context.RequestServices, authorization, cancellationToken).ConfigureAwait(false);
         var authorizationContext = CreateAuthorizationContext(context, request, cancellationToken);
         if (await FolderEndpoints.AuthorizeAffectedServices(authorizationContext, snapshot.Graph, mutation).ConfigureAwait(false) is not null)
             throw new FolderProposalRefusal("The requester does not have access to every affected service.");
-        if (policyRevision != await PolicyRevisionAsync(context.RequestServices, requesterId!, cancellationToken).ConfigureAwait(false))
+        if (revision != await PolicyRevisionAsync(context.RequestServices, authorization, cancellationToken).ConfigureAwait(false))
             throw new FolderProposalRefusal(FreshProposalRequired);
-        var ticket = await context.AuthenticateAsync().ConfigureAwait(false);
-        var expiry = ticket.Properties?.ExpiresUtc;
+        return plan with { FolderAuthorization = authorization with { PolicyRevision = revision } };
+    }
+
+    private static async Task<DateTimeOffset> EvidenceExpiryAsync(HttpContext context)
+    {
+        var now = context.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow();
+        var expiry = now.Add(MaximumEvidenceLifetime);
+        var authentication = context.Features.Get<IAuthenticateResultFeature>()?.AuthenticateResult ?? await context.AuthenticateAsync().ConfigureAwait(false);
+        if (authentication.Properties?.ExpiresUtc is { } ticketExpiry && ticketExpiry < expiry) expiry = ticketExpiry;
         if (long.TryParse(context.User.FindFirst("exp")?.Value, out var unixExpiry))
         {
             var tokenExpiry = DateTimeOffset.FromUnixTimeSeconds(unixExpiry);
-            if (expiry is null || tokenExpiry < expiry) expiry = tokenExpiry;
+            if (tokenExpiry < expiry) expiry = tokenExpiry;
         }
-        if (expiry <= context.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow())
-            throw new FolderProposalRefusal(FreshProposalRequired);
-        return plan with
-        {
-            FolderAuthorization = new FolderRequesterAuthorization
-            {
-                RequesterId = actor, OperationId = operationId, SnapshotEtag = snapshot.Etag,
-                PolicyRevision = policyRevision,
-                ServiceIds = mutation.AffectedServices(snapshot.Graph).Select(service => service.Metadata.Id).Order(StringComparer.Ordinal).ToArray(),
-                ExpiresAt = expiry
-            }
-        };
+        if (expiry <= now) throw new FolderProposalRefusal("The requester credential has expired. Authenticate and submit a fresh proposal.");
+        return expiry;
     }
 
-    internal static async Task<bool> IsCurrentAsync(OperationProposal proposal, HttpContext context, CancellationToken cancellationToken)
+    internal static async Task<bool> IsCurrentAsync(OperationProposal proposal, IServiceProvider services, CancellationToken cancellationToken)
     {
         var authorization = proposal.Plan.FolderAuthorization;
         if (authorization is null || authorization.OperationId != proposal.OperationId || authorization.RequesterId != proposal.RequestedBy ||
-            authorization.ExpiresAt <= context.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow()) return false;
+            authorization.ExpiresAt <= services.GetRequiredService<TimeProvider>().GetUtcNow()) return false;
         try
         {
-            var payload = ReadPayload(proposal.OperationId!, proposal.TenantId, proposal.Plan);
-            var snapshot = await context.RequestServices.GetRequiredService<IMetadataV2GraphStore>()
+            if (proposal.SealedPlanHash != OperationApprovalPlanSeal.Compute(proposal.Plan)) return false;
+            var payload = FolderReplayRequest.ReadSealedPayload(proposal.Plan, proposal.OperationId, proposal.TenantId);
+            if (payload.SchemaName != services.GetService<ISchemaContext>()?.CurrentSchema) return false;
+            var snapshot = await services.GetRequiredService<IMetadataV2GraphStore>()
                 .GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             if (snapshot.Etag != authorization.SnapshotEtag ||
                 payload.Parameters.GetValueOrDefault("If-Match") != snapshot.Etag ||
-                authorization.PolicyRevision != await PolicyRevisionAsync(context.RequestServices, authorization.RequesterId, cancellationToken).ConfigureAwait(false)) return false;
+                authorization.PolicyRevision != await PolicyRevisionAsync(services, authorization, cancellationToken).ConfigureAwait(false)) return false;
             var affected = BuildMutation(snapshot.Graph, payload.ToOperationRequest(), proposal.TenantId)
                 .AffectedServices(snapshot.Graph).Select(service => service.Metadata.Id).Order(StringComparer.Ordinal);
             return authorization.ServiceIds.SequenceEqual(affected, StringComparer.Ordinal);
         }
-        catch (Exception exception) when (exception is JsonException or ArgumentException or KeyNotFoundException or InvalidOperationException or FolderProposalRefusal)
+        catch (Exception exception) when (exception is not OperationCanceledException and not OutOfMemoryException)
         {
             return false;
         }
@@ -102,24 +118,16 @@ internal static class FolderApprovalAuthorization
         => existing.RequestedBy == requesterId && existing.Plan.ExecutionPayload == plan.ExecutionPayload &&
             existing.Plan.FolderAuthorization is { } prior && plan.FolderAuthorization is { } current &&
             prior.RequesterId == current.RequesterId && prior.OperationId == current.OperationId &&
+            prior.ExpiresAt > DateTimeOffset.UtcNow && prior.SubjectId == current.SubjectId && prior.SubjectIssuer == current.SubjectIssuer &&
             prior.SnapshotEtag == current.SnapshotEtag && prior.PolicyRevision == current.PolicyRevision &&
             prior.ServiceIds.SequenceEqual(current.ServiceIds, StringComparer.Ordinal);
-
-    private static AdminApiOperationApprovalPayload ReadPayload(string operationId, string? tenantId, OperationProposalPlan plan)
-    {
-        var payload = plan.ExecutionPayload is null ? null : JsonSerializer.Deserialize(plan.ExecutionPayload,
-            AdminApiOperationApprovalJsonContext.Default.AdminApiOperationApprovalPayload);
-        if (payload is null || payload.OperationId != operationId || payload.DryRun ||
-            !MetadataV2ServicePaths.SameTenant(payload.TenantId, tenantId)) throw new FolderProposalRefusal(FreshProposalRequired);
-        return payload;
-    }
 
     private static FolderMutation BuildMutation(MetadataV2Graph graph, OperationRequest request, string? tenantId)
     {
         var parameters = request.Parameters;
-        var tenant = parameters.ContainsKey("namespace") ? MetadataV2ServicePaths.NormalizeTenant(tenantId) : null;
-        if (!LayerPublicationNamespace.IsValid(parameters.GetValueOrDefault("namespace")) ||
-            (parameters.ContainsKey("namespace") && tenant is null)) throw new FolderProposalRefusal(FreshProposalRequired);
+        var namespaced = parameters.TryGetValue("namespace", out var selection) && selection is not null;
+        var tenant = namespaced ? MetadataV2ServicePaths.NormalizeTenant(tenantId) : null;
+        if (!LayerPublicationNamespace.IsValid(selection) || (namespaced && tenant is null)) throw new FolderProposalRefusal(FreshProposalRequired);
         var folder = new FolderRequest { Name = parameters.GetValueOrDefault("name") };
         if (parameters.TryGetValue("title", out var title)) folder.Title = title;
         return request.OperationId switch
@@ -136,22 +144,15 @@ internal static class FolderApprovalAuthorization
     private static DefaultHttpContext CreateAuthorizationContext(HttpContext context, OperationRequest request, CancellationToken cancellationToken)
     {
         var authorization = new DefaultHttpContext { RequestServices = context.RequestServices, User = context.User, RequestAborted = cancellationToken };
-        var definition = AdminApiOperationCatalog.Definitions.Single(item => item.OperationId == request.OperationId);
-        authorization.Request.Method = definition.Method.Method;
-        authorization.Request.Path = "/api/v1/admin" + AdminApiOperationExecutor.BindPath(definition, request);
-        if (request.Parameters.TryGetValue("namespace", out var selection))
-            authorization.Request.QueryString = QueryString.Create("namespace", selection);
+        FolderReplayRequest.BindRoute(request, authorization.Request);
         return authorization;
     }
 
     private static async Task WriteCredentialPolicyAsync(Utf8JsonWriter writer, IServiceProvider services,
         string requesterId, CancellationToken cancellationToken)
     {
-        if (!OperationProposerApiKeyAuthority.TryGetKeyId(requesterId, out var id))
-            throw new FolderProposalRefusal(FreshProposalRequired);
-        var key = await services.GetRequiredService<IAdminApiKeyStore>().GetAsync(id, cancellationToken).ConfigureAwait(false);
-        if (key is null || key.Id != id || key.RevokedAt is not null ||
-            key.ExpiresAt <= services.GetRequiredService<TimeProvider>().GetUtcNow()) throw new FolderProposalRefusal(FreshProposalRequired);
+        var authority = new OperationProposerApiKeyAuthority(services.GetRequiredService<TimeProvider>(), services.GetService<IAdminApiKeyStore>());
+        var key = await authority.GetCurrentRecordAsync(requesterId, cancellationToken).ConfigureAwait(false);
         writer.WriteStartArray();
         writer.WriteStringValue(key.Id);
         writer.WriteStringValue(key.ExpiresAt?.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
@@ -165,7 +166,27 @@ internal static class FolderApprovalAuthorization
         writer.WriteEndArray();
     }
 
-    private static async Task<string> PolicyRevisionAsync(IServiceProvider services, string requesterId, CancellationToken cancellationToken)
+    private static async Task WriteMembershipPolicyAsync(Utf8JsonWriter writer, IServiceProvider services,
+        FolderRequesterAuthorization authorization, CancellationToken cancellationToken)
+    {
+        writer.WriteStartArray();
+        writer.WriteStringValue(authorization.SubjectId);
+        writer.WriteStringValue(authorization.SubjectIssuer);
+        var source = services.GetService<IPrincipalMembershipSource>();
+        writer.WriteBooleanValue(source is not null);
+        var membership = source is not null && authorization.SubjectId is not null
+            ? await source.ResolveMembershipAsync(authorization.SubjectId, authorization.SubjectIssuer, cancellationToken).ConfigureAwait(false)
+            : null;
+        writer.WriteBooleanValue(membership is not null);
+        if (membership is not null)
+        {
+            if (!membership.IsActive) throw new FolderProposalRefusal(FreshProposalRequired);
+            foreach (var role in membership.Roles.Order(StringComparer.Ordinal)) writer.WriteStringValue(role);
+        }
+        writer.WriteEndArray();
+    }
+
+    private static async Task<string> PolicyRevisionAsync(IServiceProvider services, FolderRequesterAuthorization authorization, CancellationToken cancellationToken)
     {
         using var bytes = new MemoryStream();
         using (var writer = new Utf8JsonWriter(bytes))
@@ -178,8 +199,10 @@ internal static class FolderApprovalAuthorization
             writer.WriteStartArray();
             foreach (var role in options.DataEditorRoles.Order(StringComparer.Ordinal)) writer.WriteStringValue(role);
             writer.WriteEndArray();
-            if (OperationProposerApiKeyAuthority.IsApiKeyActor(requesterId))
-                await WriteCredentialPolicyAsync(writer, services, requesterId, cancellationToken).ConfigureAwait(false);
+            if (OperationProposerApiKeyAuthority.IsApiKeyActor(authorization.RequesterId))
+                await WriteCredentialPolicyAsync(writer, services, authorization.RequesterId, cancellationToken).ConfigureAwait(false);
+            writer.WriteBooleanValue(LicenseGate.HasLiveEntitlement(services, FeatureCatalog.OidcClaimsMappingKey));
+            await WriteMembershipPolicyAsync(writer, services, authorization, cancellationToken).ConfigureAwait(false);
             var store = services.GetService<IRoleStore>();
             writer.WriteBooleanValue(store is not null);
             if (store is not null)

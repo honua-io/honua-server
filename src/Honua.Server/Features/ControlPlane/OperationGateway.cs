@@ -350,12 +350,17 @@ internal sealed partial class OperationGateway : IOperationGateway
                 schemaContext.CurrentSchema = replay?.SchemaName;
             }
 
-            OperationHandle handle;
+            OperationHandle? handle = null;
             try
             {
                 // Recheck after claim/scope/replay preparation, immediately before canonical dispatch.
                 await ValidateCurrentProposerAsync(proposal.RequestedBy, cancellationToken).ConfigureAwait(false);
-                handle = await invoker.SubmitAsync(
+                if (FolderOperationCredential.IsFolderMutation(proposal.OperationId ?? string.Empty) &&
+                    !await FolderApprovalAuthorization.IsCurrentAsync(proposal, scope.ServiceProvider, cancellationToken).ConfigureAwait(false))
+                {
+                    failureMessage = FolderApprovalAuthorization.FreshProposalRequired;
+                }
+                else handle = await invoker.SubmitAsync(
                     replay?.Request ?? new OperationRequest
                     {
                         OperationId = operationId,
@@ -387,17 +392,20 @@ internal sealed partial class OperationGateway : IOperationGateway
 
                 tenantContext?.Set(previousTenant, previousTenantSource);
             }
-            executionOperationId = handle.JobId;
-            status = handle.Status switch
+            if (handle is not null)
             {
-                OperationHandleStatus.Completed => OperationProposalStatus.Succeeded,
-                OperationHandleStatus.Queued or OperationHandleStatus.Running => OperationProposalStatus.Submitted,
-                _ => OperationProposalStatus.Failed,
-            };
-            if (status == OperationProposalStatus.Failed)
-            {
-                failureMessage = handle.Reason
-                    ?? $"Canonical approved replay returned unexpected status '{handle.Status}'.";
+                executionOperationId = handle.JobId;
+                status = handle.Status switch
+                {
+                    OperationHandleStatus.Completed => OperationProposalStatus.Succeeded,
+                    OperationHandleStatus.Queued or OperationHandleStatus.Running => OperationProposalStatus.Submitted,
+                    _ => OperationProposalStatus.Failed,
+                };
+                if (status == OperationProposalStatus.Failed)
+                {
+                    failureMessage = handle.Reason
+                        ?? $"Canonical approved replay returned unexpected status '{handle.Status}'.";
+                }
             }
         }
         catch (OperationCanceledException)
@@ -583,7 +591,7 @@ internal sealed partial class OperationGateway : IOperationGateway
             ? new OperationGatewayResult
             {
                 Outcome = OperationGatewayOutcome.Blocked, Decision = decision,
-                Message = FolderApprovalAuthorization.FreshProposalRequired
+                Message = FolderApprovalAuthorization.NewIdempotencyKeyRequired
             }
             : ExistingProposalResult(existing, decision, request.IdempotencyKey!);
 
@@ -602,19 +610,18 @@ internal sealed partial class OperationGateway : IOperationGateway
             var context = authorizationScope.ServiceProvider.GetService<IHttpContextAccessor>()?.HttpContext;
             try
             {
-                plan = await FolderApprovalAuthorization.PrepareAsync(request.OperationId!, request.RequestedBy,
-                    request.TenantId, plan, context, cancellationToken).ConfigureAwait(false);
+                plan = await FolderApprovalAuthorization.PrepareAsync(request, plan, context, cancellationToken).ConfigureAwait(false);
             }
             catch (FolderProposalRefusal refusal)
             {
                 return new OperationGatewayResult { Outcome = refusal.Outcome, Decision = decision, Message = refusal.Message };
             }
-            catch (Exception exception) when (exception is System.Text.Json.JsonException or ArgumentException or KeyNotFoundException or InvalidOperationException)
+            catch (Exception exception) when (FolderMutationFailure.Handles(exception))
             {
                 return new OperationGatewayResult
                 {
                     Outcome = OperationGatewayOutcome.Failed, Decision = decision,
-                    Message = "Folder proposal input is invalid or unavailable. Refresh the catalog and submit a fresh proposal."
+                    Message = FolderMutationFailure.From(exception).Detail
                 };
             }
         }

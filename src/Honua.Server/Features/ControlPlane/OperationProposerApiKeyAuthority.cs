@@ -27,6 +27,11 @@ internal sealed class OperationProposerApiKeyAuthority(TimeProvider timeProvider
 
     internal async Task ValidateAsync(string? actor, CancellationToken cancellationToken)
     {
+        await GetCurrentRecordAsync(actor, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal async Task<AdminApiKeyRecord> GetCurrentRecordAsync(string? actor, CancellationToken cancellationToken)
+    {
         cancellationToken.ThrowIfCancellationRequested();
         if (!TryGetKeyId(actor, out var id) || apiKeys is null)
             throw Denied();
@@ -42,6 +47,7 @@ internal sealed class OperationProposerApiKeyAuthority(TimeProvider timeProvider
             new Claim(AdminApiKeyPermission.PermissionClaimType, permission)), "proposal-key-revalidation");
         identity.AddClaim(new Claim(ClaimTypes.Role, "admin"));
         if (!AdminApiKeyPermission.IsAuthorized(new ClaimsPrincipal(identity), HttpMethods.Post)) throw Denied();
+        return record;
     }
 
     private static InvalidOperationException Denied() => new(Refusal);

@@ -17,15 +17,12 @@ internal static class FolderReplayRequest
         if (proposal.Plan.ExecutionPayload is null) return false;
         try
         {
-            var payload = JsonSerializer.Deserialize(proposal.Plan.ExecutionPayload,
-                AdminApiOperationApprovalJsonContext.Default.AdminApiOperationApprovalPayload);
-            if (payload is null || payload.OperationId != proposal.OperationId || payload.DryRun ||
-                !MetadataV2ServicePaths.SameTenant(payload.TenantId, proposal.TenantId)) return false;
+            var payload = ReadSealedPayload(proposal.Plan, proposal.OperationId, proposal.TenantId);
             var approvedRequest = payload.ToOperationRequest();
-            var definition = AdminApiOperationCatalog.Definitions.Single(item => item.OperationId == approvedRequest.OperationId);
+            var approvedRoute = new DefaultHttpContext().Request;
+            BindRoute(approvedRequest, approvedRoute);
             var request = invocation.HttpContext.Request;
-            return request.Method == definition.Method.Method &&
-                request.Path.Value == "/api/v1/admin" + AdminApiOperationExecutor.BindPath(definition, approvedRequest) &&
+            return request.Method == approvedRoute.Method && request.Path.Value == approvedRoute.Path.Value &&
                 request.Headers.IfMatch.Count == 1 && request.Headers.IfMatch.ToString() == approvedRequest.Parameters.GetValueOrDefault("If-Match") &&
                 MatchesNamespace(request, approvedRequest.Parameters.GetValueOrDefault("namespace")) &&
                 MatchesBody(invocation, approvedRequest);
@@ -34,6 +31,25 @@ internal static class FolderReplayRequest
         {
             return false;
         }
+    }
+
+    internal static AdminApiOperationApprovalPayload ReadSealedPayload(OperationProposalPlan plan, string? operationId, string? tenantId)
+    {
+        var payload = plan.ExecutionPayload is null ? null : JsonSerializer.Deserialize(plan.ExecutionPayload,
+            AdminApiOperationApprovalJsonContext.Default.AdminApiOperationApprovalPayload);
+        if (payload is null || payload.Parameters is null || payload.OperationId != operationId || payload.DryRun ||
+            !MetadataV2ServicePaths.SameTenant(payload.TenantId, tenantId))
+            throw new ArgumentException("The sealed folder operation payload is invalid.");
+        return payload;
+    }
+
+    internal static void BindRoute(OperationRequest operation, HttpRequest request)
+    {
+        var definition = AdminApiOperationCatalog.Definitions.Single(item => item.OperationId == operation.OperationId);
+        request.Method = definition.Method.Method;
+        request.Path = "/api/v1/admin" + AdminApiOperationExecutor.BindPath(definition, operation);
+        request.QueryString = operation.Parameters.TryGetValue("namespace", out var selection) && selection is not null
+            ? QueryString.Create("namespace", selection) : QueryString.Empty;
     }
 
     private static bool MatchesNamespace(HttpRequest request, string? approvedNamespace)

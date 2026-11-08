@@ -7,6 +7,11 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Identity.Abstractions;
+using Honua.Core.Features.Licensing.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Helpers;
+using Honua.Server.Tests.Features.Admin;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -55,12 +60,10 @@ public sealed partial class FolderOperationIntegrationTests
         using var response = await _proposer.PostAsJsonAsync($"/api/v1/operations/{operationId}/submit",
             new { serviceName = "test", parameters });
         var payload = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Forbidden);
-        if (response.StatusCode == HttpStatusCode.OK)
-        {
-            using var body = JsonDocument.Parse(payload);
-            body.RootElement.GetProperty("data").GetProperty("status").GetString().Should().Be("Denied", payload);
-        }
+        response.StatusCode.Should().Be(HttpStatusCode.OK, payload);
+        using var body = JsonDocument.Parse(payload);
+        body.RootElement.GetProperty("data").GetProperty("status").GetString().Should().Be("Denied", payload);
+        body.RootElement.GetProperty("data").GetProperty("reason").GetString().Should().Be("The requester does not have access to every affected service.");
         (await _proposals.ListActiveAsync()).Should().OnlyContain(proposal => activeBefore.Contains(proposal.ProposalId),
             "submission must check every affected facet before accepting an approval proposal");
         (await SnapshotAsync()).Etag.Should().Be(restricted.Etag);
@@ -111,6 +114,7 @@ public sealed partial class FolderOperationIntegrationTests
             (await SnapshotAsync()).Etag.Should().Be(before.Etag, "role policy changes do not change the metadata ETag");
             await ApproveAsync(proposalId);
             (await _proposals.GetAsync(proposalId))!.Status.Should().Be(OperationProposalStatus.Failed);
+            (await _proposals.GetAsync(proposalId))!.ResolutionReason.Should().Be(FolderApprovalAuthorization.FreshProposalRequired);
             (await SnapshotAsync()).Etag.Should().Be(before.Etag);
             (await SnapshotAsync()).Graph.Folders.Should().NotContain(folder => folder.Metadata.Name == "Pending");
         }
@@ -131,6 +135,7 @@ public sealed partial class FolderOperationIntegrationTests
             new AdminApiKeyRestrictions(null, ["192.0.2.0/24"]), CancellationToken.None)).Should().NotBeNull();
         await ApproveAsync(proposalId);
         (await _proposals.GetAsync(proposalId))!.Status.Should().Be(OperationProposalStatus.Failed);
+        (await _proposals.GetAsync(proposalId))!.ResolutionReason.Should().Be(FolderApprovalAuthorization.FreshProposalRequired);
         (await SnapshotAsync()).Etag.Should().Be(before.Etag);
     }
 
@@ -150,18 +155,9 @@ public sealed partial class FolderOperationIntegrationTests
         var payload = JsonSerializer.Deserialize(original.Plan.ExecutionPayload!,
             AdminApiOperationApprovalJsonContext.Default.AdminApiOperationApprovalPayload)!;
         payload.Parameters["If-Match"] = restricted.Etag;
-        using var scope = _fixture.Services.CreateScope();
-        scope.ServiceProvider.GetRequiredService<SchemaContext>().CurrentSchema = payload.SchemaName;
-        scope.ServiceProvider.GetRequiredService<RequestTenantContext>().Set(original.TenantId, TenantContextSource.Claim);
-        var context = new DefaultHttpContext { RequestServices = scope.ServiceProvider };
-        context.Request.Headers["X-API-Key"] = _proposer.DefaultRequestHeaders.GetValues("X-API-Key").Single();
-        context.User = (await context.AuthenticateAsync(AuthenticationExtensions.ApiKeyScheme)).Principal!;
-        var accessor = _fixture.Services.GetRequiredService<IHttpContextAccessor>();
-        var previous = accessor.HttpContext;
-        try
+        await WithRequesterContextAsync(payload, async context =>
         {
-            accessor.HttpContext = context;
-            var result = await _fixture.Services.GetRequiredService<IOperationGateway>().CreateApprovalProposalAsync("untrusted-plan", new()
+            var result = await _fixture.Services.GetRequiredService<IOperationGateway>().CreateApprovalProposalAsync(original.Audit.OperationInstanceId!, new()
             {
                 OperationId = "service.move", Kind = OperationClass.AdminConfigChange,
                 RequestedBy = CanonicalSecurityActor.Resolve(context.User)!.ActorId,
@@ -172,10 +168,154 @@ public sealed partial class FolderOperationIntegrationTests
                 }
             });
             result.Outcome.Should().Be(OperationGatewayOutcome.Blocked);
+            result.Message.Should().Be("The requester does not have access to every affected service.");
             result.ProposalId.Should().BeNull();
-        }
-        finally { accessor.HttpContext = previous; }
+        });
         (await SnapshotAsync()).Etag.Should().Be(restricted.Etag);
+    }
+
+    [IntegrationTheory]
+    [Endpoint("POST /api/v1/operations/{id}/submit")]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    [InlineData("roles")]
+    [InlineData("inactive")]
+    [InlineData("removed")]
+    [InlineData("entitlement")]
+    public async Task FolderCreate_ManagedMembershipChanges_RequiresFreshProposal(string change)
+    {
+        if (change == "entitlement") _licensing.Current = new TestLicenseEntitlementService(HonuaEdition.Enterprise);
+        var before = await SnapshotAsync();
+        var payload = new AdminApiOperationApprovalPayload
+        {
+            OperationId = "folder.create", TenantId = "public", SchemaName = _fixture.CurrentSchema,
+            Parameters = new() { ["name"] = "SubjectFolder", ["If-Match"] = before.Etag }
+        };
+        await WithRequesterContextAsync(payload, async context =>
+        {
+            var result = await _fixture.Services.GetRequiredService<IOperationGateway>().CreateApprovalProposalAsync("subject-" + Guid.NewGuid().ToString("N"), new()
+            {
+                OperationId = payload.OperationId, Kind = OperationClass.AdminConfigChange, TenantId = payload.TenantId,
+                RequestedBy = CanonicalSecurityActor.Resolve(context.User)!.ActorId,
+                Plan = new OperationProposalPlan
+                {
+                    Summary = "Create subject folder",
+                    ExecutionPayload = JsonSerializer.Serialize(payload, AdminApiOperationApprovalJsonContext.Default.AdminApiOperationApprovalPayload)
+                }
+            });
+            result.Outcome.Should().Be(OperationGatewayOutcome.ProposalCreated, result.Message);
+            var proposal = (await _proposals.GetAsync(result.ProposalId!))!;
+            proposal.Plan.FolderAuthorization!.SubjectId.Should().Be("folder-requester");
+            proposal.Plan.FolderAuthorization.ExpiresAt.Should().BeAfter(DateTimeOffset.UtcNow).And.BeBefore(DateTimeOffset.UtcNow.AddDays(31));
+            JsonSerializer.Serialize(proposal.Plan, Honua.ControlPlane.OperationProposalJsonContext.Default.OperationProposalPlan)
+                .Should().NotContain("original-membership");
+            if (change == "entitlement") _licensing.Current = new TestLicenseEntitlementService(HonuaEdition.Pro);
+            else _memberships.Current = change switch
+            {
+                "roles" => new PrincipalMembership(true, ["viewer"]),
+                "inactive" => new PrincipalMembership(false, ["admin"]),
+                _ => null
+            };
+            await ApproveAsync(result.ProposalId!);
+            var refused = (await _proposals.GetAsync(result.ProposalId!))!;
+            refused.Status.Should().Be(OperationProposalStatus.Failed);
+            refused.ResolutionReason.Should().Be(FolderApprovalAuthorization.FreshProposalRequired);
+        }, "folder-requester");
+        (await SnapshotAsync()).Etag.Should().Be(before.Etag);
+    }
+
+    [IntegrationTheory]
+    [Endpoint("POST /api/v1/operations/{id}/submit")]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FolderCreate_IdempotencyCollision_RequiresNewKeyForActiveAndTerminalProposal(bool terminal)
+    {
+        var before = await SnapshotAsync();
+        var payload = new AdminApiOperationApprovalPayload
+        {
+            OperationId = "folder.create", TenantId = "public", SchemaName = _fixture.CurrentSchema,
+            Parameters = new() { ["name"] = "First", ["If-Match"] = before.Etag }
+        };
+        await WithRequesterContextAsync(payload, async context =>
+        {
+            var gateway = _fixture.Services.GetRequiredService<IOperationGateway>();
+            var request = new OperationGatewayRequest
+            {
+                OperationId = payload.OperationId, Kind = OperationClass.AdminConfigChange, TenantId = payload.TenantId,
+                RequestedBy = CanonicalSecurityActor.Resolve(context.User)!.ActorId,
+                IdempotencyKey = "folder-" + Guid.NewGuid().ToString("N"),
+                Plan = new OperationProposalPlan
+                {
+                    Summary = "Create folder",
+                    ExecutionPayload = JsonSerializer.Serialize(payload, AdminApiOperationApprovalJsonContext.Default.AdminApiOperationApprovalPayload)
+                }
+            };
+            var first = await gateway.CreateApprovalProposalAsync("first-" + Guid.NewGuid().ToString("N"), request);
+            first.Outcome.Should().Be(OperationGatewayOutcome.ProposalCreated, first.Message);
+            if (terminal)
+            {
+                var proposal = (await _proposals.GetAsync(first.ProposalId!))!;
+                (await _proposals.TrySetAsync(proposal with { Status = OperationProposalStatus.Rejected })).Should().BeTrue();
+            }
+            var active = await _proposals.ListActiveAsync();
+            if (terminal) active.Should().NotContain(proposal => proposal.ProposalId == first.ProposalId);
+            else active.Should().Contain(proposal => proposal.ProposalId == first.ProposalId);
+            payload.Parameters["name"] = "Second";
+            var second = await gateway.CreateApprovalProposalAsync("second-" + Guid.NewGuid().ToString("N"), request with
+            {
+                Plan = request.Plan with
+                {
+                    ExecutionPayload = JsonSerializer.Serialize(payload, AdminApiOperationApprovalJsonContext.Default.AdminApiOperationApprovalPayload)
+                }
+            });
+            second.Outcome.Should().Be(OperationGatewayOutcome.Blocked);
+            second.Message.Should().Be(FolderApprovalAuthorization.NewIdempotencyKeyRequired);
+            second.ProposalId.Should().BeNull();
+        });
+        (await SnapshotAsync()).Etag.Should().Be(before.Etag);
+    }
+
+    private async Task WithRequesterContextAsync(AdminApiOperationApprovalPayload payload, Func<HttpContext, Task> action, string? subject = null)
+    {
+        using var scope = _fixture.Services.CreateScope();
+        scope.ServiceProvider.GetRequiredService<SchemaContext>().CurrentSchema = payload.SchemaName;
+        scope.ServiceProvider.GetRequiredService<RequestTenantContext>().Set(payload.TenantId, TenantContextSource.Claim);
+        var context = new DefaultHttpContext { RequestServices = scope.ServiceProvider };
+        var scheme = AuthenticationExtensions.ApiKeyScheme;
+        if (subject is null)
+            context.Request.Headers["X-API-Key"] = _proposer.DefaultRequestHeaders.GetValues("X-API-Key").Single();
+        else
+        {
+            scheme = RlsClaimsTestAuthHandler.SchemeName;
+            context.Request.Headers[RlsClaimsTestAuthHandler.UserHeader] = subject;
+            context.Request.Headers[RlsClaimsTestAuthHandler.RolesHeader] = "admin";
+        }
+        var authenticated = await context.AuthenticateAsync(scheme);
+        authenticated.Succeeded.Should().BeTrue();
+        context.User = authenticated.Principal!;
+        context.Features.Set<IAuthenticateResultFeature>(new RequesterAuthenticationFeature { AuthenticateResult = authenticated });
+        var accessor = _fixture.Services.GetRequiredService<IHttpContextAccessor>();
+        var previous = accessor.HttpContext;
+        try { accessor.HttpContext = context; await action(context); }
+        finally { accessor.HttpContext = previous; }
+    }
+
+    private sealed class RequesterAuthenticationFeature : IAuthenticateResultFeature
+    {
+        public AuthenticateResult? AuthenticateResult { get; set; }
+    }
+
+    private sealed class FolderRequesterLicense : ILicenseEntitlementService
+    {
+        public ILicenseEntitlementService Current { get; set; } = new TestLicenseEntitlementService(HonuaEdition.Pro);
+        public LicenseSnapshot GetSnapshot() => Current.GetSnapshot();
+        public LicenseEntitlementDecision CheckEntitlement(string entitlementKey) => Current.CheckEntitlement(entitlementKey);
+    }
+
+    private sealed class FolderRequesterMembership : IPrincipalMembershipSource
+    {
+        public PrincipalMembership? Current { get; set; } = new(true, ["admin", "original-membership"]);
+        public Task<PrincipalMembership?> ResolveMembershipAsync(string principalId, CancellationToken cancellationToken = default)
+            => Task.FromResult(principalId == "folder-requester" ? Current : null);
     }
 
     private async Task<MetadataV2GraphSnapshot> RestrictLastServiceFacetAsync()

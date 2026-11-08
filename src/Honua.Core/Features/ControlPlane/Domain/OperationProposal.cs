@@ -142,11 +142,13 @@ public sealed record OperationProposalPlan
 public sealed record FolderRequesterAuthorization
 {
     public required string RequesterId { get; init; }
+    public string? SubjectId { get; init; }
+    public string? SubjectIssuer { get; init; }
     public required string OperationId { get; init; }
     public required string SnapshotEtag { get; init; }
     public required string PolicyRevision { get; init; }
     public required IReadOnlyList<string> ServiceIds { get; init; }
-    public DateTimeOffset? ExpiresAt { get; init; }
+    public required DateTimeOffset ExpiresAt { get; init; }
 }
 
 /// <summary>
