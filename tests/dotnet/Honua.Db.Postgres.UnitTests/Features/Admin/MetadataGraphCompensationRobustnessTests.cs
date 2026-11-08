@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Scene.Domain;
 using Honua.Db.Postgres.Features.Admin;
 using Honua.TestKit.Attributes;
 
@@ -55,6 +56,37 @@ public sealed class MetadataGraphCompensationRobustnessTests
         {
             AtPath(json.RootElement, path).GetRawText().Should().Be(tokens[3], path);
         }
+    }
+
+    [UnitTest]
+    public void BuildRebasedCompensatingMetadataV2Graph_ConcurrentSymbologyEdit_RetainsUnknownTokenSpelling()
+    {
+        const string token = "\"future-\\u0076alue\"";
+        var previous = ReadEnumGraph(token, "Original");
+        var originalResource = previous.Resources.Single();
+        previous = previous with
+        {
+            Resources = [originalResource with { Symbology3D = originalResource.Symbology3D! with { DefaultOpacity = 0.2 } }]
+        };
+        var persistedResource = previous.Resources.Single();
+        var persisted = previous with
+        {
+            Resources = [persistedResource with { Symbology3D = persistedResource.Symbology3D! with { DefaultOpacity = 0.5 } }]
+        };
+        var currentResource = persisted.Resources.Single();
+        var current = persisted with
+        {
+            Resources = [currentResource with { Symbology3D = currentResource.Symbology3D! with { DefaultColor = Symbology3DColor.White } }]
+        };
+
+        var restored = PostgreSqlLayerPublishingService.BuildRebasedCompensatingMetadataV2Graph(
+            current, previous, persisted, DateTimeOffset.UnixEpoch);
+
+        var symbology = restored.Resources.Single().Symbology3D!;
+        symbology.DefaultOpacity.Should().Be(0.2);
+        symbology.DefaultColor.Should().Be(Symbology3DColor.White);
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(restored, MetadataV2JsonContext.Default.MetadataV2Graph));
+        AtPath(json.RootElement, "resources/0/symbology3D/rules/0/comparison").GetRawText().Should().Be(token);
     }
 
     [UnitTheory]
