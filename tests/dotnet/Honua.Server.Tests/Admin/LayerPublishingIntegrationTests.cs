@@ -926,31 +926,10 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
     [Endpoint("GET /ogc/features/collections/{collectionId}/items/{featureId}")]
     public async Task PublishLayer_FeatureServerQuery_ReadsSourceBackedPostGisTable()
     {
-        var publishRequest = new PublishLayerRequest
-        {
-            Schema = _schema,
-            Table = _tableName,
-            LayerName = $"Layer {_tableName}",
-            Description = "Layer publish FeatureServer query integration test",
-            GeometryColumn = "geom",
-            GeometryType = "Point",
-            Srid = 4326,
-            PrimaryKey = "id",
-            Fields = new[] { "id", "name", "population" },
-            ServiceName = _serviceName,
-            Enabled = true
-        };
+        var publishRequest = SourceTablePublishRequest("Layer publish FeatureServer query integration test");
 
-        var publishResponse = await _client.PostAsync(
-            $"/api/v1/admin/connections/{_connectionId}/layers",
-            JsonContent.Create(publishRequest, options: _jsonOptions));
-
-        var publishPayload = await publishResponse.Content.ReadAsStringAsync();
-        publishResponse.StatusCode.Should().Be(HttpStatusCode.Created, $"response: {publishPayload}");
-        var publishApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(publishPayload, _jsonOptions);
-        publishApi.Should().NotBeNull();
-        publishApi!.Data.Should().NotBeNull();
-        _layerId = publishApi.Data!.StorageLayerId;
+        var publishedLayer = await PublishLayerAsync(publishRequest);
+        _layerId = publishedLayer.StorageLayerId;
 
         var metadataResponse = await _client.GetAsync(
             $"/rest/services/{_serviceName}/FeatureServer/{_layerId}?f=json");
@@ -1069,31 +1048,10 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
         await InsertPostGisFeatureAsync("Near Feature", 200, 1.01d, 1.01d);
         await InsertPostGisFeatureAsync("Far Feature", 300, 10d, 10d);
 
-        var publishRequest = new PublishLayerRequest
-        {
-            Schema = _schema,
-            Table = _tableName,
-            LayerName = $"Layer {_tableName}",
-            Description = "Layer publish nearest-neighbor integration test",
-            GeometryColumn = "geom",
-            GeometryType = "Point",
-            Srid = 4326,
-            PrimaryKey = "id",
-            Fields = new[] { "id", "name", "population" },
-            ServiceName = _serviceName,
-            Enabled = true
-        };
+        var publishRequest = SourceTablePublishRequest("Layer publish nearest-neighbor integration test");
 
-        var publishResponse = await _client.PostAsync(
-            $"/api/v1/admin/connections/{_connectionId}/layers",
-            JsonContent.Create(publishRequest, options: _jsonOptions));
-
-        var publishPayload = await publishResponse.Content.ReadAsStringAsync();
-        publishResponse.StatusCode.Should().Be(HttpStatusCode.Created, $"response: {publishPayload}");
-        var publishApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(publishPayload, _jsonOptions);
-        publishApi.Should().NotBeNull();
-        publishApi!.Data.Should().NotBeNull();
-        _layerId = publishApi.Data!.StorageLayerId;
+        var publishedLayer = await PublishLayerAsync(publishRequest);
+        _layerId = publishedLayer.StorageLayerId;
 
         var pointGeometry = Uri.EscapeDataString(@"{""x"":1,""y"":1}");
         var queryResponse = await _client.GetAsync(
@@ -1173,32 +1131,10 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     public async Task PublishLayer_MaterializesFeaturesAndExtentForFeatureServer()
     {
-        var publishRequest = new PublishLayerRequest
-        {
-            Schema = _schema,
-            Table = _tableName,
-            LayerName = $"Layer {_tableName}",
-            Description = "Layer publish materialization integration test",
-            GeometryColumn = "geom",
-            GeometryType = "Point",
-            Srid = 4326,
-            PrimaryKey = "id",
-            Fields = new[] { "id", "name", "population" },
-            ServiceName = _serviceName,
-            Enabled = true
-        };
+        var publishRequest = SourceTablePublishRequest("Layer publish materialization integration test");
 
-        var publishResponse = await _client.PostAsync(
-            $"/api/v1/admin/connections/{_connectionId}/layers",
-            JsonContent.Create(publishRequest, options: _jsonOptions));
-
-        var publishPayload = await publishResponse.Content.ReadAsStringAsync();
-        publishResponse.StatusCode.Should().Be(HttpStatusCode.Created, $"response: {publishPayload}");
-        var publishApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(publishPayload, _jsonOptions);
-        publishApi.Should().NotBeNull();
-        publishApi!.Success.Should().BeTrue();
-        publishApi.Data.Should().NotBeNull();
-        _layerId = publishApi.Data!.StorageLayerId;
+        var publishedLayer = await PublishLayerAsync(publishRequest);
+        _layerId = publishedLayer.StorageLayerId;
 
         await using (var connection = await _fixture.Postgres.GetConnectionAsync())
         await using (var command = connection.CreateCommand())
@@ -2727,34 +2663,10 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
     {
         await ResetPublishedMetadataAsync();
 
-        var publishRequest = new PublishLayerRequest
-        {
-            Schema = _schema,
-            Table = _tableName,
-            LayerName = $"Layer {_tableName}",
-            Description = "Layer publish sequence bootstrap integration test",
-            GeometryColumn = "geom",
-            GeometryType = "Point",
-            Srid = 4326,
-            PrimaryKey = "id",
-            Fields = new[] { "id", "name", "population" },
-            ServiceName = _serviceName,
-            Enabled = true
-        };
+        var publishRequest = SourceTablePublishRequest("Layer publish sequence bootstrap integration test");
 
-        var publishResponse = await _client.PostAsync(
-            $"/api/v1/admin/connections/{_connectionId}/layers",
-            JsonContent.Create(publishRequest, options: _jsonOptions));
-
-        var publishPayload = await publishResponse.Content.ReadAsStringAsync();
-        publishResponse.StatusCode.Should().Be(HttpStatusCode.Created, $"response: {publishPayload}");
-        var publishApi = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(publishPayload, _jsonOptions);
-
-        publishApi.Should().NotBeNull();
-        publishApi!.Success.Should().BeTrue();
-        publishApi.Data.Should().NotBeNull();
-
-        _layerId = publishApi.Data!.StorageLayerId;
+        var publishedLayer = await PublishLayerAsync(publishRequest);
+        _layerId = publishedLayer.StorageLayerId;
         _layerId.Value.Should().BeGreaterThan(0);
     }
 
@@ -2824,6 +2736,21 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
         api.Data.Should().NotBeNull();
         return api.Data!;
     }
+
+    private PublishLayerRequest SourceTablePublishRequest(string description) => new()
+    {
+        Schema = _schema,
+        Table = _tableName,
+        LayerName = $"Layer {_tableName}",
+        Description = description,
+        GeometryColumn = "geom",
+        GeometryType = "Point",
+        Srid = 4326,
+        PrimaryKey = "id",
+        Fields = ["id", "name", "population"],
+        ServiceName = _serviceName,
+        Enabled = true
+    };
 
     private async Task<PublishedLayerSummary> PublishLayerAsync(
         PublishLayerRequest request,

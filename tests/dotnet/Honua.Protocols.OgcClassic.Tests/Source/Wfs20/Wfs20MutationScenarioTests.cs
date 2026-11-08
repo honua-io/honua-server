@@ -39,16 +39,7 @@ public sealed class Wfs20MutationScenarioTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.Wfs20, "Transaction")]
     public async Task Transaction_InsertUpdateReplaceDelete_RoundTripsEachState(string publicationId)
     {
-        var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
-        var publication = graph.Publications.Single(candidate => candidate.Metadata.Id == "pub-layer-0");
-        _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>().SetGraph(graph with
-        {
-            Revision = graph.Revision + 1,
-            Publications = graph.Publications.Select(candidate => candidate == publication
-                ? candidate with { Metadata = candidate.Metadata with { Id = publicationId, Name = publicationId } }
-                : candidate).ToArray(),
-        }, schema: _fixture.MetadataGraphSchema);
-        _typeName = XmlConvert.EncodeLocalName(publicationId);
+        ConfigurePublicationIdentity(publicationId);
         var insert = $$"""
             <wfs:Transaction service="WFS" version="2.0.0"
                 xmlns:wfs="http://www.opengis.net/wfs/2.0"
@@ -114,13 +105,7 @@ public sealed class Wfs20MutationScenarioTests : IAsyncLifetime
             .Should().Contain("<wfs:totalReplaced>1</wfs:totalReplaced>");
         (await ReadFeatureAsync(resourceId)).Should().Contain("wfs-mutation-replaced");
 
-        using var storedQuery = await _fixture.Client.GetAsync(
-            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&STOREDQUERY_ID=urn:ogc:def:query:OGC-WFS::GetFeatureById&ID={Uri.EscapeDataString(resourceId)}");
-        storedQuery.StatusCode.Should().Be(HttpStatusCode.OK, await storedQuery.Content.ReadAsStringAsync());
-
-        using var wrongCase = await _fixture.Client.GetAsync(
-            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&STOREDQUERY_ID=urn:ogc:def:query:OGC-WFS::GetFeatureById&ID={Uri.EscapeDataString(resourceId.ToUpperInvariant())}");
-        wrongCase.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await AssertStoredQueryIdentityAsync(resourceId);
 
         var delete = $$"""
             <wfs:Transaction service="WFS" version="2.0.0"
@@ -178,6 +163,32 @@ public sealed class Wfs20MutationScenarioTests : IAsyncLifetime
             .Should().Contain("ExceptionReport");
         (await ReadFeatureAsync($"pub-layer-0.{existingId}"))
             .Should().Contain("wfs-mutation-original");
+    }
+
+    private void ConfigurePublicationIdentity(string publicationId)
+    {
+        var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        var publication = graph.Publications.Single(candidate => candidate.Metadata.Id == "pub-layer-0");
+        _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>().SetGraph(graph with
+        {
+            Revision = graph.Revision + 1,
+            Publications = graph.Publications.Select(candidate => candidate == publication
+                ? candidate with { Metadata = candidate.Metadata with { Id = publicationId, Name = publicationId } }
+                : candidate).ToArray(),
+        }, schema: _fixture.MetadataGraphSchema);
+        _typeName = XmlConvert.EncodeLocalName(publicationId);
+    }
+
+    private async Task AssertStoredQueryIdentityAsync(string resourceId)
+    {
+        using var storedQuery = await _fixture.Client.GetAsync(
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&STOREDQUERY_ID=urn:ogc:def:query:OGC-WFS::GetFeatureById&ID={Uri.EscapeDataString(resourceId)}");
+        storedQuery.StatusCode.Should().Be(HttpStatusCode.OK, await storedQuery.Content.ReadAsStringAsync());
+
+        using var wrongCase = await _fixture.Client.GetAsync(
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&STOREDQUERY_ID=urn:ogc:def:query:OGC-WFS::GetFeatureById&ID={Uri.EscapeDataString(resourceId.ToUpperInvariant())}");
+        wrongCase.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
     }
 
     private async Task<string> SendTransactionAsync(string xml, HttpStatusCode expectedStatus)
