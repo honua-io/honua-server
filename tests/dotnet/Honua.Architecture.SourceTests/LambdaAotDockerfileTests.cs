@@ -118,7 +118,9 @@ public sealed class LambdaAotDockerfileTests
             "HONUA_DEFAULT_FONT_PATH=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
         nativeVerification.Should().Contain("test -f \"$runtime_root$app_directory/libSkiaSharp.so\"");
         nativeVerification.Should().Contain("chroot \"$runtime_root\" \"$loader\" --list");
-        nativeVerification.Should().Contain("ldd -r \"$native\"");
+        nativeVerification.Should().Contain(
+            "chroot \"$runtime_root\" /.verify-env LD_TRACE_LOADED_OBJECTS=1 LD_WARN=yes LD_BIND_NOW=yes");
+        nativeVerification.Should().NotContain("ldd -r \"$native\"");
         nativeVerification.Should().Contain("grep -Eq 'not found|undefined symbol|not a dynamic executable'");
         typefaceProvider.Should().Contain("SKTypeface.FromFile(configuredPath)");
 
