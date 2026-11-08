@@ -932,7 +932,8 @@ public sealed class OperationsToolsetTests
         replay.TenantId.Should().Be("requester-tenant");
         replay.SchemaName.Should().Be("tenant_schema");
         replay.Request.ConnectionId.Should().Be("connection-1");
-        replay.Request.Parameters.Should().Contain("layerId", "7").And.Contain("enabled", "true");
+        replay.Request.Parameters.Should().Contain("storageLayerId", "7").And.Contain("enabled", "true")
+            .And.NotContainKey("layerId");
     }
 
     [UnitTest]

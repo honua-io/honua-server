@@ -70,7 +70,7 @@ public sealed class RedisOffDirectPublishTests
         handle.AuthorizationOutcome.Should().Be("admin-authorized");
         handle.ProposalId.Should().BeNull("a direct publish involves no governed proposal");
         handle.EvidenceRefs.Should().Contain(NonDurableDirectOperationInstanceStore.NonDurableEvidenceRef);
-        handle.Result!.Details.Should().ContainKey("layerId");
+        handle.Result!.Details.Should().Contain("storageLayerId", "123").And.NotContainKey("layerId");
         await publishing.Received(1).PublishLayerAsync(
             Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
 
