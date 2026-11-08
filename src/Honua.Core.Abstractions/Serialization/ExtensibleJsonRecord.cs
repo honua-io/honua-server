@@ -9,7 +9,7 @@ namespace Honua.Core.Serialization;
 public abstract record ExtensibleJsonRecord
 {
     [JsonExtensionData]
-    public Dictionary<string, JsonElement>? AdditionalProperties { get; init; }
+    public Dictionary<string, JsonElement>? AdditionalProperties { get; set; }
 
     public virtual bool Equals(ExtensibleJsonRecord? other)
         => other is not null && EqualityContract == other.EqualityContract &&

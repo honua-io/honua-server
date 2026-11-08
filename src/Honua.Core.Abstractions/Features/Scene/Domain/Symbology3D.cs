@@ -59,10 +59,16 @@ public enum Symbology3DComparison
     Unknown = -1
 }
 
-public readonly record struct Symbology3DColor(byte Red, byte Green, byte Blue)
+public record struct Symbology3DColor(byte Red, byte Green, byte Blue)
 {
+    public byte Red { get; init; } = Red;
+
+    public byte Green { get; init; } = Green;
+
+    public byte Blue { get; init; } = Blue;
+
     [JsonExtensionData]
-    public Dictionary<string, JsonElement>? AdditionalProperties { get; init; }
+    public Dictionary<string, JsonElement>? AdditionalProperties { get; set; }
 
     public bool Equals(Symbology3DColor other)
         => Red == other.Red && Green == other.Green && Blue == other.Blue &&
