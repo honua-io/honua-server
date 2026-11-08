@@ -13,7 +13,7 @@ using Xunit;
 
 namespace Honua.LoadTests;
 
-[Collection(CapacitySoakConsoleCollection.Name)]
+[Collection(CapacitySoakConsoleIsolation.Name)]
 public sealed class CapacitySoakLicenseTests
 {
     [UnitTest]
@@ -82,8 +82,8 @@ public sealed class CapacitySoakLicenseTests
     }
 }
 
-[CollectionDefinition(CapacitySoakConsoleCollection.Name, DisableParallelization = true)]
-public sealed class CapacitySoakConsoleCollection
+[CollectionDefinition(CapacitySoakConsoleIsolation.Name, DisableParallelization = true)]
+public sealed class CapacitySoakConsoleIsolation
 {
     public const string Name = "Capacity soak console";
 }
