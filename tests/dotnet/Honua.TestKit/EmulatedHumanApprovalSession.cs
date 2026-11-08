@@ -15,8 +15,10 @@ internal static class EmulatedHumanApprovalSession
         var sessions = scope.ServiceProvider.GetRequiredService<AdminAuthSessionStore>();
         var sessionId = await sessions.CreateAuthenticatedSessionAsync(new AdminAuthAuthenticatedSession
         {
-            ProviderKey = "emulated-identity", AccessToken = "emulated-interactive-token",
-            Origin = AdminAuthSessionOrigin.InteractiveOidc, ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(30),
+            ProviderKey = "emulated-identity",
+            AccessToken = "emulated-interactive-token",
+            Origin = AdminAuthSessionOrigin.InteractiveOidc,
+            ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(30),
             Claims =
             [
                 new() { Type = "iss", Value = "https://identity.example.test" },

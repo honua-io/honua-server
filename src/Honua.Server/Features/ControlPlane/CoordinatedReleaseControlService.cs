@@ -127,11 +127,15 @@ internal sealed partial class CoordinatedReleaseControlService(
         {
             CoordinatedReleaseStep.ContainerRollout => context with
             {
-                ContainerGateApproved = true, ContainerHumanApproval = evidence, GateApprovedBy = evidence.ActorId,
+                ContainerGateApproved = true,
+                ContainerHumanApproval = evidence,
+                GateApprovedBy = evidence.ActorId,
             },
             CoordinatedReleaseStep.MetadataAndSchema => context with
             {
-                DataGateApproved = true, DataHumanApproval = evidence, GateApprovedBy = evidence.ActorId,
+                DataGateApproved = true,
+                DataHumanApproval = evidence,
+                GateApprovedBy = evidence.ActorId,
             },
             _ => throw new InvalidOperationException($"Coordinated release step '{gate}' is not an approvable gate.")
         };

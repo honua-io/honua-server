@@ -210,12 +210,15 @@ public sealed class DurableRestoreWorkerTests
         {
             Audit = new OperationAuditInfo
             {
-                ProposalId = proposal.ProposalId, OperationInstanceId = proposal.Audit.OperationInstanceId,
-                RequestedBy = proposal.RequestedBy, TenantId = proposal.TenantId,
+                ProposalId = proposal.ProposalId,
+                OperationInstanceId = proposal.Audit.OperationInstanceId,
+                RequestedBy = proposal.RequestedBy,
+                TenantId = proposal.TenantId,
             },
             PreMigrationRestore = harness.Restore.PreMigrationRestore! with
             {
-                Payload = proposal.Plan.ExecutionPayload!, ApprovedBy = proposal.ResolvedBy!,
+                Payload = proposal.Plan.ExecutionPayload!,
+                ApprovedBy = proposal.ResolvedBy!,
             },
         };
         harness.Proposals.GetAsync(proposal.ProposalId, Arg.Any<CancellationToken>()).Returns(proposal);
@@ -245,11 +248,16 @@ public sealed class DurableRestoreWorkerTests
             var plan = new OperationProposalPlan { Summary = "Claimed restore", ExecutionPayload = payload };
             return new OperationProposal
             {
-                ProposalId = "legacy-proposal", Kind = OperationClass.Deploy,
+                ProposalId = "legacy-proposal",
+                Kind = OperationClass.Deploy,
                 Status = phase == "queued" ? OperationProposalStatus.Executing : OperationProposalStatus.Submitted,
-                RequestedBy = "requester", ResolvedBy = "approver", ExecutionOperationId = RestoreId,
-                Plan = plan, SealedPlanHash = Honua.Server.Features.Operations.OperationApprovalPlanSeal.Compute(plan),
-                CreatedAt = Restore.CreatedAt, UpdatedAt = Restore.UpdatedAt,
+                RequestedBy = "requester",
+                ResolvedBy = "approver",
+                ExecutionOperationId = RestoreId,
+                Plan = plan,
+                SealedPlanHash = Honua.Server.Features.Operations.OperationApprovalPlanSeal.Compute(plan),
+                CreatedAt = Restore.CreatedAt,
+                UpdatedAt = Restore.UpdatedAt,
             };
         }
 

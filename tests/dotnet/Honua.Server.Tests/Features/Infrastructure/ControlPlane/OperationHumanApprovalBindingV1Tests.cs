@@ -16,15 +16,27 @@ public sealed class OperationHumanApprovalBindingV1Tests
         var instant = new DateTimeOffset(2026, 1, 2, 3, 4, 5, TimeSpan.FromHours(1));
         var initiation = new OperationInitiationEvidence
         {
-            Version = 1, Kind = OperationInitiationKind.Agent, Channel = OperationInitiationChannel.Mcp,
-            PrincipalId = "a", TenantId = null, PlanHash = "h", PolicyRevision = "policy", AcceptedAt = instant,
+            Version = 1,
+            Kind = OperationInitiationKind.Agent,
+            Channel = OperationInitiationChannel.Mcp,
+            PrincipalId = "a",
+            TenantId = null,
+            PlanHash = "h",
+            PolicyRevision = "policy",
+            AcceptedAt = instant,
         };
         var proposal = new OperationProposal
         {
-            ProposalId = "p", OperationId = "op", Kind = OperationClass.AdminConfigChange,
-            Status = OperationProposalStatus.Executing, RequestedBy = "a", SealedPlanHash = "h",
+            ProposalId = "p",
+            OperationId = "op",
+            Kind = OperationClass.AdminConfigChange,
+            Status = OperationProposalStatus.Executing,
+            RequestedBy = "a",
+            SealedPlanHash = "h",
             Audit = new OperationAuditInfo { OperationInstanceId = "i" },
-            CreatedAt = instant, UpdatedAt = instant, Initiation = initiation,
+            CreatedAt = instant,
+            UpdatedAt = instant,
+            Initiation = initiation,
             Evidence = Evidence(instant),
         };
 

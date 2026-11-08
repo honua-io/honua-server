@@ -625,7 +625,8 @@ public sealed class CoordinatedReleaseReconcilerTests
                 var pending = _operations[operation.OperationId];
                 _operations[operation.OperationId] = pending with
                 {
-                    Version = pending.Version + 1, Status = WorkflowOperationStatus.RollbackRequested,
+                    Version = pending.Version + 1,
+                    Status = WorkflowOperationStatus.RollbackRequested,
                     CoordinatedRelease = pending.CoordinatedRelease! with { CurrentStep = CoordinatedReleaseStep.RollingBack },
                 };
                 return Task.FromResult(false);

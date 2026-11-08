@@ -139,7 +139,9 @@ public sealed class DeployHumanApprovalReplayTests
             },
             PreMigrationRestore = new PreMigrationRestoreContext
             {
-                Phase = "queued", Payload = proposal.Plan.ExecutionPayload!, ApprovedBy = proposal.ResolvedBy!,
+                Phase = "queued",
+                Payload = proposal.Plan.ExecutionPayload!,
+                ApprovedBy = proposal.ResolvedBy!,
             },
         };
         var store = Substitute.For<IWorkflowOperationStore>();

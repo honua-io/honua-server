@@ -231,7 +231,8 @@ internal sealed partial class CoordinatedReleaseReconciler(
         {
             context = context with
             {
-                ContainerOperationId = started.ContainerOperationId, Container = started.Container,
+                ContainerOperationId = started.ContainerOperationId,
+                Container = started.Container,
                 Steps = UpsertStep(context.Steps, CoordinatedReleaseStep.ContainerRollout,
                     CoordinatedReleaseStepStatus.Running, "Accepted container child retained after a checkpoint conflict."),
             };

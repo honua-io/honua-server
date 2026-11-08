@@ -120,7 +120,8 @@ public sealed partial class ProposalEndpointsTests
         var audits = await scope.ServiceProvider.GetRequiredService<Honua.Core.Features.AuditLog.Abstractions.IAuditLogReader>()
             .ListAsync(new Honua.Core.Features.AuditLog.Abstractions.AuditLogFilter
             {
-                ResourceId = proposal.ProposalId, PageSize = 20,
+                ResourceId = proposal.ProposalId,
+                PageSize = 20,
             });
         audits.Items.Should().NotContain(item => item.Action == "operation.approval_denied");
         using var retry = await human.ApproveAsync(proposal.ProposalId);

@@ -139,9 +139,12 @@ public sealed class CoordinatedReleaseHumanApprovalTests
         var operation = Workflow();
         host.GateApproveRequest(human, operation, new CoordinatedReleaseHumanReview
         {
-            WorkflowId = operation.OperationId, WorkflowVersion = operation.Version,
-            Gate = operation.CoordinatedRelease!.CurrentStep, PlanHash = proposalReview.PlanHash,
-            ExpiresAt = proposalReview.ExpiresAt, Capability = proposalReview.Capability,
+            WorkflowId = operation.OperationId,
+            WorkflowVersion = operation.Version,
+            Gate = operation.CoordinatedRelease!.CurrentStep,
+            PlanHash = proposalReview.PlanHash,
+            ExpiresAt = proposalReview.ExpiresAt,
+            Capability = proposalReview.Capability,
         });
 
         var verify = () => host.Authority.VerifyGateAsync(operation, operation.CoordinatedRelease.CurrentStep,
@@ -160,13 +163,22 @@ public sealed class CoordinatedReleaseHumanApprovalTests
             "requester-name" => operation with { CoordinatedRelease = context with { RequesterName = "changed-name" } },
             "tenant-claim-type" => operation with { CoordinatedRelease = context with { RequesterTenantClaimType = "changed-claim" } },
             "requester" => operation with { Audit = operation.Audit with { RequestedBy = "different-requester" } },
-            "tenant" => operation with { Audit = operation.Audit with { TenantId = "tenant-b" },
-                CoordinatedRelease = context with { RequesterTenantId = "tenant-b" } },
+            "tenant" => operation with
+            {
+                Audit = operation.Audit with { TenantId = "tenant-b" },
+                CoordinatedRelease = context with { RequesterTenantId = "tenant-b" }
+            },
             "gate" => operation with { CoordinatedRelease = context with { CurrentStep = CoordinatedReleaseStep.MetadataAndSchema } },
             "environment" => operation with { CoordinatedRelease = context with { TargetEnvironment = "different-environment" } },
             "container" => operation with { CoordinatedRelease = context with { Container = context.Container with { DesiredImage = "different-image" } } },
-            "script" => operation with { CoordinatedRelease = context with { MetadataPlan = context.MetadataPlan with
-                { Script = context.MetadataPlan.Script with { ForwardOperations = [] } } } },
+            "script" => operation with
+            {
+                CoordinatedRelease = context with
+                {
+                    MetadataPlan = context.MetadataPlan with
+                    { Script = context.MetadataPlan.Script with { ForwardOperations = [] } }
+                }
+            },
             "package" => operation with { CoordinatedRelease = context with { PackageId = "different-package" } },
             _ => throw new ArgumentOutOfRangeException(nameof(change)),
         };
@@ -174,20 +186,34 @@ public sealed class CoordinatedReleaseHumanApprovalTests
 
     private static WorkflowOperationRecord Workflow(CoordinatedReleaseStep gate = CoordinatedReleaseStep.ContainerRollout) => new()
     {
-        OperationId = "coordinated-workflow", Version = 5, Kind = WorkflowOperationKind.CoordinatedRelease,
-        Status = WorkflowOperationStatus.AwaitingApproval, CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
+        OperationId = "coordinated-workflow",
+        Version = 5,
+        Kind = WorkflowOperationKind.CoordinatedRelease,
+        Status = WorkflowOperationStatus.AwaitingApproval,
+        CreatedAt = DateTimeOffset.UtcNow,
+        UpdatedAt = DateTimeOffset.UtcNow,
         Audit = new OperationAuditInfo { RequestedBy = "requester", TenantId = "tenant-a" },
         CoordinatedRelease = new CoordinatedReleaseContext
         {
-            PackageId = "reviewed-package", TargetEnvironment = "production", RequesterTenantId = "tenant-a", CurrentStep = gate,
+            PackageId = "reviewed-package",
+            TargetEnvironment = "production",
+            RequesterTenantId = "tenant-a",
+            CurrentStep = gate,
             Container = new CoordinatedReleaseContainerSpec { TargetId = "deploy-target", DesiredImage = "image:v2" },
             MetadataPlan = new MetadataReleaseExecutionPlan
             {
-                PackageId = "reviewed-package", TargetEnvironment = "production", ResourceSemanticId = "parcels", NewFieldName = "owner",
-                Script = new MetadataReleaseScript { ScriptId = "add-owner", ForwardOperations = [new MetadataReleaseScriptOperation
+                PackageId = "reviewed-package",
+                TargetEnvironment = "production",
+                ResourceSemanticId = "parcels",
+                NewFieldName = "owner",
+                Script = new MetadataReleaseScript
+                {
+                    ScriptId = "add-owner",
+                    ForwardOperations = [new MetadataReleaseScriptOperation
                 {
                     Kind = MetadataReleaseScriptOperationKind.AddColumn, ResourceSemanticId = "parcels", FieldName = "owner", FieldType = "String",
-                }] },
+                }]
+                },
             },
         },
     };

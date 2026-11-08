@@ -79,9 +79,12 @@ public sealed class AdminAuthSessionApprovalTests
         var id = await store.CreateAuthenticatedSessionAsync(
             new AdminAuthAuthenticatedSession
             {
-                ProviderKey = "oidc", AccessToken = "access-token", IdToken = "id-token",
+                ProviderKey = "oidc",
+                AccessToken = "access-token",
+                IdToken = "id-token",
                 Claims = [new() { Type = "sub", Value = "person" }],
-                ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(-1), Origin = AdminAuthSessionOrigin.InteractiveOidc
+                ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(-1),
+                Origin = AdminAuthSessionOrigin.InteractiveOidc
             }, CancellationToken.None);
 
         (await store.GetInteractiveSessionForApprovalAsync(id, CancellationToken.None)).Should().BeNull();
@@ -94,8 +97,11 @@ public sealed class AdminAuthSessionApprovalTests
         store.CreateAuthenticatedSessionAsync(
             new AdminAuthAuthenticatedSession
             {
-                ProviderKey = "oidc", AccessToken = "access-token", IdToken = "id-token",
+                ProviderKey = "oidc",
+                AccessToken = "access-token",
+                IdToken = "id-token",
                 Claims = [new() { Type = "sub", Value = "person" }],
-                ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(10), Origin = AdminAuthSessionOrigin.InteractiveOidc
+                ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(10),
+                Origin = AdminAuthSessionOrigin.InteractiveOidc
             }, CancellationToken.None);
 }
