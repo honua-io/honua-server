@@ -1193,6 +1193,7 @@ jobs:
     timeout-minutes: ${{ matrix.timeout_minutes }}
     strategy:
       fail-fast: false
+      max-parallel: 24
       matrix:
         include: ${{ fromJson(needs.targeted-shards.outputs.matrix_include) }}
     env:
