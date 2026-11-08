@@ -38345,7 +38345,10 @@
           "blockingReasons",
           "warnings",
           "createdAt",
-          "updatedAt"
+          "updatedAt",
+          "version",
+          "initiation",
+          "requiresReproposal"
         ],
         "properties": {
           "proposalId": {
@@ -38482,6 +38485,34 @@
             "format": "date-time",
             "nullable": true,
             "description": "Resolution timestamp."
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Optimistic-concurrency version of the proposal reviewed for approval."
+          },
+          "planHash": {
+            "type": "string",
+            "nullable": true,
+            "description": "Digest of the exact persisted proposal plan."
+          },
+          "initiation": {
+            "type": "string",
+            "description": "Server-recorded initiation classification; missing legacy evidence is Unknown."
+          },
+          "approvalChannel": {
+            "type": "string",
+            "nullable": true,
+            "description": "Verified human approval channel recorded with the execution claim."
+          },
+          "requiresReproposal": {
+            "type": "boolean",
+            "description": "Whether a legacy pending proposal needs a fresh proposal before approval."
+          },
+          "approvalRemediation": {
+            "type": "string",
+            "nullable": true,
+            "description": "Guidance for obtaining a fresh proposal when required."
           }
         }
       },
