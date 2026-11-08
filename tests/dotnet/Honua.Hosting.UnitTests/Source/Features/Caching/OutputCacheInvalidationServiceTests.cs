@@ -314,14 +314,14 @@ public sealed class OutputCacheInvalidationServiceTests
 
     [UnitTest]
     [Operation(Operations.Cache)]
-    public async Task InvalidateLayerAsync_NonNumericPublication_EvictsPublicationIdViaStorageBinding()
+    public async Task InvalidateStorageLayerAsync_NonNumericPublication_EvictsPublicationIdViaStorageBinding()
     {
         var responseCache = Substitute.For<IResponseCache>();
         var scopeFactory = CreateScopeFactory(CreateNonNumericPublicationGraph());
         var logger = NullLogger<OutputCacheInvalidationService>.Instance;
         var sut = new OutputCacheInvalidationService(null, responseCache, null, scopeFactory, null, logger);
 
-        await sut.InvalidateLayerAsync(null, 42, CancellationToken.None);
+        await sut.InvalidateStorageLayerAsync(42, CancellationToken.None);
 
         await responseCache.Received().RemoveByPatternAsync("response:query:ogc:collection:parcels:*", Arg.Any<CancellationToken>());
     }
