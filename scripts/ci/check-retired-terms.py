@@ -9,6 +9,7 @@ from pathlib import Path, PurePosixPath
 import re
 import subprocess
 import sys
+import tempfile
 
 
 POLICY_PATH = Path(__file__).with_name("retired-terms.v1.json")
@@ -21,11 +22,14 @@ GIT_ENVIRONMENT_OVERRIDES = {
 DIFF_OPTIONS = ("--no-ext-diff", "--no-textconv", "--no-color", "--find-renames")
 
 
-def git(root, *arguments):
+def git(root, *arguments, **options):
     environment = {key: value for key, value in os.environ.items() if key not in GIT_ENVIRONMENT_OVERRIDES}
+    index_file = options.pop("index_file", None)
+    if index_file is not None:
+        environment["GIT_INDEX_FILE"] = str(index_file)
     return subprocess.run(
         ["git", "-c", "diff.relative=false", "-C", str(root), *arguments],
-        check=True, capture_output=True, env=environment,
+        check=True, capture_output=True, env=environment, **options,
     ).stdout
 
 
@@ -135,30 +139,32 @@ class VocabularyCheck:
         resolved = path.resolve()
         return resolved.is_relative_to(self.root) and resolved not in self.policy_files
 
-    def excluded_pathspecs(self, names):
-        excluded = set()
-        for name in names:
-            parts = PurePosixPath(name).parts
-            for depth in range(1, len(parts) + 1):
-                ancestor = PurePosixPath(*parts[:depth]).as_posix()
-                if not self.is_safe_path(ancestor):
-                    excluded.add(ancestor)
-                    break
-        return [f":(top,exclude,literal){name}" for name in sorted(excluded)]
+    def populate_index(self, entries, index_file):
+        selected = []
+        for entry in filter(None, entries.split(b"\0")):
+            name = entry.split(b"\t", 1)[1].decode("utf-8")
+            if self.is_safe_path(name):
+                selected.append(entry + b"\0")
+        git(self.root, "read-tree", "--empty", index_file=index_file)
+        git(self.root, "update-index", "-z", "--index-info",
+            index_file=index_file, input=b"".join(selected))
+
+    def selected_changes(self, base):
+        previous = git(self.root, "ls-tree", "-r", "-z", base)
+        current = git(self.root, "ls-files", "--stage", "-z")
+        with tempfile.TemporaryDirectory(prefix="honua-vocabulary-") as directory:
+            index_file = Path(directory) / "index"
+            self.populate_index(previous, index_file)
+            selected_base = git(self.root, "write-tree", index_file=index_file).decode().strip()
+            self.populate_index(current, index_file)
+            return git(self.root, "diff", *DIFF_OPTIONS, "--name-status", "-z", selected_base, "--",
+                       index_file=index_file)
 
     def check_changes(self, base):
         commit = git(self.root, "rev-parse", "--verify", "--end-of-options", f"{base}^{{commit}}").decode().strip()
         merge_base = git(self.root, "merge-base", commit, "HEAD").decode().strip()
-        current = git(self.root, "ls-files", "-z")
-        previous = git(self.root, "ls-tree", "-r", "--name-only", "-z", merge_base)
-        names = sorted(set((current + previous).decode("utf-8").split("\0")) - {""})
-        safe = {name for name in names if self.is_safe_path(name)}
-        if not safe:
-            return []
-        pathspecs = [":(top)", *self.excluded_pathspecs(set(names) - safe)]
-        status = git(self.root, "diff", *DIFF_OPTIONS, "--name-status", "-z", merge_base, "--", *pathspecs)
         findings = []
-        for original, name in changed_paths(status):
+        for original, name in changed_paths(self.selected_changes(merge_base)):
             findings.extend(self.changed_file_findings(merge_base, original, name))
         return findings
 

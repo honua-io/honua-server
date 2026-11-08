@@ -17,6 +17,7 @@ spec.loader.exec_module(checker)
 
 class RetiredTermsTests(unittest.TestCase):
     def setUp(self):
+        self.unpatched_git = checker.git
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
@@ -81,10 +82,10 @@ class RetiredTermsTests(unittest.TestCase):
         self.run_git("add", ".")
         actual_git = checker.git
 
-        def guarded_git(root, *arguments):
+        def guarded_git(root, *arguments, **options):
             if any(name in arguments for name in names):
                 self.fail("Protected input passed to git diff")
-            return actual_git(root, *arguments)
+            return actual_git(root, *arguments, **options)
 
         actual_read = Path.read_bytes
 
@@ -267,13 +268,10 @@ class RetiredTermsTests(unittest.TestCase):
         self.run_git("add", "-A")
         actual_git = checker.git
 
-        def guarded_git(root, *arguments):
+        def guarded_git(root, *arguments, **options):
             if "diff" in arguments:
-                paths = arguments[arguments.index("--") + 1:]
-                selected = actual_git(root, "diff", "--no-renames", "--name-only", "-z",
-                                      "HEAD", "--", *paths)
-                self.assertNotIn(name.encode(), selected.split(b"\0"))
-            result = actual_git(root, *arguments)
+                self.assert_safe_diff_inputs(arguments, options)
+            result = actual_git(root, *arguments, **options)
             self.assertNotIn(b"synthetic-protected-sentinel", result)
             return result
 
@@ -321,6 +319,16 @@ class RetiredTermsTests(unittest.TestCase):
         self.run_git("add", ".")
         self.assertEqual(self.scan(), ["certification/ai-arc/public.md:1: legacy: use canonical phrase"])
 
+    def assert_safe_diff_inputs(self, arguments, options):
+        index_file = options["index_file"]
+        selected_base = arguments[arguments.index("--") - 1]
+        actual_git = self.unpatched_git
+        previous = actual_git(self.root, "ls-tree", "-r", "--name-only", "-z", selected_base)
+        current = actual_git(self.root, "ls-files", "-z", index_file=index_file)
+        for name in filter(None, (previous + current).decode().split("\0")):
+            self.assertFalse(checker.is_protected_path(name), name)
+        self.assertFalse(arguments[arguments.index("--") + 1:])
+
     def test_discovery_excludes_protected_paths_before_content_aware_git(self):
         name = "certification/agent-e2e/synthetic.json"
         self.write(name, "retired phrase\n")
@@ -330,19 +338,16 @@ class RetiredTermsTests(unittest.TestCase):
         self.run_git("mv", name, "moved.md")
         actual_git = checker.git
 
-        def guarded_git(root, *arguments):
+        def guarded_git(root, *arguments, **options):
             if "diff" in arguments:
-                self.assertIn("--", arguments)
-                paths = arguments[arguments.index("--") + 1:]
-                self.assertTrue(paths)
-                self.assertNotIn(name, paths)
-            return actual_git(root, *arguments)
+                self.assert_safe_diff_inputs(arguments, options)
+            return actual_git(root, *arguments, **options)
 
         with patch.object(checker, "git", side_effect=guarded_git):
             self.assertEqual(self.scan(), ["moved.md:1: legacy: use canonical phrase"])
 
     @unittest.skipUnless(sys.platform == "linux", "Linux argument-limit regression")
-    def test_compact_selection_preserves_renames_and_excludes_protected_inputs_at_low_limit(self):
+    def test_streamed_selection_preserves_renames_and_excludes_protected_inputs_at_low_limit(self):
         for index in range(1800):
             self.write(f"docs/{index:04d}-{'x' * 80}.md", "clean\n")
             self.write(f"certification/agent-e2e/{index:04d}-{'x' * 80}.json", "protected-sentinel\n")
@@ -364,16 +369,45 @@ class RetiredTermsTests(unittest.TestCase):
                          ["renamed.md:3: legacy: use canonical phrase", "Retired-term check: 1 finding(s)"])
         actual_git = checker.git
 
-        def guarded_git(root, *arguments):
+        def guarded_git(root, *arguments, **options):
             if "diff" in arguments:
-                paths = arguments[arguments.index("--") + 1:]
-                self.assertLess(sum(len(path.encode()) + 1 for path in paths), 16384)
-                selected = actual_git(root, "diff", "--no-renames", "--name-only", "-z", "HEAD", "--", *paths)
-                self.assertFalse(any(checker.is_protected_path(path) for path in selected.decode().split("\0")))
-            return actual_git(root, *arguments)
+                self.assertLess(sum(len(str(argument).encode()) + 1 for argument in arguments), 16384)
+                self.assert_safe_diff_inputs(arguments, options)
+            return actual_git(root, *arguments, **options)
 
         with patch.object(checker, "git", side_effect=guarded_git):
             self.assertEqual(self.scan(), ["renamed.md:3: legacy: use canonical phrase"])
+
+    def test_scan_preserves_real_index_and_removes_temporary_index(self):
+        index_file = Path(self.run_git("rev-parse", "--git-path", "index").decode().strip())
+        if not index_file.is_absolute():
+            index_file = self.root / index_file
+        self.write("page.md", "new retired phrase\n")
+        self.run_git("add", ".")
+        index_before = index_file.read_bytes()
+        temporary_indexes = []
+        actual_git = checker.git
+
+        def guarded_git(root, *arguments, **options):
+            if "index_file" in options:
+                temporary_indexes.append(options["index_file"])
+            return actual_git(root, *arguments, **options)
+
+        with patch.object(checker, "git", side_effect=guarded_git):
+            self.assertEqual(self.scan(), ["page.md:1: legacy: use canonical phrase"])
+        self.assertEqual(index_file.read_bytes(), index_before)
+        self.assertTrue(temporary_indexes)
+        self.assertTrue(all(not path.exists() for path in temporary_indexes))
+
+    def test_safe_sibling_of_protected_leaf_is_still_scanned(self):
+        directory = "certification/ai-arc/heldout-notes"
+        self.write(f"{directory}/heldout-fixture.sealed", "synthetic-protected-sentinel\n")
+        self.run_git("add", ".")
+        self.run_git("-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+                     "commit", "-qm", "synthetic protected leaf")
+        self.write(f"{directory}/public.md", "new retired phrase\n")
+        self.run_git("add", ".")
+        self.assertEqual(self.scan(), [f"{directory}/public.md:1: legacy: use canonical phrase"])
 
     def test_cli_exit_codes_distinguish_findings_and_incomplete_checks(self):
         command = [sys.executable, str(CHECKER), "--root", str(self.root),
