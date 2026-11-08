@@ -15,7 +15,7 @@ namespace Honua.Server.Tests.Features.StudioAiProxy;
 
 public sealed partial class AnthropicStudioAiProxyAdapterTests
 {
-    internal const string ThinkingBlockFixture = """
+    private const string ThinkingBlockFixture = """
         data: {"type":"content_block_start","index":7,"content_block":{"type":"thinking","thinking":"PRIVATE_THINKING","signature":""}}
         data: {"type":"content_block_delta","index":7,"delta":{"type":"thinking_delta","thinking":"PRIVATE_THINKING"}}
         data: {"type":"content_block_delta","index":7,"delta":{"type":"signature_delta","signature":"PRIVATE_SIGNATURE"}}
@@ -23,12 +23,22 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
 
         """;
 
-    internal static string WithThinking(string fixture)
+    private static string WithThinking(string fixture)
         => fixture.Replace("event: content_block_start", ThinkingBlockFixture + "event: content_block_start", StringComparison.Ordinal);
 
     internal static string InterleavedThinkingFixture => WithThinking(
         TextTurnFixture[..TextTurnFixture.IndexOf("event: message_delta", StringComparison.Ordinal)]
         + "\n" + ToolCallFixture[ToolCallFixture.IndexOf("event: content_block_start", StringComparison.Ordinal)..]);
+
+    [UnitTest]
+    public async Task StreamAsync_ThinkingBeforeMessageStart_FailsClosed()
+    {
+        var events = await CollectAsync(CreateAdapter(ThinkingBlockFixture + TextTurnFixture), ToolFreeRequest());
+
+        events.Should().ContainSingle().Subject.ErrorCode.Should().Be("studio_ai/unsupported_content_block");
+        events.Should().NotContain(e => e.Type == StudioAiChatEventType.MessageStop);
+        JsonSerializer.Serialize(events).Should().NotContain("PRIVATE_THINKING").And.NotContain("PRIVATE_SIGNATURE");
+    }
 
     [UnitTheory]
     [InlineData(TextTurnFixture)]
