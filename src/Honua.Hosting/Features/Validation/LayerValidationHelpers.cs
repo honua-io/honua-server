@@ -255,6 +255,38 @@ internal static class LayerValidationHelpers
         return new MetadataV2ValidationResult(true, publication, resource, service, null, snapshot);
     }
 
+    public static async Task<MetadataV2ValidationResult> ValidatePublicationWithAccessV2Async(
+        HttpContext context,
+        string publicationId,
+        AuthorizationOperation operation)
+    {
+        var snapshot = await GetV2SnapshotAsync(context, context.RequestAborted).ConfigureAwait(false);
+        if (!snapshot.Index.PublicationsById.TryGetValue(publicationId, out var publication) || !snapshot.IsRoutable(publication))
+        {
+            return new MetadataV2ValidationResult(false, null, null, null,
+                StandardErrorHelpers.CreateNotFound(context, $"Publication '{publicationId}' not found."));
+        }
+
+        var resource = snapshot.ResolveResource(publication)!;
+        var service = ResolveVisibleProtocolService(context, snapshot, publication, null);
+        if (service is null)
+        {
+            var error = context.User.Identity?.IsAuthenticated != true
+                ? AccessPolicyHelpers.CreateAccessDeniedResult(context, AccessDecision.RequiresAuth())
+                : StandardErrorHelpers.CreateNotFound(context, $"Publication '{publicationId}' not found.");
+            return new MetadataV2ValidationResult(false, null, null, null, error);
+        }
+
+        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context, resource, operation, service, context.RequestAborted).ConfigureAwait(false);
+        if (accessError is null)
+        {
+            ValidatedMetadataSnapshot.Remember(context, resource, snapshot);
+        }
+
+        return new MetadataV2ValidationResult(accessError is null, publication, resource, service, accessError, snapshot);
+    }
+
     public static async Task<MetadataV2ValidationResult> ValidateStorageLayerWithAccessV2Async(
         HttpContext context,
         int storageLayerId,

@@ -269,7 +269,7 @@ internal static partial class WmsRequestHandlers
 
     private static WmsLayer[] ResolveWmsLayers(MetadataV2GraphSnapshot snapshot, MetadataV2Service service, HttpContext context)
     {
-        var byResource = new Dictionary<string, WmsLayer>(StringComparer.Ordinal);
+        var layers = new List<WmsLayer>();
         foreach (var publication in snapshot.Index.PublicationsByService[service.Metadata.Id])
         {
             var resource = snapshot.ResolveResource(publication);
@@ -286,21 +286,11 @@ internal static partial class WmsRequestHandlers
                 continue;
             }
 
-            var identifier = publication.LayerIndex.HasValue
-                ? publication.LayerIndex.Value.ToString(CultureInfo.InvariantCulture)
-                : publication.ServiceLocalId ?? publication.Metadata.Name ?? routableResource.Metadata.Name;
-
-            var candidate = new WmsLayer(routableResource, publication, storageLayerId.Value, identifier, snapshot);
-            if (!byResource.TryGetValue(routableResource.Metadata.Id, out var existing) ||
-                (publication.IsPrimary && !existing.Publication.IsPrimary))
-            {
-                byResource[routableResource.Metadata.Id] = candidate;
-            }
+            var identifier = publication.Identifier.Value;
+            layers.Add(new WmsLayer(routableResource, publication, storageLayerId.Value, identifier, snapshot));
         }
 
-        return byResource.Values
-            .OrderBy(static l => l.StorageLayerId)
-            .ToArray();
+        return layers.OrderBy(static layer => layer.Identifier, StringComparer.Ordinal).ToArray();
     }
 
     private static async Task<IFeatureReader> ResolveLayerReaderAsync(
@@ -354,7 +344,7 @@ internal static partial class WmsRequestHandlers
     }
 
     private static string GetWmsLayerDisplayName(WmsLayer layer)
-        => GetWmsLayerName(layer.Resource, layer.Publication);
+        => layer.Identifier;
 
     private static bool IsCiteLayerNamed(WmsLayer layer, string citeName)
     {
@@ -391,11 +381,11 @@ internal static partial class WmsRequestHandlers
         WmsLayer[] layers,
         SqlFragment?[]? filters)
     {
-        var seen = new HashSet<int>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
         var kept = new List<int>(layers.Length);
         for (var i = 0; i < layers.Length; i++)
         {
-            if (seen.Add(layers[i].StorageLayerId))
+            if (seen.Add(layers[i].Publication.Metadata.Id))
             {
                 kept.Add(i);
             }
@@ -434,30 +424,7 @@ internal static partial class WmsRequestHandlers
             return true;
         }
 
-        var byId = new Dictionary<string, WmsLayer>(StringComparer.OrdinalIgnoreCase);
-        var byName = new Dictionary<string, WmsLayer>(StringComparer.OrdinalIgnoreCase);
-        foreach (var layer in accessibleLayers)
-        {
-            byId[layer.StorageLayerId.ToString(CultureInfo.InvariantCulture)] = layer;
-            if (!string.IsNullOrWhiteSpace(layer.Identifier))
-            {
-                byId[layer.Identifier] = layer;
-            }
-
-            var resourceName = layer.Resource.Metadata.Name;
-            if (!string.IsNullOrWhiteSpace(resourceName))
-            {
-                // Match against the resource's namespaced name (e.g. "cite:Autos") so
-                // CITE conformance can address layers by their fully-qualified title.
-                byName[resourceName] = layer;
-            }
-
-            var displayName = GetWmsLayerDisplayName(layer);
-            if (!string.IsNullOrWhiteSpace(displayName))
-            {
-                byName[displayName] = layer;
-            }
-        }
+        var byId = accessibleLayers.ToDictionary(static layer => layer.Identifier, StringComparer.Ordinal);
 
         var resolved = new List<WmsLayer>(requestedTokens.Length);
         foreach (var token in requestedTokens)
@@ -465,12 +432,6 @@ internal static partial class WmsRequestHandlers
             if (byId.TryGetValue(token, out var byIdLayer))
             {
                 resolved.Add(byIdLayer);
-                continue;
-            }
-
-            if (byName.TryGetValue(token, out var byNameLayer))
-            {
-                resolved.Add(byNameLayer);
                 continue;
             }
 

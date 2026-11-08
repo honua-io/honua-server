@@ -38,14 +38,14 @@ public sealed class Wfs20MutationScenarioTests : IAsyncLifetime
                 xmlns:gml="http://www.opengis.net/gml/3.2"
                 xmlns:honua="http://honua.io/wfs">
               <wfs:Insert handle="mutation-insert">
-                <honua:test_layer>
+                <honua:pub-layer-0>
                   <honua:name>wfs-mutation-created</honua:name>
                   <honua:shape>
                     <gml:Point srsName="urn:ogc:def:crs:EPSG::4326">
                       <gml:pos>37.77 -122.41</gml:pos>
                     </gml:Point>
                   </honua:shape>
-                </honua:test_layer>
+                </honua:pub-layer-0>
               </wfs:Insert>
             </wfs:Transaction>
             """;
@@ -54,7 +54,7 @@ public sealed class Wfs20MutationScenarioTests : IAsyncLifetime
         insertBody.Should().Contain("<wfs:totalInserted>1</wfs:totalInserted>");
         var resourceMatch = Regex.Match(
             insertBody,
-            "rid=\"(?<rid>test_layer\\.\\d+)\"",
+            "rid=\"(?<rid>pub-layer-0\\.\\d+)\"",
             RegexOptions.CultureInvariant);
         resourceMatch.Success.Should().BeTrue(insertBody);
         var resourceId = resourceMatch.Groups["rid"].Value;
@@ -65,7 +65,7 @@ public sealed class Wfs20MutationScenarioTests : IAsyncLifetime
             <wfs:Transaction service="WFS" version="2.0.0"
                 xmlns:wfs="http://www.opengis.net/wfs/2.0"
                 xmlns:fes="http://www.opengis.net/fes/2.0">
-              <wfs:Update typeName="test_layer">
+              <wfs:Update typeName="pub-layer-0">
                 <wfs:Property>
                   <wfs:ValueReference>name</wfs:ValueReference>
                   <wfs:Value>wfs-mutation-updated</wfs:Value>
@@ -85,10 +85,10 @@ public sealed class Wfs20MutationScenarioTests : IAsyncLifetime
                 xmlns:gml="http://www.opengis.net/gml/3.2"
                 xmlns:honua="http://honua.io/wfs">
               <wfs:Replace>
-                <honua:test_layer gml:id="{{resourceId}}">
+                <honua:pub-layer-0 gml:id="{{resourceId}}">
                   <gml:name>wfs-mutation-replaced</gml:name>
                   <honua:name>wfs-mutation-replaced</honua:name>
-                </honua:test_layer>
+                </honua:pub-layer-0>
                 <fes:Filter><fes:ResourceId rid="{{resourceId}}" /></fes:Filter>
               </wfs:Replace>
             </wfs:Transaction>
@@ -101,7 +101,7 @@ public sealed class Wfs20MutationScenarioTests : IAsyncLifetime
             <wfs:Transaction service="WFS" version="2.0.0"
                 xmlns:wfs="http://www.opengis.net/wfs/2.0"
                 xmlns:fes="http://www.opengis.net/fes/2.0">
-              <wfs:Delete typeName="test_layer">
+              <wfs:Delete typeName="pub-layer-0">
                 <fes:Filter><fes:ResourceId rid="{{resourceId}}" /></fes:Filter>
               </wfs:Delete>
             </wfs:Transaction>
@@ -110,7 +110,7 @@ public sealed class Wfs20MutationScenarioTests : IAsyncLifetime
             .Should().Contain("<wfs:totalDeleted>1</wfs:totalDeleted>");
 
         var deletedResponse = await _fixture.Client.GetAsync(
-            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&STOREDQUERY_ID=urn:ogc:def:query:OGC-WFS::GetFeatureById&ID=test_layer.{numericId}");
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&STOREDQUERY_ID=urn:ogc:def:query:OGC-WFS::GetFeatureById&ID=pub-layer-0.{numericId}");
         var deletedBody = await deletedResponse.Content.ReadAsStringAsync();
         deletedResponse.StatusCode.Should().Be(HttpStatusCode.NotFound, deletedBody);
         deletedBody.Should().Contain("exceptionCode=\"NotFound\"");
@@ -129,12 +129,12 @@ public sealed class Wfs20MutationScenarioTests : IAsyncLifetime
                 xmlns:gml="http://www.opengis.net/gml/3.2"
                 xmlns:honua="http://honua.io/wfs">
               <wfs:Insert>
-                <honua:test_layer>
+                <honua:pub-layer-0>
                   <honua:name>wfs-invalid-insert</honua:name>
                   <honua:shape>
                     <gml:Point srsName="not-a-crs"><gml:pos>37 -122</gml:pos></gml:Point>
                   </honua:shape>
-                </honua:test_layer>
+                </honua:pub-layer-0>
               </wfs:Insert>
             </wfs:Transaction>
             """;
@@ -146,12 +146,12 @@ public sealed class Wfs20MutationScenarioTests : IAsyncLifetime
             <wfs:Transaction service="WFS" version="2.0.0"
                 xmlns:wfs="http://www.opengis.net/wfs/2.0"
                 xmlns:fes="http://www.opengis.net/fes/2.0">
-              <wfs:Delete typeName="test_layer"><fes:Filter/></wfs:Delete>
+              <wfs:Delete typeName="pub-layer-0"><fes:Filter/></wfs:Delete>
             </wfs:Transaction>
             """;
         (await SendTransactionAsync(invalidDelete, HttpStatusCode.BadRequest))
             .Should().Contain("ExceptionReport");
-        (await ReadFeatureAsync($"test_layer.{existingId}"))
+        (await ReadFeatureAsync($"pub-layer-0.{existingId}"))
             .Should().Contain("wfs-mutation-original");
     }
 
@@ -167,7 +167,7 @@ public sealed class Wfs20MutationScenarioTests : IAsyncLifetime
     private async Task<string> ReadFeatureAsync(string resourceId)
     {
         var response = await _fixture.Client.GetAsync(
-            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&RESOURCEID={resourceId}");
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0&RESOURCEID={resourceId}");
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);
         return body;
@@ -176,7 +176,7 @@ public sealed class Wfs20MutationScenarioTests : IAsyncLifetime
     private async Task<string> ReadAllFeaturesAsync()
     {
         var response = await _fixture.Client.GetAsync(
-            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer");
+            "/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=pub-layer-0");
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);
         return body;

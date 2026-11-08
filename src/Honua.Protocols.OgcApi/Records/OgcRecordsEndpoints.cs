@@ -11,6 +11,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Validation;
 using Honua.Protocols.Ogc.Api.Records.Models;
 using Honua.Protocols.Ogc.Common;
 using Microsoft.AspNetCore.Mvc;
@@ -546,33 +547,28 @@ internal static class OgcRecordsEndpoints
         string baseUrl,
         ImmutableArray<double>? bbox)
     {
-        // Use the storage layer id as the externally-facing v1-compatible identifier
-        // when available; otherwise fall back to the resource id.
-        var storageLayerId = publication is not null
-            ? snapshot.ResolveStorageLayerId(publication)
-            : snapshot.ResolveStorageLayerId(resource);
-        var layerIdString = storageLayerId.HasValue
-            ? storageLayerId.Value.ToString(CultureInfo.InvariantCulture)
-            : resource.Metadata.Id;
+        var publicationId = publication!.Metadata.Id;
+        var collectionId = Uri.EscapeDataString(LayerValidationHelpers.AdvertisedCollectionId(publication, resource));
+        var serviceLayerIndex = Uri.EscapeDataString(publication.Identifier.Value);
 
         var links = ImmutableArray.CreateBuilder<Link>();
-        links.Add(Link.Create($"{baseUrl}/ogc/records/collections/{CatalogCollectionId}/items/{Uri.EscapeDataString($"layer:{layerIdString}")}", RelationTypes.Self, MediaTypes.GeoJson, resource.Metadata.Name));
+        links.Add(Link.Create($"{baseUrl}/ogc/records/collections/{CatalogCollectionId}/items/{Uri.EscapeDataString($"layer:{publicationId}")}", RelationTypes.Self, MediaTypes.GeoJson, resource.Metadata.Name));
 
         if (IsProtocolEnabled(service, OgcFeaturesProtocolName))
         {
-            links.Add(Link.Create($"{baseUrl}/ogc/features/collections/{layerIdString}", RelationTypes.Alternate, MediaTypes.Json, "OGC API Features collection"));
-            links.Add(Link.Create($"{baseUrl}/ogc/features/collections/{layerIdString}/items", RelationTypes.Data, MediaTypes.GeoJson, "OGC API Features items"));
+            links.Add(Link.Create($"{baseUrl}/ogc/features/collections/{collectionId}", RelationTypes.Alternate, MediaTypes.Json, "OGC API Features collection"));
+            links.Add(Link.Create($"{baseUrl}/ogc/features/collections/{collectionId}/items", RelationTypes.Data, MediaTypes.GeoJson, "OGC API Features items"));
         }
 
         if (IsProtocolEnabled(service, StacProtocolName))
         {
-            links.Add(Link.Create($"{baseUrl}/stac/collections/{layerIdString}", RelationTypes.Alternate, MediaTypes.Json, "STAC collection"));
+            links.Add(Link.Create($"{baseUrl}/stac/collections/{collectionId}", RelationTypes.Alternate, MediaTypes.Json, "STAC collection"));
         }
 
         if (service is { } featureServerService &&
             IsProtocolEnabled(featureServerService, FeatureServerProtocolName))
         {
-            links.Add(Link.Create($"{baseUrl}{GeoServicesServiceUrls.CanonicalPath(snapshot.Graph, featureServerService)}/FeatureServer/{layerIdString}", RelationTypes.Alternate, MediaTypes.Json, "FeatureServer layer"));
+            links.Add(Link.Create($"{baseUrl}{GeoServicesServiceUrls.CanonicalPath(snapshot.Graph, featureServerService)}/FeatureServer/{serviceLayerIndex}", RelationTypes.Alternate, MediaTypes.Json, "FeatureServer layer"));
         }
 
         var properties = new OgcRecordProperties
@@ -582,13 +578,13 @@ internal static class OgcRecordsEndpoints
             Type = "dataset",
             ResourceType = "Layer",
             GeometryType = resource.ReadGeometryType().ToString(),
-            ExternalIds = ImmutableArray.Create(layerIdString, resource.Metadata.Name)
+            ExternalIds = ImmutableArray.Create(publicationId, resource.Metadata.Name)
         };
 
         return new CatalogRecord(
             new OgcRecordFeature
             {
-                Id = $"layer:{layerIdString}",
+                Id = $"layer:{publicationId}",
                 Geometry = CreateExtentGeometry(bbox),
                 Bbox = bbox,
                 Properties = properties,
@@ -596,10 +592,10 @@ internal static class OgcRecordsEndpoints
             },
             bbox,
             Modified: ResolveModified(resource.Metadata),
-            ExternalIds: [layerIdString, resource.Metadata.Name],
+            ExternalIds: [publicationId, resource.Metadata.Name],
             SearchText: BuildSearchText(
-                $"layer:{layerIdString}",
-                layerIdString,
+                $"layer:{publicationId}",
+                publicationId,
                 resource.Metadata.Name,
                 resource.Metadata.Title,
                 resource.Metadata.Description));

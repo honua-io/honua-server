@@ -33,15 +33,15 @@ public sealed class OgcRecordsPublicationTenantTests
         var ids = response.RootElement.GetProperty("features").EnumerateArray()
             .Select(feature => feature.GetProperty("id").GetString()).ToArray();
 
-        ids.Should().Contain("layer:2");
+        ids.Should().Contain("layer:public-publication");
         if (tenantId == "tenant-b")
         {
-            ids.Should().Contain("layer:1").And.Contain("service:private-service");
+            ids.Should().Contain("layer:private-publication").And.Contain("service:private-service");
         }
         else
         {
-            ids.Should().NotContain("layer:1").And.NotContain("service:private-service");
-            using var item = await GetItemAsync(services, "layer:1");
+            ids.Should().NotContain("layer:private-publication").And.NotContain("service:private-service");
+            using var item = await GetItemAsync(services, "layer:private-publication");
             item.Status.Should().Be(StatusCodes.Status404NotFound);
         }
     }
@@ -52,10 +52,10 @@ public sealed class OgcRecordsPublicationTenantTests
         using var services = CreateServices("tenant-a", includeVisibleSecondary: true);
         using var response = await SearchAsync(services);
         var feature = response.RootElement.GetProperty("features").EnumerateArray()
-            .Single(value => value.GetProperty("id").GetString() == "layer:1");
+            .Single(value => value.GetProperty("id").GetString() == "layer:visible-publication");
 
         feature.GetRawText().Should().Contain("visible-service").And.NotContain("private-service");
-        using var item = await GetItemAsync(services, "layer:1");
+        using var item = await GetItemAsync(services, "layer:visible-publication");
         item.Status.Should().Be(StatusCodes.Status200OK);
         item.Body.RootElement.GetRawText().Should().Contain("visible-service").And.NotContain("private-service");
     }
