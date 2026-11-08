@@ -3778,8 +3778,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
         };
 
     private static MetadataV2Status WithReadyStatus(
-        MetadataV2Status status, MetadataV2Status readyStatus)
-        => status with
+        MetadataV2Status? status, MetadataV2Status readyStatus)
+        => (status ?? new MetadataV2Status()) with
         {
             LifecycleValue = readyStatus.LifecycleValue,
             StateValue = readyStatus.StateValue,
