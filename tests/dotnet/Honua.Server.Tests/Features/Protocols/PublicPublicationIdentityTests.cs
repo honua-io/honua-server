@@ -219,6 +219,52 @@ public sealed partial class PublicPublicationIdentityTests : IAsyncLifetime
         }
     }
 
+    [IntegrationTest]
+    [Protocol(TestProtocols.Wms13)]
+    [Operation(Operations.Wms)]
+    [InterfaceOperation(TestProtocols.Wms13, "GetCapabilities")]
+    [Endpoint("GET /ogc/services/{serviceId}/wms")]
+    public async Task WmsCapabilities_DistinctIdentifiersShareResource_PreservesBothNames()
+    {
+        var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        var primary = graph.Publications.Single(publication => publication.Metadata.Id == PublicationId);
+        SetGraph(graph with
+        {
+            Revision = graph.Revision + 1,
+            Publications = [.. graph.Publications, primary with
+            {
+                Metadata = primary.Metadata with { Id = "roads-alternate", Name = "roads-alternate" },
+                LayerIndex = 7,
+                Identifier = new() { Value = "7", IsNumeric = true },
+                IsPrimary = false,
+            }],
+        });
+
+        (await WmsNamesAsync()).Should().Equal("0", "7");
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.Wms13)]
+    [Operation(Operations.Wms)]
+    [InterfaceOperation(TestProtocols.Wms13, "GetCapabilities")]
+    [Endpoint("GET /ogc/services/{serviceId}/wms")]
+    public async Task WmsCapabilities_DistinctResourcesShareIdentifier_RejectsAmbiguousName()
+    {
+        ConfigureDistinctStyleResources();
+        var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        var primary = graph.Publications.Single(publication => publication.Metadata.Id == PublicationId);
+        SetGraph(graph with
+        {
+            Revision = graph.Revision + 1,
+            Publications = graph.Publications.Select(publication => publication with { ServiceId = primary.ServiceId }).ToArray(),
+        });
+        using var response = await _fixture.Client.GetAsync(
+            $"/ogc/services/{ServiceName}/wms?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.3.0");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("LayerNotDefined");
+    }
+
     private async Task<string[]> WfsNamesAsync()
     {
         var xml = await ReadXmlAsync("/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=2.0.0");
