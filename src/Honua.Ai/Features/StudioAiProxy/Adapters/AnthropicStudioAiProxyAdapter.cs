@@ -372,8 +372,8 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
         else if (state.StopReason == StudioAiStopReason.ToolCall && !cancellationToken.IsCancellationRequested)
         {
             var content = turn.Content();
-            var key = AnthropicContinuationStore.Key(options, invocation.Request, invocation.Model,
-                invocation.ExecutionContext, invocation.Request.Messages.Count, AnthropicAssistantTurn.VisibleMessage(content));
+            var scope = new AnthropicContinuationStore.Scope(options, invocation.Request, invocation.Model, invocation.ExecutionContext);
+            var key = AnthropicContinuationStore.Key(scope, invocation.Request.Messages.Count, AnthropicAssistantTurn.VisibleMessage(content));
             _continuations.Save(key, content);
         }
     }
@@ -396,6 +396,7 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
     {
         var currentTurnStart = request.Messages.Select((message, index) => (message, index))
             .LastOrDefault(item => item.message.Role == StudioAiRole.User).index;
+        var scope = new AnthropicContinuationStore.Scope(options, request, model, executionContext);
         var proxyRequest = new AnthropicProxyRequest
         {
             Model = model,
@@ -408,10 +409,7 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
                 .Select(item => new AnthropicProxyMessage
                 {
                     Role = item.Message.Role == StudioAiRole.Tool ? "user" : item.Message.Role.ToString().ToLowerInvariant(),
-                    Content = item.Message is { Role: StudioAiRole.Assistant, ToolCalls.Count: > 0 }
-                        ? _continuations.Restore(AnthropicContinuationStore.Key(options, request, model,
-                            executionContext, item.Index, item.Message), item.Index >= currentTurnStart) ?? BuildMessageContent(item.Message)
-                        : BuildMessageContent(item.Message)
+                    Content = RestoreMessageContent(scope, item.Index, currentTurnStart)
                 })
                 .ToArray()
         };
@@ -432,6 +430,15 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
         }
 
         return proxyRequest;
+    }
+
+    private JsonElement RestoreMessageContent(AnthropicContinuationStore.Scope scope, int index, int currentTurnStart)
+    {
+        var message = scope.Request.Messages[index];
+        if (message is not { Role: StudioAiRole.Assistant, ToolCalls.Count: > 0 }) return BuildMessageContent(message);
+        var key = AnthropicContinuationStore.Key(scope, index, message);
+        return (index >= currentTurnStart ? _continuations.Restore(key) : _continuations.TryRestore(key))
+            ?? BuildMessageContent(message);
     }
 
     private static JsonElement BuildMessageContent(StudioAiMessage message)

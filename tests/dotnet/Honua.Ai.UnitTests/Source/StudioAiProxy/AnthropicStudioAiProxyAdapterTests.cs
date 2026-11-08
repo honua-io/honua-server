@@ -225,7 +225,9 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
             NullLogger<AnthropicStudioAiProxyAdapter>.Instance);
         var first = new StudioAiChatRequest
         {
-            ExecutionContext = RecordingAiAdmission.Context(), Messages = ToolRequest().Messages, Tools = ToolRequest().Tools
+            ExecutionContext = RecordingAiAdmission.Context(),
+            Messages = ToolRequest().Messages,
+            Tools = ToolRequest().Tools
         };
         await CollectAsync(adapter, first);
         var request = new StudioAiChatRequest

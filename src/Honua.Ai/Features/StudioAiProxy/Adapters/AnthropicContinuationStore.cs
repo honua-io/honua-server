@@ -18,15 +18,19 @@ internal sealed class AnthropicContinuationStore(TimeProvider clock)
     private readonly Dictionary<string, Entry> _entries = new(StringComparer.Ordinal);
     private int _storedCharacters;
 
-    internal JsonElement? Restore(string? key, bool required = true)
+    internal JsonElement? Restore(string? key)
+        => key is null ? null : TryRestore(key)
+            ?? throw new InvalidOperationException("The provider continuation is unavailable; start a new conversation.");
+
+    internal JsonElement? TryRestore(string? key)
     {
         if (key is null) return null;
         lock (_lock)
         {
             if (!_entries.TryGetValue(key, out var entry) || entry.ExpiresAt <= clock.GetUtcNow())
             {
-                if (!required) return null;
-                throw new InvalidOperationException("The provider continuation is unavailable; start a new conversation.");
+                Remove(key);
+                return null;
             }
             using var document = JsonDocument.Parse(entry.Content);
             return document.RootElement.Clone();
@@ -51,9 +55,9 @@ internal sealed class AnthropicContinuationStore(TimeProvider clock)
         }
     }
 
-    internal static string? Key(StudioAiProxyProviderOptions options, StudioAiChatRequest request, string model,
-        AiExecutionContext? identity, int assistantIndex, StudioAiMessage assistant)
+    internal static string? Key(Scope scope, int assistantIndex, StudioAiMessage assistant)
     {
+        var (options, request, model, identity) = scope;
         if (identity is not { IsValid: true }) return null;
         var buffer = new ArrayBufferWriter<byte>();
         using (var writer = new Utf8JsonWriter(buffer))
@@ -106,4 +110,7 @@ internal sealed class AnthropicContinuationStore(TimeProvider clock)
     }
 
     private sealed record Entry(string Content, DateTimeOffset ExpiresAt);
+
+    internal sealed record Scope(StudioAiProxyProviderOptions Options, StudioAiChatRequest Request,
+        string Model, AiExecutionContext? Identity);
 }
