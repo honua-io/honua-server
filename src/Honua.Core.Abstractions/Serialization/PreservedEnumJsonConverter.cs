@@ -14,11 +14,7 @@ internal class PreservedEnumJsonConverter<TEnum> : JsonConverter<PreservedEnum<T
     private readonly TolerantEnumJsonConverter<TEnum> _values = new();
 
     public override PreservedEnum<TEnum> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
-    {
-        var originalReader = reader;
-        var value = _values.Read(ref reader, typeof(TEnum), options);
-        return PreservedEnum<TEnum>.FromToken(value, ref originalReader);
-    }
+        => _values.ReadPreserved(ref reader, options);
 
     public override void Write(Utf8JsonWriter writer, PreservedEnum<TEnum> value, JsonSerializerOptions options)
     {
@@ -41,9 +37,7 @@ internal sealed class PreservedNumericEnumJsonConverter<TEnum> : PreservedEnumJs
     private readonly TolerantNumericEnumJsonConverter<TEnum> _values = new();
 
     public override PreservedEnum<TEnum> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
-        => reader.TokenType == JsonTokenType.String
-            ? PreservedEnum<TEnum>.FromToken(PreservedEnum<TEnum>.UnknownValue, ref reader)
-            : base.Read(ref reader, typeToConvert, options);
+        => _values.ReadPreserved(ref reader, options);
 
     protected override void WriteKnownValue(Utf8JsonWriter writer, TEnum value, JsonSerializerOptions options)
         => _values.Write(writer, value, options);

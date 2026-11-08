@@ -9,6 +9,11 @@ namespace Honua.Core.Serialization;
 internal sealed class TolerantNumericEnumJsonConverter<TEnum> : TolerantEnumJsonConverter<TEnum>
     where TEnum : struct, Enum
 {
+    internal override PreservedEnum<TEnum> ReadPreserved(ref Utf8JsonReader reader, JsonSerializerOptions options)
+        => reader.TokenType == JsonTokenType.String
+            ? PreservedEnum<TEnum>.FromUnknownToken(ref reader)
+            : base.ReadPreserved(ref reader, options);
+
     public override void Write(Utf8JsonWriter writer, TEnum value, JsonSerializerOptions options)
         => writer.WriteNumberValue(Convert.ToInt32(KnownOrUnknown(value), CultureInfo.InvariantCulture));
 }

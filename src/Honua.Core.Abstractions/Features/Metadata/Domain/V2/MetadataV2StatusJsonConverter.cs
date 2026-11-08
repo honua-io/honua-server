@@ -95,103 +95,22 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
     }
 
     private static PreservedEnum<MetadataV2LifecycleStatus>? ReadLifecycle(ref Utf8JsonReader reader)
-    {
-        var originalReader = reader;
-        var value = ParseLifecycle(ref reader);
-        return value.HasValue ? PreservedEnum<MetadataV2LifecycleStatus>.FromToken(value.Value, ref originalReader) : null;
-    }
+        => reader.TokenType == JsonTokenType.Null ? null : ReadStatusEnum<MetadataV2LifecycleStatus>(ref reader);
 
     private static PreservedEnum<MetadataV2OperationalState> ReadState(ref Utf8JsonReader reader)
+        => reader.TokenType == JsonTokenType.Null
+            ? new PreservedEnum<MetadataV2OperationalState>(MetadataV2OperationalState.Unknown)
+            : ReadStatusEnum<MetadataV2OperationalState>(ref reader);
+
+    private static PreservedEnum<TEnum> ReadStatusEnum<TEnum>(ref Utf8JsonReader reader)
+        where TEnum : struct, Enum
     {
-        var originalReader = reader;
-        var value = ParseState(ref reader);
-        return PreservedEnum<MetadataV2OperationalState>.FromToken(value, ref originalReader);
-    }
-
-    private static MetadataV2LifecycleStatus? ParseLifecycle(ref Utf8JsonReader reader)
-    {
-        if (reader.TokenType == JsonTokenType.Null)
+        if (reader.TokenType == JsonTokenType.String && reader.GetString() is { Length: > 0 } name &&
+            (char.IsAsciiDigit(name[0]) || name[0] is '-' or '+'))
         {
-            return null;
+            return PreservedEnum<TEnum>.FromUnknownToken(ref reader);
         }
-
-        if (reader.TokenType == JsonTokenType.Number)
-        {
-            if (!reader.TryGetInt32(out var number))
-            {
-                if (JsonIntegerToken.IsInteger(ref reader))
-                {
-                    return MetadataV2LifecycleStatus.Unknown;
-                }
-
-                throw new JsonException("Metadata v2 lifecycle must be a string.");
-            }
-
-            return number switch
-            {
-                0 => MetadataV2LifecycleStatus.Draft,
-                1 => MetadataV2LifecycleStatus.Active,
-                2 => MetadataV2LifecycleStatus.Deprecated,
-                3 => MetadataV2LifecycleStatus.Retired,
-                4 => MetadataV2LifecycleStatus.Archived,
-                _ => MetadataV2LifecycleStatus.Unknown
-            };
-        }
-
-        if (reader.TokenType != JsonTokenType.String)
-        {
-            throw new JsonException("Metadata v2 lifecycle must be a string.");
-        }
-
-        if (!TryParseNamed(reader.GetString(), out MetadataV2LifecycleStatus lifecycle))
-        {
-            return MetadataV2LifecycleStatus.Unknown;
-        }
-
-        return lifecycle;
-    }
-
-    private static MetadataV2OperationalState ParseState(ref Utf8JsonReader reader)
-    {
-        if (reader.TokenType == JsonTokenType.Null)
-        {
-            return MetadataV2OperationalState.Unknown;
-        }
-
-        if (reader.TokenType == JsonTokenType.Number)
-        {
-            if (!reader.TryGetInt32(out var number))
-            {
-                if (JsonIntegerToken.IsInteger(ref reader))
-                {
-                    return MetadataV2OperationalState.Unknown;
-                }
-
-                throw new JsonException("Metadata v2 operational state must be a string.");
-            }
-
-            return number switch
-            {
-                0 => MetadataV2OperationalState.Unknown,
-                1 => MetadataV2OperationalState.Ready,
-                2 => MetadataV2OperationalState.Pending,
-                3 => MetadataV2OperationalState.Degraded,
-                4 => MetadataV2OperationalState.Failed,
-                _ => MetadataV2OperationalState.Unknown
-            };
-        }
-
-        if (reader.TokenType != JsonTokenType.String)
-        {
-            throw new JsonException("Metadata v2 operational state must be a string.");
-        }
-
-        if (!TryParseNamed(reader.GetString(), out MetadataV2OperationalState state))
-        {
-            return MetadataV2OperationalState.Unknown;
-        }
-
-        return state;
+        return PreservedEnumJsonConverter<TEnum>.Instance.Read(ref reader, typeof(PreservedEnum<TEnum>), JsonSerializerOptions.Default);
     }
 
     private static List<MetadataV2Condition> ReadConditions(ref Utf8JsonReader reader)
@@ -326,18 +245,6 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
 
     private static bool OmitNulls(JsonSerializerOptions options)
         => options.DefaultIgnoreCondition is JsonIgnoreCondition.WhenWritingNull or JsonIgnoreCondition.WhenWritingDefault;
-
-    private static bool TryParseNamed<TEnum>(string? text, out TEnum value)
-        where TEnum : struct, Enum
-    {
-        value = default;
-        if (string.IsNullOrEmpty(text) || char.IsAsciiDigit(text[0]) || text[0] is '-' or '+')
-        {
-            return false;
-        }
-
-        return Enum.TryParse(text, ignoreCase: true, out value) && Enum.IsDefined(value);
-    }
 
     private static void WriteEnum<TEnum>(Utf8JsonWriter writer, string name, PreservedEnum<TEnum> value)
         where TEnum : struct, Enum

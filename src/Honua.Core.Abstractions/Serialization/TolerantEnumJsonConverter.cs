@@ -18,16 +18,25 @@ internal class TolerantEnumJsonConverter<TEnum> : JsonConverter<TEnum>
     }
 
     public override TEnum Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        => ReadPreserved(ref reader, options).Value;
+
+    internal virtual PreservedEnum<TEnum> ReadPreserved(ref Utf8JsonReader reader, JsonSerializerOptions options)
     {
+        var originalReader = reader;
         try
         {
-            return KnownOrUnknown(_knownValues.Read(ref reader, typeToConvert, options));
+            var value = _knownValues.Read(ref reader, typeof(TEnum), options);
+            if (Enum.IsDefined(value))
+            {
+                return new PreservedEnum<TEnum>(value);
+            }
         }
         catch (JsonException) when (reader.TokenType == JsonTokenType.String ||
             JsonIntegerToken.IsInteger(ref reader))
         {
-            return PreservedEnum<TEnum>.UnknownValue;
         }
+
+        return PreservedEnum<TEnum>.FromUnknownToken(ref originalReader);
     }
 
     public override void Write(Utf8JsonWriter writer, TEnum value, JsonSerializerOptions options)

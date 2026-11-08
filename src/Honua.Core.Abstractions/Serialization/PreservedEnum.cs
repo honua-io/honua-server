@@ -24,16 +24,10 @@ public readonly record struct PreservedEnum<TEnum> where TEnum : struct, Enum
         RawToken = rawToken;
     }
 
-    internal static PreservedEnum<TEnum> FromToken(TEnum value, ref Utf8JsonReader reader)
+    internal static PreservedEnum<TEnum> FromUnknownToken(ref Utf8JsonReader reader)
     {
-        if (reader.TokenType == JsonTokenType.Null ||
-            !EqualityComparer<TEnum>.Default.Equals(value, UnknownValue))
-        {
-            return new PreservedEnum<TEnum>(value);
-        }
-
         using var document = JsonDocument.ParseValue(ref reader);
-        return new PreservedEnum<TEnum>(value, document.RootElement.GetRawText());
+        return new PreservedEnum<TEnum>(UnknownValue, document.RootElement.GetRawText());
     }
 
     public static implicit operator PreservedEnum<TEnum>(TEnum value) => new(value);
