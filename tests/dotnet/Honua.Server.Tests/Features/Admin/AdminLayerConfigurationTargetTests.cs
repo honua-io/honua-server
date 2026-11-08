@@ -7,13 +7,13 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Admin;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Admin;
 
 public sealed class AdminLayerConfigurationTargetTests
 {
     private const int StorageLayerId = 42;
-    private static readonly MetadataV2Status Active = new() { Lifecycle = MetadataV2LifecycleStatus.Active };
 
     [UnitTest]
     public void Resolve_TwoRoutableFeatureResources_IsAmbiguousAndNamesBothServices()
@@ -109,58 +109,23 @@ public sealed class AdminLayerConfigurationTargetTests
         bool legacyIdentifier = false,
         MetadataV2ResourceType type = MetadataV2ResourceType.FeatureDataset)
     {
-        return new MetadataV2Graph
+        var bindingId = "binding-" + resourceId;
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource(resourceId, resourceId, type,
+                fields: [new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String }])
+            .AddStorageBinding(bindingId, resourceId, resourceId, storageLayerId: StorageLayerId)
+            .AddService(serviceId, serviceName)
+            .AddPublication("pub-" + resourceId, serviceId, resourceId,
+                layerIndex: layerIndex, storageBindingId: bindingId)
+            .Build();
+        return graph with
         {
-            Resources =
-            [
-                new MetadataV2Resource
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = resourceId, Name = resourceId },
-                    Type = type,
-                    StorageBindingIds = ["binding-" + resourceId],
-                    PrimaryStorageBindingId = "binding-" + resourceId,
-                    Status = retired
-                        ? new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Retired }
-                        : Active,
-                    SchemaFields = [new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String }],
-                }
-            ],
-            StorageBindings =
-            [
-                new MetadataV2StorageBinding
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-" + resourceId, Name = "binding-" + resourceId },
-                    ResourceId = resourceId,
-                    StorageLayerId = StorageLayerId,
-                }
-            ],
-            Services =
-            [
-                new MetadataV2Service
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = serviceId, Name = serviceName },
-                    Status = Active,
-                }
-            ],
-            Publications =
-            [
-                new MetadataV2Publication
-                {
-                    Metadata = new MetadataV2ObjectMetadata { Id = "pub-" + resourceId, Name = resourceId },
-                    Status = Active,
-                    ServiceId = serviceId,
-                    ResourceId = resourceId,
-                    StorageBindingId = "binding-" + resourceId,
-                    Identifier = legacyIdentifier
-                        ? null!
-                        : new MetadataV2PublicationIdentifier
-                        {
-                            Value = layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                            IsNumeric = true,
-                        },
-                    LayerIndex = layerIndex,
-                }
-            ],
+            Resources = graph.Resources.Select(resource => retired
+                ? resource with { Status = resource.Status with { Lifecycle = MetadataV2LifecycleStatus.Retired } }
+                : resource).ToArray(),
+            Publications = graph.Publications.Select(publication => legacyIdentifier
+                ? publication with { Identifier = null!, LayerIndex = layerIndex }
+                : publication).ToArray(),
         };
     }
 
