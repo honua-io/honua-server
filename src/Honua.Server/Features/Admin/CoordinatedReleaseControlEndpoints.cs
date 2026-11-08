@@ -52,7 +52,10 @@ internal static class CoordinatedReleaseControlEndpoints
             .WithSummary("Approves the container-swap or data-affecting gate so the conductor can advance.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<CoordinatedReleaseOperationResponse>()
-            .ProducesProblem(StatusCodes.Status404NotFound);
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         group.MapGet("/operations/{operationId}/approval-review/{gate}", HandleGateReview)
             .RequireAdminApproveAuthorization()
@@ -61,7 +64,8 @@ internal static class CoordinatedReleaseControlEndpoints
             .ExcludeFromDescription()
             .Produces<CoordinatedReleaseHumanReviewResponse>()
             .ProducesProblem(StatusCodes.Status403Forbidden)
-            .ProducesProblem(StatusCodes.Status404NotFound);
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
         group.MapPost("/operations/{operationId}/rollback", HandleRollback)
             .WithDisplayName("Roll Back Coordinated Release")
@@ -301,10 +305,6 @@ internal static class CoordinatedReleaseControlEndpoints
             return HumanApprovalDenied(exception);
         }
         catch (ServiceUnavailableException)
-        {
-            return Results.Problem(detail: ControlUnavailableMessage, statusCode: StatusCodes.Status503ServiceUnavailable);
-        }
-        catch (InvalidOperationException)
         {
             return Results.Problem(detail: ControlUnavailableMessage, statusCode: StatusCodes.Status503ServiceUnavailable);
         }
