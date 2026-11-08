@@ -100,7 +100,8 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
         mcpClient.DefaultRequestHeaders.Add("X-API-Key", agentApiKey);
 
         var proposalId = await ProposeRollbackDeployAsync(env, mcpClient);
-        var rollbackOperationId = await ApproveProposalAsync(adminClient, proposalId);
+        using var human = await EmulatedHumanApprovalSession.CreateClientAsync(env.Factory.Services, () => env.Factory.CreateClient());
+        var rollbackOperationId = await ApproveProposalAsync(human, proposalId);
 
         var rollbackTerminal = await env.DriveDeployToSucceededAsync(
             rollbackOperationId,
@@ -167,7 +168,8 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
         mcpClient.DefaultRequestHeaders.Add("X-API-Key", agentApiKey);
         var proposalId = await ProposeRollbackDeployAsync(env, mcpClient);
 
-        using var response = await adminClient.PostAsync($"/api/v1/admin/proposals/{proposalId}/approve", content: null);
+        using var human = await EmulatedHumanApprovalSession.CreateClientAsync(env.Factory.Services, () => env.Factory.CreateClient());
+        using var response = await SubmitHumanApprovalAsync(human, proposalId);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -385,9 +387,9 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
         return await client.SendAsync(message);
     }
 
-    private static async Task<string> ApproveProposalAsync(HttpClient adminClient, string proposalId)
+    private static async Task<string> ApproveProposalAsync(HttpClient human, string proposalId)
     {
-        using var response = await adminClient.PostAsync($"/api/v1/admin/proposals/{proposalId}/approve", content: null);
+        using var response = await SubmitHumanApprovalAsync(human, proposalId);
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -443,6 +445,17 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
     {
         public int? MaxSchema(string revision)
             => string.Equals(revision, previousRevision, StringComparison.Ordinal) ? TestSchema : null;
+    }
+
+    private static async Task<HttpResponseMessage> SubmitHumanApprovalAsync(HttpClient human, string proposalId)
+    {
+        using var review = await human.GetAsync($"/api/v1/admin/proposals/{proposalId}/approval-review");
+        review.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var snapshot = JsonDocument.Parse(await review.Content.ReadAsStringAsync());
+        var capability = snapshot.RootElement.GetProperty("review").GetProperty("capability").GetString();
+        using var decision = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/admin/proposals/{proposalId}/approve");
+        decision.Headers.Add("X-Honua-Approval-Capability", capability);
+        return await human.SendAsync(decision);
     }
 
     private sealed class ServerHostBridgeEnvironment : IAsyncDisposable
@@ -793,6 +806,8 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
             return new Dictionary<string, string?>(StringComparer.Ordinal)
             {
                 ["HONUA_DEV_AUTH"] = "false",
+                ["Oidc:Enabled"] = "true",
+                ["Public:BaseUrl"] = "http://localhost",
                 ["HONUA_ADMIN_PASSWORD"] = AdminPassword,
                 ["ConnectionStrings:redis"] = redisConnectionString,
                 ["Cache:KeyPrefix"] = $"honua:{targetId}:",
