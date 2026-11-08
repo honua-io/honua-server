@@ -1453,13 +1453,14 @@ assert_descriptor \
   "targeted" \
   "false" \
   "Server Features Admin Governance and Sharing"
-assert_descriptor \
-  "console-session-targeted" \
-  "src/Honua.Server/Features/Console/ConsoleSessionEndpoints.cs" \
-  "targeted" \
-  "false" \
-  "Server Features Console Sessions and Access" \
-  "Server Features Console and Alerts"
+for child in "Server Features Console Sessions and Access" "Server Features Console and Alerts"; do
+  assert_descriptor \
+    "console-session-targeted-${child}" \
+    "src/Honua.Server/Features/Console/ConsoleSessionEndpoints.cs" \
+    "targeted" \
+    "false" \
+    "${child}"
+done
 assert_descriptor \
   "feature-overview-targeted" \
   "src/Honua.Server/Features/Admin/FeatureOverviewEndpoints.cs" \
