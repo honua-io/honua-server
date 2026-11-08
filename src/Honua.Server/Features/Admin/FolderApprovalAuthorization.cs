@@ -18,6 +18,7 @@ using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Licensing;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Security;
@@ -45,15 +46,15 @@ internal static class FolderApprovalAuthorization
             context.User.IsInRole(AdminApiKeyPermission.ApprovedOperationRole) ||
             !MetadataV2ServicePaths.SameTenant(operation.TenantId, context.RequestServices.GetRequiredService<ITenantContext>().TenantId))
             throw new FolderProposalRefusal("Folder proposals require the authenticated requester's durable identity and tenant.");
-        AdminApiOperationApprovalPayload payload;
-        try { payload = FolderReplayRequest.ReadSealedPayload(plan, operation.OperationId, operation.TenantId); }
+        OperationApprovalReplayMapping replay;
+        try { replay = FolderReplayRequest.ReadSealedRequest(plan, operation.OperationId, operation.TenantId); }
         catch (Exception exception) when (exception is JsonException or ArgumentException)
         {
             throw new FolderProposalRefusal("The folder proposal payload does not match the requested operation, tenant, or mode.");
         }
-        if (payload.SchemaName != context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema)
+        if (replay.SchemaName != context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema)
             throw new FolderProposalRefusal("The folder proposal schema does not match the authenticated request.");
-        var request = payload.ToOperationRequest();
+        var request = replay.Request;
         var store = context.RequestServices.GetService<IMetadataV2GraphStore>()
             ?? throw new FolderProposalRefusal(FolderMutationFailure.ReadOnlyCatalog.Detail, OperationGatewayOutcome.Failed);
         var snapshot = await store.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
@@ -108,14 +109,14 @@ internal static class FolderApprovalAuthorization
         try
         {
             if (proposal.SealedPlanHash != OperationApprovalPlanSeal.Compute(proposal.Plan)) return false;
-            var payload = FolderReplayRequest.ReadSealedPayload(proposal.Plan, proposal.OperationId, proposal.TenantId);
-            if (payload.SchemaName != services.GetService<ISchemaContext>()?.CurrentSchema) return false;
+            var replay = FolderReplayRequest.ReadSealedRequest(proposal.Plan, proposal.OperationId, proposal.TenantId);
+            if (replay.SchemaName != services.GetService<ISchemaContext>()?.CurrentSchema) return false;
             var snapshot = await services.GetRequiredService<IMetadataV2GraphStore>()
                 .GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             if (snapshot.Etag != authorization.SnapshotEtag ||
-                payload.Parameters.GetValueOrDefault("If-Match") != snapshot.Etag ||
+                replay.Request.Parameters.GetValueOrDefault("If-Match") != snapshot.Etag ||
                 authorization.PolicyRevision != await PolicyRevisionAsync(services, authorization, null, cancellationToken).ConfigureAwait(false)) return false;
-            var affected = BuildMutation(snapshot.Graph, payload.ToOperationRequest(), proposal.TenantId)
+            var affected = BuildMutation(snapshot.Graph, replay.Request, proposal.TenantId)
                 .AffectedServices(snapshot.Graph).Select(service => service.Metadata.Id).Order(StringComparer.Ordinal);
             return authorization.ServiceIds.SequenceEqual(affected, StringComparer.Ordinal);
         }

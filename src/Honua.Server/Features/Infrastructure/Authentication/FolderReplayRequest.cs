@@ -4,6 +4,7 @@
 using System.Text.Json;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Server.Features.Operations;
 using Honua.Server.Features.Admin;
@@ -17,8 +18,7 @@ internal static class FolderReplayRequest
         if (proposal.Plan.ExecutionPayload is null) return false;
         try
         {
-            var payload = ReadSealedPayload(proposal.Plan, proposal.OperationId, proposal.TenantId);
-            var approvedRequest = payload.ToOperationRequest();
+            var approvedRequest = ReadSealedRequest(proposal.Plan, proposal.OperationId, proposal.TenantId).Request;
             var approvedRoute = new DefaultHttpContext().Request;
             BindRoute(approvedRequest, approvedRoute);
             var request = invocation.HttpContext.Request;
@@ -33,14 +33,19 @@ internal static class FolderReplayRequest
         }
     }
 
-    internal static AdminApiOperationApprovalPayload ReadSealedPayload(OperationProposalPlan plan, string? operationId, string? tenantId)
+    internal static OperationApprovalReplayMapping ReadSealedRequest(OperationProposalPlan plan, string? operationId, string? tenantId)
     {
         var payload = plan.ExecutionPayload is null ? null : JsonSerializer.Deserialize(plan.ExecutionPayload,
             AdminApiOperationApprovalJsonContext.Default.AdminApiOperationApprovalPayload);
         if (payload is null || payload.Parameters is null || payload.OperationId != operationId || payload.DryRun ||
             !MetadataV2ServicePaths.SameTenant(payload.TenantId, tenantId))
             throw new ArgumentException("The sealed folder operation payload is invalid.");
-        return payload;
+        return new OperationApprovalReplayMapping
+        {
+            Request = payload.ToOperationRequest(),
+            TenantId = payload.TenantId,
+            SchemaName = payload.SchemaName
+        };
     }
 
     internal static void BindRoute(OperationRequest operation, HttpRequest request)
