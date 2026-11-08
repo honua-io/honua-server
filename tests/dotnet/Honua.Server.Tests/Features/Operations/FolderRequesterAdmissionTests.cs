@@ -30,7 +30,10 @@ public sealed partial class FolderOperationIntegrationTests
         var restricted = await RestrictLastServiceFacetAsync();
         var payload = new AdminApiOperationApprovalPayload
         {
-            OperationId = "service.move", ServiceName = "test", TenantId = "public", SchemaName = _fixture.CurrentSchema,
+            OperationId = "service.move",
+            ServiceName = "test",
+            TenantId = "public",
+            SchemaName = _fixture.CurrentSchema,
             Parameters = new() { ["folderId"] = restricted.Graph.Folders.Single().Metadata.Id, ["If-Match"] = restricted.Etag }
         };
         _memberships.Current = new PrincipalMembership(true, ["admin", "service-owner"]);
@@ -42,7 +45,9 @@ public sealed partial class FolderOperationIntegrationTests
             _memberships.Current = new PrincipalMembership(true, ["admin"]);
             var result = await _fixture.Services.GetRequiredService<IOperationGateway>().CreateApprovalProposalAsync("stale-" + Guid.NewGuid().ToString("N"), new()
             {
-                OperationId = payload.OperationId, Kind = OperationClass.AdminConfigChange, TenantId = payload.TenantId,
+                OperationId = payload.OperationId,
+                Kind = OperationClass.AdminConfigChange,
+                TenantId = payload.TenantId,
                 RequestedBy = CanonicalSecurityActor.Resolve(context.User)!.ActorId,
                 Plan = new OperationProposalPlan
                 {
