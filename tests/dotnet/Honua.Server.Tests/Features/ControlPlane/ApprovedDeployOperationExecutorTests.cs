@@ -64,6 +64,7 @@ public sealed class ApprovedDeployOperationExecutorTests
     [InlineData("binding")]
     [InlineData("payload")]
     [InlineData("instance")]
+    [InlineData("proposal")]
     public async Task ExecuteAsync_ChangedHumanApproval_RefusesBeforeCreatingWorkflow(string change)
     {
         using var host = new OperationHumanApprovalTestHost();
@@ -76,6 +77,7 @@ public sealed class ApprovedDeployOperationExecutorTests
         };
         var request = DeployHumanApprovalReplayTests.CreateExecutionRequest(original);
         if (change == "instance") request = request with { OperationInstanceId = "changed-instance" };
+        if (change == "proposal") request = request with { ApprovedProposalId = null };
         var payload = change == "payload" ? Payload() : original.Plan.ExecutionPayload;
         var (executor, backend, read) = Create(proposal, DeployTargetKind.LocalCompose);
 
@@ -117,6 +119,7 @@ public sealed class ApprovedDeployOperationExecutorTests
         backend.StartAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>())
             .Returns(new DeploySubmissionResult { Status = WorkflowOperationStatus.Reconciling });
         var store = Substitute.For<IWorkflowOperationStore>();
+        store.TryAcquireLeaseAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>()).Returns(true);
         store.TryCreateAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(call => { saved = call.Arg<WorkflowOperationRecord>(); return true; });
         store.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(_ => saved);
