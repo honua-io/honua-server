@@ -79,17 +79,17 @@ internal static class McpToolSchemas
             },
             "namespace": {
               "type": "string",
-              "description": "Namespace selector. Omission publishes an unscoped Service; a supplied value uses the resolved tenant."
+              "description": "Resolved tenant; omit: unscoped."
             },
             "folderId": {
               "type": ["string", "null"],
               "minLength": 1,
-              "description": "Destination Folder identifier. Null selects Root; omission preserves existing membership."
+              "description": "Null: Root. Omit: preserve membership."
             },
             "publicName": {
               "type": "string",
               "minLength": 1,
-              "description": "Immutable public Service leaf name, separate from its logical serviceName and display title."
+              "description": "Immutable public leaf; distinct from ID/title."
             },
             "description": {
               "type": "string",
