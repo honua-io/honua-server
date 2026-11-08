@@ -59,7 +59,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     # The Lambda custom runtime requires the entrypoint binary to be named "bootstrap".
     cp /app/bootstrap/Honua.ControlPlane.Lambda /app/bootstrap/bootstrap && \
     chmod +x /app/bootstrap/bootstrap && \
-    rm -rf /app/server/BlazorDebugProxy /app/server/wwwroot && \
+    rm -rf /app/server/wwwroot && \
     find /app -type f \( -name '*.pdb' -o -name '*.dbg' \) -delete
 
 FROM public.ecr.aws/lambda/provided:al2@sha256:4003dbba5eb640ddb26eb3aaa951ecaebe6dddb4c718b6ce83e0bba37f06168f AS runtime

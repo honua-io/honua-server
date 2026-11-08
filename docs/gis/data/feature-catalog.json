@@ -684,7 +684,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Console.ConsoleSessionEndpointTests.DeleteContent_RemovesItem"
+        "Honua.Server.Tests.Features.Console.ConsoleSessionEndpointTests.DeleteContent_RemovesItem",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_PublishedIdentity_DoesNotCreateMutableContentRows"
       ],
       "proof_ledger_surface": "console-content-rbac",
       "maturity": "implemented",
@@ -5142,7 +5143,17 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Console.ConsoleSessionEndpointTests.ListContent_WithItemTypeFilter_AppliesFilter"
+        "Honua.Server.Tests.Features.Console.ConsoleSessionEndpointTests.ListContent_WithItemTypeFilter_AppliesFilter",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_CollectionPublicationWithoutExplicitPath_OmitsUnresolvedLayerUrl",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_DuplicateGraphIdentities_UsesFirstItemWithoutFailing",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_DuplicatePublicationAcrossServices_DoesNotExposeRestrictedIdentity",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_GraphLifecycle_TracksPublishRepublishDisableAndDelete",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_MixedResourceAccess_CountsOnlyReadableLayers",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_MultipleAuthoredPages_PaginatesAfterCombiningWithGraphItems",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_PublishedIdentity_DoesNotCreateMutableContentRows",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_ResourceWithMultipleProtocols_ListsItsPrimaryPublicationOnce",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_RestrictedResource_ExcludesLayerAndServiceFromTotalsAndSearch",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_StoredIdentityCollision_PreservesGraphAuthorizationAndOwnership"
       ],
       "proof_ledger_surface": "console-content-rbac",
       "maturity": "implemented",
@@ -5156,7 +5167,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Console.ConsoleSessionEndpointTests.SearchContent_FindsByTerm"
+        "Honua.Server.Tests.Features.Console.ConsoleSessionEndpointTests.SearchContent_FindsByTerm",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_RestrictedResource_ExcludesLayerAndServiceFromTotalsAndSearch"
       ],
       "proof_ledger_surface": "console-content-rbac",
       "maturity": "implemented",
@@ -5170,7 +5182,11 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Console.ConsoleSessionEndpointTests.CreateThenGetContentItem_ProducesComputedActions"
+        "Honua.Server.Tests.Features.Console.ConsoleSessionEndpointTests.CreateThenGetContentItem_ProducesComputedActions",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_DuplicatePublicationAcrossServices_DoesNotExposeRestrictedIdentity",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_GraphLifecycle_TracksPublishRepublishDisableAndDelete",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_MixedResourceAccess_CountsOnlyReadableLayers",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_StoredIdentityCollision_PreservesGraphAuthorizationAndOwnership"
       ],
       "proof_ledger_surface": "console-content-rbac",
       "maturity": "implemented",
@@ -5376,7 +5392,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Console.ConsoleSessionEndpointTests.GetSession_AsAdmin_ReturnsProfileCapabilitiesEntitlementsAndContent"
+        "Honua.Server.Tests.Features.Console.ConsoleSessionEndpointTests.GetSession_AsAdmin_ReturnsProfileCapabilitiesEntitlementsAndContent",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_PublishedIdentity_DoesNotCreateMutableContentRows"
       ],
       "proof_ledger_surface": "console-content-rbac",
       "maturity": "implemented",
@@ -5753,7 +5770,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Console.ConsoleOpenDataEndpointsTests.AnonymousReads_ForPrivateOrIneligibleItem_Return404WithoutLeakingTitle",
-        "Honua.Server.Tests.Features.Console.ConsoleOpenDataEndpointsTests.AnonymousReads_ForPublicIndexedItem_ReturnDcatStacAndSchemaOrg"
+        "Honua.Server.Tests.Features.Console.ConsoleOpenDataEndpointsTests.AnonymousReads_ForPublicIndexedItem_ReturnDcatStacAndSchemaOrg",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_GraphItems_DoNotOptIntoAuthoredSharingOrOpenData"
       ],
       "proof_ledger_surface": "console-open-data-dcat-stac",
       "maturity": "implemented",
@@ -5768,7 +5786,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Console.ConsoleOpenDataEndpointsTests.AnonymousReads_ForPrivateOrIneligibleItem_Return404WithoutLeakingTitle",
-        "Honua.Server.Tests.Features.Console.ConsoleOpenDataEndpointsTests.AnonymousReads_ForPublicIndexedItem_ReturnDcatStacAndSchemaOrg"
+        "Honua.Server.Tests.Features.Console.ConsoleOpenDataEndpointsTests.AnonymousReads_ForPublicIndexedItem_ReturnDcatStacAndSchemaOrg",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_GraphItems_DoNotOptIntoAuthoredSharingOrOpenData"
       ],
       "proof_ledger_surface": "console-open-data-dcat-stac",
       "maturity": "implemented",
@@ -5782,7 +5801,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Console.ConsoleOpenDataEndpointsTests.AnonymousReads_ForPublicIndexedItem_ReturnDcatStacAndSchemaOrg"
+        "Honua.Server.Tests.Features.Console.ConsoleOpenDataEndpointsTests.AnonymousReads_ForPublicIndexedItem_ReturnDcatStacAndSchemaOrg",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_GraphItems_DoNotOptIntoAuthoredSharingOrOpenData"
       ],
       "proof_ledger_surface": "console-open-data-dcat-stac",
       "maturity": "implemented",
@@ -13516,22 +13536,6 @@
       "capability": "identity.saml"
     },
     {
-      "id": "get-samples-stac-ops",
-      "route": "/samples/stac-ops",
-      "method": "GET",
-      "family": "STAC API",
-      "protocol": "http-route-family",
-      "code_location": "src/Honua.Server/EndpointRegistry.cs",
-      "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.Stac.StacOpsDemoEndpointTests.GetStacOpsDemo_ServesHostedSampleShell",
-        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRouteFamilies_AreCompletelyMarked",
-        "Honua.Server.Tests.Infrastructure.Authentication.OidcAuthenticationTests.TenantIndependentAuthAndOperationalRoutes_TenantlessValidBearer_ReachHandlers"
-      ],
-      "proof_ledger_surface": "stac-api",
-      "maturity": "implemented",
-      "capability": "serve.stac"
-    },
-    {
       "id": "get-scenes-sceneid-sceneserver",
       "route": "/scenes/{sceneId}/SceneServer",
       "method": "GET",
@@ -14135,6 +14139,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.SearchPortal_CallerAccess_FiltersBeforeCounting",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.SearchPortal_DuplicateServiceId_PreservesCanonicalAccessPolicy",
         "Honua.Server.Tests.Features.Sharing.PortalCanonicalGroupSharingTests.GroupShare_AfterHostRestart_ReadsPersistedAudience_AndNextRequestSeesRevocation",
         "Honua.Server.Tests.Features.Sharing.PortalFacadeDiscoveryContractTests.Search_Anonymous_ProjectsOnlyPublicTier",
         "Honua.Server.Tests.Features.Sharing.PortalFacadeDiscoveryContractTests.Search_Clauses_FilterVisibleItems",
@@ -15742,7 +15748,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Console.ConsoleSessionEndpointTests.PatchContent_UpdatesDisplayableFields",
-        "Honua.Server.Tests.Features.Console.ConsoleSessionEndpointTests.PatchContent_VisibilityToTeam_WithoutTeamScope_ReturnsBadRequest"
+        "Honua.Server.Tests.Features.Console.ConsoleSessionEndpointTests.PatchContent_VisibilityToTeam_WithoutTeamScope_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_StoredIdentityCollision_PreservesGraphAuthorizationAndOwnership"
       ],
       "proof_ledger_surface": "console-content-rbac",
       "maturity": "implemented",
@@ -17330,6 +17337,7 @@
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.BackgroundWorker_WithUnsafeStoredServiceUrl_FailsJobBeforeImport",
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_AfterRedisRecovers_AdmitsAndCompletesOneJobWithoutRestart",
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_OwnershipConflict_IsAcceptedThenReportsStableTerminalFailure",
+        "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_SourcePublicPathAlreadyReserved_RequiresExplicitMapping",
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_WhenDistributedCoordinationIsUnavailable_ReturnsServiceUnavailable",
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_WhenQueueBecomesUnavailable_RollsBackPersistedJobState",
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_WithCredentialQueryParameter_ReturnsBadRequest",
@@ -17342,7 +17350,10 @@
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_WithSecretReferenceToken_DoesNotPersistPlaintextSecrets_AndWorkerReceivesResolvedValue",
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_WithUnresolvableHost_ReturnsBadRequest",
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_WithValidRequest_ReturnsAccepted",
-        "Honua.Server.Tests.Import.MigrationAdminSdkLifecycleTests.LayerImport_DrivenThroughThePublishedAdminSdk_PreservesRecordsOrdinatesAndNulls"
+        "Honua.Server.Tests.Import.GeoservicesImportFolderEndpointTests.Start_FolderSelection_PersistsServerPlannedIdentityAndResolvedScope",
+        "Honua.Server.Tests.Import.GeoservicesImportFolderEndpointTests.Start_InvalidFolderMapping_RefusesBeforeQueueing",
+        "Honua.Server.Tests.Import.MigrationAdminSdkLifecycleTests.LayerImport_DrivenThroughThePublishedAdminSdk_PreservesRecordsOrdinatesAndNulls",
+        "Honua.Server.Tests.Import.MigrationScannerEndpointTests.Scan_GeoservicesFolderPlan_StartPreservesPreviewIdentity"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -17414,6 +17425,8 @@
       "proving_tests": [
         "Honua.Server.Tests.Import.MigrationAdminSdkLifecycleTests.ServiceMigration_DrivenThroughThePublishedAdminSdkWithATableLeftOut_RoutesToReviewAsIncomplete",
         "Honua.Server.Tests.Import.MigrationAdminSdkLifecycleTests.ServiceMigration_DrivenThroughThePublishedAdminSdk_LandsEveryRecordAndReportsWhatItCouldNotPublishOrVerify",
+        "Honua.Server.Tests.Import.MigrationBatchEndpointTests.StartBatch_DuplicatePublicLeavesInDifferentFolders_RecordsOneTargetPerSource",
+        "Honua.Server.Tests.Import.MigrationBatchEndpointTests.StartBatch_InvalidTargetMapping_RefusesBeforeStartingOrCreatingRun",
         "Honua.Server.Tests.Import.MigrationBatchEndpointTests.StartBatch_WhenFullFidelityIsRequiredAndADiscoveredLayerIsUnselected_ReturnsUnprocessableEntity",
         "Honua.Server.Tests.Import.MigrationBatchEndpointTests.StartBatch_WithEmptyFootprint_ReturnsBadRequest",
         "Honua.Server.Tests.Import.MigrationBatchEndpointTests.StartBatch_WithFootprint_ReturnsAcceptedWithBatchId",
@@ -17589,6 +17602,7 @@
         "Honua.Server.Tests.Import.MigrationAdminSdkLifecycleTests.ServiceMigration_DrivenThroughThePublishedAdminSdkWithATableLeftOut_RoutesToReviewAsIncomplete",
         "Honua.Server.Tests.Import.MigrationAdminSdkLifecycleTests.ServiceMigration_DrivenThroughThePublishedAdminSdk_LandsEveryRecordAndReportsWhatItCouldNotPublishOrVerify",
         "Honua.Server.Tests.Import.MigrationScannerEndpointTests.Scan_GeoServerSource_ReturnsNormalizedInventoryArtifact",
+        "Honua.Server.Tests.Import.MigrationScannerEndpointTests.Scan_GeoservicesFolderPlan_StartPreservesPreviewIdentity",
         "Honua.Server.Tests.Import.MigrationScannerEndpointTests.Scan_GeoservicesSourceWithJsonExport_ProducesStableInventoryBaseline",
         "Honua.Server.Tests.Import.MigrationScannerEndpointTests.Scan_GeoservicesSourceWithJsonExport_ReturnsIndentedAttachment",
         "Honua.Server.Tests.Import.MigrationScannerEndpointTests.Scan_GeoservicesSourceWithPlaintextToken_UsesCredentialsAndRedactsResponse",
@@ -19291,7 +19305,8 @@
         "Honua.Server.Tests.Features.Console.ConsoleSessionEndpointTests.CheckActions_ReturnsAllowedAndDeniedSets",
         "Honua.Server.Tests.Features.Console.ConsoleSessionEndpointTests.CheckActions_RouteTarget_ReturnsOnlyRequestedVerbs",
         "Honua.Server.Tests.Features.Console.ConsoleSessionEndpointTests.CheckActions_WithNullTargetEntry_ReturnsBadRequest",
-        "Honua.Server.Tests.Features.Console.ConsoleSessionEndpointTests.CheckActions_WithUndefinedActionNumber_ReturnsBadRequest"
+        "Honua.Server.Tests.Features.Console.ConsoleSessionEndpointTests.CheckActions_WithUndefinedActionNumber_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_PublishedIdentity_DoesNotCreateMutableContentRows"
       ],
       "proof_ledger_surface": "console-content-rbac",
       "maturity": "implemented",
@@ -26048,7 +26063,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Console.ConsoleOpenDataEndpointsTests.SavePage_RejectsDistributionWithEmptyAccessUrl",
-        "Honua.Server.Tests.Features.Console.ConsoleOpenDataEndpointsTests.SavePage_ThenDcat_ReportsValidationSuccessAndMapsFields"
+        "Honua.Server.Tests.Features.Console.ConsoleOpenDataEndpointsTests.SavePage_ThenDcat_ReportsValidationSuccessAndMapsFields",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_GraphItems_DoNotOptIntoAuthoredSharingOrOpenData"
       ],
       "proof_ledger_surface": "console-content-rbac",
       "maturity": "implemented",
@@ -26065,7 +26081,8 @@
         "Honua.Server.Tests.Features.Console.ConsoleOpenDataEndpointsTests.Eligibility_DistributableType_FlipsWhenAccessTierBecomesPublicIndexed",
         "Honua.Server.Tests.Features.Console.ConsoleShareEndpointsTests.PublicLinkLifecycle_ResolvesAndDeniesExpiredInvalidRevokedAndPrivateWithoutTitleLeak",
         "Honua.Server.Tests.Features.Console.ConsoleShareEndpointsTests.PublicShareAndEmbed_WithPrivateDependency_ReturnClosureConflictUnlessBypassed",
-        "Honua.Server.Tests.Features.Console.ConsoleShareEndpointsTests.UpdateAccess_PublicIndexed_UpdatesVisibilityAndAllowsAnonymousPublicRead"
+        "Honua.Server.Tests.Features.Console.ConsoleShareEndpointsTests.UpdateAccess_PublicIndexed_UpdatesVisibilityAndAllowsAnonymousPublicRead",
+        "Honua.Server.Tests.Features.Console.PublishedContentProjectionTests.GetContent_GraphItems_DoNotOptIntoAuthoredSharingOrOpenData"
       ],
       "proof_ledger_surface": "console-content-rbac",
       "maturity": "implemented",

@@ -63,7 +63,6 @@ COPY src/Honua.Scene/*.csproj src/Honua.Scene/
 COPY src/Honua.Routing/*.csproj src/Honua.Routing/
 COPY src/Honua.Plugins/*.csproj src/Honua.Plugins/
 COPY src/Honua.Plugins.Abstractions/*.csproj src/Honua.Plugins.Abstractions/
-COPY samples/Honua.StacOpsDemo/*.csproj samples/Honua.StacOpsDemo/
 
 ARG TARGETARCH
 
@@ -79,7 +78,6 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
       -p:HonuaStoreProfile=${HONUA_STORE_PROFILE:-postgis} \
       --runtime "$RUNTIME_ID" \
       -p:RuntimeIdentifier="$RUNTIME_ID" \
-      -p:HonuaIncludeStacOpsDemo=false \
       -p:PublishAot=false \
       -p:SelfContained=true
 
@@ -105,7 +103,6 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
       --runtime "$RUNTIME_ID" \
       --force \
       -p:RuntimeIdentifier="$RUNTIME_ID" \
-      -p:HonuaIncludeStacOpsDemo=false \
       -p:PublishAot=false \
       -p:SelfContained=true && \
     dotnet publish src/Honua.Server/Honua.Server.csproj \
@@ -119,11 +116,10 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
       --self-contained true \
       --output /app \
       -p:RuntimeIdentifier="$RUNTIME_ID" \
-      -p:HonuaIncludeStacOpsDemo=false \
       -p:PublishAot=false \
       -p:DebugType=None \
       -p:DebugSymbols=false && \
-    rm -rf /app/BlazorDebugProxy /app/wwwroot && \
+    rm -rf /app/wwwroot && \
     find /app -type f \( -name '*.pdb' -o -name '*.dbg' \) -delete
 
 FROM ${LAMBDA_RUNTIME_IMAGE} AS runtime

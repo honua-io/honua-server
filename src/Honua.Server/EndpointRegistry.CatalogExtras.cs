@@ -111,9 +111,6 @@ public static partial class EndpointRegistry
         new("PATCH", "/sta/v1.1/{**resourcePath}"),
         new("DELETE", "/sta/v1.1/{**resourcePath}"),
 
-        // Hosted samples
-        new("GET", "/samples/stac-ops"),
-
         // MCP operator surface (#728) — JSON-RPC dispatch over a single route.
         // Streamable-HTTP transport (#1954) adds the SSE GET stream and the
         // session-termination DELETE alongside the POST dispatcher.

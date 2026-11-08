@@ -475,11 +475,6 @@ public sealed record MetadataV2Publication
     [JsonPropertyName("layerIndex")]
     public int? LayerIndex
     {
-        // Identifier is declared non-nullable, but a graph snapshot written before the
-        // identifier object existed omits the member entirely and deserializes with it
-        // unset, so every read of LayerIndex on such a snapshot threw
-        // NullReferenceException. That is the legacy shape this property exists to
-        // support, so it must tolerate it rather than fault on it.
         get => _layerIndex ?? (Identifier?.IsNumeric == true
             && int.TryParse(Identifier.Value, System.Globalization.NumberStyles.Integer,
                 System.Globalization.CultureInfo.InvariantCulture, out var parsed)
@@ -491,14 +486,14 @@ public sealed record MetadataV2Publication
     [JsonPropertyName("path")]
     public string? Path
     {
-        get => _path ?? Identifier.PathOverride;
+        get => _path ?? Identifier?.PathOverride;
         init => _path = value;
     }
 
     [JsonPropertyName("serviceLocalId")]
     public string? ServiceLocalId
     {
-        get => _serviceLocalId ?? (string.IsNullOrEmpty(Identifier.Value) ? null : Identifier.Value);
+        get => _serviceLocalId ?? (string.IsNullOrEmpty(Identifier?.Value) ? null : Identifier.Value);
         init => _serviceLocalId = value;
     }
 

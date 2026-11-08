@@ -20,5 +20,6 @@ journal to `CUSTOMCODE_EVENTS_PATH` (default `/work/out/honua-events.v1.jsonl`) 
 uploads it beside the tool's artifacts.
 Tools requiring server access must use the configured integration runtime.
 
-The repository's `samples/gp-custom-local` contains executable Python and .NET
-examples with VS Code debugger configurations.
+The maintained [Python](https://github.com/honua-io/honua-samples/tree/trunk/templates/gp-python)
+and [.NET](https://github.com/honua-io/honua-samples/tree/trunk/templates/gp-dotnet) templates
+contain executable examples with VS Code debugger configurations.

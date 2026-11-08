@@ -26,7 +26,7 @@ public sealed class GpCliEndToEndTests
 {
     internal const string CollectionName = "GpCli console capture";
 
-    // The geometry.buffer inputs mirror samples/gp/geometry-buffer-point/fixture.json:
+    // The geometry.buffer inputs mirror tests/fixtures/gp/geometry-buffer-point/fixture.json:
     // buffer POINT(0 0) by 10 units in EPSG:4326. WKB is the base64 of a 2D point at the origin.
     private const string PointWkbBase64 = "AQEAAAAAAAAAAAAAAAAAAAAAAAAA";
 
@@ -509,7 +509,7 @@ public sealed class GpCliEndToEndTests
     [Fact]
     public async Task RunAsync_Test_ManagedGoldenFixture_Passes()
     {
-        var root = ResolveSamplesGpRoot();
+        var root = ResolveGpFixtureRoot();
 
         var (exit, stdout, _) = await InvokeAsync(
             "test", "geometry-buffer-point", "--root", root);
@@ -521,9 +521,26 @@ public sealed class GpCliEndToEndTests
     }
 
     [Fact]
+    public async Task RunAsync_Test_WithoutRootOverride_FindsRepositoryFixture()
+    {
+        var previousDirectory = Directory.GetCurrentDirectory();
+        try
+        {
+            Directory.SetCurrentDirectory(ResolveGpFixtureRoot());
+            var (exit, stdout, _) = await InvokeAsync("test", "geometry-buffer-point");
+            exit.Should().Be(0);
+            stdout.Should().Contain("PASS").And.Contain("geometry-buffer-point").And.Contain("0 failed");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousDirectory);
+        }
+    }
+
+    [Fact]
     public async Task RunAsync_Test_UnknownFixture_ReturnsUsageExit()
     {
-        var root = ResolveSamplesGpRoot();
+        var root = ResolveGpFixtureRoot();
 
         var (exit, _, stderr) = await InvokeAsync(
             "test", "no-such-fixture", "--root", root);
@@ -540,7 +557,7 @@ public sealed class GpCliEndToEndTests
     [Fact]
     public async Task RunAsync_FullDevkitLoop_ListDescribePlanRunTest_AllSucceed()
     {
-        var root = ResolveSamplesGpRoot();
+        var root = ResolveGpFixtureRoot();
         var bufferParams = new[]
         {
             "--param", $"wkb={PointWkbBase64}",
@@ -589,17 +606,12 @@ public sealed class GpCliEndToEndTests
         }
     }
 
-    /// <summary>
-    /// Locates the repo's <c>samples/gp</c> fixtures directory by walking up from the test
-    /// assembly's base directory, so the <c>test</c> verb is exercised against the real fixtures
-    /// regardless of the runner's working directory.
-    /// </summary>
-    private static string ResolveSamplesGpRoot()
+    private static string ResolveGpFixtureRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir is not null)
         {
-            var candidate = Path.Join(dir.FullName, "samples", "gp");
+            var candidate = Path.Join(dir.FullName, "tests", "fixtures", "gp");
             if (Directory.Exists(candidate))
             {
                 return candidate;
@@ -609,7 +621,7 @@ public sealed class GpCliEndToEndTests
         }
 
         throw new DirectoryNotFoundException(
-            "Could not locate the samples/gp fixtures directory above " + AppContext.BaseDirectory);
+            "Could not locate the tests/fixtures/gp fixtures directory above " + AppContext.BaseDirectory);
     }
 
     private static string ExtractJson(string output)

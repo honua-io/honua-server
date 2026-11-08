@@ -86,7 +86,6 @@ COPY src/Honua.Scene/*.csproj src/Honua.Scene/
 COPY src/Honua.Routing/*.csproj src/Honua.Routing/
 COPY src/Honua.Plugins/*.csproj src/Honua.Plugins/
 COPY src/Honua.Plugins.Abstractions/*.csproj src/Honua.Plugins.Abstractions/
-COPY samples/Honua.StacOpsDemo/*.csproj samples/Honua.StacOpsDemo/
 
 ARG TARGETARCH
 
@@ -165,7 +164,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
         sleep $((attempt * 15)) ; \
         attempt=$((attempt + 1)) ; \
     done && \
-    rm -rf /out/app/BlazorDebugProxy /out/app/wwwroot && \
+    rm -rf /out/app/wwwroot && \
     find /out/app -type f \( -name '*.pdb' -o -name '*.dbg' \) -delete
 
 FROM ${AZURE_FUNCTIONS_BASE_IMAGE} AS runtime

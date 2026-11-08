@@ -49,7 +49,7 @@
     <!-- Sample plugins exercised by the plugin custom-endpoint integration tests (#1562).
          The default host does not compile in plugins, so the contributed routes are only
          present in a test host that explicitly registers a sample plugin. -->
-    <ProjectReference Include="..\..\..\samples\plugins\Honua.Sample.UtilityValidationPlugin\Honua.Sample.UtilityValidationPlugin.csproj" />
+    <ProjectReference Include="..\..\fixtures\plugins\Honua.Sample.UtilityValidationPlugin\Honua.Sample.UtilityValidationPlugin.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Scene\Honua.Scene.csproj" />
     <!-- License-mint round-trip tests prove minted envelopes are accepted by the
          runtime verifier (FileBackedLicenseService) and rejected when tampered. -->

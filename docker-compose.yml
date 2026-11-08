@@ -71,8 +71,6 @@ services:
     image: "${HONUA_SERVER_IMAGE:-honua-server:local}"
     build:
       context: .
-      args:
-        HONUA_INCLUDE_STAC_OPS_DEMO: "true"
       secrets:
         - github_actor
         - github_token

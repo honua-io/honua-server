@@ -4211,14 +4211,13 @@
     },
     {
       "surfaceId": "stac-api",
-      "displayName": "STAC API and hosted sample",
+      "displayName": "STAC API",
       "surfaceKind": "http-route-family",
       "protocol": "STAC API",
-      "canonicalIdentifier": "/stac + /samples/stac-ops",
+      "canonicalIdentifier": "/stac",
       "parentSurfaceId": null,
       "endpointPrefixes": [
-        "/stac",
-        "/samples/stac-ops"
+        "/stac"
       ],
       "endpointExactMatches": [],
       "endpointContains": [],

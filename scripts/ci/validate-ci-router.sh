@@ -170,6 +170,9 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   echo "Validating GitHub Actions baseline measurement contract..."
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-actions-baseline.py
 
+  echo "Validating external sample inputs..."
+  "${PYTHON_BIN}" tests/python/unit/test_validated_sample_inputs.py
+
   echo "Validating server-test archive entry checks..."
   "${PYTHON_BIN}" scripts/ci/validate-server-test-archive.test.py
 
@@ -421,7 +424,7 @@ assert_exact_shards \
 assert_exact_shards \
   "headroom-split-mcp-auth" \
   "tests/dotnet/Honua.Ai.Tests/Source/McpBearerAuthenticationTests.cs" \
-  '["MCP Authentication and Governance","MCP and Sessions"]'
+  '["MCP Authentication and Governance","MCP Endpoints","MCP and Sessions"]'
 # Honua.Server.Tests classes: assert the NEW child is selected (the broad
 # Features/ path prefixes legitimately add the catch-all shards as well).
 assert_descriptor \
@@ -1107,7 +1110,7 @@ assert_descriptor \
 assert_exact_shards \
   "mcp-studio-source-includes-server-dashboard-proof" \
   "src/Honua.Ai/Features/Protocols/Mcp/Mcp/Studio/StudioCompositionTools.cs" \
-  '["Ai Components","Ai Units","MCP Authentication and Governance","MCP and Sessions","Operator Eval Harness","Server Features Analytics Studio Export and Reporting","Server Features Studio Packaging"]'
+  '["Ai Components","Ai Units","MCP Authentication and Governance","MCP Endpoints","MCP and Sessions","Operator Eval Harness","Server Features Analytics Studio Export and Reporting","Server Features Studio Packaging"]'
 assert_excludes_shard \
   "studio-source-excludes-collaboration-child" \
   "src/Honua.Server/Features/Studio/StudioPackageEndpoints.cs" \
@@ -1620,6 +1623,7 @@ echo "Checking shard filter/test-class coverage in both directions..."
 "${PYTHON_BIN}" scripts/ci/test-admin-runtime-partition.py
 "${PYTHON_BIN}" scripts/ci/test-wms-capacity-partition.py
 "${PYTHON_BIN}" scripts/ci/test-featureserver-capacity-partition.py
+"${PYTHON_BIN}" scripts/ci/test-mcp-capacity-partition.py
 "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.test.py
 "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.py \
   --assert-owner \
@@ -1689,10 +1693,6 @@ echo "Checking shard filter/test-class coverage in both directions..."
     "Honua.Server.Tests.Comprehensive.TestQualityValidationTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "STAC and API Governance" \
-  `# #3204 STAC capacity split: the two heaviest classes of the serialized STAC` \
-  `# timeline move to their own shard. StacOpsDemoEndpointTests no longer needs the` \
-  `# cache-writer shard: since #4453 the payload carries its hosted Blazor content` \
-  `# roots, which validate-server-test-binary-artifacts.sh above enforces.` \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Stac.StacItemsTests" \
     "tests/dotnet/Honua.Protocols.Stac.Tests/Honua.Protocols.Stac.Tests.csproj" \
@@ -1706,7 +1706,7 @@ echo "Checking shard filter/test-class coverage in both directions..."
     "tests/dotnet/Honua.Protocols.Stac.Tests/Honua.Protocols.Stac.Tests.csproj" \
     "STAC Protocol" \
   --assert-owner \
-    "Honua.Server.Tests.Features.Protocols.Stac.StacOpsDemoEndpointTests" \
+    "Honua.Server.Tests.Features.Protocols.Stac.RetiredHostedSampleTests" \
     "tests/dotnet/Honua.Protocols.Stac.Tests/Honua.Protocols.Stac.Tests.csproj" \
     "STAC Protocol" \
   `# #3204 September 2026 shard-headroom rebalance: pin one class on each side of` \
@@ -1867,7 +1867,7 @@ echo "Checking shard filter/test-class coverage in both directions..."
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests" \
     "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
-    "MCP and Sessions" \
+    "MCP Endpoints" \
   --assert-owner \
     "Honua.Server.Tests.Routing.NAServerPgRoutingEndToEndTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
@@ -1932,12 +1932,6 @@ echo "Checking shard filter/test-class coverage in both directions..."
     "Honua.Server.Tests.Features.Protocols.Future.FutureEndpointTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Server Features Miscellaneous" \
-  `# #3711: the session/transport fixtures move together to the static MCP and Sessions` \
-  `# Sessions owner so the main MCP and Sessions shard can return to its pre-#3664 cap.` \
-  --assert-owner \
-    "Honua.Server.Tests.Features.Protocols.Mcp.McpEndpointIntegrationTests" \
-    "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \
-    "MCP and Sessions" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests" \
     "tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj" \

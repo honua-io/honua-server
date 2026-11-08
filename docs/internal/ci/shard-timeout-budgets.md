@@ -807,50 +807,6 @@ timeline, so neither can run longer than its share of that span. Even at the
 136 in 755s), both stay under the 70% target. Fold the observed p90s into the
 next audit.
 
-### The split's one hazard: the hosted Blazor content root
-
-Two shards on the same `csproj` change the build topology. `ci.yml` sorts the
-matrix by `-dispatch_rank` and `scripts/ci/server-test-shard-cache.sh` makes the
-first selected shard for a project the exact-head cache **writer**; every later
-sibling materializes the writer's packaged payload instead of building
-(`plan-server-test-reuse-benchmark.py` calls the same relationship a "producer"
-with "reused consumers").
-
-At the time of the split, `scripts/ci/package-server-test-binaries.sh` staged
-only the *test project's* `bin/` and `obj/`. `Honua.Server.staticwebassets.runtime.json`
-in that output resolves `/samples/stac-ops/` from six content roots, and two of
-them are build outputs of a **different** project:
-
-```text
-samples/Honua.StacOpsDemo/wwwroot/                       <- source, always present
-samples/Honua.StacOpsDemo/bin/Release/net10.0/wwwroot/   <- build output, NOT packaged before #4453
-samples/Honua.StacOpsDemo/obj/Release/net10.0/compressed/ <- build output, NOT packaged before #4453
-```
-
-That is exactly what attempt 2 of `34039679229` showed. It materialized the
-payload (`REASON: exact_cache_hit`, `Build server test binaries` skipped) and
-`StacOpsDemoEndpointTests.GetStacOpsDemoFrameworkAsset_WhenDemoEnabled_ReturnsStaticFile`
-failed with `Expected ... HttpStatusCode.OK ... but found HttpStatusCode.NotFound`
-on `/samples/stac-ops/_framework/blazor.webassembly.js`, while
-`GetStacOpsDemo_ServesHostedSampleShell` passed — `index.html` comes from the
-source content root, the 420 files under `_framework/` do not. The same four
-tests all passed on the building attempt 1.
-
-That defect predated this split (any rerun of the single shard hit it). The
-split could not let it become an attempt-1 failure too, so
-`StacOpsDemoEndpointTests` stayed on the higher-`dispatch_rank` shard: that shard
-is the writer, the one shard that still builds on attempt 1. Ranking could not
-help a rerun, because `server-test-shard-cache.sh` tests `run_attempt > 1` *before*
-the writer designation, and `scripts/ci/validate-ci-router.sh` pinned the
-ordering as a stopgap.
-
-**Resolved by #4453.** The payload now carries every build-output content root
-the test project's static web asset manifests reference. Restore rejects a
-payload whose roots would be missing, and the shard builds instead (see "Static
-web asset content roots" in `docs/internal/ci/server-test-binary-artifacts.md`).
-The `dispatch_rank` writer pin was removed. `validate-ci-router.sh` still pins
-the class's owning shard as one side of this split.
-
 ### Local verification of the split
 
 Both post-split filters were run on the lane box with
