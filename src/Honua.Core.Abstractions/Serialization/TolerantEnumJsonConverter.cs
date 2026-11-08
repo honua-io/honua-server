@@ -20,7 +20,7 @@ internal class TolerantEnumJsonConverter<TEnum> : JsonConverter<TEnum>
     public override TEnum Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         => ReadPreserved(ref reader, options).Value;
 
-    internal virtual PreservedEnum<TEnum> ReadPreserved(ref Utf8JsonReader reader, JsonSerializerOptions options)
+    internal virtual PreservedEnumValue<TEnum> ReadPreserved(ref Utf8JsonReader reader, JsonSerializerOptions options)
     {
         var originalReader = reader;
         try
@@ -28,7 +28,7 @@ internal class TolerantEnumJsonConverter<TEnum> : JsonConverter<TEnum>
             var value = _knownValues.Read(ref reader, typeof(TEnum), options);
             if (Enum.IsDefined(value))
             {
-                return new PreservedEnum<TEnum>(value);
+                return new PreservedEnumValue<TEnum>(value);
             }
         }
         catch (JsonException) when (reader.TokenType == JsonTokenType.String ||
@@ -36,12 +36,12 @@ internal class TolerantEnumJsonConverter<TEnum> : JsonConverter<TEnum>
         {
         }
 
-        return PreservedEnum<TEnum>.FromUnknownToken(ref originalReader);
+        return PreservedEnumValue<TEnum>.FromUnknownToken(ref originalReader);
     }
 
     public override void Write(Utf8JsonWriter writer, TEnum value, JsonSerializerOptions options)
         => _knownValues.Write(writer, KnownOrUnknown(value), options);
 
     protected static TEnum KnownOrUnknown(TEnum value)
-        => Enum.IsDefined(value) ? value : PreservedEnum<TEnum>.UnknownValue;
+        => Enum.IsDefined(value) ? value : PreservedEnumValue<TEnum>.UnknownValue;
 }

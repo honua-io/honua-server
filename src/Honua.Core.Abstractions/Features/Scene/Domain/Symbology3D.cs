@@ -31,7 +31,7 @@ public sealed record Symbology3DRule : ExtensibleJsonRecord
 
     [JsonPropertyName("comparison")]
     [JsonConverter(typeof(PreservedNumericEnumJsonConverter<Symbology3DComparison>))]
-    public PreservedEnum<Symbology3DComparison> ComparisonValue { get; init; } = Symbology3DComparison.Equals;
+    public PreservedEnumValue<Symbology3DComparison> ComparisonValue { get; init; } = Symbology3DComparison.Equals;
 
     public string? Value { get; init; }
 

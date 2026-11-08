@@ -6,17 +6,17 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Core.Serialization;
 
-internal class PreservedEnumJsonConverter<TEnum> : JsonConverter<PreservedEnum<TEnum>>
+internal class PreservedEnumJsonConverter<TEnum> : JsonConverter<PreservedEnumValue<TEnum>>
     where TEnum : struct, Enum
 {
     internal static PreservedEnumJsonConverter<TEnum> Instance { get; } = new();
 
     private readonly TolerantEnumJsonConverter<TEnum> _values = new();
 
-    public override PreservedEnum<TEnum> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    public override PreservedEnumValue<TEnum> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         => _values.ReadPreserved(ref reader, options);
 
-    public override void Write(Utf8JsonWriter writer, PreservedEnum<TEnum> value, JsonSerializerOptions options)
+    public override void Write(Utf8JsonWriter writer, PreservedEnumValue<TEnum> value, JsonSerializerOptions options)
     {
         if (value.RawToken is { } rawToken)
         {
@@ -36,7 +36,7 @@ internal sealed class PreservedNumericEnumJsonConverter<TEnum> : PreservedEnumJs
 {
     private readonly TolerantNumericEnumJsonConverter<TEnum> _values = new();
 
-    public override PreservedEnum<TEnum> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    public override PreservedEnumValue<TEnum> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         => _values.ReadPreserved(ref reader, options);
 
     protected override void WriteKnownValue(Utf8JsonWriter writer, TEnum value, JsonSerializerOptions options)

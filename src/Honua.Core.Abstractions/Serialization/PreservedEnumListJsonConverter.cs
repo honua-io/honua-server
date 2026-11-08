@@ -6,27 +6,27 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Core.Serialization;
 
-internal sealed class PreservedEnumListJsonConverter<TEnum> : JsonConverter<IReadOnlyList<PreservedEnum<TEnum>>>
+internal sealed class PreservedEnumListJsonConverter<TEnum> : JsonConverter<IReadOnlyList<PreservedEnumValue<TEnum>>>
     where TEnum : struct, Enum
 {
     private readonly PreservedEnumJsonConverter<TEnum> _values = new();
 
-    public override IReadOnlyList<PreservedEnum<TEnum>> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    public override IReadOnlyList<PreservedEnumValue<TEnum>> Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         if (reader.TokenType != JsonTokenType.StartArray)
         {
             throw new JsonException("Enum values must be an array.");
         }
 
-        var values = new List<PreservedEnum<TEnum>>();
+        var values = new List<PreservedEnumValue<TEnum>>();
         while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
         {
-            values.Add(_values.Read(ref reader, typeof(PreservedEnum<TEnum>), options));
+            values.Add(_values.Read(ref reader, typeof(PreservedEnumValue<TEnum>), options));
         }
         return values;
     }
 
-    public override void Write(Utf8JsonWriter writer, IReadOnlyList<PreservedEnum<TEnum>> value, JsonSerializerOptions options)
+    public override void Write(Utf8JsonWriter writer, IReadOnlyList<PreservedEnumValue<TEnum>> value, JsonSerializerOptions options)
     {
         writer.WriteStartArray();
         foreach (var item in value)

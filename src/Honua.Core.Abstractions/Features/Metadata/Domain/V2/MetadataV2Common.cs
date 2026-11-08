@@ -129,7 +129,7 @@ public sealed record MetadataV2Status : ExtensibleJsonRecord
 
     [JsonPropertyName("lifecycle")]
     [JsonConverter(typeof(PreservedEnumJsonConverter<MetadataV2LifecycleStatus>))]
-    public PreservedEnum<MetadataV2LifecycleStatus> LifecycleValue { get; init; } = MetadataV2LifecycleStatus.Active;
+    public PreservedEnumValue<MetadataV2LifecycleStatus> LifecycleValue { get; init; } = MetadataV2LifecycleStatus.Active;
 
     [JsonIgnore]
     public MetadataV2OperationalState State
@@ -140,7 +140,7 @@ public sealed record MetadataV2Status : ExtensibleJsonRecord
 
     [JsonPropertyName("state")]
     [JsonConverter(typeof(PreservedEnumJsonConverter<MetadataV2OperationalState>))]
-    public PreservedEnum<MetadataV2OperationalState> StateValue { get; init; } = MetadataV2OperationalState.Unknown;
+    public PreservedEnumValue<MetadataV2OperationalState> StateValue { get; init; } = MetadataV2OperationalState.Unknown;
 
     [JsonPropertyName("conditions")]
     public IReadOnlyList<MetadataV2Condition> Conditions { get; init; } = Array.Empty<MetadataV2Condition>();
@@ -240,7 +240,7 @@ public sealed record MetadataV2Field : ExtensibleJsonRecord
 
     [JsonPropertyName("type")]
     [JsonConverter(typeof(PreservedEnumJsonConverter<MetadataV2FieldType>))]
-    public PreservedEnum<MetadataV2FieldType> TypeValue { get; init; } = MetadataV2FieldType.Unknown;
+    public PreservedEnumValue<MetadataV2FieldType> TypeValue { get; init; } = MetadataV2FieldType.Unknown;
 
     [JsonPropertyName("title")]
     public string? Title { get; init; }
@@ -428,7 +428,7 @@ public sealed record MetadataV2AttributeRule : ExtensibleJsonRecord
 
     [JsonPropertyName("type")]
     [JsonConverter(typeof(PreservedNumericEnumJsonConverter<MetadataV2AttributeRuleType>))]
-    public PreservedEnum<MetadataV2AttributeRuleType> TypeValue { get; init; } = MetadataV2AttributeRuleType.Calculation;
+    public PreservedEnumValue<MetadataV2AttributeRuleType> TypeValue { get; init; } = MetadataV2AttributeRuleType.Calculation;
 
     [JsonPropertyName("fieldName")]
     public string? FieldName { get; init; }

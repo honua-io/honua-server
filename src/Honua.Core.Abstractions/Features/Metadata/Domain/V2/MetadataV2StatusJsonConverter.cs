@@ -24,8 +24,8 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
             throw new JsonException("Metadata v2 status must be a JSON object.");
         }
 
-        PreservedEnum<MetadataV2LifecycleStatus>? lifecycle = null;
-        PreservedEnum<MetadataV2OperationalState> state = MetadataV2OperationalState.Unknown;
+        PreservedEnumValue<MetadataV2LifecycleStatus>? lifecycle = null;
+        PreservedEnumValue<MetadataV2OperationalState> state = MetadataV2OperationalState.Unknown;
         var conditions = new List<MetadataV2Condition>();
         DateTimeOffset? observedAt = null;
         var additionalProperties = new Dictionary<string, JsonElement>();
@@ -65,7 +65,7 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
 
         return new MetadataV2Status
         {
-            LifecycleValue = lifecycle ?? new PreservedEnum<MetadataV2LifecycleStatus>(MetadataV2LifecycleStatus.Active),
+            LifecycleValue = lifecycle ?? new PreservedEnumValue<MetadataV2LifecycleStatus>(MetadataV2LifecycleStatus.Active),
             StateValue = state,
             Conditions = conditions,
             ObservedAt = observedAt,
@@ -94,23 +94,23 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
         writer.WriteEndObject();
     }
 
-    private static PreservedEnum<MetadataV2LifecycleStatus>? ReadLifecycle(ref Utf8JsonReader reader)
+    private static PreservedEnumValue<MetadataV2LifecycleStatus>? ReadLifecycle(ref Utf8JsonReader reader)
         => reader.TokenType == JsonTokenType.Null ? null : ReadStatusEnum<MetadataV2LifecycleStatus>(ref reader);
 
-    private static PreservedEnum<MetadataV2OperationalState> ReadState(ref Utf8JsonReader reader)
+    private static PreservedEnumValue<MetadataV2OperationalState> ReadState(ref Utf8JsonReader reader)
         => reader.TokenType == JsonTokenType.Null
-            ? new PreservedEnum<MetadataV2OperationalState>(MetadataV2OperationalState.Unknown)
+            ? new PreservedEnumValue<MetadataV2OperationalState>(MetadataV2OperationalState.Unknown)
             : ReadStatusEnum<MetadataV2OperationalState>(ref reader);
 
-    private static PreservedEnum<TEnum> ReadStatusEnum<TEnum>(ref Utf8JsonReader reader)
+    private static PreservedEnumValue<TEnum> ReadStatusEnum<TEnum>(ref Utf8JsonReader reader)
         where TEnum : struct, Enum
     {
         if (reader.TokenType == JsonTokenType.String && reader.GetString() is { Length: > 0 } name &&
             (char.IsAsciiDigit(name[0]) || name[0] is '-' or '+'))
         {
-            return PreservedEnum<TEnum>.FromUnknownToken(ref reader);
+            return PreservedEnumValue<TEnum>.FromUnknownToken(ref reader);
         }
-        return PreservedEnumJsonConverter<TEnum>.Instance.Read(ref reader, typeof(PreservedEnum<TEnum>), JsonSerializerOptions.Default);
+        return PreservedEnumJsonConverter<TEnum>.Instance.Read(ref reader, typeof(PreservedEnumValue<TEnum>), JsonSerializerOptions.Default);
     }
 
     private static List<MetadataV2Condition> ReadConditions(ref Utf8JsonReader reader)
@@ -246,7 +246,7 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
     private static bool OmitNulls(JsonSerializerOptions options)
         => options.DefaultIgnoreCondition is JsonIgnoreCondition.WhenWritingNull or JsonIgnoreCondition.WhenWritingDefault;
 
-    private static void WriteEnum<TEnum>(Utf8JsonWriter writer, string name, PreservedEnum<TEnum> value)
+    private static void WriteEnum<TEnum>(Utf8JsonWriter writer, string name, PreservedEnumValue<TEnum> value)
         where TEnum : struct, Enum
     {
         writer.WritePropertyName(name);

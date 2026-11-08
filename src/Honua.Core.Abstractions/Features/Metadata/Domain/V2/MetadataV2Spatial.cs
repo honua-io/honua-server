@@ -105,7 +105,7 @@ public sealed record MetadataV2ResourceSpatial : ExtensibleJsonRecord
 
     [JsonPropertyName("geometryType")]
     [JsonConverter(typeof(PreservedEnumJsonConverter<MetadataV2GeometryType>))]
-    public PreservedEnum<MetadataV2GeometryType> GeometryTypeValue { get; init; } = MetadataV2GeometryType.None;
+    public PreservedEnumValue<MetadataV2GeometryType> GeometryTypeValue { get; init; } = MetadataV2GeometryType.None;
 
     [JsonPropertyName("bbox")]
     public MetadataV2Bbox? Bbox { get; init; }

@@ -5,7 +5,7 @@ using System.Text.Json;
 
 namespace Honua.Core.Serialization;
 
-public readonly record struct PreservedEnum<TEnum> where TEnum : struct, Enum
+public readonly record struct PreservedEnumValue<TEnum> where TEnum : struct, Enum
 {
     internal static TEnum UnknownValue { get; } = Enum.Parse<TEnum>("Unknown");
 
@@ -13,22 +13,22 @@ public readonly record struct PreservedEnum<TEnum> where TEnum : struct, Enum
 
     internal string? RawToken { get; }
 
-    public PreservedEnum(TEnum value)
+    public PreservedEnumValue(TEnum value)
     {
         Value = value;
     }
 
-    internal PreservedEnum(TEnum value, string rawToken)
+    internal PreservedEnumValue(TEnum value, string rawToken)
     {
         Value = value;
         RawToken = rawToken;
     }
 
-    internal static PreservedEnum<TEnum> FromUnknownToken(ref Utf8JsonReader reader)
+    internal static PreservedEnumValue<TEnum> FromUnknownToken(ref Utf8JsonReader reader)
     {
         using var document = JsonDocument.ParseValue(ref reader);
-        return new PreservedEnum<TEnum>(UnknownValue, document.RootElement.GetRawText());
+        return new PreservedEnumValue<TEnum>(UnknownValue, document.RootElement.GetRawText());
     }
 
-    public static implicit operator PreservedEnum<TEnum>(TEnum value) => new(value);
+    public static implicit operator PreservedEnumValue<TEnum>(TEnum value) => new(value);
 }
