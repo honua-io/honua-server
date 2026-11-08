@@ -17,12 +17,23 @@ internal sealed class OperationProposerApiKeyAuthority(TimeProvider timeProvider
         && (string.Equals(actor, Scheme, StringComparison.OrdinalIgnoreCase)
             || actor.StartsWith(Scheme + ":", StringComparison.OrdinalIgnoreCase));
 
+    internal static bool TryGetKeyId(string? actor, out Guid id)
+    {
+        id = Guid.Empty;
+        return actor is not null && actor.Length == Prefix.Length + 36 &&
+            actor.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase) &&
+            Guid.TryParseExact(actor[Prefix.Length..], "D", out id) && id != Guid.Empty;
+    }
+
     internal async Task ValidateAsync(string? actor, CancellationToken cancellationToken)
     {
+        await GetCurrentRecordAsync(actor, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal async Task<AdminApiKeyRecord> GetCurrentRecordAsync(string? actor, CancellationToken cancellationToken)
+    {
         cancellationToken.ThrowIfCancellationRequested();
-        if (actor is null || actor.Length != Prefix.Length + 36
-            || !actor.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase)
-            || !Guid.TryParseExact(actor[Prefix.Length..], "D", out var id) || id == Guid.Empty || apiKeys is null)
+        if (!TryGetKeyId(actor, out var id) || apiKeys is null)
             throw Denied();
         AdminApiKeyRecord? record;
         try { record = await apiKeys.GetAsync(id, cancellationToken).ConfigureAwait(false); }
@@ -36,6 +47,7 @@ internal sealed class OperationProposerApiKeyAuthority(TimeProvider timeProvider
             new Claim(AdminApiKeyPermission.PermissionClaimType, permission)), "proposal-key-revalidation");
         identity.AddClaim(new Claim(ClaimTypes.Role, "admin"));
         if (!AdminApiKeyPermission.IsAuthorized(new ClaimsPrincipal(identity), HttpMethods.Post)) throw Denied();
+        return record;
     }
 
     private static InvalidOperationException Denied() => new(Refusal);

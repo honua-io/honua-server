@@ -99,6 +99,8 @@ public enum ProposalRiskLevel
 /// </summary>
 public sealed record OperationProposalPlan
 {
+    public FolderRequesterAuthorization? FolderAuthorization { get; init; }
+
     /// <summary>
     /// Human-readable, single-line summary of the proposed change.
     /// </summary>
@@ -135,6 +137,18 @@ public sealed record OperationProposalPlan
     /// pipeline when the proposal is approved. Not rendered to reviewers verbatim.
     /// </summary>
     public string? ExecutionPayload { get; init; }
+}
+
+public sealed record FolderRequesterAuthorization
+{
+    public required string RequesterId { get; init; }
+    public string? SubjectId { get; init; }
+    public string? SubjectIssuer { get; init; }
+    public required string OperationId { get; init; }
+    public required string SnapshotEtag { get; init; }
+    public required string PolicyRevision { get; init; }
+    public required IReadOnlyList<string> ServiceIds { get; init; }
+    public required DateTimeOffset ExpiresAt { get; init; }
 }
 
 /// <summary>
