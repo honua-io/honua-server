@@ -2792,7 +2792,6 @@ jobs:
             -p:HonuaSkipAdminClientForAotVerification=true \
             -p:HonuaSkipOracleForAotVerification=true \
             -p:HonuaSkipSnowflakeForAotVerification=true \
-            -p:HonuaIncludeStacOpsDemo=false \
             -p:StripSymbols=true \
             -o ./publish
         working-directory: src/Honua.Server

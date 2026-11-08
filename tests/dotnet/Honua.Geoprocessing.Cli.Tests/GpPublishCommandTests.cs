@@ -9,6 +9,7 @@ using Xunit;
 namespace Honua.Geoprocessing.Cli.Tests;
 
 [global::Xunit.Trait("Tier", "Fast")]
+[Collection(GpCliEndToEndTests.CollectionName)]
 public sealed class GpPublishCommandTests : IDisposable
 {
     private readonly string _fixtureRoot = Path.Join(
@@ -75,12 +76,38 @@ public sealed class GpPublishCommandTests : IDisposable
             return new WorkflowPackagePublishClient(http, options.ApiKey, options.BearerToken);
         }
 
-        // Append the temp fixture root via the public option by injecting it through args is not
-        // supported, so we resolve it directly: tests that need fixtures pass --file instead, and
-        // the fixtureRoot default is exercised by GpWorkflowSourceTests. For command tests we use
-        // --file or a registered process id.
         var exit = await GpPublishCommand.RunAsync(args, processIds, catalog, Factory, output, error);
         return (exit, output.ToString(), error.ToString(), handler);
+    }
+
+    [Fact]
+    public async Task Run_WorkflowWithoutRootOverride_UsesDefaultFixtureDirectory()
+    {
+        var workflowDirectory = Path.Join(_fixtureRoot, "tests", "fixtures", "gp", "my-flow");
+        Directory.CreateDirectory(workflowDirectory);
+        File.WriteAllText(Path.Join(workflowDirectory, "workflow.json"),
+            """{"schemaVersion":"workflow-package.v1","nodes":[{"nodeId":"n1","nodeTypeId":"process:geometry.buffer"}]}""");
+        var previousDirectory = Directory.GetCurrentDirectory();
+        try
+        {
+            Directory.SetCurrentDirectory(_fixtureRoot);
+            var (exit, output, error, handler) = await RunAsync(
+                ["my-flow", "--dry-run"],
+                responses => responses
+                    .RespondCreated("/workflow-packages", PackageJson)
+                    .RespondCreated("/versions", VersionJson)
+                    .RespondOk("/validate", ValidationJson)
+                    .RespondOk("/dry-run", DryRunJson));
+
+            Assert.Equal(0, exit);
+            Assert.Empty(error);
+            Assert.Contains("dry-run   :", output, StringComparison.Ordinal);
+            Assert.Contains("package   : my-flow", output, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(previousDirectory);
+        }
     }
 
     [Fact]

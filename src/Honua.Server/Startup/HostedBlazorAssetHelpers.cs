@@ -1,59 +1,16 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
-using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Primitives;
 
 namespace Honua.Server.Startup;
 
-// The in-tree admin UI stays blocked so leftover endpoint metadata cannot be served.
+// Retired hosted UIs stay blocked even when a stale asset manifest is loaded.
 internal static class HostedBlazorAssetHelpers
 {
-    public static void ConfigureHostedBlazorAssets(
-        IApplicationBuilder app,
-        PathString pathPrefix)
+    public static void FilterHostedBlazorStaticAssetEndpoints(WebApplication app)
     {
-        var prefix = pathPrefix.Value?.Trim('/') ??
-            throw new InvalidOperationException("Hosted Blazor path prefix is required.");
-        var webRootFileProvider = app.ApplicationServices
-            .GetRequiredService<IWebHostEnvironment>()
-            .WebRootFileProvider;
-
-        // Keep hosted shells isolated to their configured prefix so enabling one
-        // does not expose another shell's static web assets.
-        app.UseStaticFiles(new StaticFileOptions
-        {
-            RequestPath = pathPrefix,
-            FileProvider = new PathPrefixFileProvider(webRootFileProvider, prefix)
-        });
-    }
-
-    public static IEndpointConventionBuilder MapHostedBlazorFallback(
-        IEndpointRouteBuilder endpoints,
-        PathString pathPrefix)
-    {
-        var prefix = pathPrefix.Value?.TrimEnd('/') ??
-            throw new InvalidOperationException("Hosted Blazor path prefix is required.");
-        var fallbackRoute = $"{prefix}/{{*path:nonfile}}";
-        var fallbackFile = $"{prefix.TrimStart('/')}/index.html";
-
-        return endpoints.MapFallbackToFile(fallbackRoute, fallbackFile);
-    }
-
-    public static void FilterHostedBlazorStaticAssetEndpoints(
-        WebApplication app,
-        bool allowStacOpsDemoAssets)
-    {
-        var blockedPrefixes = new List<string>(1);
-        // Always block the `admin/` static-asset prefix — the in-tree Blazor admin UI
-        // moved to the separate `honua-console` repo and ships as a separately
-        // deployed static site.
-        blockedPrefixes.Add("admin/");
-
-        if (!allowStacOpsDemoAssets)
-        {
-            blockedPrefixes.Add("samples/stac-ops/");
-        }
+        string[] blockedPrefixes = ["admin/", "samples/stac-ops/"];
 
         var routeBuilder = (IEndpointRouteBuilder)app;
         var dataSources = routeBuilder.DataSources.ToArray();
@@ -64,45 +21,6 @@ internal static class HostedBlazorAssetHelpers
             routeBuilder.DataSources.Add(new HostedBlazorStaticAssetFilterDataSource(
                 dataSource,
                 blockedPrefixes));
-        }
-    }
-
-    public static void MapDisabledHostedBlazorPrefix(
-        IApplicationBuilder app,
-        PathString pathPrefix)
-    {
-        app.Map(pathPrefix, disabledApp =>
-        {
-            disabledApp.Run(context =>
-            {
-                context.Response.StatusCode = StatusCodes.Status404NotFound;
-                return Task.CompletedTask;
-            });
-        });
-    }
-
-    private sealed class PathPrefixFileProvider(
-        IFileProvider innerProvider,
-        string pathPrefix) : IFileProvider
-    {
-        private readonly IFileProvider _innerProvider = innerProvider;
-        private readonly string _pathPrefix = pathPrefix;
-
-        public IDirectoryContents GetDirectoryContents(string subpath)
-            => _innerProvider.GetDirectoryContents(ApplyPrefix(subpath));
-
-        public IFileInfo GetFileInfo(string subpath)
-            => _innerProvider.GetFileInfo(ApplyPrefix(subpath));
-
-        public IChangeToken Watch(string filter)
-            => _innerProvider.Watch(ApplyPrefix(filter));
-
-        private string ApplyPrefix(string subpath)
-        {
-            var trimmedSubpath = subpath.TrimStart('/');
-            return string.IsNullOrEmpty(trimmedSubpath)
-                ? _pathPrefix
-                : $"{_pathPrefix}/{trimmedSubpath}";
         }
     }
 

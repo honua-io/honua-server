@@ -24,6 +24,17 @@ endpoint for this publication operation in the restored contract; defer workflow
 that depend on it until a validated implementation is available. Existing raster
 import and serving operations retain their previous contracts.
 
+## Import scan result types
+
+The import scan response schema uses `oneOf` to describe the default inventory
+payload and the wrapper selected by `artifactSet=all`. Both response forms already
+exist at runtime; this schema correction documents the existing choices. Callers
+requesting the same artifact set continue to receive the same JSON shape.
+
+When generating a client from the curated contract, select the response type that
+matches the requested artifact set. See the [import and job reference](admin-api/imports-and-jobs.md)
+for the request fields and artifact selections.
+
 ## Migration Baseline
 
 Before regenerating or upgrading SDK artifacts:

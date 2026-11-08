@@ -67,6 +67,12 @@ public sealed record MigrationApplyPlanStep
 
     public string? TargetServiceName { get; init; }
 
+    public string? TargetPublicName { get; init; }
+
+    public string? TargetFolderPath { get; init; }
+
+    public GeoservicesImportPlan? ImportPlan { get; init; }
+
     public string? TargetResourceName { get; init; }
 
     public string[] StyleIds { get; init; } = [];
