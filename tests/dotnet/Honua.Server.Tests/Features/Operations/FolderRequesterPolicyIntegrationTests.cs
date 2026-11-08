@@ -21,6 +21,8 @@ using Honua.Infrastructure.Security;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.MultiTenancy;
 using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Core.Features.Operations.Abstractions;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Server.Features.Operations;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
@@ -200,7 +202,7 @@ public sealed partial class FolderOperationIntegrationTests
         };
         await WithRequesterContextAsync(payload, async context =>
         {
-            var result = await _fixture.Services.GetRequiredService<IOperationGateway>().CreateApprovalProposalAsync("subject-" + Guid.NewGuid().ToString("N"), new()
+            var result = await CreateRequesterProposalAsync(context, new()
             {
                 OperationId = payload.OperationId,
                 Kind = OperationClass.AdminConfigChange,
@@ -253,7 +255,6 @@ public sealed partial class FolderOperationIntegrationTests
         };
         await WithRequesterContextAsync(payload, async context =>
         {
-            var gateway = _fixture.Services.GetRequiredService<IOperationGateway>();
             var request = new OperationGatewayRequest
             {
                 OperationId = payload.OperationId,
@@ -267,7 +268,7 @@ public sealed partial class FolderOperationIntegrationTests
                     ExecutionPayload = JsonSerializer.Serialize(payload, AdminApiOperationApprovalJsonContext.Default.AdminApiOperationApprovalPayload)
                 }
             };
-            var first = await gateway.CreateApprovalProposalAsync("first-" + Guid.NewGuid().ToString("N"), request);
+            var first = await CreateRequesterProposalAsync(context, request);
             first.Outcome.Should().Be(OperationGatewayOutcome.ProposalCreated, first.Message);
             if (terminal)
             {
@@ -278,7 +279,7 @@ public sealed partial class FolderOperationIntegrationTests
             if (terminal) active.Should().NotContain(proposal => proposal.ProposalId == first.ProposalId);
             else active.Should().Contain(proposal => proposal.ProposalId == first.ProposalId);
             payload.Parameters["name"] = "Second";
-            var second = await gateway.CreateApprovalProposalAsync("second-" + Guid.NewGuid().ToString("N"), request with
+            var second = await CreateRequesterProposalAsync(context, request with
             {
                 Plan = request.Plan with
                 {
@@ -290,6 +291,21 @@ public sealed partial class FolderOperationIntegrationTests
             second.ProposalId.Should().BeNull();
         });
         (await SnapshotAsync()).Etag.Should().Be(before.Etag);
+    }
+
+    private static async Task<OperationGatewayResult> CreateRequesterProposalAsync(HttpContext context, OperationGatewayRequest request)
+    {
+        var accepted = await context.RequestServices.GetRequiredService<IOperationEnvelopeFactory>()
+            .CreateAcceptedAsync(request.OperationId!, new OperationPolicyContext
+            {
+                PrincipalId = CanonicalSecurityActor.Resolve(context.User)!.ActorId,
+                TenantId = request.TenantId,
+                SchemaName = context.RequestServices.GetRequiredService<ISchemaContext>().CurrentSchema,
+                AuthorizationOutcome = "authorized"
+            }, context.RequestAborted);
+        accepted.Status.Should().Be(OperationHandleStatus.Accepted, accepted.Reason);
+        return await context.RequestServices.GetRequiredService<IOperationGateway>()
+            .CreateApprovalProposalAsync(accepted.OperationInstanceId!, request, context.RequestAborted);
     }
 
     private async Task WithRequesterContextAsync(AdminApiOperationApprovalPayload payload, Func<HttpContext, Task> action, string? subject = null)
