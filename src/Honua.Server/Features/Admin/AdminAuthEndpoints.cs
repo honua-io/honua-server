@@ -330,23 +330,18 @@ internal static class AdminAuthEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, validationError);
         }
 
-        string? codeVerifier = null;
-        string? pendingSessionId = null;
-        if (string.Equals(request.GrantType, AuthorizationCodeGrantType, StringComparison.Ordinal))
+        var pendingSessionId = context.Request.Cookies[AdminAuthSessionStore.PendingSessionCookieName];
+        var pendingSession = await sessionStore.GetPendingSessionAsync(pendingSessionId, context.RequestAborted).ConfigureAwait(false);
+        if (pendingSession is null ||
+            !string.Equals(pendingSession.ProviderKey, provider.Key, StringComparison.Ordinal) ||
+            !string.Equals(pendingSession.State, request.State, StringComparison.Ordinal) ||
+            string.IsNullOrWhiteSpace(pendingSession.CodeVerifier))
         {
-            pendingSessionId = context.Request.Cookies[AdminAuthSessionStore.PendingSessionCookieName];
-            var pendingSession = await sessionStore.GetPendingSessionAsync(pendingSessionId, context.RequestAborted).ConfigureAwait(false);
-            if (pendingSession is null ||
-                !string.Equals(pendingSession.ProviderKey, provider.Key, StringComparison.Ordinal) ||
-                !string.Equals(pendingSession.State, request.State, StringComparison.Ordinal) ||
-                string.IsNullOrWhiteSpace(pendingSession.CodeVerifier))
-            {
-                DeleteCookie(context.Response, AdminAuthSessionStore.PendingSessionCookieName);
-                return StandardErrorHelpers.CreateBadRequest(context, "Authorization session is invalid or expired.");
-            }
-
-            codeVerifier = pendingSession.CodeVerifier;
+            DeleteCookie(context.Response, AdminAuthSessionStore.PendingSessionCookieName);
+            return StandardErrorHelpers.CreateBadRequest(context, "Authorization session is invalid or expired.");
         }
+
+        var codeVerifier = pendingSession.CodeVerifier;
 
         var baseUrlRequirement = RequireConfiguredAdminCallback(context, oidcOptions.Value);
         if (baseUrlRequirement != null)
@@ -570,32 +565,28 @@ internal static class AdminAuthEndpoints
 
     private static bool TryValidateTokenRequest(AdminAuthTokenRequest request, out string error)
     {
-        var grantType = request.GrantType?.Trim();
-        if (!string.Equals(grantType, AuthorizationCodeGrantType, StringComparison.Ordinal))
+        if (!string.Equals(request.GrantType, AuthorizationCodeGrantType, StringComparison.Ordinal))
         {
             error = "Grant type is invalid.";
             return false;
         }
 
-        if (string.Equals(grantType, AuthorizationCodeGrantType, StringComparison.Ordinal))
+        if (string.IsNullOrWhiteSpace(request.Code))
         {
-            if (string.IsNullOrWhiteSpace(request.Code))
-            {
-                error = "Authorization code is required.";
-                return false;
-            }
+            error = "Authorization code is required.";
+            return false;
+        }
 
-            if (string.IsNullOrWhiteSpace(request.State))
-            {
-                error = "State is required.";
-                return false;
-            }
+        if (string.IsNullOrWhiteSpace(request.State))
+        {
+            error = "State is required.";
+            return false;
+        }
 
-            if (request.State.Length > MaxStateLength)
-            {
-                error = "State is too long.";
-                return false;
-            }
+        if (request.State.Length > MaxStateLength)
+        {
+            error = "State is too long.";
+            return false;
         }
 
         error = string.Empty;
@@ -732,26 +723,22 @@ internal static class AdminAuthEndpoints
         string tokenEndpoint,
         OidcProviderRegistration provider,
         AdminAuthTokenRequest request,
-        string? codeVerifier,
+        string codeVerifier,
         string redirectUri,
         CancellationToken cancellationToken)
     {
         var formValues = new Dictionary<string, string>
         {
-            ["grant_type"] = request.GrantType!,
+            ["grant_type"] = AuthorizationCodeGrantType,
+            ["code"] = request.Code!,
+            ["code_verifier"] = codeVerifier,
+            ["redirect_uri"] = redirectUri,
             ["client_id"] = provider.ClientId!
         };
 
         if (!string.IsNullOrWhiteSpace(provider.ClientSecret))
         {
             formValues["client_secret"] = provider.ClientSecret;
-        }
-
-        if (string.Equals(request.GrantType, AuthorizationCodeGrantType, StringComparison.Ordinal))
-        {
-            formValues["code"] = request.Code!;
-            formValues["code_verifier"] = codeVerifier ?? throw new InvalidOperationException("Pending authorization session is missing the PKCE verifier.");
-            formValues["redirect_uri"] = redirectUri;
         }
 
         var client = httpClientFactory.CreateClient(AdminAuthHttpClient);
