@@ -8,6 +8,7 @@ using FluentAssertions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Identity.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
