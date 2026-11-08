@@ -104,9 +104,9 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
     [InlineData("{\"type\":\"future_event\"}")]
     public async Task StreamAsync_RejectedFrame_PreservesUsageFromMessageStart(string frame)
     {
-        var fixture = $$$"""
+        var fixture = $$$$"""
             data: {"type":"message_start","message":{"model":"claude-opus-5-5","usage":{"input_tokens":12,"output_tokens":1}}}
-            data: {{{frame}}}
+            data: {{{{frame}}}}
             """;
 
         var events = await CollectAsync(CreateAdapter(fixture), ToolFreeRequest());
