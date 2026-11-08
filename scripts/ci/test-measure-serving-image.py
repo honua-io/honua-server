@@ -59,5 +59,28 @@ class ServingImageMeasurementTests(unittest.TestCase):
             self.measurement.verify_files(files, 'postgis')
 
 
+    def test_native_aot_requires_compiler_response_evidence(self):
+        evidence = {'assets': {'targets': {}}, 'responses': [], 'compilation': 'aot'}
+        with self.assertRaisesRegex(ValueError, 'compiler'):
+            self.measurement.verify_build_inputs(evidence, 'postgis')
+
+    def test_native_aot_rejects_excluded_assembly_in_compiler_inputs(self):
+        evidence = {'assets': {'targets': {}}, 'responses': ['Honua.Server.dll\n-r:/app/Honua.DuckDB.dll'],
+                    'compilation': 'aot'}
+        with self.assertRaisesRegex(ValueError, 'Honua.DuckDB.dll'):
+            self.measurement.verify_build_inputs(evidence, 'postgis')
+
+    def test_jit_rejects_excluded_assembly_in_runtime_manifest(self):
+        evidence = {'assets': {'targets': {}}, 'responses': [], 'compilation': 'jit',
+                    'deps': {'targets': {'net10.0': {'optional/1': {'runtime': {'Honua.MySql.dll': {}}}}}}}
+        with self.assertRaisesRegex(ValueError, 'Honua.MySql.dll'):
+            self.measurement.verify_build_inputs(evidence, 'postgis')
+
+    def test_native_aot_accepts_a_store_free_compiler_closure(self):
+        evidence = {'assets': {'targets': {}}, 'responses': ['Honua.Server.dll\n-r:/app/Honua.Postgres.dll'],
+                    'compilation': 'aot'}
+        self.measurement.verify_build_inputs(evidence, 'postgis')
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -41,7 +41,7 @@ public sealed class CustomBuildProfileTests
             reference.Condition == "'$(HonuaIncludeAzure)' == 'true'");
         projectReferences.Should().Contain(reference =>
             reference.Include == @"..\Honua.Db\Oracle\Honua.Oracle.csproj" &&
-            reference.Condition == "'$(HonuaIncludeOracle)' == 'true' and '$(HonuaStoreProfile)' == 'full'");
+            reference.Condition == "'$(HonuaIncludeOracle)' == 'true'");
     }
 
     [ArchitectureTest]
@@ -105,6 +105,22 @@ public sealed class CustomBuildProfileTests
         fullReferences.Should().Contain([
             "Honua.DuckDB", "Honua.SqlServer", "Honua.MySql", "Honua.Redshift",
             "Honua.Oracle", "Honua.Snowflake", "Honua.Databricks", "Honua.GeoServicesRest"]);
+    }
+
+    [ArchitectureTest]
+    public void PostgisStoreProfile_AllModuleProfiles_DisablesOptionalStoreFlags()
+    {
+        foreach (var moduleProfile in new[] { "full", "no-cloud", "slim" })
+        {
+            var properties = GetMsBuildProperties(
+                "HonuaIncludeOracle,HonuaIncludeSnowflake,DefineConstants",
+                "-p:HonuaStoreProfile=postgis", $"-p:HonuaBuildProfile={moduleProfile}");
+
+            properties["HonuaIncludeOracle"].Should().Be("false");
+            properties["HonuaIncludeSnowflake"].Should().Be("false");
+            properties["DefineConstants"].Should().Contain("HONUA_SKIP_ORACLE");
+            properties["DefineConstants"].Should().Contain("HONUA_SKIP_SNOWFLAKE");
+        }
     }
 
     [ArchitectureTest]

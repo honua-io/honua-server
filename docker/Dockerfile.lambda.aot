@@ -138,7 +138,6 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
           -p:PublishAot=true \
           -p:DebugType=None \
           -p:DebugSymbols=false \
-          -p:HonuaNobleRuntimePublish=true \
           -p:StripSymbols=true \
           -p:OptimizationPreference=Speed \
           -p:IlcOptimizationPreference=Speed \
@@ -166,6 +165,7 @@ COPY docker/runtime/ docker/runtime/
 COPY --from=chiseled-base / /runtime-root/
 # hadolint ignore=DL3008
 RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get upgrade -y --no-install-recommends && \
     apt-get install -y --no-install-recommends gcc libatomic1 libgssapi-krb5-2 fonts-dejavu-core && \
     sh docker/runtime/stage-runtime.sh /runtime-root /runtime-additions && \
     rm -rf /var/lib/apt/lists/*

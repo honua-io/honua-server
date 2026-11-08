@@ -1,16 +1,6 @@
 #!/usr/bin/env bash
-# honua-server#4912 image-build regression: prove a built server image can load its GeoParquet
-# encoder (ParquetSharpNative) by serving real GeoParquet bytes, before the image is published.
-#
-# The published musl native-AOT image passed the serving-image boundary check and every unit lane
-# while each FeatureServer f=parquet answered the typed 501, because the glibc-only native library
-# could not load. Only a request against the built image exposes that, so this boots the image
-# through the CNG lane's own docker/cng/compose.yml in the lane's order (migrate, stop, seed
-# docker/cng/seed.sql, restart) and fetches the seeded layer with f=parquet. It fails unless the
-# response is HTTP 200 and the body is framed by the Parquet magic `PAR1` at both ends. A private
-# compose project name and ports keep parallel stacks on a shared Docker engine untouched.
-#
-# usage: smoke-aot-geoparquet.sh <image> [output-dir] [server-port] [postgres-port]
+# Native readers and font rendering must be exercised in the built runtime, where SDK libraries are absent.
+# Usage: smoke-serving-formats.sh <image> [output-dir] [server-port] [postgres-port]
 set -euo pipefail
 
 IMAGE="${1:?image reference required (tag or image@sha256:...)}"
@@ -21,7 +11,7 @@ PG_PORT="${4:-18913}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 COMPOSE_FILE="$REPO_ROOT/docker/cng/compose.yml"
 SEED_FILE="$REPO_ROOT/docker/cng/seed.sql"
-PROJECT="honua-aot-geoparquet-smoke-$$"
+PROJECT="honua-serving-formats-smoke-$$"
 mkdir -p "$OUT"
 OUT="$(cd "$OUT" && pwd)"
 
@@ -42,8 +32,14 @@ cleanup() {
 }
 trap cleanup EXIT
 
+python3 -m venv "$work/python"
+format_python="$work/python/bin/python"
+"$format_python" -m pip install --quiet --only-binary=:all: -r "$REPO_ROOT/scripts/ci/requirements-image-smoke.txt"
+"$format_python" "$REPO_ROOT/scripts/ci/test-serving-formats.py"
+format_assertions="$REPO_ROOT/scripts/ci/verify-serving-formats.py"
+
 fail() {
-  echo "::error::AOT GeoParquet smoke failed for ${IMAGE}: $*" >&2
+  echo "::error::Serving format smoke failed for ${IMAGE}: $*" >&2
   compose logs --no-color --tail 80 honua-server >&2 || true
   exit 1
 }
@@ -96,6 +92,30 @@ import sys
 if Path(sys.argv[1]).read_bytes()[:8] != b'\x89PNG\r\n\x1a\n':
     raise SystemExit('Map export did not produce a PNG')
 PYPNG
+admin_key="$(compose config --format json | python3 -c 'import json,sys; print(json.load(sys.stdin)["services"]["honua-server"]["environment"]["HONUA_ADMIN_PASSWORD"])')"
+for format in gpkg shapefile; do
+  case "$format" in
+    gpkg) fixture=survey-sites.gpkg ;;
+    shapefile) fixture=survey-sites-shapefile.zip ;;
+  esac
+  code="$(curl -sS --max-time 120 -o "$OUT/import-$format.json" -w '%{http_code}' \
+    -H "X-API-Key: $admin_key" \
+    -F "File=@$REPO_ROOT/tests/fixtures/external-format-corpus/v1/$fixture" \
+    -F "TableName=smoke_reader_$format" -F OverwriteExisting=true \
+    "http://localhost:${PORT}/api/v1/admin/import/upload")" || fail "$format import request failed"
+  [[ "$code" == 200 ]] || fail "$format import answered HTTP ${code}"
+  "$format_python" "$format_assertions" import "$OUT/import-$format.json" --feature-count 3
+done
+path="/api/v1/admin/services/cng/layers/1000/export?format=gpkg"
+code="$(curl -sS --max-time 120 -H "X-API-Key: $admin_key" -o "$OUT/cng.gpkg" -w '%{http_code}' "http://localhost:${PORT}${path}")" \
+  || fail "GeoPackage export failed"
+[[ "$code" == 200 ]] || fail "GeoPackage export answered HTTP ${code}"
+"$format_python" "$format_assertions" gpkg "$OUT/cng.gpkg"
+path="/rest/services/cng/MapServer/WMS?SERVICE=WMS&REQUEST=GetLegendGraphic&VERSION=1.3.0&LAYER=1000&FORMAT=image/png&WIDTH=24&HEIGHT=24"
+code="$(curl -sS --max-time 120 -o "$OUT/legend.png" -w '%{http_code}' "http://localhost:${PORT}${path}")" \
+  || fail "legend request failed"
+[[ "$code" == 200 ]] || fail "legend answered HTTP ${code}"
+"$format_python" "$format_assertions" legend "$OUT/legend.png"
 # The container must still be serving after the encoder ran: a native crash exits the process.
 wait_healthy honua-server 60
-echo "AOT GeoParquet smoke passed: ${bytes} bytes of GeoParquet from ${IMAGE}"
+echo "Serving format smoke passed: ${bytes} bytes of GeoParquet from ${IMAGE}"

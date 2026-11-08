@@ -2,6 +2,8 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Metadata.Abstractions;
 
 namespace Honua.Server.Startup;
 
@@ -12,6 +14,10 @@ internal static class DataStoreBuildPolicy
 #else
     public static bool AdditionalStoresIncluded => true;
 #endif
+
+    public const string FullImageTagSuffix = "-full";
+    public const string DocumentationHref =
+        "https://github.com/honua-io/honua-server/blob/trunk/docs/ops/nightly-images.md";
 
     public static string Profile => AdditionalStoresIncluded ? "full" : "postgis";
 
@@ -33,6 +39,9 @@ internal static class DataStoreBuildPolicy
 #endif
 #endif
     ];
+
+    public static Task ValidatePostgisConnectionsAsync(
+        ISecureConnectionRegistry registry, IMetadataV2GraphProvider graphProvider) => Task.CompletedTask;
 
     public static void Validate(IConfiguration configuration)
     {
@@ -75,6 +84,6 @@ internal static class DataStoreBuildPolicy
         ["DuckDB", "MySql", "SqlServer", "GeoServicesRest", "Oracle", "Redshift", "Snowflake", "Databricks"];
 
     private static void RefuseAdditionalStores() => throw new InvalidOperationException(
-        "This image includes only the PostGIS data store. Use the same-version JIT -full image variant " +
-        "for additional data stores; see docs/ops/nightly-images.md.");
+        "This image includes only the PostGIS data store. Use the same-version nightly-jit-<revision>" +
+        FullImageTagSuffix + " image for additional data stores; see " + DocumentationHref + ".");
 }

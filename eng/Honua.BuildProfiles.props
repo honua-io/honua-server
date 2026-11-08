@@ -4,6 +4,11 @@
     <HonuaBuildProfile Condition="'$(HonuaBuildProfile)' == ''">full</HonuaBuildProfile>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(HonuaStoreProfile)' == 'postgis'">
+    <HonuaIncludeOracle Condition="'$(HonuaIncludeOracle)' == ''">false</HonuaIncludeOracle>
+    <HonuaIncludeSnowflake Condition="'$(HonuaIncludeSnowflake)' == ''">false</HonuaIncludeSnowflake>
+  </PropertyGroup>
+
   <PropertyGroup Condition="'$(HonuaBuildProfile)' == 'no-cloud'">
     <HonuaIncludeAws Condition="'$(HonuaIncludeAws)' == ''">false</HonuaIncludeAws>
     <HonuaIncludeAzure Condition="'$(HonuaIncludeAzure)' == ''">false</HonuaIncludeAzure>
@@ -34,6 +39,8 @@
   </PropertyGroup>
 
   <Target Name="ValidateHonuaBuildProfile" BeforeTargets="PrepareForBuild;Restore">
+    <Error Condition="'$(HonuaStoreProfile)' == 'postgis' and ('$(HonuaIncludeOracle)' == 'true' or '$(HonuaIncludeSnowflake)' == 'true')"
+           Text="Optional store flags require HonuaStoreProfile=full; they cannot be enabled with the postgis profile." />
     <Error Condition="'$(HonuaStoreProfile)' != 'full' and '$(HonuaStoreProfile)' != 'postgis'"
            Text="Unsupported HonuaStoreProfile '$(HonuaStoreProfile)'. Supported store profiles: postgis, full." />
     <Error

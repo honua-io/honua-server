@@ -5,22 +5,19 @@
 
 # Base images are digest-pinned for reproducible builds and supply-chain integrity.
 # Refresh both digests together by resolving the current manifests behind
-# `mcr.microsoft.com/dotnet/sdk:10.0` and `mcr.microsoft.com/dotnet/aspnet:10.0`.
+# `mcr.microsoft.com/dotnet/sdk:10.0` and `mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled-extra`.
 # Overrideable via build args so CI can swap in pre-warmed mirrors if MCR throttles.
 # These ARG defaults are the single source of truth for the mirrored bases:
 # scripts/ci/base-image-mirrors.sh reads them and the nightly `mirror-base-images`
 # job mirrors exactly what it prints, so no second digest list needs updating.
-# digest pinned 2026-08-12
 ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:de4fe90a98845d75910b9769662465c84de1a934665c431279d1382b2bddc02b
-# digest pinned 2026-08-20
 ARG DOTNET_ASPNET_IMAGE=mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled-extra@sha256:a9298ccc39c6258ae71228479e2f3f8d2ceb6639a9927262a4b0ff7d319a0e7e
 
-# Build stage
+FROM ${DOTNET_ASPNET_IMAGE} AS chiseled-base
+
 # Extract restore inputs with their directory structure. Ordinary source edits,
 # including JSON content, rerun this inexpensive extraction but leave the
 # downstream restore input tree unchanged.
-FROM ${DOTNET_ASPNET_IMAGE} AS chiseled-base
-
 FROM ${DOTNET_SDK_IMAGE} AS restore-inputs
 # Bind-mounted context. WORKDIR avoids `cd` (hadolint DL3003) without changing
 # the relative paths `find` and `cp --parents` write under /restore-inputs.
@@ -71,7 +68,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
         arm64) RUNTIME_ID="linux-arm64" ;; \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
-    MODULE_MSBUILD_ARGS="-p:HonuaStoreProfile=${HONUA_STORE_PROFILE:-postgis} -p:HonuaUseSkiaNoDependencies=true -p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full} -p:HonuaProtocolProfile=${HONUA_PROTOCOL_PROFILE:-all}" && \
+    MODULE_MSBUILD_ARGS="-p:HonuaStoreProfile=${HONUA_STORE_PROFILE:-postgis} -p:HonuaNobleRuntimePublish=true -p:HonuaUseSkiaNoDependencies=true -p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full} -p:HonuaProtocolProfile=${HONUA_PROTOCOL_PROFILE:-all}" && \
     if [ -n "${HONUA_INCLUDE_AWS:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeAws=$HONUA_INCLUDE_AWS"; fi && \
     if [ -n "${HONUA_INCLUDE_AZURE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeAzure=$HONUA_INCLUDE_AZURE"; fi && \
     if [ -n "${HONUA_INCLUDE_ORACLE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeOracle=$HONUA_INCLUDE_ORACLE"; fi && \
@@ -100,7 +97,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
         arm64) RUNTIME_ID="linux-arm64" ;; \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
-    MODULE_MSBUILD_ARGS="-p:HonuaStoreProfile=${HONUA_STORE_PROFILE:-postgis} -p:HonuaUseSkiaNoDependencies=true -p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full} -p:HonuaProtocolProfile=${HONUA_PROTOCOL_PROFILE:-all}" && \
+    MODULE_MSBUILD_ARGS="-p:HonuaStoreProfile=${HONUA_STORE_PROFILE:-postgis} -p:HonuaNobleRuntimePublish=true -p:HonuaUseSkiaNoDependencies=true -p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full} -p:HonuaProtocolProfile=${HONUA_PROTOCOL_PROFILE:-all}" && \
     if [ -n "${HONUA_INCLUDE_AWS:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeAws=$HONUA_INCLUDE_AWS"; fi && \
     if [ -n "${HONUA_INCLUDE_AZURE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeAzure=$HONUA_INCLUDE_AZURE"; fi && \
     if [ -n "${HONUA_INCLUDE_ORACLE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeOracle=$HONUA_INCLUDE_ORACLE"; fi && \
@@ -121,18 +118,25 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
       -p:PublishAot=false \
       -p:DebugType=None \
       -p:DebugSymbols=false \
-      -p:HonuaNobleRuntimePublish=true \
       $EXTRA_MSBUILD_ARGS && \
     rm -rf /app/wwwroot/admin && \
     find /app -type f \( -name '*.pdb' -o -name '*.dbg' \) -delete
 
 # Runtime stage
+RUN mkdir -p /store-evidence && \
+    cp src/Honua.Server/obj/project.assets.json /store-evidence/ && \
+    find src/Honua.Server/obj -name '*.ilc.rsp' -type f -exec cp {} /store-evidence/ \;
+
+FROM scratch AS store-evidence
+COPY --from=build /store-evidence/ /
+
 FROM ${DOTNET_SDK_IMAGE} AS runtime-assets
 WORKDIR /src
 COPY docker/runtime/ docker/runtime/
 COPY --from=chiseled-base / /runtime-root/
 # hadolint ignore=DL3008
 RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get upgrade -y --no-install-recommends && \
     apt-get install -y --no-install-recommends gcc libatomic1 libgssapi-krb5-2 fonts-dejavu-core && \
     sh docker/runtime/stage-runtime.sh /runtime-root /runtime-additions && \
     rm -rf /var/lib/apt/lists/*
@@ -140,6 +144,8 @@ COPY --from=build /app /runtime-root/app
 RUN sh docker/runtime/verify-native.sh /runtime-root /app
 
 FROM chiseled-base AS runtime
+ARG HONUA_STORE_PROFILE=postgis
+LABEL honua.store.profile=$HONUA_STORE_PROFILE
 COPY --from=runtime-assets /runtime-additions/ /
 
 

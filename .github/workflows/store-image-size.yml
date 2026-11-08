@@ -8,13 +8,18 @@ on:
       - 'docker/Dockerfile.aot'
       - 'docker/runtime/**'
       - 'eng/Honua.BuildProfiles.props'
-      - 'src/**/*.csproj'
+      - 'src/**'
       - 'Directory.*.props'
       - 'Directory.*.targets'
       - 'src/Honua.Server/Startup/DataStoreBuildPolicy.cs'
       - 'scripts/ci/*measure-serving-image.py'
       - 'scripts/ci/test-health-probe.py'
-      - 'scripts/ci/smoke-aot-geoparquet.sh'
+      - 'scripts/ci/test-runtime-native.py'
+      - 'scripts/ci/test-runtime-packages.py'
+      - 'scripts/ci/smoke-serving-formats.sh'
+      - 'scripts/ci/verify-serving-formats.py'
+      - 'scripts/ci/test-serving-formats.py'
+      - 'scripts/ci/requirements-image-smoke.txt'
       - '.github/workflows/store-image-size.yml'
   workflow_dispatch:
 
@@ -55,6 +60,8 @@ jobs:
         run: |
           python3 scripts/ci/test-measure-serving-image.py
           python3 scripts/ci/test-health-probe.py
+          sudo python3 scripts/ci/test-runtime-native.py
+          python3 scripts/ci/test-runtime-packages.py
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
       - name: Build serving image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
@@ -71,6 +78,20 @@ jobs:
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
           cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-${{ matrix.compilation }}-amd64
+      - name: Export compiler and restore evidence
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          target: store-evidence
+          platforms: linux/amd64
+          outputs: type=local,dest=artifacts/build-evidence
+          build-args: |
+            HONUA_GIT_SHA=${{ github.sha }}
+            HONUA_STORE_PROFILE=${{ matrix.profile }}
+          secrets: |
+            github_actor=${{ github.actor }}
+            github_token=${{ github.token }}
       - name: Record image size and verify store and format files
         env:
           BASELINE: ${{ matrix.baseline }}
@@ -78,7 +99,16 @@ jobs:
         run: |
           docker pull --platform linux/amd64 "$BASELINE"
           python3 scripts/ci/measure-serving-image.py honua-store-measure:current \
-            --profile "$PROFILE" --baseline "$BASELINE" --output artifacts/image-size.json
+            --profile "$PROFILE" --baseline "$BASELINE" --output artifacts/image-size.json \
+            --compilation "${{ matrix.compilation }}" --evidence-directory artifacts/build-evidence
+      - name: Verify native packages remain visible to scanners
+        run: |
+          container=$(docker create honua-store-measure:current)
+          trap 'docker rm "$container" >/dev/null' EXIT
+          docker cp "$container:/var/lib/dpkg/status" artifacts/runtime-dpkg-status
+          grep -Fx 'Package: libatomic1' artifacts/runtime-dpkg-status
+          grep -Fx 'Package: libgssapi-krb5-2' artifacts/runtime-dpkg-status
+          grep -Fx 'Package: fonts-dejavu-core' artifacts/runtime-dpkg-status
       - name: Refuse excluded providers at startup
         if: matrix.profile == 'postgis'
         run: |
@@ -92,7 +122,7 @@ jobs:
             grep -F -- '-full' "artifacts/startup-$provider.log"
           done
       - name: Smoke import format support and rendering
-        run: bash scripts/ci/smoke-aot-geoparquet.sh honua-store-measure:current artifacts/formats
+        run: bash scripts/ci/smoke-serving-formats.sh honua-store-measure:current artifacts/formats
       - name: Scan chiseled image
         run: |
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \

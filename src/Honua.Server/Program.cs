@@ -569,10 +569,7 @@ if (registerProviderInfrastructure)
     InfrastructureCompositionRoot.RegisterInfrastructureServices(builder.Services, builder.Configuration);
 }
 
-// Provider-aware admin connection testing: register every engine's connection driver + the registry so the
-// connection create/test endpoints build and probe MySQL / SQL Server / Oracle / PostgreSQL with the correct
-// ADO.NET provider instead of always speaking Npgsql. Registered unconditionally — independent of the primary
-// data-source provider — because any of these engines can be an external secured connection.
+// Connection administration can target installed providers beyond the configured primary store.
 Honua.Db.Postgres.Features.Security.PostgresConnectionDriverServiceCollectionExtensions.AddPostgresConnectionDriver(builder.Services);
 #if !HONUA_POSTGIS_ONLY
 Honua.Db.MySql.Features.Security.MySqlConnectionDriverServiceCollectionExtensions.AddMySqlConnectionDriver(builder.Services);

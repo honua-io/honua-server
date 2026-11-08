@@ -44,7 +44,7 @@ int main(int argc, char **argv)
 
     char request[128];
     int request_length = snprintf(request, sizeof(request),
-        "GET %s HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n", path);
+        "GET %s HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n", path);
     if (request_length < 0 || (size_t)request_length >= sizeof(request)) {
         close(connection);
         return 1;

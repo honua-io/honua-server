@@ -5,6 +5,7 @@ import json
 import re
 import subprocess
 import sys
+from xml.etree import ElementTree
 
 VERSION_LABEL = 'org.opencontainers.image.version'
 
@@ -63,6 +64,18 @@ def filter_tags(tags, sha, release_version):
             if not is_immutable(tag, sha) or not existing(tag, release_version)]
 
 
+def supports_full_variant(sha):
+    result = subprocess.run(['git', 'show', f'{sha}:eng/Honua.BuildProfiles.props'],
+                            text=True, capture_output=True)
+    if result.returncode:
+        commit = subprocess.run(['git', 'cat-file', '-e', f'{sha}^{{commit}}'], capture_output=True)
+        if commit.returncode:
+            raise RuntimeError(f'Cannot read candidate build profiles at {sha}')
+        return False
+    project = ElementTree.fromstring(result.stdout)
+    return any(element.tag.rsplit('}', 1)[-1] == 'HonuaStoreProfile' for element in project.iter())
+
+
 def publication_state(repository, sha, release_version):
     suffixes = ['nightly', 'nightly-aot', 'nightly-lambda-aot', 'nightly-jit', 'nightly-compose-executor', 'nightly-functions-aot']
     if repository.startswith('docker.io/'):
@@ -71,8 +84,9 @@ def publication_state(repository, sha, release_version):
     tags = [f'{repository}:{suffix}-{sha[:7]}' for suffix in suffixes]
     tags += [f'{repository}:{suffix}-{sha[:7]}-{arch}'
              for suffix in ('nightly', 'nightly-lambda-aot', 'nightly-jit') for arch in ('amd64', 'arm64')]
-    tags += [f'{repository}:nightly-jit-{sha[:7]}-full{suffix}'
-             for suffix in ('', '-amd64', '-arm64')]
+    if supports_full_variant(sha):
+        tags += [f'{repository}:nightly-jit-{sha[:7]}-full{suffix}'
+                 for suffix in ('', '-amd64', '-arm64')]
     # Do not short circuit: an explicit version mismatch must fail even in a partial publication.
     states = [existing(tag, release_version) for tag in tags]
     return all(states), any(states)

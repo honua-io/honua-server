@@ -1,4 +1,7 @@
 """Offline coverage for immutable candidate image publication."""
+import contextlib
+import subprocess
+import tempfile
 import importlib.util
 import json
 import itertools
@@ -15,6 +18,18 @@ class ImmutableTagsTests(unittest.TestCase):
     def setUpClass(cls):
         cls.module = importlib.util.module_from_spec(SPEC)
         SPEC.loader.exec_module(cls.module)
+
+    def setUp(self):
+        profile = patch.object(self.module, 'supports_full_variant', return_value=True, create=True)
+        profile.start()
+        self.addCleanup(profile.stop)
+
+    def test_legacy_candidate_does_not_require_full_variant_tags(self):
+        with patch.object(self.module, 'supports_full_variant', return_value=False), patch.object(
+            self.module, 'inspect', side_effect=lambda reference: None if '-full' in reference else 'sha256:' + 'a' * 64
+        ):
+            self.assertEqual(self.module.publication_state('ghcr.io/honua/server', 'abcdef0' + 'a' * 33, ''),
+                             (True, True))
 
     def test_existing_sha_tags_are_preserved_but_floating_tags_can_move(self):
         tags = ['ghcr.io/honua-io/honua-server:nightly-abcdef0',
@@ -130,6 +145,29 @@ class ImmutableTagsTests(unittest.TestCase):
         self.assertIn('if [ "${existing}" != "${CANDIDATE_SHA}" ]; then', workflow)
         self.assertIn('if [ "$PARTIAL_PUBLICATION" = 1 ]; then', workflow)
         self.assertIn('contents/scripts/ci/immutable-container-tags.py?ref=${CANDIDATE_SHA}', workflow)
+
+
+class CandidateProfileTests(unittest.TestCase):
+    def test_profile_detection_uses_the_candidate_tree_and_refuses_unknown_commits(self):
+        module = importlib.util.module_from_spec(SPEC)
+        SPEC.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as directory, contextlib.chdir(directory):
+            subprocess.run(['git', 'init', '-q'], check=True)
+            subprocess.run(['git', 'config', 'user.name', 'Mike McDougall'], check=True)
+            subprocess.run(['git', 'config', 'user.email', 'mike@honua.io'], check=True)
+            profile = Path('eng/Honua.BuildProfiles.props')
+            profile.parent.mkdir()
+            profile.write_text('<Project/>')
+            subprocess.run(['git', 'add', '.'], check=True)
+            subprocess.run(['git', 'commit', '-qm', 'base profile'], check=True)
+            previous = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+            profile.write_text('<Project><PropertyGroup><HonuaStoreProfile>full</HonuaStoreProfile></PropertyGroup></Project>')
+            subprocess.run(['git', 'add', '.'], check=True)
+            subprocess.run(['git', 'commit', '-qm', 'store profile'], check=True)
+            self.assertFalse(module.supports_full_variant(previous))
+            self.assertTrue(module.supports_full_variant('HEAD'))
+            with self.assertRaisesRegex(RuntimeError, 'Cannot read candidate'):
+                module.supports_full_variant('0' * 40)
 
 
 if __name__ == '__main__':

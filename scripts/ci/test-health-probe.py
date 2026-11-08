@@ -5,6 +5,7 @@ import socket
 import subprocess
 import tempfile
 import threading
+import time
 import unittest
 
 
@@ -23,7 +24,7 @@ class HealthProbeTests(unittest.TestCase):
     def probe_status(self, status, path):
         class Handler(http.server.BaseHTTPRequestHandler):
             def do_GET(self):
-                self.send_response(status if self.path == path else 404)
+                self.send_response(status if self.path == path and self.headers.get("Host") == "127.0.0.1" else 404)
                 self.end_headers()
 
             def log_message(self, *args):
@@ -72,6 +73,31 @@ class HealthProbeTests(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
             finally:
                 thread.join()
+
+    def fragmented_response(self, parts, delay):
+        with socket.socket() as listener:
+            listener.bind(('127.0.0.1', 0))
+            listener.listen()
+            def reply():
+                with listener.accept()[0] as connection:
+                    connection.recv(1024)
+                    for part in parts:
+                        time.sleep(delay)
+                        connection.sendall(part)
+            thread = threading.Thread(target=reply)
+            thread.start()
+            try:
+                return subprocess.run([self.binary],
+                    env={**os.environ, 'HONUA_HEALTH_PORT': str(listener.getsockname()[1])},
+                    capture_output=True, timeout=8).returncode
+            finally:
+                thread.join()
+
+    def test_fragmented_status_line_succeeds(self):
+        self.assertEqual(self.fragmented_response([b'HTTP/1.1 ', b'200 OK\r', b'\n\r\n'], 0.05), 0)
+
+    def test_server_that_never_replies_fails(self):
+        self.assertNotEqual(self.fragmented_response([b''], 4), 0)
 
     def test_invalid_port_fails(self):
         self.assertNotEqual(subprocess.run([self.binary], env={**os.environ, 'HONUA_HEALTH_PORT': '65536'},

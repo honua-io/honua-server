@@ -447,7 +447,7 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
         stores.GetProperty("installedProviders").EnumerateArray()
             .Select(provider => provider.GetString()).Should().Contain(
                 "postgis", "duckdb", "mysql", "sqlserver", "oracle", "redshift", "snowflake", "databricks");
-        stores.GetProperty("fullImageTagSuffix").GetString().Should().Be("-full");
+        stores.GetProperty("fullImageTagSuffix").ValueKind.Should().Be(JsonValueKind.Null);
         stores.GetProperty("documentationHref").GetString().Should().EndWith("/docs/ops/nightly-images.md");
     }
 

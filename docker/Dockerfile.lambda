@@ -10,9 +10,9 @@ ARG LAMBDA_RUNTIME_IMAGE=public.ecr.aws/lambda/provided:al2023@sha256:612c98f126
 ARG LAMBDA_ADAPTER_IMAGE=public.ecr.aws/awsguru/aws-lambda-adapter:0.9.1@sha256:46d6625e68cbbdd2efab4a20245977664513f13ffef47915b000d431adcea0b4
 
 FROM ${LAMBDA_ADAPTER_IMAGE} AS lambda-adapter
-ARG HONUA_STORE_PROFILE=postgis
 
 FROM ${DOTNET_SDK_IMAGE} AS build
+ARG HONUA_STORE_PROFILE=postgis
 WORKDIR /src
 
 COPY Honua.sln Directory.Build.props Directory.Packages.props NuGet.config .editorconfig ./

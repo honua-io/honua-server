@@ -131,13 +131,13 @@ public sealed class AotNativeLibraryRuntimeTests
 
         var smoke = workflow[smokeIndex..publicationIndex];
         smoke.Should().Contain("steps.build.outputs.digest", "the smoke must boot the exact candidate digest");
-        smoke.Should().Contain("scripts/ci/smoke-aot-geoparquet.sh \"$CANDIDATE\"");
+        smoke.Should().Contain("scripts/ci/smoke-serving-formats.sh \"$CANDIDATE\"");
         smoke.Should().NotContain("continue-on-error");
         smoke.Should().Contain("if: matrix.arch == 'amd64'",
             "the CNG seed database image is amd64-only; any other condition would silently skip the smoke");
         smoke.Should().NotContain("if: ${{", "the smoke must not gain an escape-hatch condition");
 
-        var script = File.ReadAllText(Path.Join(repositoryRoot, "scripts/ci/smoke-aot-geoparquet.sh"));
+        var script = File.ReadAllText(Path.Join(repositoryRoot, "scripts/ci/smoke-serving-formats.sh"));
         script.Should().Contain("f=parquet");
         script.Should().Contain("[[ \"$code\" == 200 ]]");
         script.Should().Contain("PAR1", "a 200 carrying the 501 capability envelope must not pass");

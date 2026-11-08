@@ -16,12 +16,11 @@
 ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:de4fe90a98845d75910b9769662465c84de1a934665c431279d1382b2bddc02b
 ARG DOTNET_RUNTIME_DEPS_IMAGE=mcr.microsoft.com/dotnet/runtime-deps:10.0-noble-chiseled-extra@sha256:56b6c354a140e50e09d45a397b43f9f9d31012c325020239e602e06d1594f8ff
 
-# Build stage with security hardening
+FROM ${DOTNET_RUNTIME_DEPS_IMAGE} AS chiseled-base
+
 # Extract restore inputs with their directory structure. Ordinary source edits,
 # including JSON content, rerun this inexpensive extraction but leave the
 # downstream restore input tree unchanged.
-FROM ${DOTNET_RUNTIME_DEPS_IMAGE} AS chiseled-base
-
 FROM ${DOTNET_SDK_IMAGE} AS restore-inputs
 # Bind-mounted context. WORKDIR avoids `cd` (hadolint DL3003) without changing
 # the relative paths `find` and `cp --parents` write under /restore-inputs.
@@ -156,7 +155,6 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
           -p:PublishAot=true \
           -p:DebugType=None \
           -p:DebugSymbols=false \
-          -p:HonuaNobleRuntimePublish=true \
           -p:StripSymbols=true \
           -p:OptimizationPreference=Speed \
           -p:IlcOptimizationPreference=Speed \
@@ -175,13 +173,20 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     rm -rf /app/wwwroot && \
     find /app -type f \( -name '*.pdb' -o -name '*.dbg' \) -delete
 
-# Runtime stage - distroless-style minimal image for maximum security
+RUN mkdir -p /store-evidence && \
+    cp src/Honua.Server/obj/project.assets.json /store-evidence/ && \
+    find src/Honua.Server/obj -name '*.ilc.rsp' -type f -exec cp {} /store-evidence/ \;
+
+FROM scratch AS store-evidence
+COPY --from=build /store-evidence/ /
+
 FROM ${DOTNET_SDK_IMAGE} AS runtime-assets
 WORKDIR /src
 COPY docker/runtime/ docker/runtime/
 COPY --from=chiseled-base / /runtime-root/
 # hadolint ignore=DL3008
 RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get upgrade -y --no-install-recommends && \
     apt-get install -y --no-install-recommends gcc libatomic1 libgssapi-krb5-2 fonts-dejavu-core && \
     sh docker/runtime/stage-runtime.sh /runtime-root /runtime-additions && \
     rm -rf /var/lib/apt/lists/*
@@ -189,6 +194,8 @@ COPY --from=build /app /runtime-root/app
 RUN sh docker/runtime/verify-native.sh /runtime-root /app
 
 FROM chiseled-base AS runtime
+ARG HONUA_STORE_PROFILE=postgis
+LABEL honua.store.profile=$HONUA_STORE_PROFILE
 COPY --from=runtime-assets /runtime-additions/ /
 
 

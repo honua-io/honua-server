@@ -51,10 +51,18 @@ is independent of `HONUA_BUILD_PROFILE` and `HONUA_PROTOCOL_PROFILE`. Local sour
 builds and existing provider tests retain the full store profile; an MSBuild publish can
 select `-p:HonuaStoreProfile=postgis` explicitly.
 
+The shell-free image provides `/app/honua-healthcheck`; use `--ready` for readiness
+or omit it for liveness. `HONUA_HEALTH_PORT` selects the loopback port (default 8080).
+Deployment probes must use direct execution. Older images lack this executable;
+retain their existing probe when pinning a pre-change image, and update the image
+and probe together. The ECS module exposes `health_check_command` and
+`health_check_port` for that transition.
+
 Authenticated callers can read `dataStores` from `/api/v1/capabilities/manifest`.
 `profile` is `postgis` or `full`; `installedProviders` lists canonical provider identifiers
 compiled into that image, including stores whose experimental gates are disabled.
-`fullImageTagSuffix` is `-full` and `documentationHref` links to this guide. Anonymous
+`fullImageTagSuffix` is `-full` on the PostGIS profile and null on the full profile;
+`documentationHref` links to this guide. Anonymous
 responses omit `dataStores`. Clients must use this inventory, rather than infer support
 from a tag; an absent inventory does not establish support for any additional store.
 

@@ -2,6 +2,12 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Security.Abstractions;
+using Honua.Core.Features.Security.Domain;
+using Honua.TestKit;
+using NSubstitute;
 using Honua.Server.Startup;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
@@ -105,6 +111,63 @@ public sealed class DataStoreBuildPolicyTests
         var start = () => DataStoreBuildPolicy.Validate(configuration);
 
         start.Should().NotThrow();
+    }
+
+    [UnitTest]
+    public void ValidatePostgisConfiguration_ShippedProductionSettings_Accepts()
+    {
+        var configuration = new ConfigurationBuilder()
+            .SetBasePath(RepositoryPaths.Resolve("src", "Honua.Server"))
+            .AddJsonFile("appsettings.json")
+            .AddJsonFile("appsettings.Production.json")
+            .Build();
+
+        var start = () => DataStoreBuildPolicy.ValidatePostgisConfiguration(configuration);
+
+        start.Should().NotThrow();
+    }
+
+    [UnitTheory]
+    [InlineData("mssql", null)]
+    [InlineData("postgis", "snowflake")]
+    [InlineData("postgis", "featureserver")]
+    public async Task ValidatePostgisConnectionsAsync_PersistedExcludedStore_RefusesWithFullImageGuidance(
+        string securedProvider, string? graphProviderName)
+    {
+        var (registry, graph) = StoredConnections(securedProvider, graphProviderName);
+
+        var start = () => DataStoreBuildPolicy.ValidatePostgisConnectionsAsync(registry, graph);
+
+        await start.Should().ThrowAsync<InvalidOperationException>().WithMessage("*-full*");
+    }
+
+    [UnitTheory]
+    [InlineData("postgis", "postgresql")]
+    [InlineData("postgresql", null)]
+    public async Task ValidatePostgisConnectionsAsync_PersistedPostgisStores_Accepts(
+        string securedProvider, string? graphProviderName)
+    {
+        var (registry, graph) = StoredConnections(securedProvider, graphProviderName);
+
+        var start = () => DataStoreBuildPolicy.ValidatePostgisConnectionsAsync(registry, graph);
+
+        await start.Should().NotThrowAsync();
+    }
+
+    private static (ISecureConnectionRegistry, IMetadataV2GraphProvider) StoredConnections(
+        string securedProvider, string? graphProviderName)
+    {
+        var registry = Substitute.For<ISecureConnectionRegistry>();
+        registry.GetAllConnectionsAsync().Returns(Task.FromResult<IEnumerable<DataConnection>>(
+            [new DataConnection { Provider = securedProvider }]));
+        var graph = new MetadataV2Graph
+        {
+            Connections = graphProviderName is null ? [] : [new MetadataV2Connection { Provider = graphProviderName }]
+        };
+        var provider = Substitute.For<IMetadataV2GraphProvider>();
+        provider.GetCurrentAsync().Returns(
+            new MetadataV2GraphSnapshot(graph, "fixture", DateTimeOffset.UnixEpoch));
+        return (registry, provider);
     }
 
     private static IConfiguration Configuration(params (string Key, string? Value)[] settings)

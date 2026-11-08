@@ -97,6 +97,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
 
       - name: Self-test the certified-candidate selector
         run: python3 scripts/ci/select-certified-nightly-sha.test.py
@@ -559,7 +561,7 @@ jobs:
           CANDIDATE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}@${{ steps.build.outputs.digest }}
         run: |
           set -euo pipefail
-          scripts/ci/smoke-aot-geoparquet.sh "$CANDIDATE" "${RUNNER_TEMP}/aot-geoparquet-smoke"
+          scripts/ci/smoke-serving-formats.sh "$CANDIDATE" "${RUNNER_TEMP}/aot-geoparquet-smoke"
 
       - name: Publish verified nightly AOT architecture tags
         shell: bash
