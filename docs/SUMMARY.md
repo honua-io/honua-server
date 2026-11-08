@@ -26,6 +26,8 @@
   - [Data source language](concepts/domain/data-source.md)
   - [Dataset naming transition](concepts/domain/resource.md)
   - [Dataset](concepts/domain/dataset.md)
+  - [Coming from ArcGIS](concepts/domain/coming-from-arcgis.md)
+  - [Coming from GeoServer](concepts/domain/coming-from-geoserver.md)
   - [Deployment and execution target](concepts/domain/deployment.md)
   - [DevOps workflow language](concepts/domain/devops-language.md)
   - [Draft, Version, and Released](concepts/domain/content-version.md)
