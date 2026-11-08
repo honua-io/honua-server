@@ -38,16 +38,74 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
         JsonSerializer.Serialize(events).Should().NotContain("PRIVATE_");
     }
 
-    [UnitTest]
-    public async Task StreamAsync_PrivateCaptureLimitExceeded_RejectsWithoutExposingContent()
+    [UnitTheory]
+    [InlineData("text")]
+    [InlineData("thinking")]
+    public async Task StreamAsync_PrivateCaptureLimitExceeded_CompletesVisibleText(string oversizedBlock)
     {
-        var fixture = WithThinking(TextTurnFixture).Replace("PRIVATE_THINKING", new string('x', AnthropicContinuationStore.MaximumTurnCharacters), StringComparison.Ordinal);
+        var oversized = new string('x', AnthropicContinuationStore.MaximumTurnCharacters);
+        var fixture = oversizedBlock == "text"
+            ? TextTurnFixture.Replace("Hello", oversized, StringComparison.Ordinal)
+            : WithThinking(TextTurnFixture).Replace("PRIVATE_THINKING", oversized, StringComparison.Ordinal);
 
         var events = await CollectAsync(CreateAdapter(fixture), ToolFreeRequest());
 
-        events.Should().ContainSingle(e => e.Type == StudioAiChatEventType.Error).Subject.ErrorCode.Should()
-            .Be(StudioAiStreamGrammarValidator.InvalidStreamCode);
-        events.Should().NotContain(e => e.Type == StudioAiChatEventType.MessageStop);
+        events.Should().NotContain(e => e.Type == StudioAiChatEventType.Error);
+        events.Last().Type.Should().Be(StudioAiChatEventType.MessageStop);
+        events.Last().StopReason.Should().Be(StudioAiStopReason.EndTurn);
+        string.Concat(events.Where(e => e.Type == StudioAiChatEventType.TextDelta).Select(e => e.Text))
+            .Should().Be(oversizedBlock == "text" ? oversized + " world" : "Hello world");
+    }
+
+    [UnitTest]
+    public async Task StreamAsync_OversizedToolTurn_CompletesButRejectsContinuationBeforeHttp()
+    {
+        var fixture = WithThinking(ToolCallFixture).Replace("PRIVATE_THINKING",
+            new string('x', AnthropicContinuationStore.MaximumTurnCharacters), StringComparison.Ordinal);
+        var handler = new StudioAiProxyMockHttpMessageHandler(fixture);
+        using var clients = new StudioAiProxyMockHttpClientFactory(handler);
+        var adapter = new AnthropicStudioAiProxyAdapter(clients, new StudioAiProxyApiKeyResolver(),
+            NullLogger<AnthropicStudioAiProxyAdapter>.Instance);
+        var identity = AiExecutionContext.Create("test", "person-a", "studio-chat");
+
+        var events = await CollectAsync(adapter, ContinuationRequest(identity, false));
+
+        events.Should().NotContain(e => e.Type == StudioAiChatEventType.Error);
+        events.Should().ContainSingle(e => e.Type == StudioAiChatEventType.ToolCallStop);
+        events.Last().Type.Should().Be(StudioAiChatEventType.MessageStop);
+        events.Last().StopReason.Should().Be(StudioAiStopReason.ToolCall);
+        JsonSerializer.Serialize(events).Should().NotContain("PRIVATE_");
+        var continueTurn = () => CollectAsync(adapter, ContinuationRequest(identity, true));
+        await continueTurn.Should().ThrowAsync<InvalidOperationException>();
+        handler.SendCount.Should().Be(1);
+    }
+
+    [UnitTheory]
+    [InlineData("credential")]
+    [InlineData("provider")]
+    public async Task StreamAsync_ContinuationCredentialOrProviderChanged_RejectsBeforeHttp(string changed)
+    {
+        var handler = new StudioAiProxyMockHttpMessageHandler(WithThinking(ToolCallFixture));
+        using var clients = new StudioAiProxyMockHttpClientFactory(handler);
+        var adapter = new AnthropicStudioAiProxyAdapter(clients, new StudioAiProxyApiKeyResolver(),
+            NullLogger<AnthropicStudioAiProxyAdapter>.Instance);
+        var identity = AiExecutionContext.Create("test", "person-a", "studio-chat");
+        await CollectAsync(adapter, ContinuationRequest(identity, false));
+        var options = DefaultOptions();
+        if (changed == "credential") options.ApiKey = "other-test-key";
+        var prior = ContinuationRequest(identity, true);
+        var request = new StudioAiChatRequest
+        {
+            Provider = changed == "provider" ? "other-provider" : prior.Provider,
+            ExecutionContext = identity,
+            Messages = prior.Messages,
+            Tools = prior.Tools
+        };
+
+        var continueTurn = () => CollectAsync(adapter, options, request);
+
+        await continueTurn.Should().ThrowAsync<InvalidOperationException>();
+        handler.SendCount.Should().Be(1);
     }
 
     [UnitTest]

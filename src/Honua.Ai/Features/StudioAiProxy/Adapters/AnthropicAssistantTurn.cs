@@ -15,10 +15,19 @@ internal sealed class AnthropicAssistantTurn
     private readonly Dictionary<int, ContentBlock> _openBlocks = [];
     private int _characters;
 
-    internal bool TryAccept(AnthropicStreamFrame frame, string payload)
+    internal bool CaptureLimitExceeded { get; private set; }
+
+    internal void Capture(AnthropicStreamFrame frame, string payload)
     {
+        if (CaptureLimitExceeded) return;
+        if (payload.Length > AnthropicContinuationStore.MaximumTurnCharacters - _characters)
+        {
+            CaptureLimitExceeded = true;
+            _blocks.Clear();
+            _openBlocks.Clear();
+            return;
+        }
         _characters += payload.Length;
-        if (_characters > AnthropicContinuationStore.MaximumTurnCharacters) return false;
         using var document = JsonDocument.Parse(payload);
         var root = document.RootElement;
         if (frame.Type == "content_block_start" && frame.ContentBlock is not null && frame.Index is { } startIndex)
@@ -44,7 +53,6 @@ internal sealed class AnthropicAssistantTurn
         }
         else if (frame.Type == "content_block_stop" && frame.Index is { } stopIndex)
             _openBlocks.Remove(stopIndex);
-        return true;
     }
 
     internal JsonElement Content()

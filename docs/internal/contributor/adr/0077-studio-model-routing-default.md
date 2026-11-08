@@ -166,6 +166,8 @@ successful tool-call stream can populate this state; malformed, cancelled and po
 
 Continuation state is process-local, available for 15 minutes, and bounded to 128 turns and
 4,194,304 UTF-16 characters in total, with a 262,144-character capture limit per provider response.
+Capture overflow discards private continuation state without interrupting visible text or tool events;
+an oversized tool turn cannot be continued and requires a new conversation.
 Expired, evicted, restarted or differently routed continuations within the current tool-use turn
 fail preparation before a provider call; start a new conversation in that case. After a new user
 message, historical assistant turns can use their visible form if the original prefix no longer
