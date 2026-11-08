@@ -10,6 +10,7 @@
 // projection layer that is large, shared across the publish and extent-refresh paths,
 // and easier to audit independently from the SQL-heavy persistence code.
 
+using System.Buffers;
 using System.Data.Common;
 using System.Globalization;
 using System.Text.Json;
@@ -2171,9 +2172,47 @@ internal sealed partial class PostgreSqlLayerPublishingService
             new OptionalJsonNode(true, currentNode),
             new OptionalJsonNode(true, previousNode),
             new OptionalJsonNode(true, persistedNode));
-        var restoredContainer = JsonSerializer.Deserialize(restoredNode.Node!.ToJsonString(), typeInfo)
+        var restoredJson = new ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(restoredJson))
+        {
+            WriteCompensatedJson(writer, restoredNode.Node);
+        }
+        var restoredContainer = JsonSerializer.Deserialize(restoredJson.WrittenSpan, typeInfo)
             ?? throw new InvalidOperationException("Resource compensation produced invalid metadata JSON.");
         return valueSelector(restoredContainer);
+    }
+
+    private static void WriteCompensatedJson(Utf8JsonWriter writer, JsonNode? node)
+    {
+        switch (node)
+        {
+            case JsonObject properties:
+                writer.WriteStartObject();
+                foreach (var property in properties)
+                {
+                    writer.WritePropertyName(property.Key);
+                    WriteCompensatedJson(writer, property.Value);
+                }
+                writer.WriteEndObject();
+                break;
+            case JsonArray items:
+                writer.WriteStartArray();
+                foreach (var item in items)
+                {
+                    WriteCompensatedJson(writer, item);
+                }
+                writer.WriteEndArray();
+                break;
+            case JsonValue value when value.TryGetValue<JsonElement>(out var element):
+                writer.WriteRawValue(element.GetRawText());
+                break;
+            case null:
+                writer.WriteNullValue();
+                break;
+            default:
+                node.WriteTo(writer);
+                break;
+        }
     }
 
     private static OptionalJsonNode RestoreJsonNodeMutation(

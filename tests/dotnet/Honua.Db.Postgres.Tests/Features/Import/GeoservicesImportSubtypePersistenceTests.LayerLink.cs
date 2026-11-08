@@ -9,6 +9,7 @@ using Honua.Db.Postgres.Features.Admin;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Db.Postgres.Features.Metadata;
 using Honua.TestKit;
+using Npgsql;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
@@ -69,6 +70,10 @@ public sealed partial class GeoservicesImportSubtypePersistenceTests
     private async Task<PublishedLayerSummary> PublishLinkSourcesAsync(
         PostgreSqlLayerPublishingService publisher, string schema, string serviceName)
     {
+        var connectionString = new NpgsqlConnectionStringBuilder(fixture.ConnectionString)
+        {
+            SearchPath = $"{schema},public"
+        }.ConnectionString;
         PublishedLayerSummary? source = null;
         foreach (var table in new[] { "link_source", "link_unrelated" })
         {
@@ -76,7 +81,7 @@ public sealed partial class GeoservicesImportSubtypePersistenceTests
                 CREATE TABLE "{schema}"."{table}" (objectid integer PRIMARY KEY, geometry geometry(Point, 4326));
                 INSERT INTO "{schema}"."{table}" VALUES (1, ST_SetSRID(ST_MakePoint(1, 2), 4326));
                 """);
-            var layer = await publisher.PublishLayerAsync(fixture.ConnectionString, new LayerPublishRequest
+            var layer = await publisher.PublishLayerAsync(connectionString, new LayerPublishRequest
             {
                 Schema = schema,
                 Table = table,
