@@ -336,12 +336,8 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
 
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             var serviceIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var pub in snapshot.Graph.Publications)
+            foreach (var pub in snapshot.PublicationsForStorageLayer(layerId.Value))
             {
-                if (pub.LayerIndex != layerId.Value)
-                {
-                    continue;
-                }
                 if (snapshot.Index.ServicesById.TryGetValue(pub.ServiceId, out var service))
                 {
                     serviceIds.Add(NormalizeServiceId(service.Metadata.Name));
