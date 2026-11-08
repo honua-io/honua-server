@@ -52,6 +52,27 @@ public sealed class MetadataV2PropertyRobustnessTests
         serialized.RootElement.GetProperty("futureNull").ValueKind.Should().Be(JsonValueKind.Null);
     }
 
+    [UnitTheory]
+    [InlineData(typeof(MetadataV2Link))]
+    [InlineData(typeof(MetadataV2Condition))]
+    [InlineData(typeof(MetadataV2Bbox))]
+    [InlineData(typeof(MetadataV2TimeRange))]
+    [InlineData(typeof(MetadataV2SpatialReference))]
+    [InlineData(typeof(Symbology3DColor))]
+    public void Equals_SeparatelyLoadedFutureProperties_UsesJsonContent(Type recordType)
+    {
+        const string first = """{"future":{"a":1,"b":[true,null]},"other":"value"}""";
+        const string reordered = """{"other":"value","future":{"b":[true,null],"a":1.0}}""";
+        var typeInfo = MetadataV2JsonContext.Default.GetTypeInfo(recordType)!;
+        var left = JsonSerializer.Deserialize(first, typeInfo)!;
+        var right = JsonSerializer.Deserialize(reordered, typeInfo)!;
+        var changed = JsonSerializer.Deserialize(first.Replace("true", "false", StringComparison.Ordinal), typeInfo)!;
+
+        left.Equals(right).Should().BeTrue();
+        left.GetHashCode().Should().Be(right.GetHashCode());
+        left.Equals(changed).Should().BeFalse();
+    }
+
     [UnitTest]
     public void Serialize_KnownFieldEdit_RetainsNestedFutureProperties()
     {

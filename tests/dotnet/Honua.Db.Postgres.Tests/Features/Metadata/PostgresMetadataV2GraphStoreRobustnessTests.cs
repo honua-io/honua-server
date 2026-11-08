@@ -64,6 +64,16 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
             reloaded.Etag.Should().Be(saved.Etag);
             reloaded.Graph.Resources[0].Metadata.Title.Should().Be("Edited title");
             AssertUnknownPropertiesRetained(reloaded.Graph);
+            await using var savedConnection = await fixture.DataSource.OpenConnectionAsync();
+            await using var savedDocument = savedConnection.CreateCommand();
+            savedDocument.CommandText = $"""
+                SELECT document::text FROM "{schema}".metadata_v2_snapshots WHERE environment = 'Test';
+                """;
+            using var persisted = JsonDocument.Parse((string)(await savedDocument.ExecuteScalarAsync())!);
+            var persistedDataset = persisted.RootElement.GetProperty("resources")[0];
+            persistedDataset.GetProperty("type").GetString().Should().Be(datasetKind);
+            persistedDataset.GetProperty("status").GetProperty("lifecycle").GetString().Should().Be(lifecycle);
+            persistedDataset.GetProperty("status").GetProperty("state").GetString().Should().Be(operationalState);
         }
         finally
         {
