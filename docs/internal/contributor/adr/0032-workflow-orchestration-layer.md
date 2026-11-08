@@ -130,8 +130,8 @@ settings, and package hashes include them. Packages without execution settings
 keep their existing hashes. Editor metadata does not configure execution.
 
 A Failure edge becomes an explicit dependency in `FailureDependsOn`. A handler
-waits for its failure sources to finish and runs only when every failure source
-is `Failed`; otherwise it is `Skipped`. Retries finish before failure routing.
+runs only after every failure source is `Failed`. A terminal source with any
+other status skips the handler, including a source whose failure policy is `Skip`. Retries finish before failure routing.
 Failure edges carry control flow, not artifact bindings. Handling a failure does
 not clear the source failure or change the run's failure status. Ordinary
 dependencies keep their success, skip and cancellation behavior.
@@ -141,7 +141,14 @@ cancellation at the first tick observing an active child past its deadline.
 The step remains active until the child's terminal state is observed, including
 after a restart. Cancellation failures are retried; a new attempt cannot start
 while the timed-out child remains active. Once cancellation completes, the
-normal retry and failure policies apply.
+normal retry and failure policies apply. A child that succeeds while cancellation
+is in flight retains its success and artifacts without retrying. Acknowledged
+cancellation is not requested again while waiting for a terminal child state.
+
+Existing scheduled publications retain their stored definitions until republished.
+Disable and republish those publications to adopt the corrected Failure-edge
+routing before resuming them. In-flight runs must finish or be cancelled first;
+republishing a definition does not migrate an existing run.
 
 Direct Job and ProcessEndpoint targets cannot honor these orchestration
 settings, so publication rejects them with a Schedule-target diagnostic.

@@ -26,7 +26,6 @@ public static class WorkflowPackageGraphValidator
         };
 
         var failures = new List<WorkflowPackageValidationFailure>();
-        var warnings = new List<string>();
 
         if (graph.Nodes.Count == 0)
         {
@@ -159,18 +158,29 @@ public static class WorkflowPackageGraphValidator
                 });
             }
 
+            if (edge.Kind == WorkflowEdgeKind.Failure && graph.Edges.Any(other =>
+                other.SourceNodeId == edge.SourceNodeId && other.TargetNodeId == edge.TargetNodeId && other.Kind != WorkflowEdgeKind.Failure))
+            {
+                failures.Add(new WorkflowPackageValidationFailure
+                {
+                    Code = "CONFLICTING_FAILURE_EDGE",
+                    Message = $"Failure edge '{edge.SourceNodeId}' to '{edge.TargetNodeId}' cannot also carry data or success control flow.",
+                    FieldPath = "graph.edges"
+                });
+            }
+
             if (!Enum.IsDefined(edge.Kind) || edge.Kind == WorkflowEdgeKind.Failure && !string.IsNullOrWhiteSpace(edge.TargetPort))
             {
                 failures.Add(new WorkflowPackageValidationFailure
                 {
                     Code = "UNSUPPORTED_EDGE",
-                    Message = "Edge kind must be supported; Failure edges are control-only and cannot bind a target port.",
+                    Message = $"Edge '{edge.SourceNodeId}' to '{edge.TargetNodeId}' must use a supported kind; Failure edges are control-only and cannot bind a target port.",
                     FieldPath = "graph.edges"
                 });
             }
         }
 
-        ValidateExecutionSettings(graph, nodeIds, failures);
+        ValidateOrchestrationRules(graph, nodeIds, failures);
 
         if (nodeIds.Count == graph.Nodes.Count && HasCycle(graph))
         {
@@ -183,11 +193,11 @@ public static class WorkflowPackageGraphValidator
         }
 
         return failures.Count == 0
-            ? WorkflowPackageValidationResult.Success(packageHash, warnings)
-            : WorkflowPackageValidationResult.Failed(failures, packageHash, warnings);
+            ? WorkflowPackageValidationResult.Success(packageHash)
+            : WorkflowPackageValidationResult.Failed(failures, packageHash);
     }
 
-    private static void ValidateExecutionSettings(
+    private static void ValidateOrchestrationRules(
         WorkflowGraph graph,
         HashSet<string> nodeIds,
         List<WorkflowPackageValidationFailure> failures)
@@ -228,7 +238,6 @@ public static class WorkflowPackageGraphValidator
                 });
             }
         }
-
     }
 
     private static HashSet<string> WiredInputPorts(WorkflowGraph graph, string nodeId)

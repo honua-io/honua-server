@@ -176,7 +176,7 @@ public sealed partial class WorkflowPackageSchedulePublicationTests
     }
 
     [UnitTest]
-    public async Task ReconcileCompiledPackage_ConditionAndFanOut_ExecuteOnlyTakenIterations()
+    public async Task ReconcileCompiledPackage_ConditionAndFanOut_SubmitsEveryItemWhenConditionPasses()
     {
         var harness = CreateHarness();
         var definition = await CompileGraphAsync(harness, ExecutionGraph());
@@ -197,7 +197,7 @@ public sealed partial class WorkflowPackageSchedulePublicationTests
         var harness = CreateHarness();
         var graph = ReadGraph("""
             {"nodes":[{"nodeId":"work","nodeTypeId":"process:test.echo","timeoutSeconds":0}]}
-            """ );
+            """);
         var saved = await harness.Service.SavePackageAsync(new SaveWorkflowPackageRequest { Name = "Invalid", Graph = graph }, Author(), CancellationToken.None);
         var exception = await Assert.ThrowsAsync<WorkflowPackageValidationException>(() => harness.Service.CreateVersionAsync(saved.PackageId, Author(), CancellationToken.None));
         Assert.Contains(exception.Result.Failures, failure => failure.FieldPath == "graph.nodes[work].timeoutSeconds");
@@ -209,6 +209,9 @@ public sealed partial class WorkflowPackageSchedulePublicationTests
     [InlineData("\"retryPolicy\":{\"maxAttempts\":2,\"initialDelaySeconds\":-1}", "retryPolicy.initialDelaySeconds")]
     [InlineData("\"retryPolicy\":{\"maxAttempts\":2,\"initialDelaySeconds\":1,\"backoffMultiplier\":0}", "retryPolicy.backoffMultiplier")]
     [InlineData("\"retryPolicy\":{\"maxAttempts\":2,\"initialDelaySeconds\":1,\"maxDelaySeconds\":0}", "retryPolicy.maxDelaySeconds")]
+    [InlineData("\"timeoutSeconds\":-1", "timeoutSeconds")]
+    [InlineData("\"condition\":{\"sourceStepId\":\"work\",\"kind\":\"HasArtifact\",\"threshold\":-1}", "condition.threshold")]
+    [InlineData("\"forEach\":{\"items\":[\"one\"],\"itemPlaceholder\":\"\"}", "forEach.itemPlaceholder")]
     [InlineData("\"failurePolicy\":99", "failurePolicy")]
     [InlineData("\"condition\":{\"sourceStepId\":\"ghost\",\"kind\":\"HasArtifact\"}", "condition.sourceStepId")]
     [InlineData("\"condition\":{\"sourceStepId\":\"work\",\"kind\":99}", "condition.kind")]

@@ -774,8 +774,7 @@ internal sealed class WorkflowPackageService(
         List<WorkflowPackageValidationFailure> failures)
     {
         if (target is WorkflowPublicationTarget.Job or WorkflowPublicationTarget.ProcessEndpoint
-            && (graph.Nodes.Any(node => node.RetryPolicy is not null || node.FailurePolicy != WorkflowStepFailurePolicy.Fail
-                || node.TimeoutSeconds is not null || node.Condition is not null || node.ForEach is not null)
+            && (graph.Nodes.Any(node => node.HasExecutionSettings())
                 || graph.Edges.Any(edge => edge.Kind == WorkflowEdgeKind.Failure)))
         {
             failures.Add(new WorkflowPackageValidationFailure
@@ -785,7 +784,6 @@ internal sealed class WorkflowPackageService(
                 FieldPath = "graph"
             });
         }
-
     }
 
     private async Task<IReadOnlyDictionary<string, WorkflowNodeDefinition>> GetNodeDefinitionLookupAsync(

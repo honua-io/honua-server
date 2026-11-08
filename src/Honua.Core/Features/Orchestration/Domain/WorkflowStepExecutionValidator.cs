@@ -29,7 +29,7 @@ public static class WorkflowStepExecutionValidator
         {
             if (retry.MaxAttempts < 1)
             {
-                failures["retryPolicy.maxAttempts"] = "retry policy must allow at least one attempt.";
+                failures["retryPolicy.maxAttempts"] = "Retry policy must allow at least one attempt.";
             }
 
             if (retry.InitialDelaySeconds < 0)
@@ -100,15 +100,15 @@ public static class WorkflowStepExecutionValidator
         {
             if (string.IsNullOrWhiteSpace(condition.SourceStepId) || !topology.StepIds.Contains(condition.SourceStepId))
             {
-                failures["condition.sourceStepId"] = $"condition references unknown source step '{condition.SourceStepId}'.";
+                failures["condition.sourceStepId"] = $"Condition references unknown source step '{condition.SourceStepId}'.";
             }
             else if (!dependencies.Contains(condition.SourceStepId, StringComparer.Ordinal))
             {
-                failures["condition.sourceStepId"] = $"condition references source step '{condition.SourceStepId}' which is not declared in DependsOn.";
+                failures["condition.sourceStepId"] = $"Condition references source step '{condition.SourceStepId}' which is not declared in DependsOn.";
             }
             else if (topology.ForEachStepIds.Contains(condition.SourceStepId))
             {
-                failures["condition.sourceStepId"] = $"condition may not read from ForEach step '{condition.SourceStepId}'.";
+                failures["condition.sourceStepId"] = $"Condition may not read from ForEach step '{condition.SourceStepId}'.";
             }
         }
 

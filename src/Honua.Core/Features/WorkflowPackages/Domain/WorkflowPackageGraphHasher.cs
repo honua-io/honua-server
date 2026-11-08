@@ -46,7 +46,7 @@ public static class WorkflowPackageGraphHasher
             AppendField(builder, edge.TargetPort);
         }
 
-        if (graph.Nodes.Any(HasExecutionSettings))
+        if (graph.Nodes.Any(node => node.HasExecutionSettings()))
         {
             AppendField(builder, "workflow-execution.v1");
             foreach (var node in graph.Nodes.OrderBy(node => node.NodeId, StringComparer.Ordinal))
@@ -59,10 +59,6 @@ public static class WorkflowPackageGraphHasher
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString()));
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
-
-    private static bool HasExecutionSettings(WorkflowNode node)
-        => node.RetryPolicy is not null || node.FailurePolicy != WorkflowStepFailurePolicy.Fail
-            || node.TimeoutSeconds is not null || node.Condition is not null || node.ForEach is not null;
 
     private static void AppendExecutionSettings(StringBuilder builder, WorkflowNode node)
     {

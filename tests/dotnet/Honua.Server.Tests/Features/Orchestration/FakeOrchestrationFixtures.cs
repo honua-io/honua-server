@@ -427,6 +427,8 @@ internal sealed class FakeWorkflowJobExecutor : IWorkflowJobExecutor
     /// </summary>
     public Exception? NextCancelJobFailure { get; set; }
 
+    public ExecutionJobStatus CancellationStatus { get; set; } = ExecutionJobStatus.Cancelled;
+
     /// <summary>
     /// When set, <see cref="GetJobResultsAsync"/> raises this exception on the next call
     /// and clears itself. Lets tests exercise the "job succeeded but result package is
@@ -637,7 +639,7 @@ internal sealed class FakeWorkflowJobExecutor : IWorkflowJobExecutor
             var now = DateTimeOffset.UtcNow;
             _jobs[jobId] = job with
             {
-                Status = ExecutionJobStatus.Cancelled,
+                Status = CancellationStatus,
                 CompletedAt = now,
                 UpdatedAt = now
             };

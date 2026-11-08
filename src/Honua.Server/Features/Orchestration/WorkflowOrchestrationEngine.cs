@@ -952,9 +952,14 @@ internal sealed class WorkflowOrchestrationEngine : IWorkflowCancellationCoordin
 
         if (state.TimeoutCancellationRequested)
         {
-            return IsStepTerminal(MapJobStatusToStepStatus(job.Status))
-                ? ApplyObservedFailure(run, stepDefinition, state with { ErrorMessage = "Workflow step timeout exceeded." })
-                : await RequestTimeoutCancellationAsync(run, state, cancellationToken).ConfigureAwait(false);
+            if (!IsStepTerminal(MapJobStatusToStepStatus(job.Status)))
+            {
+                return null;
+            }
+            if (job.Status == ExecutionJobStatus.Cancelled)
+            {
+                return ApplyObservedFailure(run, stepDefinition, state with { ErrorMessage = "Workflow step timeout exceeded." });
+            }
         }
         if (stepDefinition.TimeoutSeconds is > 0 && state.StartedAt is { } startedAt
             && now - startedAt >= TimeSpan.FromSeconds(stepDefinition.TimeoutSeconds.Value)

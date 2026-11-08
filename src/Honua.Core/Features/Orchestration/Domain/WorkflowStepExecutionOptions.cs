@@ -5,6 +5,10 @@ namespace Honua.Core.Features.Orchestration.Domain;
 
 public abstract record WorkflowStepExecutionOptions
 {
+    public bool HasExecutionSettings()
+        => RetryPolicy is not null || FailurePolicy != WorkflowStepFailurePolicy.Fail
+            || TimeoutSeconds is not null || Condition is not null || ForEach is not null;
+
     public StepRetryPolicy? RetryPolicy { get; init; }
 
     public WorkflowStepFailurePolicy FailurePolicy { get; init; } = WorkflowStepFailurePolicy.Fail;

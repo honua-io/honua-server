@@ -66,8 +66,6 @@ public static class WorkflowDefinitionValidator
             {
                 failures.Add($"Step '{step.StepId}' identifier must not contain the reserved iteration separator '{WorkflowDefinitionExpander.IterationSeparator}'.");
             }
-
-
         }
 
         var forEachStepIds = new HashSet<string>(
@@ -96,6 +94,10 @@ public static class WorkflowDefinitionValidator
                 else if (!step.DependsOn.Contains(binding.SourceStepId, StringComparer.Ordinal))
                 {
                     failures.Add($"Step '{step.StepId}' binding references source step '{binding.SourceStepId}' which is not declared in DependsOn. Binding sources must be explicit dependencies so execution ordering and cycle detection cover all data edges.");
+                }
+                else if (step.FailureDependsOn.Contains(binding.SourceStepId, StringComparer.Ordinal))
+                {
+                    failures.Add($"Step '{step.StepId}' cannot bind artifacts from failure dependency '{binding.SourceStepId}'.");
                 }
                 else if (forEachStepIds.Contains(binding.SourceStepId))
                 {
