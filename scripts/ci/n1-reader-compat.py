@@ -84,7 +84,7 @@ RECEIPT_SCHEMA = "honua.n1-reader-compat/v1"
 REFUSAL_CODE = "schema_reader_incompatible"
 READER_DECLARATIONS_MIGRATION = "135_RecordMigrationReaderCompatibility.sql"
 # The typed schema_reader_incompatible startup guard (#5333); images built before it never refuse.
-READER_GUARD_SOURCE = "src/Honua.Core/Features/Infrastructure/Domain/DatabaseSchemaCompatibilityException.cs"
+READER_GUARD_SOURCE = "src/Honua.Core/Core/Features/Infrastructure/Domain/DatabaseSchemaCompatibilityException.cs"
 # The N-1 prior of record is the honua-server image the latest published platform release
 # pins: the image a customer actually runs. Trunk `nightly-aot` is scaffolding, used (and
 # labelled `nightly-scaffold`) only when no release pin can be resolved and pulled.
@@ -102,10 +102,10 @@ READER_INCOMPATIBLE = re.compile(r"^[ \t]*--[ \t]*honua:reader-incompatible\b", 
 APPLIES_PATTERNS = (
     "src/*/Migrations/*.sql",
     "src/*/*/Migrations/*.sql",
-    "src/Honua.Core/Features/Infrastructure/Migrations/*",
-    "src/Honua.Core/Features/Infrastructure/Abstractions/IDatabaseSchemaGuard.cs",
-    "src/Honua.Core/Features/Infrastructure/Abstractions/IDatabaseMigrationRunner.cs",
-    "src/Honua.Core/Features/Infrastructure/Domain/DatabaseSchemaCompatibilityException.cs",
+    "src/Honua.Core/Core/Features/Infrastructure/Migrations/*",
+    "src/Honua.Core/Core/Features/Infrastructure/Abstractions/IDatabaseSchemaGuard.cs",
+    "src/Honua.Core/Core/Features/Infrastructure/Abstractions/IDatabaseMigrationRunner.cs",
+    "src/Honua.Core/Core/Features/Infrastructure/Domain/DatabaseSchemaCompatibilityException.cs",
     "src/Honua.Db/Postgres/Features/Infrastructure/Migrations/*",
     "src/Honua.Server/Hosting/MigrateOnly/*",
     "src/Honua.Server/Startup/ServerCoreSchemaMigrations.cs",

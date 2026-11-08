@@ -6,7 +6,7 @@ tags: [gis, domain-language]
 aliases: ["physical binding","table binding","storage layer"]
 sources:
   - id: contract
-    resource: "https://github.com/honua-io/honua-server/blob/3fb2c48d15395f2e49a5a55e4a2445a3387e0145/src/Honua.Core.Abstractions/Features/Metadata/Domain/V2/MetadataV2Graph.cs"
+    resource: "https://github.com/honua-io/honua-server/blob/3fb2c48d15395f2e49a5a55e4a2445a3387e0145/src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/MetadataV2Graph.cs"
 ---
 
 # Storage binding
@@ -17,4 +17,4 @@ A [connection](connection.md) supplies the provider and safe endpoint/secret ref
 
 “Move the data source” needs to distinguish changing a locator from copying records. Inspect shared references, desired storage semantics, credentials, and effective capabilities before a catalog change. AI does not modify source features to make a binding fit.
 
-[^contract]: [Source contract](https://github.com/honua-io/honua-server/blob/3fb2c48d15395f2e49a5a55e4a2445a3387e0145/src/Honua.Core.Abstractions/Features/Metadata/Domain/V2/MetadataV2Graph.cs).
+[^contract]: [Source contract](https://github.com/honua-io/honua-server/blob/3fb2c48d15395f2e49a5a55e4a2445a3387e0145/src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/MetadataV2Graph.cs).

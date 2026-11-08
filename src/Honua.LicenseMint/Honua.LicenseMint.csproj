@@ -27,7 +27,7 @@
     <!-- HonuaEdition + FeatureCatalog are the canonical edition/entitlement
          source of truth; the mint tool resolves and validates against them so
          minted envelopes can never reference unknown entitlement keys. -->
-    <ProjectReference Include="..\Honua.Core\Honua.Core.csproj" />
+    <ProjectReference Include="..\Honua.Core\Core\Honua.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>

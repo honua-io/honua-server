@@ -6,7 +6,7 @@ tags: [gis, domain-language]
 aliases: ["map layer", "drawing layer", "overlay", "visual layer", "hide", "take off the map"]
 sources:
   - id: composition
-    resource: "https://github.com/honua-io/honua-server/blob/3fb2c48d15395f2e49a5a55e4a2445a3387e0145/src/Honua.Core/Features/Studio/Domain/StudioCompositionModels.cs"
+    resource: "https://github.com/honua-io/honua-server/blob/3fb2c48d15395f2e49a5a55e4a2445a3387e0145/src/Honua.Core/Core/Features/Studio/Domain/StudioCompositionModels.cs"
 relations:
   - predicate: interpreted_with
     target: /concepts/domain/intent-interpretation.md
@@ -27,4 +27,4 @@ In a map's layer list, "hide that layer" normally toggles the selected drawing l
 
 Use [compose a map](../../guides/workflows/compose-map.md) for drawing changes and [cleanup](../../guides/workflows/cleanup-resources.md) for resource removal.
 
-[^composition]: [Studio composition model](https://github.com/honua-io/honua-server/blob/3fb2c48d15395f2e49a5a55e4a2445a3387e0145/src/Honua.Core/Features/Studio/Domain/StudioCompositionModels.cs).
+[^composition]: [Studio composition model](https://github.com/honua-io/honua-server/blob/3fb2c48d15395f2e49a5a55e4a2445a3387e0145/src/Honua.Core/Core/Features/Studio/Domain/StudioCompositionModels.cs).

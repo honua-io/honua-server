@@ -161,7 +161,7 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/Features/Collaboration/Operations/SavedMapOperationEndpoints.cs",
-            "src/Honua.Core/Features/Collaboration/Operations/InMemorySavedMapOperationLogRepository.cs",
+            "src/Honua.Core/Core/Features/Collaboration/Operations/InMemorySavedMapOperationLogRepository.cs",
             "tests/dotnet/Honua.Server.Tests/Features/Collaboration/OperationLog/SavedMapOperationEndpointsTests.cs"
           ],
           "ownerRepo": "honua-server",
@@ -299,7 +299,7 @@
           "executionLane": "docs+review",
           "evidenceLocations": [
             "docs/reference/admin-api/forms.md",
-            "src/Honua.Core/Features/Forms/Packages/FormPackageContracts.cs"
+            "src/Honua.Core/Core/Features/Forms/Packages/FormPackageContracts.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -341,9 +341,9 @@
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "src/Honua.Server/Features/Console/Models/ConsoleJsonContext.cs",
-            "src/Honua.Core.Abstractions/Features/Console/Domain/ConsoleContentItem.cs",
-            "src/Honua.Core.Abstractions/Features/Console/Domain/ConsoleShareProjection.cs",
-            "src/Honua.Core.Abstractions/Features/Console/Domain/ConsoleShareTokens.cs",
+            "src/Honua.Core/Abstractions/Features/Console/Domain/ConsoleContentItem.cs",
+            "src/Honua.Core/Abstractions/Features/Console/Domain/ConsoleShareProjection.cs",
+            "src/Honua.Core/Abstractions/Features/Console/Domain/ConsoleShareTokens.cs",
             "docs/internal/admin-api/console-content-and-rbac.md"
           ],
           "ownerRepo": "honua-server",
@@ -416,8 +416,8 @@
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
             "src/Honua.Server/Features/Protocols/Zarr/ZarrEndpoints.cs",
-            "src/Honua.Core/Features/Raster/ZarrParser/ZarrTileSlicePlanner.cs",
-            "src/Honua.Core/Features/Raster/ZarrParser/ZarrTileRenderer.cs",
+            "src/Honua.Core/Core/Features/Raster/ZarrParser/ZarrTileSlicePlanner.cs",
+            "src/Honua.Core/Core/Features/Raster/ZarrParser/ZarrTileRenderer.cs",
             "tests/dotnet/Honua.Server.Tests/Features/Protocols/Zarr/DatacubeTileEndpointTests.cs",
             "tests/dotnet/Honua.Core.Tests/Raster/ZarrParser/ZarrTileSlicePlannerTests.cs",
             "tests/dotnet/Honua.Core.Tests/Raster/ZarrParser/ZarrTileRendererTests.cs"
@@ -431,9 +431,9 @@
           "proofMechanism": "A datacube tile binds a (z/x/y, time, elevation, variable) Zarr coverage slice to an RGBA PNG: the tile bbox is mapped to a half-open grid-index window, time and vertical axes are resolved through the shared CF axis indexers (#1790), the bounded subset is read via IZarrSubsetReader, the little-endian dtype buffer is decoded and colour-mapped, and the result is encoded by the managed AOT-safe PNG encoder. Temporal parameters use the neutral Core-level Iso8601TemporalIntervalParser rather than any OGC protocol parser.",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
-            "src/Honua.Core/Features/Raster/ZarrParser/Iso8601TemporalIntervalParser.cs",
-            "src/Honua.Core/Features/Raster/ZarrParser/CfTimeAxisIndexer.cs",
-            "src/Honua.Core/Features/Raster/ZarrParser/PngEncoder.cs",
+            "src/Honua.Core/Core/Features/Raster/ZarrParser/Iso8601TemporalIntervalParser.cs",
+            "src/Honua.Core/Core/Features/Raster/ZarrParser/CfTimeAxisIndexer.cs",
+            "src/Honua.Core/Core/Features/Raster/ZarrParser/PngEncoder.cs",
             "tests/dotnet/Honua.Core.Tests/Raster/ZarrParser/ZarrTileRendererTests.cs"
           ],
           "ownerRepo": "honua-server",
@@ -617,7 +617,7 @@
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "src/Honua.Server/Features/WorkflowPackages/WorkflowPackagesJsonContext.cs",
-            "src/Honua.Core/Features/WorkflowPackages/Domain/WorkflowPackageModels.cs",
+            "src/Honua.Core/Core/Features/WorkflowPackages/Domain/WorkflowPackageModels.cs",
             "docs/internal/admin-api/console-workflow-packages.md"
           ],
           "ownerRepo": "honua-server",
@@ -657,8 +657,8 @@
           "proofMechanism": "Descriptor/executor split: groundable IOperationDescriptor catalog is separate from IOperationExecutor (Validate/Submit->Handle/GetStatus); every submit flows through IOperationPolicyDecisionPoint (AllowAll pass-through default) and OperationsJsonContext keeps the operation DTOs AOT-safe",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
-            "src/Honua.Core/Features/Operations/Abstractions/IOperationExecutor.cs",
-            "src/Honua.Core/Features/Operations/Abstractions/IOperationPolicyDecisionPoint.cs",
+            "src/Honua.Core/Core/Features/Operations/Abstractions/IOperationExecutor.cs",
+            "src/Honua.Core/Core/Features/Operations/Abstractions/IOperationPolicyDecisionPoint.cs",
             "src/Honua.Server/Features/Operations/OperationsJsonContext.cs"
           ],
           "ownerRepo": "honua-server",
@@ -742,8 +742,8 @@
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "src/Honua.Server/Migrations/069_AddAuditLogHashChain.sql",
-            "src/Honua.Core/Features/AuditLog/Abstractions/AuditEntryHasher.cs",
-            "src/Honua.Core/Features/AuditLog/Abstractions/AuditCefFormatter.cs",
+            "src/Honua.Core/Core/Features/AuditLog/Abstractions/AuditEntryHasher.cs",
+            "src/Honua.Core/Core/Features/AuditLog/Abstractions/AuditCefFormatter.cs",
             "tests/dotnet/Honua.Core.Tests/Features/AuditLog/AuditEntryHasherTests.cs",
             "tests/dotnet/Honua.Core.Tests/Features/AuditLog/AuditCefFormatterTests.cs"
           ],
@@ -841,9 +841,9 @@
           "proofMechanism": "Source-generated FieldReviewJsonContext and FieldExportJsonContext keep the review and export wire shapes AOT-safe; the back-office field workflows API doc documents review state transitions, the export filter, export package contents, and the privacy posture (no raw values/geometry duplicated).",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
-            "src/Honua.Core/Features/FieldWorkflows/Review/FieldReviewJsonContext.cs",
-            "src/Honua.Core/Features/FieldWorkflows/Export/FieldExportJsonContext.cs",
-            "src/Honua.Core/Features/FieldWorkflows/Export/FieldExportContracts.cs",
+            "src/Honua.Core/Core/Features/FieldWorkflows/Review/FieldReviewJsonContext.cs",
+            "src/Honua.Core/Core/Features/FieldWorkflows/Export/FieldExportJsonContext.cs",
+            "src/Honua.Core/Core/Features/FieldWorkflows/Export/FieldExportContracts.cs",
             "docs/internal/developer/back-office-field-workflows-api.md"
           ],
           "ownerRepo": "honua-server",
@@ -890,7 +890,7 @@
             "tests/dotnet/Honua.Core.Tests/Features/Publishing/Content/ContentPublicationServiceTests.cs",
             "tests/dotnet/Honua.Core.Tests/Features/Publishing/Content/ContentPublicationPrimitivesTests.cs",
             "tests/dotnet/Honua.Db.Postgres.Tests/Features/Publishing/PostgresContentPublicationStoreTests.cs",
-            "src/Honua.Core/Features/Publishing/Content/Domain/ContentPublicationJsonContext.cs"
+            "src/Honua.Core/Core/Features/Publishing/Content/Domain/ContentPublicationJsonContext.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
@@ -987,7 +987,7 @@
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "src/Honua.Server/Features/Studio/Models/StudioApiJsonContext.cs",
-            "src/Honua.Core/Features/Studio/Domain/StudioJsonContext.cs",
+            "src/Honua.Core/Core/Features/Studio/Domain/StudioJsonContext.cs",
             "docs/internal/admin-api/studio-package-lifecycle.md"
           ],
           "ownerRepo": "honua-server",
@@ -1234,8 +1234,8 @@
           "proofMechanism": "Core migration artifact translator and parity evidence generator tests",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
-            "src/Honua.Core/Features/Migration/Domain/MigrationManifestArtifact.cs",
-            "src/Honua.Core/Features/Migration/Domain/MigrationParityEvidenceArtifact.cs",
+            "src/Honua.Core/Core/Features/Migration/Domain/MigrationManifestArtifact.cs",
+            "src/Honua.Core/Core/Features/Migration/Domain/MigrationParityEvidenceArtifact.cs",
             "tests/dotnet/Honua.Core.Tests/Features/Import/MigrationManifestTranslatorTests.cs",
             "tests/dotnet/Honua.Core.Tests/Features/Import/MigrationParityEvidenceGeneratorTests.cs"
           ],

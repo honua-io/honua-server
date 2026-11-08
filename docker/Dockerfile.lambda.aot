@@ -33,7 +33,7 @@ COPY scripts/docker/restore-dotnet-with-github-packages.sh scripts/docker/
 # causes NuGet to skip it during restore; the subsequent publish then fails with
 # NETSDK1004 ("Assets file not found") for those projects.
 COPY src/Honua.Analyzers/*.csproj src/Honua.Analyzers/
-COPY src/Honua.Core/*.csproj src/Honua.Core/
+COPY src/Honua.Core/Core/*.csproj src/Honua.Core/Core/
 COPY src/Honua.Db/Postgres/*.csproj src/Honua.Db/Postgres/
 COPY src/Honua.Db/Postgres.Shared/*.csproj src/Honua.Db/Postgres.Shared/
 COPY src/Honua.ServiceDefaults/*.csproj src/Honua.ServiceDefaults/
@@ -65,7 +65,7 @@ COPY src/Honua.Protocols.Stac/*.csproj src/Honua.Protocols.Stac/
 COPY src/Honua.Protocols.SensorThings/*.csproj src/Honua.Protocols.SensorThings/
 COPY src/Honua.Protocols.GeoServices/*.csproj src/Honua.Protocols.GeoServices/
 COPY src/Honua.Scene/*.csproj src/Honua.Scene/
-COPY src/Honua.Core.Abstractions/*.csproj src/Honua.Core.Abstractions/
+COPY src/Honua.Core/Abstractions/*.csproj src/Honua.Core/Abstractions/
 COPY src/Honua.Routing/*.csproj src/Honua.Routing/
 COPY src/Honua.Plugins/*.csproj src/Honua.Plugins/
 COPY src/Honua.Plugins.Abstractions/*.csproj src/Honua.Plugins.Abstractions/

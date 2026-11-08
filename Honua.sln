@@ -29,7 +29,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.LoadTests", "tests\do
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{827E0CD3-B72D-47B6-A68D-7590B98EB39B}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Core", "src\Honua.Core\Honua.Core.csproj", "{6FA86D72-BAEC-4B23-8EE0-CF7725E4BD3D}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Core", "src\Honua.Core\Core\Honua.Core.csproj", "{6FA86D72-BAEC-4B23-8EE0-CF7725E4BD3D}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Core.Security.Tests", "tests\dotnet\Honua.Core.Security.Tests\Honua.Core.Security.Tests.csproj", "{AE285A79-B7A3-40A2-932E-C8F194CBF780}"
 EndProject
@@ -57,7 +57,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Worker.Gdal", "src\Ho
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Worker.Gdal.Tests", "tests\dotnet\Honua.Worker.Gdal.Tests\Honua.Worker.Gdal.Tests.csproj", "{4F3324D6-1F46-4EA2-AB5D-3C951B8399B3}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Core.Abstractions", "src\Honua.Core.Abstractions\Honua.Core.Abstractions.csproj", "{C3BEA6ED-1ED5-4B70-AF59-6153682585C2}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Core.Abstractions", "src\Honua.Core\Abstractions\Honua.Core.Abstractions.csproj", "{C3BEA6ED-1ED5-4B70-AF59-6153682585C2}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Honua.Protocols.OData.Tests", "tests\dotnet\Honua.Protocols.OData.Tests\Honua.Protocols.OData.Tests.csproj", "{9CB6F100-3EEC-4B5B-9B7D-983177106DFC}"
 EndProject

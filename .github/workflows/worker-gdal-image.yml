@@ -13,7 +13,7 @@ name: GDAL Worker Image
 # helper it depends on (honua-server#4401 — this workflow is the ONLY lane that
 # runs Category=PDAL, so a PR that deletes the attribute, retraits the case or
 # weakens its assertions must land here to be seen), and this workflow. Shared managed-source and build-graph
-# inputs (`src/Honua.Core/**`, `src/Honua.Core.Abstractions/**`,
+# inputs (`src/Honua.Core/Core/**`, `src/Honua.Core/Abstractions/**`,
 # `src/Honua.Analyzers/**`, `src/Honua.Geoprocessing/**`, `src/Honua.Jobs/**`,
 # `src/Honua.Geometry/**`, `src/Honua.Hosting/**`,
 # `src/Honua.ServiceDefaults/**`, `eng/**`, the solution, build props/targets,

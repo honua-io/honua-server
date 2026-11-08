@@ -5,9 +5,9 @@ on:
     branches: [trunk]
     paths:
       - 'src/Honua.Protocols.GeoServices/Sharing/**'
-      - 'src/Honua.Core.Abstractions/Features/Portal/**'
-      - 'src/Honua.Core/Features/Portal/**'
-      - 'src/Honua.Core/Features/Security/Abstractions/IPortalResourceReadAuthorizer.cs'
+      - 'src/Honua.Core/Abstractions/Features/Portal/**'
+      - 'src/Honua.Core/Core/Features/Portal/**'
+      - 'src/Honua.Core/Core/Features/Security/Abstractions/IPortalResourceReadAuthorizer.cs'
       - 'src/Honua.Hosting/Features/Authentication/PortalResourceReadAuthorizer.cs'
       - 'src/Honua.Hosting/Features/Authentication/AccessPolicyHelpers.cs'
       - 'src/Honua.Hosting/Features/Authentication/PortalGroupStore.cs'

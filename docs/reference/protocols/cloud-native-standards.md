@@ -97,12 +97,12 @@ review baseline.
 
 | Area | Primary implementation | Existing tests / independent evidence path |
 |---|---|---|
-| COG parsing, publication and serving | `src/Honua.Core/Features/Raster/CogParser/`; `src/Honua.Server/Features/Protocols/Cog/`; `src/Honua.Server/Features/Protocols/Rasters/CogArtifacts/` | `CogMetadataExtractorTests`, `CogEncodedTileTests`, `CogArtifactEndpointTests`; rasterio, rio-cogeo and GDAL CNG cells |
-| Zarr subsets | `src/Honua.Core/Features/Raster/ZarrParser/` | `ZarrMetadataExtractorTests`, `ZarrSubsetReaderTests`, `CuratedZarrCorpusReaderTests`; independent xarray/formula/coordinate comparisons |
+| COG parsing, publication and serving | `src/Honua.Core/Core/Features/Raster/CogParser/`; `src/Honua.Server/Features/Protocols/Cog/`; `src/Honua.Server/Features/Protocols/Rasters/CogArtifacts/` | `CogMetadataExtractorTests`, `CogEncodedTileTests`, `CogArtifactEndpointTests`; rasterio, rio-cogeo and GDAL CNG cells |
+| Zarr subsets | `src/Honua.Core/Core/Features/Raster/ZarrParser/` | `ZarrMetadataExtractorTests`, `ZarrSubsetReaderTests`, `CuratedZarrCorpusReaderTests`; independent xarray/formula/coordinate comparisons |
 | Derived multidimensional coverage | `src/Honua.Worker.Gdal/Execution/GdalMultidimCoverageMetadataJobExecutor.cs` | `test_derived_zarr.py`, `test_derived_fsspec.py`; opt-in receipt-bound rehearsal |
 | GeoParquet / GeoArrow | `src/Honua.Hosting/Features/Services/GeoParquetFeatureWriter.cs`; `src/Honua.Geometry/Features/FileImport/Services/GeoParquetReader.cs`; `src/Honua.Protocols.GeoServices/FeatureServer/Services/GeoArrowQueryFormatter.cs` | Formatter/import tests, `gpq validate`, PyArrow/GeoPandas/GDAL |
 | FlatGeobuf | `src/Honua.Db/Postgres/Features/FeatureStore/Services/PostgresStorageMappedFeatureReader.EncodedFormats.cs`; `src/Honua.Geometry/Features/FileImport/Services/FlatGeobufFormatReader.cs` | External format corpus/import tests; GDAL, Pyogrio, GeoPandas and flatgeobuf-js |
-| PMTiles | `src/Honua.Core/Features/Tiles/PMTiles/`; `src/Honua.Server/Features/Protocols/Tiles/PMTilesProxy/` | `PMTilesPublishEndpointTests`, go-pmtiles verify, Python/JavaScript clients and measured HTTP reads |
+| PMTiles | `src/Honua.Core/Core/Features/Tiles/PMTiles/`; `src/Honua.Server/Features/Protocols/Tiles/PMTilesProxy/` | `PMTilesPublishEndpointTests`, go-pmtiles verify, Python/JavaScript clients and measured HTTP reads |
 | Point clouds | `src/Honua.Scene/PointCloud/LasPointCloudReader.cs`; `src/Honua.Geoprocessing/Features/Geoprocessing/BuiltInProcessCatalog.cs` | LAS reader/worker tests; no native COPC conformance cell |
 
 [Current CNG status](../../cng-status.md) names the inspected run evidence and its

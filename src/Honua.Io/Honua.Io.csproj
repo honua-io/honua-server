@@ -31,8 +31,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Honua.Core.Abstractions\Honua.Core.Abstractions.csproj" />
-    <ProjectReference Include="..\Honua.Core\Honua.Core.csproj" />
+    <ProjectReference Include="..\Honua.Core\Abstractions\Honua.Core.Abstractions.csproj" />
+    <ProjectReference Include="..\Honua.Core\Core\Honua.Core.csproj" />
     <!-- Export writers (Shapefile / GeoPackage / CSV) emit NTS geometries. -->
     <ProjectReference Include="..\Honua.Geometry\Honua.Geometry.csproj" />
     <!--

@@ -31,10 +31,10 @@ proven, not speculative:
 - **Provider seam** — a backend implements
   `IFeatureDataProvider` + `IFeatureReader` (and `IBindableFeatureDataProvider`
   for per-layer Metadata-v2 binding).
-  `src/Honua.Core/Features/FeatureStore/Abstractions/IFeatureDataProvider.cs`,
+  `src/Honua.Core/Core/Features/FeatureStore/Abstractions/IFeatureDataProvider.cs`,
   `IFeatureReader.cs`.
 - **Capability declaration** — `FeatureProviderCapabilities`
-  (`src/Honua.Core.Abstractions/Features/FeatureStore/Domain/FeatureProviderCapabilities.cs`)
+  (`src/Honua.Core/Abstractions/Features/FeatureStore/Domain/FeatureProviderCapabilities.cs`)
   lets a read-only backend advertise `SupportsQuery/Count/Extent`, set
   `Edits = FeatureProviderEditCapabilities.ReadOnly`, and disable native output
   formats. ADR-0035 makes read-only providers first-class by *declaring*
@@ -48,7 +48,7 @@ proven, not speculative:
 - **Provider name + routing** — canonical names live in `DataProviderNames`
   (`.../Domain/DataProviderNames.cs`; already includes `redshift`, `snowflake`,
   `databricks` with aliases). `FeatureProviderQueryRouter`
-  (`src/Honua.Core/Features/FeatureStore/Services/FeatureProviderQueryRouter.cs`)
+  (`src/Honua.Core/Core/Features/FeatureStore/Services/FeatureProviderQueryRouter.cs`)
   resolves *service → secure connection → provider engine → registered
   implementation* per ADR-0035. `DataSource:Provider` selects the **primary**
   backend; warehouse providers register as **secondary** read backends and are

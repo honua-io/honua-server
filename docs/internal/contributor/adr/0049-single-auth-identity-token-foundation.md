@@ -34,7 +34,7 @@ tracks rather than reinvented:
   (Okta `groups`, Auth0 namespaced `roles`/`permissions`) are already handled,
   and claims→role mapping runs through `OidcClaimsTransformation`.
 - **ArcGIS-shaped tokens:** `IPortalTokenIssuer`
-  (`src/Honua.Core/Features/Authorization/Abstractions/IPortalTokenIssuer.cs`)
+  (`src/Honua.Core/Core/Features/Authorization/Abstractions/IPortalTokenIssuer.cs`)
   + `PortalTokenIssuer`
   (`src/Honua.Hosting/Features/Authentication/PortalTokenIssuer.cs`) mint
   distributed-cache-backed opaque bearer tokens that are URL-safe for the

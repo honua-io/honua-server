@@ -22,7 +22,7 @@ Local stack: `docker compose up -d`, then expect `Ready` at http://localhost:808
 build or test on docs-only tasks unless asked. Scope and flags: [local pre-PR validation](docs/internal/contributor/local-pre-pr-validation.md).
 
 ## Where things are
-- `src/Honua.Core*`: models, abstractions, canonical pipelines. Providers: `src/Honua.Db/<Provider>`.
+- `src/Honua.Core/<Core|Abstractions>/`: models, abstractions, canonical pipelines. Providers: `src/Honua.Db/<Provider>`.
 - Protocol adapters: `src/Honua.Protocols.*`, `src/Honua.Server/Features/Protocols/`, MCP under `src/Honua.Ai/`.
 - Read the relevant ADR in `docs/internal/contributor/adr/` before changing cross-cutting behaviour.
 

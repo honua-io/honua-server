@@ -6,7 +6,7 @@
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\..\src\Honua.Core\Honua.Core.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Core\Core\Honua.Core.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Jobs\Honua.Jobs.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Geoprocessing\Honua.Geoprocessing.csproj" />
   </ItemGroup>

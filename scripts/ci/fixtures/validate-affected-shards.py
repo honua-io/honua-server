@@ -434,7 +434,7 @@ def check_run_all_narrows_by_affected_projects(config: dict[str, Any]) -> None:
         "reason": "infrastructure_change",
         "shards": [shard["name"] for shard in config["shards"]],
     }
-    result = select_offline(config, ["src/Honua.Core/Models/Probe.cs"], descriptor=descriptor, projects=[project], cap=6)
+    result = select_offline(config, ["src/Honua.Core/Core/Models/Probe.cs"], descriptor=descriptor, projects=[project], cap=6)
     if result["reason"] != "run_all_narrowed_by_affected_projects":
         raise FixtureError(f"expected the closure to narrow run_all; got {result['reason']}")
     if not candidates(result) <= owners:
@@ -443,7 +443,7 @@ def check_run_all_narrows_by_affected_projects(config: dict[str, Any]) -> None:
         )
     # ALL carries no narrowing information and must not be read as one.
     unnarrowed = select_offline(
-        config, ["src/Honua.Core/Models/Probe.cs"], descriptor=descriptor, projects=["ALL"], cap=6
+        config, ["src/Honua.Core/Core/Models/Probe.cs"], descriptor=descriptor, projects=["ALL"], cap=6
     )
     if unnarrowed["reason"] != "run_all":
         raise FixtureError(f"a force-full closure must not narrow; got {unnarrowed['reason']}")
@@ -472,7 +472,7 @@ def check_advisory_shards_are_excluded(config: dict[str, Any]) -> None:
     mutated["shards"][0]["advisory"] = True
     name = mutated["shards"][0]["name"]
     descriptor = {"run_all": True, "reason": "infrastructure_change", "shards": [s["name"] for s in mutated["shards"]]}
-    result = select_offline(mutated, ["src/Honua.Core/Models/Probe.cs"], descriptor=descriptor, cap=71)
+    result = select_offline(mutated, ["src/Honua.Core/Core/Models/Probe.cs"], descriptor=descriptor, cap=71)
     if name in candidates(result):
         raise FixtureError(f"advisory shard {name!r} was selected")
 

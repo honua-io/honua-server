@@ -3961,7 +3961,7 @@
           "src/Honua.Protocols.GeoServices/VersionManagementServer/Models/VersionManagementModels.cs",
           "src/Honua.Db/Postgres/Features/FeatureStore/Services/PostgresVersionManager.cs",
           "src/Honua.Db/Postgres/Features/FeatureStore/Services/PostgresVersionManager.ReconcilePost.cs",
-          "src/Honua.Core/Features/FeatureStore/ReadOnlyProviders/NoOpVersionManager.cs"
+          "src/Honua.Core/Core/Features/FeatureStore/ReadOnlyProviders/NoOpVersionManager.cs"
         ],
         "tests": [
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VersionManagementServer/VersionManagementServerEndpointTests.cs",
@@ -4251,8 +4251,8 @@
         "code": [
           "src/Honua.Protocols.GeoServices/Sharing/SharingRestEndpoints.cs",
           "src/Honua.Protocols.GeoServices/Sharing/SharingRestModels.cs",
-          "src/Honua.Core/Features/Authorization/Abstractions/IPortalTokenIssuer.cs",
-          "src/Honua.Core/Features/Authorization/Abstractions/IPortalCredentialVerifier.cs",
+          "src/Honua.Core/Core/Features/Authorization/Abstractions/IPortalTokenIssuer.cs",
+          "src/Honua.Core/Core/Features/Authorization/Abstractions/IPortalCredentialVerifier.cs",
           "src/Honua.Hosting/Features/Authentication/PortalTokenIssuer.cs",
           "src/Honua.Hosting/Features/Authentication/AdminPortalCredentialVerifier.cs",
           "src/Honua.Hosting/Features/Authentication/PortalTokenAuthenticationHandler.cs",

@@ -5,7 +5,7 @@ on:
     branches: [trunk]
     paths:
       - 'src/Honua.Geoprocessing/Features/Geoprocessing/**'
-      - 'src/Honua.Core/Features/ControlPlane/Domain/OperationModels.cs'
+      - 'src/Honua.Core/Core/Features/ControlPlane/Domain/OperationModels.cs'
       - 'src/Honua.Hosting/Features/Authentication/LayerScopedWriteKey.cs'
       - 'src/Honua.Hosting/Features/Authentication/ApiKeyAuthenticationHandler.cs'
       - 'src/Honua.Hosting/Features/Authentication/ScopedJob*.cs'
@@ -25,7 +25,7 @@ on:
       - 'tests/dotnet/Honua.Geoprocessing.UnitTests/**'
       - 'src/Honua.Db/Postgres/Features/Geoprocessing/**'
       - 'tests/dotnet/Honua.Db.Postgres.Tests/Features/Geoprocessing/**'
-      - 'src/Honua.Core/Features/Geoprocessing/**'
+      - 'src/Honua.Core/Core/Features/Geoprocessing/**'
       - 'src/Honua.Server/Migrations/132_IndexManagedWorkspaceStreamRetention.sql'
       - 'tests/dotnet/Honua.Server.Tests/Features/Eval/EvalHarnessTests.cs'
       - 'tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/**'

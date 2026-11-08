@@ -152,7 +152,7 @@ class Applies(unittest.TestCase):
         for path in ("src/Honua.Server/Migrations/136_AddX.sql",
                      "src/Honua.Db/Postgres/Migrations/008_AddRaster.sql",
                      "src/Honua.Db/Postgres/Features/Infrastructure/Migrations/PostgresCoreSchemaGuard.cs",
-                     "src/Honua.Core/Features/Infrastructure/Migrations/MigrationReaderCompatibility.cs",
+                     "src/Honua.Core/Core/Features/Infrastructure/Migrations/MigrationReaderCompatibility.cs",
                      "eng/schema/schema-migration-hashes.v1.json",
                      "scripts/ci/n1-reader-compat.py"):
             self.assertTrue(n1.path_applies(path), path)

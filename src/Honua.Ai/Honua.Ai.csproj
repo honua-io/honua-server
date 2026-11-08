@@ -27,8 +27,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Honua.Core.Abstractions\Honua.Core.Abstractions.csproj" />
-    <ProjectReference Include="..\Honua.Core\Honua.Core.csproj" />
+    <ProjectReference Include="..\Honua.Core\Abstractions\Honua.Core.Abstractions.csproj" />
+    <ProjectReference Include="..\Honua.Core\Core\Honua.Core.csproj" />
     <!-- Grounding / AnalysisContent orchestrate geoprocessing jobs through
          IGeoprocessingJobService, which moved into Honua.Geoprocessing in the
          geoprocessing-split. Ai consumes that surface (it must never reference

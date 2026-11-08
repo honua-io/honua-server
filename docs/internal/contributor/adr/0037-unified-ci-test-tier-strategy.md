@@ -141,7 +141,7 @@ emits a JSON descriptor consumed by the `server-tests` matrix:
   (`infrastructure_paths` in `ci-shards.json` —
   `tests/dotnet/Honua.TestKit/` (the `PostgresFixture`/`SeedRunner` harness),
   the shared canonical query/filter/paging/CRS pipeline and shared
-  models/config/exceptions in `src/Honua.Core/` (`Queries/`, `Models/`,
+  models/config/exceptions in `src/Honua.Core/Core/` (`Queries/`, `Models/`,
   `Configuration/`, `Exceptions/`, `Features/Infrastructure/`,
   `Features/Shared/`, `Honua.Core.csproj`), the Postgres connection/migration
   layer (`src/Honua.Db/Postgres/Migrations/`, `Queries/`, `Features/Infrastructure/`,

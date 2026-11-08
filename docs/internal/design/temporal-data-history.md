@@ -20,7 +20,7 @@ temporal surface and the full disconnected-sync conflict-review surface, all bui
 tracker** — no parallel history store:
 
 - **Temporal slice 1 (read):** `ITemporalHistoryService`
-  (`src/Honua.Core.Abstractions/Features/Temporal/Abstractions/ITemporalHistoryService.cs`) with
+  (`src/Honua.Core/Abstractions/Features/Temporal/Abstractions/ITemporalHistoryService.cs`) with
   `GetCapabilityAsync` + `ReadAsOfAsync`, mapped by `TemporalHistoryEndpoints`
   (`src/Honua.Server/Features/Temporal/TemporalHistoryEndpoints.cs`) at
   `/api/v{version}/temporal/services/{serviceId}/layers/{layerId}` under a dedicated
@@ -29,7 +29,7 @@ tracker** — no parallel history store:
   `SupportsDiff`/`SupportsTimeline`/`SupportsAttribution`/`SupportsRollback` as `false`), `TemporalAsOfResult`,
   `TemporalFeatureState`, `TemporalCursorKind` (generation now; timestamp reserved).
 - **The change tracker primitive:** `IChangeTracker`
-  (`src/Honua.Core/Features/FeatureStore/Abstractions/IChangeTracker.cs`) backed by
+  (`src/Honua.Core/Core/Features/FeatureStore/Abstractions/IChangeTracker.cs`) backed by
   `PostgresChangeTracker` — monotonic generations, the substrate for as-of, diff, and timeline.
 - **Disconnected-sync conflict review (#1167):** **fully implemented** in `ReplicaManagementEndpoints`
   (`src/Honua.Server/Features/Admin/ReplicaManagementEndpoints.cs`) at
@@ -37,7 +37,7 @@ tracker** — no parallel history store:
   **resolve** with operator actions (`acceptClient`/`keepServer`/`mergeFields`/`chooseGeometry`/
   `rejectClient`/`defer`), all `ApiResponse<T>`, audited, generation-linked. Repos:
   `IReplicaRepository`, `IReplicaConflictRepository`
-  (`src/Honua.Core/Features/FeatureStore/Abstractions/`). DTOs in `ReplicaConflictModels.cs` /
+  (`src/Honua.Core/Core/Features/FeatureStore/Abstractions/`). DTOs in `ReplicaConflictModels.cs` /
   `ReplicaManagementModels.cs`.
 
 So `/operate/sync` is essentially **done server-side**, and `/operate/temporal` has its read foundation.

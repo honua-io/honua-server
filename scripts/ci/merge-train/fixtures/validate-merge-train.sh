@@ -1143,8 +1143,8 @@ reset_calls() { : >"${BEDROCK_CALLS}"; }
 calls() { wc -l <"${BEDROCK_CALLS}" | tr -d ' '; }
 
 # Two PR file sets with HEAVY overlap (B's files all appear in A) => ambiguous.
-FILES_A=$'src/Honua.Core/Query/Filter.cs\nsrc/Honua.Core/Query/Paging.cs\nsrc/Honua.Core/Query/Crs.cs'
-FILES_B=$'src/Honua.Core/Query/Filter.cs\nsrc/Honua.Core/Query/Paging.cs'  # 100% of B in A
+FILES_A=$'src/Honua.Core/Core/Query/Filter.cs\nsrc/Honua.Core/Core/Query/Paging.cs\nsrc/Honua.Core/Core/Query/Crs.cs'
+FILES_B=$'src/Honua.Core/Core/Query/Filter.cs\nsrc/Honua.Core/Core/Query/Paging.cs'  # 100% of B in A
 # A non-overlapping pair (deterministic-only, never ambiguous).
 FILES_C=$'docs/readme.md'
 

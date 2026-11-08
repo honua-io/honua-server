@@ -6,8 +6,8 @@
       "shardRouted": true,
       "runtimeOwners": [
         "src/Honua.Ai/Honua.Ai.csproj",
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Geocoding/Honua.Geocoding.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
@@ -26,8 +26,8 @@
         "src/Honua.Ai/Honua.Ai.csproj",
         "src/Honua.Cloud/Aws/Honua.Aws.csproj",
         "src/Honua.Cloud/Azure/Honua.Azure.csproj",
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/Databricks/Honua.Databricks.csproj",
         "src/Honua.Db/DuckDB/Honua.DuckDB.csproj",
         "src/Honua.Db/MySql/Honua.MySql.csproj",
@@ -72,8 +72,8 @@
       "shardRouted": true,
       "runtimeOwners": [
         "src/Honua.Ai/Honua.Ai.csproj",
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Geocoding/Honua.Geocoding.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
@@ -102,8 +102,8 @@
         "src/Honua.Ai/Honua.Ai.csproj",
         "src/Honua.Cloud/Aws/Honua.Aws.csproj",
         "src/Honua.Cloud/Azure/Honua.Azure.csproj",
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/Databricks/Honua.Databricks.csproj",
         "src/Honua.Db/DuckDB/Honua.DuckDB.csproj",
         "src/Honua.Db/MySql/Honua.MySql.csproj",
@@ -152,8 +152,8 @@
       "shardRouted": true,
       "runtimeOwners": [
         "src/Honua.Cloud/Aws/Honua.Aws.csproj",
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Hosting/Honua.Hosting.csproj",
         "src/Honua.Jobs/Honua.Jobs.csproj",
@@ -168,8 +168,8 @@
       "shardRouted": true,
       "runtimeOwners": [
         "src/Honua.Cloud/Azure/Honua.Azure.csproj",
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Hosting/Honua.Hosting.csproj",
         "src/Honua.Jobs/Honua.Jobs.csproj",
@@ -185,8 +185,8 @@
         "src/Honua.Ai/Honua.Ai.csproj",
         "src/Honua.Cloud/Aws/Honua.Aws.csproj",
         "src/Honua.Cloud/Azure/Honua.Azure.csproj",
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/Databricks/Honua.Databricks.csproj",
         "src/Honua.Db/DuckDB/Honua.DuckDB.csproj",
         "src/Honua.Db/MySql/Honua.MySql.csproj",
@@ -241,8 +241,8 @@
     "tests/dotnet/Honua.Core.Security.Tests/Honua.Core.Security.Tests.csproj": {
       "role": "unit",
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj"
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj"
       ],
       "resources": [],
       "isolated": true,
@@ -252,8 +252,8 @@
     "tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj": {
       "role": "unit",
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Geocoding/Honua.Geocoding.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Hosting/Honua.Hosting.csproj",
@@ -268,8 +268,8 @@
     "tests/dotnet/Honua.Db.Databricks.Tests/Honua.Databricks.Tests.csproj": {
       "role": "mixed",
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/Databricks/Honua.Databricks.csproj"
       ],
       "resources": [],
@@ -281,8 +281,8 @@
       "role": "unit",
       "shardRouted": true,
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/Databricks/Honua.Databricks.csproj"
       ],
       "resources": [],
@@ -292,8 +292,8 @@
     "tests/dotnet/Honua.Db.DuckDB.Tests/Honua.DuckDB.Tests.csproj": {
       "role": "component",
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/DuckDB/Honua.DuckDB.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj"
       ],
@@ -310,8 +310,8 @@
         "src/Honua.Ai/Honua.Ai.csproj",
         "src/Honua.Cloud/Aws/Honua.Aws.csproj",
         "src/Honua.Cloud/Azure/Honua.Azure.csproj",
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/Databricks/Honua.Databricks.csproj",
         "src/Honua.Db/DuckDB/Honua.DuckDB.csproj",
         "src/Honua.Db/MySql/Honua.MySql.csproj",
@@ -357,8 +357,8 @@
       "role": "unit",
       "shardRouted": true,
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/MySql/Honua.MySql.csproj"
       ],
       "resources": [],
@@ -368,8 +368,8 @@
     "tests/dotnet/Honua.Db.Oracle.Tests/Honua.Oracle.Tests.csproj": {
       "role": "mixed",
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/Oracle/Honua.Oracle.csproj"
       ],
       "resources": [
@@ -383,8 +383,8 @@
       "role": "unit",
       "shardRouted": true,
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/Oracle/Honua.Oracle.csproj"
       ],
       "resources": [],
@@ -394,8 +394,8 @@
     "tests/dotnet/Honua.Db.Postgres.Security.Tests/Honua.Postgres.Security.Tests.csproj": {
       "role": "unit",
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/Postgres.Shared/Honua.Postgres.Shared.csproj",
         "src/Honua.Db/Postgres/Honua.Postgres.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj"
@@ -411,8 +411,8 @@
         "src/Honua.Ai/Honua.Ai.csproj",
         "src/Honua.Cloud/Aws/Honua.Aws.csproj",
         "src/Honua.Cloud/Azure/Honua.Azure.csproj",
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/Databricks/Honua.Databricks.csproj",
         "src/Honua.Db/DuckDB/Honua.DuckDB.csproj",
         "src/Honua.Db/MySql/Honua.MySql.csproj",
@@ -458,8 +458,8 @@
       "role": "unit",
       "shardRouted": true,
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/Postgres.Shared/Honua.Postgres.Shared.csproj",
         "src/Honua.Db/Postgres/Honua.Postgres.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
@@ -474,8 +474,8 @@
     "tests/dotnet/Honua.Db.Redshift.Tests/Honua.Redshift.Tests.csproj": {
       "role": "mixed",
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/Redshift/Honua.Redshift.csproj"
       ],
       "resources": [
@@ -489,8 +489,8 @@
       "role": "unit",
       "shardRouted": true,
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/Redshift/Honua.Redshift.csproj"
       ],
       "resources": [],
@@ -500,8 +500,8 @@
     "tests/dotnet/Honua.Db.SqlServer.Tests/Honua.SqlServer.Tests.csproj": {
       "role": "mixed",
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/SqlServer/Honua.SqlServer.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj"
       ],
@@ -514,8 +514,8 @@
       "role": "unit",
       "shardRouted": true,
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/SqlServer/Honua.SqlServer.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj"
       ],
@@ -526,8 +526,8 @@
     "tests/dotnet/Honua.GeoServicesRest.Tests/Honua.GeoServicesRest.Tests.csproj": {
       "role": "unit",
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.GeoServicesRest/Honua.GeoServicesRest.csproj"
       ],
       "resources": [],
@@ -540,8 +540,8 @@
       "runtimeOwners": [
         "src/Honua.Cloud/Aws/Honua.Aws.csproj",
         "src/Honua.Cloud/Azure/Honua.Azure.csproj",
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Geoprocessing.Cli/Honua.Geoprocessing.Cli.csproj",
         "src/Honua.Geoprocessing.Testing/Honua.Geoprocessing.Testing.csproj",
@@ -565,8 +565,8 @@
         "src/Honua.Ai/Honua.Ai.csproj",
         "src/Honua.Cloud/Aws/Honua.Aws.csproj",
         "src/Honua.Cloud/Azure/Honua.Azure.csproj",
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/Databricks/Honua.Databricks.csproj",
         "src/Honua.Db/DuckDB/Honua.DuckDB.csproj",
         "src/Honua.Db/MySql/Honua.MySql.csproj",
@@ -612,8 +612,8 @@
       "role": "unit",
       "shardRouted": true,
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
         "src/Honua.Hosting/Honua.Hosting.csproj",
@@ -629,8 +629,8 @@
       "role": "component",
       "shardRouted": true,
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Hosting/Honua.Hosting.csproj",
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
@@ -646,8 +646,8 @@
       "role": "unit",
       "shardRouted": true,
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Hosting/Honua.Hosting.csproj",
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
@@ -660,8 +660,8 @@
       "role": "unit",
       "shardRouted": true,
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Hosting/Honua.Hosting.csproj",
         "src/Honua.Import/Honua.Import.csproj",
@@ -675,8 +675,8 @@
       "role": "mixed",
       "shardRouted": false,
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.LicenseMint/Honua.LicenseMint.csproj"
       ],
       "resources": [],
@@ -689,8 +689,8 @@
         "src/Honua.Ai/Honua.Ai.csproj",
         "src/Honua.Cloud/Aws/Honua.Aws.csproj",
         "src/Honua.Cloud/Azure/Honua.Azure.csproj",
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/Databricks/Honua.Databricks.csproj",
         "src/Honua.Db/DuckDB/Honua.DuckDB.csproj",
         "src/Honua.Db/MySql/Honua.MySql.csproj",
@@ -733,8 +733,8 @@
     "tests/dotnet/Honua.OData.TestHost/Honua.OData.TestHost.csproj": {
       "role": "host",
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/Postgres.Shared/Honua.Postgres.Shared.csproj",
         "src/Honua.Db/Postgres/Honua.Postgres.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
@@ -755,8 +755,8 @@
         "src/Honua.Ai/Honua.Ai.csproj",
         "src/Honua.Cloud/Aws/Honua.Aws.csproj",
         "src/Honua.Cloud/Azure/Honua.Azure.csproj",
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/Databricks/Honua.Databricks.csproj",
         "src/Honua.Db/DuckDB/Honua.DuckDB.csproj",
         "src/Honua.Db/MySql/Honua.MySql.csproj",
@@ -798,8 +798,8 @@
       "role": "component",
       "shardRouted": true,
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/Postgres.Shared/Honua.Postgres.Shared.csproj",
         "src/Honua.Db/Postgres/Honua.Postgres.csproj",
         "src/Honua.Geocoding/Honua.Geocoding.csproj",
@@ -825,8 +825,8 @@
         "src/Honua.Ai/Honua.Ai.csproj",
         "src/Honua.Cloud/Aws/Honua.Aws.csproj",
         "src/Honua.Cloud/Azure/Honua.Azure.csproj",
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/Databricks/Honua.Databricks.csproj",
         "src/Honua.Db/DuckDB/Honua.DuckDB.csproj",
         "src/Honua.Db/MySql/Honua.MySql.csproj",
@@ -872,8 +872,8 @@
       "role": "unit",
       "shardRouted": true,
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.GeoServicesRest/Honua.GeoServicesRest.csproj",
         "src/Honua.Geocoding/Honua.Geocoding.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
@@ -892,8 +892,8 @@
     "tests/dotnet/Honua.Protocols.OData.ComponentTests/Honua.Protocols.OData.ComponentTests.csproj": {
       "role": "component",
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/Postgres.Shared/Honua.Postgres.Shared.csproj",
         "src/Honua.Db/Postgres/Honua.Postgres.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
@@ -915,8 +915,8 @@
         "src/Honua.Ai/Honua.Ai.csproj",
         "src/Honua.Cloud/Aws/Honua.Aws.csproj",
         "src/Honua.Cloud/Azure/Honua.Azure.csproj",
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/Databricks/Honua.Databricks.csproj",
         "src/Honua.Db/DuckDB/Honua.DuckDB.csproj",
         "src/Honua.Db/MySql/Honua.MySql.csproj",
@@ -959,8 +959,8 @@
     "tests/dotnet/Honua.Protocols.OData.UnitTests/Honua.Protocols.OData.UnitTests.csproj": {
       "role": "unit",
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Hosting/Honua.Hosting.csproj",
         "src/Honua.Protocols.OData/Honua.Protocols.OData.csproj",
@@ -975,8 +975,8 @@
       "role": "component",
       "shardRouted": true,
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/Postgres.Shared/Honua.Postgres.Shared.csproj",
         "src/Honua.Db/Postgres/Honua.Postgres.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
@@ -1001,8 +1001,8 @@
         "src/Honua.Ai/Honua.Ai.csproj",
         "src/Honua.Cloud/Aws/Honua.Aws.csproj",
         "src/Honua.Cloud/Azure/Honua.Azure.csproj",
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/Databricks/Honua.Databricks.csproj",
         "src/Honua.Db/DuckDB/Honua.DuckDB.csproj",
         "src/Honua.Db/MySql/Honua.MySql.csproj",
@@ -1048,8 +1048,8 @@
       "role": "unit",
       "shardRouted": true,
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
         "src/Honua.Hosting/Honua.Hosting.csproj",
@@ -1067,8 +1067,8 @@
       "role": "component",
       "shardRouted": true,
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/Postgres.Shared/Honua.Postgres.Shared.csproj",
         "src/Honua.Db/Postgres/Honua.Postgres.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
@@ -1093,8 +1093,8 @@
         "src/Honua.Ai/Honua.Ai.csproj",
         "src/Honua.Cloud/Aws/Honua.Aws.csproj",
         "src/Honua.Cloud/Azure/Honua.Azure.csproj",
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/Databricks/Honua.Databricks.csproj",
         "src/Honua.Db/DuckDB/Honua.DuckDB.csproj",
         "src/Honua.Db/MySql/Honua.MySql.csproj",
@@ -1138,8 +1138,8 @@
       "role": "unit",
       "shardRouted": true,
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
         "src/Honua.Hosting/Honua.Hosting.csproj",
@@ -1157,8 +1157,8 @@
       "role": "component",
       "shardRouted": true,
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Hosting/Honua.Hosting.csproj",
         "src/Honua.Protocols.Scene/Honua.Protocols.Scene.csproj",
@@ -1175,8 +1175,8 @@
         "src/Honua.Ai/Honua.Ai.csproj",
         "src/Honua.Cloud/Aws/Honua.Aws.csproj",
         "src/Honua.Cloud/Azure/Honua.Azure.csproj",
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/Databricks/Honua.Databricks.csproj",
         "src/Honua.Db/DuckDB/Honua.DuckDB.csproj",
         "src/Honua.Db/MySql/Honua.MySql.csproj",
@@ -1218,8 +1218,8 @@
       "role": "unit",
       "shardRouted": true,
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Hosting/Honua.Hosting.csproj",
         "src/Honua.Protocols.Scene/Honua.Protocols.Scene.csproj",
@@ -1234,8 +1234,8 @@
       "role": "component",
       "shardRouted": true,
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/Postgres.Shared/Honua.Postgres.Shared.csproj",
         "src/Honua.Db/Postgres/Honua.Postgres.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
@@ -1256,8 +1256,8 @@
         "src/Honua.Ai/Honua.Ai.csproj",
         "src/Honua.Cloud/Aws/Honua.Aws.csproj",
         "src/Honua.Cloud/Azure/Honua.Azure.csproj",
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/Databricks/Honua.Databricks.csproj",
         "src/Honua.Db/DuckDB/Honua.DuckDB.csproj",
         "src/Honua.Db/MySql/Honua.MySql.csproj",
@@ -1303,8 +1303,8 @@
       "role": "unit",
       "shardRouted": true,
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Hosting/Honua.Hosting.csproj",
         "src/Honua.Protocols.SensorThings/Honua.Protocols.SensorThings.csproj",
@@ -1318,8 +1318,8 @@
       "role": "component",
       "shardRouted": true,
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/Postgres.Shared/Honua.Postgres.Shared.csproj",
         "src/Honua.Db/Postgres/Honua.Postgres.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
@@ -1341,8 +1341,8 @@
         "src/Honua.Ai/Honua.Ai.csproj",
         "src/Honua.Cloud/Aws/Honua.Aws.csproj",
         "src/Honua.Cloud/Azure/Honua.Azure.csproj",
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/Databricks/Honua.Databricks.csproj",
         "src/Honua.Db/DuckDB/Honua.DuckDB.csproj",
         "src/Honua.Db/MySql/Honua.MySql.csproj",
@@ -1384,8 +1384,8 @@
       "role": "unit",
       "shardRouted": true,
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Hosting/Honua.Hosting.csproj",
         "src/Honua.Protocols.Ogc.Shared/Honua.Protocols.Ogc.Shared.csproj",
@@ -1402,8 +1402,8 @@
         "src/Honua.Ai/Honua.Ai.csproj",
         "src/Honua.Cloud/Aws/Honua.Aws.csproj",
         "src/Honua.Cloud/Azure/Honua.Azure.csproj",
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/Databricks/Honua.Databricks.csproj",
         "src/Honua.Db/DuckDB/Honua.DuckDB.csproj",
         "src/Honua.Db/MySql/Honua.MySql.csproj",
@@ -1455,7 +1455,7 @@
       "role": "unit",
       "shardRouted": true,
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
         "src/Honua.Routing/Honua.Routing.csproj"
       ],
       "resources": [],
@@ -1466,8 +1466,8 @@
       "role": "unit",
       "shardRouted": true,
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Hosting/Honua.Hosting.csproj",
         "src/Honua.Scene/Honua.Scene.csproj",
@@ -1483,8 +1483,8 @@
         "src/Honua.Ai/Honua.Ai.csproj",
         "src/Honua.Cloud/Aws/Honua.Aws.csproj",
         "src/Honua.Cloud/Azure/Honua.Azure.csproj",
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/Databricks/Honua.Databricks.csproj",
         "src/Honua.Db/DuckDB/Honua.DuckDB.csproj",
         "src/Honua.Db/MySql/Honua.MySql.csproj",
@@ -1531,8 +1531,8 @@
       "role": "unit",
       "shardRouted": true,
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj"
       ],
       "resources": [],
@@ -1542,8 +1542,8 @@
     "tests/dotnet/Honua.Snowflake.Tests/Honua.Snowflake.Tests.csproj": {
       "role": "mixed",
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Snowflake/Honua.Snowflake.csproj"
       ],
       "resources": [],
@@ -1555,8 +1555,8 @@
       "role": "unit",
       "shardRouted": true,
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Snowflake/Honua.Snowflake.csproj"
       ],
       "resources": [],
@@ -1566,8 +1566,8 @@
     "tests/dotnet/Honua.StaleAttemptWorker/Honua.StaleAttemptWorker.csproj": {
       "role": "host",
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
         "src/Honua.Hosting/Honua.Hosting.csproj",
@@ -1594,8 +1594,8 @@
       "role": "support",
       "shardRouted": false,
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj"
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj"
       ],
       "resources": [],
       "isolated": false,
@@ -1613,8 +1613,8 @@
       "role": "support",
       "shardRouted": false,
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/Postgres.Shared/Honua.Postgres.Shared.csproj",
         "src/Honua.Db/Postgres/Honua.Postgres.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
@@ -1631,8 +1631,8 @@
     "tests/dotnet/Honua.TestKit.Postgres/Honua.TestKit.Postgres.csproj": {
       "role": "support",
       "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/Postgres.Shared/Honua.Postgres.Shared.csproj",
         "src/Honua.Db/Postgres/Honua.Postgres.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj"
@@ -1662,8 +1662,8 @@
         "src/Honua.Ai/Honua.Ai.csproj",
         "src/Honua.Cloud/Aws/Honua.Aws.csproj",
         "src/Honua.Cloud/Azure/Honua.Azure.csproj",
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/Databricks/Honua.Databricks.csproj",
         "src/Honua.Db/DuckDB/Honua.DuckDB.csproj",
         "src/Honua.Db/MySql/Honua.MySql.csproj",
@@ -1711,8 +1711,8 @@
         "src/Honua.Ai/Honua.Ai.csproj",
         "src/Honua.Cloud/Aws/Honua.Aws.csproj",
         "src/Honua.Cloud/Azure/Honua.Azure.csproj",
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
+        "src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj",
+        "src/Honua.Core/Core/Honua.Core.csproj",
         "src/Honua.Db/Databricks/Honua.Databricks.csproj",
         "src/Honua.Db/DuckDB/Honua.DuckDB.csproj",
         "src/Honua.Db/MySql/Honua.MySql.csproj",

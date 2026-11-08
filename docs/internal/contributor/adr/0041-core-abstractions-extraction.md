@@ -30,7 +30,7 @@ decision and the incremental sequencing used to land it safely.
 
 ## Decision
 
-Introduce `src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj` with a
+Introduce `src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj` with a
 deliberately small package surface:
 
 - `Microsoft.Extensions.DependencyInjection.Abstractions`
