@@ -4,7 +4,6 @@
 using System.Globalization;
 using Honua.Core.Features.Caching.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
-using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Validation;
@@ -40,15 +39,12 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
     public async Task InvalidateStorageLayerAsync(int storageLayerId, CancellationToken cancellationToken)
     {
         await EvictTagsAsync(LayerTags(storageLayerId), cancellationToken).ConfigureAwait(false);
-        using var scope = _scopeFactory.CreateScope();
-        var graphProvider = scope.ServiceProvider.GetService<IMetadataV2GraphProvider>();
-        if (graphProvider is null)
+        var snapshot = await ReadStorageInvalidationSnapshotAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
+        if (snapshot is null)
         {
             await InvalidateQueryResponsesAsync(cancellationToken).ConfigureAwait(false);
             return;
         }
-
-        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var publications = snapshot.PublicationsForStorageLayer(storageLayerId).ToArray();
         foreach (var publication in publications.DistinctBy(static publication => (publication.ServiceId, publication.LayerIndex)))
         {
@@ -352,14 +348,11 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
 
         try
         {
-            using var scope = _scopeFactory.CreateScope();
-            var graphProvider = scope.ServiceProvider.GetService<IMetadataV2GraphProvider>();
-            if (graphProvider == null)
+            var snapshot = await ReadMetadataSnapshotAsync(cancellationToken).ConfigureAwait(false);
+            if (snapshot is null)
             {
                 return [];
             }
-
-            var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             var serviceIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var pub in snapshot.Graph.Publications.Where(publication => publication.LayerIndex == layerId.Value && snapshot.IsRoutable(publication)))
             {
@@ -388,14 +381,11 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
 
         try
         {
-            using var scope = _scopeFactory.CreateScope();
-            var graphProvider = scope.ServiceProvider.GetService<IMetadataV2GraphProvider>();
-            if (graphProvider == null)
+            var snapshot = await ReadMetadataSnapshotAsync(cancellationToken).ConfigureAwait(false);
+            if (snapshot is null)
             {
                 return collectionIds.ToArray();
             }
-
-            var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             foreach (var pub in snapshot.Graph.Publications)
             {
                 var resource = snapshot.ResolveResource(pub);
@@ -426,14 +416,11 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
 
         try
         {
-            using var scope = _scopeFactory.CreateScope();
-            var graphProvider = scope.ServiceProvider.GetService<IMetadataV2GraphProvider>();
-            if (graphProvider == null)
+            var snapshot = await ReadMetadataSnapshotAsync(cancellationToken).ConfigureAwait(false);
+            if (snapshot is null)
             {
                 return collectionIds.ToArray();
             }
-
-            var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             MetadataV2Publication? matchedPub = null;
             MetadataV2Resource? matchedResource = null;
 
