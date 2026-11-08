@@ -162,7 +162,7 @@ public sealed class DurableRestoreWorkerTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
-    public async Task Enqueue_SelfApproval_IsRejectedBeforeWriting()
+    public async Task Enqueue_MissingDurableApproval_IsRejectedBeforeWriting()
     {
         var store = Substitute.For<IWorkflowOperationStore>();
         var queue = new DurableRestoreQueue(store, Substitute.For<IOperationProposalStore>());
