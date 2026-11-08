@@ -74,4 +74,29 @@ public sealed class MetadataV2LosslessEnumTests
 
         JsonNode.Parse(json)!["resources"]![0]!["type"]!.GetValue<string>().Should().Be("table");
     }
+    [UnitTest]
+    public void Serialize_ExplicitUnknownEdit_ReplacesRawToken()
+    {
+        var graph = JsonSerializer.Deserialize("""{"resources":[{"type":"future-kind"}]}""",
+            MetadataV2JsonContext.Default.MetadataV2Graph)!;
+        var edited = graph with { Resources = [graph.Resources[0] with { Type = MetadataV2ResourceType.Unknown }] };
+        using var persisted = JsonDocument.Parse(JsonSerializer.Serialize(edited, MetadataV2JsonContext.Default.MetadataV2Graph));
+
+        persisted.RootElement.GetProperty("resources")[0].GetProperty("type").GetString().Should().Be("unknown");
+    }
+
+    [UnitTest]
+    public void Serialize_ExplicitCapabilitiesEdit_ReplacesRawTokens()
+    {
+        var graph = JsonSerializer.Deserialize("""{"storageBindings":[{"capabilities":["future-capability"]}]}""",
+            MetadataV2JsonContext.Default.MetadataV2Graph)!;
+        var edited = graph with
+        {
+            StorageBindings = [graph.StorageBindings[0] with { Capabilities = [MetadataV2StorageBindingCapability.Query] }]
+        };
+        using var persisted = JsonDocument.Parse(JsonSerializer.Serialize(edited, MetadataV2JsonContext.Default.MetadataV2Graph));
+
+        persisted.RootElement.GetProperty("storageBindings")[0].GetProperty("capabilities").GetRawText().Should().Be("[\"query\"]");
+    }
+
 }

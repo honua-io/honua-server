@@ -64,7 +64,7 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
             reloaded.Etag.Should().Be(saved.Etag);
             reloaded.Graph.Resources[0].Metadata.Title.Should().Be("Edited title");
             AssertUnknownPropertiesRetained(reloaded.Graph);
-            using var persisted = await ReadPersistedSnapshotAsync(schema);
+            using var persisted = await ReadPersistedSnapshotAsync(schema, saved.Revision);
             var persistedDataset = persisted.RootElement.GetProperty("resources")[0];
             persistedDataset.GetProperty("type").GetString().Should().Be(datasetKind);
             persistedDataset.GetProperty("status").GetProperty("lifecycle").GetString().Should().Be(lifecycle);
@@ -76,13 +76,14 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
         }
     }
 
-    private async Task<JsonDocument> ReadPersistedSnapshotAsync(string schema)
+    private async Task<JsonDocument> ReadPersistedSnapshotAsync(string schema, long revision)
     {
         await using var connection = await fixture.DataSource.OpenConnectionAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
-            SELECT document::text FROM "{schema}".metadata_v2_snapshots WHERE environment = 'Test';
+            SELECT document::text FROM "{schema}".metadata_v2_snapshots WHERE environment = 'Test' AND revision = $1;
             """;
+        command.Parameters.AddWithValue(revision);
         return JsonDocument.Parse((string)(await command.ExecuteScalarAsync())!);
     }
 
