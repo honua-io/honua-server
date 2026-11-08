@@ -700,13 +700,6 @@ builder.Services.AddHonuaSelfHostedRollingProxy(builder.Configuration);
 // the second trigger of the same defect.
 if (connectedRedis != null && redisCacheEntitled)
 {
-    // Control-plane reconcile graph (stores, four typed reconcilers, dispatcher seam, event handler,
-    // trigger options). Shared with the cloud event entrypoint (Honua.ControlPlane.Lambda) via
-    // ControlPlaneReconcileRegistration so both wire the exact same graph from one source of truth.
-    // Phase 0: one dispatcher routes a reconcile-once request to the typed reconciler that owns the
-    // operation kind. Both the poll loops and the Phase 1 event handler call this single method.
-    // Phase 1: the event handler is the cloud (EventBridge -> Lambda) entrypoint, and the backstop
-    // sweep self-heals dropped events; the TriggerMode flag chooses poll (on-prem) vs event (cloud).
     builder.Services.AddHonuaControlPlaneReconcilers(builder.Configuration);
 
     // Phase 3: the PERIODIC (bucket-b) scheduled-tick dispatcher routes a tick kind to the handler

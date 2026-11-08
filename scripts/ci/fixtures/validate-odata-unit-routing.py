@@ -79,7 +79,6 @@ def check_runner_filters() -> None:
         stub.chmod(0o755)
         for index, (project, expected_fast) in enumerate([
             (selector.ODATA_UNIT_PROJECT, False),
-            ("tests/dotnet/Honua.ControlPlane.Lambda.Tests/Honua.ControlPlane.Lambda.Tests.csproj", False),
             ("tests/dotnet/Honua.Geoprocessing.Cli.Tests/Honua.Geoprocessing.Cli.Tests.csproj", False),
             (str(ROOT / selector.ODATA_UNIT_PROJECT), False),
             ("tests/dotnet/Honua.Protocols.OData.Tests/Honua.Protocols.OData.Tests.csproj", True),
