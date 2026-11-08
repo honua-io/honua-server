@@ -79,7 +79,7 @@ public sealed class PersistedExportProgressTests : IAsyncLifetime
                 var response = await fixture.Client.GetAsync($"/api/v1/admin/operations/{path}");
                 response.StatusCode.Should().Be(HttpStatusCode.OK, path);
                 var json = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
-                var operations = json["operations"]!.AsArray();
+                var operations = json["Operations"]!.AsArray();
                 var body = operations.ToJsonString();
                 body.Should().NotContain(invalidId);
                 body.Should().Contain(path == "type/Print" ? printId : exportId);
@@ -148,15 +148,19 @@ public sealed class PersistedExportProgressTests : IAsyncLifetime
     public async Task ReadQueuedJobIdsAsync_InvalidProgressAndRequest_QuarantinesOnlyInvalidJob(bool legacyShape)
     {
         var invalidId = await SeedInvalidExportAsync(legacyShape);
-        await _cache.SetStringAsync($"export:request:{invalidId}",
-            $$"""{"job":{"jobId":"{{invalidId}}","serviceName":"svc","layerId":3,"format":"csv"}}""");
         var healthyId = NewId();
         var job = new ExportJob(healthyId, "svc", 741, "roads", "csv", new FeatureQuery(), [],
             4326, 1, ExportGeometryType.None, null) { ServiceLayerIndex = 3 };
         await _store.SetProgressAsync(healthyId, ExportProgress.CreateInitial(healthyId, "csv", "svc", 3, 1));
-        await _cache.SetStringAsync($"export:request:{healthyId}", JsonSerializer.Serialize(
-            new ExportJobService.PersistedExportJobRequest { Job = job },
-            ExportJsonContext.Default.PersistedExportJobRequest));
+        await SeedRequestAsync(job);
+        var oldRequest = JsonNode.Parse(JsonSerializer.Serialize(
+            new ExportJobService.PersistedExportJobRequest { Job = job with { JobId = invalidId } },
+            ExportJsonContext.Default.PersistedExportJobRequest))!;
+        var oldJob = oldRequest["job"]!.AsObject();
+        oldJob.Remove("storageLayerId").Should().BeTrue();
+        oldJob.Remove("serviceLayerIndex").Should().BeTrue();
+        oldJob["layerId"] = 3;
+        await _cache.SetStringAsync($"export:request:{invalidId}", oldRequest.ToJsonString());
         var channel = Channel.CreateUnbounded<string>();
         channel.Writer.Complete();
         var logger = Substitute.For<ILogger<ExportJobService>>();
@@ -184,6 +188,11 @@ public sealed class PersistedExportProgressTests : IAsyncLifetime
         (await _cache.GetStringAsync($"export:request:{healthyId}")).Should().NotBeNull();
         _store.IsUsingFallback.Should().BeFalse();
     }
+
+    private Task SeedRequestAsync(ExportJob job)
+        => _cache.SetStringAsync($"export:request:{job.JobId}", JsonSerializer.Serialize(
+            new ExportJobService.PersistedExportJobRequest { Job = job },
+            ExportJsonContext.Default.PersistedExportJobRequest));
 
     private string NewId()
     {
