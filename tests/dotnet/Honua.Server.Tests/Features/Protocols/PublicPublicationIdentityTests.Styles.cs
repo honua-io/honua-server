@@ -63,7 +63,7 @@ public sealed partial class PublicPublicationIdentityTests
 
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(authenticated ? HttpStatusCode.NotFound : HttpStatusCode.Unauthorized,
-            $"body: {body}; challenge: {response.Headers.WwwAuthenticate.Any()}; path: {response.RequestMessage?.RequestUri?.AbsolutePath}");
+            $"body: {body}; challenge: {response.Headers.WwwAuthenticate.Count > 0}; path: {response.RequestMessage?.RequestUri?.AbsolutePath}");
         await _styles.DidNotReceive().GetStyleAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
     }
 

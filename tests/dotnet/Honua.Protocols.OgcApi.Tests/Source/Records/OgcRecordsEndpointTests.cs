@@ -381,7 +381,7 @@ public sealed class OgcRecordsEndpointTests : IClassFixture<OgcRecordsEndpointTe
 
         using var secondPage = await ReadJsonAsync(secondResponse);
         secondPage.RootElement.GetProperty("numberReturned").GetInt32().Should().Be(1);
-        secondPage.RootElement.GetProperty("features")[0].GetProperty("id").GetString().Should().Be($"layer:pub-layer-{WebAppFixture.TestLayerId}");
+        secondPage.RootElement.GetProperty("features")[0].GetProperty("id").GetString().Should().Be("layer:pub-image-test");
         secondPage.RootElement.GetProperty("links").EnumerateArray()
             .Should()
             .Contain(link => HasRel(link, "prev") && HrefContains(link, "offset=0"));

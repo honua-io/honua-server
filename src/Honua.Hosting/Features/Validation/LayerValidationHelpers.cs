@@ -378,7 +378,7 @@ internal static partial class LayerValidationHelpers
             int.TryParse(collectionId, NumberStyles.None, CultureInfo.InvariantCulture, out var storageLayerId))
         {
             var collections = await ResolveStorageCollectionsWithAccessV2Async(
-                context, snapshot, requiredProtocol, scope, storageLayerId, cancellationToken).ConfigureAwait(false);
+                context, snapshot, new(requiredProtocol, scope, cancellationToken) { StorageLayerId = storageLayerId }).ConfigureAwait(false);
             return collections.TryGetValue(storageLayerId, out var collection)
                 ? collection
                 : new MetadataV2ValidationResult(false, null, null, null,
@@ -521,18 +521,23 @@ internal static partial class LayerValidationHelpers
         return new MetadataV2ValidationResult(true, publication, resource, service, null, snapshot);
     }
 
+    public sealed record StorageCollectionOptions(
+        string? RequiredProtocol,
+        AccessScope Scope = AccessScope.Read,
+        CancellationToken CancellationToken = default)
+    {
+        public int? StorageLayerId { get; init; }
+    }
+
     public static async Task<IReadOnlyDictionary<int, MetadataV2ValidationResult>> ResolveStorageCollectionsWithAccessV2Async(
         HttpContext context,
         MetadataV2GraphSnapshot snapshot,
-        string? requiredProtocol,
-        AccessScope scope = AccessScope.Read,
-        int? storageLayerId = null,
-        CancellationToken cancellationToken = default)
+        StorageCollectionOptions options)
         => await ResolveStorageCollectionsWithAccessV2Async(snapshot,
-            new StorageCollectionAccess(new(context, AccessPolicyHelpers.DefaultOperationForScope(scope), cancellationToken))
+            new StorageCollectionAccess(new(context, AccessPolicyHelpers.DefaultOperationForScope(options.Scope), options.CancellationToken))
             {
-                RequiredProtocol = requiredProtocol,
-                StorageLayerId = storageLayerId,
+                RequiredProtocol = options.RequiredProtocol,
+                StorageLayerId = options.StorageLayerId,
             }).ConfigureAwait(false);
 
     private static async Task<IReadOnlyDictionary<int, MetadataV2ValidationResult>> ResolveStorageCollectionsWithAccessV2Async(

@@ -24,7 +24,7 @@ using Microsoft.Extensions.Options;
 
 namespace Honua.Io.Export;
 
-internal static class ExportEndpoints
+internal static partial class ExportEndpoints
 {
     private const long AsyncThreshold = 50_000;
 
@@ -149,30 +149,12 @@ internal static class ExportEndpoints
         }
 
         var query = ApplyOutputFieldProjection(countQuery, selectedFields, outFields);
-        long count;
-        var countSw = Stopwatch.StartNew();
-        using (var countActivity = HonuaTelemetry.StartDatabaseActivity(
-            "export.count",
-            serviceLayerIndex.ToString(CultureInfo.InvariantCulture)))
-        {
-            countActivity?.SetTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Admin);
-            countActivity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceName);
-            try
+        var count = await CountFeaturesAsync(featureReader,
+            new(storageLayerId, countQuery, cancellationToken)
             {
-                count = await featureReader.CountAsync(storageLayerId, countQuery, cancellationToken);
-                HonuaTelemetry.SetSuccess(countActivity, ToTelemetryFeatureCount(count));
-            }
-            catch (Exception ex)
-            {
-                HonuaTelemetry.RecordException(countActivity, ex);
-                HonuaTelemetry.RecordException(activity, ex);
-                throw;
-            }
-            finally
-            {
-                HonuaTelemetry.CategorizeLatency(countActivity, countSw.Elapsed.TotalMilliseconds);
-            }
-        }
+                ServiceName = serviceName,
+                ServiceLayerIndex = serviceLayerIndex,
+            }, activity);
 
         activity?.SetTag(HonuaTelemetry.Tags.FeatureCount, count);
 
