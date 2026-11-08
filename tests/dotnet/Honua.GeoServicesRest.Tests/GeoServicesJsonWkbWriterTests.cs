@@ -3,10 +3,10 @@
 
 using System.Buffers.Binary;
 using System.Text.Json;
-using Honua.GeoServicesRest.Features.FeatureStore.Services;
+using Honua.Db.GeoServicesRest.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Domain.V2;
 
-namespace Honua.GeoServicesRest.Tests;
+namespace Honua.Db.GeoServicesRest.Tests;
 
 public class GeoServicesJsonWkbWriterTests
 {

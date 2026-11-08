@@ -5,9 +5,9 @@ using System.Collections.Immutable;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Queries.Filters;
-using Honua.Snowflake.Features.FeatureStore.Services;
+using Honua.Db.Snowflake.Features.FeatureStore.Services;
 
-namespace Honua.Snowflake.Tests;
+namespace Honua.Db.Snowflake.Tests;
 
 /// <summary>
 /// Unit tests for the Snowflake query builder. Verifies Snowflake SQL dialect, double-quoted

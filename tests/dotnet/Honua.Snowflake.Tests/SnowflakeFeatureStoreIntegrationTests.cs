@@ -5,13 +5,13 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Snowflake.Features.FeatureStore;
-using Honua.Snowflake.Features.FeatureStore.Services;
+using Honua.Db.Snowflake.Features.FeatureStore;
+using Honua.Db.Snowflake.Features.FeatureStore.Services;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
-namespace Honua.Snowflake.Tests;
+namespace Honua.Db.Snowflake.Tests;
 
 /// <summary>
 /// Integration tests against a live Snowflake account. Gated behind <c>HONUA_TEST_SNOWFLAKE=1</c>

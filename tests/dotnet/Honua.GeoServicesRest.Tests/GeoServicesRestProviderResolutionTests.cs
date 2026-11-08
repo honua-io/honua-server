@@ -3,10 +3,10 @@
 
 using System.Globalization;
 using System.Text.Json;
-using Honua.GeoServicesRest;
-using Honua.GeoServicesRest.Features.FeatureStore;
-using Honua.GeoServicesRest.Features.FeatureStore.Models;
-using Honua.GeoServicesRest.Features.FeatureStore.Services;
+using Honua.Db.GeoServicesRest;
+using Honua.Db.GeoServicesRest.Features.FeatureStore;
+using Honua.Db.GeoServicesRest.Features.FeatureStore.Models;
+using Honua.Db.GeoServicesRest.Features.FeatureStore.Services;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
@@ -15,7 +15,7 @@ using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Honua.GeoServicesRest.Tests;
+namespace Honua.Db.GeoServicesRest.Tests;
 
 /// <summary>
 /// Verifies the federated ArcGIS REST provider plugs into the shared Metadata v2 provider

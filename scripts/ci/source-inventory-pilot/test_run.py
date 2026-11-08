@@ -94,7 +94,7 @@ class DriverTests(unittest.TestCase):
         fixtures = producer.split('- name: Verify source inventory fixture semantics', 1)[1].split('- name:', 1)[0]
         self.assertNotIn('continue-on-error', fixtures)
         self.assertIn('if: always()', producer.split('- name: Upload producer source inventory observations', 1)[1])
-        self.assertIn('path: tests/TestResults/source-inventory-pilot/', producer)
+        self.assertIn('path: artifacts/test-results/source-inventory-pilot/', producer)
         self.assertIn('scripts/ci/run-foundation-family.sh run', consumer)
         self.assertIn('--lane ci', producer)
         family = subprocess.check_output(['bash', 'scripts/ci/run-foundation-family.sh', 'build-projects', 'server'], cwd=root, text=True).splitlines()

@@ -5,6 +5,8 @@ description: "You'll have tables you already own served as live layers, without 
 ---
 # Serve existing databases
 
+See the [Honua vocabulary](../../concepts/domain/README.md) for the meanings of Connection, Dataset, Layer, Service, Folder, and Environment.
+
 You'll have tables you already own served as live layers, without copying data, in about 10 minutes.
 
 **Prerequisites:** A running server ([quickstart](../../get-started/quickstart.md)) and admin credentials ([authentication](../secure/authentication.md)).

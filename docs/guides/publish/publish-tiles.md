@@ -6,6 +6,8 @@ resource: "honua://capability/serve.vector-tiles"
 ---
 # Publish tiles
 
+See the [Honua vocabulary](../../concepts/domain/README.md) for the meanings of Connection, Dataset, Layer, Service, Folder, and Environment.
+
 You'll have a published layer serving vector tiles, a seeded tile cache, and (optionally) a durable PMTiles artifact in about 10 minutes.
 
 **Prerequisites:** A running server ([quickstart](../../get-started/quickstart.md)), admin credentials ([authentication](../secure/authentication.md)), and a published layer ([Publish layers](publish-layers.md)).

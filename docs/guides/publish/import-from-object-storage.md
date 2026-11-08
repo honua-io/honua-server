@@ -6,6 +6,8 @@ resource: "honua://capability/import.file"
 ---
 # Import a layer from object storage
 
+See the [Honua vocabulary](../../concepts/domain/README.md) for the meanings of Connection, Dataset, Layer, Service, Folder, and Environment.
+
 You'll import a private object from an allow-listed S3 bucket into a PostGIS table. The server uses the host identity (the Lambda execution role, ECS task role, or EKS Pod Identity / IRSA). The request does not carry an access key, a session token, or an external id.
 
 **Prerequisites:** A running server ([quickstart](../../get-started/quickstart.md)), admin credentials ([authentication](../secure/authentication.md)), and a bucket the host role can read.

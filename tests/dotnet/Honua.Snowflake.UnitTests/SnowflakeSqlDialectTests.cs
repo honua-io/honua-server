@@ -2,10 +2,10 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Queries.Filters;
-using Honua.Snowflake.Features.FeatureStore.Services;
-using Honua.Snowflake.Queries.Filters;
+using Honua.Db.Snowflake.Features.FeatureStore.Services;
+using Honua.Db.Snowflake.Queries.Filters;
 
-namespace Honua.Snowflake.Tests;
+namespace Honua.Db.Snowflake.Tests;
 
 /// <summary>
 /// Unit tests for the Snowflake SQL dialect and identifier quoting. Confirms double-quoted,

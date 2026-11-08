@@ -858,7 +858,7 @@ jobs:
         timeout-minutes: 3
         with:
           name: source-inventory-pilot-${{ github.run_attempt }}
-          path: tests/TestResults/source-inventory-pilot/
+          path: artifacts/test-results/source-inventory-pilot/
           if-no-files-found: warn
           retention-days: 7
 
@@ -985,7 +985,7 @@ jobs:
         run: python3 scripts/ci/managed-test-build.py fallback --projects-file "${RUNNER_TEMP}/foundation-projects.json" --restored-file "${RESTORED_PROJECTS}"
 
       - name: Create Test Results Directory
-        run: mkdir -p ./tests/TestResults
+        run: mkdir -p ./artifacts/test-results
 
       # Trunk validation can start before the post-merge writer finishes. Use
       # fresh projections here too, preserving every authored-input validator.
@@ -1003,7 +1003,7 @@ jobs:
         run: >-
           dotnet test tests/dotnet/Honua.Architecture.SourceTests/Honua.Architecture.SourceTests.csproj
           --configuration Release --no-build --no-restore
-          --logger "trx;LogFileName=source-architecture-tests.trx" --results-directory ./tests/TestResults
+          --logger "trx;LogFileName=source-architecture-tests.trx" --results-directory ./artifacts/test-results
 
       - name: Prepare foundation Testcontainers images
         if: matrix.family != 'core'
@@ -1028,12 +1028,12 @@ jobs:
         timeout-minutes: 3
         with:
           name: foundation-test-results-${{ matrix.family }}
-          path: tests/TestResults/
+          path: artifacts/test-results/
           if-no-files-found: warn
           retention-days: 7
 
       # Coverlet's XPlat collector drops `coverage.cobertura.xml` into a per-run
-      # GUID subdirectory under TestResults. Only the Core family collects
+      # GUID subdirectory under the configured results directory. Only the Core family collects
       # coverage (as before the split), but the artifact is uploaded per family
       # so the fan-in job below can merge whatever exists without special-casing.
       - name: Upload foundation family coverage (cobertura)
@@ -1042,7 +1042,7 @@ jobs:
         timeout-minutes: 3
         with:
           name: foundation-coverage-${{ matrix.family }}
-          path: tests/TestResults/**/coverage.cobertura.xml
+          path: artifacts/test-results/**/coverage.cobertura.xml
           if-no-files-found: ignore
           retention-days: 7
 
@@ -1079,16 +1079,16 @@ jobs:
         continue-on-error: true
         with:
           pattern: foundation-test-results-*
-          path: tests/TestResults
+          path: artifacts/test-results
           merge-multiple: true
 
       - name: Verify merged foundation results
         run: |
-          trx_count=$(find tests/TestResults -name '*.trx' 2>/dev/null | wc -l)
-          cobertura_count=$(find tests/TestResults -name 'coverage.cobertura.xml' 2>/dev/null | wc -l)
+          trx_count=$(find artifacts/test-results -name '*.trx' 2>/dev/null | wc -l)
+          cobertura_count=$(find artifacts/test-results -name 'coverage.cobertura.xml' 2>/dev/null | wc -l)
           expected_trx=$(( $(scripts/ci/run-foundation-family.sh expected-trx-count) + 1 ))
           family_result='${{ needs.dotnet-foundation-family-tests.result }}'
-          if [[ "${family_result}" == success && ! -f tests/TestResults/source-architecture-tests.trx ]]; then
+          if [[ "${family_result}" == success && ! -f artifacts/test-results/source-architecture-tests.trx ]]; then
             echo "::error::Source architecture evidence is missing from successful foundation families."
             exit 1
           fi
@@ -1114,6 +1114,15 @@ jobs:
             exit 1
           fi
 
+      - name: Verify foundation TRX outcomes
+        if: always()
+        run: |
+          trx_args=()
+          while IFS= read -r -d '' trx; do
+            trx_args+=(--trx "${trx}")
+          done < <(find tests/TestResults -name '*.trx' -print0)
+          python3 scripts/ci/assert-trx-executed.py --label 'Foundation test results' "${trx_args[@]}"
+
       # Republish under the pre-split artifact names so anything pointing at
       # `foundation-test-results` / `foundation-coverage` keeps working, and so
       # coverage is aggregated across families in one place rather than being
@@ -1124,7 +1133,7 @@ jobs:
         timeout-minutes: 5
         with:
           name: foundation-test-results
-          path: tests/TestResults/
+          path: artifacts/test-results/
           if-no-files-found: warn
           retention-days: 7
 
@@ -1134,7 +1143,7 @@ jobs:
         timeout-minutes: 5
         with:
           name: foundation-coverage
-          path: tests/TestResults/**/coverage.cobertura.xml
+          path: artifacts/test-results/**/coverage.cobertura.xml
           if-no-files-found: warn
           retention-days: 7
 
@@ -1148,7 +1157,7 @@ jobs:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: tests/TestResults/**/coverage.cobertura.xml
+          files: artifacts/test-results/**/coverage.cobertura.xml
           flags: foundation
           name: foundation-tests
           fail_ci_if_error: false
@@ -1177,28 +1186,11 @@ jobs:
     # protocol-split projects (not just Honua.Server.Tests), so this
     # exclusion is safe for every shard's csproj, not only the legacy
     # Honua.Server.Tests.csproj default.
-    #
-    # Advisory shards (matrix.advisory==true — the #1965 rotted Features.* buckets)
-    # are SKIPPED on pull_request: they are non-gating, currently always-red, and
-    # painting every PR red kept PRs UNSTABLE (blocking the clean-only merge-train).
-    # They still run on scheduled/manual full-matrix runs so the coverage signal
-    # isn't lost. Delete the matrix.advisory clause once #1965 fixes the tests.
     if: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.integration_changes == 'true' }}
     runs-on: ubuntu-latest
     # Explicit producer dependency; only unmaterialized projects compile here.
     needs: [changes, targeted-shards, build]
     timeout-minutes: ${{ matrix.timeout_minutes }}
-    # Advisory shards (matrix.advisory == true in .github/ci-shards.json) RUN and
-    # publish results but do NOT gate the merge: continue-on-error is applied to the
-    # "Run server test shard" STEP (below), so an advisory test failure is swallowed
-    # there and the JOB CONCLUDES SUCCESS. That keeps CI Gate green (needs.*.result
-    # has no failure) AND keeps the job's check-run green — so the PR's
-    # mergeStateStatus stays CLEAN and the clean-only merge-train can auto-merge it.
-    # (A job-LEVEL continue-on-error kept CI Gate green but still published a FAILING
-    # check-run for the shard, forcing every PR to UNSTABLE and stalling auto-drain.)
-    # Used to keep a newly-running coverage shard visible while its rotted tests are
-    # repaired (the #1899/#1964 Features.* orphan buckets; tracked in #1965) instead
-    # of blocking unrelated PRs. Delete the shard's `advisory` field to re-block it.
     strategy:
       fail-fast: false
       matrix:
@@ -1358,7 +1350,7 @@ jobs:
             --read-mode '${{ steps.shard-cache-plan.outputs.restore_mode }}'
 
       - name: Create Test Results Directory
-        run: mkdir -p ./tests/TestResults
+        run: mkdir -p ./artifacts/test-results
 
       - name: Build server test binaries
         id: shard-cache-build
@@ -1510,11 +1502,6 @@ jobs:
           fi
 
       - name: Run server test shard
-        # Advisory shards (matrix.advisory==true) swallow their test failure HERE so
-        # the job concludes success and the PR stays CLEAN (see job comment above).
-        # Non-advisory shards (false) fail the job as normal. A build failure in an
-        # earlier step still fails the job regardless — only the test run is swallowed.
-        continue-on-error: ${{ matrix.advisory == true }}
         shell: bash
         env:
           HONUA_SERVER_TEST_SHARD_NAME: ${{ matrix.shard_name }}
@@ -1522,7 +1509,7 @@ jobs:
           HONUA_SERVER_TEST_LOG_NAME: ${{ matrix.log_name }}
           HONUA_SERVER_TEST_TIMEOUT_MINUTES: ${{ matrix.test_timeout_minutes }}
           HONUA_SERVER_TEST_MAX_CPU_COUNT: ${{ matrix.max_cpu_count }}
-          HONUA_SERVER_TEST_RESULTS_DIR: ./tests/TestResults
+          HONUA_SERVER_TEST_RESULTS_DIR: ./artifacts/test-results
           HONUA_SERVER_TEST_CONFIGURATION: Release
           # Phase 2 / ADR-0042: per-protocol test-project routing.
           # The shard record's optional `csproj` field selects the test
@@ -1568,12 +1555,12 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
-          if ! ls tests/TestResults/*.timing.json >/dev/null 2>&1; then
+          if ! ls artifacts/test-results/*.timing.json >/dev/null 2>&1; then
             echo "No timing artifact for this shard; nothing to report."
             exit 0
           fi
           table=$(python3 scripts/ci/audit-shard-headroom.py \
-            --timings-dir tests/TestResults --markdown 2>/dev/null \
+            --timings-dir artifacts/test-results --markdown 2>/dev/null \
             | grep -Ev '\| no_data \|')
           printf '%s\n' "${table}"
           {
@@ -1584,14 +1571,14 @@ jobs:
           # Advisory: the ::warning:: annotation is the signal and --advisory
           # exits 0, so the step never reports a failure it does not mean.
           python3 scripts/ci/audit-shard-headroom.py \
-            --timings-dir tests/TestResults --max-utilization 0.85 --advisory >/dev/null
+            --timings-dir artifacts/test-results --max-utilization 0.85 --advisory >/dev/null
 
       - name: Upload Operator Eval Report
         if: ${{ always() && matrix.upload_operator_eval_report }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: operator-eval-report
-          path: tests/TestResults/eval-report.json
+          path: artifacts/test-results/eval-report.json
           if-no-files-found: error
 
       - name: Upload OData CLI certification evidence
@@ -1600,7 +1587,7 @@ jobs:
         with:
           kind: evidence
           suffix: cli-odata
-          path: tests/TestResults/*-cli-odata.cert.json
+          path: artifacts/test-results/*-cli-odata.cert.json
           tier: pr
 
       - name: Upload shard test results
@@ -1609,7 +1596,7 @@ jobs:
         timeout-minutes: 3
         with:
           name: server-test-results-${{ matrix.artifact_suffix }}
-          path: tests/TestResults/
+          path: artifacts/test-results/
           retention-days: 7
 
   worker-gdal-tests:
@@ -1662,7 +1649,7 @@ jobs:
         run: scripts/ci/dotnet-restore-retry.sh tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj
 
       - name: Create Test Results Directory
-        run: mkdir -p ./tests/TestResults
+        run: mkdir -p ./artifacts/test-results
 
       - name: Build
         timeout-minutes: 15
@@ -1695,7 +1682,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           HONUA_NATIVE_TOOLS_REUSE: ${{ vars.HONUA_NATIVE_TOOLS_REUSE != 'false' && 'true' || 'false' }}
-        run: python3 scripts/ci/native-tools-image.py resolve --output tests/TestResults/native-tools-proof.json
+        run: python3 scripts/ci/native-tools-image.py resolve --output artifacts/test-results/native-tools-proof.json
 
       - name: Prepare GDAL Testcontainers images
         timeout-minutes: 12
@@ -1710,7 +1697,7 @@ jobs:
             --configuration Release \
             --logger "trx;LogFileName=worker-gdal-tests.trx" \
             --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults
+            --results-directory ./artifacts/test-results
 
       - name: Run the real-GDAL cases and prove they were not skipped
         # HONUA_REQUIRE_GDAL_CLI above already turns a missing tool into a test
@@ -1729,14 +1716,14 @@ jobs:
         timeout-minutes: 10
         run: |
           set -euo pipefail
-          trx=./tests/TestResults/worker-gdal-cli.trx
+          trx=./artifacts/test-results/worker-gdal-cli.trx
           dotnet test tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj \
             --no-build \
             --configuration Release \
             --filter "Category=GDAL" \
             --logger "trx;LogFileName=worker-gdal-cli.trx" \
             --logger "console;verbosity=normal" \
-            --results-directory ./tests/TestResults
+            --results-directory ./artifacts/test-results
           if [[ ! -f "${trx}" ]]; then
             echo "::error::no TRX produced for the Category=GDAL subset"
             exit 1
@@ -1776,7 +1763,7 @@ jobs:
         timeout-minutes: 3
         with:
           name: worker-gdal-test-results
-          path: tests/TestResults/
+          path: artifacts/test-results/
           retention-days: 7
 
   python-integration-tests:
@@ -1838,8 +1825,8 @@ jobs:
         working-directory: tests/python
         run: |
           set -euo pipefail
-          mkdir -p ../TestResults
-          report="../TestResults/geoparquet-interop.xml"
+          mkdir -p ../../artifacts/test-results
+          report="../../artifacts/test-results/geoparquet-interop.xml"
           status=0
           pytest --tb=short -q feature_server/test_geoparquet_interop.py --junitxml="${report}" || status=$?
           python ../../scripts/ci/check-geoparquet-interop.py "${report}" "${status}" "$(git rev-parse HEAD)"
@@ -1855,7 +1842,7 @@ jobs:
         with:
           name: python-test-results
           path: |
-            tests/TestResults/
+            artifacts/test-results/
             tests/python/gdal-ogr-results*.json
             tests/python/stac-client-compat-results*.json
             tests/python/stac-client-compat-results*.md
@@ -1895,6 +1882,7 @@ jobs:
     timeout-minutes: 15
     needs:
       - changes
+      - targeted-shards
       # Both the family matrix and its fan-in: a bug in the fan-in job's result
       # check cannot then leave a foundation family un-gated (#3567).
       - dotnet-foundation-family-tests
@@ -1907,6 +1895,31 @@ jobs:
       - esri-leaflet-browser-tests
       - maplibre-compat
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: always() && needs.changes.outputs.integration_changes == 'true'
+
+      - name: Download server shard receipts
+        if: always() && needs.changes.outputs.integration_changes == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: server-test-results-*
+          path: artifacts/server-shard-results
+          merge-multiple: true
+
+      - name: Verify server shard execution receipts
+        if: always() && needs.changes.outputs.integration_changes == 'true'
+        env:
+          MODE: enforce
+          SELECT_RESULT: ${{ needs.targeted-shards.result }}
+          SELECT_SKIP: 'false'
+          SELECT_REASON: selected_server_shards
+          SELECT_MATRIX: ${{ needs.targeted-shards.outputs.matrix_include }}
+          SHARDS_RESULT: ${{ needs.server-tests.result }}
+        run: |
+          export SELECT_COUNT
+          SELECT_COUNT=$(jq 'length' <<< "${SELECT_MATRIX}")
+          python3 scripts/ci/affected-shard-verdict.py --timings artifacts/server-shard-results --receipt artifacts/server-shard-verdict.json
+
       - name: Check required test job results
         env:
           REQUIRE_TEST_LANES: ${{ needs.changes.outputs.integration_changes == 'true' }}
@@ -2600,7 +2613,7 @@ jobs:
             --configuration Release
             --no-build
             --logger "console;verbosity=detailed"
-            --results-directory ./tests/TestResults
+            --results-directory ./artifacts/test-results
           )
           if [ "${COLLECT_COVERAGE}" = "true" ]; then
             test_args+=(--collect:"XPlat Code Coverage" --settings coverlet.runsettings)
@@ -2636,7 +2649,7 @@ jobs:
         timeout-minutes: 3
         with:
           name: postgres-coverage-${{ matrix.pg_suffix }}
-          path: tests/TestResults/**/coverage.cobertura.xml
+          path: artifacts/test-results/**/coverage.cobertura.xml
           if-no-files-found: warn
           retention-days: 7
 
@@ -2647,7 +2660,7 @@ jobs:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: tests/TestResults/**/coverage.cobertura.xml
+          files: artifacts/test-results/**/coverage.cobertura.xml
           flags: postgres-${{ matrix.pg_suffix }}
           name: postgres-compat
           fail_ci_if_error: false

@@ -20,13 +20,8 @@ using Honua.TestKit.Helpers;
 
 namespace Honua.Server.Tests.Features.Protocols.OData;
 
-/// <summary>
-/// Cross-client certification suite for the OData v4 surface using
-/// Microsoft.OData.Client 8.4.3 as the canonical client. Each test maps to a
-/// CERT-* identifier from
-/// <c>docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md</c> and contributes one
-/// row to the certification envelope written under <c>tests/TestResults/</c>.
-/// </summary>
+// CERT-* identifiers follow docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md so
+// release consumers can compare envelopes across client lanes.
 /// <remarks>
 /// <para>
 /// This is the CLI lane's automated OData proof. It mirrors the BI lane's
@@ -308,15 +303,6 @@ public sealed class ODataClientCertificationTests : IClassFixture<ODataClientCer
     private const int TestLayerId = 0;
 }
 
-/// <summary>
-/// xUnit class fixture that owns the certification collector and the
-/// <see cref="WebAppFixture"/> for <see cref="ODataClientCertificationTests"/>.
-/// Pre-records the lane-scoped <c>not-applicable</c> CERT cases at
-/// initialization so the envelope is always populated for all 18 common-core
-/// IDs, even when an individual test method panics. The envelope is flushed
-/// to <c>tests/TestResults/{run_id}-cli-odata.cert.json</c> in
-/// <see cref="DisposeAsync"/>.
-/// </summary>
 public sealed class ODataClientCertificationFixture : IAsyncLifetime
 {
     private const string ClientLane = "cli";
@@ -438,10 +424,6 @@ public sealed class ODataClientCertificationFixture : IAsyncLifetime
 
     private static string ResolveOutputDirectory()
     {
-        // Walk up from the test bin/ directory to the repo root (Honua.sln)
-        // and write into tests/TestResults/ so CI's existing
-        // --results-directory and the new upload-ci-evidence step both
-        // pick the file up.
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         // "Honua.sln" is a literal relative segment appended after the walked-up
         // directory root, so it can never be rooted and drop directory.FullName.
@@ -451,8 +433,7 @@ public sealed class ODataClientCertificationFixture : IAsyncLifetime
         }
 
         var root = directory?.FullName ?? AppContext.BaseDirectory;
-        // "tests" and "TestResults" are literal relative segments; neither can be
-        // rooted and drop the resolved repo root.
-        return Path.Join(root, "tests", "TestResults");
+        // Both literal relative segments preserve the resolved repository root.
+        return Path.Join(root, "artifacts", "test-results");
     }
 }
