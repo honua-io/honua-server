@@ -18,7 +18,7 @@ public sealed class PublishedLayerFieldRewriteTests
     [InlineData("18446744073709551616")]
     public void ApplyReplacementFieldMetadata_UnknownDatasetKind_RetainsToken(string token)
     {
-        var resource = JsonSerializer.Deserialize("{\"type\":" + token + "}",
+        var resource = JsonSerializer.Deserialize("{\"metadata\":{},\"status\":{},\"type\":" + token + "}",
             MetadataV2JsonContext.Default.MetadataV2Resource)!;
         var request = new LayerPublishRequest { Schema = "public", Table = "source", LayerName = "Source" };
 

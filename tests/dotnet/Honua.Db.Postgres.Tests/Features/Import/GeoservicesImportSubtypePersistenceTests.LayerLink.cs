@@ -31,6 +31,8 @@ public sealed partial class GeoservicesImportSubtypePersistenceTests
         {
             await EnsureCatalogSchemaAsync();
             await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, "honua");
+            await fixture.ExecuteDdlUnderLockAsync(
+                $"CREATE TABLE \"{schema}\".features (LIKE honua.features INCLUDING ALL);");
             var store = CreateLinkGraphStore(environment);
             var publisher = CreateLayerPublisher(store,
                 new PostgresSchemaConfiguration("honua", schema, [schema, "public"]), null);

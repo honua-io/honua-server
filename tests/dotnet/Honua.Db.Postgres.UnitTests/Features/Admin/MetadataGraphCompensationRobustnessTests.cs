@@ -20,7 +20,7 @@ public sealed class MetadataGraphCompensationRobustnessTests
          "connections":[{"metadata":{"id":"connection"},"type":TOKEN,"status":{"lifecycle":TOKEN,"state":TOKEN}}],
          "storageBindings":[{"metadata":{"id":"binding"},"resourceId":"dataset","connectionId":"connection",
            "storageType":TOKEN,"capabilities":[TOKEN],"status":{"lifecycle":TOKEN,"state":TOKEN}}],
-         "services":[{"metadata":{"id":"service"},"serviceType":TOKEN,"status":{"lifecycle":TOKEN,"state":TOKEN}}],
+         "services":[{"metadata":{"id":"service"},"serviceType":TOKEN,"publicationIds":["layer"],"status":{"lifecycle":TOKEN,"state":TOKEN}}],
          "publications":[{"metadata":{"id":"layer"},"resourceId":"dataset","serviceId":"service",
            "storageBindingId":"binding","publicationType":TOKEN,"status":{"lifecycle":TOKEN,"state":TOKEN}}]}
         """;
