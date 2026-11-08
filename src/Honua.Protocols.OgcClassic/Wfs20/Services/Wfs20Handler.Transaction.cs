@@ -1244,15 +1244,7 @@ internal sealed partial class Wfs20Handler
             throw new WfsTransactionException("MissingParameterValue", "Transaction action is missing a feature type name.", "typeName");
         }
 
-        var trimmedTypeName = rawTypeName.Trim();
-        var localName = trimmedTypeName.Contains(':', StringComparison.Ordinal)
-            ? trimmedTypeName[(trimmedTypeName.LastIndexOf(':') + 1)..]
-            : trimmedTypeName;
-
-        var match = descriptors.FirstOrDefault(descriptor =>
-            descriptor.QualifiedName.Equals(trimmedTypeName, StringComparison.OrdinalIgnoreCase) ||
-            descriptor.LocalName.Equals(trimmedTypeName, StringComparison.OrdinalIgnoreCase) ||
-            descriptor.LocalName.Equals(localName, StringComparison.OrdinalIgnoreCase));
+        var match = descriptors.FirstOrDefault(descriptor => MatchesRequestedType(descriptor, rawTypeName.Trim()));
         if (match is not null)
         {
             return match;

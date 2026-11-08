@@ -31,7 +31,7 @@ internal static class AdminSldStyleEndpoints
             .WithTags("Admin", "Metadata", "Styles", "Migration")
             .RequireAdminAuthorization();
 
-        _ = group.MapPost("/{layerId:int}/style/import-sld", HandleImportSld)
+        _ = group.MapPost("/{storageLayerId:int}/style/import-sld", HandleImportSld)
             .WithName("ImportLayerSldStyle")
             .WithSummary("Import an SLD/SE document and convert it to a MapLibre style.")
             .Accepts<string>("application/xml", "text/xml")
@@ -41,7 +41,7 @@ internal static class AdminSldStyleEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status413PayloadTooLarge);
 
-        _ = group.MapGet("/{layerId:int}/style/export-sld", HandleExportSld)
+        _ = group.MapGet("/{storageLayerId:int}/style/export-sld", HandleExportSld)
             .WithName("ExportLayerSldStyle")
             .WithSummary("Export the stored MapLibre style as an SLD 1.0 document.")
             .Produces<string>(StatusCodes.Status200OK, "application/xml")
@@ -51,27 +51,23 @@ internal static class AdminSldStyleEndpoints
     }
 
     private static async Task<IResult> HandleImportSld(
-        int layerId,
+        int storageLayerId,
         HttpContext context,
         [FromServices] ILayerStyleService styleService,
         [FromServices] OutputCacheInvalidationService cacheInvalidator,
         [FromServices] ILogger<SldImportLogCategory> logger,
         CancellationToken cancellationToken)
     {
-        if (layerId < 0)
+        if (storageLayerId < 0)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
                 context,
                 StatusCodes.Status400BadRequest,
-                $"Layer id '{layerId}' is invalid.");
+                $"Layer id '{storageLayerId}' is invalid.");
         }
 
-        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
-            context,
-            layerId,
-            scope: AccessScope.Write,
-            cancellationToken: cancellationToken,
-            operation: AuthorizationOperation.Admin).ConfigureAwait(false);
+        var layerValidation = await LayerValidationHelpers.ValidateStorageLayerWithAccessV2Async(
+            context, storageLayerId, AuthorizationOperation.Admin).ConfigureAwait(false);
         if (!layerValidation.IsValid || layerValidation.Resource is null)
         {
             return layerValidation.ErrorResult!;
@@ -110,7 +106,7 @@ internal static class AdminSldStyleEndpoints
         }
         catch (SldParseException ex)
         {
-            SldStyleLog.ParseFailed(logger, layerId, ex.Message);
+            SldStyleLog.ParseFailed(logger, storageLayerId, ex.Message);
             return ProblemDetailsHelpers.CreateAdminProblem(
                 context,
                 StatusCodes.Status400BadRequest,
@@ -140,19 +136,19 @@ internal static class AdminSldStyleEndpoints
                 Diagnostics = diagnostics
             };
 
-            SldStyleLog.ImportRejected(logger, layerId, diagnostics.Length);
+            SldStyleLog.ImportRejected(logger, storageLayerId, diagnostics.Length);
             return Results.Json(
                 ApiResponse<SldImportFailureResponse>.Failure("SLD import failed; see diagnostics.", failure),
                 SldStyleJsonContext.Default.ApiResponseSldImportFailureResponse,
                 statusCode: StatusCodes.Status422UnprocessableEntity);
         }
 
-        var styleJson = BuildMapLibreStyleDocument(layerValidation.Resource, layerId, conversion.Layers);
+        var styleJson = BuildMapLibreStyleDocument(layerValidation.Resource, storageLayerId, conversion.Layers);
         var styleElement = JsonSerializer.SerializeToElement(styleJson, StyleJsonContext.Default.DictionaryStringObject);
 
         var update = await styleService.UpdateStyleAsync(
                 layerValidation.Resource,
-                layerId,
+                storageLayerId,
                 styleElement,
                 drawingInfo: null,
                 cancellationToken: cancellationToken)
@@ -171,10 +167,10 @@ internal static class AdminSldStyleEndpoints
             return ProblemDetailsHelpers.CreateAdminProblem(
                 context,
                 StatusCodes.Status404NotFound,
-                $"Style for layer {layerId} not found.");
+                $"Style for layer {storageLayerId} not found.");
         }
 
-        await cacheInvalidator.InvalidateLayerAsync(null, layerId, cancellationToken).ConfigureAwait(false);
+        await cacheInvalidator.InvalidateLayerAsync(null, storageLayerId, cancellationToken).ConfigureAwait(false);
 
         var response = new SldImportResponse
         {
@@ -186,7 +182,7 @@ internal static class AdminSldStyleEndpoints
 
         SldStyleLog.ImportSucceeded(
             logger,
-            layerId,
+            storageLayerId,
             conversion.DetectedVersion.ToString(),
             conversion.Layers.Length,
             conversion.Diagnostics.Length);
@@ -197,36 +193,34 @@ internal static class AdminSldStyleEndpoints
     }
 
     private static async Task<IResult> HandleExportSld(
-        int layerId,
+        int storageLayerId,
         HttpContext context,
         [FromServices] ILayerStyleService styleService,
         [FromServices] ILogger<SldImportLogCategory> logger,
         CancellationToken cancellationToken)
     {
-        if (layerId < 0)
+        if (storageLayerId < 0)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
                 context,
                 StatusCodes.Status400BadRequest,
-                $"Layer id '{layerId}' is invalid.");
+                $"Layer id '{storageLayerId}' is invalid.");
         }
 
-        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
-            context,
-            layerId,
-            cancellationToken: cancellationToken).ConfigureAwait(false);
+        var layerValidation = await LayerValidationHelpers.ValidateStorageLayerWithAccessV2Async(
+            context, storageLayerId, AuthorizationOperation.Query).ConfigureAwait(false);
         if (!layerValidation.IsValid || layerValidation.Resource is null)
         {
             return layerValidation.ErrorResult!;
         }
 
-        var snapshot = await styleService.GetStyleAsync(layerValidation.Resource, layerId, cancellationToken).ConfigureAwait(false);
+        var snapshot = await styleService.GetStyleAsync(layerValidation.Resource, storageLayerId, cancellationToken).ConfigureAwait(false);
         if (snapshot == null || !snapshot.MapLibreStyle.HasValue || snapshot.MapLibreStyle.Value.ValueKind != JsonValueKind.Object)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
                 context,
                 StatusCodes.Status404NotFound,
-                $"Style for layer {layerId} not found.");
+                $"Style for layer {storageLayerId} not found.");
         }
 
         if (!snapshot.MapLibreStyle.Value.TryGetProperty("layers", out var layersElement)
@@ -254,7 +248,7 @@ internal static class AdminSldStyleEndpoints
         }
 
         var layerName = string.IsNullOrWhiteSpace(layerValidation.Resource.Metadata.Name)
-            ? $"layer-{layerId}"
+            ? $"layer-{storageLayerId}"
             : layerValidation.Resource.Metadata.Name;
         var export = MapLibreToSldConverter.Export(layers, layerName);
 
@@ -274,7 +268,7 @@ internal static class AdminSldStyleEndpoints
                 SldStyleJsonContext.Default.SldConversionDiagnosticArray);
         }
 
-        SldStyleLog.ExportSucceeded(logger, layerId, layers.Length, diagnosticCount);
+        SldStyleLog.ExportSucceeded(logger, storageLayerId, layers.Length, diagnosticCount);
 
         return Results.Content(export.SldXml, "application/xml", Encoding.UTF8);
     }
@@ -346,10 +340,10 @@ internal static class AdminSldStyleEndpoints
 
     private static Dictionary<string, object?> BuildMapLibreStyleDocument(
         MetadataV2Resource resource,
-        int layerId,
+        int storageLayerId,
         MapLibreStyleLayer[] convertedLayers)
     {
-        var styleLayer = StyleLayerDescriptor.FromResource(resource, layerId);
+        var styleLayer = StyleLayerDescriptor.FromResource(resource, storageLayerId);
         var document = StyleDefaults.BuildDefaultMapLibreStyle(styleLayer);
         var sourceId = StyleDefaults.GetSourceId(styleLayer);
         var layerList = new List<Dictionary<string, object?>>(convertedLayers.Select(converted =>
@@ -406,15 +400,15 @@ internal sealed class SldImportLogCategory;
 
 internal static partial class SldStyleLog
 {
-    [LoggerMessage(8100, LogLevel.Debug, "SLD parse failed for layer {LayerId}: {Reason}")]
-    public static partial void ParseFailed(ILogger logger, int layerId, string reason);
+    [LoggerMessage(8100, LogLevel.Debug, "SLD parse failed for layer {StorageLayerId}: {Reason}")]
+    public static partial void ParseFailed(ILogger logger, int storageLayerId, string reason);
 
-    [LoggerMessage(8101, LogLevel.Information, "SLD import succeeded for layer {LayerId} (version={SldVersion}, layers={LayerCount}, diagnostics={DiagnosticCount})")]
-    public static partial void ImportSucceeded(ILogger logger, int layerId, string sldVersion, int layerCount, int diagnosticCount);
+    [LoggerMessage(8101, LogLevel.Information, "SLD import succeeded for layer {StorageLayerId} (version={SldVersion}, layers={LayerCount}, diagnostics={DiagnosticCount})")]
+    public static partial void ImportSucceeded(ILogger logger, int storageLayerId, string sldVersion, int layerCount, int diagnosticCount);
 
-    [LoggerMessage(8102, LogLevel.Information, "SLD import rejected for layer {LayerId} with {DiagnosticCount} diagnostics")]
-    public static partial void ImportRejected(ILogger logger, int layerId, int diagnosticCount);
+    [LoggerMessage(8102, LogLevel.Information, "SLD import rejected for layer {StorageLayerId} with {DiagnosticCount} diagnostics")]
+    public static partial void ImportRejected(ILogger logger, int storageLayerId, int diagnosticCount);
 
-    [LoggerMessage(8103, LogLevel.Information, "SLD export produced for layer {LayerId} (layers={LayerCount}, diagnostics={DiagnosticCount})")]
-    public static partial void ExportSucceeded(ILogger logger, int layerId, int layerCount, int diagnosticCount);
+    [LoggerMessage(8103, LogLevel.Information, "SLD export produced for layer {StorageLayerId} (layers={LayerCount}, diagnostics={DiagnosticCount})")]
+    public static partial void ExportSucceeded(ILogger logger, int storageLayerId, int layerCount, int diagnosticCount);
 }

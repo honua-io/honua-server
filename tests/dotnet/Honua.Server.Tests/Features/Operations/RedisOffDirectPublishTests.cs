@@ -450,7 +450,7 @@ public sealed class RedisOffDirectPublishTests
         Parameters = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             ["serviceId"] = StyleServiceId,
-            ["layerId"] = StyleLayerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["serviceLayerIndex"] = StyleLayerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
             ["styleId"] = StyleId,
         },
     };

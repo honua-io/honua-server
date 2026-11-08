@@ -235,7 +235,7 @@ internal sealed partial class Wfs20Handler
         var spatialFilter = ParseBboxFilterForResource(bbox, resource, wfsVersion);
         var resourceIds = ParseResourceIds(
             normalizedResourceId,
-            descriptor,
+            descriptor.LocalName,
             enforceResourceIdTypeMatch,
             requireResourceIdQualifier);
         sqlFilter = resourceIds.MatchesNothing
@@ -601,20 +601,7 @@ internal sealed partial class Wfs20Handler
 
     private static ResourceIdResolution ParseResourceIds(
         string? resourceId,
-        WfsFeatureTypeDescriptor descriptor,
-        bool enforceTypeMatch,
-        bool requireTypeQualifier)
-        => ParseResourceIds(
-            resourceId,
-            descriptor.LocalName,
-            descriptor.Resource.Metadata.Name,
-            enforceTypeMatch,
-            requireTypeQualifier);
-
-    private static ResourceIdResolution ParseResourceIds(
-        string? resourceId,
         string localTypeName,
-        string resourceName,
         bool enforceTypeMatch,
         bool requireTypeQualifier)
     {
@@ -638,8 +625,7 @@ internal sealed partial class Wfs20Handler
             }
 
             if (prefix.Length > 0 &&
-                !FilterExpressionHelpers.NormalizeIdentifier(prefix).Equals(localTypeName, StringComparison.OrdinalIgnoreCase) &&
-                !FilterExpressionHelpers.NormalizeIdentifier(prefix).Equals(resourceName, StringComparison.OrdinalIgnoreCase))
+                !FilterExpressionHelpers.NormalizeIdentifier(prefix).Equals(localTypeName, StringComparison.Ordinal))
             {
                 if (enforceTypeMatch)
                 {
@@ -1621,45 +1607,6 @@ internal sealed partial class Wfs20Handler
         {
             writer.WriteAttributeString("previous", previous);
         }
-    }
-
-    private static string BuildTypeLocalName(string resourceName, int storageLayerId)
-    {
-        var input = string.IsNullOrWhiteSpace(resourceName)
-            ? $"layer_{storageLayerId.ToString(CultureInfo.InvariantCulture)}"
-            : resourceName;
-
-        var builder = new StringBuilder(input.Length);
-        var lastWasUnderscore = false;
-
-        foreach (var ch in input)
-        {
-            if (char.IsLetterOrDigit(ch))
-            {
-                builder.Append(char.ToLowerInvariant(ch));
-                lastWasUnderscore = false;
-                continue;
-            }
-
-            if (!lastWasUnderscore)
-            {
-                builder.Append('_');
-                lastWasUnderscore = true;
-            }
-        }
-
-        var result = builder.ToString().Trim('_');
-        if (string.IsNullOrWhiteSpace(result))
-        {
-            result = $"layer_{storageLayerId.ToString(CultureInfo.InvariantCulture)}";
-        }
-
-        if (char.IsDigit(result[0]))
-        {
-            result = $"layer_{result}";
-        }
-
-        return result;
     }
 
     private static bool IsAnonymousWriteAllowed(

@@ -83,7 +83,7 @@ internal static class TileJsonEndpoints
         var tilesUrl = BaseUrlResolver.PreserveToken(context.Request,
             $"{baseUrl}/tiles/{publicLayerId}/{{z}}/{{x}}/{{y}}.mvt");
         var styleUrl = BaseUrlResolver.PreserveToken(context.Request,
-            $"{baseUrl}/api/styles/{publicLayerId}.json");
+            $"{baseUrl}/api/styles/{Uri.EscapeDataString(publication.Metadata.Id)}.json");
 
         var title = resource.Metadata.Title ?? resource.Metadata.Name;
         var description = resource.Metadata.Description;

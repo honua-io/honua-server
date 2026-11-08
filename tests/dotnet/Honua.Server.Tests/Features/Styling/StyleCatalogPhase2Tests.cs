@@ -36,7 +36,7 @@ public sealed class StyleCatalogPhase2Tests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Update)]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/style")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/style")]
     public async Task UpdatingLayerStyle_PopulatesStyleResourceIdsWithTypeStyleResource()
     {
         var client = _fixture.CreateAdminClient();
@@ -70,7 +70,7 @@ public sealed class StyleCatalogPhase2Tests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Update)]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/style")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/style")]
     public async Task OneCatalogStyle_CanBeReferencedByManyLayers()
     {
         var client = _fixture.CreateAdminClient();

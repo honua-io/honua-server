@@ -85,7 +85,7 @@ internal static class DiscoveryToolSchemas
                   "kind": { "type": "string", "enum": ["service", "layer"] },
                   "serviceId": { "type": "string" },
                   "serviceName": { "type": "string" },
-                  "layerId": { "type": ["integer", "null"] },
+                  "serviceLayerIndex": { "type": ["integer", "null"] },
                   "name": { "type": "string" },
                   "type": { "type": ["string", "null"] },
                   "geometryType": { "type": ["string", "null"] },

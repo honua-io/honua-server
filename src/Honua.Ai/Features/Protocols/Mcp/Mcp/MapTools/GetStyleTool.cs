@@ -18,7 +18,7 @@ internal sealed class GetStyleTool : IMcpTool
 
     private const string ToolDescription =
         "Inspect a layer's or a catalog style's stylesheet/renderer (read-only) via the OGC API - Styles surface. "
-        + "Resolve a single style by 'styleId', or resolve a published layer's primary/default style by 'serviceId'+'layerId'; "
+        + "Resolve a single style by 'styleId', or resolve a published layer's primary/default style by 'serviceId'+'serviceLayerIndex'; "
         + "omit all three to list the available styles (a discovery catalog of styleId/title). "
         + "A resolved style advertises its encodings — MapLibre style JSON ('mapbox-style', the canonical form), Esri 'esri-drawing-info' (drawingInfo renderer), and SLD 'sld-1.0.0'/'sld-1.1.0' — each by reference; "
         + "set includeStylesheet=true (with 'encoding', default 'mapbox-style') to inline the selected stylesheet body. "
@@ -71,7 +71,7 @@ internal sealed class GetStyleTool : IMcpTool
 
         // List mode: no styleId and no layer address -> discovery catalog.
         var hasStyleId = !string.IsNullOrWhiteSpace(argument.StyleId);
-        var hasLayer = !string.IsNullOrWhiteSpace(argument.ServiceId) || argument.LayerId is not null;
+        var hasLayer = !string.IsNullOrWhiteSpace(argument.ServiceId) || argument.ServiceLayerIndex is not null;
         if (!hasStyleId && !hasLayer)
         {
             var styles = await styleCatalog.ListStylesAsync(cancellationToken).ConfigureAwait(false);
@@ -138,14 +138,14 @@ internal sealed class GetStyleTool : IMcpTool
             ?? throw new GeoprocessingStoreUnavailableException("The metadata catalog is not available on this server.");
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var layer = await MapToolLayerResolver.ResolveForReadAsync(
-            httpContext, snapshot, argument.ServiceId, argument.LayerId, AuthorizationOperation.Metadata, cancellationToken)
+            httpContext, snapshot, argument.ServiceId, argument.ServiceLayerIndex, AuthorizationOperation.Metadata, cancellationToken)
             .ConfigureAwait(false);
 
         var styles = await styleCatalog.GetStylesForLayerAsync(layer.StorageLayerId, cancellationToken).ConfigureAwait(false);
         if (styles.Count == 0)
         {
             throw new GeoprocessingNotFoundException(
-                $"Layer {argument.LayerId} on service '{argument.ServiceId}' has no style bound. "
+                $"Layer {argument.ServiceLayerIndex} on service '{argument.ServiceId}' has no style bound. "
                 + "Apply one with honua_apply_style_preset.");
         }
 

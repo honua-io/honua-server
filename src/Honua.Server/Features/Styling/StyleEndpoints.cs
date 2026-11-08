@@ -3,6 +3,8 @@
 
 using System.Text.Json;
 using Honua.Core.Features.Styling.Domain;
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Caching;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
@@ -19,11 +21,11 @@ internal static class StyleEndpoints
 
     public static IEndpointRouteBuilder MapStyleEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapGet("/api/styles/{layerId:int}.json", HandleGetStyle)
-            .WithDisplayName("Get MapLibre Style (deprecated layerId alias)")
+        endpoints.MapGet("/api/styles/{publicationId}.json", HandleGetStyle)
+            .WithDisplayName("Get MapLibre Style")
             .WithName("GetMapLibreStyle")
-            .WithSummary("[Deprecated] Get MapLibre style for a layer by layerId")
-            .WithDescription("DEPRECATED layerId-keyed alias. The canonical style identifier is styleId via GET /ogc/styles/{styleId} (ADR-0048); content negotiation there serves MapLibre and derived SLD. This endpoint keeps working as a back-compat alias and returns advisory Deprecation/Sunset response headers; it will be removed only after downstream styleId migration completes. Returns a MapLibre style JSON document for the requested layer. Pass ?theme=dark|colorblind-safe|print for theme transforms.")
+            .WithSummary("Get MapLibre style for a publication")
+            .WithDescription("Returns a MapLibre style for the exact publication identifier. Pass ?theme=dark|colorblind-safe|print for theme transforms.")
             .WithTags("Styles")
             .CacheOutput("LayerStyle")
             .WithETag()
@@ -37,17 +39,13 @@ internal static class StyleEndpoints
     }
 
     private static async Task<IResult> HandleGetStyle(
-        int layerId,
+        string publicationId,
         HttpContext context,
         [FromQuery(Name = ThemeQueryParameter)] string? theme,
         [FromServices] ILayerStyleService styleService,
         [FromServices] ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
     {
-        // Advisory deprecation signaling for the layerId-keyed alias. Behavior is
-        // unchanged; the canonical identifier is styleId via /ogc/styles/{styleId}.
-        StyleDeprecationHeaders.Apply(context, "/ogc/styles");
-
         if (!TryParseTheme(theme, out var themeProfile))
         {
             return StandardErrorHelpers.CreateBadRequest(
@@ -55,26 +53,25 @@ internal static class StyleEndpoints
                 $"Unsupported theme '{theme}'. Use 'default', 'dark', 'colorblind-safe', or 'print'.");
         }
 
-        if (layerId < 0)
-        {
-            return StandardErrorHelpers.CreateBadRequest(context, $"Layer id '{layerId}' is invalid.");
-        }
-
-        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
-            context,
-            layerId,
-            cancellationToken: cancellationToken);
+        var layerValidation = await LayerValidationHelpers.ValidatePublicationWithAccessV2Async(
+            context, publicationId, AuthorizationOperation.Query);
         if (!layerValidation.IsValid || layerValidation.Resource is null)
         {
             return layerValidation.ErrorResult!;
         }
 
-        var snapshot = await styleService.GetStyleAsync(layerValidation.Resource, layerId, cancellationToken);
+        var storageLayerId = layerValidation.Snapshot!.ResolveStorageLayerId(layerValidation.Publication!);
+        if (!storageLayerId.HasValue)
+        {
+            return StandardErrorHelpers.CreateNotFound(context, $"Style for publication '{publicationId}' not found.");
+        }
+
+        var snapshot = await styleService.GetStyleAsync(layerValidation.Resource, storageLayerId.Value, cancellationToken);
         var styleElement = snapshot?.MapLibreStyle;
 
         if (!styleElement.HasValue || styleElement.Value.ValueKind == JsonValueKind.Null)
         {
-            return StandardErrorHelpers.CreateNotFound(context, $"Style for layer {layerId} not found.");
+            return StandardErrorHelpers.CreateNotFound(context, $"Style for publication '{publicationId}' not found.");
         }
 
         if (themeProfile == ThemeProfile.Default)
@@ -85,7 +82,7 @@ internal static class StyleEndpoints
 
         var rawJson = styleElement.Value.GetRawText();
         var logger = loggerFactory.CreateLogger("Honua.Server.Features.Styling.StyleEndpoints");
-        var themed = StyleThemeTransformer.ApplyTheme(rawJson, themeProfile, logger, layerId);
+        var themed = StyleThemeTransformer.ApplyTheme(rawJson, themeProfile, logger, storageLayerId.Value);
         var themeName = themeProfile switch
         {
             ThemeProfile.Dark => "Dark",
@@ -93,7 +90,7 @@ internal static class StyleEndpoints
             ThemeProfile.Print => "Print",
             _ => "Default"
         };
-        LayerStyleLog.ThemeApplied(logger, themeName, layerId);
+        LayerStyleLog.ThemeApplied(logger, themeName, storageLayerId.Value);
 
         var themedElement = StyleJsonUtilities.ParseJsonElement(themed);
         if (!themedElement.HasValue)

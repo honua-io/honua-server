@@ -10,7 +10,7 @@ public static partial class EndpointRegistry
     private static IReadOnlyList<EndpointDefinition> CatalogExtraEndpoints =>
     [
         // Data export
-        new("GET", "/api/v1/admin/services/{serviceName}/layers/{layerId}/export"),
+        new("GET", "/api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/export"),
 
         // COG admin endpoints (#519)
         new("POST", "/api/v1/admin/cloud-rasters"),

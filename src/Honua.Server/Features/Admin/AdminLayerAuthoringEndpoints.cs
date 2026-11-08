@@ -28,52 +28,52 @@ internal static partial class AdminLayerAuthoringEndpoints
             .WithTags("Admin", "Metadata", "Authoring")
             .RequireAdminAuthorization();
 
-        _ = group.MapGet("/{layerId:int}/popup-info", HandleGetPopupInfo).WithName("GetAdminLayerPopupInfo");
-        _ = group.MapPut("/{layerId:int}/popup-info", HandleSetPopupInfo).WithName("SetAdminLayerPopupInfo");
-        _ = group.MapGet("/{layerId:int}/drawing-info", HandleGetDrawingInfo).WithName("GetAdminLayerDrawingInfo");
-        _ = group.MapPut("/{layerId:int}/drawing-info", HandleSetDrawingInfo).WithName("SetAdminLayerDrawingInfo");
-        _ = group.MapGet("/{layerId:int}/relationships", HandleGetRelationships).WithName("GetAdminLayerRelationships");
-        _ = group.MapPut("/{layerId:int}/relationships", HandleSetRelationships).WithName("SetAdminLayerRelationships");
+        _ = group.MapGet("/{storageLayerId:int}/popup-info", HandleGetPopupInfo).WithName("GetAdminLayerPopupInfo");
+        _ = group.MapPut("/{storageLayerId:int}/popup-info", HandleSetPopupInfo).WithName("SetAdminLayerPopupInfo");
+        _ = group.MapGet("/{storageLayerId:int}/drawing-info", HandleGetDrawingInfo).WithName("GetAdminLayerDrawingInfo");
+        _ = group.MapPut("/{storageLayerId:int}/drawing-info", HandleSetDrawingInfo).WithName("SetAdminLayerDrawingInfo");
+        _ = group.MapGet("/{storageLayerId:int}/relationships", HandleGetRelationships).WithName("GetAdminLayerRelationships");
+        _ = group.MapPut("/{storageLayerId:int}/relationships", HandleSetRelationships).WithName("SetAdminLayerRelationships");
         _ = group.MapPut("/relationships/batch", HandleSetRelationshipsBatch).WithName("SetAdminLayerRelationshipsBatch");
     }
 
     // ---- popupInfo + drawingInfo (resource.Extensions documents) ----------------------------------------
 
     private static Task<IResult> HandleGetPopupInfo(
-        int layerId, HttpContext context,
+        int storageLayerId, HttpContext context,
         [FromServices] IResourceValidator resourceValidator,
         [FromServices] IMetadataV2GraphStore graphStore,
         CancellationToken cancellationToken) =>
-        GetExtensionAsync(layerId, PopupInfoExtensionKey, context, resourceValidator, graphStore, cancellationToken);
+        GetExtensionAsync(storageLayerId, PopupInfoExtensionKey, context, resourceValidator, graphStore, cancellationToken);
 
     private static Task<IResult> HandleSetPopupInfo(
-        int layerId, JsonElement document, HttpContext context,
+        int storageLayerId, JsonElement document, HttpContext context,
         [FromServices] IResourceValidator resourceValidator,
         [FromServices] IMetadataV2GraphStore graphStore,
         [FromServices] OutputCacheInvalidationService cacheInvalidator,
         CancellationToken cancellationToken) =>
-        SetExtensionAsync(layerId, PopupInfoExtensionKey, document, context, resourceValidator, graphStore, cacheInvalidator, cancellationToken);
+        SetExtensionAsync(storageLayerId, PopupInfoExtensionKey, document, context, resourceValidator, graphStore, cacheInvalidator, cancellationToken);
 
     private static Task<IResult> HandleGetDrawingInfo(
-        int layerId, HttpContext context,
+        int storageLayerId, HttpContext context,
         [FromServices] IResourceValidator resourceValidator,
         [FromServices] IMetadataV2GraphStore graphStore,
         CancellationToken cancellationToken) =>
-        GetExtensionAsync(layerId, DrawingInfoExtensionKey, context, resourceValidator, graphStore, cancellationToken);
+        GetExtensionAsync(storageLayerId, DrawingInfoExtensionKey, context, resourceValidator, graphStore, cancellationToken);
 
     private static Task<IResult> HandleSetDrawingInfo(
-        int layerId, JsonElement document, HttpContext context,
+        int storageLayerId, JsonElement document, HttpContext context,
         [FromServices] IResourceValidator resourceValidator,
         [FromServices] IMetadataV2GraphStore graphStore,
         [FromServices] OutputCacheInvalidationService cacheInvalidator,
         CancellationToken cancellationToken) =>
-        SetExtensionAsync(layerId, DrawingInfoExtensionKey, document, context, resourceValidator, graphStore, cacheInvalidator, cancellationToken);
+        SetExtensionAsync(storageLayerId, DrawingInfoExtensionKey, document, context, resourceValidator, graphStore, cacheInvalidator, cancellationToken);
 
     private static async Task<IResult> GetExtensionAsync(
-        int layerId, string key, HttpContext context,
+        int storageLayerId, string key, HttpContext context,
         IResourceValidator resourceValidator, IMetadataV2GraphStore graphStore, CancellationToken cancellationToken)
     {
-        var (resource, problem) = await ValidateLayerAsync(layerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
+        var (resource, problem) = await ValidateLayerAsync(storageLayerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
         if (problem != null || resource == null)
         {
             return problem!;
@@ -88,18 +88,18 @@ internal static partial class AdminLayerAuthoringEndpoints
         return Results.Json(
             ApiResponse<LayerAuthoringDocumentResponse>.CreateSuccess(new LayerAuthoringDocumentResponse
             {
-                LayerId = layerId,
+                StorageLayerId = storageLayerId,
                 Document = document,
             }),
             LayerAuthoringJsonContext.Default.ApiResponseLayerAuthoringDocumentResponse);
     }
 
     private static async Task<IResult> SetExtensionAsync(
-        int layerId, string key, JsonElement document, HttpContext context,
+        int storageLayerId, string key, JsonElement document, HttpContext context,
         IResourceValidator resourceValidator, IMetadataV2GraphStore graphStore,
         OutputCacheInvalidationService cacheInvalidator, CancellationToken cancellationToken)
     {
-        var (resource, problem) = await ValidateLayerAsync(layerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
+        var (resource, problem) = await ValidateLayerAsync(storageLayerId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
         if (problem != null || resource == null)
         {
             return problem!;
@@ -107,7 +107,7 @@ internal static partial class AdminLayerAuthoringEndpoints
 
         var preview = AdminLayerConfigurationTargets.Resolve(
             await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false),
-            layerId);
+            storageLayerId);
         if (preview.IsAmbiguous)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
@@ -126,7 +126,7 @@ internal static partial class AdminLayerAuthoringEndpoints
 
         var stored = clearing ? (JsonElement?)null : document.Clone();
         var written = await AdminLayerConfigurationTargets.WriteAsync(
-            graphStore, layerId, res => WithExtension(res, key, stored), cancellationToken).ConfigureAwait(false);
+            graphStore, storageLayerId, res => WithExtension(res, key, stored), cancellationToken).ConfigureAwait(false);
         if (written.IsAmbiguous)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
@@ -135,12 +135,12 @@ internal static partial class AdminLayerAuthoringEndpoints
                 written.ConflictDetail ?? "The layer id is published by more than one resource.");
         }
 
-        await cacheInvalidator.InvalidateServiceCatalogAsync(null, [layerId], cancellationToken).ConfigureAwait(false);
+        await cacheInvalidator.InvalidateServiceCatalogAsync(null, [storageLayerId], cancellationToken).ConfigureAwait(false);
 
         return Results.Json(
             ApiResponse<LayerAuthoringDocumentResponse>.CreateSuccess(new LayerAuthoringDocumentResponse
             {
-                LayerId = layerId,
+                StorageLayerId = storageLayerId,
                 Document = stored,
             }),
             LayerAuthoringJsonContext.Default.ApiResponseLayerAuthoringDocumentResponse);
@@ -164,32 +164,32 @@ internal static partial class AdminLayerAuthoringEndpoints
     // ---- relationships (resource.Relationships) ---------------------------------------------------------
 
     private static async Task<IResult> HandleGetRelationships(
-        int layerId, HttpContext context,
+        int storageLayerId, HttpContext context,
         [FromServices] IMetadataV2GraphStore graphStore,
         CancellationToken cancellationToken)
     {
         var snapshot = await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var (resource, error) = ResolveRelationshipResource(layerId, snapshot);
+        var (resource, error) = ResolveRelationshipResource(storageLayerId, snapshot);
         if (error is not null || resource is null)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(context, StatusCodes.Status404NotFound,
-                error ?? $"Layer {layerId} was not found.");
+                error ?? $"Layer {storageLayerId} was not found.");
         }
 
         return Results.Json(
-            ApiResponse<LayerRelationshipResponse>.CreateSuccess(BuildRelationshipResponse(layerId, resource, snapshot)),
+            ApiResponse<LayerRelationshipResponse>.CreateSuccess(BuildRelationshipResponse(storageLayerId, resource, snapshot)),
             LayerAuthoringJsonContext.Default.ApiResponseLayerRelationshipResponse);
     }
 
     private static async Task<IResult> HandleSetRelationships(
-        int layerId, LayerRelationshipUpdateRequest request, HttpContext context,
+        int storageLayerId, LayerRelationshipUpdateRequest request, HttpContext context,
         [FromServices] IMetadataV2GraphStore graphStore,
         [FromServices] OutputCacheInvalidationService cacheInvalidator,
         CancellationToken cancellationToken)
     {
         var batch = new LayerRelationshipBatchUpdateRequest
         {
-            Layers = [new LayerRelationshipBatchUpdateItem { LayerId = layerId, Relationships = request.Relationships }],
+            Layers = [new LayerRelationshipBatchUpdateItem { StorageLayerId = storageLayerId, Relationships = request.Relationships }],
         };
         var (saved, problem) = await ApplyRelationshipBatchAsync(
             batch, context, graphStore, cacheInvalidator, cancellationToken).ConfigureAwait(false);
@@ -198,14 +198,14 @@ internal static partial class AdminLayerAuthoringEndpoints
             return problem!;
         }
 
-        var resource = ResolveRelationshipResource(layerId, saved).Resource!;
+        var resource = ResolveRelationshipResource(storageLayerId, saved).Resource!;
         return Results.Json(
-            ApiResponse<LayerRelationshipResponse>.CreateSuccess(BuildRelationshipResponse(layerId, resource, saved)),
+            ApiResponse<LayerRelationshipResponse>.CreateSuccess(BuildRelationshipResponse(storageLayerId, resource, saved)),
             LayerAuthoringJsonContext.Default.ApiResponseLayerRelationshipResponse);
     }
 
     private static (MetadataV2Relationship[] Relationships, string? Error) BuildRelationships(
-        int layerId, MetadataV2Resource resource, LayerRelationshipUpdateRequest request, MetadataV2GraphSnapshot snapshot)
+        int storageLayerId, MetadataV2Resource resource, LayerRelationshipUpdateRequest request, MetadataV2GraphSnapshot snapshot)
     {
         if (request.Relationships is null || request.Relationships.Count > MaxRelationships)
         {
@@ -230,7 +230,7 @@ internal static partial class AdminLayerAuthoringEndpoints
 
             if (string.IsNullOrWhiteSpace(item.OriginField) || !originFields.Contains(item.OriginField))
             {
-                return ([], $"Origin field '{item.OriginField}' does not exist on layer {layerId}.");
+                return ([], $"Origin field '{item.OriginField}' does not exist on layer {storageLayerId}.");
             }
 
             if (!IsValidCardinality(item.Cardinality))
@@ -247,7 +247,7 @@ internal static partial class AdminLayerAuthoringEndpoints
                 return ([], $"Relationship '{item.Id}' role must be origin or destination.");
             }
 
-            var (targetResource, targetError) = ResolveRelationshipResource(item.RelatedLayerId, snapshot);
+            var (targetResource, targetError) = ResolveRelationshipResource(item.RelatedStorageLayerId, snapshot);
             if (targetError is not null || targetResource is null)
             {
                 return ([], targetError);
@@ -255,7 +255,7 @@ internal static partial class AdminLayerAuthoringEndpoints
 
             if (!targetResource.SchemaFields.Any(field => field.Name.Equals(item.DestinationField, StringComparison.OrdinalIgnoreCase)))
             {
-                return ([], $"Destination field '{item.DestinationField}' does not exist on related layer {item.RelatedLayerId}.");
+                return ([], $"Destination field '{item.DestinationField}' does not exist on related layer {item.RelatedStorageLayerId}.");
             }
 
             result.Add(new MetadataV2Relationship
@@ -277,14 +277,14 @@ internal static partial class AdminLayerAuthoringEndpoints
     }
 
     private static LayerRelationshipResponse BuildRelationshipResponse(
-        int layerId, MetadataV2Resource resource, MetadataV2GraphSnapshot snapshot)
+        int storageLayerId, MetadataV2Resource resource, MetadataV2GraphSnapshot snapshot)
     {
         var items = resource.Relationships.Select(rel => new LayerRelationshipItem
         {
             Id = rel.Id,
             Name = rel.Name,
             Description = rel.Description,
-            RelatedLayerId = ResolveLayerIdForResource(rel.RelatedResourceId, snapshot),
+            RelatedStorageLayerId = ResolveStorageLayerIdForResource(rel.RelatedResourceId, snapshot),
             Role = rel.Role,
             Cardinality = rel.Cardinality,
             OriginField = rel.OriginField,
@@ -293,10 +293,10 @@ internal static partial class AdminLayerAuthoringEndpoints
             Composite = rel.Composite,
         }).ToArray();
 
-        return new LayerRelationshipResponse { LayerId = layerId, Relationships = items };
+        return new LayerRelationshipResponse { StorageLayerId = storageLayerId, Relationships = items };
     }
 
-    private static int ResolveLayerIdForResource(string resourceId, MetadataV2GraphSnapshot snapshot)
+    private static int ResolveStorageLayerIdForResource(string resourceId, MetadataV2GraphSnapshot snapshot)
     {
         return snapshot.Index.ResourcesById.TryGetValue(resourceId, out var resource)
             ? snapshot.ResolveStorageLayerId(resource) ?? -1
@@ -311,16 +311,16 @@ internal static partial class AdminLayerAuthoringEndpoints
     // ---- shared helpers ---------------------------------------------------------------------------------
 
     private static async Task<(MetadataV2Resource? Resource, IResult? Problem)> ValidateLayerAsync(
-        int layerId, HttpContext context, IResourceValidator resourceValidator, CancellationToken cancellationToken)
+        int storageLayerId, HttpContext context, IResourceValidator resourceValidator, CancellationToken cancellationToken)
     {
-        var layerResult = await resourceValidator.ValidateLayerV2Async(layerId, cancellationToken).ConfigureAwait(false);
+        var layerResult = await resourceValidator.ValidateStorageLayerV2Async(storageLayerId, cancellationToken).ConfigureAwait(false);
         if (!layerResult.IsValid || layerResult.Resource == null)
         {
             var statusCode = layerResult.ErrorCode == ResourceValidationError.InvalidIdentifier
                 ? StatusCodes.Status400BadRequest
                 : StatusCodes.Status404NotFound;
             return (null, ProblemDetailsHelpers.CreateAdminProblem(
-                context, statusCode, layerResult.ErrorMessage ?? $"Layer {layerId} not found."));
+                context, statusCode, layerResult.ErrorMessage ?? $"Layer {storageLayerId} not found."));
         }
 
         return (layerResult.Resource, null);

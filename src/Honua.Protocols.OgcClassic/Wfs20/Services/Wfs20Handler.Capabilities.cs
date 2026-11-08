@@ -169,31 +169,11 @@ internal sealed partial class Wfs20Handler
             candidates.Add((storageLayerId.Value, resource!, publication, service!));
         }
 
-        var visiblePublications = candidates
-            .OrderBy(static candidate => candidate.StorageLayerId)
-            .ThenBy(static candidate => candidate.Publication.LayerIndex ?? int.MaxValue)
-            .ThenBy(static candidate => candidate.Resource.Metadata.Name, StringComparer.OrdinalIgnoreCase)
-            .GroupBy(static candidate => candidate.StorageLayerId)
-            .Select(static group => group.First())
-            .ToArray();
-
-        var descriptors = ImmutableArray.CreateBuilder<WfsFeatureTypeDescriptor>(visiblePublications.Length);
-        var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var candidate in visiblePublications)
+        var descriptors = ImmutableArray.CreateBuilder<WfsFeatureTypeDescriptor>(candidates.Count);
+        foreach (var candidate in candidates.OrderBy(static candidate => candidate.Publication.Metadata.Id, StringComparer.Ordinal))
         {
             var resourceName = GetResourceFeatureTypeName(candidate.Resource);
-
-            var baseName = IsWfs10CiteLayerName(resourceName)
-                ? resourceName
-                : BuildTypeLocalName(resourceName, candidate.StorageLayerId);
-            var localName = baseName;
-            if (!usedNames.Add(localName))
-            {
-                localName = $"{baseName}_{candidate.StorageLayerId.ToString(CultureInfo.InvariantCulture)}";
-                usedNames.Add(localName);
-            }
-
+            var localName = XmlConvert.EncodeLocalName(candidate.Publication.Metadata.Id);
             descriptors.Add(new WfsFeatureTypeDescriptor(
                 candidate.Resource,
                 candidate.Publication,
@@ -228,11 +208,6 @@ internal sealed partial class Wfs20Handler
         };
 
 
-    private static bool IsWfs10CiteLayerName(string layerName)
-        => layerName is "Other" or "Fifteen" or "Seven" or "Nulls" or "Locks" or
-            "Points" or "Lines" or "Polygons" or "MPoints" or "MLines" or "MPolygons";
-
-
     private static ImmutableArray<WfsFeatureTypeDescriptor> ResolveRequestedFeatureTypes(
         ImmutableArray<WfsFeatureTypeDescriptor> publishedTypes,
         string[] requestedTypes)
@@ -243,14 +218,14 @@ internal sealed partial class Wfs20Handler
         }
 
         var matches = ImmutableArray.CreateBuilder<WfsFeatureTypeDescriptor>();
-        var seenLayerIds = new HashSet<int>();
+        var seenPublicationIds = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var requestedType in requestedTypes)
         {
             foreach (var featureType in publishedTypes)
             {
                 if (!MatchesRequestedType(featureType, requestedType) ||
-                    !seenLayerIds.Add(featureType.StorageLayerId))
+                    !seenPublicationIds.Add(featureType.Publication.Metadata.Id))
                 {
                     continue;
                 }
@@ -294,11 +269,8 @@ internal sealed partial class Wfs20Handler
 
     private static bool MatchesRequestedType(WfsFeatureTypeDescriptor featureType, string requestedType)
     {
-        var normalizedRequested = FilterExpressionHelpers.NormalizeIdentifier(requestedType);
-        return string.Equals(requestedType, featureType.QualifiedName, StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(normalizedRequested, featureType.LocalName, StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(normalizedRequested, featureType.Resource.Metadata.Name, StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(normalizedRequested, featureType.StorageLayerId.ToString(CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase);
+        return string.Equals(requestedType, featureType.QualifiedName, StringComparison.Ordinal) ||
+               string.Equals(FilterExpressionHelpers.NormalizeIdentifier(requestedType), featureType.LocalName, StringComparison.Ordinal);
     }
 
 
@@ -777,7 +749,7 @@ internal sealed partial class Wfs20Handler
 
         foreach (var featureType in featureTypes)
         {
-            var typeName = XmlConvert.EncodeLocalName(featureType.LocalName);
+            var typeName = featureType.LocalName;
             schema.AppendLine($"""  <xsd:element name="{typeName}" type="{FeatureNamespacePrefix}:{typeName}Type" substitutionGroup="gml:AbstractFeature"/>""");
             schema.AppendLine($"""  <xsd:complexType name="{typeName}Type">""");
             schema.AppendLine("""    <xsd:complexContent>""");

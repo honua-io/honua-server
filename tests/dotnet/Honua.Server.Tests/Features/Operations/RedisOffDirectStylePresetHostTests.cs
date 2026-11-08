@@ -112,7 +112,7 @@ public sealed class RedisOffDirectStylePresetHostTests : IAsyncLifetime
 
         using var admin = ApiKeyClient(AdminPassword);
         var (status, payload) = await SubmitAsync(admin, StylePresetOperation.OperationId,
-            $$$"""{"parameters":{"serviceId":"{{{ServiceId}}}","layerId":"{{{LayerIndex}}}","styleId":"{{{StyleId}}}"}}""");
+            $$$"""{"parameters":{"serviceId":"{{{ServiceId}}}","serviceLayerIndex":"{{{LayerIndex}}}","styleId":"{{{StyleId}}}"}}""");
 
         status.Should().Be(HttpStatusCode.OK, payload);
         using var document = JsonDocument.Parse(payload);

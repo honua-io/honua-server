@@ -26,39 +26,39 @@ internal sealed class LayerValidationService(
     private const string SeverityError = "error";
 
     public async Task<LayerValidationResponse?> ValidateLayerAsync(
-        int layerId,
+        int storageLayerId,
         CancellationToken cancellationToken = default)
     {
-        if (layerId < 0)
+        if (storageLayerId < 0)
         {
             return null;
         }
 
         var snapshot = await metadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var resource))
+        if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(storageLayerId, out var resource))
         {
             return null;
         }
 
         var checks = new List<LayerValidationCheck>
         {
-            Pass("catalog-layer", $"Layer {layerId} exists in the metadata v2 graph.")
+            Pass("catalog-layer", $"Layer {storageLayerId} exists in the metadata v2 graph.")
         };
         ValidatePermanentFilter(resource, checks);
 
-        if (!snapshot.Index.StorageBindingsByStorageLayerId.TryGetValue(layerId, out var storageBinding))
+        if (!snapshot.Index.StorageBindingsByStorageLayerId.TryGetValue(storageLayerId, out var storageBinding))
         {
             checks.Add(Error(
                 "storage-mapping",
                 "Layer does not define a metadata v2 storage binding."));
 
-            return BuildResponse(layerId, resource, null, checks);
+            return BuildResponse(storageLayerId, resource, null, checks);
         }
 
         var storageMapping = ResolveStorageMapping(resource, storageBinding, checks);
         if (storageMapping == null)
         {
-            return BuildResponse(layerId, resource, null, checks);
+            return BuildResponse(storageLayerId, resource, null, checks);
         }
 
         checks.Add(Pass(
@@ -86,7 +86,7 @@ internal sealed class LayerValidationService(
                 storageMapping.QualifiedName,
                 null));
 
-            return BuildResponse(layerId, resource, storageMapping, checks);
+            return BuildResponse(storageLayerId, resource, storageMapping, checks);
         }
 
         checks.Add(Pass(
@@ -98,7 +98,7 @@ internal sealed class LayerValidationService(
         ValidateSrid(storageMapping, table, checks);
         ValidateDeclaredFields(resource, table, checks);
 
-        return BuildResponse(layerId, resource, storageMapping, checks);
+        return BuildResponse(storageLayerId, resource, storageMapping, checks);
     }
 
     private static TableInfo? FindTable(
@@ -479,7 +479,7 @@ internal sealed class LayerValidationService(
     }
 
     private static LayerValidationResponse BuildResponse(
-        int layerId,
+        int storageLayerId,
         MetadataV2Resource resource,
         StorageValidationMapping? storageMapping,
         IReadOnlyCollection<LayerValidationCheck> checks)
@@ -489,7 +489,7 @@ internal sealed class LayerValidationService(
 
         return new LayerValidationResponse
         {
-            LayerId = layerId,
+            StorageLayerId = storageLayerId,
             LayerName = resource.Metadata.Name,
             IsValid = !hasErrors,
             Status = hasErrors ? "invalid" : hasWarnings ? "warning" : "valid",

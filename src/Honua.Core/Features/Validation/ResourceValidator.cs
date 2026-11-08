@@ -18,6 +18,19 @@ public sealed class ResourceValidator : IResourceValidator
         _v2Provider = v2Provider ?? throw new ArgumentNullException(nameof(v2Provider));
     }
 
+    public async Task<ResourceValidationResult<MetadataV2Resource>> ValidateStorageLayerV2Async(
+        int storageLayerId,
+        CancellationToken cancellationToken = default)
+    {
+        var snapshot = await RequireV2SnapshotAsync(cancellationToken).ConfigureAwait(false);
+        var resource = snapshot.ResolveStorageResource(storageLayerId);
+
+        return resource is null
+            ? ResourceValidationResult.NotFound<MetadataV2Resource>(
+                ErrorMessages.NotFound.FormatLayer(storageLayerId))
+            : ResourceValidationResult.Success(resource);
+    }
+
     public async Task<ResourceValidationResult<MetadataV2Resource>> ValidateLayerV2Async(
         int layerId,
         CancellationToken cancellationToken = default)

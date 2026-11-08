@@ -622,12 +622,11 @@ internal static class CollectionsEndpoints
             type: MediaTypes.Json,
             title: "Queryables (legacy clients)"));
 
-        // Style link (MapLibre style JSON) — uses the storage layer id as the v1 catalog does.
         var storageLayerId = snapshot.ResolveStorageLayerId(publication);
         if (storageLayerId.HasValue)
         {
             collectionLinks.Add(Link.Create(
-                href: $"{baseUrl}/api/styles/{storageLayerId.Value.ToString(CultureInfo.InvariantCulture)}.json",
+                href: $"{baseUrl}/api/styles/{Uri.EscapeDataString(publication.Metadata.Id)}.json",
                 rel: RelationTypes.Style,
                 type: MediaTypes.Json,
                 title: "Style"));

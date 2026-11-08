@@ -57,6 +57,12 @@ public sealed class PublicPublicationIdentityTests : IAsyncLifetime
         before.Should().BeEquivalentTo(expected);
         after.Should().BeEquivalentTo(expected);
         before.Select(XmlConvert.DecodeName).Should().BeEquivalentTo([PublicationId, SecondPublicationId]);
+        foreach (var name in expected)
+        {
+            var schema = await ReadXmlAsync($"/wfs?SERVICE=WFS&REQUEST=DescribeFeatureType&VERSION=2.0.0&TYPENAMES={Uri.EscapeDataString(name)}");
+            XNamespace xsd = "http://www.w3.org/2001/XMLSchema";
+            schema.Root!.Elements(xsd + "element").Select(element => element.Attribute("name")!.Value).Should().Equal(name);
+        }
     }
 
     [IntegrationTest]
@@ -92,7 +98,7 @@ public sealed class PublicPublicationIdentityTests : IAsyncLifetime
     [IntegrationTest]
     [Protocol(TestProtocols.OgcApiStyles)]
     [Operation(Operations.GetMetadata)]
-    [Endpoint("GET /api/styles/{layerId}.json")]
+    [Endpoint("GET /api/styles/{publicationId}.json")]
     public async Task Style_StorageRebound_KeepsPublicationUrlAndResolvesCurrentStorage()
     {
         var path = $"/api/styles/{Uri.EscapeDataString(PublicationId)}.json";
@@ -112,6 +118,8 @@ public sealed class PublicPublicationIdentityTests : IAsyncLifetime
         await _styles.Received().GetStyleAsync(Arg.Any<MetadataV2Resource>(), ReboundStorageLayerId, Arg.Any<CancellationToken>());
         using var storageAlias = await _fixture.Client.GetAsync($"/api/styles/{OriginalStorageLayerId}.json");
         storageAlias.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        using var caseAlias = await _fixture.Client.GetAsync($"/api/styles/{Uri.EscapeDataString(PublicationId.ToUpperInvariant())}.json");
+        caseAlias.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     private async Task<string[]> WfsNamesAsync()

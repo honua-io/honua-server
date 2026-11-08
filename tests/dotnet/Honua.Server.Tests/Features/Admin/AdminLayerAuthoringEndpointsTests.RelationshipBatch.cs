@@ -48,11 +48,11 @@ public sealed partial class AdminLayerAuthoringEndpointsTests
         _fixture.GetCurrentV2GraphSnapshot().Graph.Resources.Should().BeEquivalentTo(saved.Graph.Resources);
         foreach (var layer in request.Layers)
         {
-            using var get = await client.GetAsync($"/api/v1/admin/metadata/layers/{layer.LayerId}/relationships");
+            using var get = await client.GetAsync($"/api/v1/admin/metadata/layers/{layer.StorageLayerId}/relationships");
             get.Be200Ok();
             var readback = await DeserializeRelationshipsAsync(get);
             readback!.Data!.Relationships.Should().ContainSingle().Which.Composite.Should().BeTrue();
-            readback.Data.Relationships[0].RelatedLayerId.Should().Be(layer.LayerId == 0 ? 1 : 0);
+            readback.Data.Relationships[0].RelatedStorageLayerId.Should().Be(layer.StorageLayerId == 0 ? 1 : 0);
         }
     }
 
@@ -68,7 +68,7 @@ public sealed partial class AdminLayerAuthoringEndpointsTests
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("PUT /api/v1/admin/metadata/layers/relationships/batch")]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/relationships")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/relationships")]
     public async Task PutRelationshipBatch_OneSidedComposite_IsRejectedThroughBothAuthoringRoutes()
     {
         PrepareRelationshipBatchGraph();
@@ -120,7 +120,7 @@ public sealed partial class AdminLayerAuthoringEndpointsTests
         response.Be200Ok();
         var payload = JsonSerializer.Deserialize(await response.Content.ReadAsStringAsync(),
             LayerAuthoringJsonContext.Default.ApiResponseLayerRelationshipBatchResponse);
-        payload!.Data!.Layers.Single(layer => layer.LayerId == 0).Relationships[0].RelatedLayerId.Should().Be(1);
+        payload!.Data!.Layers.Single(layer => layer.StorageLayerId == 0).Relationships[0].RelatedStorageLayerId.Should().Be(1);
     }
 
     [IntegrationTest]
@@ -193,20 +193,20 @@ public sealed partial class AdminLayerAuthoringEndpointsTests
         [
             new LayerRelationshipBatchUpdateItem
             {
-                LayerId = 0,
+                StorageLayerId = 0,
                 Relationships = [new LayerRelationshipUpdateItem
                 {
-                    Id = "reviewed-parent", Name = "Reviewed summary", RelatedLayerId = 1,
+                    Id = "reviewed-parent", Name = "Reviewed summary", RelatedStorageLayerId = 1,
                     OriginField = "objectid", DestinationField = "related_id", Role = "origin",
                     Composite = true, GeoServicesRelationshipId = 7,
                 }],
             },
             new LayerRelationshipBatchUpdateItem
             {
-                LayerId = 1,
+                StorageLayerId = 1,
                 Relationships = [new LayerRelationshipUpdateItem
                 {
-                    Id = "reviewed-child", Name = "Reviewed parent", RelatedLayerId = 0,
+                    Id = "reviewed-child", Name = "Reviewed parent", RelatedStorageLayerId = 0,
                     OriginField = invalidChildField ? "missing_field" : "related_id", DestinationField = "objectid",
                     Role = "destination", Composite = true, GeoServicesRelationshipId = 7,
                 }],

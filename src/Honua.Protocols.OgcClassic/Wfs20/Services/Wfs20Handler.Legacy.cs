@@ -1001,7 +1001,7 @@ internal sealed partial class Wfs20Handler
 
         foreach (var featureType in featureTypes)
         {
-            var typeName = XmlConvert.EncodeLocalName(featureType.LocalName);
+            var typeName = featureType.LocalName;
             schema.AppendLine($"""  <xsd:element name="{typeName}" type="{FeatureNamespacePrefix}:{typeName}Type" substitutionGroup="gml:_Feature"/>""");
             schema.AppendLine($"""  <xsd:complexType name="{typeName}Type">""");
             schema.AppendLine("""    <xsd:complexContent>""");

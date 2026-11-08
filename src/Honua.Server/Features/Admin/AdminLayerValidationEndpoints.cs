@@ -19,33 +19,33 @@ internal static class AdminLayerValidationEndpoints
             .WithTags("Admin", "Metadata", "Validation")
             .RequireAdminAuthorization();
 
-        _ = group.MapGet("/{layerId:int}/validation", HandleGetLayerValidation)
+        _ = group.MapGet("/{storageLayerId:int}/validation", HandleGetLayerValidation)
             .WithName("GetAdminLayerValidation")
             .WithSummary("Validate layer metadata against its backing storage")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
     }
 
     private static async Task<IResult> HandleGetLayerValidation(
-        int layerId,
+        int storageLayerId,
         HttpContext context,
         [FromServices] ILayerValidationService validationService,
         CancellationToken cancellationToken)
     {
-        if (layerId < 0)
+        if (storageLayerId < 0)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
                 context,
                 StatusCodes.Status400BadRequest,
-                $"Layer identifier '{layerId}' is invalid.");
+                $"Layer identifier '{storageLayerId}' is invalid.");
         }
 
-        var validation = await validationService.ValidateLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
+        var validation = await validationService.ValidateLayerAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
         if (validation == null)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
                 context,
                 StatusCodes.Status404NotFound,
-                $"Layer {layerId} not found.");
+                $"Layer {storageLayerId} not found.");
         }
 
         var payload = ApiResponse<LayerValidationResponse>.CreateSuccess(validation);

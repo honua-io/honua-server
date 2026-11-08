@@ -182,6 +182,16 @@ public static class MetadataV2GraphSnapshotExtensions
             && snapshot.ResolveStorageLayerId(publication) == storageLayerId);
     }
 
+    public static MetadataV2Resource? ResolveStorageResource(
+        this MetadataV2GraphSnapshot snapshot,
+        int storageLayerId,
+        Func<MetadataV2Publication, bool>? includePublication = null)
+        => snapshot.PublicationsForStorageLayer(storageLayerId)
+            .Where(publication => includePublication?.Invoke(publication) ?? true)
+            .Select(publication => snapshot.ResolveResource(publication)!)
+            .OrderBy(static candidate => candidate.Type is MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table ? 0 : 1)
+            .FirstOrDefault();
+
     public static MetadataV2Connection? ResolveConnection(
         this MetadataV2GraphSnapshot snapshot, MetadataV2StorageBinding binding)
     {

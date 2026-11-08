@@ -69,9 +69,9 @@ public sealed class McpMapToolTests
     [Operation(Operations.Query)]
     [Endpoint("POST /mcp tools/call honua_list_layers")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
-    public void CatalogIdentity_MatchesExistingStudioUriComponentContract(string serviceId, int layerId, string expected)
+    public void CatalogIdentity_MatchesExistingStudioUriComponentContract(string serviceId, int serviceLayerIndex, string expected)
     {
-        StudioCatalogSourceIdentity.Create(serviceId, layerId).Should().Be(expected);
+        StudioCatalogSourceIdentity.Create(serviceId, serviceLayerIndex).Should().Be(expected);
     }
 
     [Fact]
@@ -156,7 +156,7 @@ public sealed class McpMapToolTests
 
         var response = await BuildSurface().DispatchAsync(context,
             ToolCall("gav-policy", QueryFeaturesTool.ToolName,
-                $$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"returnCountOnly":{{(countOnly ? "true" : "false")}}}"""),
+                $$"""{"serviceId":"{{ServiceId}}","serviceLayerIndex":{{LayerIndex}},"returnCountOnly":{{(countOnly ? "true" : "false")}}}"""),
             CancellationToken.None);
 
         response!.Result!.Value.GetProperty("isError").GetBoolean().Should().BeTrue(
@@ -194,7 +194,7 @@ public sealed class McpMapToolTests
         using var services = BuildServices(reader: reader, accessPolicy: new AccessPolicy { AllowedRoles = ["restricted-reader"] });
         var response = await BuildSurface().DispatchAsync(AuthenticatedContext(services),
             ToolCall("denied-describe", DescribeLayerTool.ToolName,
-                $$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"includeRowCount":{{(includeRowCount ? "true" : "false")}}}"""),
+                $$"""{"serviceId":"{{ServiceId}}","serviceLayerIndex":{{LayerIndex}},"includeRowCount":{{(includeRowCount ? "true" : "false")}}}"""),
             CancellationToken.None);
         response!.Error.Should().BeNull();
         var result = response.Result!.Value;
@@ -216,7 +216,7 @@ public sealed class McpMapToolTests
         context.User.AddIdentity(new ClaimsIdentity([new Claim(ClaimTypes.Role, "restricted-reader")]));
         var response = await BuildSurface().DispatchAsync(context,
             ToolCall("allowed-count", QueryFeaturesTool.ToolName,
-                $$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"returnCountOnly":true}"""),
+                $$"""{"serviceId":"{{ServiceId}}","serviceLayerIndex":{{LayerIndex}},"returnCountOnly":true}"""),
             CancellationToken.None);
         response!.Error.Should().BeNull();
         response.Result!.Value.GetProperty("structuredContent").GetProperty("count").GetInt64().Should().Be(42);
@@ -270,7 +270,7 @@ public sealed class McpMapToolTests
         structured.GetProperty("layerCount").GetInt32().Should().Be(1);
         var layer = structured.GetProperty("layers")[0];
         layer.GetProperty("serviceId").GetString().Should().Be(ServiceId);
-        layer.GetProperty("layerId").GetInt32().Should().Be(LayerIndex);
+        layer.GetProperty("serviceLayerIndex").GetInt32().Should().Be(LayerIndex);
         layer.GetProperty("studioSourceId").GetString().Should().Be("svc-parcels/0");
         StructuredContentShouldMatchOutputSchema(result, McpToolOutputSchemas.ListLayersOutputSchema);
         layer.GetProperty("geometryType").GetString().Should().Be(nameof(MetadataV2GeometryType.Polygon));
@@ -321,7 +321,7 @@ public sealed class McpMapToolTests
                 output.GetProperty("nextOffset").GetInt32().Should().Be(offset + 1);
             }
             var layer = output.GetProperty("layers")[0];
-            identities.Add($"{layer.GetProperty("serviceId").GetString()}/{layer.GetProperty("layerId").GetInt32()}");
+            identities.Add($"{layer.GetProperty("serviceId").GetString()}/{layer.GetProperty("serviceLayerIndex").GetInt32()}");
         }
         identities.Should().Equal("svc-other/0", $"{ServiceId}/0", $"{ServiceId}/1");
 
@@ -472,7 +472,27 @@ public sealed class McpMapToolTests
     [Operation(Operations.Query)]
     [Endpoint("POST /mcp tools/call honua_describe_layer")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
-    public async Task ToolsCall_DescribeLayer_ReturnsFieldSchemaRowCountAndCrs()
+    public async Task ToolsCall_DescribeLayer_AmbiguousLayerIdParameter_IsRejected()
+    {
+        var reader = Substitute.For<IFeatureReader>();
+        var response = await BuildSurface().DispatchAsync(
+            AuthenticatedContext(BuildServices(reader: reader)),
+            ToolCall("describe-old-parameter", DescribeLayerTool.ToolName,
+                $$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}}}"""),
+            CancellationToken.None);
+
+        response!.Error.Should().BeNull();
+        var result = response.Result!.Value;
+        result.GetProperty("isError").GetBoolean().Should().BeTrue();
+        result.GetProperty("content")[0].GetProperty("text").GetString().Should().Contain("serviceLayerIndex");
+        await reader.DidNotReceiveWithAnyArgs().CountAsync(default, default!, default);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /mcp tools/call honua_describe_layer")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_DescribeLayer_StorageBindingDiffers_UsesServiceLayerIndex()
     {
         var reader = Substitute.For<IFeatureReader>();
         reader.CountAsync(StorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
@@ -482,7 +502,7 @@ public sealed class McpMapToolTests
         var response = await surface.DispatchAsync(
             AuthenticatedContext(BuildServices(reader: reader)),
             ToolCall("describe-1", DescribeLayerTool.ToolName, $$"""
-                {"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}}}
+                {"serviceId":"{{ServiceId}}","serviceLayerIndex":{{LayerIndex}}}
                 """),
             CancellationToken.None);
 
@@ -491,7 +511,8 @@ public sealed class McpMapToolTests
         result.GetProperty("isError").GetBoolean().Should().BeFalse();
         var structured = result.GetProperty("structuredContent");
         structured.GetProperty("serviceId").GetString().Should().Be(ServiceId);
-        structured.GetProperty("layerId").GetInt32().Should().Be(LayerIndex);
+        structured.GetProperty("serviceLayerIndex").GetInt32().Should().Be(LayerIndex);
+        structured.TryGetProperty("layerId", out _).Should().BeFalse();
         structured.GetProperty("studioSourceId").GetString().Should().Be("svc-parcels/0");
         StructuredContentShouldMatchOutputSchema(result, new DescribeLayerTool(_jobService,
             NullLogger<DescribeLayerTool>.Instance).Describe().OutputSchema!.Value);
@@ -522,7 +543,7 @@ public sealed class McpMapToolTests
         var response = await surface.DispatchAsync(
             AuthenticatedContext(BuildServices(reader: reader)),
             ToolCall("describe-2", DescribeLayerTool.ToolName, $$"""
-                {"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"includeRowCount":false}
+                {"serviceId":"{{ServiceId}}","serviceLayerIndex":{{LayerIndex}},"includeRowCount":false}
                 """),
             CancellationToken.None);
 
@@ -545,7 +566,7 @@ public sealed class McpMapToolTests
         var response = await surface.DispatchAsync(
             AuthenticatedContext(BuildServices()),
             ToolCall("describe-missing-1", DescribeLayerTool.ToolName, """
-                {"serviceId":"does-not-exist","layerId":0}
+                {"serviceId":"does-not-exist","serviceLayerIndex":0}
                 """),
             CancellationToken.None);
 
@@ -587,7 +608,7 @@ public sealed class McpMapToolTests
         var response = await surface.DispatchAsync(
             AuthenticatedContext(BuildServices(reader: reader, geometryService: geometryService)),
             ToolCall("query-1", QueryFeaturesTool.ToolName, $$"""
-                {"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"limit":10}
+                {"serviceId":"{{ServiceId}}","serviceLayerIndex":{{LayerIndex}},"limit":10}
                 """),
             CancellationToken.None);
 
@@ -635,7 +656,7 @@ public sealed class McpMapToolTests
         var response = await surface.DispatchAsync(
             AuthenticatedContext(BuildServices(reader: reader, geometryService: geometryService)),
             ToolCall("query-crs-1", QueryFeaturesTool.ToolName, $$"""
-                {"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"bbox":[-20037508,-20037508,20037508,20037508]}
+                {"serviceId":"{{ServiceId}}","serviceLayerIndex":{{LayerIndex}},"bbox":[-20037508,-20037508,20037508,20037508]}
                 """),
             CancellationToken.None);
 
@@ -737,7 +758,7 @@ public sealed class McpMapToolTests
             var response = await surface.DispatchAsync(
                 AuthenticatedContext(services),
                 ToolCall($"page-{calls}", QueryFeaturesTool.ToolName, $$"""
-                    {"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"limit":{{pageSize}}{{offsetJson}}}
+                    {"serviceId":"{{ServiceId}}","serviceLayerIndex":{{LayerIndex}},"limit":{{pageSize}}{{offsetJson}}}
                     """),
                 CancellationToken.None);
 
@@ -822,7 +843,7 @@ public sealed class McpMapToolTests
             var response = await surface.DispatchAsync(
                 AuthenticatedContext(services),
                 ToolCall($"cursor-page-{call}", QueryFeaturesTool.ToolName, $$"""
-                    {"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"limit":{{pageSize}}{{cursorJson}}}
+                    {"serviceId":"{{ServiceId}}","serviceLayerIndex":{{LayerIndex}},"limit":{{pageSize}}{{cursorJson}}}
                     """),
                 CancellationToken.None);
 
@@ -857,7 +878,7 @@ public sealed class McpMapToolTests
         var response = await surface.DispatchAsync(
             AuthenticatedContext(BuildServices()),
             ToolCall("query-invalid-1", QueryFeaturesTool.ToolName, $$"""
-                {"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"limit":0}
+                {"serviceId":"{{ServiceId}}","serviceLayerIndex":{{LayerIndex}},"limit":0}
                 """),
             CancellationToken.None);
 
@@ -878,7 +899,7 @@ public sealed class McpMapToolTests
     public async Task ToolsCall_QueryFeatures_MissingLayerId_ReturnsCertificationErrorShape()
     {
         // This is the exact invalid-argument shape used by the external MCP
-        // certification error-shape contract: serviceId is present and layerId
+        // certification error-shape contract: serviceId is present and serviceLayerIndex
         // is omitted. It must remain a structured tool error, not -32602.
         var surface = BuildSurface();
         var response = await surface.DispatchAsync(
@@ -913,7 +934,7 @@ public sealed class McpMapToolTests
         var response = await surface.DispatchAsync(
             AuthenticatedContext(BuildServices(reader: reader)),
             ToolCall("count-1", QueryFeaturesTool.ToolName, $$"""
-                {"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"returnCountOnly":true}
+                {"serviceId":"{{ServiceId}}","serviceLayerIndex":{{LayerIndex}},"returnCountOnly":true}
                 """),
             CancellationToken.None);
 
@@ -959,7 +980,7 @@ public sealed class McpMapToolTests
         var response = await surface.DispatchAsync(
             AuthenticatedContext(BuildServices(reader: reader, geometryService: geometryService)),
             ToolCall("nogeom-1", QueryFeaturesTool.ToolName, $$"""
-                {"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"returnGeometry":false}
+                {"serviceId":"{{ServiceId}}","serviceLayerIndex":{{LayerIndex}},"returnGeometry":false}
                 """),
             CancellationToken.None);
 
@@ -1008,7 +1029,7 @@ public sealed class McpMapToolTests
         var response = await surface.DispatchAsync(
             AuthenticatedContext(BuildServices(reader: reader, geometryService: geometryService)),
             ToolCall("quant-1", QueryFeaturesTool.ToolName, $$"""
-                {"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}}}
+                {"serviceId":"{{ServiceId}}","serviceLayerIndex":{{LayerIndex}}}
                 """),
             CancellationToken.None);
 
@@ -1023,7 +1044,7 @@ public sealed class McpMapToolTests
         var fullResponse = await surface.DispatchAsync(
             AuthenticatedContext(BuildServices(reader: reader, geometryService: geometryService)),
             ToolCall("quant-2", QueryFeaturesTool.ToolName, $$"""
-                {"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"geometryPrecision":-1}
+                {"serviceId":"{{ServiceId}}","serviceLayerIndex":{{LayerIndex}},"geometryPrecision":-1}
                 """),
             CancellationToken.None);
 
@@ -1066,7 +1087,7 @@ public sealed class McpMapToolTests
             AuthenticatedContext(BuildServices(renderer: renderer, temporaryFileService: temporaryFileService)),
             ToolCall("render-1", RenderMapTool.ToolName, $$"""
                 {
-                  "layers":[{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}}}],
+                  "layers":[{"serviceId":"{{ServiceId}}","serviceLayerIndex":{{LayerIndex}}}],
                   "bbox":[-10,-10,10,10],
                   "width":256,
                   "height":256
@@ -1154,7 +1175,7 @@ public sealed class McpMapToolTests
             AuthenticatedContext(BuildServices(renderer: renderer, temporaryFileService: temporaryFileService)),
             ToolCall("render-inline-1", RenderMapTool.ToolName, $$"""
                 {
-                  "layers":[{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}}}],
+                  "layers":[{"serviceId":"{{ServiceId}}","serviceLayerIndex":{{LayerIndex}}}],
                   "bbox":[-10,-10,10,10],
                   "width":256,
                   "height":256,
@@ -1232,7 +1253,7 @@ public sealed class McpMapToolTests
         var response = await surface.DispatchAsync(
             AuthenticatedContext(BuildServices(reader: reader, geometryService: geometryService)),
             ToolCall("query-byname-1", QueryFeaturesTool.ToolName, $$"""
-                {"serviceId":"{{ServiceName}}","layerId":{{LayerIndex}},"limit":10}
+                {"serviceId":"{{ServiceName}}","serviceLayerIndex":{{LayerIndex}},"limit":10}
                 """),
             CancellationToken.None);
 
@@ -1273,7 +1294,7 @@ public sealed class McpMapToolTests
             AuthenticatedContext(BuildServices(renderer: renderer, temporaryFileService: BuildTemporaryFileService("/temp/byname.png"))),
             ToolCall("render-byname-1", RenderMapTool.ToolName, $$"""
                 {
-                  "layers":[{"serviceId":"{{ServiceName}}","layerId":{{LayerIndex}}}],
+                  "layers":[{"serviceId":"{{ServiceName}}","serviceLayerIndex":{{LayerIndex}}}],
                   "bbox":[-10,-10,10,10],
                   "width":256,
                   "height":256
@@ -1345,7 +1366,7 @@ public sealed class McpMapToolTests
             AuthenticatedContext(BuildServices(renderer: renderer)),
             ToolCall("render-nonative-1", RenderMapTool.ToolName, $$"""
                 {
-                  "layers":[{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}}}],
+                  "layers":[{"serviceId":"{{ServiceId}}","serviceLayerIndex":{{LayerIndex}}}],
                   "bbox":[-10,-10,10,10],
                   "width":256,
                   "height":256
@@ -1392,7 +1413,7 @@ public sealed class McpMapToolTests
 
         var response = await BuildSurface().DispatchAsync(context,
             ToolCall("granted-count", QueryFeaturesTool.ToolName,
-                $$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"returnCountOnly":true}"""),
+                $$"""{"serviceId":"{{ServiceId}}","serviceLayerIndex":{{LayerIndex}},"returnCountOnly":true}"""),
             CancellationToken.None);
 
         response!.Error.Should().BeNull();
@@ -1427,7 +1448,7 @@ public sealed class McpMapToolTests
 
         var response = await BuildSurface().DispatchAsync(context,
             ToolCall("describe-grants", DescribeLayerTool.ToolName,
-                $$"""{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}},"includeRowCount":{{includeRowCount.ToString().ToLowerInvariant()}}}"""),
+                $$"""{"serviceId":"{{ServiceId}}","serviceLayerIndex":{{LayerIndex}},"includeRowCount":{{includeRowCount.ToString().ToLowerInvariant()}}}"""),
             CancellationToken.None);
 
         var allowed = metadataAllowed && (!includeRowCount || queryAllowed);
@@ -1525,7 +1546,7 @@ public sealed class McpMapToolTests
 
         var render = await surface.DispatchAsync(context,
             ToolCall("scoped-admin-render", RenderMapTool.ToolName, $$"""
-                {"layers":[{"serviceId":"{{ServiceId}}","layerId":{{LayerIndex}}}],"bbox":[-10,-10,10,10],"width":64,"height":64}
+                {"layers":[{"serviceId":"{{ServiceId}}","serviceLayerIndex":{{LayerIndex}}}],"bbox":[-10,-10,10,10],"width":64,"height":64}
                 """),
             CancellationToken.None);
 

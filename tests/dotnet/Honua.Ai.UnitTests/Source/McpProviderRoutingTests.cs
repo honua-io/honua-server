@@ -115,7 +115,7 @@ public sealed class McpProviderRoutingTests
         context.RequestServices = services;
         using var parameters = JsonDocument.Parse($$"""
             {"name":"{{toolName}}","arguments":{
-              "serviceId":"svc-remote","layerId":0,"returnCountOnly":{{(countOnly ? "true" : "false")}}
+              "serviceId":"svc-remote","serviceLayerIndex":0,"returnCountOnly":{{(countOnly ? "true" : "false")}}
             }
             }
             """);
