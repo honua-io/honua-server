@@ -12,9 +12,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="..\..\LICENSE" Pack="true" PackagePath="\" />
-    <None Include="..\..\THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="\" />
-    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+    <None Include="..\..\..\LICENSE" Pack="true" PackagePath="\" />
+    <None Include="..\..\..\THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="\" />
+    <None Include="..\..\..\README.md" Pack="true" PackagePath="\" />
 
     <!--
       Public, AOT-safe plugin SDK contract surface (issue #347). Third-party plugin
@@ -22,7 +22,7 @@
       Honua.Core.Abstractions purely for the canonical Feature type and takes no
       dependency on the heavy data-layer/host assemblies.
     -->
-    <ProjectReference Include="..\Honua.Core\Abstractions\Honua.Core.Abstractions.csproj" />
+    <ProjectReference Include="..\..\Honua.Core\Abstractions\Honua.Core.Abstractions.csproj" />
   </ItemGroup>
 
   <ItemGroup>

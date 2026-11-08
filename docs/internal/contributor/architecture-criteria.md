@@ -378,7 +378,7 @@ project files are `src/Honua.Db/<Provider>/Honua.<Provider>.csproj`, and their n
 public class FeaturesController : ControllerBase { }   // BLOCKING: no controllers
 
 // CORRECT: Minimal API endpoint mapping
-// (see src/Honua.Protocols.GeoServices/FeatureServer/FeatureServerEndpoints.cs)
+// (see src/Honua.Protocols/GeoServices/FeatureServer/FeatureServerEndpoints.cs)
 public static void MapFeatureServerEndpoints(this WebApplication app)
 {
     app.MapGet("/rest/services/{id}/FeatureServer/{layerId}/query",
@@ -400,7 +400,7 @@ Organise code in vertical feature slices, not in layer-based folders (`Controlle
 `Services/`, `Models/`, `Repositories/`):
 
 ```text
-src/Honua.Protocols.GeoServices/FeatureServer/
+src/Honua.Protocols/GeoServices/FeatureServer/
 ├── FeatureServerEndpoints.cs      // API endpoints
 ├── FeatureServerEditsHandler.cs   // adapter to the canonical edit pipeline
 └── AttachmentEndpoints.cs         // one slice per feature, not per layer

@@ -126,7 +126,7 @@
           "verdict": "identical"
         },
         {
-          "path": "src/Honua.Geoprocessing/Features/Geoprocessing/WorkspaceOptions.cs",
+          "path": "src/Honua.Geoprocessing/Core/Features/Geoprocessing/WorkspaceOptions.cs",
           "verdict": "identical"
         },
         {
@@ -205,14 +205,14 @@
           "verdict": "absent"
         },
         {
-          "path": "src/Honua.Geoprocessing/Features/Geoprocessing/BuiltInProcessCatalog.cs",
+          "path": "src/Honua.Geoprocessing/Core/Features/Geoprocessing/BuiltInProcessCatalog.cs",
           "verdict": "partial",
           "addedLinesProbed": 17,
           "addedLinesFound": 1,
           "supersededOnDefault": false
         },
         {
-          "path": "src/Honua.Geoprocessing/Features/Geoprocessing/GeoprocessingServiceCollectionExtensions.cs",
+          "path": "src/Honua.Geoprocessing/Core/Features/Geoprocessing/GeoprocessingServiceCollectionExtensions.cs",
           "verdict": "partial",
           "addedLinesProbed": 28,
           "addedLinesFound": 1,

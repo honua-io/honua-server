@@ -15,8 +15,8 @@ class CatalogTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
-        self.owner = self.project('src/Honua.Protocols.Example')
-        self.unrelated = self.project('src/Honua.Protocols.Other')
+        self.owner = self.project('src/Honua.Protocols/Example')
+        self.unrelated = self.project('src/Honua.Protocols/Other')
         self.unit = self.project('tests/dotnet/Honua.Protocols.Example.UnitTests', [self.owner])
         self.integration = self.project('tests/dotnet/Honua.Protocols.Example.Tests', [self.owner])
         (self.root / '.github').mkdir()
@@ -64,11 +64,11 @@ class CatalogTests(unittest.TestCase):
 
     def test_unit_plan_uses_forward_closure_not_integration_consumer(self):
         catalog.validate(self.root, self.entries)
-        result = catalog.plan(self.root, self.entries, ['src/Honua.Protocols.Example/Example.cs'])
+        result = catalog.plan(self.root, self.entries, ['src/Honua.Protocols/Example/Example.cs'])
         self.assertEqual([self.unit], result['selectedProjects'])
         self.assertNotIn(self.integration, result['forwardBuildClosure'])
         self.assertFalse(result['validatesPullRequest'])
-        self.assertEqual([self.unit], catalog.plan(self.root, self.entries, ['src/Honua.Protocols.Other/Example.cs'])['selectedProjects'])
+        self.assertEqual([self.unit], catalog.plan(self.root, self.entries, ['src/Honua.Protocols/Other/Example.cs'])['selectedProjects'])
 
     def test_linked_input_selects_consumer_without_source_owner_assembly(self):
         shared = self.root / 'tests/shared/Pure.cs'
@@ -93,7 +93,7 @@ class CatalogTests(unittest.TestCase):
     def test_unrelated_protocol_and_integration_package_are_rejected(self):
         unit = self.root / self.unit
         original = unit.read_text()
-        unit.write_text(original.replace('</ItemGroup>', '<ProjectReference Include="../../../src/Honua.Protocols.Other/Honua.Protocols.Other.csproj" /></ItemGroup>'))
+        unit.write_text(original.replace('</ItemGroup>', '<ProjectReference Include="../../../src/Honua.Protocols/Other/Honua.Protocols.Other.csproj" /></ItemGroup>'))
         with self.assertRaisesRegex(ValueError, 'forbidden runtime'):
             catalog.validate(self.root, self.entries)
         unit.write_text(original.replace('</ItemGroup>', '<PackageReference Include="Testcontainers.PostgreSql" /></ItemGroup>'))

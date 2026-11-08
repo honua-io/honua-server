@@ -41,7 +41,7 @@ tracks rather than reinvented:
   `?token=` query parameter ArcGIS clients send, with referer/IP/host binding.
   `PortalTokenAuthenticationHandler` validates them on the request path, and
   `generateToken` is live at
-  `src/Honua.Protocols.GeoServices/Sharing/SharingRestEndpoints.cs`.
+  `src/Honua.Protocols/GeoServices/Sharing/SharingRestEndpoints.cs`.
 - **Access decisions:** the RBAC resolver (#1375) over the persistent role
   store (#1374) is the per-operation `(service, layer, operation) → allow/deny`
   seam (see the scope section below), backed by `IRoleStore` and

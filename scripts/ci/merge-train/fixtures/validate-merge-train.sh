@@ -63,10 +63,10 @@ git remote add origin "${UPSTREAM}"
 
 # Seed trunk with a couple of files mirroring real shard paths so attribution
 # can be exercised against ci-shards.json prefixes.
-mkdir -p src/Honua.Protocols.GeoServices/FeatureServer src/Honua.Protocols.OgcApi/Features
+mkdir -p src/Honua.Protocols/GeoServices/FeatureServer src/Honua.Protocols/OgcApi/Features
 printf 'line1\nline2\nline3\n' > shared.txt
-printf 'a\n' > src/Honua.Protocols.GeoServices/FeatureServer/fs.cs
-printf 'b\n' > src/Honua.Protocols.OgcApi/Features/ogc.cs
+printf 'a\n' > src/Honua.Protocols/GeoServices/FeatureServer/fs.cs
+printf 'b\n' > src/Honua.Protocols/OgcApi/Features/ogc.cs
 git add -A; git commit -qm "seed trunk"
 git push -q origin HEAD:trunk
 TRUNK_SHA="$(git rev-parse HEAD)"
@@ -163,11 +163,11 @@ INC="${SCRATCH}/inc.tsv"; SKP="${SCRATCH}/skp.tsv"
 export TRAIN_INCLUDED_FILE="${INC}" TRAIN_SKIPPED_FILE="${SKP}"
 
 echo "== Case 1: clean-merge (two non-conflicting PRs both INCLUDED) =="
-make_pr pr101 src/Honua.Protocols.GeoServices/FeatureServer/fs.cs \
-  bash -c 'echo newfs >> src/Honua.Protocols.GeoServices/FeatureServer/fs.cs'
+make_pr pr101 src/Honua.Protocols/GeoServices/FeatureServer/fs.cs \
+  bash -c 'echo newfs >> src/Honua.Protocols/GeoServices/FeatureServer/fs.cs'
 echo "101 pr101" >>"${PRMAP}"
-make_pr pr102 src/Honua.Protocols.OgcApi/Features/ogc.cs \
-  bash -c 'echo newogc >> src/Honua.Protocols.OgcApi/Features/ogc.cs'
+make_pr pr102 src/Honua.Protocols/OgcApi/Features/ogc.cs \
+  bash -c 'echo newogc >> src/Honua.Protocols/OgcApi/Features/ogc.cs'
 echo "102 pr102" >>"${PRMAP}"
 git fetch -q origin trunk
 unset TRAIN_BATCH_BRANCH
@@ -342,8 +342,8 @@ printf '402\t%s\n' "$(git rev-parse origin/trunk)" >>"${INC}"
 export TRAIN_DIFF_FOR_PR=__diff_for_pr
 __diff_for_pr() {
   case "$1" in
-    401) printf 'src/Honua.Protocols.GeoServices/FeatureServer/fs.cs\n' ;;
-    402) printf 'src/Honua.Protocols.OgcApi/Features/ogc.cs\n' ;;
+    401) printf 'src/Honua.Protocols/GeoServices/FeatureServer/fs.cs\n' ;;
+    402) printf 'src/Honua.Protocols/OgcApi/Features/ogc.cs\n' ;;
   esac
 }
 export -f __diff_for_pr
@@ -358,7 +358,7 @@ export TRAIN_DIFF_FOR_PR=__diff_for_pr_none; export -f __diff_for_pr_none
 esc="$(train_attribute "server-tests (FeatureServer Query Services and Replication)" "${INC}")"
 assert_eq "attribute: 0 suspects => ESCALATE_BATCH" "${esc}" "ESCALATE_BATCH"
 # >=2 suspects: both PRs touch FeatureServer paths => both dropped.
-__diff_for_pr_both() { printf 'src/Honua.Protocols.GeoServices/FeatureServer/x.cs\n'; }
+__diff_for_pr_both() { printf 'src/Honua.Protocols/GeoServices/FeatureServer/x.cs\n'; }
 export TRAIN_DIFF_FOR_PR=__diff_for_pr_both; export -f __diff_for_pr_both
 both="$(train_attribute "server-tests (FeatureServer Query Services and Replication)" "${INC}" | sort | tr '\n' ' ' | xargs)"
 assert_eq "attribute: >=2 suspects => drop all" "${both}" "401 402"
@@ -685,8 +685,8 @@ echo "== Case 8: smart-CI shard computation on a real batch diff =="
 # shards (not run_all) — proving smart-CI uses production routing.
 git fetch -q origin trunk
 git checkout -q -B train/batch/smartci-batch origin/trunk
-mkdir -p src/Honua.Protocols.GeoServices/FeatureServer
-echo "// change" >> src/Honua.Protocols.GeoServices/FeatureServer/fs.cs
+mkdir -p src/Honua.Protocols/GeoServices/FeatureServer
+echo "// change" >> src/Honua.Protocols/GeoServices/FeatureServer/fs.cs
 git add -A; git commit -qm "featureserver change"
 desc="$(train_smart_ci_shards train/batch/smartci-batch)"
 assert_contains "smart-ci: descriptor is valid JSON with shards" "$(jq -r 'has("shards")' <<<"${desc}")" "true"

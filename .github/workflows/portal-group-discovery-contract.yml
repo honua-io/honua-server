@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [trunk]
     paths:
-      - 'src/Honua.Protocols.GeoServices/Sharing/**'
+      - 'src/Honua.Protocols/GeoServices/Sharing/**'
       - 'src/Honua.Core/Abstractions/Features/Portal/**'
       - 'src/Honua.Core/Core/Features/Portal/**'
       - 'src/Honua.Core/Core/Features/Security/Abstractions/IPortalResourceReadAuthorizer.cs'

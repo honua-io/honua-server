@@ -64,7 +64,7 @@ This doc scopes both, reusing the frozen read DTOs verbatim.
 | Config-backed store | `ConfigCatalogDiscoveryRegistryStore` | Keep as the projection target; feed it from real catalog state |
 | Dialect identity | `CatalogDialects` (`esri`/`ogc`/`odata`/`stac`/`dcat`) | The endpoint `dialect`/`key` vocabulary |
 | Envelope | `ApiResponse<T>` · `src/Honua.Hosting/Features/Models/ApiResponse.cs` | This group already uses it (success/failure) |
-| Catalog sources to project from | `src/Honua.Core/Core/Features/Catalog`, `src/Honua.Protocols.GeoServices/Catalog`, plus the OGC API Records / STAC / OData metadata surfaces | Read the live published set; do **not** rebuild catalogs |
+| Catalog sources to project from | `src/Honua.Core/Core/Features/Catalog`, `src/Honua.Protocols/GeoServices/Catalog`, plus the OGC API Records / STAC / OData metadata surfaces | Read the live published set; do **not** rebuild catalogs |
 | One-shot discovery (do NOT confuse) | `ExternalServiceDiscoveryEndpoints` (`/api/v{version}/admin/external-services/discover`) | This is *inbound* discovery of *external* services to import — unrelated to *this* surface, which is *outbound* discovery the server *publishes*. Keep them distinct. |
 
 > **Distinct from #1162.** This surface (`/console/catalog-endpoints`) describes *which discovery dialects
@@ -176,7 +176,7 @@ server's **live published surfaces** and emits the endpoint cards + items:
 
 | Dialect (`key`) | Source to project from | `entries` | `feeders` |
 | --- | --- | --- | --- |
-| `esri` | GeoServices catalog (`src/Honua.Protocols.GeoServices/Catalog`) — published Feature/Map services | service count | FeatureServer/MapServer feeders |
+| `esri` | GeoServices catalog (`src/Honua.Protocols/GeoServices/Catalog`) — published Feature/Map services | service count | FeatureServer/MapServer feeders |
 | `ogc` | OGC API Records / OGC API Features collections | collection count | `ogc-features` feeders |
 | `odata` | OData v4 service document / entity sets | entity-set count | `odata-entity-set` feeders |
 | `stac` | STAC catalog/collections | collection/item count | STAC feeders |

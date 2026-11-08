@@ -27,7 +27,7 @@ TEST_DISCOVERY = re.compile(
 SAFE_SOURCE_ROOTS = (
     "src/Honua.Geometry/", "src/Honua.Core/Core/", "src/Honua.Core/Abstractions/",
     "src/Honua.Db/", "src/Honua.Hosting/", "src/Honua.Io/",
-    "src/Honua.Protocols.", "src/Honua.Server/Features/", "src/Honua.Import/",
+    "src/Honua.Protocols/", "src/Honua.Server/Features/", "src/Honua.Import/",
 )
 
 

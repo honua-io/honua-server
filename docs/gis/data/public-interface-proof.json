@@ -1401,7 +1401,7 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
-            "src/Honua.Protocols.Scene/SceneDiscoveryEndpoints.cs",
+            "src/Honua.Protocols/Scene/SceneDiscoveryEndpoints.cs",
             "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
             "tests/dotnet/Honua.Protocols.Scene.Tests/Source/PublicSceneDiscoveryEndpointTests.cs"
           ],
@@ -1629,7 +1629,7 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
-            "src/Honua.Protocols.GeoServices/Sharing/SharingRestEndpoints.cs",
+            "src/Honua.Protocols/GeoServices/Sharing/SharingRestEndpoints.cs",
             "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
             "tests/dotnet/Honua.Server.Tests/Features/Sharing/SharingRestTokenTests.cs"
           ],
@@ -1659,7 +1659,7 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
-            "src/Honua.Protocols.GeoServices/Sharing/SharingOAuth2Endpoints.cs",
+            "src/Honua.Protocols/GeoServices/Sharing/SharingOAuth2Endpoints.cs",
             "src/Honua.Hosting/Features/Authentication/PortalTokenIntrospectionService.cs",
             "src/Honua.Hosting/Features/Authentication/PortalJwtAccessTokenService.cs",
             "tests/dotnet/Honua.Server.Tests/Features/Sharing/SharingOAuth2IntrospectionTests.cs"
@@ -1687,7 +1687,7 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
-            "src/Honua.Protocols.GeoServices/Sharing/SharingCommunityEndpoints.cs",
+            "src/Honua.Protocols/GeoServices/Sharing/SharingCommunityEndpoints.cs",
             "src/Honua.Hosting/Features/Authentication/PortalGroupStore.cs",
             "src/Honua.Hosting/Features/Authentication/PortalItemSharingStore.cs",
             "tests/dotnet/Honua.Server.Tests/Features/Sharing/SharingCommunityTests.cs"
@@ -1960,9 +1960,9 @@
           "proofMechanism": "Tile data (tile/{z}/{y}/{x}.pbf), style/resources (default styles + root.json, scoped-minimal sprites and glyph ranges), and tileMap routes are implemented as thin adapters over the shared vector-tile pipeline; sprite/glyphs are referenced from the composed style only when it has symbol layers. VectorTileServerEndpointTests exercises happy-path plus negative-path depth (bad coordinates, out-of-range zoom, unknown service, empty tile, absurd tileMap dimension) across tile, resources, and tileMap.",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
-            "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.Tile.cs",
-            "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.Resources.cs",
-            "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.TileMap.cs",
+            "src/Honua.Protocols/GeoServices/VectorTileServer/VectorTileServerEndpoints.Tile.cs",
+            "src/Honua.Protocols/GeoServices/VectorTileServer/VectorTileServerEndpoints.Resources.cs",
+            "src/Honua.Protocols/GeoServices/VectorTileServer/VectorTileServerEndpoints.TileMap.cs",
             "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VectorTileServer/VectorTileServerEndpointTests.cs",
             "tests/dotnet/Honua.Protocols.GeoServices.UnitTests/Source/VectorTileServer/VectorTileStyleComposerTests.cs"
           ],
@@ -2487,7 +2487,7 @@
           "proofMechanism": "WPS 2.0.2 endpoint integration tests cover capabilities, process descriptions, execution submission, GetStatus request and error handling, result retrieval, and OWS exception responses.",
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
-            "src/Honua.Protocols.OgcClassic/Wps20/Wps20Endpoint.cs",
+            "src/Honua.Protocols/OgcClassic/Wps20/Wps20Endpoint.cs",
             "src/Honua.Server/OperationRegistry.cs",
             "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wps20/Wps20EndpointsTests.cs"
           ],
@@ -3596,7 +3596,7 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/OperationRegistry.cs",
-            "src/Honua.Protocols.OgcClassic/Wfs20/Services/Wfs20Handler.Legacy.cs",
+            "src/Honua.Protocols/OgcClassic/Wfs20/Services/Wfs20Handler.Legacy.cs",
             "tests/dotnet/Honua.Protocols.OgcClassic.ComponentTests/WfsLegacyEndpointsTests.cs"
           ],
           "ownerRepo": "honua-server",
@@ -3656,7 +3656,7 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/OperationRegistry.cs",
-            "src/Honua.Protocols.OgcClassic/Wfs20/Services/Wfs20Handler.Legacy.cs",
+            "src/Honua.Protocols/OgcClassic/Wfs20/Services/Wfs20Handler.Legacy.cs",
             "tests/dotnet/Honua.Protocols.OgcClassic.ComponentTests/WfsLegacyEndpointsTests.cs"
           ],
           "ownerRepo": "honua-server",
@@ -3885,7 +3885,7 @@
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
-            "src/Honua.Protocols.Scene/I3s/I3sSceneServerEndpoints.cs",
+            "src/Honua.Protocols/Scene/I3s/I3sSceneServerEndpoints.cs",
             "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs",
             "tests/dotnet/Honua.Protocols.Scene.Tests/Source/I3sSceneServerEndpointTests.cs",
             "tests/dotnet/Honua.Protocols.Scene.Tests/Source/I3sConformanceFixtureTests.cs"
@@ -3918,7 +3918,7 @@
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "tests/dotnet/Honua.Protocols.Scene.Tests/Source/I3sSceneServerEndpointTests.cs",
-            "src/Honua.Protocols.Scene/I3s/I3sSceneServiceBuilder.cs"
+            "src/Honua.Protocols/Scene/I3s/I3sSceneServiceBuilder.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "planned",

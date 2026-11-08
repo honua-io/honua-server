@@ -34,7 +34,7 @@
       "kind": "Counter",
       "unit": "{evaluation}",
       "series": ["execution_admission_evaluated_total"],
-      "source": "src/Honua.Geoprocessing/Features/Geoprocessing/ExecutionAdmissionEvaluator.cs"
+      "source": "src/Honua.Geoprocessing/Core/Features/Geoprocessing/ExecutionAdmissionEvaluator.cs"
     },
     {
       "instrument": "honua.alerts.deliveries_circuit_deferred_total",
@@ -636,14 +636,14 @@
       "kind": "Counter",
       "unit": null,
       "series": ["honua_tile_cache_hits_total"],
-      "source": "src/Honua.Protocols.GeoServices/GeoServicesCloudTileCache.cs"
+      "source": "src/Honua.Protocols/GeoServices/GeoServicesCloudTileCache.cs"
     },
     {
       "instrument": "honua.tile.cache.misses",
       "kind": "Counter",
       "unit": null,
       "series": ["honua_tile_cache_misses_total"],
-      "source": "src/Honua.Protocols.GeoServices/GeoServicesCloudTileCache.cs"
+      "source": "src/Honua.Protocols/GeoServices/GeoServicesCloudTileCache.cs"
     },
     {
       "instrument": "honua.tile.jobs.duration_ms",
@@ -979,21 +979,21 @@
       "kind": "Histogram",
       "unit": null,
       "series": ["honua_plugin_duration_ms_bucket", "honua_plugin_duration_ms_count", "honua_plugin_duration_ms_sum"],
-      "source": "src/Honua.Plugins/PluginMetrics.cs"
+      "source": "src/Honua.Plugins/Core/PluginMetrics.cs"
     },
     {
       "instrument": "honua_plugin_failures_total",
       "kind": "Counter",
       "unit": null,
       "series": ["honua_plugin_failures_total"],
-      "source": "src/Honua.Plugins/PluginMetrics.cs"
+      "source": "src/Honua.Plugins/Core/PluginMetrics.cs"
     },
     {
       "instrument": "honua_plugin_invocations_total",
       "kind": "Counter",
       "unit": null,
       "series": ["honua_plugin_invocations_total"],
-      "source": "src/Honua.Plugins/PluginMetrics.cs"
+      "source": "src/Honua.Plugins/Core/PluginMetrics.cs"
     },
     {
       "instrument": "honua_request_error_total",
@@ -1007,14 +1007,14 @@
       "kind": "Counter",
       "unit": null,
       "series": ["honua_sensorthings_observation_stream_drops_total"],
-      "source": "src/Honua.Protocols.SensorThings/Streaming/ObservationStreamSessionManager.cs"
+      "source": "src/Honua.Protocols/SensorThings/Streaming/ObservationStreamSessionManager.cs"
     },
     {
       "instrument": "honua_sensorthings_observation_stream_rejections_total",
       "kind": "Counter",
       "unit": null,
       "series": ["honua_sensorthings_observation_stream_rejections_total"],
-      "source": "src/Honua.Protocols.SensorThings/Streaming/ObservationStreamSessionManager.cs"
+      "source": "src/Honua.Protocols/SensorThings/Streaming/ObservationStreamSessionManager.cs"
     },
     {
       "instrument": "honua_serving_request_duration_ms",

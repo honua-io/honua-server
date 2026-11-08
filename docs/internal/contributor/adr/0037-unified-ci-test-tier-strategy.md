@@ -169,19 +169,19 @@ emits a JSON descriptor consumed by the `server-tests` matrix:
   runtime, `Honua.Geometry`, `Honua.Jobs`, `Honua.Routing`, `Honua.Hosting`,
   and the cloud providers `Honua.Cloud.Aws`/`Honua.Cloud.Azure`; and (b) a brand-new,
   not-yet-mapped TOP-LEVEL source area (e.g. a future
-  `src/Honua.Protocols.SensorThings/` landing before its shard is added). The
+  `src/Honua.Protocols/SensorThings/` landing before its shard is added). The
   alternative would be to silently fall back to the Core shard whose filter
   excludes `Honua.Server.Tests.Features.*`. New modules land green on a full
   matrix until a follow-up adds their shard + `paths`.
 - **The protocol source dirs route targeted, not run_all (#1897).** Each
   protocol-specific subdir is claimed by its owning shard(s)' `paths`:
-  `src/Honua.Protocols.GeoServices/FeatureServer/` → the six FeatureServer
+  `src/Honua.Protocols/GeoServices/FeatureServer/` → the six FeatureServer
   shards; `ImageServer/` → GeoServices ImageServer; `MapServer/`, `GPServer/`,
   `NAServer/`, `GeometryService/`, `Catalog/` → their owning shards;
-  `src/Honua.Protocols.OData/` → the four OData shards;
-  `src/Honua.Protocols.OgcApi/{Features,Maps,Records,Tiles,Coverages,Processes}/`,
-  `src/Honua.Protocols.OgcClassic/{Wfs20,Wcs20,Wms,Wmts}/`,
-  `src/Honua.Protocols.Stac/`, `src/Honua.Protocols.Scene/` + `src/Honua.Scene/`,
+  `src/Honua.Protocols/OData/` → the four OData shards;
+  `src/Honua.Protocols/OgcApi/{Features,Maps,Records,Tiles,Coverages,Processes}/`,
+  `src/Honua.Protocols/OgcClassic/{Wfs20,Wcs20,Wms,Wmts}/`,
+  `src/Honua.Protocols/Stac/`, `src/Honua.Protocols/Scene/` + `src/Honua.Scene/`,
   and `src/Honua.Ai/` → their respective shards. So a normal single-protocol
   feature PR matches a shard (targeted) instead of tripping the unmapped net.
   Code directly under a protocol project ROOT (shared across all that

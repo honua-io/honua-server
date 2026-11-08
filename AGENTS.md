@@ -23,7 +23,7 @@ build or test on docs-only tasks unless asked. Scope and flags: [local pre-PR va
 
 ## Where things are
 - `src/Honua.Core/<Core|Abstractions>/`: models, abstractions, canonical pipelines. Providers: `src/Honua.Db/<Provider>`.
-- Protocol adapters: `src/Honua.Protocols.*`, `src/Honua.Server/Features/Protocols/`, MCP under `src/Honua.Ai/`.
+- Protocol adapters: `src/Honua.Protocols/<Family>`, `src/Honua.Server/Features/Protocols/`, MCP under `src/Honua.Ai/`.
 - Read the relevant ADR in `docs/internal/contributor/adr/` before changing cross-cutting behaviour.
 
 ## Protocol Adapter Architecture (invariants; break one and the PR is wrong)

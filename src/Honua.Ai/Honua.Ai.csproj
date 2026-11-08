@@ -34,7 +34,7 @@
          geoprocessing-split. Ai consumes that surface (it must never reference
          Honua.Server). Honua.Geoprocessing has no edge back to Ai, so this is
          acyclic. Matrix cell: (Ai, Geoprocessing) in ADR-0047. -->
-    <ProjectReference Include="..\Honua.Geoprocessing\Honua.Geoprocessing.csproj" />
+    <ProjectReference Include="..\Honua.Geoprocessing\Core\Honua.Geoprocessing.csproj" />
     <!-- The MCP geocode/route tools (#1597) are thin protocol adapters over the
          canonical IGeocodeCoordinatorService / IRoutingProvider pipelines that
          live in the Geocoding / Routing satellites. Neither satellite references

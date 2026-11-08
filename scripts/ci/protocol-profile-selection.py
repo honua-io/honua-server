@@ -41,13 +41,13 @@ WIDEN_EXACT = {
 }
 
 MODULE_PREFIXES = (
-    ("src/Honua.Protocols.GeoServices/", "geoservices"),
-    ("src/Honua.Protocols.OgcApi/", "ogc-api"),
-    ("src/Honua.Protocols.OgcClassic/", "ogc-classic"),
-    ("src/Honua.Protocols.OData/", "odata"),
-    ("src/Honua.Protocols.Stac/", "stac"),
-    ("src/Honua.Protocols.SensorThings/", "sensorthings"),
-    ("src/Honua.Protocols.Scene/", "scene"),
+    ("src/Honua.Protocols/GeoServices/", "geoservices"),
+    ("src/Honua.Protocols/OgcApi/", "ogc-api"),
+    ("src/Honua.Protocols/OgcClassic/", "ogc-classic"),
+    ("src/Honua.Protocols/OData/", "odata"),
+    ("src/Honua.Protocols/Stac/", "stac"),
+    ("src/Honua.Protocols/SensorThings/", "sensorthings"),
+    ("src/Honua.Protocols/Scene/", "scene"),
     ("src/Honua.Scene/", "scene"),
     ("src/Honua.Server/Features/Protocols/Grpc/", "grpc"),
     ("src/Honua.Ai/Features/Protocols/Mcp/", "mcp"),

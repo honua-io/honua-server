@@ -39,7 +39,7 @@ This map summarizes source-backed runtime capabilities in `honua-server`.
 - Console workflow packages: `src/Honua.Server/Features/WorkflowPackages/`
 - Content publication registry: `src/Honua.Core/Core/Features/Publishing/Content/`, `src/Honua.Server/Features/Console/Publications/`, `src/Honua.Db/Postgres/Features/Publishing/`
 - Import/migration: `src/Honua.Server/Features/Import/`
-- Portal Sharing token issuer + auth handler: `src/Honua.Core/Core/Features/Authorization/Abstractions/IPortalTokenIssuer.cs`, `src/Honua.Hosting/Features/Authentication/PortalTokenIssuer.cs`, `src/Honua.Hosting/Features/Authentication/PortalTokenAuthentication*.cs`, `src/Honua.Protocols.GeoServices/Sharing/SharingRestEndpoints.cs`
+- Portal Sharing token issuer + auth handler: `src/Honua.Core/Core/Features/Authorization/Abstractions/IPortalTokenIssuer.cs`, `src/Honua.Hosting/Features/Authentication/PortalTokenIssuer.cs`, `src/Honua.Hosting/Features/Authentication/PortalTokenAuthentication*.cs`, `src/Honua.Protocols/GeoServices/Sharing/SharingRestEndpoints.cs`
 - Forms package/submission contracts: `src/Honua.Core/Core/Features/Forms/Packages/`, `src/Honua.Server/Features/Forms/`, `src/Honua.Db/Postgres/Features/Forms/`
 - Monitoring and health: `src/Honua.Server/Features/Infrastructure/Monitoring/`, `src/Honua.Server/Features/HealthCheck/`
 

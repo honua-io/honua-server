@@ -43,7 +43,7 @@
     <ProjectReference Include="..\..\..\src\Honua.Server\Honua.Server.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Db\Postgres\Honua.Postgres.csproj" />
     <ProjectReference Include="..\Honua.TestKit\Honua.TestKit.csproj" />
-    <ProjectReference Include="..\..\..\src\Honua.Protocols.OData\Honua.Protocols.OData.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Protocols\OData\Honua.Protocols.OData.csproj" />
   </ItemGroup>
 
 </Project>

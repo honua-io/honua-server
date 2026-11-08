@@ -395,10 +395,10 @@ def edit_source(root, scenario, relative, pair):
     if scenario != "odata-only-edit":
         yield
         return
-    if not relative or not relative.startswith("src/Honua.Protocols.OData/") or not relative.endswith(".cs"):
-        raise ValueError("OData edit scenario requires --edit-file src/Honua.Protocols.OData/...cs")
+    if not relative or not relative.startswith("src/Honua.Protocols/OData/") or not relative.endswith(".cs"):
+        raise ValueError("OData edit scenario requires --edit-file src/Honua.Protocols/OData/...cs")
     path = (root / relative).resolve()
-    if not path.is_relative_to(root / "src/Honua.Protocols.OData"):
+    if not path.is_relative_to(root / "src/Honua.Protocols/OData"):
         raise ValueError("Edit path escapes OData sources")
     original = path.read_bytes()
     modified = original + f"\n// OData pilot paired edit {pair}\n".encode()

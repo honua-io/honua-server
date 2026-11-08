@@ -54,7 +54,7 @@ def report(*paths: str):
 
 class NativeImageImpactTests(unittest.TestCase):
     def test_server_project_change_selects_all_serving_variants_only(self) -> None:
-        result = report("src/Honua.Protocols.OData/Features/Query.cs")
+        result = report("src/Honua.Protocols/OData/Features/Query.cs")
         self.assertTrue(result["candidate"]["risk_classes"]["server_aot_compile"])
         self.assertEqual(
             result["candidate"]["serving_variants"],

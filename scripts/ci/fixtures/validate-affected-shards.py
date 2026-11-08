@@ -153,7 +153,7 @@ def check_feature_namespace_selects_its_shard(
     """A change under one feature namespace must select that namespace's shard.
 
     This is the property the whole lane rests on: if a diff under
-    `src/Honua.Protocols.OgcClassic/Wfs20/` stops selecting `WFS`, PR Gate
+    `src/Honua.Protocols/OgcClassic/Wfs20/` stops selecting `WFS`, PR Gate
     silently stops predicting the trailing matrix for that family.
     """
     covered = 0

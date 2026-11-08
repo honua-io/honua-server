@@ -8,6 +8,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\..\src\Honua.Core\Core\Honua.Core.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Jobs\Honua.Jobs.csproj" />
-    <ProjectReference Include="..\..\..\src\Honua.Geoprocessing\Honua.Geoprocessing.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Geoprocessing\Core\Honua.Geoprocessing.csproj" />
   </ItemGroup>
 </Project>

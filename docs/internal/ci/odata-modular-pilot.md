@@ -74,7 +74,7 @@ three scenario names. Use the same relative edit path in both worktrees.
 python3 scripts/ci/odata-pilot/pilot.py run \
   --root /path/to/candidate --variant candidate --selection unit \
   --scenario odata-only-edit --pair 1 \
-  --edit-file src/Honua.Protocols.OData/Features/Example.cs \
+  --edit-file src/Honua.Protocols/OData/Features/Example.cs \
   --output /tmp/odata-evidence/unit/edit/pair-1/candidate
 ```
 
