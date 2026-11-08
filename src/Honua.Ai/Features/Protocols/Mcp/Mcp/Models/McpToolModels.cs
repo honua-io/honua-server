@@ -311,6 +311,9 @@ internal sealed class McpPublishServiceArgument
     [JsonPropertyName("serviceName")]
     public string? ServiceName { get; set; }
 
+    [JsonPropertyName("namespace")]
+    public string? Namespace { get; set; }
+
     [JsonPropertyName("folderId")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public MetadataV2FolderSelection FolderId { get; set; }

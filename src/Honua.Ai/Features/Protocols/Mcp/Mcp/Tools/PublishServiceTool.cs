@@ -114,6 +114,11 @@ internal sealed class PublishServiceTool : IMcpTool
             parameters["publicName"] = argument.PublicName;
         }
 
+        if (argument.Namespace is not null)
+        {
+            parameters["namespace"] = argument.Namespace;
+        }
+
         return new OperationRequest
         {
             OperationId = PublishOperationId,

@@ -10,10 +10,13 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 public sealed partial class PublishServiceToolTests
 {
     [UnitTheory]
-    [InlineData("", false, null)]
-    [InlineData(",\"folderId\":null,\"publicName\":\"Parcels\",\"namespace\":\"workspace\"", true, null)]
-    [InlineData(",\"folderId\":\"folder\",\"publicName\":\"Parcels\",\"namespace\":\"workspace\"", true, "folder")]
-    public async Task PublishService_ForwardsFolderPresenceAndPublicName(string selection, bool specified, string? folderId)
+    [InlineData("", false, null, null)]
+    [InlineData(",\"namespace\":null", false, null, null)]
+    [InlineData(",\"namespace\":\"\"", false, null, "")]
+    [InlineData(",\"folderId\":null,\"publicName\":\"Parcels\",\"namespace\":\"workspace\"", true, null, "workspace")]
+    [InlineData(",\"folderId\":\"folder\",\"publicName\":\"Parcels\",\"namespace\":\"workspace\"", true, "folder", "workspace")]
+    public async Task PublishService_ForwardsFolderAndNamespaceSelection(
+        string selection, bool specified, string? folderId, string? expectedNamespace)
     {
         OperationRequest? captured = null;
         var invoker = new FakeInvoker((request, _) =>
@@ -37,8 +40,16 @@ public sealed partial class PublishServiceToolTests
         {
             captured.Parameters["folderId"].Should().Be(folderId);
             captured.Parameters["publicName"].Should().Be("Parcels");
-            captured.Parameters["namespace"].Should().Be("workspace");
         }
-        else captured.Parameters.Should().NotContainKey("publicName").And.NotContainKey("namespace");
+        else
+        {
+            captured.Parameters.Should().NotContainKey("publicName");
+        }
+
+        captured.Parameters.ContainsKey("namespace").Should().Be(expectedNamespace is not null);
+        if (expectedNamespace is not null)
+        {
+            captured.Parameters["namespace"].Should().Be(expectedNamespace);
+        }
     }
 }

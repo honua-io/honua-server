@@ -77,6 +77,10 @@ internal static class McpToolSchemas
               "type": "string",
               "description": "Target service name. Defaults to the canonical default service when omitted."
             },
+            "namespace": {
+              "type": "string",
+              "description": "Namespace selector. Omission publishes an unscoped Service; a supplied value uses the resolved tenant."
+            },
             "folderId": {
               "type": ["string", "null"],
               "minLength": 1,
