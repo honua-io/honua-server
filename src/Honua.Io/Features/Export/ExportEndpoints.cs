@@ -94,6 +94,14 @@ internal static class ExportEndpoints
         }
 
         var triple = validation.Resource;
+        if (triple.StorageLayerId is not { } storageLayerId)
+        {
+            return ProblemDetailsHelpers.CreateAdminProblem(
+                StatusCodes.Status400BadRequest,
+                ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
+                "Layer has no feature storage binding.");
+        }
+
         var resource = triple.Resource;
         var layerName = ResolveLayerName(resource, serviceLayerIndex);
         var geometryType = MapGeometryType(resource.ReadGeometryType());
@@ -151,7 +159,7 @@ internal static class ExportEndpoints
             countActivity?.SetTag(HonuaTelemetry.Tags.ServiceId, serviceName);
             try
             {
-                count = await featureReader.CountAsync(serviceLayerIndex, countQuery, cancellationToken);
+                count = await featureReader.CountAsync(storageLayerId, countQuery, cancellationToken);
                 HonuaTelemetry.SetSuccess(countActivity, ToTelemetryFeatureCount(count));
             }
             catch (Exception ex)
@@ -203,7 +211,7 @@ internal static class ExportEndpoints
                 httpContext.User,
                 httpContext.RequestServices.GetRequiredService<IOptions<RbacOptions>>().Value,
                 httpContext.RequestServices.GetService<ITenantContext>());
-            var job = new ExportJob(jobId, serviceName, serviceLayerIndex, layerName, format,
+            var job = new ExportJob(jobId, serviceName, storageLayerId, layerName, format,
                 query, selectedFields, outputSrid, count, geometryType, submitter);
 
             try
@@ -258,7 +266,7 @@ internal static class ExportEndpoints
         }
 
         // Sync path — stream directly
-        var features = streamingStore.StreamFeaturesAsync(serviceLayerIndex, query, cancellationToken);
+        var features = streamingStore.StreamFeaturesAsync(storageLayerId, query, cancellationToken);
 
         try
         {
