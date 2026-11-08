@@ -171,14 +171,16 @@ public sealed class DeployHumanApprovalReplayTests
             ExecutionPayload = new DeployExecutionPayload { TargetId = "cell", DesiredRevision = "prior", Rollback = true }.Serialize(),
         };
         var planHash = OperationApprovalPlanSeal.Compute(plan);
+        var policy = proposal.GuardrailDecision! with { OperationClass = OperationClass.Deploy };
         proposal = proposal with
         {
             Kind = OperationClass.Deploy,
+            GuardrailDecision = policy,
             OperationId = LegacyOperationIds.For(OperationClass.Deploy),
             Plan = plan,
             SealedPlanHash = planHash,
             Audit = proposal.Audit with { OperationInstanceId = "approved-instance" },
-            Initiation = proposal.Initiation! with { PlanHash = planHash },
+            Initiation = proposal.Initiation! with { PlanHash = planHash, PolicyRevision = OperationGateway.ComputePolicyRevision(policy) },
         };
         host.ReviewRequest(human);
         var review = await host.Authority.OpenReviewAsync(proposal, host.Context);
