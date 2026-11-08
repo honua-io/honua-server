@@ -117,7 +117,7 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
             }
             return PreservedEnumValue<TEnum>.FromUnknownToken(ref reader);
         }
-        return PreservedEnumJsonConverter<TEnum>.Instance.Read(ref reader, typeof(PreservedEnumValue<TEnum>), JsonSerializerOptions.Default);
+        return PreservedEnumJsonConverter<TEnum>.Instance.Read(ref reader, typeof(PreservedEnumValue<TEnum>), TolerantEnumJsonConverter<TEnum>.ConverterOptions);
     }
 
     private static List<MetadataV2Condition> ReadConditions(ref Utf8JsonReader reader)
@@ -257,7 +257,7 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
         where TEnum : struct, Enum
     {
         writer.WritePropertyName(name);
-        PreservedEnumJsonConverter<TEnum>.Instance.Write(writer, value, JsonSerializerOptions.Default);
+        PreservedEnumJsonConverter<TEnum>.Instance.Write(writer, value, TolerantEnumJsonConverter<TEnum>.ConverterOptions);
     }
 
     private static JsonElement ReadAdditionalProperty(ref Utf8JsonReader reader)

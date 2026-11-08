@@ -3,18 +3,24 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 
 namespace Honua.Core.Serialization;
 
 internal class TolerantEnumJsonConverter<TEnum> : JsonConverter<TEnum>
     where TEnum : struct, Enum
 {
+    internal static JsonSerializerOptions ConverterOptions { get; } = new()
+    {
+        TypeInfoResolver = JsonTypeInfoResolver.Combine()
+    };
+
     private readonly JsonConverter<TEnum> _knownValues;
 
     public TolerantEnumJsonConverter()
     {
         var factory = new JsonStringEnumConverter<TEnum>();
-        _knownValues = (JsonConverter<TEnum>)factory.CreateConverter(typeof(TEnum), JsonSerializerOptions.Default);
+        _knownValues = (JsonConverter<TEnum>)factory.CreateConverter(typeof(TEnum), ConverterOptions);
     }
 
     public override TEnum Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
