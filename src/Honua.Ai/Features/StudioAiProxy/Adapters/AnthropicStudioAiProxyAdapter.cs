@@ -214,6 +214,13 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
                 continue;
             }
 
+            if (state.SawMessageStop)
+            {
+                yield return state.Error("Provider returned a stream frame after message_stop.", state.Timer.ElapsedMilliseconds,
+                    StudioAiStreamGrammarValidator.InvalidStreamCode);
+                yield break;
+            }
+
             AnthropicStreamFrame? frame = null;
             var parseFailed = false;
             try
