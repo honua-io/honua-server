@@ -468,13 +468,9 @@ public sealed class TileStyleSpecWriterTests
 
     private static bool EvaluateTest(string test, IReadOnlyDictionary<string, object?> attributes)
     {
-        if (test == "true")
+        if (test is "true" or "false")
         {
-            return true;
-        }
-        if (test == "false")
-        {
-            return false;
+            return test == "true";
         }
 
         // Parse "${prop} OP operand"; the operand is a quoted string or a bare number.
