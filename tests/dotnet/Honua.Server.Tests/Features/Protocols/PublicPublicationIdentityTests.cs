@@ -239,25 +239,7 @@ public sealed class PublicPublicationIdentityTests : IAsyncLifetime
     public async Task Style_DistinctPublications_KeepsCachedRepresentationsSeparate()
     {
         const string secondResourceId = "second-style-resource";
-        var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
-        var resource = graph.Resources.Single();
-        var binding = graph.StorageBindings.Single();
-        SetGraph(graph with
-        {
-            Revision = graph.Revision + 1,
-            Resources = [resource, resource with
-            {
-                Metadata = resource.Metadata with { Id = secondResourceId, Name = secondResourceId },
-            }],
-            StorageBindings = [binding, binding with
-            {
-                Metadata = binding.Metadata with { Id = "second-style-binding", Name = "second-style-binding" },
-                ResourceId = secondResourceId,
-            }],
-            Publications = graph.Publications.Select(publication => publication.Metadata.Id == SecondPublicationId
-                ? publication with { ResourceId = secondResourceId, StorageBindingId = "second-style-binding" }
-                : publication).ToArray(),
-        });
+        var resourceId = ConfigureDistinctStyleResources();
         var secondStyle = JsonSerializer.Deserialize<JsonElement>(
             """{"version":8,"name":"second-publication-style","sources":{},"layers":[]}""");
         _styles.GetStyleAsync(Arg.Is<MetadataV2Resource>(candidate => candidate.Metadata.Id == secondResourceId),
@@ -272,7 +254,7 @@ public sealed class PublicPublicationIdentityTests : IAsyncLifetime
             style.RootElement.GetProperty("name").GetString().Should().Be(
                 publicationId == PublicationId ? "publication-style" : "second-publication-style");
         }
-        await _styles.Received(1).GetStyleAsync(Arg.Is<MetadataV2Resource>(candidate => candidate.Metadata.Id == resource.Metadata.Id),
+        await _styles.Received(1).GetStyleAsync(Arg.Is<MetadataV2Resource>(candidate => candidate.Metadata.Id == resourceId),
             OriginalStorageLayerId, Arg.Any<CancellationToken>());
         await _styles.Received(1).GetStyleAsync(Arg.Is<MetadataV2Resource>(candidate => candidate.Metadata.Id == secondResourceId),
             OriginalStorageLayerId, Arg.Any<CancellationToken>());
@@ -314,6 +296,45 @@ public sealed class PublicPublicationIdentityTests : IAsyncLifetime
         {
             featureServerLinks.Should().BeEmpty();
         }
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.Admin)]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/style")]
+    public async Task StorageStyle_DistinctResourcesShareStorage_RejectsAmbiguousTarget()
+    {
+        ConfigureDistinctStyleResources();
+        using var client = _fixture.CreateAdminClient();
+        using var response = await client.GetAsync($"/api/v1/admin/metadata/layers/{OriginalStorageLayerId}/style");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict, await response.Content.ReadAsStringAsync());
+        await _styles.DidNotReceive().GetStyleAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+    }
+
+    private string ConfigureDistinctStyleResources()
+    {
+        const string secondResourceId = "second-style-resource";
+        var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        var resource = graph.Resources.Single();
+        var binding = graph.StorageBindings.Single();
+        SetGraph(graph with
+        {
+            Revision = graph.Revision + 1,
+            Resources = [resource, resource with
+            {
+                Metadata = resource.Metadata with { Id = secondResourceId, Name = secondResourceId },
+            }],
+            StorageBindings = [binding, binding with
+            {
+                Metadata = binding.Metadata with { Id = "second-style-binding", Name = "second-style-binding" },
+                ResourceId = secondResourceId,
+            }],
+            Publications = graph.Publications.Select(publication => publication.Metadata.Id == SecondPublicationId
+                ? publication with { ResourceId = secondResourceId, StorageBindingId = "second-style-binding" }
+                : publication).ToArray(),
+        });
+        return resource.Metadata.Id;
     }
 
     private async Task<string[]> WfsNamesAsync()
