@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.ControlPlane.Executors;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Server.Features.Operations;
@@ -19,6 +20,13 @@ internal static class OperationHumanApprovalEvidenceValidation
         && proposal.TenantId == request.TenantId
         && proposal.Audit.OperationInstanceId == request.OperationInstanceId
         && proposal.Plan.ExecutionPayload == payload;
+
+    public static bool MatchesObservedForwardDeploy(string approvedPayload, DeployExecutionPayload observed)
+    {
+        var approved = DeployExecutionPayload.Parse(approvedPayload);
+        return approved is { Rollback: false }
+            && (observed with { CurrentRevision = approved.CurrentRevision }).Serialize() == approved.Serialize();
+    }
 
     public static bool HasExecutionAuthority(OperationProposal proposal)
     {

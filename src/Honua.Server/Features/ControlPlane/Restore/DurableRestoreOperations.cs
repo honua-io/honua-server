@@ -287,12 +287,11 @@ internal sealed partial class DurableRestoreWorker(
             return false;
         if (record.PreMigrationRestore!.Payload == approvedPayload) return true;
 
-        var approved = DeployExecutionPayload.Parse(approvedPayload);
         var checkpoint = DeployExecutionPayload.Parse(record.PreMigrationRestore.Payload);
         // Local forward convergence records the observed baseline after approval and before submission.
         return record.PreMigrationRestore.Phase == "awaiting-local-deploy"
-            && approved is { Rollback: false } && checkpoint is not null
-            && (checkpoint with { CurrentRevision = approved.CurrentRevision }).Serialize() == approved.Serialize();
+            && checkpoint is not null
+            && OperationHumanApprovalEvidenceValidation.MatchesObservedForwardDeploy(approvedPayload, checkpoint);
     }
 
     private static OperationGatewayRequest ExecutionRequest(WorkflowOperationRecord record) => new()

@@ -66,4 +66,11 @@ execution retains its recorded recovery authority. See
 [human approval and rollout](../../guides/secure/authentication.md#human-operation-approval)
 for the session boundary and deployment order.
 
+Coordinated releases retain a separate human decision for the container and data gates.
+Each review binds the workflow version, gate, tenant and exact release plan. An old
+approval flag or actor name cannot start a child operation: an uncrossed legacy
+gate requires a fresh review. Already submitted legacy children may finish their
+existing recovery path. The requester may approve either gate through the same
+verified interactive session boundary.
+
 [^contract]: [Source contract](../../guides/connect/ai-agents-mcp.md).

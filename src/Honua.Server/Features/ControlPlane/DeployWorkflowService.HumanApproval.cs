@@ -40,7 +40,7 @@ internal sealed partial class DeployWorkflowService
         var approved = DeployExecutionPayload.Parse(approvedPayload);
         if (approved is null) return false;
         if (approved.Serialize() == payload.Serialize()) return true;
-        return restoreOwnerId is not null && !approved.Rollback
-            && (payload with { CurrentRevision = approved.CurrentRevision }).Serialize() == approved.Serialize();
+        return restoreOwnerId is not null
+            && OperationHumanApprovalEvidenceValidation.MatchesObservedForwardDeploy(approvedPayload, payload);
     }
 }
