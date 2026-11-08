@@ -13,6 +13,60 @@ namespace Honua.Db.Postgres.Tests.Features.Metadata;
 public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
 {
     [IntegrationTheory]
+    [InlineData("\"future-field-type\"")]
+    [InlineData("18446744073709551616")]
+    [InlineData("-9223372036854775809")]
+    public async Task SaveAsync_UnfamiliarSemanticFields_RetainsTypesThroughColdReload(string token)
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresMetadataV2GraphStoreFreshDbTests));
+        try
+        {
+            await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresMetadataV2GraphStore(provider, "Test",
+                schemaGuard: FixtureBypassDatabaseSchemaGuard.Instance, schemaName: schema);
+            await store.SaveAsync(new MetadataV2Graph { Environment = "Test" }, expectedEtag: null);
+            await using (var connection = await fixture.DataSource.OpenConnectionAsync())
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = $"""
+                    UPDATE "{schema}".metadata_v2_snapshots SET document = document || $1::jsonb
+                    WHERE environment = 'Test';
+                    """;
+                command.Parameters.AddWithValue($$"""
+                    {"resources":[{"metadata":{"id":"dataset","name":"dataset"},
+                      "spatial":{"primaryGeometryField":"shape"},
+                      "temporal":{"startTimeField":"start","endTimeField":"end"},
+                      "schemaFields":[{"name":"shape","type":{{token}}},
+                        {"name":"start","type":{{token}}},{"name":"end","type":{{token}}}]}]}
+                    """);
+                await command.ExecuteNonQueryAsync();
+            }
+            var loaded = await store.GetCurrentAsync();
+            var dataset = loaded.Graph.Resources.Single();
+            var saved = await store.SaveAsync(loaded.Graph with
+            {
+                Resources = [dataset with { Metadata = dataset.Metadata with { Title = "Edited title" } }]
+            }, loaded.Etag);
+            var reloaded = await new PostgresMetadataV2GraphStore(provider, "Test",
+                schemaGuard: FixtureBypassDatabaseSchemaGuard.Instance, schemaName: schema).GetCurrentAsync();
+
+            reloaded.Revision.Should().BeGreaterThan(loaded.Revision);
+            reloaded.Etag.Should().Be(saved.Etag);
+            reloaded.Graph.Resources[0].Metadata.Title.Should().Be("Edited title");
+            using var persisted = await ReadPersistedSnapshotAsync(schema, saved.Revision);
+            foreach (var field in persisted.RootElement.GetProperty("resources")[0].GetProperty("schemaFields").EnumerateArray())
+            {
+                field.GetProperty("type").GetRawText().Should().Be(token);
+            }
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTheory]
     [InlineData("future-dataset-kind", "future-lifecycle", "future-state")]
     [InlineData("feature-dataset", "active", "ready")]
     public async Task SaveAsync_FutureSnapshotValues_PreservesUnknownPropertiesAfterKnownEdit(

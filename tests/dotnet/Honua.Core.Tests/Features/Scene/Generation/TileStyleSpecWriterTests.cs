@@ -17,6 +17,33 @@ namespace Honua.Core.Tests.Features.Scene.Generation;
 /// </summary>
 public sealed class TileStyleSpecWriterTests
 {
+    [UnitTheory]
+    [InlineData(Symbology3DComparison.Unknown, "tree")]
+    [InlineData((Symbology3DComparison)987, "tree")]
+    [InlineData(Symbology3DComparison.Unknown, "7")]
+    [InlineData((Symbology3DComparison)987, "7")]
+    public void Build_UnsupportedComparison_MatchesResolverAndAllowsLaterRule(Symbology3DComparison comparison, string value)
+    {
+        var symbology = new Symbology3D
+        {
+            Rules =
+            [
+                new() { Attribute = "kind", Comparison = comparison, Value = value, Color = new(255, 0, 0), Visible = false },
+                new() { Attribute = "kind", Comparison = Symbology3DComparison.Equals, Value = value, Color = new(0, 128, 0), Visible = true }
+            ]
+        };
+        var attributes = Attributes(("kind", value));
+        var resolved = Symbology3DResolver.Resolve(symbology, attributes);
+        var spec = TileStyleSpecWriter.Build(symbology);
+
+        resolved.Color.Should().Be(new Symbology3DColor(0, 128, 0));
+        resolved.Visible.Should().BeTrue();
+        spec.Style.Color!.Conditions[0][0].Should().Be("false");
+        spec.Style.Show!.Conditions[0][0].Should().Be("false");
+        EvaluateColor(spec.Style.Color, attributes).Should().Be("color('#008000', 1)");
+        EvaluateColor(spec.Style.Show, attributes).Should().Be("true");
+    }
+
     [UnitTest]
     public void Build_NoSymbology_EmitsDefaultMaterialOnlyNoExpressions()
     {
@@ -421,6 +448,10 @@ public sealed class TileStyleSpecWriterTests
         if (test == "true")
         {
             return true;
+        }
+        if (test == "false")
+        {
+            return false;
         }
 
         // Parse "${prop} OP operand"; the operand is a quoted string or a bare number.
