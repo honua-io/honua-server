@@ -145,8 +145,8 @@ public sealed class DeployHumanApprovalReplayTests
         var store = Substitute.For<IWorkflowOperationStore>();
         store.TryAcquireLeaseAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>()).Returns(true);
         store.GetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(record);
-        var audit = Substitute.For<Honua.Core.Features.ControlPlane.Restore.IPreMigrationRestoreAudit>();
-        audit.AppendAsync(Arg.Any<Honua.Core.Features.ControlPlane.Restore.PreMigrationRestoreAuditLine>(), Arg.Any<CancellationToken>()).Returns(true);
+        var audit = Substitute.For<IPreMigrationRestoreAudit>();
+        audit.AppendAsync(Arg.Any<PreMigrationRestoreAuditLine>(), Arg.Any<CancellationToken>()).Returns(true);
         return new DurableRestoreWorker(store, proposals, null!, null!, null!, audit, NullLogger<DurableRestoreWorker>.Instance);
     }
 
