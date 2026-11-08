@@ -6288,7 +6288,7 @@
           "Compliance"
         ],
         "summary": "Advance Compliance Key-Version Posture",
-        "description": "Advances the auditor-facing compliance key-version counter and writes an encryption.key.rotate audit event. This endpoint records the rotation as a compliance event — it does NOT re-encrypt data or rotate the cipher material used by IConnectionEncryptionService (real key-material rotation lives behind Security:ConnectionEncryption:MasterKey). The audit write is decoupled from the caller token so a client disconnect cannot strand a committed posture advance without an audit event.",
+        "description": "Advances the auditor-facing compliance key-version counter and writes an encryption.key.rotate audit event. This endpoint records the rotation as a compliance event \u2014 it does NOT re-encrypt data or rotate the cipher material used by IConnectionEncryptionService (real key-material rotation lives behind Security:ConnectionEncryption:MasterKey). The audit write is decoupled from the caller token so a client disconnect cannot strand a committed posture advance without an audit event.",
         "operationId": "rotateComplianceEncryptionKey",
         "responses": {
           "200": {
@@ -6723,7 +6723,7 @@
           "Import"
         ],
         "summary": "List GeoServer Import Jobs",
-        "description": "Returns the GeoServer import jobs that are still active — that is, jobs whose progress status is not Completed, Failed, or Cancelled.",
+        "description": "Returns the GeoServer import jobs that are still active \u2014 that is, jobs whose progress status is not Completed, Failed, or Cancelled.",
         "operationId": "listGeoServerImportJobs",
         "responses": {
           "200": {
@@ -7026,7 +7026,7 @@
           "Import"
         ],
         "summary": "List GeoServices Import Jobs",
-        "description": "Returns the GeoServices import jobs that are still active — that is, jobs whose status is not Completed, Failed, or Cancelled. Each entry is the full progress record.",
+        "description": "Returns the GeoServices import jobs that are still active \u2014 that is, jobs whose status is not Completed, Failed, or Cancelled. Each entry is the full progress record.",
         "operationId": "listGeoservicesImportJobs",
         "responses": {
           "200": {

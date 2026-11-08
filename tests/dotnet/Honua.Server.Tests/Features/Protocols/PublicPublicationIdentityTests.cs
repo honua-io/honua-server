@@ -73,11 +73,15 @@ public sealed class PublicPublicationIdentityTests : IAsyncLifetime
     public async Task WmsCapabilities_StorageRebound_KeepsServiceLocalIdentifier()
     {
         var before = await WmsNamesAsync();
+        var secondBefore = await WmsNamesAsync("second-roads");
         RebindStorage();
         var after = await WmsNamesAsync();
+        var secondAfter = await WmsNamesAsync("second-roads");
 
         before.Should().Equal("0");
         after.Should().Equal("0");
+        secondBefore.Should().Equal("0");
+        secondAfter.Should().Equal("0");
     }
 
     [IntegrationTest]
@@ -274,6 +278,44 @@ public sealed class PublicPublicationIdentityTests : IAsyncLifetime
             OriginalStorageLayerId, Arg.Any<CancellationToken>());
     }
 
+    [IntegrationTheory]
+    [InlineData(null)]
+    [InlineData(3)]
+    [Protocol(TestProtocols.OgcApiRecords)]
+    [Operation(Operations.GetById)]
+    [Endpoint("GET /ogc/records/collections/{collectionId}/items/{recordId}")]
+    public async Task Records_LegacyPublication_UsesOnlyNumericFeatureServerIndex(int? serviceLayerIndex)
+    {
+        var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        var publication = graph.Publications.Single(candidate => candidate.Metadata.Id == PublicationId);
+        SetGraph(graph with
+        {
+            Revision = graph.Revision + 1,
+            Services = graph.Services.Select(service => service.Metadata.Id == publication.ServiceId
+                ? service with { Protocols = [.. service.Protocols, ServiceProtocols.FeatureServer] }
+                : service).ToArray(),
+            Publications = graph.Publications.Select(candidate => candidate.Metadata.Id == PublicationId
+                ? candidate with { LayerIndex = serviceLayerIndex, ServiceLocalId = null, Identifier = new() }
+                : candidate).ToArray(),
+        });
+        using var response = await _fixture.Client.GetAsync(
+            $"/ogc/records/collections/honua-catalog/items/{Uri.EscapeDataString($"layer:{PublicationId}")}");
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        using var record = JsonDocument.Parse(body);
+        var featureServerLinks = record.RootElement.GetProperty("links").EnumerateArray()
+            .Where(link => link.TryGetProperty("title", out var title) && title.GetString() == "FeatureServer layer").ToArray();
+        if (serviceLayerIndex.HasValue)
+        {
+            featureServerLinks.Should().ContainSingle();
+            featureServerLinks[0].GetProperty("href").GetString().Should().EndWith($"/FeatureServer/{serviceLayerIndex.Value}");
+        }
+        else
+        {
+            featureServerLinks.Should().BeEmpty();
+        }
+    }
+
     private async Task<string[]> WfsNamesAsync()
     {
         var xml = await ReadXmlAsync("/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=2.0.0");
@@ -285,9 +327,9 @@ public sealed class PublicPublicationIdentityTests : IAsyncLifetime
         }).ToArray();
     }
 
-    private async Task<string[]> WmsNamesAsync()
+    private async Task<string[]> WmsNamesAsync(string serviceName = ServiceName)
     {
-        var xml = await ReadXmlAsync($"/ogc/services/{ServiceName}/wms?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.3.0");
+        var xml = await ReadXmlAsync($"/ogc/services/{serviceName}/wms?SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.3.0");
         XNamespace wms = "http://www.opengis.net/wms";
         return xml.Descendants(wms + "Layer")
             .Where(layer => !layer.Elements(wms + "Layer").Any())
