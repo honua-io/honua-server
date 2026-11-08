@@ -84,7 +84,7 @@ internal sealed partial class Wfs20Handler
             throw new ArgumentException($"Requested feature type(s) not found: {string.Join(", ", requestedTypes)}.");
         }
 
-        return GenerateLegacySchemaForTypes(selectedTypes, version);
+        return GenerateLegacySchemaForTypes(selectedTypes, version, context);
     }
 
     internal async Task<IResult> HandleLegacyGetFeatureAsync(
@@ -982,54 +982,17 @@ internal sealed partial class Wfs20Handler
         }
     }
 
-    private static string GenerateLegacySchemaForTypes(IReadOnlyList<WfsFeatureTypeDescriptor> featureTypes, string version)
+    private static string GenerateLegacySchemaForTypes(
+        IReadOnlyList<WfsFeatureTypeDescriptor> featureTypes,
+        string version,
+        HttpContext context)
     {
         if (IsWfs10(version) &&
             featureTypes.Any(featureType => featureType.NamespaceUri.StartsWith("http://www.opengis.net/cite/", StringComparison.Ordinal)))
         {
             return GenerateWfs10CiteSchema(featureTypes);
         }
-
-        var gmlSchema = IsWfs10(version)
-            ? "http://schemas.opengis.net/gml/2.1.2/feature.xsd"
-            : "http://schemas.opengis.net/gml/3.1.1/base/gml.xsd";
-        var schema = new StringBuilder(4096);
-        schema.AppendLine("""<?xml version="1.0" encoding="UTF-8"?>""");
-        schema.AppendLine($"""<xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:gml="{GmlLegacyNamespace}" xmlns:{FeatureNamespacePrefix}="{FeatureNamespaceUri}" targetNamespace="{FeatureNamespaceUri}" elementFormDefault="qualified" version="1.0.0">""");
-        schema.AppendLine($"""  <xsd:import namespace="{GmlLegacyNamespace}" schemaLocation="{gmlSchema}"/>""");
-        schema.AppendLine();
-
-        foreach (var featureType in featureTypes)
-        {
-            var typeName = featureType.LocalName;
-            schema.AppendLine($"""  <xsd:element name="{typeName}" type="{FeatureNamespacePrefix}:{typeName}Type" substitutionGroup="gml:_Feature"/>""");
-            schema.AppendLine($"""  <xsd:complexType name="{typeName}Type">""");
-            schema.AppendLine("""    <xsd:complexContent>""");
-            schema.AppendLine("""      <xsd:extension base="gml:AbstractFeatureType">""");
-            schema.AppendLine("""        <xsd:sequence>""");
-
-            var geometryPropertyName = ResolveGeometryPropertyName(featureType.Resource);
-            if (geometryPropertyName is not null)
-            {
-                schema.AppendLine($"""          <xsd:element name="{XmlConvert.EncodeLocalName(geometryPropertyName)}" type="gml:GeometryPropertyType" minOccurs="0" nillable="true"/>""");
-            }
-
-            foreach (var field in GetVisibleAttributeFields(featureType.Resource))
-            {
-                var minOccurs = field.Nullable ? " minOccurs=\"0\"" : string.Empty;
-                var nillable = field.Nullable ? " nillable=\"true\"" : string.Empty;
-                schema.AppendLine($"""          <xsd:element name="{XmlConvert.EncodeLocalName(field.Name)}" type="{MapXsdType(field.Type)}"{minOccurs}{nillable}/>""");
-            }
-
-            schema.AppendLine("""        </xsd:sequence>""");
-            schema.AppendLine("""      </xsd:extension>""");
-            schema.AppendLine("""    </xsd:complexContent>""");
-            schema.AppendLine("""  </xsd:complexType>""");
-            schema.AppendLine();
-        }
-
-        schema.AppendLine("</xsd:schema>");
-        return schema.ToString();
+        return GenerateFeatureSchema(featureTypes, context, version);
     }
 
     private static string GenerateWfs10CiteSchema(IReadOnlyList<WfsFeatureTypeDescriptor> featureTypes)
