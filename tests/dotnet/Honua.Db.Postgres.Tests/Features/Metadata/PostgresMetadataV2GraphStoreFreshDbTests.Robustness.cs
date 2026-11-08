@@ -42,7 +42,8 @@ public sealed partial class PostgresMetadataV2GraphStoreFreshDbTests
                     """);
                 await command.ExecuteNonQueryAsync();
             }
-            var loaded = await store.GetCurrentAsync();
+            var loaded = await new PostgresMetadataV2GraphStore(provider, "Test",
+                schemaGuard: FixtureBypassDatabaseSchemaGuard.Instance, schemaName: schema).GetCurrentAsync();
             var dataset = loaded.Graph.Resources.Single();
             var saved = await store.SaveAsync(loaded.Graph with
             {

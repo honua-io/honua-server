@@ -100,6 +100,7 @@ public sealed class MetadataV2RoutingRobustnessTests
         var graph = JsonSerializer.Deserialize(KnownGraph, MetadataV2JsonContext.Default.MetadataV2Graph)!;
         return graph with
         {
+            Metadata = new(),
             Resources =
             [
                 graph.Resources[0] with
