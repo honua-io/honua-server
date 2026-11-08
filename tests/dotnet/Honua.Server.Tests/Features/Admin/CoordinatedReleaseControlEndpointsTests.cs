@@ -147,28 +147,7 @@ public sealed partial class CoordinatedReleaseControlEndpointsTests : IAsyncLife
             .RootElement.GetProperty("operationId").GetString()!;
 
         // Drive + approve each gate as it appears until terminal.
-        JsonElement root = default;
-        for (var i = 0; i < 40; i++)
-        {
-            using var response = await _client.GetAsync($"/api/v1/admin/metadata/coordinated-releases/{packageId}/operation");
-            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            root = document.RootElement.Clone();
-            var status = root.GetProperty("status").GetString();
-
-            if (status == "AwaitingApproval")
-            {
-                var step = root.GetProperty("currentStep").GetString();
-                var gate = step == "ContainerRollout" ? "container" : "data";
-                using var approve = await ApproveGateAsHumanAsync(operationId, gate);
-                approve.StatusCode.Should().Be(HttpStatusCode.OK);
-                continue;
-            }
-
-            if (status is "Succeeded" or "Failed" or "RolledBack" or "ManualInterventionRequired")
-            {
-                break;
-            }
-        }
+        var root = await DriveWithHumanGatesAsync(packageId, operationId);
 
         root.GetProperty("status").GetString().Should().Be("Succeeded");
         _container.StartCalls.Should().Be(1);
@@ -220,28 +199,7 @@ public sealed partial class CoordinatedReleaseControlEndpointsTests : IAsyncLife
         var operationId = JsonDocument.Parse(await created.Content.ReadAsStringAsync())
             .RootElement.GetProperty("operationId").GetString()!;
 
-        JsonElement root = default;
-        for (var i = 0; i < 40; i++)
-        {
-            using var response = await _client.GetAsync($"/api/v1/admin/metadata/coordinated-releases/{packageId}/operation");
-            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            root = document.RootElement.Clone();
-            var status = root.GetProperty("status").GetString();
-
-            if (status == "AwaitingApproval")
-            {
-                var step = root.GetProperty("currentStep").GetString();
-                var gate = step == "ContainerRollout" ? "container" : "data";
-                using var approve = await ApproveGateAsHumanAsync(operationId, gate);
-                approve.StatusCode.Should().Be(HttpStatusCode.OK);
-                continue;
-            }
-
-            if (status is "Succeeded" or "Failed" or "RolledBack" or "ManualInterventionRequired")
-            {
-                break;
-            }
-        }
+        var root = await DriveWithHumanGatesAsync(packageId, operationId);
 
         // The metadata-step fault triggered ONE coordinated rollback. The provider's
         // incomplete rollback evidence is terminal manual intervention, not a claimed
@@ -250,6 +208,31 @@ public sealed partial class CoordinatedReleaseControlEndpointsTests : IAsyncLife
         root.GetProperty("status").GetString().Should().Be("ManualInterventionRequired");
         _container.RollbackCalls.Should().Be(0);
         _metadata.RollbackCalls.Should().Be(1);
+    }
+
+    private async Task<JsonElement> DriveWithHumanGatesAsync(string packageId, string operationId)
+    {
+        JsonElement result = default;
+        for (var attempt = 0; attempt < 40; attempt++)
+        {
+            using var response = await _client.GetAsync($"/api/v1/admin/metadata/coordinated-releases/{packageId}/operation");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            result = document.RootElement.Clone();
+            var status = result.GetProperty("status").GetString();
+            if (status == "AwaitingApproval")
+            {
+                var gate = result.GetProperty("currentStep").GetString() == "ContainerRollout" ? "container" : "data";
+                using var approval = await ApproveGateAsHumanAsync(operationId, gate);
+                approval.StatusCode.Should().Be(HttpStatusCode.OK);
+            }
+            else if (status is "Succeeded" or "Failed" or "RolledBack" or "ManualInterventionRequired")
+            {
+                return result;
+            }
+        }
+
+        return result;
     }
 
     private async Task<HttpResponseMessage> ApproveGateAsHumanAsync(string workflowId, string gate)
