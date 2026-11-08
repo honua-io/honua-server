@@ -228,6 +228,52 @@ public sealed class PublicPublicationIdentityTests : IAsyncLifetime
         await _styles.DidNotReceive().GetStyleAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
     }
 
+    [IntegrationTest]
+    [Protocol(TestProtocols.OgcApiStyles)]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /api/styles/{publicationId}.json")]
+    public async Task Style_DistinctPublications_KeepsCachedRepresentationsSeparate()
+    {
+        const string secondResourceId = "second-style-resource";
+        var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        var resource = graph.Resources.Single();
+        var binding = graph.StorageBindings.Single();
+        SetGraph(graph with
+        {
+            Revision = graph.Revision + 1,
+            Resources = [resource, resource with
+            {
+                Metadata = resource.Metadata with { Id = secondResourceId, Name = secondResourceId },
+            }],
+            StorageBindings = [binding, binding with
+            {
+                Metadata = binding.Metadata with { Id = "second-style-binding", Name = "second-style-binding" },
+                ResourceId = secondResourceId,
+            }],
+            Publications = graph.Publications.Select(publication => publication.Metadata.Id == SecondPublicationId
+                ? publication with { ResourceId = secondResourceId, StorageBindingId = "second-style-binding" }
+                : publication).ToArray(),
+        });
+        var secondStyle = JsonSerializer.Deserialize<JsonElement>(
+            """{"version":8,"name":"second-publication-style","sources":{},"layers":[]}""");
+        _styles.GetStyleAsync(Arg.Is<MetadataV2Resource>(candidate => candidate.Metadata.Id == secondResourceId),
+            Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(new LayerStyleSnapshot(secondStyle, null));
+
+        foreach (var publicationId in new[] { PublicationId, SecondPublicationId, PublicationId })
+        {
+            using var response = await _fixture.Client.GetAsync($"/api/styles/{Uri.EscapeDataString(publicationId)}.json");
+            var body = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+            using var style = JsonDocument.Parse(body);
+            style.RootElement.GetProperty("name").GetString().Should().Be(
+                publicationId == PublicationId ? "publication-style" : "second-publication-style");
+        }
+        await _styles.Received(1).GetStyleAsync(Arg.Is<MetadataV2Resource>(candidate => candidate.Metadata.Id == resource.Metadata.Id),
+            OriginalStorageLayerId, Arg.Any<CancellationToken>());
+        await _styles.Received(1).GetStyleAsync(Arg.Is<MetadataV2Resource>(candidate => candidate.Metadata.Id == secondResourceId),
+            OriginalStorageLayerId, Arg.Any<CancellationToken>());
+    }
+
     private async Task<string[]> WfsNamesAsync()
     {
         var xml = await ReadXmlAsync("/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=2.0.0");
