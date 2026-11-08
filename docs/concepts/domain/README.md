@@ -12,7 +12,7 @@ Use the same words in the Console, Studio, SDKs, guides, error messages, APIs, d
 | Term | Definition |
 | --- | --- |
 | [Connection](connection.md) | A registered database or file that Honua can reach. Registration exposes no data by itself; a client session is a Session. |
-| [Dataset](dataset.md) | A collection of records, features, or imagery, with logical identity, schema, spatial metadata, policy, and style references independent of storage and protocol. |
+| [Dataset](dataset.md) | A collection of records, features, or imagery, with logical identity, schema, spatial metadata, policy, and style references independent of storage and protocol. Its kind is Feature type (vector) or Coverage (raster); a non-spatial Feature type is shown as Table. |
 | [Layer](layer.md) | A Dataset exposed in a Service, optionally selecting a storage binding, with a Service-local identifier, capabilities, access rules, and display defaults. |
 | [Service](service.md) | A named group of Layers with one list of enabled protocols. It belongs to a Folder or the root of its Environment. |
 | [Folder](folder.md) | The grouping of Services within an Environment. Folders do not nest or grant permissions. |
@@ -63,6 +63,8 @@ The [data-model narrative](../data-model.md) follows these same relationships.
 The canonical names are Dataset, Layer, Map, App, and each other named Studio kind throughout the system. Existing code and persisted metadata still contain `MetadataV2Resource`, `MetadataV2Publication`, and Studio content-item names. These are legacy names scheduled for migration, not a second vocabulary. Until that migration lands, use the current API reference for literal routes and fields. This glossary changes no runtime contract. A forward migration will convert existing databases after a verified backup and draining pending Proposals; steady-state readers will use only canonical shapes. Protocol wire names required by clients remain unchanged.
 
 ## Vocabulary review rules
+
+Moving from another system? Use [Coming from ArcGIS](coming-from-arcgis.md) or [Coming from GeoServer](coming-from-geoserver.md) to map familiar terms to these definitions.
 
 Review new UI labels, model types, database names, API fields, MCP schemas, public SDK names, guides, and error messages against this table. Block additions that use:
 
