@@ -78,7 +78,7 @@ public sealed class LayerValidationEndpointsTests : IAsyncLifetime
             Revision = snapshot.Graph.Revision + 1
         });
 
-        using var response = await _client.GetAsync($"/api/v1/admin/metadata/layers/{storageLayerId}/validation");
+        using var response = await _client.GetAsync($"/api/v1/admin/metadata/layers/{layerId}/validation");
         response.Be200Ok();
         var result = await ReadValidationResponseAsync(response);
         result.Data.Should().NotBeNull();
