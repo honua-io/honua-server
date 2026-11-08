@@ -455,9 +455,13 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
         }
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
     [Endpoint("POST /api/v1/admin/auth/providers/{providerKey}/token")]
-    public async Task RequestToken_WithoutPkceCookies_ReturnsBadRequest()
+    [InlineData("authorization_code")]
+    [InlineData("authorization_code ")]
+    [InlineData(" authorization_code")]
+    [InlineData("\tauthorization_code")]
+    public async Task RequestToken_WithoutPkceCookies_ReturnsBadRequest(string grantType)
     {
         using var stubFactory = new StubHttpClientFactory(
             "https://auth.example.com/.well-known/openid-configuration",
@@ -477,12 +481,16 @@ public sealed class AdminAuthEndpointsTests : IAsyncLifetime
                 "/api/v1/admin/auth/providers/oidc/token",
                 new
                 {
-                    grantType = "authorization_code",
+                    grantType,
                     code = "code-123",
                     state = "state-123"
                 });
 
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            stubFactory.LastTokenFormValues.Should().BeEmpty();
+            response.Headers.TryGetValues("Set-Cookie", out var cookies);
+            (cookies ?? []).Should().NotContain(value => value.StartsWith(
+                AdminAuthSessionStore.AuthSessionCookieName + "=", StringComparison.Ordinal));
         }
         finally
         {
