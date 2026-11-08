@@ -67,6 +67,21 @@ def validate_checkout_credentials(document: dict) -> None:
                     raise AssertionError("every checkout must disable persisted credentials")
 
 
+def validate_app_token_scope(document: dict) -> None:
+    mint_steps = [step for job in document["jobs"].values() for step in job.get("steps", [])
+                  if str(step.get("uses", "")).startswith("actions/create-github-app-token@")]
+    expected = {
+        "app-id": "${{ secrets.HONUA_RELEASE_APP_ID }}",
+        "private-key": "${{ secrets.HONUA_RELEASE_APP_PRIVATE_KEY }}",
+        "owner": "honua-io",
+        "repositories": "honua-server",
+        "permission-contents": "write",
+        "permission-pull-requests": "write",
+    }
+    if len(mint_steps) != 1 or mint_steps[0].get("with") != expected:
+        raise AssertionError("normalization App token scope must be exactly the repository and approved permissions")
+
+
 def validate(
     producer: str,
     consumer: str,
@@ -172,9 +187,9 @@ def validate(
     # and whole-context JSON forms, so every shape is detected and each use must
     # be one of the exact allowlisted expressions.
     allowed_expressions = {
-        "secrets.NORMALIZATION_APP_ID != ''\n        && secrets.NORMALIZATION_APP_PRIVATE_KEY != ''",
-        "secrets.NORMALIZATION_APP_ID",
-        "secrets.NORMALIZATION_APP_PRIVATE_KEY",
+        "secrets.HONUA_RELEASE_APP_ID != ''\n        && secrets.HONUA_RELEASE_APP_PRIVATE_KEY != ''",
+        "secrets.HONUA_RELEASE_APP_ID",
+        "secrets.HONUA_RELEASE_APP_PRIVATE_KEY",
     }
     expressions = re.findall(r"\$\{\{(.*?)\}\}", consumer, re.DOTALL)
     secret_expressions = [
@@ -302,6 +317,8 @@ def validate(
     require(mint_block, "permission-contents: write", "the minted token must request Contents: write")
     require(mint_block, "permission-pull-requests: write",
             "the minted token must request Pull requests: write for the review re-request")
+
+    validate_app_token_scope(consumer_document)
 
     token_uses = re.findall(r"github-token: (.+)", consumer)
     if token_uses != ["${{ steps.app-token.outputs.token }}"]:

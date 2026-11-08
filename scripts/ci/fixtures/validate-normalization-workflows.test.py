@@ -73,6 +73,27 @@ class NormalizationContractTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "credentials"):
             run(producer=producer)
 
+    def test_app_token_has_exact_repository_and_permission_scope(self) -> None:
+        token_step = next(step for step in MODULE.yaml.safe_load(SOURCES["consumer"])["jobs"]["validate"]["steps"]
+                          if step.get("name") == "Mint scoped normalization credential")
+        self.assertEqual(token_step["with"], {
+            "app-id": "${{ secrets.HONUA_RELEASE_APP_ID }}",
+            "private-key": "${{ secrets.HONUA_RELEASE_APP_PRIVATE_KEY }}",
+            "owner": "honua-io",
+            "repositories": "honua-server",
+            "permission-contents": "write",
+            "permission-pull-requests": "write",
+        })
+
+    def test_app_token_scope_widening_is_rejected(self) -> None:
+        for scope in ("owner: another-owner", "repositories: another-repository",
+                      "permission-actions: write"):
+            with self.subTest(scope=scope):
+                consumer = SOURCES["consumer"].replace(
+                    "          permission-contents: write", "          " + scope + "\n          permission-contents: write", 1)
+                with self.assertRaisesRegex(AssertionError, "scope|permission"):
+                    run(consumer=consumer)
+
     def test_declared_enforce_mode_passes(self) -> None:
         consumer = SOURCES["consumer"].replace(
             "  NORMALIZATION_MODE: observe", "  NORMALIZATION_MODE: enforce")
@@ -106,7 +127,7 @@ class NormalizationContractTests(unittest.TestCase):
 
     def test_index_form_secret_is_rejected(self) -> None:
         consumer = SOURCES["consumer"].replace(
-            "          app-id: ${{ secrets.NORMALIZATION_APP_ID }}",
+            "          app-id: ${{ secrets.HONUA_RELEASE_APP_ID }}",
             "          app-id: ${{ secrets['MERGE_TRAIN_TOKEN'] }}",
         )
         with self.assertRaisesRegex(AssertionError, "unexpected secret expression"):
@@ -114,7 +135,7 @@ class NormalizationContractTests(unittest.TestCase):
 
     def test_tojson_secrets_is_rejected(self) -> None:
         consumer = SOURCES["consumer"].replace(
-            "          app-id: ${{ secrets.NORMALIZATION_APP_ID }}",
+            "          app-id: ${{ secrets.HONUA_RELEASE_APP_ID }}",
             "          app-id: ${{ toJSON(secrets) }}",
         )
         with self.assertRaisesRegex(AssertionError, "unexpected secret expression"):
@@ -122,7 +143,7 @@ class NormalizationContractTests(unittest.TestCase):
 
     def test_lowercase_secret_name_is_rejected(self) -> None:
         consumer = SOURCES["consumer"].replace(
-            "          app-id: ${{ secrets.NORMALIZATION_APP_ID }}",
+            "          app-id: ${{ secrets.HONUA_RELEASE_APP_ID }}",
             "          app-id: ${{ secrets.merge_train_token }}",
         )
         with self.assertRaisesRegex(AssertionError, "unexpected secret expression"):

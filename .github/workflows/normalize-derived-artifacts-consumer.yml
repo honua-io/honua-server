@@ -22,7 +22,7 @@ concurrency:
   cancel-in-progress: false
 
 # Observe until the current recipe has 20 independently corroborated heads and
-# the dedicated scoped App credential is provisioned. A separate reviewed mode
+# the scoped App token is configured. A separate reviewed mode
 # change enables writes; reverting that value disables them.
 env:
   NORMALIZATION_MODE: observe
@@ -37,8 +37,8 @@ jobs:
     timeout-minutes: 10
     env:
       NORMALIZATION_CREDENTIAL_PRESENT: >-
-        ${{ secrets.NORMALIZATION_APP_ID != ''
-        && secrets.NORMALIZATION_APP_PRIVATE_KEY != '' }}
+        ${{ secrets.HONUA_RELEASE_APP_ID != ''
+        && secrets.HONUA_RELEASE_APP_PRIVATE_KEY != '' }}
     steps:
       - name: Checkout trusted default-branch policy
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -319,8 +319,10 @@ jobs:
           steps.compare.outputs.change_count != '0'
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
-          app-id: ${{ secrets.NORMALIZATION_APP_ID }}
-          private-key: ${{ secrets.NORMALIZATION_APP_PRIVATE_KEY }}
+          app-id: ${{ secrets.HONUA_RELEASE_APP_ID }}
+          private-key: ${{ secrets.HONUA_RELEASE_APP_PRIVATE_KEY }}
+          owner: honua-io
+          repositories: honua-server
           permission-contents: write
           permission-pull-requests: write
 
