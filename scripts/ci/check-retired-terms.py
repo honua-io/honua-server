@@ -135,6 +135,17 @@ class VocabularyCheck:
         resolved = path.resolve()
         return resolved.is_relative_to(self.root) and resolved not in self.policy_files
 
+    def excluded_pathspecs(self, names):
+        excluded = set()
+        for name in names:
+            parts = PurePosixPath(name).parts
+            for depth in range(1, len(parts) + 1):
+                ancestor = PurePosixPath(*parts[:depth]).as_posix()
+                if not self.is_safe_path(ancestor):
+                    excluded.add(ancestor)
+                    break
+        return [f":(top,exclude,literal){name}" for name in sorted(excluded)]
+
     def check_changes(self, base):
         commit = git(self.root, "rev-parse", "--verify", "--end-of-options", f"{base}^{{commit}}").decode().strip()
         merge_base = git(self.root, "merge-base", commit, "HEAD").decode().strip()
@@ -144,8 +155,7 @@ class VocabularyCheck:
         safe = {name for name in names if self.is_safe_path(name)}
         if not safe:
             return []
-        pathspecs = [f":(top,literal){name}" for name in sorted(safe)]
-        pathspecs.extend(f":(top,exclude,literal){name}" for name in names if name not in safe)
+        pathspecs = [":(top)", *self.excluded_pathspecs(set(names) - safe)]
         status = git(self.root, "diff", *DIFF_OPTIONS, "--name-status", "-z", merge_base, "--", *pathspecs)
         findings = []
         for original, name in changed_paths(status):

@@ -341,6 +341,40 @@ class RetiredTermsTests(unittest.TestCase):
         with patch.object(checker, "git", side_effect=guarded_git):
             self.assertEqual(self.scan(), ["moved.md:1: legacy: use canonical phrase"])
 
+    @unittest.skipUnless(sys.platform == "linux", "Linux argument-limit regression")
+    def test_compact_selection_preserves_renames_and_excludes_protected_inputs_at_low_limit(self):
+        for index in range(1800):
+            self.write(f"docs/{index:04d}-{'x' * 80}.md", "clean\n")
+            self.write(f"certification/agent-e2e/{index:04d}-{'x' * 80}.json", "protected-sentinel\n")
+        self.run_git("add", ".")
+        self.run_git("-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+                     "commit", "-qm", "large synthetic inventory")
+        self.run_git("mv", "page.md", "renamed.md")
+        self.write("renamed.md", "retired phrase already exists\nunchanged\nnew retired phrase\n")
+        self.write("certification/agent-e2e/new.json", "protected-sentinel\n")
+        self.run_git("add", ".")
+        program = ("import resource,runpy,sys; "
+                   "resource.setrlimit(resource.RLIMIT_STACK, (1048576, resource.getrlimit(resource.RLIMIT_STACK)[1])); "
+                   "sys.argv=sys.argv[1:]; runpy.run_path(sys.argv[0],run_name='__main__')")
+        command = [sys.executable, "-c", program, str(CHECKER), "--root", str(self.root),
+                   "--policy", str(self.policy), "--allowlist", str(self.allowlist), "--base", "HEAD"]
+        result = subprocess.run(command, capture_output=True)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(result.stdout.decode().splitlines(),
+                         ["renamed.md:3: legacy: use canonical phrase", "Retired-term check: 1 finding(s)"])
+        actual_git = checker.git
+
+        def guarded_git(root, *arguments):
+            if "diff" in arguments:
+                paths = arguments[arguments.index("--") + 1:]
+                self.assertLess(sum(len(path.encode()) + 1 for path in paths), 16384)
+                selected = actual_git(root, "diff", "--no-renames", "--name-only", "-z", "HEAD", "--", *paths)
+                self.assertFalse(any(checker.is_protected_path(path) for path in selected.decode().split("\0")))
+            return actual_git(root, *arguments)
+
+        with patch.object(checker, "git", side_effect=guarded_git):
+            self.assertEqual(self.scan(), ["renamed.md:3: legacy: use canonical phrase"])
+
     def test_cli_exit_codes_distinguish_findings_and_incomplete_checks(self):
         command = [sys.executable, str(CHECKER), "--root", str(self.root),
                    "--policy", str(self.policy), "--allowlist", str(self.allowlist)]
