@@ -51,7 +51,10 @@ public enum MetadataV2ResourceType
     GeoprocessingService,
 
     [JsonStringEnumMemberName("etl-pipeline")]
-    EtlPipeline
+    EtlPipeline,
+
+    [JsonStringEnumMemberName("unknown")]
+    Unknown = -1
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter<MetadataV2ConnectionType>))]
@@ -73,7 +76,10 @@ public enum MetadataV2ConnectionType
     Stac,
 
     [JsonStringEnumMemberName("managed")]
-    Managed
+    Managed,
+
+    [JsonStringEnumMemberName("unknown")]
+    Unknown = -1
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter<MetadataV2StorageType>))]
@@ -125,7 +131,10 @@ public enum MetadataV2StorageType
     ExternalApi,
 
     [JsonStringEnumMemberName("stac-asset")]
-    StacAsset
+    StacAsset,
+
+    [JsonStringEnumMemberName("unknown")]
+    Unknown = -1
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter<MetadataV2ServiceType>))]
@@ -168,7 +177,10 @@ public enum MetadataV2ServiceType
     SensorThings,
 
     [JsonStringEnumMemberName("custom")]
-    Custom
+    Custom,
+
+    [JsonStringEnumMemberName("unknown")]
+    Unknown = -1
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter<MetadataV2PublicationType>))]
@@ -214,7 +226,10 @@ public enum MetadataV2PublicationType
     SensorThingsDatastream,
 
     [JsonStringEnumMemberName("custom")]
-    Custom
+    Custom,
+
+    [JsonStringEnumMemberName("unknown")]
+    Unknown = -1
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter<MetadataV2StorageBindingCapability>))]
@@ -248,7 +263,10 @@ public enum MetadataV2StorageBindingCapability
     Download,
 
     [JsonStringEnumMemberName("search")]
-    Search
+    Search,
+
+    [JsonStringEnumMemberName("unknown")]
+    Unknown = -1
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter<MetadataV2LifecycleStatus>))]
@@ -267,7 +285,10 @@ public enum MetadataV2LifecycleStatus
     Retired,
 
     [JsonStringEnumMemberName("archived")]
-    Archived
+    Archived,
+
+    [JsonStringEnumMemberName("unknown")]
+    Unknown = -1
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter<MetadataV2OperationalState>))]
@@ -317,7 +338,10 @@ public enum MetadataV2GeometryType
     GeometryCollection,
 
     [JsonStringEnumMemberName("mixed")]
-    Mixed
+    Mixed,
+
+    [JsonStringEnumMemberName("unknown")]
+    Unknown = -1
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter<MetadataV2FieldType>))]

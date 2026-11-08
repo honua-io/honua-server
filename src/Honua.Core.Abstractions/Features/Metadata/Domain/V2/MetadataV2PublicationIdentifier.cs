@@ -3,10 +3,12 @@
 
 using System.Text.Json.Serialization;
 
+using Honua.Core.Serialization;
+
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
 // One identifier replaces the separate index, local id, and path so those three cannot drift.
-public sealed record MetadataV2PublicationIdentifier
+public sealed record MetadataV2PublicationIdentifier : ExtensibleJsonRecord
 {
     [JsonPropertyName("value")]
     public string Value { get; init; } = string.Empty;

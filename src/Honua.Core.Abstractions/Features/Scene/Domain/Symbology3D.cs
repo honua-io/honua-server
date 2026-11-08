@@ -2,10 +2,14 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
+using Honua.Core.Serialization;
 
 namespace Honua.Core.Features.Scene.Domain;
 
-public sealed record Symbology3D
+public sealed record Symbology3D : ExtensibleJsonRecord
 {
     public Symbology3DColor? DefaultColor { get; init; }
 
@@ -14,7 +18,7 @@ public sealed record Symbology3D
     public IReadOnlyList<Symbology3DRule> Rules { get; init; } = [];
 }
 
-public sealed record Symbology3DRule
+public sealed record Symbology3DRule : ExtensibleJsonRecord
 {
     public required string Attribute { get; init; }
 
@@ -41,11 +45,16 @@ public enum Symbology3DComparison
 
     LessThan,
 
-    LessThanOrEqual
+    LessThanOrEqual,
+
+    Unknown = -1
 }
 
 public readonly record struct Symbology3DColor(byte Red, byte Green, byte Blue)
 {
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? AdditionalProperties { get; init; }
+
     public static Symbology3DColor White => new(255, 255, 255);
 
     public string ToHex() => string.Create(

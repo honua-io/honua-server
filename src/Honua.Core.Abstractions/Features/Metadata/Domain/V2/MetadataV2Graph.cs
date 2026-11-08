@@ -6,9 +6,11 @@ using System.Text.Json.Serialization;
 using Honua.Core.Features.Scene.Domain;
 using Honua.Core.Features.Security.Domain;
 
+using Honua.Core.Serialization;
+
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
-public sealed record MetadataV2Graph
+public sealed record MetadataV2Graph : ExtensibleJsonRecord
 {
     private IReadOnlyList<MetadataV2Folder>? _folders;
     private IReadOnlyList<MetadataV2ServicePathAlias>? _servicePathAliases;
@@ -86,7 +88,7 @@ public sealed record MetadataV2Graph
     public IReadOnlyDictionary<string, JsonElement> Extensions { get; init; } = new Dictionary<string, JsonElement>();
 }
 
-public sealed record MetadataV2Resource
+public sealed record MetadataV2Resource : ExtensibleJsonRecord
 {
     private string? _primaryStorageBindingId;
     private IReadOnlyList<string>? _storageBindingIds;
@@ -209,7 +211,7 @@ public sealed record MetadataV2Resource
         new Dictionary<string, JsonElement>();
 }
 
-public sealed record MetadataV2ResourceDisplay
+public sealed record MetadataV2ResourceDisplay : ExtensibleJsonRecord
 {
     [JsonPropertyName("minScale")]
     public double? MinScale { get; init; }
@@ -233,7 +235,7 @@ public sealed record MetadataV2ResourceDisplay
     public bool HasM { get; init; }
 }
 
-public sealed record MetadataV2ResourceEditing
+public sealed record MetadataV2ResourceEditing : ExtensibleJsonRecord
 {
     [JsonPropertyName("globalIdField")]
     public string? GlobalIdField { get; init; }
@@ -260,7 +262,7 @@ public sealed record MetadataV2ResourceEditing
     public bool SupportsRelatedRecords { get; init; } = true;
 }
 
-public sealed record MetadataV2Connection
+public sealed record MetadataV2Connection : ExtensibleJsonRecord
 {
     [JsonPropertyName("metadata")]
     public MetadataV2ObjectMetadata Metadata { get; init; } = new();
@@ -287,7 +289,7 @@ public sealed record MetadataV2Connection
     public IReadOnlyDictionary<string, JsonElement> Extensions { get; init; } = new Dictionary<string, JsonElement>();
 }
 
-public sealed record MetadataV2StorageBinding
+public sealed record MetadataV2StorageBinding : ExtensibleJsonRecord
 {
     [JsonPropertyName("metadata")]
     public MetadataV2ObjectMetadata Metadata { get; init; } = new();
@@ -327,7 +329,7 @@ public sealed record MetadataV2StorageBinding
     }
 }
 
-public sealed record MetadataV2Service
+public sealed record MetadataV2Service : ExtensibleJsonRecord
 {
     [JsonPropertyName("folderId")]
     public string? FolderId { get; init; }
@@ -399,7 +401,7 @@ public sealed record MetadataV2Service
         new Dictionary<string, JsonElement>();
 }
 
-public sealed record MetadataV2ServiceSettings
+public sealed record MetadataV2ServiceSettings : ExtensibleJsonRecord
 {
     [JsonPropertyName("maxRecordCount")]
     public int? MaxRecordCount { get; init; }
@@ -444,7 +446,7 @@ public sealed record MetadataV2ServiceSettings
     public long? MaxPayloadBytes { get; init; }
 }
 
-public sealed record MetadataV2Publication
+public sealed record MetadataV2Publication : ExtensibleJsonRecord
 {
     private int? _layerIndex;
     private string? _path;
@@ -520,7 +522,7 @@ public sealed record MetadataV2Publication
     public IReadOnlyDictionary<string, JsonElement> Extensions { get; init; } = new Dictionary<string, JsonElement>();
 }
 
-public sealed record MetadataV2Catalog
+public sealed record MetadataV2Catalog : ExtensibleJsonRecord
 {
     [JsonPropertyName("metadata")]
     public MetadataV2ObjectMetadata Metadata { get; init; } = new();
@@ -538,7 +540,7 @@ public sealed record MetadataV2Catalog
     public IReadOnlyDictionary<string, JsonElement> Extensions { get; init; } = new Dictionary<string, JsonElement>();
 }
 
-public sealed record MetadataV2ProjectionProfile
+public sealed record MetadataV2ProjectionProfile : ExtensibleJsonRecord
 {
     [JsonPropertyName("metadata")]
     public MetadataV2ObjectMetadata Metadata { get; init; } = new();
@@ -559,7 +561,7 @@ public sealed record MetadataV2ProjectionProfile
     public IReadOnlyDictionary<string, JsonElement> Extensions { get; init; } = new Dictionary<string, JsonElement>();
 }
 
-public sealed record MetadataV2Policy
+public sealed record MetadataV2Policy : ExtensibleJsonRecord
 {
     [JsonPropertyName("metadata")]
     public MetadataV2ObjectMetadata Metadata { get; init; } = new();
@@ -580,7 +582,7 @@ public sealed record MetadataV2Policy
     public IReadOnlyDictionary<string, JsonElement> Extensions { get; init; } = new Dictionary<string, JsonElement>();
 }
 
-public sealed record MetadataV2Role
+public sealed record MetadataV2Role : ExtensibleJsonRecord
 {
     [JsonPropertyName("metadata")]
     public MetadataV2ObjectMetadata Metadata { get; init; } = new();
@@ -598,7 +600,7 @@ public sealed record MetadataV2Role
     public IReadOnlyDictionary<string, JsonElement> Extensions { get; init; } = new Dictionary<string, JsonElement>();
 }
 
-public sealed record MetadataV2RuntimeSnapshot
+public sealed record MetadataV2RuntimeSnapshot : ExtensibleJsonRecord
 {
     [JsonPropertyName("metadata")]
     public MetadataV2ObjectMetadata Metadata { get; init; } = new();

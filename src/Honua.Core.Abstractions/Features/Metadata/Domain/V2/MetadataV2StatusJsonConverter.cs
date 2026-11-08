@@ -27,6 +27,7 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
         var state = MetadataV2OperationalState.Unknown;
         var conditions = new List<MetadataV2Condition>();
         DateTimeOffset? observedAt = null;
+        var additionalProperties = new Dictionary<string, JsonElement>();
 
         while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
         {
@@ -56,7 +57,7 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
                     observedAt = ReadObservedAt(ref reader);
                     break;
                 default:
-                    reader.Skip();
+                    additionalProperties[name!] = ReadAdditionalProperty(ref reader);
                     break;
             }
         }
@@ -66,7 +67,8 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
             Lifecycle = lifecycle ?? MetadataV2LifecycleStatus.Active,
             State = state,
             Conditions = conditions,
-            ObservedAt = observedAt
+            ObservedAt = observedAt,
+            AdditionalProperties = additionalProperties.Count == 0 ? null : additionalProperties
         };
     }
 
@@ -87,6 +89,7 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
 
         writer.WriteEndArray();
         WriteNullableTimestamp(writer, options, "observedAt", value.ObservedAt);
+        WriteAdditionalProperties(writer, value.AdditionalProperties);
         writer.WriteEndObject();
     }
 
@@ -101,6 +104,11 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
         {
             if (!reader.TryGetInt32(out var number))
             {
+                if (reader.TryGetInt64(out _) || reader.TryGetUInt64(out _))
+                {
+                    return MetadataV2LifecycleStatus.Unknown;
+                }
+
                 throw new JsonException("Metadata v2 lifecycle must be a string.");
             }
 
@@ -111,7 +119,7 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
                 2 => MetadataV2LifecycleStatus.Deprecated,
                 3 => MetadataV2LifecycleStatus.Retired,
                 4 => MetadataV2LifecycleStatus.Archived,
-                _ => throw new JsonException("Metadata v2 lifecycle is not a known value.")
+                _ => MetadataV2LifecycleStatus.Unknown
             };
         }
 
@@ -122,7 +130,7 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
 
         if (!TryParseNamed(reader.GetString(), out MetadataV2LifecycleStatus lifecycle))
         {
-            throw new JsonException("Metadata v2 lifecycle is not a known value.");
+            return MetadataV2LifecycleStatus.Unknown;
         }
 
         return lifecycle;
@@ -139,6 +147,11 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
         {
             if (!reader.TryGetInt32(out var number))
             {
+                if (reader.TryGetInt64(out _) || reader.TryGetUInt64(out _))
+                {
+                    return MetadataV2OperationalState.Unknown;
+                }
+
                 throw new JsonException("Metadata v2 operational state must be a string.");
             }
 
@@ -149,7 +162,7 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
                 2 => MetadataV2OperationalState.Pending,
                 3 => MetadataV2OperationalState.Degraded,
                 4 => MetadataV2OperationalState.Failed,
-                _ => throw new JsonException("Metadata v2 operational state is not a known value.")
+                _ => MetadataV2OperationalState.Unknown
             };
         }
 
@@ -160,7 +173,7 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
 
         if (!TryParseNamed(reader.GetString(), out MetadataV2OperationalState state))
         {
-            throw new JsonException("Metadata v2 operational state is not a known value.");
+            return MetadataV2OperationalState.Unknown;
         }
 
         return state;
@@ -199,6 +212,7 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
         string? reason = null;
         string? message = null;
         DateTimeOffset? lastTransitionAt = null;
+        var additionalProperties = new Dictionary<string, JsonElement>();
         while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
         {
             if (reader.TokenType != JsonTokenType.PropertyName)
@@ -230,7 +244,7 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
                     lastTransitionAt = ReadObservedAt(ref reader);
                     break;
                 default:
-                    reader.Skip();
+                    additionalProperties[name!] = ReadAdditionalProperty(ref reader);
                     break;
             }
         }
@@ -241,7 +255,8 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
             Status = status,
             Reason = reason,
             Message = message,
-            LastTransitionAt = lastTransitionAt
+            LastTransitionAt = lastTransitionAt,
+            AdditionalProperties = additionalProperties.Count == 0 ? null : additionalProperties
         };
     }
 
@@ -262,6 +277,7 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
         WriteNullableString(writer, options, "reason", condition.Reason);
         WriteNullableString(writer, options, "message", condition.Message);
         WriteNullableTimestamp(writer, options, "lastTransitionAt", condition.LastTransitionAt);
+        WriteAdditionalProperties(writer, condition.AdditionalProperties);
         writer.WriteEndObject();
     }
 
@@ -316,7 +332,7 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
             MetadataV2LifecycleStatus.Deprecated => "deprecated",
             MetadataV2LifecycleStatus.Retired => "retired",
             MetadataV2LifecycleStatus.Archived => "archived",
-            _ => throw new JsonException("Metadata v2 lifecycle is not a known value.")
+            _ => "unknown"
         };
 
     private static string StateWireName(MetadataV2OperationalState state)
@@ -327,6 +343,26 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
             MetadataV2OperationalState.Pending => "pending",
             MetadataV2OperationalState.Degraded => "degraded",
             MetadataV2OperationalState.Failed => "failed",
-            _ => throw new JsonException("Metadata v2 operational state is not a known value.")
+            _ => "unknown"
         };
+
+    private static JsonElement ReadAdditionalProperty(ref Utf8JsonReader reader)
+    {
+        using var document = JsonDocument.ParseValue(ref reader);
+        return document.RootElement.Clone();
+    }
+
+    private static void WriteAdditionalProperties(Utf8JsonWriter writer, IReadOnlyDictionary<string, JsonElement>? properties)
+    {
+        if (properties is null)
+        {
+            return;
+        }
+
+        foreach (var property in properties)
+        {
+            writer.WritePropertyName(property.Key);
+            property.Value.WriteTo(writer);
+        }
+    }
 }
