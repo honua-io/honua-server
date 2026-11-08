@@ -291,9 +291,11 @@ public sealed class CoordinatedReleaseReconcilerTests
     // ---- helpers ---------------------------------------------------------
 
     [UnitTheory]
-    [InlineData(CoordinatedReleaseStep.ContainerRollout)]
-    [InlineData(CoordinatedReleaseStep.MetadataAndSchema)]
-    public async Task Reconcile_ChildStartLosesCasToRollback_RetainsTheChildForCompensation(CoordinatedReleaseStep gate)
+    [InlineData(CoordinatedReleaseStep.ContainerRollout, 1)]
+    [InlineData(CoordinatedReleaseStep.MetadataAndSchema, 1)]
+    [InlineData(CoordinatedReleaseStep.ContainerRollout, 3)]
+    [InlineData(CoordinatedReleaseStep.MetadataAndSchema, 3)]
+    public async Task Reconcile_ChildStartLosesCasToRollback_RetainsTheChildForCompensation(CoordinatedReleaseStep gate, int conflicts)
     {
         var store = new InMemoryWorkflowOperationStore();
         var operation = await CreateAsync(store);
@@ -304,21 +306,22 @@ public sealed class CoordinatedReleaseReconcilerTests
         };
         await store.SetAsync(operation);
         await CoordinatedGateTestApproval.ApproveAsync(store, operation);
-        store.RollbackOnNextWrite = true;
+        store.RollbackConflictsRemaining = conflicts;
         var container = new FakeContainerStep();
         var metadata = new FakeMetadataStep();
         var reconciler = CreateReconciler(store, container, metadata);
 
-        await reconciler.ReconcileCoordinatedReleaseAsync(operation.OperationId);
+        if (conflicts < 3) await reconciler.ReconcileCoordinatedReleaseAsync(operation.OperationId);
+        else await Assert.ThrowsAnyAsync<InvalidOperationException>(() => reconciler.ReconcileCoordinatedReleaseAsync(operation.OperationId));
 
         var checkpoint = (await store.GetAsync(operation.OperationId))!;
-        checkpoint.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
-        checkpoint.CoordinatedRelease!.CurrentStep.Should().Be(CoordinatedReleaseStep.RollingBack);
+        checkpoint.Status.Should().Be(conflicts < 3 ? WorkflowOperationStatus.RollbackRequested : WorkflowOperationStatus.ManualInterventionRequired);
+        checkpoint.CoordinatedRelease!.CurrentStep.Should().Be(conflicts < 3 ? CoordinatedReleaseStep.RollingBack : CoordinatedReleaseStep.Failed);
         (gate == CoordinatedReleaseStep.ContainerRollout ? checkpoint.CoordinatedRelease.ContainerOperationId
             : checkpoint.CoordinatedRelease.MetadataOperationId).Should().Be(gate == CoordinatedReleaseStep.ContainerRollout
                 ? "deploy-child" : "metadata-child");
         await reconciler.ReconcileCoordinatedReleaseAsync(operation.OperationId);
-        (gate == CoordinatedReleaseStep.ContainerRollout ? container.RollbackCalls : metadata.RollbackCalls).Should().Be(1);
+        (gate == CoordinatedReleaseStep.ContainerRollout ? container.RollbackCalls : metadata.RollbackCalls).Should().Be(conflicts < 3 ? 1 : 0);
         (gate == CoordinatedReleaseStep.ContainerRollout ? container.StartCalls : metadata.StartCalls).Should().Be(1);
     }
 
@@ -583,7 +586,7 @@ public sealed class CoordinatedReleaseReconcilerTests
 
     private sealed class InMemoryWorkflowOperationStore : IWorkflowOperationStore
     {
-        public bool RollbackOnNextWrite { get; set; }
+        public int RollbackConflictsRemaining { get; set; }
         private readonly ConcurrentDictionary<string, WorkflowOperationRecord> _operations = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, string> _leases = new(StringComparer.Ordinal);
 
@@ -616,9 +619,9 @@ public sealed class CoordinatedReleaseReconcilerTests
 
         public Task<bool> TrySetAsync(WorkflowOperationRecord operation, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
         {
-            if (RollbackOnNextWrite)
+            if (RollbackConflictsRemaining > 0)
             {
-                RollbackOnNextWrite = false;
+                RollbackConflictsRemaining--;
                 var pending = _operations[operation.OperationId];
                 _operations[operation.OperationId] = pending with
                 {

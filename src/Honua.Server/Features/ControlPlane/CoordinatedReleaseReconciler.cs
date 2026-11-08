@@ -203,8 +203,8 @@ internal sealed partial class CoordinatedReleaseReconciler(
     private async Task PersistProgressAsync(
         WorkflowOperationRecord original, WorkflowOperationRecord checkpoint, CancellationToken cancellationToken)
     {
-        var startedChild = (original.CoordinatedRelease!.ContainerOperationId is null && checkpoint.CoordinatedRelease!.ContainerOperationId is not null)
-            || (original.CoordinatedRelease.MetadataOperationId is null && checkpoint.CoordinatedRelease!.MetadataOperationId is not null);
+        var startedChild = (string.IsNullOrWhiteSpace(original.CoordinatedRelease!.ContainerOperationId) && !string.IsNullOrWhiteSpace(checkpoint.CoordinatedRelease!.ContainerOperationId))
+            || (string.IsNullOrWhiteSpace(original.CoordinatedRelease.MetadataOperationId) && !string.IsNullOrWhiteSpace(checkpoint.CoordinatedRelease!.MetadataOperationId));
         for (var attempt = 0; attempt < 3; attempt++)
         {
             if (await workflowStore.TrySetAsync(checkpoint, cancellationToken: cancellationToken).ConfigureAwait(false))
@@ -227,7 +227,7 @@ internal sealed partial class CoordinatedReleaseReconciler(
     {
         var context = latest.CoordinatedRelease!;
         var started = checkpoint.CoordinatedRelease!;
-        if (string.IsNullOrEmpty(context.ContainerOperationId) && !string.IsNullOrEmpty(started.ContainerOperationId))
+        if (string.IsNullOrWhiteSpace(context.ContainerOperationId) && !string.IsNullOrWhiteSpace(started.ContainerOperationId))
         {
             context = context with
             {
@@ -236,7 +236,7 @@ internal sealed partial class CoordinatedReleaseReconciler(
                     CoordinatedReleaseStepStatus.Running, "Accepted container child retained after a checkpoint conflict."),
             };
         }
-        if (string.IsNullOrEmpty(context.MetadataOperationId) && !string.IsNullOrEmpty(started.MetadataOperationId))
+        if (string.IsNullOrWhiteSpace(context.MetadataOperationId) && !string.IsNullOrWhiteSpace(started.MetadataOperationId))
         {
             context = context with
             {
