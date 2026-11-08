@@ -153,7 +153,9 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
         var prior = ContinuationRequest(identity, true);
         var next = new StudioAiChatRequest
         {
-            ExecutionContext = identity, System = "Updated canvas context", Tools = prior.Tools,
+            ExecutionContext = identity,
+            System = "Updated canvas context",
+            Tools = prior.Tools,
             Messages = [.. prior.Messages, new() { Role = StudioAiRole.User, Content = "Next question" }]
         };
 
@@ -177,7 +179,12 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
             });
             messages.Add(new StudioAiMessage { Role = StudioAiRole.Tool, ToolCallId = "toolu_1", Content = "[]" });
         }
-        return new StudioAiChatRequest { ExecutionContext = identity, Messages = messages, System = system,
-            Tools = omitTools ? null : ToolRequest().Tools };
+        return new StudioAiChatRequest
+        {
+            ExecutionContext = identity,
+            Messages = messages,
+            System = system,
+            Tools = omitTools ? null : ToolRequest().Tools
+        };
     }
 }
