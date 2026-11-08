@@ -22,8 +22,7 @@ public sealed partial class FolderOperationIntegrationTests
         var listed = await CallMcpToolAsync("honua_list_folders", []);
         listed.GetProperty("status").GetString().Should().Be("Completed");
         listed.GetProperty("details").GetProperty("etag").GetString().Should().Be(initial.Etag);
-        await ApplyFolderToolAsync("honua_create_folder", new() { ["name"] = "Survey",
-            ["If-Match"] = initial.Etag });
+        await ApplyFolderToolAsync("honua_create_folder", new() { ["name"] = "Survey", ["If-Match"] = initial.Etag });
         var created = await SnapshotAsync();
         var folder = created.Graph.Folders.Should().ContainSingle().Subject;
         await ApplyFolderToolAsync("honua_move_service", new()
@@ -77,8 +76,7 @@ public sealed partial class FolderOperationIntegrationTests
     public async Task FolderMcpTools_DeniedService_DoesNotAcceptMoveProposal()
     {
         var initial = await SnapshotAsync();
-        await ApplyAsync("folder.create", new() { ["name"] = "Destination",
-            ["If-Match"] = initial.Etag });
+        await ApplyAsync("folder.create", new() { ["name"] = "Destination", ["If-Match"] = initial.Etag });
         var before = await SnapshotAsync();
         _authorization.DeniedService = "test";
         var result = await CallMcpToolAsync("honua_move_service", new()
