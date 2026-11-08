@@ -241,12 +241,7 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
                     StudioAiStreamGrammarValidator.InvalidStreamCode);
                 yield break;
             }
-            if (!turn.TryAccept(frame, payload))
-            {
-                yield return state.Error("Provider continuation exceeded its capture limit.", state.Timer.ElapsedMilliseconds,
-                    StudioAiStreamGrammarValidator.InvalidStreamCode);
-                yield break;
-            }
+            turn.Capture(frame, payload);
 
             switch (frame.Type)
             {
@@ -369,7 +364,7 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
         {
             yield return state.Error("Provider stream ended before message_stop.", state.Timer.ElapsedMilliseconds);
         }
-        else if (state.StopReason == StudioAiStopReason.ToolCall && !cancellationToken.IsCancellationRequested)
+        else if (state.StopReason == StudioAiStopReason.ToolCall && !turn.CaptureLimitExceeded && !cancellationToken.IsCancellationRequested)
         {
             var content = turn.Content();
             var scope = new AnthropicContinuationStore.Scope(options, invocation.Request, invocation.Model, invocation.ExecutionContext);
