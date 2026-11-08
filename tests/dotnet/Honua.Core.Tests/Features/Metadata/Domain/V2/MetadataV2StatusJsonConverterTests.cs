@@ -24,6 +24,7 @@ public sealed class MetadataV2StatusJsonConverterTests
     [UnitTheory]
     [InlineData("{\"lifecycle\":\" ACTIVE \",\"state\":\" UNKNOWN \"}", "active", "unknown")]
     [InlineData("{\"lifecycle\":\" 1 \",\"state\":\" +1 \"}", " 1 ", " +1 ")]
+    [InlineData("{\"lifecycle\":\"draft,active\",\"state\":\"ready,pending\"}", "draft,active", "ready,pending")]
     public void Write_StatusStringCompatibility_PreservesKnownAliasesAndUnsupportedNumbers(
         string json, string lifecycle, string state)
     {
