@@ -32,6 +32,11 @@ internal static partial class ExportJobServiceLog
 
     [LoggerMessage(
         Level = LogLevel.Warning,
+        Message = "Skipping export recovery for job {JobId} because its persisted progress is invalid. Submit a new export request.")]
+    public static partial void InvalidRecoveryProgress(ILogger logger, string jobId, Exception exception);
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
         Message = "Export job lease renewal was lost while processing a background export.")]
     public static partial void LeaseRenewalLost(ILogger logger);
 

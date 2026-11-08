@@ -642,7 +642,16 @@ internal sealed class ExportJobService(
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var progress = await _progressStore.GetProgressAsync<ExportProgress>(jobId, cancellationToken).ConfigureAwait(false);
+            ExportProgress? progress;
+            try
+            {
+                progress = await _progressStore.GetProgressAsync<ExportProgress>(jobId, cancellationToken).ConfigureAwait(false);
+            }
+            catch (InvalidDataException exception)
+            {
+                ExportJobServiceLog.InvalidRecoveryProgress(_logger, jobId, exception);
+                continue;
+            }
             if (progress == null || progress.Status is not (OperationStatus.Queued or OperationStatus.Processing))
             {
                 continue;
