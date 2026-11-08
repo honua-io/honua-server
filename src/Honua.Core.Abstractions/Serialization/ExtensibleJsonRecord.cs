@@ -6,6 +6,7 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Core.Serialization;
 
+/// <summary>Retains unrecognized JSON properties across serialization and record copies.</summary>
 public abstract record ExtensibleJsonRecord
 {
     [JsonExtensionData]
