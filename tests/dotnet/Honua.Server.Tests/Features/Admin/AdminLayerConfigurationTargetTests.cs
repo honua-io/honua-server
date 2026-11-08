@@ -10,12 +10,9 @@ using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// Layer-index configuration writes address one routable feature or table resource.
-/// A shared index is a conflict; a raster sidecar and a retired twin are not (honua-server#6111).
-/// </summary>
 public sealed class AdminLayerConfigurationTargetTests
 {
+    private const int StorageLayerId = 42;
     private static readonly MetadataV2Status Active = new() { Lifecycle = MetadataV2LifecycleStatus.Active };
 
     [UnitTest]
@@ -25,7 +22,7 @@ public sealed class AdminLayerConfigurationTargetTests
             Layer("res-a", "svc-a", "parcels", layerIndex: 0),
             Layer("res-b", "svc-b", "twin-service-6111", layerIndex: 0));
 
-        var target = AdminLayerConfigurationTargets.Resolve(snapshot, 0);
+        var target = AdminLayerConfigurationTargets.Resolve(snapshot, StorageLayerId);
 
         target.IsAmbiguous.Should().BeTrue();
         target.Resource.Should().BeNull();
@@ -33,7 +30,7 @@ public sealed class AdminLayerConfigurationTargetTests
     }
 
     [UnitTest]
-    public async Task Write_AmbiguousLayerIndex_DoesNotSave()
+    public async Task Write_AmbiguousStorageLayerId_DoesNotSave()
     {
         var store = new RecordingGraphStore(Graph(
             Layer("res-a", "svc-a", "parcels", layerIndex: 0),
@@ -41,7 +38,7 @@ public sealed class AdminLayerConfigurationTargetTests
 
         var target = await AdminLayerConfigurationTargets.WriteAsync(
             store,
-            0,
+            StorageLayerId,
             resource => resource with { PermanentFilter = new MetadataV2PermanentFilter { Expression = "1=1" } },
             CancellationToken.None);
 
@@ -59,7 +56,7 @@ public sealed class AdminLayerConfigurationTargetTests
 
         var target = await AdminLayerConfigurationTargets.WriteAsync(
             store,
-            0,
+            StorageLayerId,
             resource => resource with
             {
                 PermanentFilter = new MetadataV2PermanentFilter { Expression = "category = 'test'", Language = "arcgis-sql" }
@@ -76,11 +73,11 @@ public sealed class AdminLayerConfigurationTargetTests
     }
 
     [UnitTest]
-    public void Resolve_LegacyPublicationWithoutIdentifier_MatchesLayerIndex()
+    public void Resolve_LegacyPublicationWithoutIdentifier_MatchesStorageLayerId()
     {
         var snapshot = Graph(Layer("res-legacy", "svc-a", "parcels", layerIndex: 4, legacyIdentifier: true));
 
-        var target = AdminLayerConfigurationTargets.Resolve(snapshot, 4);
+        var target = AdminLayerConfigurationTargets.Resolve(snapshot, StorageLayerId);
 
         target.IsAmbiguous.Should().BeFalse();
         target.Resource!.Metadata.Id.Should().Be("res-legacy");
@@ -95,6 +92,7 @@ public sealed class AdminLayerConfigurationTargetTests
             new MetadataV2Graph
             {
                 Resources = parts.SelectMany(part => part.Resources).ToArray(),
+                StorageBindings = parts.SelectMany(part => part.StorageBindings).ToArray(),
                 Services = parts.SelectMany(part => part.Services).ToArray(),
                 Publications = parts.SelectMany(part => part.Publications).ToArray(),
             },
@@ -119,10 +117,21 @@ public sealed class AdminLayerConfigurationTargetTests
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = resourceId, Name = resourceId },
                     Type = type,
+                    StorageBindingIds = ["binding-" + resourceId],
+                    PrimaryStorageBindingId = "binding-" + resourceId,
                     Status = retired
                         ? new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Retired }
                         : Active,
                     SchemaFields = [new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String }],
+                }
+            ],
+            StorageBindings =
+            [
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-" + resourceId, Name = "binding-" + resourceId },
+                    ResourceId = resourceId,
+                    StorageLayerId = StorageLayerId,
                 }
             ],
             Services =
@@ -141,6 +150,7 @@ public sealed class AdminLayerConfigurationTargetTests
                     Status = Active,
                     ServiceId = serviceId,
                     ResourceId = resourceId,
+                    StorageBindingId = "binding-" + resourceId,
                     Identifier = legacyIdentifier
                         ? null!
                         : new MetadataV2PublicationIdentifier
