@@ -34,8 +34,8 @@
       "evidence": "https://github.com/honua-io/honua-server/issues/3055",
       "reason": "The #3055 config-binding fix re-landed on trunk independently and byte-identically; trunk's ConfigurationBindingShapeTests is a superset of the guard #3113 added. Of the two residual paths, AccessPolicy is deliberately left init-only, and Features.Import.Domain.ImportLimits is not IOptions-bound at all (hand-parsed at Honua.Db/Postgres/ServiceCollectionExtensions.cs), so init->set there was a no-op and a regression. The real defect behind that path is tracked separately as #3315.",
       "paths": [
-        "src/Honua.Core/Abstractions/Features/Security/Domain/AccessPolicy.cs",
-        "src/Honua.Core/Core/Features/Import/Domain/ImportLimits.cs"
+        "src/Honua.Core.Abstractions/Features/Security/Domain/AccessPolicy.cs",
+        "src/Honua.Core/Features/Import/Domain/ImportLimits.cs"
       ]
     },
     {
@@ -46,12 +46,12 @@
       "evidence": "https://github.com/honua-io/honua-server/issues/3091",
       "reason": "A dual-engine raster capability/cost registry, rejected by name in the ADR-0071 single-engine amendment (epic #3085): all raster GP executes on the isolated GDAL worker and there is no per-job engine selection for the registry to feed. #3091 is closed NOT_PLANNED; the one decision-neutral fragment was re-filed as #3307.",
       "paths": [
-        "src/Honua.Core/Core/Features/Geoprocessing/Domain/ProcessDefinition.cs",
-        "src/Honua.Core/Core/Features/Geoprocessing/Raster/IRasterEngineCapabilityRegistry.cs",
-        "src/Honua.Core/Core/Features/Geoprocessing/Raster/RasterEngineCapabilities.cs",
-        "src/Honua.Core/Core/Features/Geoprocessing/Raster/RasterEngineCapabilityJson.cs",
-        "src/Honua.Core/Core/Features/Geoprocessing/Raster/RasterEngineCapabilityRegistry.cs",
-        "src/Honua.Core/Core/Features/Geoprocessing/Raster/RasterEngineExecutorCoverageValidator.cs",
+        "src/Honua.Core/Features/Geoprocessing/Domain/ProcessDefinition.cs",
+        "src/Honua.Core/Features/Geoprocessing/Raster/IRasterEngineCapabilityRegistry.cs",
+        "src/Honua.Core/Features/Geoprocessing/Raster/RasterEngineCapabilities.cs",
+        "src/Honua.Core/Features/Geoprocessing/Raster/RasterEngineCapabilityJson.cs",
+        "src/Honua.Core/Features/Geoprocessing/Raster/RasterEngineCapabilityRegistry.cs",
+        "src/Honua.Core/Features/Geoprocessing/Raster/RasterEngineExecutorCoverageValidator.cs",
         "src/Honua.Geoprocessing/Features/Geoprocessing/BuiltInProcessCatalog.cs",
         "src/Honua.Worker.Gdal/Execution/GdalHardeningOptions.cs",
         "src/Honua.Worker.Gdal/Execution/GdalRasterFormatConvertJobExecutor.cs",

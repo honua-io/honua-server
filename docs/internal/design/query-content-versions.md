@@ -51,7 +51,7 @@ honest "version history isn't available on this server yet" state — it is not 
 
 | Concern | Existing type / file | Reuse as |
 | --- | --- | --- |
-| Versioned store | `IAnalysisContentStore` · `Honua.Core/Features/AnalysisContent/Abstractions` | Already has `ListVersionsAsync`; **just map it to HTTP** |
+| Versioned store | `IAnalysisContentStore` · `Honua.Core/Core/Features/AnalysisContent/Abstractions` | Already has `ListVersionsAsync`; **just map it to HTTP** |
 | Domain model | `AnalysisContentItem` / `AnalysisContentVersion` / `SavedQueryContent` · `…/Domain/AnalysisContentContracts.cs` | Wire payloads verbatim |
 | Postgres + in-memory stores | `PostgresAnalysisContentStore`, `InMemoryAnalysisContentStore` | No store change required for the list endpoint |
 | Endpoint group | `AnalysisContentEndpoints.MapAnalysisContentEndpoints` · `Honua.Ai/Features/AnalysisContent` | Add the `GET …/versions` (and `…/diff`) routes alongside the existing ones |

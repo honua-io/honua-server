@@ -58,7 +58,7 @@ into a real endpoint and flips the capability flag when implemented.
 
 | Concern | Existing type / file | Reuse as |
 | --- | --- | --- |
-| History service seam | `ITemporalHistoryService` · `Honua.Core.Abstractions/Features/Temporal` | Extend with `DiffAsync`, `ReadTimelineAsync`; rollback goes through jobs, not here |
+| History service seam | `ITemporalHistoryService` · `Honua.Core/Abstractions/Features/Temporal` | Extend with `DiffAsync`, `ReadTimelineAsync`; rollback goes through jobs, not here |
 | Endpoint group | `TemporalHistoryEndpoints` · `Honua.Server/Features/Temporal` | Add `…/diff`, `…/timeline`, `…/rollback` routes alongside `capabilities`/`as-of` |
 | Capability flags | `TemporalDeferredCapabilities` (`SupportsDiff`/`SupportsTimeline`/`SupportsAttribution`/`SupportsRollback`) | Flip each to `true` as the matching endpoint ships — clients negotiate on these |
 | Change tracker | `IChangeTracker` / `PostgresChangeTracker` | The data source for diff/timeline; do **not** add a second history store |

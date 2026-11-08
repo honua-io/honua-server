@@ -346,8 +346,8 @@ def test_pr_3113_is_not_stranded_because_all_of_its_files_are_on_trunk():
     assert finding["classification"] == MODULE.MERGED_EDITS_MISSING
     assert finding["absentPaths"] == []
     assert finding["unlandedEditPaths"] == [
-        "src/Honua.Core/Abstractions/Features/Security/Domain/AccessPolicy.cs",
-        "src/Honua.Core/Core/Features/Import/Domain/ImportLimits.cs",
+        "src/Honua.Core.Abstractions/Features/Security/Domain/AccessPolicy.cs",
+        "src/Honua.Core/Features/Import/Domain/ImportLimits.cs",
     ]
 
 

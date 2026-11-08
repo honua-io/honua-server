@@ -76,49 +76,49 @@
           "supersededOnDefault": true
         },
         {
-          "path": "src/Honua.Core/Abstractions/Features/Security/Domain/AccessPolicy.cs",
+          "path": "src/Honua.Core.Abstractions/Features/Security/Domain/AccessPolicy.cs",
           "verdict": "missing",
           "addedLinesProbed": 4,
           "addedLinesFound": 0,
           "supersededOnDefault": false
         },
         {
-          "path": "src/Honua.Core/Core/Configuration/GeometryValidationOptions.cs",
+          "path": "src/Honua.Core/Configuration/GeometryValidationOptions.cs",
           "verdict": "identical"
         },
         {
-          "path": "src/Honua.Core/Core/Configuration/MigrationSafetyOptions.cs",
+          "path": "src/Honua.Core/Configuration/MigrationSafetyOptions.cs",
           "verdict": "identical"
         },
         {
-          "path": "src/Honua.Core/Core/Configuration/SecureConfigurationOptions.cs",
+          "path": "src/Honua.Core/Configuration/SecureConfigurationOptions.cs",
           "verdict": "identical"
         },
         {
-          "path": "src/Honua.Core/Core/Features/Alerts/Domain/AlertOptions.cs",
+          "path": "src/Honua.Core/Features/Alerts/Domain/AlertOptions.cs",
           "verdict": "identical"
         },
         {
-          "path": "src/Honua.Core/Core/Features/AuditLog/AuditChainVerificationOptions.cs",
+          "path": "src/Honua.Core/Features/AuditLog/AuditChainVerificationOptions.cs",
           "verdict": "identical"
         },
         {
-          "path": "src/Honua.Core/Core/Features/AuditLog/Export/AuditExportDispatcher.cs",
+          "path": "src/Honua.Core/Features/AuditLog/Export/AuditExportDispatcher.cs",
           "verdict": "identical"
         },
         {
-          "path": "src/Honua.Core/Core/Features/Import/Domain/ImportLimits.cs",
+          "path": "src/Honua.Core/Features/Import/Domain/ImportLimits.cs",
           "verdict": "missing",
           "addedLinesProbed": 20,
           "addedLinesFound": 0,
           "supersededOnDefault": false
         },
         {
-          "path": "src/Honua.Core/Core/Features/Infrastructure/Domain/QueryCacheOptions.cs",
+          "path": "src/Honua.Core/Features/Infrastructure/Domain/QueryCacheOptions.cs",
           "verdict": "identical"
         },
         {
-          "path": "src/Honua.Core/Core/Features/Tiles/TileOptions.cs",
+          "path": "src/Honua.Core/Features/Tiles/TileOptions.cs",
           "verdict": "identical"
         },
         {
@@ -178,30 +178,30 @@
       "onDefaultBranch": false,
       "paths": [
         {
-          "path": "src/Honua.Core/Core/Features/Geoprocessing/Domain/ProcessDefinition.cs",
+          "path": "src/Honua.Core/Features/Geoprocessing/Domain/ProcessDefinition.cs",
           "verdict": "partial",
           "addedLinesProbed": 8,
           "addedLinesFound": 2,
           "supersededOnDefault": false
         },
         {
-          "path": "src/Honua.Core/Core/Features/Geoprocessing/Raster/IRasterEngineCapabilityRegistry.cs",
+          "path": "src/Honua.Core/Features/Geoprocessing/Raster/IRasterEngineCapabilityRegistry.cs",
           "verdict": "absent"
         },
         {
-          "path": "src/Honua.Core/Core/Features/Geoprocessing/Raster/RasterEngineCapabilities.cs",
+          "path": "src/Honua.Core/Features/Geoprocessing/Raster/RasterEngineCapabilities.cs",
           "verdict": "absent"
         },
         {
-          "path": "src/Honua.Core/Core/Features/Geoprocessing/Raster/RasterEngineCapabilityJson.cs",
+          "path": "src/Honua.Core/Features/Geoprocessing/Raster/RasterEngineCapabilityJson.cs",
           "verdict": "absent"
         },
         {
-          "path": "src/Honua.Core/Core/Features/Geoprocessing/Raster/RasterEngineCapabilityRegistry.cs",
+          "path": "src/Honua.Core/Features/Geoprocessing/Raster/RasterEngineCapabilityRegistry.cs",
           "verdict": "absent"
         },
         {
-          "path": "src/Honua.Core/Core/Features/Geoprocessing/Raster/RasterEngineExecutorCoverageValidator.cs",
+          "path": "src/Honua.Core/Features/Geoprocessing/Raster/RasterEngineExecutorCoverageValidator.cs",
           "verdict": "absent"
         },
         {

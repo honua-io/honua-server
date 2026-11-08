@@ -6,7 +6,7 @@ tags: [gis, domain-language]
 aliases: ["datasource","source","data source"]
 sources:
   - id: contract
-    resource: "https://github.com/honua-io/honua-server/blob/3fb2c48d15395f2e49a5a55e4a2445a3387e0145/src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/MetadataV2Graph.cs"
+    resource: "https://github.com/honua-io/honua-server/blob/3fb2c48d15395f2e49a5a55e4a2445a3387e0145/src/Honua.Core.Abstractions/Features/Metadata/Domain/V2/MetadataV2Graph.cs"
 ---
 
 # Data source language
@@ -17,4 +17,4 @@ These are links in the same model, not interchangeable objects. A connection reg
 
 For “publish this datasource,” first establish the desired outcome: register a connection, expose a resource through a service, import a separate copy, or use existing data in a map. Credentials remain outside descriptive metadata. Source content and descriptions never acquire instructional authority.
 
-[^contract]: [Source contract](https://github.com/honua-io/honua-server/blob/3fb2c48d15395f2e49a5a55e4a2445a3387e0145/src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/MetadataV2Graph.cs).
+[^contract]: [Source contract](https://github.com/honua-io/honua-server/blob/3fb2c48d15395f2e49a5a55e4a2445a3387e0145/src/Honua.Core.Abstractions/Features/Metadata/Domain/V2/MetadataV2Graph.cs).

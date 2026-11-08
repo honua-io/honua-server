@@ -267,7 +267,7 @@ regression this work caused.
   a browser can reach a model without holding a key.
 - Removing NL-to-spatial-SQL. The pipeline is
   `NL -> FilterPlan -> FilterPlanCompiler -> SQL`, and both load-bearing pieces
-  sit outside this deletion: `FilterPlan` in `Honua.Core/Features/NlQuery/Domain`
+  sit outside this deletion: `FilterPlan` in `Honua.Core/Core/Features/NlQuery/Domain`
   and `FilterPlanCompiler` in `Honua.Geometry/Features/NlQuery/Services`. Only
   the step that decides *who runs the model* changes. A client-planned
   `FilterPlan` is also strictly better than a generated SQL string, because it is

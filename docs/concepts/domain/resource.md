@@ -6,7 +6,7 @@ tags: [gis, domain-language]
 aliases: ["logical resource","canonical dataset"]
 sources:
   - id: contract
-    resource: "https://github.com/honua-io/honua-server/blob/3fb2c48d15395f2e49a5a55e4a2445a3387e0145/src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/MetadataV2Graph.cs"
+    resource: "https://github.com/honua-io/honua-server/blob/3fb2c48d15395f2e49a5a55e4a2445a3387e0145/src/Honua.Core.Abstractions/Features/Metadata/Domain/V2/MetadataV2Graph.cs"
 ---
 
 # Dataset naming transition
@@ -17,4 +17,4 @@ The current Metadata v2 implementation uses `MetadataV2Resource` and fields such
 
 A Dataset identifier, a storage handle, and a Service-local Layer identifier have different scopes. Publishing a Dataset through another Service does not inherently duplicate its data.
 
-[^contract]: [Current implementation](https://github.com/honua-io/honua-server/blob/3fb2c48d15395f2e49a5a55e4a2445a3387e0145/src/Honua.Core/Abstractions/Features/Metadata/Domain/V2/MetadataV2Graph.cs).
+[^contract]: [Current implementation](https://github.com/honua-io/honua-server/blob/3fb2c48d15395f2e49a5a55e4a2445a3387e0145/src/Honua.Core.Abstractions/Features/Metadata/Domain/V2/MetadataV2Graph.cs).

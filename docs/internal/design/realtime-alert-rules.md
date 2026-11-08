@@ -81,7 +81,7 @@ So #1169's server contract effectively **exists.** **The work is narrow:**
 | Wire DTOs + JSON | `AlertAdminModels.cs` / `AlertAdminJsonContext` | Frozen request/response shapes |
 | Validation | `ValidateRuleDraftAsync` + `TryValidateConditions` in `AlertAdminEndpoints` | The pre-persist gate (also exposed via `/rules/test`) |
 | Delivery-state | `AlertRuleDeliveryHealth` + `BuildChannelValidation` + `ResolveDeliveryHealthStatus` | The per-channel state the editor renders |
-| Event query (recent triggers) | `IAlertEventQuery` · `Honua.Core/Features/Alerts/Abstractions/IAlertEventQuery.cs` | Backs `health.recentTriggers`; reuse for an events-by-rule list if added |
+| Event query (recent triggers) | `IAlertEventQuery` · `Honua.Core/Core/Features/Alerts/Abstractions/IAlertEventQuery.cs` | Backs `health.recentTriggers`; reuse for an events-by-rule list if added |
 | Edition policy | `IAlertEditionPolicy` (`AlertEditionPolicy.cs`) | Channel/trigger gating — already enforced |
 | Audit | `IAuditLog` (`alert_rule.*` events) | Already wired in every mutation |
 | Envelope | `ApiResponse<T>` · `src/Honua.Hosting/Features/Models/ApiResponse.cs` | This group uses it (`success`/`data`/`message`/`timestamp`) |
