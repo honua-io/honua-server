@@ -16566,6 +16566,7 @@
         "Honua.Server.Tests.Features.Admin.SecureConnectionEndpointsTests.CreateConnection_HostNotInConfiguredAllowlist_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Admin.SecureConnectionEndpointsTests.CreateConnection_InvalidRequest_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Admin.SecureConnectionEndpointsTests.CreateConnection_PrivateAddressBlocked_WhenPolicyBlocksPrivate",
+        "Honua.Server.Tests.Features.Admin.SecureConnectionEndpointsTests.CreateConnection_StoreProfileRefusal_ReturnsBadRequestWithFullVariant",
         "Honua.Server.Tests.Features.Admin.SecureConnectionEndpointsTests.CreateConnection_ValidEncryptedConnection_ReturnsCreated",
         "Honua.Server.Tests.Features.Admin.SecureConnectionEndpointsTests.CreateConnection_ValidSecretRefConnection_ReturnsCreated",
         "Honua.Server.Tests.Features.Admin.SecureConnectionEndpointsTests.CreateConnection_WhenEncryptionServiceThrowsInvalidOperation_ReturnsInternalServerError",
@@ -25276,7 +25277,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.SecureConnectionEndpointsTests.UpdateConnection_ExistingConnection_ReturnsUpdatedSummary"
+        "Honua.Server.Tests.Features.Admin.SecureConnectionEndpointsTests.UpdateConnection_ExistingConnection_ReturnsUpdatedSummary",
+        "Honua.Server.Tests.Features.Admin.SecureConnectionEndpointsTests.UpdateConnection_StoreProfileRefusal_ReturnsBadRequestWithFullVariant"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
