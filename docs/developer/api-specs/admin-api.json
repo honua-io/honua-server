@@ -24638,8 +24638,7 @@
             "nullable": true,
             "description": "Capability tokens declared on the layer's feature publication. Set on publish responses; null on listings."
           }
-        },
-        "required": []
+        }
       },
       "PublishLayerRequest": {
         "type": "object",
