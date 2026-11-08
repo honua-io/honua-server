@@ -20,11 +20,11 @@ internal sealed class DescribeLayerTool : IMcpTool
     private const string OutputSchemaJson = """
         {
           "type": "object",
-          "required": ["serviceId", "layerId", "studioSourceId", "name", "fields", "fieldCount"],
+          "required": ["serviceId", "serviceLayerIndex", "studioSourceId", "name", "fields", "fieldCount"],
           "properties": {
             "serviceId": { "type": "string" },
             "serviceName": { "type": "string" },
-            "layerId": { "type": "integer" },
+            "serviceLayerIndex": { "type": "integer" },
             "studioSourceId": {
               "type": "string",
               "description": "Existing Studio catalog identity for composition layer.sourceId. Distinct from a composition layer.id or a process layer-id. Discovery grants no query or publication authority."
@@ -65,17 +65,17 @@ internal sealed class DescribeLayerTool : IMcpTool
     private const string InputSchemaJson = """
         {
           "type": "object",
-          "required": ["serviceId", "layerId"],
+          "required": ["serviceId", "serviceLayerIndex"],
           "properties": {
             "serviceId": {
               "type": "string",
               "minLength": 1,
               "description": "Published service identifier or name (from honua_list_layers.serviceId)."
             },
-            "layerId": {
+            "serviceLayerIndex": {
               "type": "integer",
               "minimum": 0,
-              "description": "Service-local layer index (from honua_list_layers.layerId)."
+              "description": "Service-local layer index (from honua_list_layers.serviceLayerIndex)."
             },
             "includeRowCount": {
               "type": "boolean",
@@ -133,7 +133,7 @@ internal sealed class DescribeLayerTool : IMcpTool
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
         var context = await MapToolLayerResolver.ResolveForReadAsync(
-            httpContext, snapshot, argument.ServiceId, argument.LayerId, AuthorizationOperation.Metadata, cancellationToken).ConfigureAwait(false);
+            httpContext, snapshot, argument.ServiceId, argument.ServiceLayerIndex, AuthorizationOperation.Metadata, cancellationToken).ConfigureAwait(false);
 
         long? rowCount = null;
         if (argument.IncludeRowCount ?? true)
@@ -143,7 +143,7 @@ internal sealed class DescribeLayerTool : IMcpTool
             rowCount = await TryCountRowsAsync(httpContext, snapshot, context, cancellationToken).ConfigureAwait(false);
         }
 
-        var output = BuildOutput(context, argument.LayerId!.Value, rowCount);
+        var output = BuildOutput(context, argument.ServiceLayerIndex!.Value, rowCount);
         return McpToolHelpers.SuccessResult(output, MapToolJsonContext.Default.McpDescribeLayerOutput);
     }
 
@@ -171,7 +171,7 @@ internal sealed class DescribeLayerTool : IMcpTool
 
     private static McpDescribeLayerOutput BuildOutput(
         MapToolLayerContext context,
-        int layerId,
+        int serviceLayerIndex,
         long? rowCount)
     {
         var resource = context.Resource;
@@ -200,7 +200,7 @@ internal sealed class DescribeLayerTool : IMcpTool
         {
             ServiceId = context.Service.Metadata.Id,
             ServiceName = context.Service.Metadata.Name,
-            LayerId = layerId,
+            ServiceLayerIndex = serviceLayerIndex,
             Name = name,
             Type = resource.Type.ToString(),
             GeometryType = (spatial?.GeometryType ?? MetadataV2GeometryType.None).ToString(),

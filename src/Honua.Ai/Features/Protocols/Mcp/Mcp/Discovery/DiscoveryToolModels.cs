@@ -43,8 +43,8 @@ internal sealed class McpEntityMatch
     [JsonPropertyName("serviceName")]
     public string ServiceName { get; set; } = string.Empty;
 
-    [JsonPropertyName("layerId")]
-    public int? LayerId { get; set; }
+    [JsonPropertyName("serviceLayerIndex")]
+    public int? ServiceLayerIndex { get; set; }
 
     [JsonPropertyName("name")]
     public string Name { get; set; } = string.Empty;

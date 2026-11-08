@@ -53,7 +53,7 @@ public sealed class McpReadableCatalogTests
         var context = CreateContext(services);
         var renderer = services.GetRequiredService<IRasterMapRenderer>();
         var tool = new RenderMapTool(Substitute.For<IGeoprocessingJobService>(), NullLogger<RenderMapTool>.Instance);
-        using var arguments = JsonDocument.Parse("""{"layers":[{"serviceId":"svc","layerId":0}],"bbox":[0,0,1,1],"maxInlineBytes":1024}""");
+        using var arguments = JsonDocument.Parse("""{"layers":[{"serviceId":"svc","serviceLayerIndex":0}],"bbox":[0,0,1,1],"maxInlineBytes":1024}""");
 
         var act = () => tool.InvokeAsync(context, arguments.RootElement, CancellationToken.None);
 
@@ -73,7 +73,7 @@ public sealed class McpReadableCatalogTests
     {
         using var services = CreateServices(restriction);
         var tool = new RenderMapTool(Substitute.For<IGeoprocessingJobService>(), NullLogger<RenderMapTool>.Instance);
-        using var arguments = JsonDocument.Parse("""{"layers":[{"serviceId":"svc","layerId":0}],"bbox":[0,0,1,1],"maxInlineBytes":1024}""");
+        using var arguments = JsonDocument.Parse("""{"layers":[{"serviceId":"svc","serviceLayerIndex":0}],"bbox":[0,0,1,1],"maxInlineBytes":1024}""");
 
         var result = await tool.InvokeAsync(CreateContext(services), arguments.RootElement, CancellationToken.None);
 
@@ -216,7 +216,7 @@ public sealed class McpReadableCatalogTests
         using var services = CreateServices("allowed");
         var tool = new RenderMapTool(Substitute.For<IGeoprocessingJobService>(), NullLogger<RenderMapTool>.Instance);
         var layers = string.Join(',', Enumerable.Range(0, MapToolSchemas.MaxRenderLayers + 1)
-            .Select(_ => """{"serviceId":"svc","layerId":0}"""));
+            .Select(_ => """{"serviceId":"svc","serviceLayerIndex":0}"""));
         using var arguments = JsonDocument.Parse($"{{\"layers\":[{layers}],\"bbox\":[0,0,1,1],\"maxInlineBytes\":1024}}");
 
         var act = () => tool.InvokeAsync(CreateContext(services), arguments.RootElement, CancellationToken.None);
@@ -231,7 +231,7 @@ public sealed class McpReadableCatalogTests
     {
         using var services = CreateServices("allowed");
         var tool = new RenderMapTool(Substitute.For<IGeoprocessingJobService>(), NullLogger<RenderMapTool>.Instance);
-        using var arguments = JsonDocument.Parse("""{"layers":[{"serviceId":"svc","layerId":0},{"serviceId":"SVC","layerId":0}],"bbox":[0,0,1,1],"maxInlineBytes":1024}""");
+        using var arguments = JsonDocument.Parse("""{"layers":[{"serviceId":"svc","serviceLayerIndex":0},{"serviceId":"SVC","serviceLayerIndex":0}],"bbox":[0,0,1,1],"maxInlineBytes":1024}""");
 
         var result = await tool.InvokeAsync(CreateContext(services), arguments.RootElement, CancellationToken.None);
 

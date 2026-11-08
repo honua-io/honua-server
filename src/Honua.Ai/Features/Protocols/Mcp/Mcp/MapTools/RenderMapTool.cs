@@ -44,7 +44,7 @@ internal sealed class RenderMapTool : IMcpTool
             + "Set maxInlineBytes to opt into inlining the base64 PNG when the encoded image is at or below that size. "
             + "Each layer renders with its currently applied style (the primary style bound by honua_apply_style_preset; discover presets with honua_get_style), or its stored default style when none is applied. "
             + "Each entry in layers reports styleId and styleRendering: 'applied' (the applied style was drawn), 'default' (no applied style; stored default drawn), or 'unsupported-style-construct' (unsupportedStyleConstructs lists what was not drawn; the server rasterizes MapLibre fill, line, and circle layers). "
-            + "To render analysis results as a styled map: run the analysis, then honua_publish_result to promote the result to a serviceId/layerId, then optionally honua_apply_style_preset, then render that layer here.",
+            + "To render analysis results as a styled map: run the analysis, then honua_publish_result to promote the result to a serviceId/serviceLayerIndex, then optionally honua_apply_style_preset, then render that layer here.",
         InputSchema = MapToolSchemas.RenderMapArgumentSchema,
         OutputSchema = McpToolOutputSchemas.RenderMapOutputSchema,
         Annotations = McpToolAnnotationSets.ReadOnly("Render map")
@@ -108,7 +108,7 @@ internal sealed class RenderMapTool : IMcpTool
         {
             var layerRef = layers[i];
             var resolved = await MapToolLayerResolver.ResolveForReadAsync(
-                httpContext, snapshot, layerRef.ServiceId, layerRef.LayerId, AuthorizationOperation.Query, cancellationToken)
+                httpContext, snapshot, layerRef.ServiceId, layerRef.ServiceLayerIndex, AuthorizationOperation.Query, cancellationToken)
                 .ConfigureAwait(false);
             EnsureDistinctStorageIdentity(resolvedLayers, i, resolved);
             storageLayerIds[i] = resolved.StorageLayerId;
@@ -145,7 +145,7 @@ internal sealed class RenderMapTool : IMcpTool
             renderedLayers[i] = new McpRenderedLayer
             {
                 ServiceId = resolved.Service.Metadata.Id,
-                LayerId = layerRef.LayerId!.Value,
+                ServiceLayerIndex = layerRef.ServiceLayerIndex!.Value,
                 StyleId = appliedStyle?.StyleId,
                 StyleRendering = styleRendering,
                 UnsupportedStyleConstructs = unsupported
@@ -403,13 +403,13 @@ internal sealed class RenderMapTool : IMcpTool
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var layer in requested)
         {
-            if (string.IsNullOrWhiteSpace(layer.ServiceId) || layer.LayerId is null)
+            if (string.IsNullOrWhiteSpace(layer.ServiceId) || layer.ServiceLayerIndex is null)
             {
                 distinct.Add(layer);
                 continue;
             }
 
-            if (seen.Add(layer.ServiceId.Trim() + "\n" + layer.LayerId.Value.ToString(CultureInfo.InvariantCulture)))
+            if (seen.Add(layer.ServiceId.Trim() + "\n" + layer.ServiceLayerIndex.Value.ToString(CultureInfo.InvariantCulture)))
             {
                 distinct.Add(layer);
             }

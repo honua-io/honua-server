@@ -382,8 +382,12 @@ public sealed class LayerPublishJobTests
             Assert.Equal(OperationHandleStatus.Completed, status.Status);
             Assert.Equal(11, status.MetadataRevision);
             Assert.Equal(serviceName, status.ResourceIds["serviceName"]);
-            Assert.Equal("741", status.ResourceIds["layerId"]);
+            Assert.Equal("741", status.ResourceIds["storageLayerId"]);
+            Assert.Equal("3", status.ResourceIds["serviceLayerIndex"]);
             Assert.Equal(serviceName, status.Result!.Details["serviceName"]);
+            Assert.Equal("741", status.Result.Details["storageLayerId"]);
+            Assert.Equal("3", status.Result.Details["serviceLayerIndex"]);
+            Assert.False(status.Result.Details.ContainsKey("layerId"));
             Assert.Equal("11", status.Result.Details["metadataRevision"]);
             Assert.Equal("honua://published-services/roads%2Farea%252Ftwo", status.Result.Details["serviceUri"]);
             Assert.Equal("Resolved", status.Result.Details["readbackStatus"]);
