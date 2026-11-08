@@ -36,7 +36,6 @@ END = "<!-- nuget-table:end -->"
 
 # Packages that publish a license file instead of an SPDX expression.
 LICENSE_OVERRIDES = {
-    "Amazon.Lambda.Serialization.SystemTextJson": "Apache-2.0",
     "Apache.Arrow": "Apache-2.0",
     "FlatGeobuf": "BSD-2-Clause",
     "Oracle.ManagedDataAccess.Core": "Oracle Free Use Terms and Conditions (FUTC)",
