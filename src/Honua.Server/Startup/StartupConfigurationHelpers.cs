@@ -459,12 +459,6 @@ internal static class StartupConfigurationHelpers
         services.AddSingleton<IValidateOptions<FileUploadSecurityOptions>>(new FileUploadSecurityOptionsValidator());
     }
 
-    public static void LoadHostedBlazorStaticWebAssets(WebApplicationBuilder builder)
-    {
-        EnsureStaticWebAssetContentRootsExist();
-        builder.WebHost.UseStaticWebAssets();
-    }
-
     // Missing content roots are created before the host builder, because the development loader throws when a declared root is absent.
     public static void EnsureStaticWebAssetContentRootsExist()
     {

@@ -89,6 +89,8 @@ public sealed record MetadataV2Bbox
 
 public sealed record MetadataV2ResourceSpatial
 {
+    private IReadOnlyList<MetadataV2SpatialReference> _supportedCrs = Array.Empty<MetadataV2SpatialReference>();
+
     [JsonPropertyName("spatialReference")]
     public MetadataV2SpatialReference? SpatialReference { get; init; }
 
@@ -102,8 +104,11 @@ public sealed record MetadataV2ResourceSpatial
     public string? PrimaryGeometryField { get; init; }
 
     [JsonPropertyName("supportedCrs")]
-    public IReadOnlyList<MetadataV2SpatialReference> SupportedCrs { get; init; } =
-        Array.Empty<MetadataV2SpatialReference>();
+    public IReadOnlyList<MetadataV2SpatialReference> SupportedCrs
+    {
+        get => _supportedCrs;
+        init => _supportedCrs = value ?? Array.Empty<MetadataV2SpatialReference>();
+    }
 
     [JsonPropertyName("storageCrs")]
     public MetadataV2SpatialReference? StorageCrs { get; init; }

@@ -100,8 +100,6 @@
     <ProjectReference Include="..\Honua.Io\Honua.Io.csproj" />
     <ProjectReference Include="..\Honua.Import\Honua.Import.csproj" />
 
-    <ProjectReference Include="..\..\samples\Honua.StacOpsDemo\Honua.StacOpsDemo.csproj" Condition="'$(HonuaIncludeStacOpsDemo)' != 'false' and '$(HonuaIncludeStac)' == 'true' and ('$(PublishAot)' != 'true' or '$(RuntimeIdentifier)' == '')" GlobalPropertiesToRemove="PublishAot;RuntimeIdentifier;SelfContained;StripSymbols" />
-
     <ProjectReference Include="..\Honua.Protocols.Scene\Honua.Protocols.Scene.csproj" Condition="'$(HonuaIncludeScene)' == 'true'" />
 
     <ProjectReference Include="..\Honua.Protocols.Ogc.Shared\Honua.Protocols.Ogc.Shared.csproj" />
@@ -152,7 +150,6 @@
     <Compile Remove="Features\Infrastructure\Scene\SceneGenerationServiceCollectionExtensions.cs" />
   </ItemGroup>
 
-
   <ItemGroup>
     <PackageReference Include="Asp.Versioning.Http" />
     <PackageReference Include="BouncyCastle.Cryptography" />
@@ -164,7 +161,6 @@
     <PackageReference Include="Grpc.AspNetCore.HealthChecks" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" />
-    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" />
     <PackageReference Include="Microsoft.AspNetCore.OutputCaching.StackExchangeRedis" />
     <PackageReference Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" />
     <!-- Force the audited-safe MessagePack (2.5.301) over the vulnerable 2.5.187 that the SignalR Redis

@@ -48,5 +48,6 @@ separate from the control-plane Admin API, whose logical identities remain uncha
 Native OGC identifiers, MCP resource/tool identities and Studio/Console matching keys stay stable.
 Links targeting a GeoServices facet use its canonical public path; display labels use the title
 or public leaf. Explicit folder discovery tools, SDK and Console authoring follow separately.
-Source-folder import execution remains a separate change; the routing change does not promise
-that import requests preserve or remap source folders.
+GeoServices import auto-publishing preserves a single source folder by default. Explicit root
+or existing-folder mappings and reviewed target plans follow the
+[GeoServices import target rules](../../reference/admin-api/imports-and-jobs.md#geoservices-arcgis-migration-import).

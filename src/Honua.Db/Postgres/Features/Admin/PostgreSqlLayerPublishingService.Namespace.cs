@@ -12,21 +12,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
     internal sealed record PublicationScope(string? Namespace, string? Tenant);
 
     internal static PublicationScope ResolvePublicationScope(string? publicationNamespace, string? trustedTenant)
-    {
-        if (!LayerPublicationNamespace.IsValid(publicationNamespace))
-        {
-            throw new LayerPublishingException(LayerPublishingErrorKind.Validation,
-                "Namespace must contain 1-128 ASCII letters, digits, '.', '_' or '-'.");
-        }
-
-        if (publicationNamespace is not null && string.IsNullOrWhiteSpace(trustedTenant))
-        {
-            throw new LayerPublishingException(LayerPublishingErrorKind.Validation,
-                "Namespaced publication requires a resolved tenant.");
-        }
-
-        return new PublicationScope(publicationNamespace, publicationNamespace is null ? null : trustedTenant);
-    }
+        => new(publicationNamespace, LayerPublicationNamespace.ResolveTenant(publicationNamespace, trustedTenant));
 
     internal static void ValidatePublicationScope(
         MetadataV2Graph graph,

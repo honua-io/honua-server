@@ -21,6 +21,8 @@ public sealed record MigrationBatchChildRecord
 
     public string? ServiceName { get; init; }
 
+    public GeoservicesImportTarget? Target { get; init; }
+
     public IReadOnlyList<string> DependsOn { get; init; } = [];
 
     public required MigrationBatchChildStatus Status { get; init; }

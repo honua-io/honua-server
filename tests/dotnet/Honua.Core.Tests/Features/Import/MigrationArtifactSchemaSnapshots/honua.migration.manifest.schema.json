@@ -473,6 +473,83 @@
                   "Nullable": false
                 },
                 {
+                  "JsonName": "importPlan",
+                  "ClrName": "ImportPlan",
+                  "Container": "scalar",
+                  "ElementType": "GeoservicesImportPlan",
+                  "Required": false,
+                  "Nullable": true,
+                  "Schema": {
+                    "TypeName": "GeoservicesImportPlan",
+                    "Properties": [
+                      {
+                        "JsonName": "existingService",
+                        "ClrName": "ExistingService",
+                        "Container": "scalar",
+                        "ElementType": "bool",
+                        "Required": false,
+                        "Nullable": false
+                      },
+                      {
+                        "JsonName": "folderId",
+                        "ClrName": "FolderId",
+                        "Container": "scalar",
+                        "ElementType": "string",
+                        "Required": false,
+                        "Nullable": true
+                      },
+                      {
+                        "JsonName": "folderName",
+                        "ClrName": "FolderName",
+                        "Container": "scalar",
+                        "ElementType": "string",
+                        "Required": false,
+                        "Nullable": true
+                      },
+                      {
+                        "JsonName": "namespace",
+                        "ClrName": "Namespace",
+                        "Container": "scalar",
+                        "ElementType": "string",
+                        "Required": false,
+                        "Nullable": true
+                      },
+                      {
+                        "JsonName": "publicName",
+                        "ClrName": "PublicName",
+                        "Container": "scalar",
+                        "ElementType": "string",
+                        "Required": true,
+                        "Nullable": false
+                      },
+                      {
+                        "JsonName": "serviceId",
+                        "ClrName": "ServiceId",
+                        "Container": "scalar",
+                        "ElementType": "string",
+                        "Required": true,
+                        "Nullable": false
+                      },
+                      {
+                        "JsonName": "serviceName",
+                        "ClrName": "ServiceName",
+                        "Container": "scalar",
+                        "ElementType": "string",
+                        "Required": true,
+                        "Nullable": false
+                      },
+                      {
+                        "JsonName": "serviceUrl",
+                        "ClrName": "ServiceUrl",
+                        "Container": "scalar",
+                        "ElementType": "string",
+                        "Required": true,
+                        "Nullable": false
+                      }
+                    ]
+                  }
+                },
+                {
                   "JsonName": "sourceFolderPath",
                   "ClrName": "SourceFolderPath",
                   "Container": "scalar",
@@ -507,6 +584,14 @@
                 {
                   "JsonName": "targetName",
                   "ClrName": "TargetName",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "targetPublicName",
+                  "ClrName": "TargetPublicName",
                   "Container": "scalar",
                   "ElementType": "string",
                   "Required": false,
@@ -1216,6 +1301,83 @@
                   "Nullable": false
                 },
                 {
+                  "JsonName": "importPlan",
+                  "ClrName": "ImportPlan",
+                  "Container": "scalar",
+                  "ElementType": "GeoservicesImportPlan",
+                  "Required": false,
+                  "Nullable": true,
+                  "Schema": {
+                    "TypeName": "GeoservicesImportPlan",
+                    "Properties": [
+                      {
+                        "JsonName": "existingService",
+                        "ClrName": "ExistingService",
+                        "Container": "scalar",
+                        "ElementType": "bool",
+                        "Required": false,
+                        "Nullable": false
+                      },
+                      {
+                        "JsonName": "folderId",
+                        "ClrName": "FolderId",
+                        "Container": "scalar",
+                        "ElementType": "string",
+                        "Required": false,
+                        "Nullable": true
+                      },
+                      {
+                        "JsonName": "folderName",
+                        "ClrName": "FolderName",
+                        "Container": "scalar",
+                        "ElementType": "string",
+                        "Required": false,
+                        "Nullable": true
+                      },
+                      {
+                        "JsonName": "namespace",
+                        "ClrName": "Namespace",
+                        "Container": "scalar",
+                        "ElementType": "string",
+                        "Required": false,
+                        "Nullable": true
+                      },
+                      {
+                        "JsonName": "publicName",
+                        "ClrName": "PublicName",
+                        "Container": "scalar",
+                        "ElementType": "string",
+                        "Required": true,
+                        "Nullable": false
+                      },
+                      {
+                        "JsonName": "serviceId",
+                        "ClrName": "ServiceId",
+                        "Container": "scalar",
+                        "ElementType": "string",
+                        "Required": true,
+                        "Nullable": false
+                      },
+                      {
+                        "JsonName": "serviceName",
+                        "ClrName": "ServiceName",
+                        "Container": "scalar",
+                        "ElementType": "string",
+                        "Required": true,
+                        "Nullable": false
+                      },
+                      {
+                        "JsonName": "serviceUrl",
+                        "ClrName": "ServiceUrl",
+                        "Container": "scalar",
+                        "ElementType": "string",
+                        "Required": true,
+                        "Nullable": false
+                      }
+                    ]
+                  }
+                },
+                {
                   "JsonName": "sourceFolderPath",
                   "ClrName": "SourceFolderPath",
                   "Container": "scalar",
@@ -1266,6 +1428,14 @@
                 {
                   "JsonName": "targetName",
                   "ClrName": "TargetName",
+                  "Container": "scalar",
+                  "ElementType": "string",
+                  "Required": false,
+                  "Nullable": true
+                },
+                {
+                  "JsonName": "targetPublicName",
+                  "ClrName": "TargetPublicName",
                   "Container": "scalar",
                   "ElementType": "string",
                   "Required": false,

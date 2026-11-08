@@ -49,7 +49,7 @@ internal sealed class GpWorkflowSource(IProcessCatalog? catalog, IReadOnlySet<st
             };
         }
 
-        // 2. Local workflow fixture: samples/gp/<id>/workflow.json. Guard against a rooted
+        // 2. Local workflow fixture: tests/fixtures/gp/<id>/workflow.json. Guard against a rooted
         //    id: Path.Combine silently drops fixtureRoot when a later segment is absolute,
         //    which would let an absolute id escape the fixture root entirely. An id is a
         //    workflow/process identifier, never a path, so a rooted id just falls through
@@ -88,7 +88,7 @@ internal sealed class GpWorkflowSource(IProcessCatalog? catalog, IReadOnlySet<st
                         + "image rather than through the WorkflowPackage store. To publish it as a "
                         + "single-node workflow package (a process-endpoint wrapper, like dropping it "
                         + "onto the Console canvas), re-run with --as-process-node. To publish an "
-                        + "authored multi-step workflow, add samples/gp/" + id + "/workflow.json or "
+                        + "authored multi-step workflow, add tests/fixtures/gp/" + id + "/workflow.json or "
                         + "pass --file <workflow.json>."
                 };
             }
@@ -111,7 +111,7 @@ internal sealed class GpWorkflowSource(IProcessCatalog? catalog, IReadOnlySet<st
             Kind = "unknown",
             Reason =
                 $"No publishable workflow found for '{id}'. Expected a fixture at "
-                + $"samples/gp/{id}/workflow.json, an explicit --file <workflow.json>, or a registered "
+                + $"tests/fixtures/gp/{id}/workflow.json, an explicit --file <workflow.json>, or a registered "
                 + "process id used with --as-process-node. Run 'honua gp list' to see registered processes."
         };
     }

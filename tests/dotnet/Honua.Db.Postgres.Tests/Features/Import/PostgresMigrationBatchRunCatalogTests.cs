@@ -46,6 +46,34 @@ public sealed class PostgresMigrationBatchRunCatalogTests(PostgresFixture fixtur
     }
 
     [IntegrationTest]
+    public async Task CreateAsync_PublicationTarget_SurvivesCatalogRestartAndStatusUpdates()
+    {
+        await EnsureBatchTablesAsync();
+        var catalog = CreateCatalog();
+        var batchId = $"batch-{Guid.NewGuid():N}"[..16];
+        var target = new GeoservicesImportTarget
+        {
+            ServiceName = "logical-parcels",
+            ServiceId = "planned-service",
+            PublicName = "Parcels",
+            FolderId = "planned-folder",
+            FolderName = "Survey",
+            Namespace = "published",
+            TenantId = "resolved-owner"
+        };
+        var child = NewChildren(batchId)[0] with { ServiceName = target.ServiceName, Target = target };
+        await catalog.CreateAsync(NewBatch(batchId, 1), null, [child]);
+
+        var restarted = CreateCatalog();
+        (await restarted.GetChildrenAsync(batchId)).Should().ContainSingle().Which.Target.Should().BeEquivalentTo(target);
+        var running = await restarted.UpdateChildAsync(batchId, 0, MigrationBatchChildStatus.Running,
+            "job-1", null, null, DateTimeOffset.UtcNow);
+        running!.Target.Should().BeEquivalentTo(target);
+        await restarted.CreateAsync(NewBatch(batchId, 1), null, [child with { Target = target with { FolderId = null } }]);
+        (await restarted.GetChildrenAsync(batchId)).Single().Target.Should().BeEquivalentTo(target);
+    }
+
+    [IntegrationTest]
     public async Task UpdateChildAsync_AdvancesStatus_AndIsStickyTerminal()
     {
         await EnsureBatchTablesAsync();
@@ -237,5 +265,7 @@ public sealed class PostgresMigrationBatchRunCatalogTests(PostgresFixture fixtur
             ALTER TABLE honua.migration_batch_children
                 ADD COLUMN IF NOT EXISTS fidelity_verdict VARCHAR(32);
             """);
+        await fixture.ApplyGlobalSeedSqlAsync(await File.ReadAllTextAsync(RepositoryPaths.Resolve(
+            "src", "Honua.Server", "Migrations", "146_AddMigrationBatchPublicationTarget.sql")));
     }
 }

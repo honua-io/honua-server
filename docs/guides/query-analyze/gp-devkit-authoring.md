@@ -126,7 +126,7 @@ means registration alone has not established that the function can run here.
 
 ## Debug custom Python and .NET tools
 
-Use the [local custom-code sample](../../../samples/gp-custom-local/README.md)
+Use the [Python](https://github.com/honua-io/honua-samples/tree/4efc272e58789ec17ebec2125cec06304b2ce4e4/templates/gp-python/README.md) and [.NET](https://github.com/honua-io/honua-samples/tree/4efc272e58789ec17ebec2125cec06304b2ce4e4/templates/gp-dotnet/README.md) templates
 for filesystem inputs, fresh output directories, and VS Code breakpoints in both
 languages. This uses the production `execute(context)` / `IGeoprocessingTool`
 contracts with no cloud credentials for pure functions. The .NET harness is JIT
@@ -235,7 +235,7 @@ dotnet run --project src/Honua.Geoprocessing.Cli -- test geometry-recenter
 ```
 
 The scaffold writes an executor, adds its registration and catalog entry, and
-creates a fixture under `samples/gp/geometry-recenter/`. Its initial body returns
+creates a fixture under `tests/fixtures/gp/geometry-recenter/`. Its initial body returns
 a deterministic Point feature with an echoed `value`; it does not yet recenter
 an input geometry. Edit the TODO body and parameter schema to implement that
 behavior, then update the fixture to describe it.
@@ -259,7 +259,8 @@ supports reflection and does not require an AOT build.
 
 ## Run native functions in Docker
 
-Build a named worker image using the same Compose definition as the integration
+Complete the [sample checkout](gp-local-dev-quickstart.md#prerequisites), then
+build a named worker image using the same Compose definition as the integration
 stack. This builds the image without starting PostGIS, Redis, or the server:
 
 ```bash
@@ -267,14 +268,14 @@ docker compose --project-directory . -f docker/compose/docker-compose.gp-dev.yml
 export HONUA_GP_WORKER_IMAGE=honua-worker-etl:gp-local
 
 dotnet run --project src/Honua.Geoprocessing.Cli -- run gdal.ogr2ogr \
-  --real-worker --input samples/gp-local-dev/points.csv \
+  --real-worker --input ../honua-samples/samples/gp-local-dev/points.csv \
   --param sourceFormat=CSV --param targetFormat=GeoJSON \
   --out /tmp/honua-points.geojson --glass-box
 ```
 
 Expect two Point features preserving XYZ coordinates `[12.25, -4.5, 7.75]` and
 `[-2, 8, 3]`, names `alpha` and `beta`, and values `17` and `42`. CSV attributes
-may remain strings. The checked-in [sample](../../../samples/gp-local-dev/README.md)
+may remain strings. The maintained [sample](https://github.com/honua-io/honua-samples/tree/4efc272e58789ec17ebec2125cec06304b2ce4e4/samples/gp-local-dev/README.md)
 describes both the native conversion and server-side buffer paths.
 
 Inspect the saved coordinates as well as the job status. Some GDAL builds emit
