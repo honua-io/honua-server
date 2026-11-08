@@ -71,7 +71,7 @@ echo "   • Use 'git push --no-verify' to bypass (not recommended)"
 echo "   • Hooks only affect this local repository"
 echo
 echo -e "${BLUE}📚 Next steps for the team:${NC}"
-echo "   • Each developer should run: scripts/dev/setup-git-hooks.sh"
+echo "   • Each developer should run: scripts/hooks/setup-git-hooks.sh"
 echo "   • Add to onboarding documentation"
 echo "   • Consider adding to README setup instructions"
 echo

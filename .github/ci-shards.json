@@ -175,6 +175,7 @@
         "Server Features Admin Integrations and Automation",
         "Server Features Admin Alert Endpoints",
         "Server Features Admin Network and Jobs",
+        "Server Features Console Sessions and Access",
         "Server Features Console and Alerts"
       ]
     },
@@ -2737,19 +2738,17 @@
       "csproj": ""
     },
     {
-      "name": "Server Features Console and Alerts",
-      "shard_name": "Server Features Console and Alerts",
-      "dispatch_rank": 14.6,
-      "artifact_suffix": "server-features-console-alerts",
-      "log_name": "server-tests-server-features-console-alerts",
+      "name": "Server Features Console Sessions and Access",
+      "shard_name": "Server Features Console Sessions and Access",
+      "dispatch_rank": 14.55,
+      "artifact_suffix": "server-features-console-sessions-access",
+      "log_name": "server-tests-server-features-console-sessions-access",
       "timeout_minutes": 32,
       "test_timeout_minutes": 22,
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
-      "_comment": "#3059 split of Server Features Admin and Console. Console and Alerts classes that satisfy the legacy parent filter remain namespace-routed here, preserving a stable owner without claiming classes excluded from that parent. #3259: the Admin-family '!~RateLimit' exclusion (meant to push Admin.RateLimit* to Server Features Admin Authorization) also swallowed Features.Alerts.AlertNotificationRateLimiterTests, orphaning it. The exclusion is now '!~Honua.Server.Tests.Features.Admin.RateLimit' in this shard, in Server Features Admin Integrations and Automation, and in the Server Features Admin and Console partition parent, so the Admin routing is unchanged and the Alerts class is claimed here. #3859: the same defect recurred with the broad '!~Tenant' exclusion (meant to route Admin.TenantAdminEndpointsTests and Admin.OperationTenantOwnershipTests to Server Features Admin Authorization), which also swallowed Features.Alerts.AlertTenantIsolationRouteCoverageProofTests and left it outside every shard. The exclusion is now the two exact Admin prefixes '!~Honua.Server.Tests.Features.Admin.Tenant' and '!~Honua.Server.Tests.Features.Admin.OperationTenant' in the same three places, so Admin routing is unchanged and the Alerts class is claimed here.",
-      "filter": "((FullyQualifiedName~Honua.Server.Tests.Features.Admin.|FullyQualifiedName~Honua.Server.Tests.Features.Console.|FullyQualifiedName~Honua.Server.Tests.Features.Alerts.)&FullyQualifiedName!~RoleEndpointsTests&FullyQualifiedName!~Observability&FullyQualifiedName!~Operate&FullyQualifiedName!~Operations&FullyQualifiedName!~TileOperation&FullyQualifiedName!~Scene&FullyQualifiedName!~PMTiles&FullyQualifiedName!~Layer&FullyQualifiedName!~MetadataRelease&FullyQualifiedName!~CoordinatedRelease&FullyQualifiedName!~DeployControl&FullyQualifiedName!~Platform&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.Tenant&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.OperationTenant&FullyQualifiedName!~UserManagement&FullyQualifiedName!~OAuth&FullyQualifiedName!~Oidc&FullyQualifiedName!~ApiKey&FullyQualifiedName!~ClientCertificate&FullyQualifiedName!~OperatorBearerToken&FullyQualifiedName!~RowLevelSecurity&FullyQualifiedName!~SecureConnection&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.RateLimit&FullyQualifiedName!~Compliance&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.AdminAuth&FullyQualifiedName!~Federation&FullyQualifiedName!~Investigation&FullyQualifiedName!~Proposal&FullyQualifiedName!~Admin.Share.&FullyQualifiedName!~License)&(FullyQualifiedName~Honua.Server.Tests.Features.Console.|FullyQualifiedName~Honua.Server.Tests.Features.Alerts.)",
-      "_paths_comment": "Console and alert source/test trees route only to this child instead of widening a targeted change across every #3059 Admin child.",
+      "filter": "(((FullyQualifiedName~Honua.Server.Tests.Features.Admin.|FullyQualifiedName~Honua.Server.Tests.Features.Console.|FullyQualifiedName~Honua.Server.Tests.Features.Alerts.)&FullyQualifiedName!~RoleEndpointsTests&FullyQualifiedName!~Observability&FullyQualifiedName!~Operate&FullyQualifiedName!~Operations&FullyQualifiedName!~TileOperation&FullyQualifiedName!~Scene&FullyQualifiedName!~PMTiles&FullyQualifiedName!~Layer&FullyQualifiedName!~MetadataRelease&FullyQualifiedName!~CoordinatedRelease&FullyQualifiedName!~DeployControl&FullyQualifiedName!~Platform&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.Tenant&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.OperationTenant&FullyQualifiedName!~UserManagement&FullyQualifiedName!~OAuth&FullyQualifiedName!~Oidc&FullyQualifiedName!~ApiKey&FullyQualifiedName!~ClientCertificate&FullyQualifiedName!~OperatorBearerToken&FullyQualifiedName!~RowLevelSecurity&FullyQualifiedName!~SecureConnection&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.RateLimit&FullyQualifiedName!~Compliance&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.AdminAuth&FullyQualifiedName!~Federation&FullyQualifiedName!~Investigation&FullyQualifiedName!~Proposal&FullyQualifiedName!~Admin.Share.&FullyQualifiedName!~License)&(FullyQualifiedName~Honua.Server.Tests.Features.Console.|FullyQualifiedName~Honua.Server.Tests.Features.Alerts.))&(FullyQualifiedName~Honua.Server.Tests.Features.Console.ConsoleSessionEndpointTests|FullyQualifiedName~Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests|FullyQualifiedName~Honua.Server.Tests.Features.Console.ConsoleOpenDataEndpointsTests)",
       "paths": [
         "src/Honua.Core/Features/Alerts/",
         "src/Honua.Core/Features/Console/",
@@ -2771,7 +2770,42 @@
         "tests/dotnet/Shared/SceneUnitSupport/PointCloudSceneFixtures.cs",
         "tests/dotnet/Shared/SceneUnitSupport/SceneExecutorTestStubs.cs"
       ],
-      "csproj": ""
+      "csproj": "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj"
+    },
+    {
+      "name": "Server Features Console and Alerts",
+      "shard_name": "Server Features Console and Alerts",
+      "dispatch_rank": 14.6,
+      "artifact_suffix": "server-features-console-alerts",
+      "log_name": "server-tests-server-features-console-alerts",
+      "timeout_minutes": 32,
+      "test_timeout_minutes": 22,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "filter": "(((FullyQualifiedName~Honua.Server.Tests.Features.Admin.|FullyQualifiedName~Honua.Server.Tests.Features.Console.|FullyQualifiedName~Honua.Server.Tests.Features.Alerts.)&FullyQualifiedName!~RoleEndpointsTests&FullyQualifiedName!~Observability&FullyQualifiedName!~Operate&FullyQualifiedName!~Operations&FullyQualifiedName!~TileOperation&FullyQualifiedName!~Scene&FullyQualifiedName!~PMTiles&FullyQualifiedName!~Layer&FullyQualifiedName!~MetadataRelease&FullyQualifiedName!~CoordinatedRelease&FullyQualifiedName!~DeployControl&FullyQualifiedName!~Platform&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.Tenant&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.OperationTenant&FullyQualifiedName!~UserManagement&FullyQualifiedName!~OAuth&FullyQualifiedName!~Oidc&FullyQualifiedName!~ApiKey&FullyQualifiedName!~ClientCertificate&FullyQualifiedName!~OperatorBearerToken&FullyQualifiedName!~RowLevelSecurity&FullyQualifiedName!~SecureConnection&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.RateLimit&FullyQualifiedName!~Compliance&FullyQualifiedName!~Honua.Server.Tests.Features.Admin.AdminAuth&FullyQualifiedName!~Federation&FullyQualifiedName!~Investigation&FullyQualifiedName!~Proposal&FullyQualifiedName!~Admin.Share.&FullyQualifiedName!~License)&(FullyQualifiedName~Honua.Server.Tests.Features.Console.|FullyQualifiedName~Honua.Server.Tests.Features.Alerts.))&FullyQualifiedName!~Honua.Server.Tests.Features.Console.ConsoleSessionEndpointTests&FullyQualifiedName!~Honua.Server.Tests.Features.Console.ConsoleAccessEndpointsTests&FullyQualifiedName!~Honua.Server.Tests.Features.Console.ConsoleOpenDataEndpointsTests",
+      "paths": [
+        "src/Honua.Core/Features/Alerts/",
+        "src/Honua.Core/Features/Console/",
+        "src/Honua.Core/Features/Validation/",
+        "src/Honua.Db/Postgres/Features/Alerts/",
+        "src/Honua.Db/Postgres/Features/Console/",
+        "src/Honua.Server/Features/Alerts/",
+        "src/Honua.Server/Features/Console/",
+        "tests/dotnet/Honua.Server.Tests/Features/Alerts/AlertChannelNamesTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Alerts/AlertWebhookDeliveryE2eTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Features/Console/",
+        "tests/dotnet/RedisCollection.cs",
+        "tests/dotnet/Shared/AlertUnitSupport/AlertEventTestFactories.cs",
+        "tests/dotnet/Shared/AlertUnitSupport/AwsPublisherFakes.cs",
+        "tests/dotnet/Shared/AlertUnitSupport/AzurePublisherFake.cs",
+        "tests/dotnet/Shared/ProtocolUnits/Ai/SpecGroundingTestSupport.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/CityGmlSceneFixtures.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/InMemoryCloudFileStorage.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/PointCloudSceneFixtures.cs",
+        "tests/dotnet/Shared/SceneUnitSupport/SceneExecutorTestStubs.cs"
+      ],
+      "csproj": "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj"
     },
     {
       "name": "Server Features Admin Network and Jobs",

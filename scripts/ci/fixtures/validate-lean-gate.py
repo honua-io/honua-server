@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 import subprocess
 import tempfile
 from pathlib import Path
@@ -21,6 +22,34 @@ PRE_PR = ROOT / "scripts" / "ci" / "pre-pr-check.sh"
 TEXT = ACTION.read_text(encoding="utf-8")
 PRE_PR_TEXT = PRE_PR.read_text(encoding="utf-8")
 FORMAT_TEXT = FORMAT_ACTION.read_text(encoding="utf-8")
+
+
+def require_server_fast_scheduling(text: str) -> None:
+    step = re.search(
+        r"^    - name: Run \.NET Tests \(Server Fast Tier\)\n(.*?)(?=^    - name: |\Z)",
+        text, re.MULTILINE | re.DOTALL)
+    if step is None:
+        raise AssertionError("Server Fast tier must execute")
+    invocation = re.search(r"dotnet test (?:[^\n]*\\\n)*[^\n]*", step[1])
+    if invocation is None:
+        raise AssertionError("Server Fast tier must invoke dotnet test")
+    arguments = shlex.split(invocation[0].replace("\\\n", " "))
+    if arguments.count("--") != 1:
+        raise AssertionError("Server Fast tier must bind inline xUnit settings")
+    settings = arguments[arguments.index("--") + 1:]
+    if sorted(settings) != ["xUnit.MaxParallelThreads=4", "xUnit.ParallelAlgorithm=conservative"]:
+        raise AssertionError("Server Fast tier must use four conservative collection workers")
+
+
+require_server_fast_scheduling(TEXT)
+for setting in ("xUnit.MaxParallelThreads=4", "xUnit.ParallelAlgorithm=conservative"):
+    for replacement in ("", setting + " " + setting, setting.replace("=", "=invalid", 1)):
+        try:
+            require_server_fast_scheduling(TEXT.replace(setting, replacement))
+        except AssertionError:
+            pass
+        else:
+            raise AssertionError("Server Fast scheduling checker accepted missing or conflicting settings")
 
 
 def require(pattern: str, description: str, text: str = TEXT) -> None:
