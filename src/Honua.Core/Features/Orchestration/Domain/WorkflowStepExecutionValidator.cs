@@ -100,15 +100,15 @@ public static class WorkflowStepExecutionValidator
         {
             if (string.IsNullOrWhiteSpace(condition.SourceStepId) || !topology.StepIds.Contains(condition.SourceStepId))
             {
-                failures["condition.sourceStepId"] = $"Condition references unknown source step '{condition.SourceStepId}'.";
+                failures["condition.sourceStepId"] = $"condition references unknown source step '{condition.SourceStepId}'.";
             }
             else if (!dependencies.Contains(condition.SourceStepId, StringComparer.Ordinal))
             {
-                failures["condition.sourceStepId"] = $"Condition references source step '{condition.SourceStepId}' which is not declared in DependsOn.";
+                failures["condition.sourceStepId"] = $"condition references source step '{condition.SourceStepId}' which is not declared in DependsOn.";
             }
             else if (topology.ForEachStepIds.Contains(condition.SourceStepId))
             {
-                failures["condition.sourceStepId"] = $"Condition may not read from ForEach step '{condition.SourceStepId}'.";
+                failures["condition.sourceStepId"] = $"condition may not read from ForEach step '{condition.SourceStepId}'.";
             }
         }
 
