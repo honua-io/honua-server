@@ -145,9 +145,9 @@ normal retry and failure policies apply. A child that succeeds while cancellatio
 is in flight retains its success and artifacts without retrying. Acknowledged
 cancellation is not requested again while waiting for a terminal child state.
 
-Existing scheduled publications retain their stored definitions until republished.
-Disable and republish those publications to adopt the corrected Failure-edge
-routing before resuming them. In-flight runs must finish or be cancelled first;
+Existing scheduled publications retain their stored definitions. Disable the
+old publication and create a replacement Schedule publication with a new ID to
+adopt the corrected Failure-edge routing. In-flight runs must finish or be cancelled first;
 republishing a definition does not migrate an existing run.
 
 Direct Job and ProcessEndpoint targets cannot honor these orchestration

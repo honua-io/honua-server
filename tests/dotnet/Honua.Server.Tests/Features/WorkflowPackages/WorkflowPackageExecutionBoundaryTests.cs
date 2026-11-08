@@ -177,9 +177,11 @@ public sealed partial class WorkflowPackageSchedulePublicationTests
         await harness.Definitions.SetAsync(legacy);
         Assert.Empty((await harness.Definitions.GetAsync(definition.WorkflowId))!.Steps[1].FailureDependsOn);
         var publication = Assert.Single(await harness.Packages.ListPublicationsAsync());
-        await harness.Service.PublishVersionAsync(publication.PackageId, publication.PackageVersion,
-            ScheduleRequest(publication.PublicationId, true, true, "0 * * * *"), Author(), CancellationToken.None);
-        Assert.Equal(new[] { "work" }, (await harness.Definitions.GetAsync(definition.WorkflowId))!.Steps[1].FailureDependsOn);
+        await harness.Service.SetPublicationStatusAsync(publication.PublicationId, WorkflowPublicationStatus.Disabled, CancellationToken.None);
+        var replacement = await harness.Service.PublishVersionAsync(publication.PackageId, publication.PackageVersion,
+            ScheduleRequest("replacement", true, true, "0 * * * *"), Author(), CancellationToken.None);
+        Assert.False((await harness.Definitions.GetAsync(definition.WorkflowId))!.Trigger!.Enabled);
+        Assert.Equal(new[] { "work" }, (await harness.Definitions.GetAsync(replacement.WorkflowDefinitionId!))!.Steps[1].FailureDependsOn);
     }
 
     [UnitTest]
@@ -236,7 +238,7 @@ public sealed partial class WorkflowPackageSchedulePublicationTests
     [UnitTest]
     public void ComputePackageHash_GraphWithoutExecutionSettings_KeepsLegacyDigest()
     {
-        var graph = ReadGraph("""{"nodes":[{"nodeId":"work","nodeTypeId":"process:test.echo"}]}""");
+        var graph = ReadGraph("""{"schemaVersion":"workflow-package.v1","nodes":[{"nodeId":"work","nodeTypeId":"process:test.echo"}]}""");
         Assert.Equal("a54da6ad2a5d74de71fe80b3f29a61e17968480a69d1eaffd7ba7b7cada0cc37", WorkflowPackageGraphHasher.Compute(graph));
     }
 

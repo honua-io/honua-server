@@ -158,28 +158,10 @@ public static class WorkflowPackageGraphValidator
                 });
             }
 
-            if (edge.Kind == WorkflowEdgeKind.Failure && graph.Edges.Any(other =>
-                other.SourceNodeId == edge.SourceNodeId && other.TargetNodeId == edge.TargetNodeId && other.Kind != WorkflowEdgeKind.Failure))
-            {
-                failures.Add(new WorkflowPackageValidationFailure
-                {
-                    Code = "CONFLICTING_FAILURE_EDGE",
-                    Message = $"Failure edge '{edge.SourceNodeId}' to '{edge.TargetNodeId}' cannot also carry data or success control flow.",
-                    FieldPath = "graph.edges"
-                });
-            }
 
-            if (!Enum.IsDefined(edge.Kind) || edge.Kind == WorkflowEdgeKind.Failure && !string.IsNullOrWhiteSpace(edge.TargetPort))
-            {
-                failures.Add(new WorkflowPackageValidationFailure
-                {
-                    Code = "UNSUPPORTED_EDGE",
-                    Message = $"Edge '{edge.SourceNodeId}' to '{edge.TargetNodeId}' must use a supported kind; Failure edges are control-only and cannot bind a target port.",
-                    FieldPath = "graph.edges"
-                });
-            }
         }
 
+        ValidateOrchestrationEdges(graph, failures);
         ValidateOrchestrationRules(graph, nodeIds, failures);
 
         if (nodeIds.Count == graph.Nodes.Count && HasCycle(graph))
@@ -195,6 +177,32 @@ public static class WorkflowPackageGraphValidator
         return failures.Count == 0
             ? WorkflowPackageValidationResult.Success(packageHash)
             : WorkflowPackageValidationResult.Failed(failures, packageHash);
+    }
+
+    private static void ValidateOrchestrationEdges(WorkflowGraph graph, List<WorkflowPackageValidationFailure> failures)
+    {
+        foreach (var pair in graph.Edges.GroupBy(edge => (edge.SourceNodeId, edge.TargetNodeId)))
+        {
+            if (pair.Any(edge => edge.Kind == WorkflowEdgeKind.Failure) && pair.Any(edge => edge.Kind != WorkflowEdgeKind.Failure))
+            {
+                failures.Add(new WorkflowPackageValidationFailure
+                {
+                    Code = "CONFLICTING_FAILURE_EDGE",
+                    Message = $"Failure edge '{pair.Key.SourceNodeId}' to '{pair.Key.TargetNodeId}' cannot also carry data or success control flow.",
+                    FieldPath = "graph.edges"
+                });
+            }
+        }
+        foreach (var edge in graph.Edges.Where(edge => !Enum.IsDefined(edge.Kind)
+            || edge.Kind == WorkflowEdgeKind.Failure && !string.IsNullOrWhiteSpace(edge.TargetPort)))
+        {
+            failures.Add(new WorkflowPackageValidationFailure
+            {
+                Code = "UNSUPPORTED_EDGE",
+                Message = $"Edge '{edge.SourceNodeId}' to '{edge.TargetNodeId}' must use a supported kind; Failure edges are control-only and cannot bind a target port.",
+                FieldPath = "graph.edges"
+            });
+        }
     }
 
     private static void ValidateOrchestrationRules(
