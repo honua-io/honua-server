@@ -2,14 +2,15 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Diagnostics.Metrics;
+using Honua.ServiceDefaults;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Protocols.Ogc.Classic;
 
 internal static partial class CapabilitiesLayerBuilder
 {
-    private static readonly Meter Meter = new("Honua.Protocols.Ogc.Capabilities");
-    private static readonly Counter<long> OmittedLayers = Meter.CreateCounter<long>("honua.ogc.capabilities.omitted_layers");
+    private static readonly Counter<long> OmittedLayers =
+        HonuaTelemetry.Meter.CreateCounter<long>("honua.ogc.capabilities.omitted_layers");
 
     internal static async Task<T?> TryBuildAsync<T>(Func<Task<T>> build, string publicationId, ILogger logger)
         where T : class

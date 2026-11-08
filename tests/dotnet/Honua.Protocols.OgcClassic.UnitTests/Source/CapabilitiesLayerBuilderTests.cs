@@ -3,6 +3,7 @@
 
 using System.Diagnostics.Metrics;
 using Honua.Protocols.Ogc.Classic;
+using Honua.ServiceDefaults;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging;
 
@@ -19,7 +20,7 @@ public sealed class CapabilitiesLayerBuilderTests
         using var listener = new MeterListener();
         listener.InstrumentPublished = (instrument, meterListener) =>
         {
-            if (instrument.Meter.Name == "Honua.Protocols.Ogc.Capabilities" &&
+            if (instrument.Meter.Name == HonuaTelemetry.ServiceName &&
                 instrument.Name == "honua.ogc.capabilities.omitted_layers")
             {
                 meterListener.EnableMeasurementEvents(instrument);
@@ -40,9 +41,9 @@ public sealed class CapabilitiesLayerBuilderTests
         Assert.Null(result);
         var sample = Assert.Single(samples);
         Assert.Equal(1, sample.Count);
-        Assert.Equal(2, sample.Tags.Length);
-        Assert.Contains(new KeyValuePair<string, object?>("layer.id", publicationId), sample.Tags);
-        Assert.Contains(new KeyValuePair<string, object?>("error.type", nameof(IOException)), sample.Tags);
+        Assert.Collection(sample.Tags,
+            tag => Assert.Equal(new KeyValuePair<string, object?>("layer.id", publicationId), tag),
+            tag => Assert.Equal(new KeyValuePair<string, object?>("error.type", nameof(IOException)), tag));
         Assert.Equal($"OGC capabilities omitted layer {publicationId}: IOException", logger.Warning);
         Assert.Null(logger.Exception);
     }
