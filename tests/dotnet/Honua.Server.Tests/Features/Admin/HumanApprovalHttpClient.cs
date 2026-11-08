@@ -28,6 +28,7 @@ internal sealed class HumanApprovalHttpClient(HttpClient client, string actorId)
         AdminAuthEndpointsTests.ConfigureGenericOidcFixture(fixture, provider)
             .ConfigureWebHost(builder =>
             {
+                builder.UseSetting("RateLimiting:KeyPrefix", $"honua:test:human-approval:{Guid.NewGuid():N}:");
                 if (string.IsNullOrWhiteSpace(builder.GetSetting("Public:BaseUrl")))
                     builder.UseSetting("Public:BaseUrl", "http://localhost");
             })

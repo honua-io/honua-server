@@ -59,6 +59,8 @@ routes:
     resource: honua://proposals/{proposalId}
   "GET /api/v1/admin/proposals/{id}":
     resource: honua://proposals/{proposalId}
+  "GET /api/v1/admin/proposals/{id}/approval-review":
+    human-only: "Opening a decision-bound review requires a verified human session; agents observe proposal status without receiving approval capabilities."
   "POST /api/v1/admin/proposals/{id}/approve":
     human-only: "Approving a proposal must be performed by a human operator; agents can propose and poll honua://proposals/{proposalId}."
   "POST /api/v1/admin/proposals/{id}/reject":

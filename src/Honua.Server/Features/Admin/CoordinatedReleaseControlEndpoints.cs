@@ -278,7 +278,7 @@ internal static class CoordinatedReleaseControlEndpoints
     }
 
     private static async Task<IResult> HandleGateReview(
-        string operationId, string gate, CoordinatedReleaseControlService controlService, HttpContext context)
+        string operationId, string gate, [FromServices] CoordinatedReleaseControlService controlService, HttpContext context)
     {
         context.Response.Headers.CacheControl = "no-store";
         if (PlatformDeployAuthority.Deny(context) is { } denied) return denied;
