@@ -17,7 +17,7 @@ internal sealed record CoordinatedReleaseApprovalBinding(
     string? RequestedBy,
     string? RequesterSubject,
     string? RequesterName,
-    string RequesterTenantClaimType,
+    string? RequesterTenantClaimType,
     string? RequesterAuthenticationType,
     IReadOnlyList<string> RequesterRoles,
     string PackageId,

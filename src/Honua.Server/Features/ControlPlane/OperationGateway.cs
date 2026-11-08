@@ -936,58 +936,24 @@ internal sealed partial class OperationGateway : IOperationGateway
         OperationProposalApprovalContext approval,
         CancellationToken cancellationToken)
     {
-        for (var attempt = 0; attempt < 3; attempt++)
+        // Revalidate expiry after proposer evidence work, before attempting the exact reviewed version.
+        var humanApproval = await VerifyHumanApprovalAsync(proposal, approval, cancellationToken).ConfigureAwait(false);
+        var payload = proposal.Kind == OperationClass.Deploy
+            ? Honua.ControlPlane.Executors.DeployExecutionPayload.Parse(proposal.Plan.ExecutionPayload)
+            : null;
+        var claiming = proposal with
         {
-            // The session or capability may expire while proposer evidence is revalidated.
-            var humanApproval = await VerifyHumanApprovalAsync(proposal, approval, cancellationToken)
-                .ConfigureAwait(false);
-            var payload = proposal.Kind == OperationClass.Deploy
-                ? Honua.ControlPlane.Executors.DeployExecutionPayload.Parse(proposal.Plan.ExecutionPayload)
-                : null;
-            var restoreId = proposal.Kind == OperationClass.Deploy && payload is not null
-                ? DurableRestoreQueue.CreateId()
-                : proposal.ExecutionOperationId;
-            var claiming = proposal with
-            {
-                Status = OperationProposalStatus.Executing,
-                ResolvedBy = humanApproval.ActorId,
-                HumanApproval = humanApproval,
-                ExecutionOperationId = restoreId
-            };
-            if (await _proposalStore.TrySetAsync(claiming, cancellationToken: cancellationToken)
-                    .ConfigureAwait(false))
-            {
-                // TrySetAsync stores version+1 internally; return a record whose Version
-                // reflects the new stored value so PersistResolutionAsync uses the correct
-                // token for its subsequent CAS write.
-                return claiming with { Version = proposal.Version + 1 };
-            }
-
-            // CAS failed — re-read to find out why.
-            var latest = await _proposalStore.GetAsync(proposal.ProposalId, cancellationToken)
-                .ConfigureAwait(false);
-            if (latest == null)
-            {
-                throw new InvalidOperationException(
-                    $"Proposal '{proposal.ProposalId}' disappeared while claiming for execution.");
-            }
-
-            if (latest.Status != OperationProposalStatus.AwaitingApproval)
-            {
-                // Another concurrent caller already claimed (Executing) or fully resolved
-                // this proposal. Do not proceed to execute the operation a second time.
-                throw new InvalidOperationException(
-                    $"Proposal '{proposal.ProposalId}' is '{latest.Status}' — it was claimed or " +
-                    "resolved concurrently; this call will not execute the operation again.");
-            }
-
-            // Status is still AwaitingApproval but the version advanced (e.g. a
-            // notification write bumped the record). Refresh the version and retry.
-            proposal = latest;
-        }
+            Status = OperationProposalStatus.Executing,
+            ResolvedBy = humanApproval.ActorId,
+            HumanApproval = humanApproval,
+            ExecutionOperationId = proposal.Kind == OperationClass.Deploy && payload is not null
+                ? DurableRestoreQueue.CreateId() : proposal.ExecutionOperationId,
+        };
+        if (await _proposalStore.TrySetAsync(claiming, cancellationToken: cancellationToken).ConfigureAwait(false))
+            return claiming with { Version = proposal.Version + 1 };
 
         throw new InvalidOperationException(
-            $"Failed to claim proposal '{proposal.ProposalId}' for execution after repeated version conflicts.");
+            "The proposal changed while approval was being claimed. Reopen its review before approving again.");
     }
 
     private async Task CompensateClaimedProposalAsync(
