@@ -157,8 +157,6 @@ public static class WorkflowPackageGraphValidator
                     FieldPath = "graph.edges"
                 });
             }
-
-
         }
 
         ValidateOrchestrationEdges(graph, failures);

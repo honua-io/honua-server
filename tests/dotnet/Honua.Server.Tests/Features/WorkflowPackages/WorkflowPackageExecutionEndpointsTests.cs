@@ -35,7 +35,8 @@ public sealed partial class WorkflowPackageEndpointsTests
         var version = await CreateVersionAsync(packageId);
         await PublishAsync(packageId, version.Version, new
         {
-            target = "Schedule", enabled = true,
+            target = "Schedule",
+            enabled = true,
             schedule = new { cronExpression = "0 * * * *", timeZone = "UTC", enabled = true }
         });
         var definition = Assert.Single(await _definitionStore.ListAsync());

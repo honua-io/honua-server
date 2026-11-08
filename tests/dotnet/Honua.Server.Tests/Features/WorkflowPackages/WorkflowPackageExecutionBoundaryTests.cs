@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Orchestration.Domain;
 using Honua.Core.Features.WorkflowPackages.Domain;
 using Honua.Server.Features.Orchestration;
@@ -26,12 +27,13 @@ public sealed partial class WorkflowPackageSchedulePublicationTests
         var queued = (await execution.Runs.GetAsync(run.RunId))!;
         execution.Clock.Advance(TimeSpan.FromSeconds(1));
         await execution.Engine.ReconcileWorkflowRunAsync(run.RunId);
-        execution.Jobs.Complete(queued.StepStates[0].JobId!);
+        var artifact = new ArtifactRef { ArtifactId = "result", Kind = ArtifactKind.FeatureLayer, Label = "primary" };
+        execution.Jobs.Complete(queued.StepStates[0].JobId!, [artifact]);
         await execution.Engine.ReconcileWorkflowRunAsync(run.RunId);
         var completed = (await execution.Runs.GetAsync(run.RunId))!;
         Assert.Equal(WorkflowStepStatus.Succeeded, completed.StepStates[0].Status);
         Assert.Equal(WorkflowRunStatus.Succeeded, completed.Status);
-        Assert.NotNull(completed.StepStates[0].OutputArtifacts);
+        Assert.Equal(artifact, Assert.Single(completed.StepStates[0].OutputArtifacts!));
         Assert.Single(execution.Jobs.Submitted);
     }
 
@@ -169,13 +171,12 @@ public sealed partial class WorkflowPackageSchedulePublicationTests
     }
 
     [UnitTest]
-    public async Task PublishVersion_LegacyDefinition_RequiresRepublishToApplyFailureRouting()
+    public async Task PublishVersion_LegacyDefinition_ReplacementPublicationAppliesFailureRouting()
     {
         var harness = CreateHarness();
         var definition = await CompileGraphAsync(harness, FailureGraph());
         var legacy = definition with { Steps = [definition.Steps[0], definition.Steps[1] with { DependsOn = [], FailureDependsOn = [] }] };
         await harness.Definitions.SetAsync(legacy);
-        Assert.Empty((await harness.Definitions.GetAsync(definition.WorkflowId))!.Steps[1].FailureDependsOn);
         var publication = Assert.Single(await harness.Packages.ListPublicationsAsync());
         await harness.Service.SetPublicationStatusAsync(publication.PublicationId, WorkflowPublicationStatus.Disabled, CancellationToken.None);
         var replacement = await harness.Service.PublishVersionAsync(publication.PackageId, publication.PackageVersion,
@@ -204,15 +205,15 @@ public sealed partial class WorkflowPackageSchedulePublicationTests
 
     [Theory]
     [Trait("Tier", "Fast")]
-    [InlineData("Failure", "port", "UNSUPPORTED_EDGE")]
-    [InlineData("99", null, "UNSUPPORTED_EDGE")]
-    public async Task CreateVersion_InvalidFailureEdge_ReturnsValidation(string kind, string? port, string code)
+    [InlineData(WorkflowEdgeKind.Failure, "port")]
+    [InlineData((WorkflowEdgeKind)99, null)]
+    public async Task ValidateGraph_UnsupportedEdge_ReturnsValidation(WorkflowEdgeKind kind, string? port)
     {
         var graph = FailureGraph();
-        graph = graph with { Edges = [graph.Edges[0] with { Kind = kind == "Failure" ? WorkflowEdgeKind.Failure : (WorkflowEdgeKind)99, TargetPort = port }] };
+        graph = graph with { Edges = [graph.Edges[0] with { Kind = kind, TargetPort = port }] };
         var snapshot = await new EchoNodeRegistry().GetSnapshotAsync();
         var result = WorkflowPackageGraphValidator.Validate(graph, snapshot.Nodes.ToDictionary(node => node.NodeTypeId));
-        Assert.Contains(result.Failures, failure => failure.Code == code);
+        Assert.Contains(result.Failures, failure => failure.Code == "UNSUPPORTED_EDGE");
     }
 
     [UnitTest]

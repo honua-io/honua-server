@@ -147,8 +147,10 @@ cancellation is not requested again while waiting for a terminal child state.
 
 Existing scheduled publications retain their stored definitions. Disable the
 old publication and create a replacement Schedule publication with a new ID to
-adopt the corrected Failure-edge routing. In-flight runs must finish or be cancelled first;
-republishing a definition does not migrate an existing run.
+adopt the corrected Failure-edge routing. In-flight runs keep their legacy routing;
+delete the old publication only after those runs finish. Graphs that mix Failure
+with Data or Control edges between the same pair of nodes must be edited before
+creating the replacement.
 
 Direct Job and ProcessEndpoint targets cannot honor these orchestration
 settings, so publication rejects them with a Schedule-target diagnostic.
