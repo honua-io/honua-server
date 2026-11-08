@@ -11,6 +11,10 @@ Normalization covers exactly three deterministic JSON projections:
 - `docs/gis/data/geoservices-rest-parity.json`
 - `docs/gis/data/capability-matrix.v1.json`
 
+Admin operation parity exports are generated and verified as inputs, but never
+enter the mutation envelope. The three output paths have independent byte limits
+and a combined 6 MiB limit. Older envelope schemas are rejected.
+
 It does not format source, apply patches, run AI, or accept a path selected by a
 pull request. PR Gate and merge-train drift tests remain authoritative.
 
@@ -33,7 +37,7 @@ read-only observations still bind repository, PR, exact source head, run, and
 attempt, but treat the envelope's well-formed base SHA as informational because
 forks can never receive branch-mutation authority.
 
-The v2 envelope binds the source/base commit, the exact source Git tree,
+The v3 envelope binds the source/base commit, the exact source Git tree,
 PR/repository, workflow/run/attempt, generator input digests, and each
 allowlisted output's path, byte
 length, SHA-256 digest, and base64 content. Validation rejects extra members or

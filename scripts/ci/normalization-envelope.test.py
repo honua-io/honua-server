@@ -78,6 +78,16 @@ def expected() -> dict:
 
 
 class EnvelopeTests(unittest.TestCase):
+    def test_output_allowlist_contains_only_the_three_governed_projections(self) -> None:
+        self.assertEqual(
+            {
+                "docs/gis/data/feature-catalog.json",
+                "docs/gis/data/geoservices-rest-parity.json",
+                "docs/gis/data/capability-matrix.v1.json",
+            },
+            set(MODULE.OUTPUT_LIMITS),
+        )
+
     def test_workflow_and_envelope_enforce_the_same_bounds(self) -> None:
         workflow = (SCRIPT.parents[2] / MODULE.WORKFLOW_PATH).read_text()
         projections = re.findall(r"'(docs/gis/data/[^':]+\.json):(\d+)'", workflow)
@@ -87,23 +97,22 @@ class EnvelopeTests(unittest.TestCase):
         self.assertIsNotNone(aggregate)
         self.assertEqual(MODULE.MAX_TOTAL_OUTPUT_BYTES, int(aggregate.group(1)))
 
-    def test_mcp_projection_accepts_128_kib_and_rejects_one_byte_over(self) -> None:
-        path = "docs/gis/data/admin-mcp-projection-manifest.json"
-        prefix, suffix = b'{"payload":"', b'"}'
-        for size in (65537, 131072, 131073):
-            with self.subTest(size=size):
-                content = prefix + b"x" * (size - len(prefix) - len(suffix)) + suffix
+    def test_admin_projections_cannot_be_normalization_outputs(self) -> None:
+        for path in (
+            "docs/gis/data/admin-openapi-operation-ids.json",
+            "docs/gis/data/admin-mcp-projection-manifest.json",
+        ):
+            with self.subTest(path=path):
                 value = envelope()
-                index = next(i for i, item in enumerate(value["outputs"]) if item["path"] == path)
-                value["outputs"][index] = output(path, content)
-                if size > 131072:
-                    with self.assertRaisesRegex(MODULE.EnvelopeError, "exceeds"):
-                        MODULE.validate_envelope(raw(value), **expected())
-                else:
-                    plan = MODULE.validate_envelope(raw(value), **expected())
-                    item = next(item for item in plan["outputs"] if item["path"] == path)
-                    self.assertEqual(size, item["length"])
-                    self.assertEqual(MODULE.sha256_bytes(content), item["sha256"])
+                value["outputs"][0] = output(path)
+                with self.assertRaisesRegex(MODULE.EnvelopeError, "not allowlisted"):
+                    MODULE.validate_envelope(raw(value), **expected())
+
+    def test_previous_envelope_schema_is_rejected(self) -> None:
+        value = envelope()
+        value["schema"] = "honua.normalization-envelope/v2"
+        with self.assertRaisesRegex(MODULE.EnvelopeError, "schema"):
+            MODULE.validate_envelope(raw(value), **expected())
 
     def test_valid_envelope_round_trips(self) -> None:
         plan = MODULE.validate_envelope(raw(envelope()), **expected())
