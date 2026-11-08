@@ -550,16 +550,14 @@ internal sealed partial class DeployWorkflowService
         string? requestedBy,
         string? reason,
         CancellationToken cancellationToken = default)
-        => SubmitWithRestoreAsync(operationId, requestedBy, reason, restoreOwnerId: null, cancellationToken);
+        => SubmitCoreAsync(new DeploySubmission(operationId, requestedBy, reason, null), null, cancellationToken);
 
-    internal Task<WorkflowOperationRecord?> SubmitWithRestoreAsync(
-        string operationId, string? requestedBy, string? reason, string? restoreOwnerId, CancellationToken cancellationToken)
-        => SubmitCoreAsync(operationId, requestedBy, reason, restoreOwnerId, null, cancellationToken);
+    private sealed record DeploySubmission(string OperationId, string? ActorId, string? Reason, string? RestoreOwnerId);
 
     private async Task<WorkflowOperationRecord?> SubmitCoreAsync(
-        string operationId, string? requestedBy, string? reason, string? restoreOwnerId,
-        OperationProposal? approvedProposal, CancellationToken cancellationToken)
+        DeploySubmission submission, OperationProposal? approvedProposal, CancellationToken cancellationToken)
     {
+        var (operationId, requestedBy, reason, restoreOwnerId) = submission;
         EnsureDurableStoreConfigured();
         await using var admission = RestoreAdmissionEnabled
             ? await RestoreDeployAdmission.AcquireAsync(_workflowStore!, operationId, restoreOwnerId, false, cancellationToken, _logger).ConfigureAwait(false)

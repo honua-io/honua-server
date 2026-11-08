@@ -240,6 +240,19 @@ public sealed class DurableRestoreWorkerTests
         public IRevisionSchemaCatalog Revisions { get; } = Substitute.For<IRevisionSchemaCatalog>();
         public IRestoredSchemaProbe Probe { get; } = Substitute.For<IRestoredSchemaProbe>();
 
+        private OperationProposal CreateLegacyApproval(string payload, string phase)
+        {
+            var plan = new OperationProposalPlan { Summary = "Claimed restore", ExecutionPayload = payload };
+            return new OperationProposal
+            {
+                ProposalId = "legacy-proposal", Kind = OperationClass.Deploy,
+                Status = phase == "queued" ? OperationProposalStatus.Executing : OperationProposalStatus.Submitted,
+                RequestedBy = "requester", ResolvedBy = "approver", ExecutionOperationId = RestoreId,
+                Plan = plan, SealedPlanHash = Honua.Server.Features.Operations.OperationApprovalPlanSeal.Compute(plan),
+                CreatedAt = Restore.CreatedAt, UpdatedAt = Restore.UpdatedAt,
+            };
+        }
+
         public Harness(string phase)
         {
             const string host = "db.internal";
@@ -265,15 +278,7 @@ public sealed class DurableRestoreWorkerTests
             {
                 Audit = new OperationAuditInfo { ProposalId = "legacy-proposal", RequestedBy = "requester" },
             };
-            var plan = new OperationProposalPlan { Summary = "Claimed restore", ExecutionPayload = payload };
-            Proposals.GetAsync("legacy-proposal", Arg.Any<CancellationToken>()).Returns(new OperationProposal
-            {
-                ProposalId = "legacy-proposal", Kind = OperationClass.Deploy,
-                Status = phase == "queued" ? OperationProposalStatus.Executing : OperationProposalStatus.Submitted,
-                RequestedBy = "requester", ResolvedBy = "approver", ExecutionOperationId = RestoreId,
-                Plan = plan, SealedPlanHash = Honua.Server.Features.Operations.OperationApprovalPlanSeal.Compute(plan),
-                CreatedAt = Restore.CreatedAt, UpdatedAt = Restore.UpdatedAt,
-            });
+            Proposals.GetAsync("legacy-proposal", Arg.Any<CancellationToken>()).Returns(CreateLegacyApproval(payload, phase));
             Deployment = new WorkflowOperationRecord
             {
                 OperationId = "deploy-test",

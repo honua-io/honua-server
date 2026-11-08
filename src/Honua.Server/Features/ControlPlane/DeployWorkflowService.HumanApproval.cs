@@ -28,8 +28,8 @@ internal sealed partial class DeployWorkflowService
         if (operation is not null && operation.BlockingReasons.Count == 0
             && operation.Status is WorkflowOperationStatus.AwaitingApproval or WorkflowOperationStatus.Planned)
         {
-            return await SubmitCoreAsync(operation.OperationId, request.ApprovedBy, request.Reason,
-                restoreOwnerId, proposal, cancellationToken).ConfigureAwait(false);
+            return await SubmitCoreAsync(new DeploySubmission(operation.OperationId, request.ApprovedBy,
+                request.Reason, restoreOwnerId), proposal, cancellationToken).ConfigureAwait(false);
         }
 
         return operation;
