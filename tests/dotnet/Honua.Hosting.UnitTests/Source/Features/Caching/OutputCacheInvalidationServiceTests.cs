@@ -19,7 +19,7 @@ using ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols
 namespace Honua.Server.Tests.Features.Caching;
 
 [Protocol(TestProtocols.TestQuality)]
-public sealed class OutputCacheInvalidationServiceTests
+public sealed partial class OutputCacheInvalidationServiceTests
 {
     private static string ScopedKey(string key) => CacheScopeKeys.EnsureScoped(key, null);
 
