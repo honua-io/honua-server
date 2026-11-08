@@ -970,8 +970,8 @@ jobs:
         run: |
           started=$SECONDS
           dotnet build src/Honua.Server/Honua.Server.csproj --configuration Release -p:HonuaStoreProfile=postgis -p:TreatWarningsAsErrors=true
-          dotnet test tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj --configuration Release -p:HonuaStoreProfile=postgis --filter 'FullyQualifiedName~StoreProfileWritePolicyTests' --logger 'trx;LogFileName=core-profile.trx' --results-directory artifacts/pr-gate/postgis-policy -- RunConfiguration.TreatNoTestsAsError=true
-          dotnet test tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj --configuration Release -p:HonuaStoreProfile=postgis --filter 'FullyQualifiedName~StoreProfileWritePolicyTests' --logger 'trx;LogFileName=persistence-profile.trx' --results-directory artifacts/pr-gate/postgis-policy -- RunConfiguration.TreatNoTestsAsError=true
+          dotnet test tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj --configuration Release -p:HonuaStoreProfile=postgis --filter 'FullyQualifiedName~StoreProfileWritePolicyTests|FullyQualifiedName~ActivateRevisionAsync_StoreProfile' --logger 'trx;LogFileName=core-profile.trx' --results-directory artifacts/pr-gate/postgis-policy -- RunConfiguration.TreatNoTestsAsError=true
+          dotnet test tests/dotnet/Honua.Db.Postgres.Tests/Honua.Postgres.Tests.csproj --configuration Release -p:HonuaStoreProfile=postgis --filter 'FullyQualifiedName~StoreProfileWritePolicyTests|FullyQualifiedName~ActivateRevisionAsync_StoreProfile' --logger 'trx;LogFileName=persistence-profile.trx' --results-directory artifacts/pr-gate/postgis-policy -- RunConfiguration.TreatNoTestsAsError=true
           printf 'Default PostGIS profile verification: %s seconds\n' "$((SECONDS - started))" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload PostGIS policy proof

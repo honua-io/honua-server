@@ -3,6 +3,7 @@
 
 using System.Security.Cryptography;
 using System.Text.Json;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -379,6 +380,7 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
         var target = await ReadSnapshotAsync(connection, transaction, revision, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException(
                 $"Metadata v2 revision {revision} is not retained for environment '{_environment}'.");
+        DataStoreProviderPolicy.EnsureGraphMatchesStoreProfile(target.Graph);
 
         var active = current is { } state
             ? await ReadSnapshotAsync(connection, transaction, state.Revision, cancellationToken).ConfigureAwait(false)

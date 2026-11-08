@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Data;
 using System.Data.Common;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -10,12 +11,12 @@ using Honua.Db.Postgres.Features.Security;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
-using NSubstitute;
 
 namespace Honua.Db.Postgres.Tests.Features.Security;
 
 public sealed class StoreProfileWritePolicyTests
 {
+    private const string PersistenceReached = "persistence reached";
     private static bool AdditionalStoresExpected =>
         Environment.GetEnvironmentVariable("HONUA_EXPECTED_STORE_PROFILE") != "postgis";
 
@@ -45,15 +46,13 @@ public sealed class StoreProfileWritePolicyTests
 
     private static async Task AssertRegistryWriteAsync(Func<PostgresSecureConnectionRegistry, Task> write)
     {
-        var primary = Substitute.For<IPrimaryDatabaseConnectionProvider>();
-        primary.OpenConnectionAsync(Arg.Any<CancellationToken>()).Returns(_ =>
-            Task.FromException<DbConnection>(new InvalidOperationException("persistence reached")));
+        var primary = new RejectingPrimaryConnectionProvider();
         using var pools = new SecureConnectionDataSourceCache(new ConfigurationBuilder().Build());
         var registry = new PostgresSecureConnectionRegistry(primary,
             NullLogger<PostgresSecureConnectionRegistry>.Instance, pools);
         Func<Task> save = () => write(registry);
 
-        var expected = AdditionalStoresExpected ? "persistence reached" : "*-full*";
+        var expected = AdditionalStoresExpected ? PersistenceReached : "*-full*";
         await save.Should().ThrowAsync<InvalidOperationException>().WithMessage(expected);
     }
 
@@ -66,4 +65,22 @@ public sealed class StoreProfileWritePolicyTests
         Username = "fixture",
         Provider = provider
     };
+
+    private sealed class RejectingPrimaryConnectionProvider : IPrimaryDatabaseConnectionProvider
+    {
+        public string GetConnectionString() => throw new InvalidOperationException(PersistenceReached);
+
+        public Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default) =>
+            Task.FromException<DbConnection>(new InvalidOperationException(PersistenceReached));
+
+        public Task<(DbConnection Connection, DbTransaction Transaction)> OpenTransactionAsync(
+            IsolationLevel isolationLevel = IsolationLevel.RepeatableRead,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<T> ExecuteWithDeadlockRetryAsync<T>(Func<Task<T>> operation,
+            CancellationToken cancellationToken = default) => operation();
+
+        public Task ExecuteWithDeadlockRetryAsync(Func<Task> operation,
+            CancellationToken cancellationToken = default) => operation();
+    }
 }

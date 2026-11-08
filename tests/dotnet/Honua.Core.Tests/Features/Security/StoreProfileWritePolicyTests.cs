@@ -78,12 +78,7 @@ public sealed class StoreProfileWritePolicyTests
     [InlineData(DataProviderNames.GeoServicesRest)]
     public void ValidateGraph_AdditionalStore_EnforcesCompiledProfile(string provider)
     {
-        var graph = new MetadataV2Graph
-        {
-            Connections = [new MetadataV2Connection {
-            Metadata = new MetadataV2ObjectMetadata { Id = "fixture", Name = "fixture" },
-            Type = MetadataV2ConnectionType.Database, Provider = provider }]
-        };
+        var graph = ConnectionGraph(MetadataV2ConnectionType.Database, provider);
 
         var result = MetadataV2GraphValidator.Validate(graph);
 
@@ -112,13 +107,20 @@ public sealed class StoreProfileWritePolicyTests
     [InlineData(MetadataV2ConnectionType.Managed, DataProviderNames.PostgreSql)]
     public void ValidateGraph_IncludedStoresAndFormatSources_Accepts(MetadataV2ConnectionType type, string? provider)
     {
-        var graph = new MetadataV2Graph
-        {
-            Connections = [new MetadataV2Connection {
-            Metadata = new MetadataV2ObjectMetadata { Id = "fixture", Name = "fixture" },
-            Type = type, Provider = provider }]
-        };
+        var graph = ConnectionGraph(type, provider);
 
         MetadataV2GraphValidator.Validate(graph).IsValid.Should().BeTrue();
     }
+    private static MetadataV2Graph ConnectionGraph(MetadataV2ConnectionType type, string? provider) => new()
+    {
+        Connections =
+        [
+            new MetadataV2Connection
+            {
+                Metadata = new MetadataV2ObjectMetadata { Id = "fixture", Name = "fixture" },
+                Type = type,
+                Provider = provider
+            }
+        ]
+    };
 }

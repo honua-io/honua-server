@@ -40,6 +40,12 @@ internal static class DataStoreProviderPolicy
             throw new DataStoreProviderUnavailableException();
     }
 
+    public static void EnsureGraphMatchesStoreProfile(MetadataV2Graph graph)
+    {
+        foreach (var connection in graph.Connections.Where(IsDataStoreConnection))
+            EnsureStoreProfileIncludes(connection.Provider);
+    }
+
     private static bool IsPostgisProvider(string? provider) =>
         DataProviderNames.Normalize(provider) is DataProviderNames.Postgis or DataProviderNames.PostgreSql;
 

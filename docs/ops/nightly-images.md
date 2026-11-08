@@ -59,7 +59,7 @@ new executable; retain their existing probe when pinning a pre-change image, and
 and probe together. The ECS module exposes `health_check_command` and
 `health_check_port` for that transition.
 
-Connection creation, updates and metadata validation reject stores absent from the image.
+Connection creation, updates, metadata validation and retained-revision activation reject stores absent from the image.
 If an existing database contains such a Connection, startup refuses with the same full-image
 instruction. Recover with the matching full image; remove an unused Connection through the
 normal administration workflow before returning to the PostGIS-only image.
