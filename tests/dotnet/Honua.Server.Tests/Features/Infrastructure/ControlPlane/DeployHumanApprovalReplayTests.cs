@@ -26,14 +26,14 @@ public sealed class DeployHumanApprovalReplayTests
     public async Task EnqueueAsync_VerifiedHumanApproval_AllowsRequesterOrAnotherHuman(bool requesterApproves)
     {
         using var host = new OperationHumanApprovalTestHost();
-        var proposal = await ApprovedAsync(host, requesterApproves);
+        var proposal = await CreateApprovedProposalAsync(host, requesterApproves);
         var store = Substitute.For<IWorkflowOperationStore>();
         store.TryCreateAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(true);
         var proposals = Substitute.For<IOperationProposalStore>();
         proposals.GetAsync(proposal.ProposalId, Arg.Any<CancellationToken>()).Returns(proposal);
 
         var id = await new DurableRestoreQueue(store, proposals).EnqueueAsync(
-            Request(proposal), proposal.Plan.ExecutionPayload!, CancellationToken.None);
+            CreateExecutionRequest(proposal), proposal.Plan.ExecutionPayload!, CancellationToken.None);
 
         Assert.Equal(proposal.ExecutionOperationId, id);
         await store.Received(1).TryCreateAsync(Arg.Is<WorkflowOperationRecord>(record =>
@@ -54,7 +54,7 @@ public sealed class DeployHumanApprovalReplayTests
     public async Task EnqueueAsync_ChangedApproval_RefusesBeforeWriting(string change)
     {
         using var host = new OperationHumanApprovalTestHost();
-        var original = await ApprovedAsync(host, requesterApproves: false);
+        var original = await CreateApprovedProposalAsync(host, requesterApproves: false);
         var proposal = change switch
         {
             "proof" => original with { HumanApproval = null },
@@ -73,7 +73,7 @@ public sealed class DeployHumanApprovalReplayTests
         var queue = new DurableRestoreQueue(store, proposals);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => queue.EnqueueAsync(
-            Request(original), original.Plan.ExecutionPayload!, CancellationToken.None));
+            CreateExecutionRequest(original), original.Plan.ExecutionPayload!, CancellationToken.None));
 
         await store.DidNotReceive().TryCreateAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
@@ -84,7 +84,7 @@ public sealed class DeployHumanApprovalReplayTests
     public async Task ReconcileAsync_ClaimedHumanApproval_RecoversRequesterOrAnotherHuman(bool requesterApproves)
     {
         using var host = new OperationHumanApprovalTestHost();
-        var proposal = await ApprovedAsync(host, requesterApproves);
+        var proposal = await CreateApprovedProposalAsync(host, requesterApproves);
         var proposals = Substitute.For<IOperationProposalStore>();
         proposals.GetAsync(proposal.ProposalId, Arg.Any<CancellationToken>()).Returns(proposal);
         var worker = WorkerFor(proposal, proposals);
@@ -103,7 +103,7 @@ public sealed class DeployHumanApprovalReplayTests
     public async Task ReconcileAsync_ChangedHumanEvidence_DoesNotAdvanceExecutionClaim(string change)
     {
         using var host = new OperationHumanApprovalTestHost();
-        var original = await ApprovedAsync(host, requesterApproves: false);
+        var original = await CreateApprovedProposalAsync(host, requesterApproves: false);
         var changed = change switch
         {
             "proof" => original with { HumanApproval = null },
@@ -150,7 +150,7 @@ public sealed class DeployHumanApprovalReplayTests
         return new DurableRestoreWorker(store, proposals, null!, null!, null!, audit, NullLogger<DurableRestoreWorker>.Instance);
     }
 
-    private static OperationGatewayRequest Request(OperationProposal proposal) => new()
+    internal static OperationGatewayRequest CreateExecutionRequest(OperationProposal proposal) => new()
     {
         Kind = OperationClass.Deploy,
         RequestedBy = proposal.RequestedBy,
@@ -160,7 +160,7 @@ public sealed class DeployHumanApprovalReplayTests
         TenantId = proposal.TenantId,
     };
 
-    private static async Task<OperationProposal> ApprovedAsync(OperationHumanApprovalTestHost host, bool requesterApproves)
+    internal static async Task<OperationProposal> CreateApprovedProposalAsync(OperationHumanApprovalTestHost host, bool requesterApproves)
     {
         var human = await host.CreateHumanAsync();
         var actor = CanonicalSecurityActor.Resolve(human.Principal)!.ActorId;
