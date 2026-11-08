@@ -10,6 +10,7 @@ const {
   parseNormalizationTrailer,
   planNormalizationMutation,
   probeNormalizationCredential,
+  inspectNormalizationTarget,
 } = require('./normalization-mutation');
 
 const head = 'a'.repeat(40);
@@ -37,6 +38,7 @@ function input(overrides = {}) {
     headCommit: { sha: head, treeSha: tree, message: 'feat: example', parents: [parent] },
     changes: [change()],
     allowedPaths: ALLOWED,
+    branchPolicy: { headRef: 'feat/example', defaultBranch: 'trunk', protected: false, rulesCount: 0 },
     ...overrides,
   };
 }
@@ -243,7 +245,7 @@ test('a commit message requires a delta and an exact source SHA', () => {
   }));
 });
 
-// --- mutation orchestration (#3219 review items 3 and 8) ------------------
+
 
 const newCommit = 'd'.repeat(40);
 const newTree = '7'.repeat(40);
@@ -414,4 +416,74 @@ test('the credential probe names the missing App permission', async () => {
     octokit: ok, repo: { owner: 'honua-io', repo: 'honua-server' }, pullNumber: 1, headRef: 'x',
   });
   assert.deepEqual(ok.calls.map(([name]) => name), ['pulls.get', 'getRef']);
+});
+
+
+test('an unchanged Git tree creates no commit or ref update', async () => {
+  const octokit = fakeOctokit();
+  octokit.rest.git.createTree = async args => {
+    octokit.calls.push(['createTree', args]);
+    return { data: { sha: tree } };
+  };
+  const result = await applyNormalizationMutation(mutationArgs(octokit));
+  assert.equal(result.commitSha, null);
+  assert.deepEqual(octokit.calls.map(([name]) => name), ['createBlob', 'createBlob', 'createTree']);
+  assert.deepEqual(octokit.graphqlCalls, []);
+});
+
+
+function targetInput(overrides = {}) {
+  const repository = 'honua-io/honua-server';
+  return {
+    repo: { owner: 'honua-io', repo: 'honua-server' },
+    run: { head_sha: head, head_branch: 'feat/example', head_repository: { full_name: repository } },
+    pullRequest: { state: 'open', draft: false, head: { sha: head, ref: 'feat/example', repo: { full_name: repository } },
+      base: { ref: 'trunk', repo: { full_name: repository } } },
+    octokit: { rest: { repos: {
+      get: async () => ({ data: { default_branch: 'trunk' } }),
+      getBranch: async () => ({ data: { protected: false } }),
+    } }, request: async () => ({ data: [] }) },
+    ...overrides,
+  };
+}
+
+test('target inspection binds producer branch, repository and current base before policy reads', async () => {
+  for (const field of ['head_branch', 'head_repository', 'head_sha']) {
+    const target = targetInput();
+    target.run[field] = field === 'head_repository' ? { full_name: 'other/repository' } : 'different';
+    await assert.rejects(inspectNormalizationTarget(target), /identity/);
+  }
+  const retargeted = targetInput();
+  retargeted.pullRequest.base.ref = 'release';
+  await assert.rejects(inspectNormalizationTarget(retargeted), /base/);
+});
+
+test('protected and governed targets are never writable', async () => {
+  const protectedTarget = targetInput();
+  protectedTarget.octokit.rest.repos.getBranch = async () => ({ data: { protected: true } });
+  assert.equal((await inspectNormalizationTarget(protectedTarget)).writable, false);
+  const governed = targetInput();
+  governed.octokit.request = async () => ({ data: [{ type: 'required_status_checks' }] });
+  assert.equal((await inspectNormalizationTarget(governed)).writable, false);
+});
+
+test('reserved branch namespaces cannot pass the mutation plan', () => {
+  for (const headRef of ['trunk', 'release/next', 'releases/next', 'land/batch/one', 'train/batch/one']) {
+    const candidate = input();
+    candidate.pullRequest.headRef = headRef;
+    candidate.branchPolicy.headRef = headRef;
+    assert.equal(planNormalizationMutation(candidate).action, 'fail', headRef);
+  }
+  for (const policy of [undefined, { headRef: 'feat/example', defaultBranch: 'trunk', protected: true, rulesCount: 0 },
+    { headRef: 'feat/example', defaultBranch: 'trunk', protected: false, rulesCount: 1 }]) {
+    assert.equal(planNormalizationMutation(input({ branchPolicy: policy })).action, 'fail');
+  }
+});
+
+test('fork target inspection emits evidence without reading branch write policy', async () => {
+  const target = targetInput();
+  target.run.head_repository.full_name = 'fork/honua-server';
+  target.pullRequest.head.repo.full_name = 'fork/honua-server';
+  target.octokit.rest.repos.getBranch = async () => { throw new Error('must not inspect fork write policy'); };
+  assert.equal((await inspectNormalizationTarget(target)).writable, false);
 });
