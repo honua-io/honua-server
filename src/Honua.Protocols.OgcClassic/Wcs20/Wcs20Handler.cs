@@ -753,7 +753,7 @@ internal sealed partial class Wcs20Handler
         // decide a coverage request.
         var routable = matchingBindings
             .Select(binding => snapshot.Index.ResourcesById.TryGetValue(binding.ResourceId, out var candidate)
-                && binding.IsRoutable(candidate)
+                && snapshot.IsRoutable(binding, candidate)
                     ? candidate
                     : null)
             .Where(candidate => candidate is not null)

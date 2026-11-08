@@ -7,6 +7,8 @@ namespace Honua.Core.Serialization;
 
 public readonly record struct PreservedEnum<TEnum> where TEnum : struct, Enum
 {
+    internal static TEnum UnknownValue { get; } = Enum.Parse<TEnum>("Unknown");
+
     public TEnum Value { get; }
 
     internal string? RawToken { get; }
@@ -25,7 +27,7 @@ public readonly record struct PreservedEnum<TEnum> where TEnum : struct, Enum
     internal static PreservedEnum<TEnum> FromToken(TEnum value, ref Utf8JsonReader reader)
     {
         if (reader.TokenType == JsonTokenType.Null ||
-            !EqualityComparer<TEnum>.Default.Equals(value, Enum.Parse<TEnum>("Unknown")))
+            !EqualityComparer<TEnum>.Default.Equals(value, UnknownValue))
         {
             return new PreservedEnum<TEnum>(value);
         }

@@ -9,7 +9,6 @@ namespace Honua.Core.Serialization;
 internal class TolerantEnumJsonConverter<TEnum> : JsonConverter<TEnum>
     where TEnum : struct, Enum
 {
-    private static readonly TEnum UnknownValue = Enum.Parse<TEnum>("Unknown");
     private readonly JsonConverter<TEnum> _knownValues;
 
     public TolerantEnumJsonConverter()
@@ -27,7 +26,7 @@ internal class TolerantEnumJsonConverter<TEnum> : JsonConverter<TEnum>
         catch (JsonException) when (reader.TokenType == JsonTokenType.String ||
             JsonIntegerToken.IsInteger(ref reader))
         {
-            return UnknownValue;
+            return PreservedEnum<TEnum>.UnknownValue;
         }
     }
 
@@ -35,5 +34,5 @@ internal class TolerantEnumJsonConverter<TEnum> : JsonConverter<TEnum>
         => _knownValues.Write(writer, KnownOrUnknown(value), options);
 
     protected static TEnum KnownOrUnknown(TEnum value)
-        => Enum.IsDefined(value) ? value : UnknownValue;
+        => Enum.IsDefined(value) ? value : PreservedEnum<TEnum>.UnknownValue;
 }

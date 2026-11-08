@@ -51,7 +51,7 @@ public static class MetadataV2GraphSnapshotExtensions
                IsServingStatus(publication.Status) && IsServingResource(resource);
     }
 
-    public static bool IsRoutable(
+    private static bool IsRoutable(
         this MetadataV2StorageBinding binding,
         MetadataV2Resource? resource)
     {

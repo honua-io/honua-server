@@ -46,13 +46,10 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
             switch (name)
             {
                 case "lifecycle":
-                    var lifecycleReader = reader;
-                    var parsedLifecycle = ReadLifecycle(ref reader);
-                    lifecycle = parsedLifecycle.HasValue ? PreservedEnum<MetadataV2LifecycleStatus>.FromToken(parsedLifecycle.Value, ref lifecycleReader) : null;
+                    lifecycle = ReadLifecycle(ref reader);
                     break;
                 case "state":
-                    var stateReader = reader;
-                    state = PreservedEnum<MetadataV2OperationalState>.FromToken(ReadState(ref reader), ref stateReader);
+                    state = ReadState(ref reader);
                     break;
                 case "conditions":
                     conditions = ReadConditions(ref reader);
@@ -97,7 +94,21 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
         writer.WriteEndObject();
     }
 
-    private static MetadataV2LifecycleStatus? ReadLifecycle(ref Utf8JsonReader reader)
+    private static PreservedEnum<MetadataV2LifecycleStatus>? ReadLifecycle(ref Utf8JsonReader reader)
+    {
+        var originalReader = reader;
+        var value = ParseLifecycle(ref reader);
+        return value.HasValue ? PreservedEnum<MetadataV2LifecycleStatus>.FromToken(value.Value, ref originalReader) : null;
+    }
+
+    private static PreservedEnum<MetadataV2OperationalState> ReadState(ref Utf8JsonReader reader)
+    {
+        var originalReader = reader;
+        var value = ParseState(ref reader);
+        return PreservedEnum<MetadataV2OperationalState>.FromToken(value, ref originalReader);
+    }
+
+    private static MetadataV2LifecycleStatus? ParseLifecycle(ref Utf8JsonReader reader)
     {
         if (reader.TokenType == JsonTokenType.Null)
         {
@@ -140,7 +151,7 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
         return lifecycle;
     }
 
-    private static MetadataV2OperationalState ReadState(ref Utf8JsonReader reader)
+    private static MetadataV2OperationalState ParseState(ref Utf8JsonReader reader)
     {
         if (reader.TokenType == JsonTokenType.Null)
         {
@@ -332,12 +343,7 @@ internal sealed class MetadataV2StatusJsonConverter : JsonConverter<MetadataV2St
         where TEnum : struct, Enum
     {
         writer.WritePropertyName(name);
-        if (value.RawToken is { } rawToken)
-        {
-            writer.WriteRawValue(rawToken);
-            return;
-        }
-        writer.WriteStringValue(Enum.IsDefined(value.Value) ? value.Value.ToString().ToLowerInvariant() : "unknown");
+        PreservedEnumJsonConverter<TEnum>.Instance.Write(writer, value, JsonSerializerOptions.Default);
     }
 
     private static JsonElement ReadAdditionalProperty(ref Utf8JsonReader reader)

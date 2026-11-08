@@ -54,7 +54,7 @@ public sealed class MetadataV2EnumRobustnessTests
     [MemberData(nameof(UnknownEnumCases))]
     public void Deserialize_UnknownEnumToken_UsesUnknownSentinel(Type enumType, string json)
     {
-        var typeInfo = MetadataV2JsonContext.Default.GetTypeInfo(enumType)!;
+        var typeInfo = MetadataV2EnumTestJsonContext.Default.GetTypeInfo(enumType)!;
         typeInfo.Should().NotBeNull();
         var value = JsonSerializer.Deserialize(json, typeInfo);
 
@@ -69,7 +69,7 @@ public sealed class MetadataV2EnumRobustnessTests
     [MemberData(nameof(MalformedEnumCases))]
     public void Deserialize_MalformedEnumToken_RejectsValue(Type enumType, string json)
     {
-        var typeInfo = MetadataV2JsonContext.Default.GetTypeInfo(enumType)!;
+        var typeInfo = MetadataV2EnumTestJsonContext.Default.GetTypeInfo(enumType)!;
         var deserialize = () => JsonSerializer.Deserialize(json, typeInfo);
 
         deserialize.Should().Throw<JsonException>();
@@ -94,7 +94,7 @@ public sealed class MetadataV2EnumRobustnessTests
     [InlineData(typeof(MetadataV2FieldType), "\"geography\"", 14)]
     public void Deserialize_KnownWireValue_PreservesNumericAssignment(Type enumType, string json, int expected)
     {
-        var typeInfo = MetadataV2JsonContext.Default.GetTypeInfo(enumType)!;
+        var typeInfo = MetadataV2EnumTestJsonContext.Default.GetTypeInfo(enumType)!;
         var value = JsonSerializer.Deserialize(json, typeInfo)!;
         Convert.ToInt32(value, System.Globalization.CultureInfo.InvariantCulture).Should().Be(expected);
         JsonSerializer.Serialize(value, typeInfo).Should().Be(json);
@@ -107,7 +107,7 @@ public sealed class MetadataV2EnumRobustnessTests
     [InlineData(typeof(MetadataV2ConnectionType), "\"DATABASE\"", 0)]
     public void Deserialize_MixedCaseWireValue_PreservesKnownMeaning(Type enumType, string json, int expected)
     {
-        var value = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.GetTypeInfo(enumType)!);
+        var value = JsonSerializer.Deserialize(json, MetadataV2EnumTestJsonContext.Default.GetTypeInfo(enumType)!);
 
         Convert.ToInt32(value, System.Globalization.CultureInfo.InvariantCulture).Should().Be(expected);
     }
@@ -119,7 +119,7 @@ public sealed class MetadataV2EnumRobustnessTests
     [InlineData(typeof(Symbology3DComparison), "5")]
     public void Serialize_KnownNumericEnum_PreservesNumericEncoding(Type enumType, string json)
     {
-        var typeInfo = MetadataV2JsonContext.Default.GetTypeInfo(enumType)!;
+        var typeInfo = MetadataV2EnumTestJsonContext.Default.GetTypeInfo(enumType)!;
         var value = JsonSerializer.Deserialize(json, typeInfo);
 
         JsonSerializer.Serialize(value, typeInfo).Should().Be(json);
