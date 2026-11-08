@@ -87,13 +87,18 @@ class ComparisonTests(unittest.TestCase):
 
 
 class AdmissionEvidenceTests(unittest.TestCase):
-    def test_builder_interval_must_be_finite_ordered_and_contained(self):
-        self.assertTrue(pilot.bounded_interval(11, 19, 10, 20))
-        for start, end in ((19, 11), (9, 19), (11, 21), (float("nan"), 19),
-                           (11, float("inf")), (True, 19), ("11", 19), (None, 19)):
-            self.assertFalse(pilot.bounded_interval(start, end, 10, 20))
+    def test_image_selection_is_rejected_without_creating_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "plan.json"
+            completed = subprocess.run(
+                [sys.executable, str(Path(__file__).with_name("pilot.py")), "plan",
+                 "--variant", "candidate", "--selection", "image", "--output", str(output)],
+                capture_output=True, text=True, check=False)
+            self.assertEqual(2, completed.returncode, completed.stderr)
+            self.assertIn("invalid choice", completed.stderr)
+            self.assertFalse(output.exists())
 
-    def test_builder_numeric_bounds_reject_bool_and_nonfinite_values(self):
+    def test_numeric_bounds_reject_bool_and_nonfinite_values(self):
         for value in (True, False, float("nan"), float("inf"), "128", None):
             self.assertFalse(pilot.finite_between(value, 1, 512))
         self.assertTrue(pilot.finite_between(128, 1, 512))
@@ -235,18 +240,6 @@ class InputTests(unittest.TestCase):
         self.source.write_text("class Source { int changed; }")
         self.assertNotEqual(first["key"], identity()["key"])
 
-    def test_image_runtime_properties_are_explicit_and_identity_bound(self):
-        portable = pilot.props("Release", "full")
-        self.assertFalse(any("RuntimeIdentifier" in arg for arg in portable))
-        with patch.object(pilot, "command", self.fake_command):
-            x64 = pilot.evaluated_inputs(self.root, "src/Selected/Selected.csproj", "Release", "full", self.output, runtime="linux-x64")
-            arm = pilot.evaluated_inputs(self.root, "src/Selected/Selected.csproj", "Release", "full", self.output, runtime="linux-arm64")
-        self.assertIn("-p:RuntimeIdentifier=linux-x64", x64["identity"]["buildProperties"])
-        self.assertIn("-p:SelfContained=false", x64["identity"]["buildProperties"])
-        self.assertNotEqual(x64["key"], arm["key"])
-        with self.assertRaisesRegex(ValueError, "only to image"):
-            pilot.plan(self.root, "candidate", "unit", "Release", "full", "", "linux-x64")
-
     def test_build_only_analyzer_closure_counts_and_hashes_sources(self):
         analyzer = self.root / "src/Honua.Analyzers/Honua.Analyzers.csproj"
         analyzer.parent.mkdir(parents=True)
@@ -334,56 +327,6 @@ class InputTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             pilot.edit_source(self.root, "odata-only-edit", "src/Other/Example.cs", 1).__enter__()
 
-    def test_runtime_context_rejects_compiler_and_credentials(self):
-        runtime = self.root / "publish"
-        runtime.mkdir()
-        (runtime / "Honua.OData.TestHost.dll").write_bytes(b"app")
-        pilot.ensure_runtime_only(runtime)
-        for name in ("Microsoft.CodeAnalysis.CSharp.dll", "NuGet.Config", "certificate.pfx"):
-            path = runtime / name
-            path.write_bytes(b"not allowed")
-            with self.assertRaises(ValueError):
-                pilot.ensure_runtime_only(runtime)
-            path.unlink()
-
-    def test_runtime_json_rejects_nested_and_flat_secret_key_fields(self):
-        runtime = self.root / "secret-publish"
-        runtime.mkdir()
-        settings = runtime / "appsettings.json"
-        for key in ("MasterKey", "AdminPassword", "SigningKey", "PrivateKey", "EncryptionKey",
-                    "Security:ConnectionEncryption:MasterKey", "Security__Signing_Key"):
-            settings.write_text(json.dumps({"Security": [{key: "sensitive-value"}]}))
-            with self.subTest(key=key), self.assertRaises(ValueError):
-                pilot.ensure_runtime_only(runtime)
-        settings.write_text(json.dumps({"Security": {"MasterKey": "", "AdminPassword": None, "PublicKey": "public-material"}}))
-        pilot.ensure_runtime_only(runtime)
-
-    def test_managed_builder_requires_fresh_matching_bounds_and_reservation(self):
-        config = self.root / "builder.json"
-        receipt = self.root / "builder-receipt.json"
-        config.write_text(json.dumps({"argv": ["managed-builder", "{context}", "{tag}", "{inputKey}", "{receipt}"]}))
-        builder = {"schema": "honua.odata-pilot-managed-builder/v1", "inputKey": "key", "image": "tag",
-            "platform": "linux/amd64", "sharedAdmission": True, "boundedBuildKit": True, "reservationId": "owned-job",
-            "exitCode": 0, "peakJobMemoryBytes": 1000, "startedEpochSeconds": 2, "finishedEpochSeconds": 3,
-            "limits": {"memoryMaxBytes": 1024**3, "cpuQuotaPercent": 200, "pidsMax": 128}}
-        def fake_stage(name, argv, root, evidence, timeout):
-            self.assertEqual(["managed-builder", str(self.root), "tag", "key", str(receipt)], argv)
-            (evidence / "image").mkdir(exist_ok=True)
-            pilot.write(receipt, builder)
-            return {"startedEpochSeconds": 1, "finishedEpochSeconds": 4}
-        with patch.object(pilot, "stage", fake_stage):
-            pilot.managed_builder(config, receipt, self.root, "tag", "pin", "assembly", "key", self.root, self.output, 10)
-            with self.assertRaises(ValueError):
-                pilot.managed_builder(config, receipt, self.root, "tag", "pin", "assembly", "key", self.root, self.output, 10)
-            receipt.unlink()
-            builder["platform"] = "linux/arm64"
-            with self.assertRaises(ValueError):
-                pilot.managed_builder(config, receipt, self.root, "tag", "pin", "assembly", "key", self.root, self.output, 10)
-            receipt.unlink()
-            builder["platform"] = "linux/amd64"
-            builder["sharedAdmission"] = False
-            with self.assertRaises(ValueError):
-                pilot.managed_builder(config, receipt, self.root, "tag", "pin", "assembly", "key", self.root, self.output, 10)
 
     def test_trx_uses_case_identity_not_unstable_execution_guid(self):
         trx = self.root / "trx"
@@ -487,22 +430,12 @@ class StaticCompositionTests(unittest.TestCase):
         self.assertGreaterEqual((len(baseline) - len(candidate)) / len(baseline), 0.50)
 
     def test_host_and_component_closures_stay_on_odata_and_postgres(self):
-        host = self.assert_isolated(pilot.PROJECTS["candidate"]["image"])
+        host = self.assert_isolated("tests/dotnet/Honua.OData.TestHost/Honua.OData.TestHost.csproj")
         component = self.assert_isolated(pilot.PROJECTS["candidate"]["component"])
         self.assertTrue(any(path.endswith("Honua.Protocols.OData.csproj") for path in host))
         self.assertTrue(any(path.endswith("Honua.Postgres.csproj") for path in host))
         self.assertTrue(any(path.endswith("Honua.TestKit.Postgres.csproj") for path in component))
         self.assertTrue(component.issuperset(host))
-
-    def test_runtime_image_does_not_compile_and_publish_reuses_the_build(self):
-        planned = pilot.plan(self.root, "candidate", "image", "Release", "full", "")
-        self.assertIn("--no-build", planned["commands"][-1])
-        self.assertIn("--no-restore", planned["commands"][-1])
-        text = (self.root / "docker/odata-pilot/Dockerfile").read_text()
-        self.assertNotIn("dotnet/sdk", text)
-        self.assertNotIn("dotnet build", text)
-        self.assertNotIn("dotnet publish", text)
-        self.assertIn("COPY --chown=1654:1654 publish/", text)
 
 
 class CleanupReceiptTests(unittest.TestCase):

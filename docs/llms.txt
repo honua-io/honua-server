@@ -35,6 +35,8 @@ Each link resolves to the page's source on `trunk`. These pages are also rendere
 - [Data source language](https://github.com/honua-io/honua-server/blob/trunk/docs/concepts/domain/data-source.md): A disambiguation of original data, registered connection, storage binding, and map source reference.
 - [Dataset naming transition](https://github.com/honua-io/honua-server/blob/trunk/docs/concepts/domain/resource.md): The historical resource name is being replaced by Dataset in the model, stored metadata, and APIs.
 - [Dataset](https://github.com/honua-io/honua-server/blob/trunk/docs/concepts/domain/dataset.md): The records or imagery a workflow uses, before or after Honua publishes access to them.
+- [Coming from ArcGIS](https://github.com/honua-io/honua-server/blob/trunk/docs/concepts/domain/coming-from-arcgis.md): Translate ArcGIS terms into the Honua vocabulary without assuming equivalent behavior.
+- [Coming from GeoServer](https://github.com/honua-io/honua-server/blob/trunk/docs/concepts/domain/coming-from-geoserver.md): Translate GeoServer terms into Connections, Datasets, Layers, Services, and Folders.
 - [Deployment and execution target](https://github.com/honua-io/honua-server/blob/trunk/docs/concepts/domain/deployment.md): Where Honua serves requests and where background work executes.
 - [DevOps workflow language](https://github.com/honua-io/honua-server/blob/trunk/docs/concepts/domain/devops-language.md): Meanings, state transitions, and recovery boundaries for operating a Honua environment through ordinary language.
 - [Draft, Version, and Released](https://github.com/honua-io/honua-server/blob/trunk/docs/concepts/domain/content-version.md): Mutable authoring state and an immutable saved snapshot with stable identity.

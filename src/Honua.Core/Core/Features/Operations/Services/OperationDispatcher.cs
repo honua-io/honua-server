@@ -854,7 +854,7 @@ public sealed class OperationDispatcher : IOperationInvoker, IOperationProposalS
                     string.IsNullOrWhiteSpace(approval.ProposalId) ||
                     string.IsNullOrWhiteSpace(approval.AuditId))
                 {
-                    status = OperationHandleStatus.Failed;
+                    status = approval.IsDenied ? OperationHandleStatus.Denied : OperationHandleStatus.Failed;
                     reason = approval.Reason
                         ?? "Approval is required, but durable proposal or audit persistence failed.";
                 }

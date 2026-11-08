@@ -222,11 +222,6 @@
       "proof_filter": "FullyQualifiedName~Honua"
     },
     {
-      "csproj": "tests/dotnet/Honua.ControlPlane.Lambda.Tests/Honua.ControlPlane.Lambda.Tests.csproj",
-      "artifact_suffix": "honua-controlplane-lambda-tests",
-      "proof_filter": "FullyQualifiedName~Honua"
-    },
-    {
       "csproj": "tests/dotnet/Honua.Core.Security.Tests/Honua.Core.Security.Tests.csproj",
       "artifact_suffix": "honua-core-security-tests",
       "proof_filter": "FullyQualifiedName~Honua"

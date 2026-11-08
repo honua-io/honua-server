@@ -95,8 +95,12 @@ internal sealed partial class AdminOperationApprovalBridge(
                 string.IsNullOrWhiteSpace(result.ProposalId) ||
                 string.IsNullOrWhiteSpace(result.AuditId))
             {
-                return Failure(result.Message
-                    ?? "Approval is required, but durable proposal or audit persistence failed.");
+                return new OperationApprovalBridgeResult
+                {
+                    IsDurable = false,
+                    IsDenied = result.Outcome == OperationGatewayOutcome.Blocked,
+                    Reason = result.Message ?? "Approval is required, but durable proposal or audit persistence failed."
+                };
             }
 
             return new OperationApprovalBridgeResult

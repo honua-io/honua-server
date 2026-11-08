@@ -63,17 +63,14 @@ policies, **0 narrowed, 0 avoided, and 0 candidate-only**. The trusted ledger's
 own countable subset agrees (17 countable heads, `serving_narrowed_heads: 0`,
 `worker_avoided_heads: 0`).
 
-That is a structural result, not a small sample. `{variant}_final_rootfs`
-subsumes `server_aot_compile`, so any managed change selects all three serving
-variants exactly as `src/**` does, and the legacy workflow already routes
-variant-only Dockerfile edits per variant. Avoidance is only possible for the
-6 of 33 `src/**` projects outside the serving closure (`Honua.AppHost`,
-`Honua.ControlPlane.Lambda`, `Honua.Geoprocessing.Cli`,
-`Honua.Geoprocessing.Testing`, `Honua.LicenseMint`, `Honua.Worker.Gdal`), and no
-observed head touched only those.
+`{variant}_final_rootfs` subsumes `server_aot_compile`, so managed changes in
+that dependency closure select all three serving variants. The legacy workflow
+already routes variant-only Dockerfile edits per variant. Projects outside the
+serving closure may avoid a serving build; the selector computes the closure
+from current project references.
 
-Enforcing this router today would therefore change nothing except the risk
-surface. It is not promoted.
+The audited observation did not demonstrate avoided builds. The router remains
+in observation mode.
 
 ### Where the cost actually is
 

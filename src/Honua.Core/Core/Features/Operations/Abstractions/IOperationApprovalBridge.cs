@@ -20,6 +20,8 @@ public sealed record OperationApprovalBridgeResult
 {
     public required bool IsDurable { get; init; }
 
+    public bool IsDenied { get; init; }
+
     public string? ProposalId { get; init; }
 
     public string? AuditId { get; init; }
