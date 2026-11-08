@@ -15,7 +15,7 @@ namespace Honua.Server.Tests.Features.Admin;
 
 public sealed partial class CoordinatedReleaseControlEndpointsTests
 {
-    [IntegrationTest]
+    [IntegrationTheory]
     [Endpoint("POST /api/v1/admin/metadata/coordinated-releases/operations/{operationId}/approve/{gate}")]
     [InlineData(CoordinatedReleaseStep.ContainerRollout, "container")]
     [InlineData(CoordinatedReleaseStep.MetadataAndSchema, "data")]
@@ -35,7 +35,7 @@ public sealed partial class CoordinatedReleaseControlEndpointsTests
         _metadata.StartCalls.Should().Be(0);
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
     [InlineData(CoordinatedReleaseStep.ContainerRollout)]
     [InlineData(CoordinatedReleaseStep.MetadataAndSchema)]
     public async Task ApproveGateAsync_ActorStringWithoutHumanSession_RefusesBeforeGateWrite(
@@ -50,7 +50,7 @@ public sealed partial class CoordinatedReleaseControlEndpointsTests
         (await _workflowStore.GetAsync(operation.OperationId)).Should().BeEquivalentTo(operation);
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
     [InlineData(CoordinatedReleaseStep.ContainerRollout)]
     [InlineData(CoordinatedReleaseStep.MetadataAndSchema)]
     public async Task ReconcileAsync_UnclaimedLegacyGateBoolean_RequiresFreshHumanReview(
@@ -76,7 +76,7 @@ public sealed partial class CoordinatedReleaseControlEndpointsTests
         _metadata.StartCalls.Should().Be(0);
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
     [InlineData(CoordinatedReleaseStep.ContainerRollout)]
     [InlineData(CoordinatedReleaseStep.MetadataAndSchema)]
     public async Task ReconcileAsync_ClaimedLegacyChild_DrainsWithoutNewApprovalEvidence(
