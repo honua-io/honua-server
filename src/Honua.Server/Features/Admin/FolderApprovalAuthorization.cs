@@ -4,6 +4,7 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Admin.Domain;
 using Honua.ControlPlane;
@@ -43,7 +44,12 @@ internal static class FolderApprovalAuthorization
             context.User.IsInRole(AdminApiKeyPermission.ApprovedOperationRole) ||
             !MetadataV2ServicePaths.SameTenant(operation.TenantId, context.RequestServices.GetRequiredService<ITenantContext>().TenantId))
             throw new FolderProposalRefusal("Folder proposals require the authenticated requester's durable identity and tenant.");
-        var payload = FolderReplayRequest.ReadSealedPayload(plan, operation.OperationId, operation.TenantId);
+        AdminApiOperationApprovalPayload payload;
+        try { payload = FolderReplayRequest.ReadSealedPayload(plan, operation.OperationId, operation.TenantId); }
+        catch (Exception exception) when (exception is JsonException or ArgumentException)
+        {
+            throw new FolderProposalRefusal("The folder proposal payload does not match the requested operation, tenant, or mode.");
+        }
         if (payload.SchemaName != context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema)
             throw new FolderProposalRefusal("The folder proposal schema does not match the authenticated request.");
         var request = payload.ToOperationRequest();
@@ -108,7 +114,8 @@ internal static class FolderApprovalAuthorization
                 .AffectedServices(snapshot.Graph).Select(service => service.Metadata.Id).Order(StringComparer.Ordinal);
             return authorization.ServiceIds.SequenceEqual(affected, StringComparer.Ordinal);
         }
-        catch (Exception exception) when (exception is not OperationCanceledException and not OutOfMemoryException)
+        catch (Exception exception) when (exception is FolderProposalRefusal or JsonException or ArgumentException or KeyNotFoundException ||
+            (exception is InvalidOperationException && exception is not ServiceUnavailableException))
         {
             return false;
         }
@@ -152,7 +159,12 @@ internal static class FolderApprovalAuthorization
         string requesterId, CancellationToken cancellationToken)
     {
         var authority = new OperationProposerApiKeyAuthority(services.GetRequiredService<TimeProvider>(), services.GetService<IAdminApiKeyStore>());
-        var key = await authority.GetCurrentRecordAsync(requesterId, cancellationToken).ConfigureAwait(false);
+        AdminApiKeyRecord key;
+        try { key = await authority.GetCurrentRecordAsync(requesterId, cancellationToken).ConfigureAwait(false); }
+        catch (InvalidOperationException exception) when (exception is not ServiceUnavailableException)
+        {
+            throw new FolderProposalRefusal(OperationProposerApiKeyAuthority.Refusal);
+        }
         writer.WriteStartArray();
         writer.WriteStringValue(key.Id);
         writer.WriteStringValue(key.ExpiresAt?.ToString("O", System.Globalization.CultureInfo.InvariantCulture));

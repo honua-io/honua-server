@@ -8,6 +8,7 @@ using FluentAssertions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Identity.Abstractions;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit.Helpers;
@@ -181,7 +182,9 @@ public sealed partial class FolderOperationIntegrationTests
     [InlineData("inactive")]
     [InlineData("removed")]
     [InlineData("entitlement")]
-    public async Task FolderCreate_ManagedMembershipChanges_RequiresFreshProposal(string change)
+    [InlineData("gateway-unavailable")]
+    [InlineData("endpoint-unavailable")]
+    public async Task FolderCreate_RequesterPolicyChangesOrBecomesUnavailable_PreservesRefusalReason(string change)
     {
         if (change == "entitlement") _licensing.Current = new TestLicenseEntitlementService(HonuaEdition.Enterprise);
         var before = await SnapshotAsync();
@@ -208,7 +211,9 @@ public sealed partial class FolderOperationIntegrationTests
             proposal.Plan.FolderAuthorization.ExpiresAt.Should().BeAfter(DateTimeOffset.UtcNow).And.BeBefore(DateTimeOffset.UtcNow.AddDays(31));
             JsonSerializer.Serialize(proposal.Plan, Honua.ControlPlane.OperationProposalJsonContext.Default.OperationProposalPlan)
                 .Should().NotContain("original-membership");
-            if (change == "entitlement") _licensing.Current = new TestLicenseEntitlementService(HonuaEdition.Pro);
+            if (change == "gateway-unavailable") _memberships.ReadsBeforeOutage = 0;
+            else if (change == "endpoint-unavailable") _memberships.ReadsBeforeOutage = 1;
+            else if (change == "entitlement") _licensing.Current = new TestLicenseEntitlementService(HonuaEdition.Pro);
             else _memberships.Current = change switch
             {
                 "roles" => new PrincipalMembership(true, ["viewer"]),
@@ -218,7 +223,9 @@ public sealed partial class FolderOperationIntegrationTests
             await ApproveAsync(result.ProposalId!);
             var refused = (await _proposals.GetAsync(result.ProposalId!))!;
             refused.Status.Should().Be(OperationProposalStatus.Failed);
-            refused.ResolutionReason.Should().Be(FolderApprovalAuthorization.FreshProposalRequired);
+            if (change == "gateway-unavailable") refused.ResolutionReason.Should().Be("Execution failed (ServiceUnavailableException).");
+            else if (change == "endpoint-unavailable") refused.ResolutionReason.Should().StartWith("Admin API returned 503");
+            else refused.ResolutionReason.Should().Be(FolderApprovalAuthorization.FreshProposalRequired);
         }, "folder-requester");
         (await SnapshotAsync()).Etag.Should().Be(before.Etag);
     }
@@ -306,7 +313,7 @@ public sealed partial class FolderOperationIntegrationTests
 
     private sealed class FolderRequesterLicense : ILicenseEntitlementService
     {
-        public ILicenseEntitlementService Current { get; set; } = new TestLicenseEntitlementService(HonuaEdition.Pro);
+        public TestLicenseEntitlementService Current { get; set; } = new(HonuaEdition.Pro);
         public LicenseSnapshot GetSnapshot() => Current.GetSnapshot();
         public LicenseEntitlementDecision CheckEntitlement(string entitlementKey) => Current.CheckEntitlement(entitlementKey);
     }
@@ -314,8 +321,17 @@ public sealed partial class FolderOperationIntegrationTests
     private sealed class FolderRequesterMembership : IPrincipalMembershipSource
     {
         public PrincipalMembership? Current { get; set; } = new(true, ["admin", "original-membership"]);
+        public int? ReadsBeforeOutage { get; set; }
+
         public Task<PrincipalMembership?> ResolveMembershipAsync(string principalId, CancellationToken cancellationToken = default)
-            => Task.FromResult(principalId == "folder-requester" ? Current : null);
+        {
+            if (ReadsBeforeOutage is { } remaining)
+            {
+                if (remaining == 0) return Task.FromException<PrincipalMembership?>(new ServiceUnavailableException("Membership service unavailable."));
+                ReadsBeforeOutage = remaining - 1;
+            }
+            return Task.FromResult(principalId == "folder-requester" ? Current : null);
+        }
     }
 
     private async Task<MetadataV2GraphSnapshot> RestrictLastServiceFacetAsync()

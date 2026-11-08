@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Metadata.Abstractions;
 
 namespace Honua.Server.Features.Admin;
@@ -13,7 +14,8 @@ internal sealed record FolderMutationFailure(int Status, string Detail)
     internal static readonly FolderMutationFailure MissingPrecondition = new(428, "The current snapshot ETag is required in If-Match.");
 
     internal static bool Handles(Exception exception)
-        => exception is JsonException or ArgumentException or KeyNotFoundException or InvalidOperationException;
+        => exception is JsonException or ArgumentException or KeyNotFoundException ||
+            (exception is InvalidOperationException && exception is not ServiceUnavailableException);
 
     internal static FolderMutationFailure From(Exception exception) => exception switch
     {
