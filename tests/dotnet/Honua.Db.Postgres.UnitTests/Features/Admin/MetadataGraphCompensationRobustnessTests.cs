@@ -13,9 +13,9 @@ namespace Honua.Db.Postgres.Tests.Features.Admin;
 public sealed class MetadataGraphCompensationRobustnessTests
 {
     private const string EnumGraph = """
-        {"resources":[{"metadata":{"id":"dataset","title":"TITLE"},"type":TOKEN,
+        {"catalogs":[],"projectionProfiles":[],"policies":[],"roles":[],"resources":[{"metadata":{"id":"dataset","title":"TITLE"},"type":TOKEN,
           "status":{"lifecycle":TOKEN,"state":TOKEN},"schemaFields":[{"name":"field","type":TOKEN}],
-          "spatial":{"geometryType":TOKEN},"attributeRules":[{"name":"rule","type":TOKEN}],
+          "spatial":{"geometryType":TOKEN},"attributeRules":[{"name":"rule","type":TOKEN,"triggeringEvents":[]}],
           "symbology3D":{"rules":[{"attribute":"field","comparison":TOKEN}]}}],
          "connections":[{"metadata":{"id":"connection"},"type":TOKEN,"status":{"lifecycle":TOKEN,"state":TOKEN}}],
          "storageBindings":[{"metadata":{"id":"binding"},"resourceId":"dataset","connectionId":"connection",
@@ -97,7 +97,13 @@ public sealed class MetadataGraphCompensationRobustnessTests
             .Replace("TITLE", title, StringComparison.Ordinal), MetadataV2JsonContext.Default.MetadataV2Graph)!;
 
     private static MetadataV2Graph ReadResource(JsonObject resource)
-        => new() { Resources = [JsonSerializer.Deserialize(resource.ToJsonString(), MetadataV2JsonContext.Default.MetadataV2Resource)!] };
+    {
+        resource["status"] ??= new JsonObject();
+        return new MetadataV2Graph
+        {
+            Resources = [JsonSerializer.Deserialize(resource.ToJsonString(), MetadataV2JsonContext.Default.MetadataV2Resource)!]
+        };
+    }
 
     private static JsonElement AtPath(JsonElement root, string path)
     {
