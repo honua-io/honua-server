@@ -16,7 +16,7 @@ using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 
-namespace Honua.Server.Tests.Features.Metadata;
+namespace Honua.Server.Tests.Features.Protocols;
 
 [Collection("Database")]
 public sealed class PublicPublicationIdentityTests : IAsyncLifetime
