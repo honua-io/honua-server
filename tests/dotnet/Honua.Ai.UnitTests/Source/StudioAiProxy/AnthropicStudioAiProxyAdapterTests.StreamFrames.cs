@@ -82,6 +82,27 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
 
         events.Should().ContainSingle().Which.ErrorCode.Should().Be("studio_ai/unknown_provider_event");
         events[0].ErrorMessage.Should().Be($"Provider returned unknown stream event type '{eventType}'.");
+        events[0].PromptTokens.Should().BeNull();
+        events[0].CompletionTokens.Should().BeNull();
+    }
+
+    [UnitTheory]
+    [InlineData("{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\"}}")]
+    [InlineData("{\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\"}}")]
+    [InlineData("{\"type\":\"future_event\"}")]
+    public async Task StreamAsync_RejectedFrame_PreservesUsageFromMessageStart(string frame)
+    {
+        var fixture = $$"""
+            data: {"type":"message_start","message":{"model":"claude-opus-5-5","usage":{"input_tokens":12,"output_tokens":1}}}
+            data: {{frame}}
+            """;
+
+        var events = await CollectAsync(CreateAdapter(fixture), ToolFreeRequest());
+
+        var failure = events.Should().ContainSingle(e => e.Type == StudioAiChatEventType.Error).Subject;
+        failure.PromptTokens.Should().Be(12);
+        failure.CompletionTokens.Should().Be(1);
+        events.Should().NotContain(e => e.Type == StudioAiChatEventType.MessageStop);
     }
 
     [UnitTheory]
