@@ -1022,13 +1022,28 @@ jobs:
         timeout-minutes: 45
         run: scripts/ci/run-foundation-family.sh run ${{ matrix.family }}
 
+      - name: Upload protocol crash diagnostics
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure() && matrix.family == 'protocols'
+        timeout-minutes: 3
+        with:
+          name: protocol-crash-diagnostics
+          path: |
+            artifacts/test-results/**/*.dmp
+            artifacts/test-results/**/Sequence*.xml
+          if-no-files-found: ignore
+          retention-days: 1
+
       - name: Upload foundation family test results
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         timeout-minutes: 3
         with:
           name: foundation-test-results-${{ matrix.family }}
-          path: artifacts/test-results/
+          path: |
+            artifacts/test-results/
+            !artifacts/test-results/**/*.dmp
+            !artifacts/test-results/**/Sequence*.xml
           if-no-files-found: warn
           retention-days: 7
 
