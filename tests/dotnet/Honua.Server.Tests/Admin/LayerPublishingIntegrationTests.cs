@@ -182,7 +182,7 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
     [Operation(Operations.Create)]
     [Operation(Operations.Update)]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
-    [Endpoint("PUT /api/v1/admin/connections/{id}/layers/{layerId}/enabled")]
+    [Endpoint("PUT /api/v1/admin/connections/{id}/layers/{storageLayerId}/enabled")]
     [Endpoint("PUT /api/v1/admin/connections/{id}/layers/enabled")]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers/extents/refresh")]
     public async Task QualifiedLayerMutations_ThroughConnectionRoute_PreserveEffectiveStorageOwnership(bool managed)
@@ -326,7 +326,7 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
     [Operation(Operations.Create)]
     [Endpoint("GET /api/v1/admin/connections/{id}/layers")]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
-    [Endpoint("PUT /api/v1/admin/connections/{id}/layers/{layerId}/enabled")]
+    [Endpoint("PUT /api/v1/admin/connections/{id}/layers/{storageLayerId}/enabled")]
     public async Task PublishLayer_ListAndToggle_ReturnsExpectedResults()
     {
         var publishRequest = new PublishLayerRequest
@@ -441,7 +441,7 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
     [Protocol(TestProtocols.Admin, TestProtocols.FeatureServer, TestProtocols.MapServer, TestProtocols.OgcApiFeatures, TestProtocols.Stac)]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
     [Endpoint("GET /api/v1/admin/connections/{id}/layers")]
-    [Endpoint("PUT /api/v1/admin/connections/{id}/layers/{layerId}/enabled")]
+    [Endpoint("PUT /api/v1/admin/connections/{id}/layers/{storageLayerId}/enabled")]
     [Endpoint("PUT /api/v1/admin/connections/{id}/layers/enabled")]
     [Endpoint("GET /openapi.json")]
     [Endpoint("GET /rest/services/{serviceName}/FeatureServer/{layerId}")]
@@ -1268,7 +1268,7 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
     [Operation(Operations.Update)]
     [Operation(Operations.Query)]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
-    [Endpoint("POST /api/v1/admin/connections/{id}/layers/{layerId}/features/refresh")]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers/{storageLayerId}/features/refresh")]
     [Endpoint("GET /ogc/features/collections/{collectionId}/items")]
     [Endpoint("GET /ogc/tiles/collections/{collectionId}/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}")]
     public async Task RefreshMaterializedFeatures_AfterSourceUpdate_RebuildsSnapshotMvtReads()
@@ -1800,7 +1800,7 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Update)]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
-    [Endpoint("POST /api/v1/admin/connections/{id}/layers/{layerId}/features/refresh")]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers/{storageLayerId}/features/refresh")]
     [Endpoint("POST /ogc/features/collections/{collectionId}/items")]
     public async Task RefreshMaterializedFeatures_OnManagedStoreLayer_IsRefusedAndKeepsEdits()
     {
@@ -3600,7 +3600,7 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Update)]
-    [Endpoint("PUT /api/v1/admin/connections/{id}/layers/{layerId}/enabled")]
+    [Endpoint("PUT /api/v1/admin/connections/{id}/layers/{storageLayerId}/enabled")]
     public async Task SetLayerEnabled_NonexistentLayer_Returns404()
     {
         var toggleRequest = new LayerEnabledRequest { Enabled = false };

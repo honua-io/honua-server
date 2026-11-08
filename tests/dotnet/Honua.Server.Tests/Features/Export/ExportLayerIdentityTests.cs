@@ -47,7 +47,7 @@ public sealed class ExportLayerIdentityTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Export)]
-    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/export")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/export")]
     public async Task Export_ServiceIndexDiffersFromStorage_StreamsResolvedStorage()
     {
         using var client = _fixture.CreateAdminClient();
@@ -61,7 +61,7 @@ public sealed class ExportLayerIdentityTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Export)]
-    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/export")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/export")]
     public async Task Export_ServiceIndexDiffersFromStorage_QueuesResolvedStorage()
     {
         _reader.CountAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>()).Returns(50_001L);

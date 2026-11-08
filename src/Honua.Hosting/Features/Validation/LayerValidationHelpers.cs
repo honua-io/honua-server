@@ -255,6 +255,38 @@ internal static class LayerValidationHelpers
         return new MetadataV2ValidationResult(true, publication, resource, service, null, snapshot);
     }
 
+    public static async Task<MetadataV2ValidationResult> ValidateStorageLayerWithAccessV2Async(
+        HttpContext context,
+        int storageLayerId,
+        AuthorizationOperation operation)
+    {
+        var snapshot = await GetV2SnapshotAsync(context, context.RequestAborted).ConfigureAwait(false);
+        var resource = snapshot.ResolveStorageResource(storageLayerId,
+            publication => ResolveVisibleProtocolService(context, snapshot, publication, null) is not null);
+        if (resource is null)
+        {
+            var error = context.User.Identity?.IsAuthenticated != true && snapshot.PublicationsForStorageLayer(storageLayerId).Any()
+                ? AccessPolicyHelpers.CreateAccessDeniedResult(context, AccessDecision.RequiresAuth())
+                : StandardErrorHelpers.CreateNotFound(context, $"Storage layer {storageLayerId} not found.");
+            return new MetadataV2ValidationResult(false, null, null, null, error);
+        }
+
+        var publication = snapshot.PublicationsForStorageLayer(storageLayerId)
+            .Where(candidate => candidate.ResourceId == resource.Metadata.Id &&
+                ResolveVisibleProtocolService(context, snapshot, candidate, null) is not null)
+            .OrderByDescending(static candidate => candidate.IsPrimary)
+            .First();
+        var service = snapshot.Index.ServicesById[publication.ServiceId];
+        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context, resource, operation, service, context.RequestAborted).ConfigureAwait(false);
+        if (accessError is null)
+        {
+            ValidatedMetadataSnapshot.Remember(context, resource, snapshot);
+        }
+
+        return new MetadataV2ValidationResult(accessError is null, publication, resource, service, accessError, snapshot);
+    }
+
     public static Task<MetadataV2ValidationResult> ValidateCollectionWithAccessV2Async(
         HttpContext context,
         string collectionId,

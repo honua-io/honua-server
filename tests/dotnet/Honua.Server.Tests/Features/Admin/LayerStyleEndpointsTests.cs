@@ -29,7 +29,7 @@ public sealed class LayerStyleEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/style")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/style")]
     public async Task GetLayerStyle_ReturnsMapLibreAndDrawingInfo()
     {
         var client = _fixture.CreateAdminClient();
@@ -56,7 +56,7 @@ public sealed class LayerStyleEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/style")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/style")]
     public async Task GetLayerStyle_DeprecatedLayerIdAlias_EmitsDeprecationHeaders()
     {
         var client = _fixture.CreateAdminClient();
@@ -79,8 +79,8 @@ public sealed class LayerStyleEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/style")]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/style")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/style")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/style")]
     public async Task UnstyledLayer_ReadsAtVersionZero_AndFirstPutLandsAsRevisionOne()
     {
         // Regression for the schema-level styleVersion contract: an unstyled
@@ -134,8 +134,8 @@ public sealed class LayerStyleEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/style")]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/style")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/style")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/style")]
     public async Task UpdateLayerStyle_WithMapLibreStyle_UpdatesAndReturnsStyle()
     {
         var client = _fixture.CreateAdminClient();
@@ -192,7 +192,7 @@ public sealed class LayerStyleEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/style")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/style")]
     public async Task UpdateLayerStyle_WithInvalidMapLibreStyle_ReturnsBadRequest()
     {
         var client = _fixture.CreateAdminClient();
@@ -227,7 +227,7 @@ public sealed class LayerStyleEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/style")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/style")]
     public async Task UpdateLayerStyle_WithInvalidMapLibreColor_ReturnsBadRequest()
     {
         var client = _fixture.CreateAdminClient();
@@ -255,7 +255,7 @@ public sealed class LayerStyleEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/style")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/style")]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/legend")]
     public async Task UpdateLayerStyle_InvalidatesCachedLegendResponses()
     {
@@ -292,7 +292,7 @@ public sealed class LayerStyleEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/style")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/style")]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/tile/{z}/{y}/{x}")]
     public async Task UpdateLayerStyle_InvalidatesCachedTileResponses()
     {

@@ -8,6 +8,6 @@ namespace Honua.Server.Features.Admin.Services;
 internal interface ILayerValidationService
 {
     Task<LayerValidationResponse?> ValidateLayerAsync(
-        int layerId,
+        int storageLayerId,
         CancellationToken cancellationToken = default);
 }

@@ -60,7 +60,7 @@ internal static class LayerPublishingEndpoints
             .Produces<ApiResponse<LayerPublishJobStatusResponse>>(StatusCodes.Status200OK)
             .Produces<ApiResponse<object>>(StatusCodes.Status404NotFound);
 
-        group.MapPut("/{layerId:int}/enabled", HandleSetLayerEnabled)
+        group.MapPut("/{storageLayerId:int}/enabled", HandleSetLayerEnabled)
             .WithDisplayName("Set Layer Enabled")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
 
@@ -77,7 +77,7 @@ internal static class LayerPublishingEndpoints
             .Produces<ApiResponse<object>>(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status500InternalServerError);
 
-        group.MapPost("/{layerId:int}/features/refresh", HandleRefreshLayerFeatures)
+        group.MapPost("/{storageLayerId:int}/features/refresh", HandleRefreshLayerFeatures)
             .WithDisplayName("Refresh Layer Feature Snapshot")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Post }))
             .Produces<ApiResponse<MaterializedFeatureRefreshResult>>(StatusCodes.Status200OK)
@@ -375,7 +375,7 @@ internal static class LayerPublishingEndpoints
                 Status = progress.Status.ToString(),
                 RowsMaterialized = progress.RowsMaterialized,
                 RowsTotal = progress.RowsTotal,
-                LayerId = progress.LayerId,
+                StorageLayerId = progress.LayerId,
                 ErrorMessage = progress.ErrorMessage,
             }));
         }
@@ -559,7 +559,7 @@ internal static class LayerPublishingEndpoints
     private static async Task<IResult>
         HandleRefreshLayerFeatures(
             string id,
-            int layerId,
+            int storageLayerId,
             [FromServices] ISecureConnectionResolver resolver,
             [FromServices] ILayerPublishingService publishingService,
             [FromServices] IDatabaseMigrationRunner migrationRunner,
@@ -591,7 +591,7 @@ internal static class LayerPublishingEndpoints
 
             var result = await publishingService.RefreshMaterializedFeaturesAsync(
                 connectionString,
-                layerId,
+                storageLayerId,
                 connectionId,
                 context.RequestAborted);
 
@@ -645,7 +645,7 @@ internal static class LayerPublishingEndpoints
     private static async Task<Results<Ok<ApiResponse<PublishedLayerSummary>>, NotFound<ApiResponse<object>>, BadRequest<ApiResponse<object>>, Conflict<ApiResponse<object>>, ProblemHttpResult, ForbidHttpResult>>
         HandleSetLayerEnabled(
             string id,
-            int layerId,
+            int storageLayerId,
             LayerEnabledRequest request,
             string? serviceName,
             [FromServices] ISecureConnectionResolver resolver,
@@ -671,7 +671,7 @@ internal static class LayerPublishingEndpoints
 
             var result = await publishingService.SetLayerEnabledAsync(
                 connectionString,
-                layerId,
+                storageLayerId,
                 serviceName ?? "default",
                 request.Enabled,
                 connectionId,
@@ -837,16 +837,16 @@ internal static class LayerPublishingEndpoints
         ILogger<LayerPublishingEndpointsLog> logger)
     {
         var distinctLayerIds = layerIds
-            .Where(layerId => layerId > 0)
+            .Where(storageLayerId => storageLayerId > 0)
             .Distinct()
             .ToArray();
 
         var featureCacheManager = context.RequestServices.GetService<IFeatureCacheManager>();
         if (featureCacheManager != null)
         {
-            foreach (var layerId in distinctLayerIds)
+            foreach (var storageLayerId in distinctLayerIds)
             {
-                featureCacheManager.InvalidateLayerCache(layerId);
+                featureCacheManager.InvalidateLayerCache(storageLayerId);
             }
         }
 

@@ -23,10 +23,7 @@ public sealed class ResourceValidator : IResourceValidator
         CancellationToken cancellationToken = default)
     {
         var snapshot = await RequireV2SnapshotAsync(cancellationToken).ConfigureAwait(false);
-        var resource = snapshot.PublicationsForStorageLayer(storageLayerId)
-            .Select(publication => snapshot.ResolveResource(publication)!)
-            .OrderBy(static candidate => candidate.Type is MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table ? 0 : 1)
-            .FirstOrDefault();
+        var resource = snapshot.ResolveStorageResource(storageLayerId);
 
         return resource is null
             ? ResourceValidationResult.NotFound<MetadataV2Resource>(

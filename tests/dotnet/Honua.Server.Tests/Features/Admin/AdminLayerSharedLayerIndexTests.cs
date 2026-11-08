@@ -41,10 +41,10 @@ public sealed class AdminLayerSharedLayerIndexTests : IAsyncLifetime
     [InlineData("popup-info", "{\"title\":\"Storage popup\"}")]
     [InlineData("drawing-info", "{\"renderer\":{\"type\":\"simple\"}}")]
     [Operation(Operations.Metadata)]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/filter")]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/fields")]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/popup-info")]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/drawing-info")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/filter")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/fields")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/popup-info")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/drawing-info")]
     public async Task UpdateConfiguration_SharedIndexWithDistinctStorageIds_UpdatesOnlyRequestedStorage(
         string configuration, string payload)
     {
@@ -85,10 +85,10 @@ public sealed class AdminLayerSharedLayerIndexTests : IAsyncLifetime
     [InlineData("popup-info")]
     [InlineData("drawing-info")]
     [Operation(Operations.Metadata)]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/filter")]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/fields")]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/popup-info")]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/drawing-info")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/filter")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/fields")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/popup-info")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/drawing-info")]
     public async Task GetConfiguration_ServiceIndexDiffersFromStorage_UsesStorageId(string configuration)
     {
         AddTwinAtLayerId(retireTwin: false, twinStorageLayerId: TwinStorageLayerId);
@@ -103,7 +103,7 @@ public sealed class AdminLayerSharedLayerIndexTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/filter")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/filter")]
     public async Task UpdateLayerFilter_LayerIdSharedByTwoResources_Returns409AndChangesNeither()
     {
         var request = new LayerFilterConfigurationUpdateRequest { PermanentFilter = null };
@@ -115,7 +115,7 @@ public sealed class AdminLayerSharedLayerIndexTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/fields")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/fields")]
     public async Task UpdateLayerFields_LayerIdSharedByTwoResources_Returns409AndChangesNeither()
     {
         var request = new LayerFieldConfigurationUpdateRequest
@@ -130,7 +130,7 @@ public sealed class AdminLayerSharedLayerIndexTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/popup-info")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/popup-info")]
     public async Task SetPopupInfo_LayerIdSharedByTwoResources_Returns409AndChangesNeither()
     {
         var document = JsonSerializer.Deserialize<JsonElement>("""{ "title": "{name}" }""");
@@ -141,7 +141,7 @@ public sealed class AdminLayerSharedLayerIndexTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/drawing-info")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/drawing-info")]
     public async Task SetDrawingInfo_LayerIdSharedByTwoResources_Returns409AndChangesNeither()
     {
         var document = JsonSerializer.Deserialize<JsonElement>("""{ "renderer": { "type": "simple" } }""");
@@ -152,7 +152,7 @@ public sealed class AdminLayerSharedLayerIndexTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/filter")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/filter")]
     public async Task UpdateLayerFilter_RetiredTwinAtSameLayerId_WritesOnlyTheResolvedResource()
     {
         var (before, targetResourceId) = AddTwinAtLayerId(retireTwin: true);

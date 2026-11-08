@@ -63,7 +63,7 @@ internal static class AdminLayerConfigurationTargets
 
     internal static async Task<AdminLayerConfigurationTarget> WriteAsync(
         IMetadataV2GraphStore graphStore,
-        int layerId,
+        int storageLayerId,
         Func<MetadataV2Resource, MetadataV2Resource> mutate,
         CancellationToken cancellationToken)
     {
@@ -73,7 +73,7 @@ internal static class AdminLayerConfigurationTargets
         for (var attempt = 1; ; attempt++)
         {
             var snapshot = await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            var target = Resolve(snapshot, layerId);
+            var target = Resolve(snapshot, storageLayerId);
             if (target.IsAmbiguous || target.Resource is null)
             {
                 return target;

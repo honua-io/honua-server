@@ -23,9 +23,9 @@ internal static class AdminDiscoveryMetadataEndpoints
         var group = endpoints.MapGroup("/api/v{version:apiVersion}/admin")
             .WithApiVersionSet().HasApiVersion(1, 0)
             .WithTags("Admin", "Metadata").RequireAdminAuthorization();
-        group.MapGet("/metadata/layers/{layerId:int}/discovery", GetLayerAsync)
+        group.MapGet("/metadata/layers/{storageLayerId:int}/discovery", GetLayerAsync)
             .WithName("GetAdminLayerDiscovery");
-        group.MapPut("/metadata/layers/{layerId:int}/discovery", UpdateLayerAsync)
+        group.MapPut("/metadata/layers/{storageLayerId:int}/discovery", UpdateLayerAsync)
             .WithName("UpdateAdminLayerDiscovery");
         group.MapGet("/services/{serviceName}/discovery", GetServiceAsync)
             .WithName("GetAdminServiceDiscovery");
@@ -33,16 +33,16 @@ internal static class AdminDiscoveryMetadataEndpoints
             .WithName("UpdateAdminServiceDiscovery");
     }
 
-    private static Task<IResult> GetLayerAsync(int layerId, HttpContext context,
+    private static Task<IResult> GetLayerAsync(int storageLayerId, HttpContext context,
         [FromServices] IMetadataV2GraphProvider provider) =>
-        ReadAsync(context, provider, snapshot => DiscoveryMetadataTarget.ForLayer(snapshot, layerId));
+        ReadAsync(context, provider, snapshot => DiscoveryMetadataTarget.ForLayer(snapshot, storageLayerId));
 
     private static Task<IResult> GetServiceAsync(string serviceName, HttpContext context,
         [FromServices] IMetadataV2GraphProvider provider) =>
         ReadAsync(context, provider, snapshot => DiscoveryMetadataTarget.ForService(snapshot, serviceName));
 
-    private static Task<IResult> UpdateLayerAsync(int layerId, DiscoveryMetadataUpdateRequest request, HttpContext context) =>
-        WriteAsync(context, request, snapshot => DiscoveryMetadataTarget.ForLayer(snapshot, layerId));
+    private static Task<IResult> UpdateLayerAsync(int storageLayerId, DiscoveryMetadataUpdateRequest request, HttpContext context) =>
+        WriteAsync(context, request, snapshot => DiscoveryMetadataTarget.ForLayer(snapshot, storageLayerId));
 
     private static Task<IResult> UpdateServiceAsync(string serviceName, DiscoveryMetadataUpdateRequest request, HttpContext context) =>
         WriteAsync(context, request, snapshot => DiscoveryMetadataTarget.ForService(snapshot, serviceName));

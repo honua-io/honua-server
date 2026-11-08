@@ -12,7 +12,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Honua.Server.Features.Admin;
 
-// The layerId style routes are deprecated aliases of the styleId OGC Styles surface and stay so existing clients keep working.
+// The storageLayerId style routes are deprecated aliases of the styleId OGC Styles surface and stay so existing clients keep working.
 internal static class AdminLayerStyleEndpoints
 {
     public static void MapAdminLayerStyleEndpoints(this IEndpointRouteBuilder endpoints)
@@ -23,52 +23,50 @@ internal static class AdminLayerStyleEndpoints
             .WithTags("Admin", "Metadata", "Styles")
             .RequireAdminAuthorization();
 
-        _ = group.MapGet("/{layerId:int}/style", HandleGetLayerStyle)
+        _ = group.MapGet("/{storageLayerId:int}/style", HandleGetLayerStyle)
             .WithName("GetAdminLayerStyle")
-            .WithSummary("[Deprecated] Get layer style metadata by layerId")
-            .WithDescription("DEPRECATED layerId-keyed alias. Use the canonical styleId surface GET /ogc/styles/{styleId} (ADR-0048). Kept working for back-compat; emits advisory Deprecation/Sunset headers.")
+            .WithSummary("[Deprecated] Get layer style metadata by storageLayerId")
+            .WithDescription("DEPRECATED storageLayerId-keyed alias. Use the canonical styleId surface GET /ogc/styles/{styleId} (ADR-0048). Kept working for back-compat; emits advisory Deprecation/Sunset headers.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }));
 
-        _ = group.MapPut("/{layerId:int}/style", HandleUpdateLayerStyle)
+        _ = group.MapPut("/{storageLayerId:int}/style", HandleUpdateLayerStyle)
             .WithName("UpdateAdminLayerStyle")
-            .WithSummary("[Deprecated] Update layer style metadata by layerId")
-            .WithDescription("DEPRECATED layerId-keyed alias. Use the canonical styleId surface PUT /ogc/styles/{styleId} (ADR-0048). Kept working for back-compat; emits advisory Deprecation/Sunset headers.")
+            .WithSummary("[Deprecated] Update layer style metadata by storageLayerId")
+            .WithDescription("DEPRECATED storageLayerId-keyed alias. Use the canonical styleId surface PUT /ogc/styles/{styleId} (ADR-0048). Kept working for back-compat; emits advisory Deprecation/Sunset headers.")
             .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Put }));
     }
 
     private static async Task<IResult> HandleGetLayerStyle(
-        int layerId,
+        int storageLayerId,
         HttpContext context,
         [FromServices] ILayerStyleService styleService,
         CancellationToken cancellationToken)
     {
-        // Advisory deprecation signaling for the layerId-keyed admin alias.
+        // Advisory deprecation signaling for the storageLayerId-keyed admin alias.
         StyleDeprecationHeaders.Apply(context, "/ogc/styles");
 
-        if (layerId < 0)
+        if (storageLayerId < 0)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
                 context,
                 StatusCodes.Status400BadRequest,
-                $"Layer id '{layerId}' is invalid.");
+                $"Layer id '{storageLayerId}' is invalid.");
         }
 
-        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
-            context,
-            layerId,
-            cancellationToken: cancellationToken).ConfigureAwait(false);
+        var layerValidation = await LayerValidationHelpers.ValidateStorageLayerWithAccessV2Async(
+            context, storageLayerId, AuthorizationOperation.Query).ConfigureAwait(false);
         if (!layerValidation.IsValid || layerValidation.Resource is null)
         {
             return layerValidation.ErrorResult!;
         }
 
-        var snapshot = await styleService.GetStyleAsync(layerValidation.Resource, layerId, cancellationToken).ConfigureAwait(false);
+        var snapshot = await styleService.GetStyleAsync(layerValidation.Resource, storageLayerId, cancellationToken).ConfigureAwait(false);
         if (snapshot == null)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
                 context,
                 StatusCodes.Status404NotFound,
-                $"Style for layer {layerId} not found.");
+                $"Style for layer {storageLayerId} not found.");
         }
 
         var response = BuildResponse(snapshot, unsupportedSymbolizers: null);
@@ -78,22 +76,22 @@ internal static class AdminLayerStyleEndpoints
     }
 
     private static async Task<IResult> HandleUpdateLayerStyle(
-        int layerId,
+        int storageLayerId,
         LayerStyleUpdateRequest request,
         HttpContext context,
         [FromServices] ILayerStyleService styleService,
         [FromServices] OutputCacheInvalidationService cacheInvalidator,
         CancellationToken cancellationToken)
     {
-        // Advisory deprecation signaling for the layerId-keyed admin alias.
+        // Advisory deprecation signaling for the storageLayerId-keyed admin alias.
         StyleDeprecationHeaders.Apply(context, "/ogc/styles");
 
-        if (layerId < 0)
+        if (storageLayerId < 0)
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
                 context,
                 StatusCodes.Status400BadRequest,
-                $"Layer id '{layerId}' is invalid.");
+                $"Layer id '{storageLayerId}' is invalid.");
         }
 
         if (!string.IsNullOrEmpty(request.ChangeSummary) && request.ChangeSummary.Length > 1000)
@@ -104,12 +102,8 @@ internal static class AdminLayerStyleEndpoints
                 "Change summary must be 1000 characters or fewer.");
         }
 
-        var layerValidation = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
-            context,
-            layerId,
-            scope: AccessScope.Write,
-            cancellationToken: cancellationToken,
-            operation: AuthorizationOperation.Admin).ConfigureAwait(false);
+        var layerValidation = await LayerValidationHelpers.ValidateStorageLayerWithAccessV2Async(
+            context, storageLayerId, AuthorizationOperation.Admin).ConfigureAwait(false);
         if (!layerValidation.IsValid || layerValidation.Resource is null)
         {
             return layerValidation.ErrorResult!;
@@ -117,7 +111,7 @@ internal static class AdminLayerStyleEndpoints
 
         var result = await styleService.UpdateStyleAsync(
                 layerValidation.Resource,
-                layerId,
+                storageLayerId,
                 request.MapLibreStyle,
                 request.DrawingInfo,
                 request.ChangedBy,
@@ -136,7 +130,7 @@ internal static class AdminLayerStyleEndpoints
             return ProblemDetailsHelpers.CreateAdminProblem(
                 context,
                 StatusCodes.Status404NotFound,
-                $"Style for layer {layerId} not found.");
+                $"Style for layer {storageLayerId} not found.");
         }
 
         if (result.Style == null)
@@ -147,7 +141,7 @@ internal static class AdminLayerStyleEndpoints
                 "Failed to update layer style.");
         }
 
-        await cacheInvalidator.InvalidateLayerAsync(null, layerId, cancellationToken).ConfigureAwait(false);
+        await cacheInvalidator.InvalidateLayerAsync(null, storageLayerId, cancellationToken).ConfigureAwait(false);
 
         var response = BuildResponse(result.Style, result.UnsupportedSymbolizers);
 

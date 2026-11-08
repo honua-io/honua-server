@@ -311,7 +311,7 @@ public sealed class AdminAuthorizationTests : IAsyncLifetime
     // --- AdminLayerStyleEndpoints ---
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/style")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/style")]
     public async Task GetLayerStyle_WithoutAuth_Returns401()
     {
         var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/metadata/layers/1/style");
@@ -319,7 +319,7 @@ public sealed class AdminAuthorizationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/style")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/style")]
     public async Task PutLayerStyle_WithoutAuth_Returns401()
     {
         var response = await _unauthenticatedClient.PutAsJsonAsync("/api/v1/admin/metadata/layers/1/style", new { });
@@ -327,7 +327,7 @@ public sealed class AdminAuthorizationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/fields")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/fields")]
     public async Task GetLayerFields_WithoutAuth_Returns401()
     {
         var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/metadata/layers/1/fields");
@@ -335,7 +335,7 @@ public sealed class AdminAuthorizationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/fields")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/fields")]
     public async Task PutLayerFields_WithoutAuth_Returns401()
     {
         var response = await _unauthenticatedClient.PutAsJsonAsync("/api/v1/admin/metadata/layers/1/fields", new { });
@@ -343,7 +343,7 @@ public sealed class AdminAuthorizationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/filter")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/filter")]
     public async Task GetLayerFilter_WithoutAuth_Returns401()
     {
         var response = await _unauthenticatedClient.GetAsync("/api/v1/admin/metadata/layers/1/filter");
@@ -351,7 +351,7 @@ public sealed class AdminAuthorizationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/filter")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/filter")]
     public async Task PutLayerFilter_WithoutAuth_Returns401()
     {
         var response = await _unauthenticatedClient.PutAsJsonAsync("/api/v1/admin/metadata/layers/1/filter", new { });

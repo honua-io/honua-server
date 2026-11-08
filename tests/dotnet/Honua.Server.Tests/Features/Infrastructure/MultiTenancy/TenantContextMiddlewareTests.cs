@@ -203,7 +203,7 @@ public class TenantContextMiddlewareTests
 
     [IntegrationTest]
     [Operation(Operations.Security)]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/fields")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/fields")]
     public async Task BearerWithoutTenantClaim_TenantBoundAdminMetadataIsRejected()
     {
         var principal = AuthenticatedPrincipal(
@@ -473,7 +473,7 @@ public class TenantContextMiddlewareTests
                 Results.Text($"{tenant.Source}:{tenant.TenantId ?? "<null>"}"))
             .WithMetadata(TenantIndependentControlPlaneMetadata.Instance);
 
-        app.MapGet("/api/v1/admin/metadata/layers/{layerId:int}/fields", (ITenantContext tenant) =>
+        app.MapGet("/api/v1/admin/metadata/layers/{storageLayerId:int}/fields", (ITenantContext tenant) =>
             Results.Text($"{tenant.Source}:{tenant.TenantId ?? "<null>"}"));
 
         await app.StartAsync();

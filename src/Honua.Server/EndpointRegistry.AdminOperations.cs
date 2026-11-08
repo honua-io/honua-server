@@ -64,8 +64,8 @@ public static partial class EndpointRegistry
         new("GET", "/api/v1/admin/share/exports/{exportId}/runs/{runId}"),
         new("GET", "/api/v1/admin/share/traffic"),
         new("GET", "/api/v1/admin/share/traffic/series"),
-        new("GET", "/api/v1/admin/services/{serviceName}/layers/{layerId}/share/traffic"),
-        new("GET", "/api/v1/admin/services/{serviceName}/layers/{layerId}/share/traffic/series"),
+        new("GET", "/api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/share/traffic"),
+        new("GET", "/api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/share/traffic/series"),
 
         // Mobile runtime auth and diagnostics endpoints (#924)
         new("POST", "/api/mobile/exceptions"),

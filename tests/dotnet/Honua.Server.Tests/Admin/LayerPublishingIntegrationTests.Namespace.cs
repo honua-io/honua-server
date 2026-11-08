@@ -88,10 +88,10 @@ public sealed partial class LayerPublishingIntegrationTests
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     [Endpoint("GET /api/v1/admin/connections/{id}/layers")]
-    [Endpoint("PUT /api/v1/admin/connections/{id}/layers/{layerId}/enabled")]
+    [Endpoint("PUT /api/v1/admin/connections/{id}/layers/{storageLayerId}/enabled")]
     [Endpoint("PUT /api/v1/admin/connections/{id}/layers/enabled")]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers/extents/refresh")]
-    [Endpoint("POST /api/v1/admin/connections/{id}/layers/{layerId}/features/refresh")]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers/{storageLayerId}/features/refresh")]
     public async Task PublishNamespace_ScopesEntireGraphIgnoresWireTenantAndServesOwner()
     {
         var connectionMetadata = new MetadataV2ObjectMetadata

@@ -1603,7 +1603,7 @@
         }
       }
     },
-    "/connections/{id}/layers/{layerId}/enabled": {
+    "/connections/{id}/layers/{storageLayerId}/enabled": {
       "put": {
         "tags": [
           "Layers"
@@ -1622,10 +1622,10 @@
             }
           },
           {
-            "name": "layerId",
+            "name": "storageLayerId",
             "in": "path",
             "required": true,
-            "description": "Layer ID",
+            "description": "Internal storage layer identifier.",
             "schema": {
               "type": "integer",
               "format": "int32"
@@ -1947,7 +1947,7 @@
         }
       }
     },
-    "/metadata/layers/{layerId}/style": {
+    "/metadata/layers/{storageLayerId}/style": {
       "get": {
         "tags": [
           "Styles"
@@ -1958,10 +1958,10 @@
         "deprecated": true,
         "parameters": [
           {
-            "name": "layerId",
+            "name": "storageLayerId",
             "in": "path",
             "required": true,
-            "description": "Layer ID",
+            "description": "Internal storage layer identifier.",
             "schema": {
               "type": "integer",
               "format": "int32"
@@ -2000,10 +2000,10 @@
         "operationId": "updateAdminLayerStyle",
         "parameters": [
           {
-            "name": "layerId",
+            "name": "storageLayerId",
             "in": "path",
             "required": true,
-            "description": "Layer ID",
+            "description": "Internal storage layer identifier.",
             "schema": {
               "type": "integer",
               "format": "int32"
@@ -2046,7 +2046,7 @@
         }
       }
     },
-    "/metadata/layers/{layerId}/style/import-sld": {
+    "/metadata/layers/{storageLayerId}/style/import-sld": {
       "post": {
         "tags": [
           "Styles"
@@ -2056,10 +2056,10 @@
         "operationId": "importLayerSldStyle",
         "parameters": [
           {
-            "name": "layerId",
+            "name": "storageLayerId",
             "in": "path",
             "required": true,
-            "description": "Layer ID",
+            "description": "Internal storage layer identifier.",
             "schema": {
               "type": "integer",
               "format": "int32"
@@ -2120,7 +2120,7 @@
         }
       }
     },
-    "/metadata/layers/{layerId}/style/export-sld": {
+    "/metadata/layers/{storageLayerId}/style/export-sld": {
       "get": {
         "tags": [
           "Styles"
@@ -2130,10 +2130,10 @@
         "operationId": "exportLayerSldStyle",
         "parameters": [
           {
-            "name": "layerId",
+            "name": "storageLayerId",
             "in": "path",
             "required": true,
-            "description": "Layer ID",
+            "description": "Internal storage layer identifier.",
             "schema": {
               "type": "integer",
               "format": "int32"
@@ -2191,7 +2191,7 @@
         }
       }
     },
-    "/metadata/layers/{layerId}/suggest-style": {
+    "/metadata/layers/{storageLayerId}/suggest-style": {
       "post": {
         "tags": [
           "Styles"
@@ -2201,10 +2201,10 @@
         "operationId": "suggestLayerStyle",
         "parameters": [
           {
-            "name": "layerId",
+            "name": "storageLayerId",
             "in": "path",
             "required": true,
-            "description": "Layer ID",
+            "description": "Internal storage layer identifier.",
             "schema": {
               "type": "integer",
               "format": "int32"
@@ -3713,7 +3713,7 @@
         }
       }
     },
-    "/services/{serviceName}/layers/{layerId}/metadata": {
+    "/services/{serviceName}/layers/{serviceLayerIndex}/metadata": {
       "put": {
         "tags": [
           "Services",
@@ -3732,13 +3732,14 @@
             }
           },
           {
-            "name": "layerId",
+            "name": "serviceLayerIndex",
             "in": "path",
             "required": true,
             "schema": {
               "type": "integer",
               "format": "int32"
-            }
+            },
+            "description": "Layer index within the named service."
           }
         ],
         "requestBody": {
@@ -6287,7 +6288,7 @@
           "Compliance"
         ],
         "summary": "Advance Compliance Key-Version Posture",
-        "description": "Advances the auditor-facing compliance key-version counter and writes an encryption.key.rotate audit event. This endpoint records the rotation as a compliance event \u2014 it does NOT re-encrypt data or rotate the cipher material used by IConnectionEncryptionService (real key-material rotation lives behind Security:ConnectionEncryption:MasterKey). The audit write is decoupled from the caller token so a client disconnect cannot strand a committed posture advance without an audit event.",
+        "description": "Advances the auditor-facing compliance key-version counter and writes an encryption.key.rotate audit event. This endpoint records the rotation as a compliance event — it does NOT re-encrypt data or rotate the cipher material used by IConnectionEncryptionService (real key-material rotation lives behind Security:ConnectionEncryption:MasterKey). The audit write is decoupled from the caller token so a client disconnect cannot strand a committed posture advance without an audit event.",
         "operationId": "rotateComplianceEncryptionKey",
         "responses": {
           "200": {
@@ -6722,7 +6723,7 @@
           "Import"
         ],
         "summary": "List GeoServer Import Jobs",
-        "description": "Returns the GeoServer import jobs that are still active \u2014 that is, jobs whose progress status is not Completed, Failed, or Cancelled.",
+        "description": "Returns the GeoServer import jobs that are still active — that is, jobs whose progress status is not Completed, Failed, or Cancelled.",
         "operationId": "listGeoServerImportJobs",
         "responses": {
           "200": {
@@ -7025,7 +7026,7 @@
           "Import"
         ],
         "summary": "List GeoServices Import Jobs",
-        "description": "Returns the GeoServices import jobs that are still active \u2014 that is, jobs whose status is not Completed, Failed, or Cancelled. Each entry is the full progress record.",
+        "description": "Returns the GeoServices import jobs that are still active — that is, jobs whose status is not Completed, Failed, or Cancelled. Each entry is the full progress record.",
         "operationId": "listGeoservicesImportJobs",
         "responses": {
           "200": {
@@ -9923,7 +9924,7 @@
         }
       }
     },
-    "/metadata/layers/{layerId}/popup-info": {
+    "/metadata/layers/{storageLayerId}/popup-info": {
       "get": {
         "tags": [
           "Metadata"
@@ -10010,7 +10011,7 @@
         }
       }
     },
-    "/metadata/layers/{layerId}/drawing-info": {
+    "/metadata/layers/{storageLayerId}/drawing-info": {
       "get": {
         "tags": [
           "Metadata"
@@ -10097,7 +10098,7 @@
         }
       }
     },
-    "/metadata/layers/{layerId}/relationships": {
+    "/metadata/layers/{storageLayerId}/relationships": {
       "get": {
         "tags": [
           "Metadata"
@@ -10186,7 +10187,7 @@
         }
       }
     },
-    "/metadata/layers/{layerId}/fields": {
+    "/metadata/layers/{storageLayerId}/fields": {
       "get": {
         "tags": [
           "Metadata"
@@ -10272,7 +10273,7 @@
         }
       }
     },
-    "/metadata/layers/{layerId}/filter": {
+    "/metadata/layers/{storageLayerId}/filter": {
       "get": {
         "tags": [
           "Metadata"
@@ -10358,7 +10359,7 @@
         }
       }
     },
-    "/metadata/layers/{layerId}/validation": {
+    "/metadata/layers/{storageLayerId}/validation": {
       "get": {
         "tags": [
           "Metadata"
@@ -12714,10 +12715,10 @@
             }
           },
           {
-            "name": "layerId",
+            "name": "serviceLayerIndex",
             "in": "query",
             "required": false,
-            "description": "Filter by service-local layer id.",
+            "description": "Layer index within the named service.",
             "schema": {
               "type": "integer",
               "format": "int32"
@@ -14189,7 +14190,7 @@
         }
       }
     },
-    "/services/{serviceName}/layers/{layerId}/export": {
+    "/services/{serviceName}/layers/{serviceLayerIndex}/export": {
       "get": {
         "tags": [
           "Services"
@@ -14208,10 +14209,10 @@
             }
           },
           {
-            "name": "layerId",
+            "name": "serviceLayerIndex",
             "in": "path",
             "required": true,
-            "description": "Service-local layer id.",
+            "description": "Layer index within the named service.",
             "schema": {
               "type": "integer",
               "format": "int32"
@@ -14333,7 +14334,7 @@
         }
       }
     },
-    "/services/{serviceName}/layers/{layerId}/share/traffic": {
+    "/services/{serviceName}/layers/{serviceLayerIndex}/share/traffic": {
       "get": {
         "tags": [
           "Share"
@@ -14352,10 +14353,10 @@
             }
           },
           {
-            "name": "layerId",
+            "name": "serviceLayerIndex",
             "in": "path",
             "required": true,
-            "description": "Service-local layer id.",
+            "description": "Layer index within the named service.",
             "schema": {
               "type": "integer",
               "format": "int32"
@@ -14424,7 +14425,7 @@
         }
       }
     },
-    "/services/{serviceName}/layers/{layerId}/share/traffic/series": {
+    "/services/{serviceName}/layers/{serviceLayerIndex}/share/traffic/series": {
       "get": {
         "tags": [
           "Share"
@@ -14443,10 +14444,10 @@
             }
           },
           {
-            "name": "layerId",
+            "name": "serviceLayerIndex",
             "in": "path",
             "required": true,
-            "description": "Service-local layer id.",
+            "description": "Layer index within the named service.",
             "schema": {
               "type": "integer",
               "format": "int32"
@@ -20325,7 +20326,7 @@
         }
       }
     },
-    "/connections/{id}/layers/{layerId}/features/refresh": {
+    "/connections/{id}/layers/{storageLayerId}/features/refresh": {
       "post": {
         "tags": [
           "Layers"
@@ -20344,10 +20345,10 @@
             }
           },
           {
-            "name": "layerId",
+            "name": "storageLayerId",
             "in": "path",
             "required": true,
-            "description": "Published layer identifier.",
+            "description": "Internal storage layer identifier.",
             "schema": {
               "type": "integer",
               "format": "int32"
@@ -21271,7 +21272,7 @@
             "name": "events",
             "in": "query",
             "required": false,
-            "description": "Maximum number of recent events. Values outside 1\u2013500 are rejected.",
+            "description": "Maximum number of recent events. Values outside 1–500 are rejected.",
             "schema": {
               "type": "integer",
               "minimum": 1,
@@ -22049,7 +22050,7 @@
         }
       }
     },
-    "/metadata/layers/{layerId}/discovery": {
+    "/metadata/layers/{storageLayerId}/discovery": {
       "get": {
         "tags": [
           "Metadata"
@@ -22058,12 +22059,13 @@
         "description": "Layer IDs are global storage layer IDs, not service-local publication identifiers. Layer changes affect the shared resource and every listed publication. Other metadata is preserved. Service names address all protocol services with that logical name. Writes require the ETag returned by GET and reject stale revisions with 409.",
         "parameters": [
           {
-            "name": "layerId",
+            "name": "storageLayerId",
             "in": "path",
             "required": true,
             "schema": {
               "type": "integer"
-            }
+            },
+            "description": "Internal storage layer identifier."
           }
         ],
         "responses": {
@@ -22096,12 +22098,13 @@
         "description": "Layer IDs are global storage layer IDs, not service-local publication identifiers. Layer changes affect the shared resource and every listed publication. Other metadata is preserved. Service names address all protocol services with that logical name. Writes require the ETag returned by GET and reject stale revisions with 409.",
         "parameters": [
           {
-            "name": "layerId",
+            "name": "storageLayerId",
             "in": "path",
             "required": true,
             "schema": {
               "type": "integer"
-            }
+            },
+            "description": "Internal storage layer identifier."
           }
         ],
         "responses": {
@@ -22278,10 +22281,10 @@
         }
       },
       "AdminAuthoringLayerId": {
-        "name": "layerId",
+        "name": "storageLayerId",
         "in": "path",
         "required": true,
-        "description": "Global numeric layer identifier. The route is constrained to an int, so a non-integer segment does not match the route at all.",
+        "description": "Internal storage layer identifier, resolved through the storage binding. A service-local index cannot substitute for this identifier.",
         "schema": {
           "type": "integer",
           "format": "int32"
@@ -27072,11 +27075,11 @@
       "LayerMetadataResponse": {
         "type": "object",
         "required": [
-          "layerId",
+          "serviceLayerIndex",
           "layerName"
         ],
         "properties": {
-          "layerId": {
+          "serviceLayerIndex": {
             "type": "integer",
             "format": "int32"
           },
@@ -37652,7 +37655,7 @@
         "type": "object",
         "description": "A layer's stored popup-info / drawing-info JSON document.",
         "properties": {
-          "layerId": {
+          "storageLayerId": {
             "type": "integer",
             "format": "int32",
             "description": "Layer identifier."
@@ -37713,7 +37716,7 @@
             "nullable": true,
             "description": "Relationship description."
           },
-          "relatedLayerId": {
+          "relatedStorageLayerId": {
             "type": "integer",
             "format": "int32",
             "description": "Global storage-layer id of the related resource, distinct from its service-local publication index. Returns -1 if no storage-layer handle exists."
@@ -37756,7 +37759,7 @@
         "type": "object",
         "description": "A layer's persisted relationships.",
         "properties": {
-          "layerId": {
+          "storageLayerId": {
             "type": "integer",
             "format": "int32",
             "description": "Layer identifier."
@@ -37796,7 +37799,7 @@
         "required": [
           "id",
           "name",
-          "relatedLayerId",
+          "relatedStorageLayerId",
           "originField",
           "destinationField"
         ],
@@ -37814,7 +37817,7 @@
             "nullable": true,
             "description": "Relationship description."
           },
-          "relatedLayerId": {
+          "relatedStorageLayerId": {
             "type": "integer",
             "format": "int32",
             "description": "Global storage-layer id of the related resource, distinct from its service-local publication index."
@@ -37960,7 +37963,7 @@
         "type": "object",
         "description": "Persisted layer field configuration.",
         "properties": {
-          "layerId": {
+          "storageLayerId": {
             "type": "integer",
             "format": "int32",
             "description": "Layer identifier."
@@ -38069,7 +38072,7 @@
         "type": "object",
         "description": "Persisted layer permanent filter configuration.",
         "properties": {
-          "layerId": {
+          "storageLayerId": {
             "type": "integer",
             "format": "int32",
             "description": "Layer identifier."
@@ -38161,7 +38164,7 @@
           "status"
         ],
         "properties": {
-          "layerId": {
+          "storageLayerId": {
             "type": "integer",
             "format": "int32",
             "description": "Layer identifier."
@@ -41344,7 +41347,7 @@
         "description": "Create/replace payload for a scheduled Share export definition.",
         "required": [
           "serviceName",
-          "layerId",
+          "serviceLayerIndex",
           "destinationType",
           "format",
           "schedule"
@@ -41359,7 +41362,7 @@
             "type": "string",
             "description": "Owning service name."
           },
-          "layerId": {
+          "serviceLayerIndex": {
             "type": "integer",
             "format": "int32",
             "minimum": 0,
@@ -41420,7 +41423,7 @@
           "serviceName": {
             "type": "string"
           },
-          "layerId": {
+          "serviceLayerIndex": {
             "type": "integer",
             "format": "int32"
           },
@@ -41592,7 +41595,7 @@
           "serviceName": {
             "type": "string"
           },
-          "layerId": {
+          "serviceLayerIndex": {
             "type": "integer",
             "format": "int32"
           }
@@ -50020,11 +50023,11 @@
       "LayerRelationshipBatchUpdateItem": {
         "type": "object",
         "required": [
-          "layerId"
+          "storageLayerId"
         ],
         "description": "Complete desired relationship set for one global storage-layer id.",
         "properties": {
-          "layerId": {
+          "storageLayerId": {
             "type": "integer",
             "format": "int32"
           },
@@ -50147,7 +50150,7 @@
             "minimum": 0,
             "description": "Source count, updated to the actual materialization observation when reported by the worker."
           },
-          "layerId": {
+          "storageLayerId": {
             "type": "integer",
             "format": "int32",
             "nullable": true,
