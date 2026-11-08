@@ -1,7 +1,5 @@
 # Honua Server
 
-See the [Honua vocabulary](docs/concepts/domain/README.md) for the meanings of Connection, Dataset, Layer, Service, Folder, and Environment.
-
 [![CI](https://github.com/honua-io/honua-server/actions/workflows/ci.yml/badge.svg?branch=trunk)](https://github.com/honua-io/honua-server/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/honua-io/honua-server/actions/workflows/codeql.yml/badge.svg)](https://github.com/honua-io/honua-server/actions/workflows/codeql.yml)
 [![Security Nightly](https://github.com/honua-io/honua-server/actions/workflows/security-nightly.yml/badge.svg)](https://github.com/honua-io/honua-server/actions/workflows/security-nightly.yml)
@@ -11,6 +9,8 @@ See the [Honua vocabulary](docs/concepts/domain/README.md) for the meanings of C
 [![Docker](https://img.shields.io/badge/Docker-honuaio%2Fhonua--server-blue.svg)](https://hub.docker.com/r/honuaio/honua-server)
 
 **Cloud-native geospatial server.** One container exposes the same PostGIS-backed data through every major GIS protocol — GeoServices REST (FeatureServer, MapServer, ImageServer, Geometry, GPServer), OGC API (Features, Maps, Tiles, Coverages, Processes), classic OGC WMS/WFS/WMTS/WCS, STAC, OData v4, vector tiles (MVT/TileJSON), Terrain-RGB and elevation APIs, 3D Tiles, MCP for AI agents, and gRPC. Honua provides protocol-level compatibility for the selected, operation-scoped client workflows listed in the certification matrices; support is bounded by the published [GeoServices parity matrix](docs/reference/compatibility/geoservices-parity.md) and [cross-client certification matrix](docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md). QGIS, MapLibre, Excel, and Power BI use the same layers — no ETL, no duplication, no GDAL toolchain to install.
+
+See the [Honua vocabulary](docs/concepts/domain/README.md) for the meanings of Connection, Dataset, Layer, Service, Folder, and Environment.
 
 ## Status
 

@@ -1,7 +1,7 @@
 # ADR-0040: Metadata v2 Canonical Graph Design
 
 ## Status
-Accepted
+Accepted (cutover in progress)
 
 ## Context
 
@@ -60,7 +60,7 @@ OGC API Features + STAC) without duplication.
 
 The [Honua vocabulary](../../../concepts/domain/README.md) defines the user terms for this graph. Dataset maps to a data-bearing resource, Layer to its exposure within a Service, and Connection to a registered database or file. Resource, storage binding, and publication remain model terms for contributor use.
 
-A Folder is a first-class organization object (`MetadataV2Folder`), separate from catalog discovery. Services reference its stable ID through `folderId`; a null ID selects the root. Folders do not nest. Protocol facets of the same logical Service must agree on Folder, public name, and scope. Folder membership does not grant permissions or change storage ownership.
+A Folder is a first-class organization object (`MetadataV2Folder`), separate from catalog discovery. Services reference its stable ID through `folderId`; a null ID selects the root. Folders do not nest. Protocol facets of the same logical Service must agree on Folder, public name, and internal tenant scope. Folder membership does not grant permissions or change storage ownership.
 
 Folder names, previous names, and Service path aliases reserve public paths across renames and moves. Validation rejects colliding names, orphan memberships, and attempts to reuse another Service's reserved path. Nonempty Folders cannot be deleted. This organization is distinct from the rejected generic Catalog hierarchy below.
 

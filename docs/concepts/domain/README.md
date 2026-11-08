@@ -67,7 +67,7 @@ Review new UI labels, public SDK names, guides, and error messages against this 
 - vendor type names, hosted layer, portal item, or web map for Honua objects;
 - HonuaApiToken for an API key;
 - package, family, or composition as Studio content labels; use Map or App;
-- tenant selection as a product surface; Honua is single-tenant.
+- tenant selection as a product surface; the single-tenant product vocabulary does not remove internal isolation checks.
 
 Resource, storage binding, and publication belong in model code and contributor documentation, including the model explanations in this glossary. Protocol wire names remain unchanged where clients depend on them. A compatibility exception must identify the exact literal and its reason; never split a retired term to evade a scan. Historical filenames and links remain stable for readers.
 
@@ -85,7 +85,8 @@ Use [workflow guides](../../guides/workflows/README.md) to connect concepts to o
 
 ## Concepts
 
-- [Understanding everyday GIS requests](intent-interpretation.md)
+- [API key](api-key.md)
+- [App](app.md)
 - [Approval](approval.md)
 - [Artifact and output reference](artifact.md)
 - [Canonical resource](resource.md)
@@ -98,30 +99,29 @@ Use [workflow guides](../../guides/workflows/README.md) to connect concepts to o
 - [Deployment and execution target](deployment.md)
 - [DevOps workflow language](devops-language.md)
 - [Draft and content version](content-version.md)
+- [Environment](environment.md)
 - [Feature set snapshot](feature-set.md)
 - [Filtering and spatial analysis](spatial-analysis.md)
+- [Folder](folder.md)
 - [GIS workflow language in OKF](workflow-language.md)
 - [Identity and credentials](identity.md)
-- [API key](api-key.md)
-- [Environment](environment.md)
-- [Folder](folder.md)
 - [Job and result](job.md)
+- [Layer](layer.md)
 - [Managed and native workers](native-worker.md)
-- [Map](map.md)
-- [App](app.md)
 - [Map drawing layer](map-layer.md)
+- [Map](map.md)
 - [Metadata and provenance](metadata.md)
 - [Permissions](permissions.md)
 - [Persistent storage](storage.md)
 - [Project language](project.md)
 - [Publication](publication.md)
-- [Layer](layer.md)
 - [Query view and filter](query-view.md)
-- [Service](service.md)
 - [Semantic contracts and executable workflow slices](semantic-contracts.md)
+- [Service](service.md)
 - [Session and handoff](session.md)
 - [Sharing and audience](sharing.md)
 - [Storage binding](storage-binding.md)
 - [Studio editor](studio-workspace.md)
 - [Style and labels](style.md)
 - [Task and operation](task.md)
+- [Understanding everyday GIS requests](intent-interpretation.md)

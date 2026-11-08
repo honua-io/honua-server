@@ -33,7 +33,7 @@ A map combines references to data with ordered [drawing layers](map-layer.md), [
 
 A browser map visible on screen is not proof that a durable map was saved. A rendered image is another output, and a published [service](service.md) is a data interface rather than the map composition.
 
-“Save my map” means preserve composition and identifiers. “Share my map” additionally needs an audience and an active [publication](publication.md) with readable data dependencies. Saving does not grant [permissions](permissions.md). **Go live** means activate a saved Version at its governed route; the active Version is **Released**. Previewing the Map does not release it.
+“Save my map” means preserve composition and identifiers. “Share my map” additionally needs an audience, a [Released Version](content-version.md), and readable data dependencies. See the [current Studio activation contract](publication.md) for its authorization rules. Saving does not grant [permissions](permissions.md). **Go live** means activate a saved Version at its governed route; the active Version is **Released**. Previewing the Map does not release it.
 
 Use [compose a map](../../guides/workflows/compose-map.md), then [save and resume](../../guides/workflows/save-resume-map.md). Studio's [release boundary](../../studio/README.md#release-boundary) applies; these definitions do not assert that every browser publication journey is qualified.
 

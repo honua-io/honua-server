@@ -32,6 +32,8 @@ A [Layer](domain/layer.md) exposes a Dataset in a [Service](domain/service.md). 
 
 Source-backed Layers keep the source table authoritative and do not accept feature writes through that binding. Managed publishing copies source rows into Honua's managed store, which becomes authoritative for the Layer and no longer tracks the source table. Editing also requires the relevant declared capability and permissions. See the [storage-mode and edit-capability contract](../reference/admin-api/connections-and-layers.md#editable-layers).
 
+For smooth cross-protocol publishing, use an integer primary key where FeatureServer requires it, one geometry column with an explicit type and SRID, a spatial index, and simple field names. FeatureServer reserves `objectid` and `shape` for the primary-key and geometry roles. AI workflows do not edit source feature data.
+
 A Service is a named group of Layers with one explicit list of enabled protocols. It also carries settings such as record limits and an access policy. A permissive Service cannot override a restrictive Layer policy: deny wins. A Service's existence does not enable every protocol or every write capability.
 
 Keep returned identifiers distinct. A Dataset's logical identifier, its numeric storage-layer handle, and a Layer's identifier within a Service have different scopes. OGC collection IDs and GeoServices Layer indexes are protocol identifiers; use discovery values instead of deriving one from another.

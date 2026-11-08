@@ -23,6 +23,6 @@ People use “project” for a collection of related datasets, maps, analyses, a
 
 “Workspace” is also overloaded. Use [Folder](folder.md) for Service grouping, [Environment](environment.md) for a managed server, and [Map](map.md) or [App](app.md) for saved Studio content. A geoprocessing output workspace and a local directory are execution or filesystem concepts. A [job](job.md) output workspace does not automatically contain a Studio [map](map.md).
 
-For “reopen my project,” resolve the named saved item and version, intended Environment, and required data references. Ask for clarification when multiple readable items match. Preserve the concrete identifiers in the handoff for [save and resume](../../guides/workflows/save-resume-map.md); do not invent a project identifier or promise persistence from a folder name.
+For “reopen my project,” resolve the named saved item and version, intended Environment, and required data references. Ask for clarification when multiple readable items match. Preserve the concrete identifiers in the handoff for [save and resume](../../guides/workflows/save-resume-map.md); do not invent a project identifier or use a Folder name as a saved Map or App identity.
 
 [^contract]: [Source contract](../../studio/mcp-tools.md).

@@ -1,7 +1,7 @@
 ---
 type: concept
 title: "Publication"
-description: "The model link from a resource to a Service, distinct from Studio Version activation."
+description: "The resource-to-Service model link and the current Studio activation contract."
 tags: [gis, domain-language]
 aliases: ["resource exposure","service membership"]
 sources:
