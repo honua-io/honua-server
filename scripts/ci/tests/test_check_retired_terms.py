@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -138,6 +139,26 @@ class RetiredTermsTests(unittest.TestCase):
         self.run_git("config", "color.diff", "always")
         self.assertEqual(self.scan(), ["page.md:1: legacy: use canonical phrase"])
 
+    def test_pathspec_environment_does_not_hide_cli_findings(self):
+        self.write("page.md", "new retired phrase\n")
+        command = [sys.executable, str(CHECKER), "--root", str(self.root),
+                   "--policy", str(self.policy), "--allowlist", str(self.allowlist), "--base", "HEAD"]
+        for key in ("GIT_LITERAL_PATHSPECS", "GIT_GLOB_PATHSPECS",
+                    "GIT_NOGLOB_PATHSPECS", "GIT_ICASE_PATHSPECS"):
+            with self.subTest(key=key):
+                result = subprocess.run(command, capture_output=True, env=dict(os.environ, **{key: "1"}))
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertIn(b"page.md:1: legacy: use canonical phrase", result.stdout)
+
+    def test_crlf_checkout_ignores_debt_and_finds_only_violating_additions(self):
+        self.run_git("config", "core.autocrlf", "true")
+        page = self.root / "page.md"
+        baseline = b"retired phrase already exists\r\nunchanged\r\n"
+        page.write_bytes(baseline + b"clean addition\r\n")
+        self.assertEqual(self.scan(), [])
+        page.write_bytes(baseline + b"clean addition\r\nnew retired phrase\r\n")
+        self.assertEqual(self.scan(), ["page.md:4: legacy: use canonical phrase"])
+
     def test_unicode_separators_preserve_complete_line_and_exception(self):
         line = "prefix\u2028retired phrase\f suffix"
         self.write("page.md", line + "\n")
@@ -247,6 +268,11 @@ class RetiredTermsTests(unittest.TestCase):
         actual_git = checker.git
 
         def guarded_git(root, *arguments):
+            if "diff" in arguments:
+                paths = arguments[arguments.index("--") + 1:]
+                selected = actual_git(root, "diff", "--no-renames", "--name-only", "-z",
+                                      "HEAD", "--", *paths)
+                self.assertNotIn(name.encode(), selected.split(b"\0"))
             result = actual_git(root, *arguments)
             self.assertNotIn(b"synthetic-protected-sentinel", result)
             return result

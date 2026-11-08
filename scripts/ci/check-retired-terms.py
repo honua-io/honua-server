@@ -16,6 +16,7 @@ ALLOWLIST_PATH = "scripts/ci/retired-terms-allowlist.v1.json"
 GIT_ENVIRONMENT_OVERRIDES = {
     "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR",
     "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_LITERAL_PATHSPECS", "GIT_GLOB_PATHSPECS", "GIT_NOGLOB_PATHSPECS", "GIT_ICASE_PATHSPECS",
 }
 DIFF_OPTIONS = ("--no-ext-diff", "--no-textconv", "--no-color", "--find-renames")
 
@@ -93,8 +94,8 @@ def read_allowlist(path, rules):
 
 
 def added_lines(previous, current):
-    previous_lines = previous.split(b"\n")
-    current_lines = current.split(b"\n")
+    previous_lines = previous.replace(b"\r\n", b"\n").split(b"\n")
+    current_lines = current.replace(b"\r\n", b"\n").split(b"\n")
     changes = difflib.SequenceMatcher(None, previous_lines, current_lines, autojunk=False)
     for kind, _, _, start, end in changes.get_opcodes():
         if kind in ("insert", "replace"):
