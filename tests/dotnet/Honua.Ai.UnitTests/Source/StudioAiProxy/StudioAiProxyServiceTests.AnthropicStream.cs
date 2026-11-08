@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Ai.StudioAiProxy;
+using Honua.Ai.StudioAiProxy.Abstractions;
 using Honua.Ai.StudioAiProxy.Adapters;
 using Honua.Ai.StudioAiProxy.Domain;
 using Honua.Server.Tests.Features.StudioAiProxy.Fakes;

@@ -15,7 +15,7 @@ namespace Honua.Server.Tests.Features.StudioAiProxy;
 
 public sealed partial class AnthropicStudioAiProxyAdapterTests
 {
-    public static IEnumerable<object[]> PostTerminalStreams => new[]
+    private static readonly string[] _postTerminalFrames =
     {
         """{"type":"ping"}""",
         """{"type":"message_start","message":{"model":"claude-opus-5-5"}}""",
@@ -33,7 +33,10 @@ public sealed partial class AnthropicStudioAiProxyAdapterTests
         data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":""}}
         data: {"type":"content_block_stop","index":0}
         """
-    }.Select(frame => new object[] { TextTurnFixture + "\ndata: " + frame + "\n" });
+    };
+
+    public static IEnumerable<object[]> PostTerminalStreams
+        => _postTerminalFrames.Select(frame => new object[] { TextTurnFixture + "\ndata: " + frame + "\n" });
 
     [UnitTheory]
     [MemberData(nameof(PostTerminalStreams))]
