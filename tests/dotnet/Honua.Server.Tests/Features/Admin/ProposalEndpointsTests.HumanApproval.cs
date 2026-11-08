@@ -128,6 +128,18 @@ public sealed partial class ProposalEndpointsTests
         _executor.ExecutionCount.Should().Be(1);
     }
 
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/proposals/{id}/approval-review")]
+    public async Task OpenApprovalReview_ProjectsTheAuthoritativeTenantForThePrivateConsoleBinding()
+    {
+        var proposal = await SeedProposalAsync();
+        using var human = await HumanApprovalHttpClient.AuthenticateAsync(_fixture, _identityProvider);
+
+        var review = await human.OpenReviewAsync(proposal.ProposalId);
+
+        review.TenantId.Should().Be(proposal.TenantId);
+    }
+
     private async Task AssertNonHumanDecisionDeniedAsync(HttpClient client, OperationProposal proposal)
     {
         using var read = await client.GetAsync($"/api/v1/admin/proposals/{proposal.ProposalId}");

@@ -40,6 +40,7 @@ internal sealed partial class OperationHumanApprovalAuthority(
         var grant = await OpenCapabilityAsync(ProposalTarget(proposal), context).ConfigureAwait(false);
         return new OperationHumanApprovalReview
         {
+            TenantId = proposal.TenantId,
             ProposalId = proposal.ProposalId,
             ProposalVersion = proposal.Version,
             PlanHash = proposal.SealedPlanHash!,

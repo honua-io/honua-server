@@ -45,6 +45,7 @@ public sealed class OperationHumanApprovalAuthorityTests
         evidence.Version.Should().Be(OperationHumanApprovalEvidence.CurrentVersion);
         evidence.ActorId.Should().Be(CanonicalSecurityActor.Resolve(human.Principal)!.ActorId);
         evidence.Channel.Should().Be(OperationHumanApprovalEvidence.InteractiveOidcChannel);
+        review.TenantId.Should().Be(proposal.TenantId);
         evidence.PlanHash.Should().Be(proposal.SealedPlanHash);
         evidence.ProposalVersion.Should().Be(proposal.Version);
         evidence.CapabilityReference.Should().HaveLength(64);
