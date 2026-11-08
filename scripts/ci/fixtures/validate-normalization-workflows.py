@@ -78,7 +78,7 @@ def validate(
         raise AssertionError("generation must replay GeoServices parity exactly once")
     require(generate_block, 'cmp -- "${first_root}/${projection}" "${projection}"',
             "only byte-identical replayed projections may be staged")
-    if "uses: ./.github/actions/setup-dotnet-ci" in produce_block or "bash scripts/generate-" in produce_block:
+    if "uses: ./.github/actions/setup-dotnet-ci" in produce_block or "bash scripts/ci/generate-" in produce_block:
         raise AssertionError("isolated packaging must not execute setup or generators")
     if "packages:" in produce_block:
         raise AssertionError("isolated packaging must not receive package permissions")

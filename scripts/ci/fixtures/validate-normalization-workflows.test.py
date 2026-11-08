@@ -42,6 +42,17 @@ class NormalizationContractTests(unittest.TestCase):
     def test_current_tree_passes(self) -> None:
         self.assertIn(run(), {"observe", "enforce"})
 
+    def test_generator_in_packaging_is_rejected(self) -> None:
+        marker = "      - name: Download bounded projection data\n"
+        producer = SOURCES["producer"].replace(
+            marker,
+            "      - run: bash scripts/ci/generate-feature-catalog.sh\n\n" + marker,
+            1,
+        )
+        self.assertNotEqual(producer, SOURCES["producer"])
+        with self.assertRaisesRegex(AssertionError, "isolated packaging must not execute setup or generators"):
+            run(producer=producer)
+
     def test_declared_enforce_mode_passes(self) -> None:
         consumer = SOURCES["consumer"].replace(
             "  NORMALIZATION_MODE: observe", "  NORMALIZATION_MODE: enforce")
