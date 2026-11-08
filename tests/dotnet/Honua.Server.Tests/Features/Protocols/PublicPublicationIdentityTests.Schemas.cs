@@ -38,6 +38,7 @@ public sealed partial class PublicPublicationIdentityTests
             && name.Value.EndsWith($":{localName}", StringComparison.Ordinal));
         var prefix = advertisedName.Value.Split(':', 2)[0];
         var advertisedNamespace = advertisedName.GetNamespaceOfPrefix(prefix)!;
+        advertisedNamespace.Should().NotBeNull("advertised feature types need a namespace declaration");
         var typeParameter = version == "2.0.0" ? "TYPENAMES" : "TYPENAME";
         var schema = await ReadXmlAsync($"/wfs?SERVICE=WFS&REQUEST=DescribeFeatureType&VERSION={version}&{typeParameter}={Uri.EscapeDataString(advertisedName.Value)}");
 

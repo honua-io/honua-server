@@ -81,6 +81,10 @@ internal sealed partial class Wfs20Handler
                     : null
             };
 
+            foreach (var featureType in featureTypes.DistinctBy(featureType => featureType.NamespacePrefix))
+            {
+                capabilities.Namespaces.Add(featureType.NamespacePrefix, featureType.NamespaceUri);
+            }
             Wfs20Log.GetCapabilitiesReturned(_logger);
             return capabilities;
         }
