@@ -115,7 +115,6 @@ internal sealed class LayerMetadataResponse
     /// <summary>Persisted editing and attachment bindings for the canonical resource.</summary>
     public MetadataV2ResourceEditing? Editing { get; init; }
 
-    /// <summary>The layer identifier.</summary>
     public required int ServiceLayerIndex { get; init; }
 
     /// <summary>The layer name.</summary>

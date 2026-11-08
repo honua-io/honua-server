@@ -217,7 +217,6 @@ public sealed class LayerPublishJobStatusResponse
     /// <summary>Source rows counted when the publish was accepted.</summary>
     public required long RowsTotal { get; init; }
 
-    /// <summary>Published layer id after the publication transaction commits.</summary>
     public int? StorageLayerId { get; init; }
 
     /// <summary>Failure text when the publish did not commit.</summary>

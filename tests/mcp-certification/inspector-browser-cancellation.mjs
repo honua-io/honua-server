@@ -217,6 +217,7 @@ export async function inspectorBrowserCancellation({ endpoint, inspectorVersion,
     await ui.recover();
     await verifyRecovery(await wire.recoveryResult());
     wire.assertTerminal();
+    // The v1 evidence contract calls the service index layerId; MCP arguments use serviceLayerIndex.
     proof = { schema: INSPECTOR_CANCELLATION_CONTRACT, performedBy: 'MCP Inspector', inspectorVersion,
       protocolVersion: terminal.protocolVersion, transport: 'streamable-http', protocolEra: 'legacy',
       fixtureSourceSha: sourceSha, seedSqlSha256: fixture.seedSqlSha256, allocatedIdsSha256: fixture.allocatedIdsSha256,

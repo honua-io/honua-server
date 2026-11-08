@@ -106,6 +106,7 @@ export async function requestCancellation({ client, transport, otherClient, othe
     require(recovery.isError === undefined || recovery.isError === false, "recovery query returned an MCP error envelope");
     await verifyRecovery(recovery);
     require(responses.length === 1, "original SDK request received duplicate terminal responses");
+    // The v1 evidence contract calls the service index layerId; MCP arguments use serviceLayerIndex.
     proof = { schema: "honua.mcp-request-cancellation-proof/v1", performedBy,
       fixtureSourceSha: fixture.sourceSha, seedSqlSha256: fixture.seedSqlSha256, allocatedIdsSha256: fixture.allocatedIdsSha256,
       requestMethod: "tools/call", toolName: "honua_query_features", serviceName: fixture.serviceName,
