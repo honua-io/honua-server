@@ -162,7 +162,7 @@ internal sealed class StylePresetExecutor(IServiceProvider services) : IOperatio
     {
         var activity = ActivitySource.StartActivity($"style.apply-preset.{phase}");
         activity?.SetTag("operation.id", StylePresetOperation.OperationId);
-        foreach (var (parameter, tag) in new[] { ("serviceId", "service.id"), ("serviceLayerIndex", "layer.id"), ("styleId", "style.id") })
+        foreach (var (parameter, tag) in new[] { ("serviceId", "service.id"), ("serviceLayerIndex", "layer.service_index"), ("styleId", "style.id") })
         {
             if (request.Parameters.TryGetValue(parameter, out var value))
             {
@@ -212,7 +212,7 @@ internal sealed class StylePresetExecutor(IServiceProvider services) : IOperatio
 
         if (!int.TryParse(Required(request, "serviceLayerIndex"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var serviceLayerIndex))
         {
-            throw new ArgumentException("The published layer ID must be a 32-bit integer.", nameof(request));
+            throw new ArgumentException("The service layer index must be a 32-bit integer.", nameof(request));
         }
 
         var publication = snapshot.FindPublicationByLayerIndex(serviceId, serviceLayerIndex);

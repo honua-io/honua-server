@@ -322,7 +322,14 @@ internal static class McpToolOutputSchemas
               "type": ["string", "null"],
               "description": "honua://published-services/{serviceName} URI of the published service when the publish completed."
             },
-            "layerId": { "type": ["string", "null"] },
+            "storageLayerId": {
+              "type": ["string", "null"],
+              "description": "Internal storage layer id used by global admin layer routes."
+            },
+            "serviceLayerIndex": {
+              "type": ["string", "null"],
+              "description": "Service-local numeric index used by service routes and MCP map tools."
+            },
             "serviceName": { "type": ["string", "null"] },
             "metadataRevision": {
               "type": ["integer", "null"],
@@ -382,9 +389,13 @@ internal static class McpToolOutputSchemas
               "type": ["string", "null"],
               "description": "Published service id (name) — pass to honua_query_features / honua_render_map as serviceId."
             },
-            "layerId": {
+            "storageLayerId": {
               "type": ["string", "null"],
-              "description": "Published layer id — pass to honua_query_features / honua_render_map as layerId."
+              "description": "Internal storage layer id used by global admin layer routes."
+            },
+            "serviceLayerIndex": {
+              "type": ["string", "null"],
+              "description": "Published service layer index; pass to honua_query_features / honua_render_map as serviceLayerIndex."
             },
             "metadataRevision": {
               "type": ["integer", "null"],
