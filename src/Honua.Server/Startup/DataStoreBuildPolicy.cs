@@ -43,5 +43,38 @@ internal static class DataStoreBuildPolicy
 
     public static void ValidatePostgisConfiguration(IConfiguration configuration)
     {
+        var primary = DataProviderNames.Normalize(configuration["DataSource:Provider"]);
+        if (primary is not (DataProviderNames.Postgis or DataProviderNames.PostgreSql))
+        {
+            RefuseAdditionalStores();
+        }
+
+        foreach (var sectionName in AdditionalStoreSections)
+        {
+            var section = configuration.GetSection(sectionName);
+            if (section.GetValue<bool?>("Enabled") == false)
+            {
+                continue;
+            }
+
+            if (section.AsEnumerable().Any(setting => !string.IsNullOrWhiteSpace(setting.Value)))
+            {
+                RefuseAdditionalStores();
+            }
+        }
+
+        if (configuration.GetValue("Experimental:Features:RedshiftProvider", false)
+            || configuration.GetValue("Experimental:Features:SnowflakeProvider", false)
+            || configuration.GetValue("Experimental:Features:DatabricksProvider", false))
+        {
+            RefuseAdditionalStores();
+        }
     }
+
+    private static readonly string[] AdditionalStoreSections =
+        ["DuckDB", "MySql", "SqlServer", "GeoServicesRest", "Oracle", "Redshift", "Snowflake", "Databricks"];
+
+    private static void RefuseAdditionalStores() => throw new InvalidOperationException(
+        "This image includes only the PostGIS data store. Use the same-version JIT -full image variant " +
+        "for additional data stores; see docs/ops/nightly-images.md.");
 }
