@@ -86,12 +86,16 @@ class NormalizationContractTests(unittest.TestCase):
         })
 
     def test_app_token_scope_widening_is_rejected(self) -> None:
-        for scope in ("owner: another-owner", "repositories: another-repository",
-                      "permission-actions: write"):
-            with self.subTest(scope=scope):
-                consumer = SOURCES["consumer"].replace(
-                    "          permission-contents: write", "          " + scope + "\n          permission-contents: write", 1)
-                with self.assertRaisesRegex(AssertionError, "scope|permission"):
+        for original, replacement in (
+            ("owner: honua-io", "owner: another-owner"),
+            ("repositories: honua-server", "repositories: another-repository"),
+            ("          repositories: honua-server\n", ""),
+            ("permission-contents: write", "permission-actions: write\n          permission-contents: write"),
+        ):
+            with self.subTest(replacement=replacement):
+                self.assertEqual(SOURCES["consumer"].count(original), 1)
+                consumer = SOURCES["consumer"].replace(original, replacement, 1)
+                with self.assertRaisesRegex(AssertionError, "App token scope"):
                     run(consumer=consumer)
 
     def test_declared_enforce_mode_passes(self) -> None:

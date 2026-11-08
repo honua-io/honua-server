@@ -144,11 +144,11 @@ independent exact-head PR Gate corroborates a no-op, or authoritative drift
 checks pass on the subsequent normalized head. Reproducibility and provenance
 are necessary admission signals, not mutation authority.
 
-The 2026-08-16 shadow audit closed that evidence requirement: 61 validated
-envelopes over 16 pull requests produced 29 independently corroborated heads,
-two byte-exact would-change candidates, and zero false positives
-(`docs/internal/ci/derived-artifact-normalization.md`). The Git-object
-compare-and-swap transition is therefore implemented and covered by fixtures,
+The 2026-08-16 shadow audit covered an earlier schema and generation recipe.
+Its 29 independently corroborated heads do not qualify the v3 contract. No v3
+window is claimed: enforcement requires at least 20 fresh, independently
+corroborated v3 heads and a separate reviewed mode change. The Git-object
+compare-and-swap transition is implemented and covered by fixtures,
 gated behind `NORMALIZATION_MODE: enforce` plus a per-run GitHub App token
 minted immediately before the mutation. The workflow `GITHUB_TOKEN` keeps
 `contents: read` in every mode; the repository token cannot be the write
@@ -416,9 +416,12 @@ The complete checkpoint and decision are also recorded on
 2. Completed in observe mode: review-first transition receipts and trusted
    dispatch fixtures (#3216).
 3. Completed in observe mode: data-only normalization envelope and trusted
-   allowlist validator (#3219). Its 20-head shadow audit passed on 2026-08-16
-   and the credential-gated enforce transition is implemented; activation waits
-   only on the scoped normalization App credential.
+   allowlist validator (#3219). Its historical audit used an earlier schema
+   and recipe; no v3 observation window is claimed. Activation requires 20 fresh,
+   independently corroborated v3 heads and a separate reviewed mode change.
+   The transition uses the existing `HONUA_RELEASE_APP_*` references to mint a
+   token restricted to `honua-io/honua-server`, Contents write and Pull requests
+   write only. Observe mode mints no token.
 4. Completed history: rejected the standalone producer for insufficient
    savings, then retired the sunk-cost PR Gate build-evidence shadow under
    #3226 when its train-only consumer became dead.
