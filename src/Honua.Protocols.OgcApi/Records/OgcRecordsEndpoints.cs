@@ -376,6 +376,8 @@ internal static class OgcRecordsEndpoints
             return result;
         }
 
+        var resourceCatalogRecords = new List<CatalogRecord>();
+
         // Resource-level records: one per resource, attributed to its primary publication's service.
         var resourceRecords = snapshot.Graph.Resources
             .Select(resource =>
@@ -408,7 +410,7 @@ internal static class OgcRecordsEndpoints
                 await GetBboxAsync(resource).ConfigureAwait(false));
             if (resourceRecordIds.Add(record.Feature.Id))
             {
-                records.Add(record);
+                resourceCatalogRecords.Add(record);
                 recordPublications.Add(resource.Metadata.Id, primary);
             }
         }
@@ -471,6 +473,7 @@ internal static class OgcRecordsEndpoints
         }
 
 
+        records.AddRange(resourceCatalogRecords);
         return records;
     }
 

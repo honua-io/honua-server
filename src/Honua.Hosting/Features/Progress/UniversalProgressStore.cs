@@ -377,7 +377,6 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
                 RemoveFallbackEntry(operationId, key);
                 return null;
             }
-
         }
         // Intentional: see the "set progress" catch above — same translate-to-typed-exception
         // pattern for the Redis boundary.
