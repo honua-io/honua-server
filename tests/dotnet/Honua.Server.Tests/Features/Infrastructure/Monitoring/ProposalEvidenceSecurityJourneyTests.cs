@@ -134,7 +134,7 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
         await RejectEvidenceTamperAsync("policy-revision-mismatch", evidence => evidence with { PolicyRevision = "changed" }, receipts);
         await RejectPayloadTamperAsync(receipts);
         await RejectNoninteractiveProposerApprovalAsync(receipts);
-        await RejectExpiredEvidenceAsync(receipts);
+        await RejectExpiredHumanCapabilityAsync(receipts);
         await RejectRevokedBeforeCallAsync(receipts);
         await RejectRevokedBeforeApprovalAsync(receipts);
         await RejectUnauthorizedApproverAsync(receipts);
@@ -149,7 +149,7 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
             "allow-deploy", "allow-metadata-release", "direct-execution", "opaque-extra-field",
             "unsupported-descriptor", "parameter-tamper", "candidate-mismatch", "tenant-mismatch",
             "target-mismatch", "descriptor-revision-mismatch", "policy-revision-mismatch",
-            "payload-digest-mismatch", "noninteractive-proposer-approval", "expired", "revoked-before-call",
+            "payload-digest-mismatch", "noninteractive-proposer-approval", "human-capability-expired", "revoked-before-call",
             "revoked-before-approval", "unauthorized-approver", "cross-tenant-read", "sequential-replay",
             "concurrent-approval", "proposal-store-failure", "audit-store-failure",
         };
@@ -388,22 +388,26 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
         using var response = await _human.ApproveAsync(changed.ProposalId);
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
         MutationCount.Should().Be(before);
-        using var auditScope = _fixture.Services.CreateScope();
-        var audits = await auditScope.ServiceProvider.GetRequiredService<IAuditLogReader>().ListAsync(
-            new AuditLogFilter { ResourceId = changed.ProposalId, PageSize = 20 });
+        await AssertApprovalDenialAsync(changed, "evidence_invalid");
+        receipts.Add(ToReceipt(scenario, "rejected-at-approval", changed, 0));
+    }
+
+    private async Task AssertApprovalDenialAsync(OperationProposal proposal, string reason)
+    {
+        using var scope = _fixture.Services.CreateScope();
+        var audits = await scope.ServiceProvider.GetRequiredService<IAuditLogReader>().ListAsync(
+            new AuditLogFilter { ResourceId = proposal.ProposalId, PageSize = 20 });
         var denial = audits.Items.Should().ContainSingle(item => item.Action == "operation.approval_denied").Subject;
         denial.Outcome.Should().Be(AuditOutcome.Denied);
-        denial.CorrelationId.Should().Be(changed.Audit.CorrelationId ?? changed.ProposalId);
+        denial.CorrelationId.Should().Be(proposal.Audit.CorrelationId ?? proposal.ProposalId);
         using var details = JsonDocument.Parse(denial.Details);
-        details.RootElement.GetProperty("reason").GetString().Should().Be("evidence_invalid");
-        receipts.Add(ToReceipt(scenario, "rejected-at-approval", changed, 0));
+        details.RootElement.GetProperty("reason").GetString().Should().Be(reason);
     }
 
     private async Task RejectPayloadTamperAsync(List<JourneyReceipt> receipts)
     {
         var before = MutationCount;
         var context = await CreateProposalAsync(ProposeDeployOperationTool.ToolName);
-        var review = await _human.OpenReviewAsync(context.Proposal.ProposalId);
         var plan = context.Proposal.Plan with
         {
             ExecutionPayload = "{\"currentRevision\":null,\"desiredRevision\":\"sha256:tampered\",\"targetId\":\"candidate-a\"}",
@@ -412,11 +416,13 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
         {
             Plan = plan,
             SealedPlanHash = OperationApprovalPlanSeal.Compute(plan),
+            Initiation = context.Proposal.Initiation! with { PlanHash = OperationApprovalPlanSeal.Compute(plan) },
         };
         (await _proposals.TrySetAsync(changed)).Should().BeTrue();
-        using var response = await _human.SubmitReviewAsync(changed.ProposalId, review);
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        using var response = await _human.ApproveAsync(changed.ProposalId);
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
         MutationCount.Should().Be(before);
+        await AssertApprovalDenialAsync(changed, "evidence_invalid");
         receipts.Add(ToReceipt("payload-digest-mismatch", "rejected-at-approval", changed, 0));
     }
 
@@ -431,7 +437,7 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
         receipts.Add(ToReceipt("noninteractive-proposer-approval", "rejected-at-approval", context.Proposal, 0));
     }
 
-    private async Task RejectExpiredEvidenceAsync(List<JourneyReceipt> receipts)
+    private async Task RejectExpiredHumanCapabilityAsync(List<JourneyReceipt> receipts)
     {
         var before = MutationCount;
         var context = await CreateProposalAsync(ProposeDeployOperationTool.ToolName);
@@ -442,7 +448,8 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
             using var response = await _human.SubmitReviewAsync(context.Proposal.ProposalId, review);
             response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
             MutationCount.Should().Be(before);
-            receipts.Add(ToReceipt("expired", "rejected-at-approval", context.Proposal, 0));
+            await AssertApprovalDenialAsync(context.Proposal, "human_session_required");
+            receipts.Add(ToReceipt("human-capability-expired", "rejected-at-approval", context.Proposal, 0));
         }
         finally
         {
@@ -966,7 +973,7 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
             ResolvedAt: proposal.ResolvedAt,
             IssuedAt: evidence?.IssuedAt,
             VerifierVerdict: evidence?.VerifierDecision,
-            ExpiryDecision: scenario == "expired" ? "expired" : "valid-at-decision",
+            ExpiryDecision: scenario == "human-capability-expired" ? "human-capability-expired" : "valid-at-decision",
             NegativeReason: outcome is "allowed" or "at-most-once" ? null : scenario);
     }
 
