@@ -186,7 +186,7 @@ Canonical pipelines:
 Adapter rules:
 
 - **Where entrypoints live.** Most protocol families have their own project,
-  `src/Honua.Protocols.*`:
+  `src/Honua.Protocols/<Family>/`:
   - `GeoServices`;
   - `OgcApi`, `OgcClassic` and `Ogc.Shared`;
   - `OData`;
