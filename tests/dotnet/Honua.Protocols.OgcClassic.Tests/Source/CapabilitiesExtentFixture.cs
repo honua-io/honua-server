@@ -13,13 +13,13 @@ internal static class CapabilitiesExtentFixture
     internal const int ProjectedSrid = 32618;
 
     internal static TestMetadataV2GraphProvider PublishedLayers(
-        string protocol, MetadataV2PublicationType publicationType)
+        string protocol, MetadataV2PublicationType publicationType, int healthyLayerSrid = 4326)
     {
         const string ServiceId = "svc-capabilities-extents";
         var builder = new TestMetadataV2GraphBuilder().AddService(
             ServiceId, "capabilities_extents", protocols: [protocol],
             accessPolicy: new AccessPolicy { AllowAnonymous = true });
-        foreach (var (name, layerId, srid) in new[] { ("healthy_extent", 1, 4326), ("projected_extent", 2, ProjectedSrid) })
+        foreach (var (name, layerId, srid) in new[] { ("healthy_extent", 1, healthyLayerSrid), ("projected_extent", 2, ProjectedSrid) })
         {
             var resourceId = "res-" + name;
             var bindingId = "binding-" + name;

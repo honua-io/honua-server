@@ -7,6 +7,10 @@ namespace Honua.Protocols.Ogc.Classic;
 
 internal static partial class OgcClassicLog
 {
+    [LoggerMessage(EventId = 5646, Level = LogLevel.Warning,
+        Message = "OGC capabilities omitted layer {PublicationId}: {ErrorClass}")]
+    public static partial void LayerOmitted(ILogger logger, string publicationId, string errorClass);
+
     [LoggerMessage(
         EventId = 5640,
         Level = LogLevel.Information,
