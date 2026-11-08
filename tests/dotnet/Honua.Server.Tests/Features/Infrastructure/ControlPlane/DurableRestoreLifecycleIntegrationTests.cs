@@ -441,7 +441,8 @@ public sealed class DurableRestoreLifecycleIntegrationTests(RedisFixture redis)
                 ApprovedProposalId = proposalId,
             };
             Assert.True(await proposals.TryCreateAsync(CreateClaimedLegacyApproval(request, payload.Serialize(), id)
-                with { Status = OperationProposalStatus.Submitted }));
+                with
+            { Status = OperationProposalStatus.Submitted }));
             Assert.True(await workflows.TryCreateAsync(new WorkflowOperationRecord
             {
                 OperationId = id,
