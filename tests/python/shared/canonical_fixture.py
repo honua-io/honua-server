@@ -19,6 +19,7 @@ from pathlib import Path
 
 TESTS_ROOT = Path(__file__).resolve().parents[2]
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+TEST_RESULTS_ROOT = PROJECT_ROOT / "artifacts" / "test-results"
 
 SEED_PATH = TESTS_ROOT / "seed" / "client-compat-v1.sql"
 SERVER_CONFIG_PATH = TESTS_ROOT / "config" / "client-compat-server-v1.json"

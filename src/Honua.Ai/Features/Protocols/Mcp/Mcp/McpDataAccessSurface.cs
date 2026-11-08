@@ -370,7 +370,8 @@ internal sealed class McpDataAccessSurface
             var projection = McpWorkflowViewProjector.Project(
                 definition,
                 _tools.Values.Select(t => (McpWorkflowViewDescriptorClassifier.Describe(t), IsDynamic: false))
-                    .Concat(dynamicTools.Select(t => (McpWorkflowViewDescriptorClassifier.Describe(t), IsDynamic: true))));
+                    .Concat(dynamicTools.Select(t => (McpWorkflowViewDescriptorClassifier.Describe(t), IsDynamic: true)))
+                    .Where(_ => httpContext.User.Identity?.IsAuthenticated == true));
 
             try
             {

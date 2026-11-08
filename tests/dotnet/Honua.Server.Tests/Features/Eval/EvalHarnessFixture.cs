@@ -129,7 +129,7 @@ public sealed class EvalHarnessFixture : IAsyncLifetime
 
         // Path.Combine args are relative test fixture fragments; no rooted-segment risk
         return directory != null
-            ? Path.Join(directory.FullName, "tests", "TestResults")
-            : Path.Join(AppContext.BaseDirectory, "eval-results");
+            ? Path.Join(directory.FullName, "artifacts", "test-results")
+            : Path.Join(AppContext.BaseDirectory, "artifacts", "test-results");
     }
 }

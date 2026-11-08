@@ -301,6 +301,8 @@ public sealed class McpErrorMappingTests
         var error = McpErrorMapper.InvalidToken();
 
         error.Code.Should().Be(JsonRpcServerError);
+        error.Message.Should().Contain("X-API-Key").And.Contain("administrator")
+            .And.Contain("Authorization: Bearer").And.Contain("identity provider");
         error.Data!.Code.Should().Be(McpErrorMapper.Codes.Unauthenticated);
         error.Data.RequiresReauthentication.Should().BeTrue();
     }

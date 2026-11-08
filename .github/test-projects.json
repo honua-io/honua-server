@@ -36,7 +36,7 @@
         "src/Honua.Db/Postgres/Honua.Postgres.csproj",
         "src/Honua.Db/Redshift/Honua.Redshift.csproj",
         "src/Honua.Db/SqlServer/Honua.SqlServer.csproj",
-        "src/Honua.GeoServicesRest/Honua.GeoServicesRest.csproj",
+        "src/Honua.Db/GeoServicesRest/Honua.GeoServicesRest.csproj",
         "src/Honua.Geocoding/Honua.Geocoding.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
@@ -58,7 +58,7 @@
         "src/Honua.Scene/Honua.Scene.csproj",
         "src/Honua.Server/Honua.Server.csproj",
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj",
-        "src/Honua.Snowflake/Honua.Snowflake.csproj"
+        "src/Honua.Db/Snowflake/Honua.Snowflake.csproj"
       ],
       "resources": [
         "redis"
@@ -112,7 +112,7 @@
         "src/Honua.Db/Postgres/Honua.Postgres.csproj",
         "src/Honua.Db/Redshift/Honua.Redshift.csproj",
         "src/Honua.Db/SqlServer/Honua.SqlServer.csproj",
-        "src/Honua.GeoServicesRest/Honua.GeoServicesRest.csproj",
+        "src/Honua.Db/GeoServicesRest/Honua.GeoServicesRest.csproj",
         "src/Honua.Geocoding/Honua.Geocoding.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
@@ -135,7 +135,7 @@
         "src/Honua.Scene/Honua.Scene.csproj",
         "src/Honua.Server/Honua.Server.csproj",
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj",
-        "src/Honua.Snowflake/Honua.Snowflake.csproj",
+        "src/Honua.Db/Snowflake/Honua.Snowflake.csproj",
         "src/Honua.Worker.Gdal/Honua.Worker.Gdal.csproj"
       ],
       "resources": [
@@ -195,7 +195,7 @@
         "src/Honua.Db/Postgres/Honua.Postgres.csproj",
         "src/Honua.Db/Redshift/Honua.Redshift.csproj",
         "src/Honua.Db/SqlServer/Honua.SqlServer.csproj",
-        "src/Honua.GeoServicesRest/Honua.GeoServicesRest.csproj",
+        "src/Honua.Db/GeoServicesRest/Honua.GeoServicesRest.csproj",
         "src/Honua.Geocoding/Honua.Geocoding.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
@@ -217,7 +217,7 @@
         "src/Honua.Scene/Honua.Scene.csproj",
         "src/Honua.Server/Honua.Server.csproj",
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj",
-        "src/Honua.Snowflake/Honua.Snowflake.csproj"
+        "src/Honua.Db/Snowflake/Honua.Snowflake.csproj"
       ],
       "resources": [
         "docker",
@@ -320,7 +320,7 @@
         "src/Honua.Db/Postgres/Honua.Postgres.csproj",
         "src/Honua.Db/Redshift/Honua.Redshift.csproj",
         "src/Honua.Db/SqlServer/Honua.SqlServer.csproj",
-        "src/Honua.GeoServicesRest/Honua.GeoServicesRest.csproj",
+        "src/Honua.Db/GeoServicesRest/Honua.GeoServicesRest.csproj",
         "src/Honua.Geocoding/Honua.Geocoding.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
@@ -342,7 +342,7 @@
         "src/Honua.Scene/Honua.Scene.csproj",
         "src/Honua.Server/Honua.Server.csproj",
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj",
-        "src/Honua.Snowflake/Honua.Snowflake.csproj"
+        "src/Honua.Db/Snowflake/Honua.Snowflake.csproj"
       ],
       "resources": [
         "docker",
@@ -421,7 +421,7 @@
         "src/Honua.Db/Postgres/Honua.Postgres.csproj",
         "src/Honua.Db/Redshift/Honua.Redshift.csproj",
         "src/Honua.Db/SqlServer/Honua.SqlServer.csproj",
-        "src/Honua.GeoServicesRest/Honua.GeoServicesRest.csproj",
+        "src/Honua.Db/GeoServicesRest/Honua.GeoServicesRest.csproj",
         "src/Honua.Geocoding/Honua.Geocoding.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
@@ -443,7 +443,7 @@
         "src/Honua.Scene/Honua.Scene.csproj",
         "src/Honua.Server/Honua.Server.csproj",
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj",
-        "src/Honua.Snowflake/Honua.Snowflake.csproj"
+        "src/Honua.Db/Snowflake/Honua.Snowflake.csproj"
       ],
       "resources": [
         "docker",
@@ -528,7 +528,7 @@
       "runtimeOwners": [
         "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
         "src/Honua.Core/Honua.Core.csproj",
-        "src/Honua.GeoServicesRest/Honua.GeoServicesRest.csproj"
+        "src/Honua.Db/GeoServicesRest/Honua.GeoServicesRest.csproj"
       ],
       "resources": [],
       "isolated": true,
@@ -575,7 +575,7 @@
         "src/Honua.Db/Postgres/Honua.Postgres.csproj",
         "src/Honua.Db/Redshift/Honua.Redshift.csproj",
         "src/Honua.Db/SqlServer/Honua.SqlServer.csproj",
-        "src/Honua.GeoServicesRest/Honua.GeoServicesRest.csproj",
+        "src/Honua.Db/GeoServicesRest/Honua.GeoServicesRest.csproj",
         "src/Honua.Geocoding/Honua.Geocoding.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Geoprocessing.Testing/Honua.Geoprocessing.Testing.csproj",
@@ -598,7 +598,7 @@
         "src/Honua.Scene/Honua.Scene.csproj",
         "src/Honua.Server/Honua.Server.csproj",
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj",
-        "src/Honua.Snowflake/Honua.Snowflake.csproj",
+        "src/Honua.Db/Snowflake/Honua.Snowflake.csproj",
         "src/Honua.Worker.Gdal/Honua.Worker.Gdal.csproj"
       ],
       "resources": [
@@ -699,7 +699,7 @@
         "src/Honua.Db/Postgres/Honua.Postgres.csproj",
         "src/Honua.Db/Redshift/Honua.Redshift.csproj",
         "src/Honua.Db/SqlServer/Honua.SqlServer.csproj",
-        "src/Honua.GeoServicesRest/Honua.GeoServicesRest.csproj",
+        "src/Honua.Db/GeoServicesRest/Honua.GeoServicesRest.csproj",
         "src/Honua.Geocoding/Honua.Geocoding.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
@@ -721,7 +721,7 @@
         "src/Honua.Scene/Honua.Scene.csproj",
         "src/Honua.Server/Honua.Server.csproj",
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj",
-        "src/Honua.Snowflake/Honua.Snowflake.csproj"
+        "src/Honua.Db/Snowflake/Honua.Snowflake.csproj"
       ],
       "resources": [
         "external-server"
@@ -765,7 +765,7 @@
         "src/Honua.Db/Postgres/Honua.Postgres.csproj",
         "src/Honua.Db/Redshift/Honua.Redshift.csproj",
         "src/Honua.Db/SqlServer/Honua.SqlServer.csproj",
-        "src/Honua.GeoServicesRest/Honua.GeoServicesRest.csproj",
+        "src/Honua.Db/GeoServicesRest/Honua.GeoServicesRest.csproj",
         "src/Honua.Geocoding/Honua.Geocoding.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
@@ -787,7 +787,7 @@
         "src/Honua.Scene/Honua.Scene.csproj",
         "src/Honua.Server/Honua.Server.csproj",
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj",
-        "src/Honua.Snowflake/Honua.Snowflake.csproj"
+        "src/Honua.Db/Snowflake/Honua.Snowflake.csproj"
       ],
       "resources": [],
       "isolated": false,
@@ -835,7 +835,7 @@
         "src/Honua.Db/Postgres/Honua.Postgres.csproj",
         "src/Honua.Db/Redshift/Honua.Redshift.csproj",
         "src/Honua.Db/SqlServer/Honua.SqlServer.csproj",
-        "src/Honua.GeoServicesRest/Honua.GeoServicesRest.csproj",
+        "src/Honua.Db/GeoServicesRest/Honua.GeoServicesRest.csproj",
         "src/Honua.Geocoding/Honua.Geocoding.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
@@ -857,7 +857,7 @@
         "src/Honua.Scene/Honua.Scene.csproj",
         "src/Honua.Server/Honua.Server.csproj",
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj",
-        "src/Honua.Snowflake/Honua.Snowflake.csproj"
+        "src/Honua.Db/Snowflake/Honua.Snowflake.csproj"
       ],
       "resources": [
         "docker",
@@ -874,7 +874,7 @@
       "runtimeOwners": [
         "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
         "src/Honua.Core/Honua.Core.csproj",
-        "src/Honua.GeoServicesRest/Honua.GeoServicesRest.csproj",
+        "src/Honua.Db/GeoServicesRest/Honua.GeoServicesRest.csproj",
         "src/Honua.Geocoding/Honua.Geocoding.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
@@ -925,7 +925,7 @@
         "src/Honua.Db/Postgres/Honua.Postgres.csproj",
         "src/Honua.Db/Redshift/Honua.Redshift.csproj",
         "src/Honua.Db/SqlServer/Honua.SqlServer.csproj",
-        "src/Honua.GeoServicesRest/Honua.GeoServicesRest.csproj",
+        "src/Honua.Db/GeoServicesRest/Honua.GeoServicesRest.csproj",
         "src/Honua.Geocoding/Honua.Geocoding.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
@@ -947,7 +947,7 @@
         "src/Honua.Scene/Honua.Scene.csproj",
         "src/Honua.Server/Honua.Server.csproj",
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj",
-        "src/Honua.Snowflake/Honua.Snowflake.csproj"
+        "src/Honua.Db/Snowflake/Honua.Snowflake.csproj"
       ],
       "resources": [
         "docker"
@@ -1011,7 +1011,7 @@
         "src/Honua.Db/Postgres/Honua.Postgres.csproj",
         "src/Honua.Db/Redshift/Honua.Redshift.csproj",
         "src/Honua.Db/SqlServer/Honua.SqlServer.csproj",
-        "src/Honua.GeoServicesRest/Honua.GeoServicesRest.csproj",
+        "src/Honua.Db/GeoServicesRest/Honua.GeoServicesRest.csproj",
         "src/Honua.Geocoding/Honua.Geocoding.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
@@ -1033,7 +1033,7 @@
         "src/Honua.Scene/Honua.Scene.csproj",
         "src/Honua.Server/Honua.Server.csproj",
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj",
-        "src/Honua.Snowflake/Honua.Snowflake.csproj",
+        "src/Honua.Db/Snowflake/Honua.Snowflake.csproj",
         "src/Honua.Worker.Gdal/Honua.Worker.Gdal.csproj"
       ],
       "resources": [
@@ -1103,7 +1103,7 @@
         "src/Honua.Db/Postgres/Honua.Postgres.csproj",
         "src/Honua.Db/Redshift/Honua.Redshift.csproj",
         "src/Honua.Db/SqlServer/Honua.SqlServer.csproj",
-        "src/Honua.GeoServicesRest/Honua.GeoServicesRest.csproj",
+        "src/Honua.Db/GeoServicesRest/Honua.GeoServicesRest.csproj",
         "src/Honua.Geocoding/Honua.Geocoding.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
@@ -1125,7 +1125,7 @@
         "src/Honua.Scene/Honua.Scene.csproj",
         "src/Honua.Server/Honua.Server.csproj",
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj",
-        "src/Honua.Snowflake/Honua.Snowflake.csproj"
+        "src/Honua.Db/Snowflake/Honua.Snowflake.csproj"
       ],
       "resources": [
         "redis"
@@ -1185,7 +1185,7 @@
         "src/Honua.Db/Postgres/Honua.Postgres.csproj",
         "src/Honua.Db/Redshift/Honua.Redshift.csproj",
         "src/Honua.Db/SqlServer/Honua.SqlServer.csproj",
-        "src/Honua.GeoServicesRest/Honua.GeoServicesRest.csproj",
+        "src/Honua.Db/GeoServicesRest/Honua.GeoServicesRest.csproj",
         "src/Honua.Geocoding/Honua.Geocoding.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
@@ -1207,7 +1207,7 @@
         "src/Honua.Scene/Honua.Scene.csproj",
         "src/Honua.Server/Honua.Server.csproj",
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj",
-        "src/Honua.Snowflake/Honua.Snowflake.csproj"
+        "src/Honua.Db/Snowflake/Honua.Snowflake.csproj"
       ],
       "resources": [],
       "isolated": false,
@@ -1266,7 +1266,7 @@
         "src/Honua.Db/Postgres/Honua.Postgres.csproj",
         "src/Honua.Db/Redshift/Honua.Redshift.csproj",
         "src/Honua.Db/SqlServer/Honua.SqlServer.csproj",
-        "src/Honua.GeoServicesRest/Honua.GeoServicesRest.csproj",
+        "src/Honua.Db/GeoServicesRest/Honua.GeoServicesRest.csproj",
         "src/Honua.Geocoding/Honua.Geocoding.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
@@ -1288,7 +1288,7 @@
         "src/Honua.Scene/Honua.Scene.csproj",
         "src/Honua.Server/Honua.Server.csproj",
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj",
-        "src/Honua.Snowflake/Honua.Snowflake.csproj"
+        "src/Honua.Db/Snowflake/Honua.Snowflake.csproj"
       ],
       "resources": [
         "docker",
@@ -1351,7 +1351,7 @@
         "src/Honua.Db/Postgres/Honua.Postgres.csproj",
         "src/Honua.Db/Redshift/Honua.Redshift.csproj",
         "src/Honua.Db/SqlServer/Honua.SqlServer.csproj",
-        "src/Honua.GeoServicesRest/Honua.GeoServicesRest.csproj",
+        "src/Honua.Db/GeoServicesRest/Honua.GeoServicesRest.csproj",
         "src/Honua.Geocoding/Honua.Geocoding.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
@@ -1373,7 +1373,7 @@
         "src/Honua.Scene/Honua.Scene.csproj",
         "src/Honua.Server/Honua.Server.csproj",
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj",
-        "src/Honua.Snowflake/Honua.Snowflake.csproj"
+        "src/Honua.Db/Snowflake/Honua.Snowflake.csproj"
       ],
       "resources": [],
       "isolated": false,
@@ -1412,7 +1412,7 @@
         "src/Honua.Db/Postgres/Honua.Postgres.csproj",
         "src/Honua.Db/Redshift/Honua.Redshift.csproj",
         "src/Honua.Db/SqlServer/Honua.SqlServer.csproj",
-        "src/Honua.GeoServicesRest/Honua.GeoServicesRest.csproj",
+        "src/Honua.Db/GeoServicesRest/Honua.GeoServicesRest.csproj",
         "src/Honua.Geocoding/Honua.Geocoding.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
@@ -1434,7 +1434,7 @@
         "src/Honua.Scene/Honua.Scene.csproj",
         "src/Honua.Server/Honua.Server.csproj",
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj",
-        "src/Honua.Snowflake/Honua.Snowflake.csproj"
+        "src/Honua.Db/Snowflake/Honua.Snowflake.csproj"
       ],
       "resources": [
         "docker"
@@ -1493,7 +1493,7 @@
         "src/Honua.Db/Postgres/Honua.Postgres.csproj",
         "src/Honua.Db/Redshift/Honua.Redshift.csproj",
         "src/Honua.Db/SqlServer/Honua.SqlServer.csproj",
-        "src/Honua.GeoServicesRest/Honua.GeoServicesRest.csproj",
+        "src/Honua.Db/GeoServicesRest/Honua.GeoServicesRest.csproj",
         "src/Honua.Geocoding/Honua.Geocoding.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
@@ -1516,7 +1516,7 @@
         "src/Honua.Scene/Honua.Scene.csproj",
         "src/Honua.Server/Honua.Server.csproj",
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj",
-        "src/Honua.Snowflake/Honua.Snowflake.csproj"
+        "src/Honua.Db/Snowflake/Honua.Snowflake.csproj"
       ],
       "resources": [
         "docker",
@@ -1544,7 +1544,7 @@
       "runtimeOwners": [
         "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
         "src/Honua.Core/Honua.Core.csproj",
-        "src/Honua.Snowflake/Honua.Snowflake.csproj"
+        "src/Honua.Db/Snowflake/Honua.Snowflake.csproj"
       ],
       "resources": [],
       "isolated": false,
@@ -1557,7 +1557,7 @@
       "runtimeOwners": [
         "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
         "src/Honua.Core/Honua.Core.csproj",
-        "src/Honua.Snowflake/Honua.Snowflake.csproj"
+        "src/Honua.Db/Snowflake/Honua.Snowflake.csproj"
       ],
       "resources": [],
       "isolated": true,
@@ -1672,7 +1672,7 @@
         "src/Honua.Db/Postgres/Honua.Postgres.csproj",
         "src/Honua.Db/Redshift/Honua.Redshift.csproj",
         "src/Honua.Db/SqlServer/Honua.SqlServer.csproj",
-        "src/Honua.GeoServicesRest/Honua.GeoServicesRest.csproj",
+        "src/Honua.Db/GeoServicesRest/Honua.GeoServicesRest.csproj",
         "src/Honua.Geocoding/Honua.Geocoding.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
@@ -1694,7 +1694,7 @@
         "src/Honua.Scene/Honua.Scene.csproj",
         "src/Honua.Server/Honua.Server.csproj",
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj",
-        "src/Honua.Snowflake/Honua.Snowflake.csproj"
+        "src/Honua.Db/Snowflake/Honua.Snowflake.csproj"
       ],
       "resources": [
         "docker",
@@ -1721,7 +1721,7 @@
         "src/Honua.Db/Postgres/Honua.Postgres.csproj",
         "src/Honua.Db/Redshift/Honua.Redshift.csproj",
         "src/Honua.Db/SqlServer/Honua.SqlServer.csproj",
-        "src/Honua.GeoServicesRest/Honua.GeoServicesRest.csproj",
+        "src/Honua.Db/GeoServicesRest/Honua.GeoServicesRest.csproj",
         "src/Honua.Geocoding/Honua.Geocoding.csproj",
         "src/Honua.Geometry/Honua.Geometry.csproj",
         "src/Honua.Geoprocessing/Honua.Geoprocessing.csproj",
@@ -1743,7 +1743,7 @@
         "src/Honua.Scene/Honua.Scene.csproj",
         "src/Honua.Server/Honua.Server.csproj",
         "src/Honua.ServiceDefaults/Honua.ServiceDefaults.csproj",
-        "src/Honua.Snowflake/Honua.Snowflake.csproj",
+        "src/Honua.Db/Snowflake/Honua.Snowflake.csproj",
         "src/Honua.Worker.Gdal/Honua.Worker.Gdal.csproj"
       ],
       "resources": [

@@ -27,7 +27,7 @@ Examples::
         --markdown --max-utilization 0.85
 
     # what ci.yml runs per shard (#4790): same finding, ::warning::, exit 0
-    scripts/ci/audit-shard-headroom.py --timings-dir tests/TestResults \
+    scripts/ci/audit-shard-headroom.py --timings-dir artifacts/test-results \
         --max-utilization 0.85 --advisory
 
 `--fail-on-warn` and `--max-utilization` answer different questions.

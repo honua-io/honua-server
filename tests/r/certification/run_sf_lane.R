@@ -32,7 +32,7 @@
 #
 # Environment:
 #   HONUA_R_SF_BASE_URL / HONUA_BASE_URL   required; no local-server fallback
-#   HONUA_R_SF_OUTPUT_DIR                  envelope output dir (default tests/TestResults)
+#   HONUA_R_SF_OUTPUT_DIR                  envelope output dir (default artifacts/test-results)
 #   HONUA_R_SF_SERVER_COMMIT               overrides `git rev-parse HEAD`
 #   HONUA_R_SF_SERVER_VERSION              overrides the /api/v1/admin/version probe
 #   HONUA_R_SF_SERVICE_ID                  overrides the seeded service id
@@ -98,7 +98,7 @@ resolve_base_url <- function() {
 
 resolve_output_dir <- function() {
   configured <- Sys.getenv("HONUA_R_SF_OUTPUT_DIR", "")
-  if (nzchar(configured)) configured else file.path(cf_tests_root(), "TestResults")
+  if (nzchar(configured)) configured else file.path(dirname(cf_tests_root()), "artifacts", "test-results")
 }
 
 lane_service_id <- function() {
