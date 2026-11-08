@@ -1458,6 +1458,7 @@ assert_descriptor \
   "src/Honua.Server/Features/Console/ConsoleSessionEndpoints.cs" \
   "targeted" \
   "false" \
+  "Server Features Console Sessions and Access" \
   "Server Features Console and Alerts"
 assert_descriptor \
   "feature-overview-targeted" \
@@ -1624,6 +1625,7 @@ echo "Checking shard filter/test-class coverage in both directions..."
 "${PYTHON_BIN}" scripts/ci/test-wms-capacity-partition.py
 "${PYTHON_BIN}" scripts/ci/test-featureserver-capacity-partition.py
 "${PYTHON_BIN}" scripts/ci/test-mcp-capacity-partition.py
+"${PYTHON_BIN}" scripts/ci/test-console-capacity-partition.py
 "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.test.py
 "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.py \
   --assert-owner \
