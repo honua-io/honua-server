@@ -382,7 +382,7 @@ public class GeoservicesImportEndpointTests : IAsyncLifetime
         // Arrange
         var request = new
         {
-            ServiceUrl = "https://example.com/arcgis/rest/services/Test/FeatureServer",
+            ServiceUrl = "https://example.com/arcgis/rest/services/Imported/FeatureServer",
             LayerId = 0,
             TableName = "test_geoservices_import"
         };
@@ -391,12 +391,28 @@ public class GeoservicesImportEndpointTests : IAsyncLifetime
         var response = await _client.PostAsJsonAsync("/api/v1/admin/import/geoservices/start", request);
 
         // Assert - should return 202 Accepted with job info
-        response.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted, await response.Content.ReadAsStringAsync());
 
         var content = await response.Content.ReadAsStringAsync();
         content.Should().Contain("jobId");
         content.Should().Contain("statusUrl");
         content.Should().Contain("cancelUrl");
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/geoservices/start")]
+    public async Task Start_SourcePublicPathAlreadyReserved_RequiresExplicitMapping()
+    {
+        using var response = await _client.PostAsJsonAsync("/api/v1/admin/import/geoservices/start", new
+        {
+            ServiceUrl = "https://example.com/arcgis/rest/services/Test/FeatureServer",
+            LayerId = 0,
+            TableName = "reserved_source_import"
+        });
+
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict, body);
+        body.Should().Contain("public service path is reserved").And.Contain("explicit mapping");
     }
 
     [IntegrationTest]
@@ -652,12 +668,12 @@ public class GeoservicesImportEndpointTests : IAsyncLifetime
                 "/api/v1/admin/import/geoservices/start",
                 new
                 {
-                    ServiceUrl = "https://example.com/arcgis/rest/services/Test/FeatureServer",
+                    ServiceUrl = "https://example.com/arcgis/rest/services/Imported/FeatureServer",
                     LayerId = 0,
                     TableName = "test_geoservices_queue_rollback"
                 });
 
-            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, await response.Content.ReadAsStringAsync());
             (await response.Content.ReadAsStringAsync()).Should().Contain("Distributed import queue is temporarily unavailable");
 
             distributedCache.Keys.Should().NotContain(key => key.StartsWith("geoservices:import:request:", StringComparison.Ordinal));
@@ -883,13 +899,13 @@ public class GeoservicesImportEndpointTests : IAsyncLifetime
         // Arrange - start a job first
         var startRequest = new
         {
-            ServiceUrl = "https://example.com/arcgis/rest/services/Test/FeatureServer",
+            ServiceUrl = "https://example.com/arcgis/rest/services/Imported/FeatureServer",
             LayerId = 0,
             TableName = "test_cancel_job"
         };
 
         var startResponse = await _client.PostAsJsonAsync("/api/v1/admin/import/geoservices/start", startRequest);
-        startResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        startResponse.StatusCode.Should().Be(HttpStatusCode.Accepted, await startResponse.Content.ReadAsStringAsync());
 
         var startContent = await startResponse.Content.ReadFromJsonAsync<JsonElement>();
         var jobId = startContent.GetProperty("jobId").GetString();

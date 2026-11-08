@@ -22,6 +22,36 @@ namespace Honua.Core.Tests.Features.Migration;
 public sealed class MigrationBatchOrchestratorTests
 {
     [Trait("Tier", "Fast")]
+    [Fact]
+    public async Task StartAsync_StoredTarget_ReconstructsTheSameQueuedPublicationChoice()
+    {
+        var (orchestrator, catalog, jobs, _) = Build();
+        var request = NewRequest();
+        var target = new GeoservicesImportTarget
+        {
+            ServiceName = "allocated-parcels",
+            ServiceId = "planned-service",
+            PublicName = "Parcels",
+            FolderId = "planned-folder",
+            FolderName = "Survey",
+            Namespace = "published",
+            TenantId = "resolved-owner"
+        };
+        var batch = await orchestrator.StartAsync(request with
+        {
+            Layers = [request.Layers[0] with { Target = target }]
+        });
+        var child = (await catalog.GetChildrenAsync(batch.BatchId)).Single();
+        child.Target.Should().BeEquivalentTo(target);
+        child.ServiceName.Should().Be(target.ServiceName);
+        var queued = await jobs.RequestStore.GetProgressAsync(child.JobId!);
+        queued!.Target.Should().BeEquivalentTo(target);
+        queued.ServiceName.Should().Be(target.ServiceName);
+        await orchestrator.AdvanceAsync(batch.BatchId);
+        (await jobs.RequestStore.GetProgressAsync(child.JobId!))!.Target.Should().BeEquivalentTo(target);
+    }
+
+    [Trait("Tier", "Fast")]
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

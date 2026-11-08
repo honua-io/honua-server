@@ -17337,6 +17337,7 @@
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.BackgroundWorker_WithUnsafeStoredServiceUrl_FailsJobBeforeImport",
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_AfterRedisRecovers_AdmitsAndCompletesOneJobWithoutRestart",
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_OwnershipConflict_IsAcceptedThenReportsStableTerminalFailure",
+        "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_SourcePublicPathAlreadyReserved_RequiresExplicitMapping",
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_WhenDistributedCoordinationIsUnavailable_ReturnsServiceUnavailable",
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_WhenQueueBecomesUnavailable_RollsBackPersistedJobState",
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_WithCredentialQueryParameter_ReturnsBadRequest",
@@ -17349,7 +17350,10 @@
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_WithSecretReferenceToken_DoesNotPersistPlaintextSecrets_AndWorkerReceivesResolvedValue",
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_WithUnresolvableHost_ReturnsBadRequest",
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_WithValidRequest_ReturnsAccepted",
-        "Honua.Server.Tests.Import.MigrationAdminSdkLifecycleTests.LayerImport_DrivenThroughThePublishedAdminSdk_PreservesRecordsOrdinatesAndNulls"
+        "Honua.Server.Tests.Import.GeoservicesImportFolderEndpointTests.Start_FolderSelection_PersistsServerPlannedIdentityAndResolvedScope",
+        "Honua.Server.Tests.Import.GeoservicesImportFolderEndpointTests.Start_InvalidFolderMapping_RefusesBeforeQueueing",
+        "Honua.Server.Tests.Import.MigrationAdminSdkLifecycleTests.LayerImport_DrivenThroughThePublishedAdminSdk_PreservesRecordsOrdinatesAndNulls",
+        "Honua.Server.Tests.Import.MigrationScannerEndpointTests.Scan_GeoservicesFolderPlan_StartPreservesPreviewIdentity"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -17421,6 +17425,8 @@
       "proving_tests": [
         "Honua.Server.Tests.Import.MigrationAdminSdkLifecycleTests.ServiceMigration_DrivenThroughThePublishedAdminSdkWithATableLeftOut_RoutesToReviewAsIncomplete",
         "Honua.Server.Tests.Import.MigrationAdminSdkLifecycleTests.ServiceMigration_DrivenThroughThePublishedAdminSdk_LandsEveryRecordAndReportsWhatItCouldNotPublishOrVerify",
+        "Honua.Server.Tests.Import.MigrationBatchEndpointTests.StartBatch_DuplicatePublicLeavesInDifferentFolders_RecordsOneTargetPerSource",
+        "Honua.Server.Tests.Import.MigrationBatchEndpointTests.StartBatch_InvalidTargetMapping_RefusesBeforeStartingOrCreatingRun",
         "Honua.Server.Tests.Import.MigrationBatchEndpointTests.StartBatch_WhenFullFidelityIsRequiredAndADiscoveredLayerIsUnselected_ReturnsUnprocessableEntity",
         "Honua.Server.Tests.Import.MigrationBatchEndpointTests.StartBatch_WithEmptyFootprint_ReturnsBadRequest",
         "Honua.Server.Tests.Import.MigrationBatchEndpointTests.StartBatch_WithFootprint_ReturnsAcceptedWithBatchId",
@@ -17596,6 +17602,7 @@
         "Honua.Server.Tests.Import.MigrationAdminSdkLifecycleTests.ServiceMigration_DrivenThroughThePublishedAdminSdkWithATableLeftOut_RoutesToReviewAsIncomplete",
         "Honua.Server.Tests.Import.MigrationAdminSdkLifecycleTests.ServiceMigration_DrivenThroughThePublishedAdminSdk_LandsEveryRecordAndReportsWhatItCouldNotPublishOrVerify",
         "Honua.Server.Tests.Import.MigrationScannerEndpointTests.Scan_GeoServerSource_ReturnsNormalizedInventoryArtifact",
+        "Honua.Server.Tests.Import.MigrationScannerEndpointTests.Scan_GeoservicesFolderPlan_StartPreservesPreviewIdentity",
         "Honua.Server.Tests.Import.MigrationScannerEndpointTests.Scan_GeoservicesSourceWithJsonExport_ProducesStableInventoryBaseline",
         "Honua.Server.Tests.Import.MigrationScannerEndpointTests.Scan_GeoservicesSourceWithJsonExport_ReturnsIndentedAttachment",
         "Honua.Server.Tests.Import.MigrationScannerEndpointTests.Scan_GeoservicesSourceWithPlaintextToken_UsesCredentialsAndRedactsResponse",
