@@ -458,7 +458,7 @@ internal static class OgcRecordsEndpoints
             // Pick the primary publication if any (prefer IsPrimary, else first).
             var resource = item.Resource;
             var primary = item.Primary!;
-            MetadataV2Service? primaryService = primary is not null && snapshot.Index.ServicesById.TryGetValue(primary.ServiceId, out var svc)
+            MetadataV2Service? primaryService = snapshot.Index.ServicesById.TryGetValue(primary.ServiceId, out var svc)
                 ? svc
                 : null;
 
