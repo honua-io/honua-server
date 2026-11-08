@@ -120,7 +120,6 @@
         "src/Honua.Import/Honua.Import.csproj",
         "src/Honua.Io/Honua.Io.csproj",
         "src/Honua.Jobs/Honua.Jobs.csproj",
-        "src/Honua.LicenseMint/Honua.LicenseMint.csproj",
         "src/Honua.Plugins.Abstractions/Honua.Plugins.Abstractions.csproj",
         "src/Honua.Plugins/Honua.Plugins.csproj",
         "src/Honua.Protocols.GeoServices/Honua.Protocols.GeoServices.csproj",
@@ -226,16 +225,6 @@
       ],
       "isolated": false,
       "coverageRequired": false,
-      "shardRouted": false
-    },
-    "tests/dotnet/Honua.ControlPlane.Lambda.Tests/Honua.ControlPlane.Lambda.Tests.csproj": {
-      "role": "unit",
-      "runtimeOwners": [
-        "src/Honua.ControlPlane.Lambda/Honua.ControlPlane.Lambda.csproj"
-      ],
-      "resources": [],
-      "isolated": true,
-      "coverageRequired": true,
       "shardRouted": false
     },
     "tests/dotnet/Honua.Core.Security.Tests/Honua.Core.Security.Tests.csproj": {
@@ -670,18 +659,6 @@
       "resources": [],
       "isolated": true,
       "coverageRequired": true
-    },
-    "tests/dotnet/Honua.LicenseMint.Tests/Honua.LicenseMint.Tests.csproj": {
-      "role": "mixed",
-      "shardRouted": false,
-      "runtimeOwners": [
-        "src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj",
-        "src/Honua.Core/Honua.Core.csproj",
-        "src/Honua.LicenseMint/Honua.LicenseMint.csproj"
-      ],
-      "resources": [],
-      "isolated": false,
-      "coverageRequired": false
     },
     "tests/dotnet/Honua.LoadTests/Honua.LoadTests.csproj": {
       "role": "integration",
@@ -1501,7 +1478,6 @@
         "src/Honua.Import/Honua.Import.csproj",
         "src/Honua.Io/Honua.Io.csproj",
         "src/Honua.Jobs/Honua.Jobs.csproj",
-        "src/Honua.LicenseMint/Honua.LicenseMint.csproj",
         "src/Honua.Plugins.Abstractions/Honua.Plugins.Abstractions.csproj",
         "src/Honua.Plugins/Honua.Plugins.csproj",
         "src/Honua.Protocols.GeoServices/Honua.Protocols.GeoServices.csproj",
