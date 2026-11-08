@@ -406,6 +406,7 @@ jobs:
         working-directory: producer
         run: |
           set -euo pipefail
+          # Production refuses DevGrantEdition, so the soak uses the normal signed-license verifier.
           mkdir -p "$RUNNER_TEMP/license"
           trusted="$(dotnet run --project tests/dotnet/Honua.LoadTests -c Release -- \
             --write-soak-license "$RUNNER_TEMP/license/license.json" \

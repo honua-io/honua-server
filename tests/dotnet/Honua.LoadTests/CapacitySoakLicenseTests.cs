@@ -4,6 +4,8 @@
 using System.Buffers.Text;
 using System.Globalization;
 using System.Text.Json;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.TestKit.Attributes;
 using Honua.TestKit.Helpers;
 using Org.BouncyCastle.Crypto.Parameters;
 using Org.BouncyCastle.Crypto.Signers;
@@ -11,11 +13,10 @@ using Xunit;
 
 namespace Honua.LoadTests;
 
+[Collection("Capacity soak console")]
 public sealed class CapacitySoakLicenseTests
 {
-    [Fact]
-    [Trait("Category", "Unit")]
-    [Trait("Tier", "Fast")]
+    [UnitTest]
     public void Main_WriteSoakLicense_WritesSignedLicenseWithoutRunningLoad()
     {
         var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".json");
@@ -35,9 +36,7 @@ public sealed class CapacitySoakLicenseTests
         }
     }
 
-    [Fact]
-    [Trait("Category", "Unit")]
-    [Trait("Tier", "Fast")]
+    [UnitTest]
     public void WriteLicenseAndReturnTrustedKey_RepeatedRuns_UseDistinctSigningKeys()
     {
         var directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
@@ -79,6 +78,11 @@ public sealed class CapacitySoakLicenseTests
         Assert.InRange(expiresAt, before.AddDays(2), DateTimeOffset.UtcNow.AddDays(2));
         var entitlements = payload.RootElement.GetProperty("entitlements").EnumerateArray()
             .Select(value => value.GetString()).ToArray();
-        Assert.Equal(LicenseTestSupport.ActiveEntitlementsFor(Honua.Core.Features.Licensing.Domain.HonuaEdition.Pro), entitlements);
+        Assert.Equal(LicenseTestSupport.ActiveEntitlementsFor(HonuaEdition.Pro), entitlements);
     }
+}
+
+[CollectionDefinition("Capacity soak console", DisableParallelization = true)]
+public sealed class CapacitySoakConsoleCollection
+{
 }

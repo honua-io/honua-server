@@ -51,8 +51,6 @@
          present in a test host that explicitly registers a sample plugin. -->
     <ProjectReference Include="..\..\fixtures\plugins\Honua.Sample.UtilityValidationPlugin\Honua.Sample.UtilityValidationPlugin.csproj" />
     <ProjectReference Include="..\..\..\src\Honua.Scene\Honua.Scene.csproj" />
-    <!-- License-mint round-trip tests prove minted envelopes are accepted by the
-         runtime verifier (FileBackedLicenseService) and rejected when tampered. -->
   </ItemGroup>
 
   <ItemGroup>

@@ -98,7 +98,6 @@ class AdmissionEvidenceTests(unittest.TestCase):
             self.assertIn("invalid choice", completed.stderr)
             self.assertFalse(output.exists())
 
-
     def test_numeric_bounds_reject_bool_and_nonfinite_values(self):
         for value in (True, False, float("nan"), float("inf"), "128", None):
             self.assertFalse(pilot.finite_between(value, 1, 512))
@@ -240,7 +239,6 @@ class InputTests(unittest.TestCase):
         semantic = "PreserveNewest"
         self.source.write_text("class Source { int changed; }")
         self.assertNotEqual(first["key"], identity()["key"])
-
 
     def test_build_only_analyzer_closure_counts_and_hashes_sources(self):
         analyzer = self.root / "src/Honua.Analyzers/Honua.Analyzers.csproj"
