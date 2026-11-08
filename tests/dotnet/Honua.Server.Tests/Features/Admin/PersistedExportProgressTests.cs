@@ -150,7 +150,10 @@ public sealed class PersistedExportProgressTests : IAsyncLifetime
         var invalidId = await SeedInvalidExportAsync(legacyShape);
         var healthyId = NewId();
         var job = new ExportJob(healthyId, "svc", 741, "roads", "csv", new FeatureQuery(), [],
-            4326, 1, ExportGeometryType.None, null) { ServiceLayerIndex = 3 };
+            4326, 1, ExportGeometryType.None, null)
+        {
+            ServiceLayerIndex = 3
+        };
         await _store.SetProgressAsync(healthyId, ExportProgress.CreateInitial(healthyId, "csv", "svc", 3, 1));
         var requestJson = JsonSerializer.Serialize(
             new ExportJobService.PersistedExportJobRequest { Job = job },
