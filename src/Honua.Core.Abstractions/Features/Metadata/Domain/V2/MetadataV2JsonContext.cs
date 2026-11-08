@@ -20,6 +20,16 @@ namespace Honua.Core.Features.Metadata.Domain.V2;
     typeof(TolerantNumericEnumJsonConverter<MetadataV2AttributeRuleType>),
     typeof(TolerantNumericEnumJsonConverter<Symbology3DComparison>)
 })]
+[JsonSerializable(typeof(MetadataV2ResourceType))]
+[JsonSerializable(typeof(MetadataV2ConnectionType))]
+[JsonSerializable(typeof(MetadataV2StorageType))]
+[JsonSerializable(typeof(MetadataV2ServiceType))]
+[JsonSerializable(typeof(MetadataV2PublicationType))]
+[JsonSerializable(typeof(MetadataV2StorageBindingCapability))]
+[JsonSerializable(typeof(MetadataV2GeometryType))]
+[JsonSerializable(typeof(MetadataV2FieldType))]
+[JsonSerializable(typeof(MetadataV2AttributeRuleType))]
+[JsonSerializable(typeof(Symbology3DComparison))]
 [JsonSerializable(typeof(MetadataV2Graph))]
 [JsonSerializable(typeof(MetadataV2FolderSelection))]
 [JsonSerializable(typeof(MetadataV2Resource))]

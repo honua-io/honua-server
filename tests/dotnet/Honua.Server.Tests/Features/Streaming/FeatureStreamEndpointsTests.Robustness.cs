@@ -22,7 +22,7 @@ public sealed partial class FeatureStreamEndpointsTests
     [InlineData("{\"type\":\"managed\"}", 1)]
     public async Task Capabilities_ConnectionKindOrLifecycleUnrecognized_OmitsUnsupportedBinding(string json, int expectedLayers)
     {
-        var provider = ServiceOnlyFilterStreamLayerCatalog.BuildMetadataProvider();
+        var provider = BuildStreamMetadataProvider(false);
         var graph = (await provider.GetCurrentAsync()).Graph;
         var connection = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2Connection)! with
         {
