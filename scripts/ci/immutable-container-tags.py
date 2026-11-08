@@ -71,6 +71,8 @@ def publication_state(repository, sha, release_version):
     tags = [f'{repository}:{suffix}-{sha[:7]}' for suffix in suffixes]
     tags += [f'{repository}:{suffix}-{sha[:7]}-{arch}'
              for suffix in ('nightly', 'nightly-lambda-aot', 'nightly-jit') for arch in ('amd64', 'arm64')]
+    tags += [f'{repository}:nightly-jit-{sha[:7]}-full{suffix}'
+             for suffix in ('', '-amd64', '-arm64')]
     # Do not short circuit: an explicit version mismatch must fail even in a partial publication.
     states = [existing(tag, release_version) for tag in tags]
     return all(states), any(states)

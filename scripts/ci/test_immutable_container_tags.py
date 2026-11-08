@@ -51,7 +51,7 @@ class ImmutableTagsTests(unittest.TestCase):
     def test_complete_registry_publication_does_not_depend_on_run_success_or_ref(self):
         with patch.object(self.module, 'inspect', return_value='sha256:' + 'a' * 64):
             self.assertTrue(self.module.already_imaged('ghcr.io/honua/server', 'abcdef0' + 'a' * 33, ''))
-        with patch.object(self.module, 'inspect', side_effect=[None] + ['sha256:' + 'a' * 64] * 11):
+        with patch.object(self.module, 'inspect', side_effect=itertools.chain([None], itertools.repeat('sha256:' + 'a' * 64))):
             self.assertFalse(self.module.already_imaged('ghcr.io/honua/server', 'abcdef0' + 'a' * 33, ''))
 
     def test_missing_tag_is_distinct_from_inspection_failure(self):
@@ -67,8 +67,19 @@ class ImmutableTagsTests(unittest.TestCase):
                 self.module.already_imaged('ghcr.io/honua/server', 'abcdef0' + 'a' * 33, '2026.1.0-rc.2')
 
     def test_partial_publication_is_reported_for_safe_legacy_handoffs(self):
-        with patch.object(self.module, 'inspect', side_effect=[None] + ['sha256:' + 'a' * 64] * 11):
+        with patch.object(self.module, 'inspect', side_effect=itertools.chain([None], itertools.repeat('sha256:' + 'a' * 64))):
             self.assertEqual(self.module.publication_state('ghcr.io/honua/server', 'abcdef0' + 'a' * 33, ''), (False, True))
+
+    def test_missing_full_variant_is_partial_publication(self):
+        repository = 'ghcr.io/honua/server'
+        for suffix in ('', '-amd64', '-arm64'):
+            missing = f'{repository}:nightly-jit-abcdef0-full{suffix}'
+            with self.subTest(tag=missing), patch.object(
+                self.module, 'inspect', side_effect=lambda reference: None if reference == missing else 'sha256:' + 'a' * 64
+            ):
+                self.assertEqual(
+                    self.module.publication_state(repository, 'abcdef0' + 'a' * 33, ''),
+                    (False, True))
 
     def test_scheduled_partial_retry_cannot_mix_rc_and_nightly_images(self):
         with patch.object(self.module, 'inspect', side_effect=itertools.cycle([None] + ['sha256:' + 'a' * 64] * 11)), \
