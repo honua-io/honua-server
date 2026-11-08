@@ -81,6 +81,51 @@ public sealed class PublicPublicationIdentityTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Protocol(TestProtocols.Wms13)]
+    [Operation(Operations.Wms)]
+    [InterfaceOperation(TestProtocols.Wms13, "GetCapabilities")]
+    [Endpoint("GET /ogc/services/{serviceId}/wms")]
+    public async Task WmsCapabilities_LegacyPublication_UsesServiceLocalIdentifier()
+    {
+        var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        SetGraph(graph with
+        {
+            Revision = graph.Revision + 1,
+            Publications = graph.Publications.Select(publication => publication with
+            {
+                Identifier = new MetadataV2PublicationIdentifier(),
+                ServiceLocalId = "0",
+                LayerIndex = 0,
+            }).ToArray(),
+        });
+
+        (await WmsNamesAsync()).Should().Equal("0");
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.Wms13)]
+    [Operation(Operations.Wms)]
+    [InterfaceOperation(TestProtocols.Wms13, "GetCapabilities")]
+    [Endpoint("GET /ogc/services/{serviceId}/wms")]
+    public async Task WmsCapabilities_ProtocolPublicationsShareResource_AdvertisesIdentifierOnce()
+    {
+        var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        var primary = graph.Publications.Single(publication => publication.Metadata.Id == PublicationId);
+        SetGraph(graph with
+        {
+            Revision = graph.Revision + 1,
+            Publications = [.. graph.Publications, primary with
+            {
+                Metadata = primary.Metadata with { Id = "roads-map-view", Name = "roads-map-view" },
+                PublicationType = MetadataV2PublicationType.EsriMapLayer,
+                IsPrimary = false,
+            }],
+        });
+
+        (await WmsNamesAsync()).Should().Equal("0");
+    }
+
+    [IntegrationTest]
     [Protocol(TestProtocols.OgcApiRecords)]
     [Operation(Operations.Query)]
     [Endpoint("GET /ogc/records/collections/{collectionId}/items")]

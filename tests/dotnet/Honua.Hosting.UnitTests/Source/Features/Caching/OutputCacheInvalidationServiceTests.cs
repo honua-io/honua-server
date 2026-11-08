@@ -213,6 +213,8 @@ public sealed class OutputCacheInvalidationServiceTests
         await outputCacheStore.Received(1).EvictByTagAsync("service:alpha", Arg.Any<CancellationToken>());
         await outputCacheStore.DidNotReceive().EvictByTagAsync("service:beta", Arg.Any<CancellationToken>());
         await responseCache.Received(1).RemoveByPatternAsync("response:query:featureserver:service:alpha:*", Arg.Any<CancellationToken>());
+        await responseCache.Received().RemoveByPatternAsync("response:query:featureserver:service:alpha:layer:7:*", Arg.Any<CancellationToken>());
+        await responseCache.Received().RemoveByPatternAsync("response:query:odata:layer:7:*", Arg.Any<CancellationToken>());
     }
 
     [UnitTest]

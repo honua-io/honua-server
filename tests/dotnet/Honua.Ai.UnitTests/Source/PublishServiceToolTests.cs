@@ -82,6 +82,9 @@ public sealed class PublishServiceToolTests
         schema.GetProperty("properties").TryGetProperty("status", out _).Should().BeTrue();
         schema.GetProperty("properties").TryGetProperty("serviceUri", out _).Should().BeTrue();
         schema.GetProperty("properties").TryGetProperty("metadataRevision", out _).Should().BeTrue();
+        schema.GetProperty("properties").TryGetProperty("storageLayerId", out _).Should().BeTrue();
+        schema.GetProperty("properties").TryGetProperty("serviceLayerIndex", out _).Should().BeTrue();
+        schema.GetProperty("properties").TryGetProperty("layerId", out _).Should().BeFalse();
     }
 
     [UnitTest]
