@@ -714,6 +714,7 @@ public sealed partial class ProposalEndpointsTests : IAsyncLifetime
 
     private sealed class TestProposalStore : IOperationProposalStore
     {
+        public bool AdvanceVersionOnNextClaim { get; set; }
         private readonly Dictionary<string, OperationProposal> _proposals = new(StringComparer.Ordinal);
 
         public Task<bool> TryAcquireLeaseAsync(string operationId, string ownerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
@@ -741,6 +742,14 @@ public sealed partial class ProposalEndpointsTests : IAsyncLifetime
 
         public Task<bool> TrySetAsync(OperationProposal proposal, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
         {
+            if (AdvanceVersionOnNextClaim && proposal.Status == OperationProposalStatus.Executing)
+            {
+                AdvanceVersionOnNextClaim = false;
+                var pending = _proposals[proposal.ProposalId];
+                _proposals[proposal.ProposalId] = pending with { Version = pending.Version + 1 };
+                return Task.FromResult(false);
+            }
+
             if (_proposals.TryGetValue(proposal.ProposalId, out var existing) && existing.Version != proposal.Version)
             {
                 return Task.FromResult(false);

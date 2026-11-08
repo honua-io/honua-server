@@ -98,6 +98,36 @@ public sealed partial class ProposalEndpointsTests
         }
     }
 
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/proposals/{id}/approval-review")]
+    [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
+    public async Task ApproveProposal_ConcurrentVersionWrite_RequiresFreshReviewWithoutSecurityDenial()
+    {
+        var proposal = await SeedProposalAsync();
+        using var human = await HumanApprovalHttpClient.AuthenticateAsync(_fixture, _identityProvider);
+        var review = await human.OpenReviewAsync(proposal.ProposalId);
+        _proposalStore.AdvanceVersionOnNextClaim = true;
+
+        using var response = await human.SubmitReviewAsync(proposal.ProposalId, review);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await response.Content.ReadAsStringAsync()).Should().ContainEquivalentOf("review");
+        var pending = (await _proposalStore.GetAsync(proposal.ProposalId))!;
+        pending.Status.Should().Be(OperationProposalStatus.AwaitingApproval);
+        pending.HumanApproval.Should().BeNull();
+        _executor.ExecutionCount.Should().Be(0);
+        using var scope = _fixture.Services.CreateScope();
+        var audits = await scope.ServiceProvider.GetRequiredService<Honua.Core.Features.AuditLog.Abstractions.IAuditLogReader>()
+            .ListAsync(new Honua.Core.Features.AuditLog.Abstractions.AuditLogFilter
+            {
+                ResourceId = proposal.ProposalId, PageSize = 20,
+            });
+        audits.Items.Should().NotContain(item => item.Action == "operation.approval_denied");
+        using var retry = await human.ApproveAsync(proposal.ProposalId);
+        retry.StatusCode.Should().Be(HttpStatusCode.OK);
+        _executor.ExecutionCount.Should().Be(1);
+    }
+
     private async Task AssertNonHumanDecisionDeniedAsync(HttpClient client, OperationProposal proposal)
     {
         using var read = await client.GetAsync($"/api/v1/admin/proposals/{proposal.ProposalId}");
