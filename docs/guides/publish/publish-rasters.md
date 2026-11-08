@@ -8,6 +8,8 @@ resources:
 ---
 # Publish rasters
 
+See the [Honua vocabulary](../../concepts/domain/README.md) for the meanings of Connection, Dataset, Layer, Service, Folder, and Environment.
+
 You'll have raster data imported into PostGIS and served through ImageServer, WCS, and OGC API Coverages in about 10 minutes. Direct cloud COG tile serving currently uses the ImageServer tile fallback only.
 
 **Prerequisites:** A running server ([quickstart](../../get-started/quickstart.md)), admin credentials ([authentication](../secure/authentication.md)), and a target layer id in the catalog.

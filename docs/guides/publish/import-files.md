@@ -6,6 +6,8 @@ resource: "honua://capability/import.file"
 ---
 # Import data from files
 
+See the [Honua vocabulary](../../concepts/domain/README.md) for the meanings of Connection, Dataset, Layer, Service, Folder, and Environment.
+
 You'll have a geospatial file loaded into a PostGIS table, ready to publish, in about 5 minutes.
 
 **Prerequisites:** A running server ([quickstart](../../get-started/quickstart.md)) and admin credentials ([authentication](../secure/authentication.md)).

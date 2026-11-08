@@ -6,6 +6,8 @@ resource: "honua://capability/import.geoservices"
 ---
 # Import from GeoServices REST services
 
+See the [Honua vocabulary](../../concepts/domain/README.md) for the meanings of Connection, Dataset, Layer, Service, Folder, and Environment.
+
 You'll have a layer from a public GeoServices REST service copied into PostGIS and published in about 10 minutes.
 
 **Prerequisites:** A running server ([quickstart](../../get-started/quickstart.md)) and admin credentials ([authentication](../secure/authentication.md)). Queued imports require the distributed job queue (Redis) to be healthy.

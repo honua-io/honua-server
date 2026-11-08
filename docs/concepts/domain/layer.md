@@ -1,6 +1,6 @@
 ---
 type: concept
-title: "Published layer"
+title: "Layer"
 description: "A server resource binding data, schema, capabilities, policies, and display defaults."
 tags: [gis, domain-language]
 aliases: ["GIS layer","feature layer","published table","collection"]
@@ -18,8 +18,8 @@ relations:
     target: "/concepts/domain/map.md"
 ---
 
-# Published layer
-A published layer binds a [dataset](dataset.md) to server metadata: fields, geometry, [CRS](crs.md), storage, access, and display settings. A [service](service.md) determines its protocol exposure.[^contract]
+# Layer
+A Layer exposes a [Dataset](dataset.md) within a [Service](service.md), with fields, geometry, [CRS](crs.md), storage, access, and display settings. The Service determines its protocol exposure.[^contract]
 
 This familiar API term is interpreted through Metadata v2's [resource](resource.md), [storage binding](storage-binding.md), and [publication](publication.md). The logical resource, backing-store layer handle, and service-local identifier must not be substituted for one another.
 

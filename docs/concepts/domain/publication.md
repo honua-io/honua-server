@@ -1,9 +1,9 @@
 ---
 type: concept
 title: "Publication"
-description: "Making a specified resource or saved version available through its governed serving surface."
+description: "The model link from a resource to a Service, distinct from Studio Version activation."
 tags: [gis, domain-language]
-aliases: ["publish","make available","release a map","activate"]
+aliases: ["resource exposure","service membership"]
 sources:
   - id: contract
     resource: "/guides/connect/ai-agents-mcp.md"
@@ -26,11 +26,13 @@ relations:
 
 # Publication
 
+Publication is a model term. In user-facing product language, call the exposed Dataset a [Layer](layer.md) in a [Service](service.md). For saved Studio content, use [Version and Released](content-version.md); **Go live** means activate the saved Version at its governed route.
+
 Interpret "publish this" using the current object and previously established destination and audience. A map draft and a database table lead to different publication workflows. Ask only about unresolved choices that change the outcome; preserve existing access unless the user requests a change. Understanding the phrase does not bypass the selected interface's operational policy. See [contextual interpretation](intent-interpretation.md).
 
 “Publish” has several concrete meanings: register a [layer](layer.md), expose it through a [service](service.md), or activate a saved [map](map.md) version. Name the object, version, route, and intended audience.
 
-In the canonical Metadata v2 graph, a publication links a [resource](resource.md) to a service, optionally selecting a [storage binding](storage-binding.md). Its protocol-facing identifier is service-local, distinct from the storage-layer handle. Several publications can expose one resource without copying its data. Studio saved-content activation is a separate lifecycle use of the word publication.
+In the canonical Metadata v2 graph, a publication links a [resource](resource.md) to a service, optionally selecting a [storage binding](storage-binding.md). Its protocol-facing identifier is service-local, distinct from the storage-layer handle. Several publications can expose one resource without copying its data. Studio saved-content activation is a separate lifecycle; its current API still uses publication in route and response names. Those wire names do not change the product vocabulary.
 
 For a connection or data source, “publish” usually means register, validate, bind, and then expose the intended resource; it does not publish credential material. For a style, it means make the style resource available and bind its intended scope, not change source features. Resolve the actual object kind and runtime contract rather than applying one generic publish operation to all nouns.
 

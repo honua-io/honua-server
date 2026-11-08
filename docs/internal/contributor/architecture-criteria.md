@@ -482,3 +482,7 @@ Middleware, Logging, Monitoring, RateLimiting, Resilience, Security and MultiTen
 promoting clearly bounded subfolders into dedicated feature folders. That move is deferred: it
 needs a dedicated PR with namespace updates. `Styling/` has since moved to
 `src/Honua.Server/Features/Styling/`.
+
+## Product vocabulary
+
+Review user-facing names against the [Honua vocabulary and retired-term rules](../../concepts/domain/README.md#vocabulary-review-rules). Keep resource, storage binding, and publication as model terms. Preserve protocol wire contracts; document exact compatibility exceptions and their reasons.

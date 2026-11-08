@@ -19,6 +19,8 @@ relations:
 # Draft and content version
 A draft is mutable authoring state. Its generation supports optimistic concurrency. Saving creates an immutable version; reopening a version creates a new draft rather than modifying that historical snapshot.[^contract]
 
+A Version is **Released** when it is active at its governed route. **Go live** means activate that saved Version, subject to the current [publication and Approval contract](publication.md). Saving a Version or previewing a Draft does not release it or grant access to its dependent Layers.
+
 “Restore the earlier map” can mean reopen a previous version for editing or move an active published choice back to it. Identify the intended effect before changing [publication](publication.md). A browser undo operation is not automatically a durable revision restore.
 
 Record item, version, and content-hash identities where returned. On a generation conflict, read the current draft and reconcile; do not overwrite changes simply by retrying with a newer number.
