@@ -13,6 +13,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
 using Honua.TestKit.Infrastructure;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 
@@ -26,7 +27,12 @@ public sealed partial class PublicPublicationIdentityTests : IAsyncLifetime
     private const string ServiceName = "public-roads";
     private const int OriginalStorageLayerId = 41;
     private const int ReboundStorageLayerId = 73;
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = new WebAppFixture().ConfigureWebHost(builder =>
+    {
+        builder.UseSetting("HONUA_DEV_AUTH", "false");
+        builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false");
+        builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+    });
     private readonly ILayerStyleService _styles = Substitute.For<ILayerStyleService>();
 
     public async Task InitializeAsync()
@@ -37,6 +43,7 @@ public sealed partial class PublicPublicationIdentityTests : IAsyncLifetime
             .Returns(new LayerStyleSnapshot(style, null));
         _fixture.ReplaceRequestService(_styles);
         await _fixture.InitializeAsync();
+        _fixture.Client.DefaultRequestHeaders.Add("X-API-Key", WebAppFixture.SharedAdminPassword);
         ConfigurePublications();
     }
 
