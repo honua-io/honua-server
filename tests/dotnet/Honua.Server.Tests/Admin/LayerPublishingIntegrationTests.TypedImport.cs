@@ -267,6 +267,7 @@ public sealed partial class LayerPublishingIntegrationTests
 
     private async Task<JsonElement> CallQueryFeaturesAsync(string where)
     {
+        var layer = await ReadImportedGeometryCatalogLayerAsync();
         var body = new
         {
             jsonrpc = "2.0",
@@ -277,8 +278,8 @@ public sealed partial class LayerPublishingIntegrationTests
                 name = "honua_query_features",
                 arguments = new
                 {
-                    serviceId = _serviceName,
-                    layerId = _layerId,
+                    serviceId = layer.GetProperty("serviceId").GetString(),
+                    serviceLayerIndex = layer.GetProperty("serviceLayerIndex").GetInt32(),
                     where,
                     outFields = new[] { "name", "population" },
                     limit = 10

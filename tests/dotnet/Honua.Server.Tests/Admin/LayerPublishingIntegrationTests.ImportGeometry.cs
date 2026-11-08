@@ -196,7 +196,7 @@ public sealed partial class LayerPublishingIntegrationTests
         var layer = await ReadImportedGeometryCatalogLayerAsync();
         layer.GetProperty("geometryType").GetString().Should().Be(canonicalType);
         layer.GetProperty("srid").GetInt32().Should().Be(targetSrid);
-        var described = await CallGeometryCatalogAsync("honua_describe_layer", new { serviceId = _serviceName, serviceLayerIndex = layer.GetProperty("serviceLayerIndex").GetInt32() });
+        var described = await CallGeometryCatalogAsync("honua_describe_layer", new { serviceId = layer.GetProperty("serviceId").GetString(), serviceLayerIndex = layer.GetProperty("serviceLayerIndex").GetInt32() });
         described.GetProperty("geometryType").GetString().Should().Be(canonicalType);
         described.GetProperty("srid").GetInt32().Should().Be(targetSrid);
     }
@@ -213,7 +213,8 @@ public sealed partial class LayerPublishingIntegrationTests
     {
         var catalog = await CallGeometryCatalogAsync("honua_list_layers", new { filter = _serviceName });
         var layer = catalog.GetProperty("layers").EnumerateArray().Single();
-        layer.GetProperty("serviceId").GetString().Should().Be(_serviceName);
+        layer.GetProperty("serviceName").GetString().Should().Be(_serviceName);
+        layer.GetProperty("serviceId").GetString().Should().NotBeNullOrWhiteSpace();
         layer.TryGetProperty("layerId", out _).Should().BeFalse();
         layer.TryGetProperty("storageLayerId", out _).Should().BeFalse();
         return layer;
