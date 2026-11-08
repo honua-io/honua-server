@@ -442,21 +442,34 @@ internal sealed partial class OperationGateway : IOperationGateway
         };
 
         using var completionTimeout = new CancellationTokenSource(CompletionPersistenceTimeout);
-        await PersistResolutionAsync(resolved, OperationProposalStatus.Executing, completionTimeout.Token).ConfigureAwait(false);
+        if (!approvalAuditRecorded)
+        {
+            await PersistCanonicalResolutionAsync(resolved, OperationHandleStatus.Failed, completionTimeout.Token)
+                .ConfigureAwait(false);
+        }
+        await PersistApprovedResolutionAsync(resolved, approvedBy, completionTimeout.Token).ConfigureAwait(false);
+        return resolved;
+    }
+
+    private async Task PersistApprovedResolutionAsync(
+        OperationProposal resolved,
+        string approvedBy,
+        CancellationToken cancellationToken)
+    {
+        await PersistResolutionAsync(resolved, OperationProposalStatus.Executing, cancellationToken).ConfigureAwait(false);
         await RecordAutonomyProposalResolutionAsync(
                 resolved,
                 OpsAutonomyProposalResolution.Approved,
-                completionTimeout.Token)
+                cancellationToken)
             .ConfigureAwait(false);
         await WriteAuditAsync(
                 resolved,
-                status == OperationProposalStatus.Failed ? "operation.apply_failed" : "operation.applied",
+                resolved.Status == OperationProposalStatus.Failed ? "operation.apply_failed" : "operation.applied",
                 approvedBy,
-                status == OperationProposalStatus.Failed ? AuditOutcome.Failure : AuditOutcome.Success,
-                completionTimeout.Token)
+                resolved.Status == OperationProposalStatus.Failed ? AuditOutcome.Failure : AuditOutcome.Success,
+                cancellationToken)
             .ConfigureAwait(false);
-        await _notifier.NotifyResolvedAsync(resolved, completionTimeout.Token).ConfigureAwait(false);
-        return resolved;
+        await _notifier.NotifyResolvedAsync(resolved, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task ValidateCurrentProposerAsync(string? actor, CancellationToken cancellationToken)
@@ -502,7 +515,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         };
 
         await PersistResolutionAsync(resolved, OperationProposalStatus.AwaitingApproval, cancellationToken).ConfigureAwait(false);
-        await PersistCanonicalRejectionAsync(resolved, cancellationToken).ConfigureAwait(false);
+        await PersistCanonicalResolutionAsync(resolved, OperationHandleStatus.Rejected, cancellationToken).ConfigureAwait(false);
         await RecordAutonomyProposalResolutionAsync(
                 resolved,
                 OpsAutonomyProposalResolution.Rejected,
@@ -527,8 +540,9 @@ internal sealed partial class OperationGateway : IOperationGateway
         }
     }
 
-    private async Task PersistCanonicalRejectionAsync(
+    private async Task PersistCanonicalResolutionAsync(
         OperationProposal proposal,
+        OperationHandleStatus status,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(proposal.Audit.OperationInstanceId))
@@ -547,7 +561,7 @@ internal sealed partial class OperationGateway : IOperationGateway
 
         await instanceStore.SetAsync(current with
         {
-            Status = OperationHandleStatus.Rejected,
+            Status = status,
             ProposalId = proposal.ProposalId,
             UpdatedAt = DateTimeOffset.UtcNow,
             Reason = proposal.ResolutionReason,
