@@ -127,7 +127,7 @@ internal sealed partial class OperationHumanApprovalAuthority(
             || capability.Audience != ResolveAudience() || capability.TargetKind != target.Kind
             || capability.TargetId != target.Id || capability.TargetVersion != target.Version
             || capability.BindingDigest != target.BindingDigest || capability.TenantId != target.TenantId
-            || capability.TenantId != (string.IsNullOrEmpty(approval.TenantId) ? null : approval.TenantId)
+            || capability.TenantId != ResolveApprovalTenant(target, context, approval.TenantId)
             || capability.TenantId != ResolveRequestTenant(target, context))
             throw new HumanApprovalRequiredException();
         var human = await LoadHumanAsync(context.Request.Cookies[AdminAuthSessionStore.AuthSessionCookieName],
@@ -148,6 +148,13 @@ internal sealed partial class OperationHumanApprovalAuthority(
         // A platform-owned workflow stays global when middleware supplied only the anonymous default.
         return target.TenantId is null && requestTenant?.Source == TenantContextSource.Default
             ? null : requestTenant?.TenantId;
+    }
+
+    private static string? ResolveApprovalTenant(HumanApprovalTarget target, HttpContext context, string? tenantId)
+    {
+        var requestTenant = context.RequestServices.GetService<ITenantContext>();
+        return target.TenantId is null && requestTenant?.Source == TenantContextSource.Default && tenantId == requestTenant.TenantId
+            ? null : string.IsNullOrEmpty(tenantId) ? null : tenantId;
     }
 
     private static HumanApprovalTarget ProposalTarget(OperationProposal proposal) => new(

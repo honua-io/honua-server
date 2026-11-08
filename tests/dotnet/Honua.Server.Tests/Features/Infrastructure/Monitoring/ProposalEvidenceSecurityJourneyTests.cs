@@ -973,7 +973,7 @@ public sealed class ProposalEvidenceSecurityJourneyTests(
             ResolvedAt: proposal.ResolvedAt,
             IssuedAt: evidence?.IssuedAt,
             VerifierVerdict: evidence?.VerifierDecision,
-            ExpiryDecision: scenario == "human-capability-expired" ? "human-capability-expired" : "valid-at-decision",
+            ExpiryDecision: scenario == "human-capability-expired" ? "expired" : "valid-at-decision",
             NegativeReason: outcome is "allowed" or "at-most-once" ? null : scenario);
     }
 

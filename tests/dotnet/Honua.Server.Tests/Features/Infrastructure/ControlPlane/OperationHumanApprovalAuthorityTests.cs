@@ -253,7 +253,14 @@ public sealed class OperationHumanApprovalAuthorityTests
 
         var review = () => host.Authority.OpenReviewAsync(proposal, host.Context);
 
-        if (accepted) (await review()).Capability.Should().NotBeNullOrEmpty();
+        if (accepted)
+        {
+            var capability = await review();
+            host.ApproveRequest(human, capability);
+            host.Context.RequestServices.GetRequiredService<RequestTenantContext>().Set("public", source);
+            var decision = OperationHumanApprovalTestHost.Approval(human) with { TenantId = "public" };
+            (await host.Authority.VerifyAsync(proposal, decision)).ActorId.Should().Be(decision.ApprovedBy);
+        }
         else await review.Should().ThrowAsync<HumanApprovalRequiredException>();
     }
 
