@@ -12,7 +12,7 @@ Use the same words in the Console, Studio, SDKs, guides, error messages, APIs, d
 | Term | Definition |
 | --- | --- |
 | [Connection](connection.md) | A registered database or file that Honua can reach. Registration exposes no data by itself; a client session is a Session. |
-| [Dataset](dataset.md) | A collection of records, features, or imagery, with logical identity, schema, spatial metadata, policy, and style references independent of storage and protocol. |
+| [Dataset](dataset.md) | A collection of records, features, or imagery, with logical identity, schema, spatial metadata, policy, and style references independent of storage and protocol. Its kind is Feature type (vector) or Coverage (raster); a non-spatial Feature type is shown as Table. |
 | [Layer](layer.md) | A Dataset exposed in a Service, optionally selecting a storage binding, with a Service-local identifier, capabilities, access rules, and display defaults. |
 | [Service](service.md) | A named group of Layers with one list of enabled protocols. It belongs to a Folder or the root of its Environment. |
 | [Folder](folder.md) | The grouping of Services within an Environment. Folders do not nest or grant permissions. |
@@ -57,6 +57,10 @@ Use the same words in the Console, Studio, SDKs, guides, error messages, APIs, d
 | [Principal (internal only)](identity.md) | The authenticated identity used for authorization and audit, representing a User or automation. Credentials authenticate a principal; display names do not establish identity. |
 
 The [data-model narrative](../data-model.md) follows these same relationships.
+
+## Coming from another system
+
+Moving from another system? Use [Coming from ArcGIS](coming-from-arcgis.md) or [Coming from GeoServer](coming-from-geoserver.md) to map familiar terms to these definitions.
 
 ## Implementation transition
 
