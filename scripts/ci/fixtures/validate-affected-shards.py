@@ -515,15 +515,25 @@ def check_skip_paths() -> None:
         raise FixtureError(f"CI-only diff did not skip: {workflow_only['reason']}")
 
 
+def check_fixture_input_owners() -> None:
+    owners = {
+        "tests/fixtures/gp/": "GP Devkit CLI",
+        "tests/fixtures/plugins/": "Server Features Miscellaneous",
+    }
+    for prefix, expected_owner in owners.items():
+        result = run_selector([f"{prefix}consumer-input.json"])
+        if set(result["shards"]) != {expected_owner}:
+            raise FixtureError(
+                f"{prefix} selected {result['shards']}, expected only {expected_owner}"
+            )
+
+
 def check_shard_owned_roots_are_product_code(config: dict[str, Any]) -> int:
     """A diff limited to a shard INPUT outside `src/`/`tests/dotnet/` must run.
 
-    `.github/ci-shards.json` routes `eng/telemetry/`, `samples/gp/` and
-    `tests/fixtures/toolbox-translation/` -- `SloMetricContractTests` reads
-    `eng/telemetry/slo-metric-contract.v1.json`, `ToolboxTranslationEndpointTests`
-    consumes the toolbox fixtures. A static `src/` + `tests/dotnet/` admission
-    test answered `no_product_code` for exactly those diffs, so the detector
-    ran nothing while the trailing matrix could still go red on them.
+    Shard inputs also include telemetry contracts and GP, plugin and toolbox
+    fixtures outside those trees. Their consumers must run when an input is
+    the only changed file, even though it has no test namespace of its own.
 
     Derived from the live map: the assertion is that the admission test is
     never narrower than the router it wraps, whatever the map currently routes.
@@ -791,6 +801,7 @@ def main() -> int:
     check_wps_and_h3_tests_select_both_owners(config)
     tiered = check_non_runnable_tiers_are_not_credited(config)
     unrouted = check_unrouted_test_selects_its_owning_shard(config)
+    check_fixture_input_owners()
     roots = check_shard_owned_roots_are_product_code(config)
     check_run_all_narrows_by_affected_projects(config)
     check_targeted_answer_is_never_trimmed(config)

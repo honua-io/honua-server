@@ -1047,7 +1047,7 @@ else
 fi
 
 echo "6. Running .NET tests..."
-mkdir -p ./tests/TestResults
+mkdir -p ./artifacts/test-results
 
 COMPLETED_UNIT_FULL_SUITES=()
 run_unit_project() {
@@ -1063,7 +1063,7 @@ run_unit_project() {
             --no-restore \
             --configuration Release \
             --logger "console;verbosity=minimal" \
-            --results-directory ./tests/TestResults \
+            --results-directory ./artifacts/test-results \
             -- RunConfiguration.MaxCpuCount=1
         case "${proj}" in
             tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj|tests/dotnet/Honua.Core.Security.Tests/Honua.Core.Security.Tests.csproj)
@@ -1085,7 +1085,7 @@ if [[ "${DRY_RUN}" == "1" ]]; then
 else
     dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
         --no-build --no-restore --configuration Release --filter "Tier=Fast" \
-        --logger "console;verbosity=minimal" --results-directory ./tests/TestResults \
+        --logger "console;verbosity=minimal" --results-directory ./artifacts/test-results \
         -- RunConfiguration.MaxCpuCount=1
 fi
 
@@ -1108,7 +1108,7 @@ else
         --configuration Release \
         --filter "${MCP_GOVERNANCE_FILTER}" \
         --logger "console;verbosity=minimal" \
-        --results-directory ./tests/TestResults \
+        --results-directory ./artifacts/test-results \
         -- RunConfiguration.MaxCpuCount=1
 fi
 
@@ -1137,7 +1137,7 @@ else
         # Timing hints only reorder the canonical selection. Missing or invalid
         # evidence retains the original order and cannot remove a selected shard.
         if ordered_shards="$("${PYTHON_BIN}" scripts/ci/shard-timing-plan.py order \
-            --timings-dir "${HONUA_LOCAL_CI_TIMINGS:-tests/TestResults}" <<< "${SELECTED_SHARDS}")"; then
+            --timings-dir "${HONUA_LOCAL_CI_TIMINGS:-artifacts/test-results}" <<< "${SELECTED_SHARDS}")"; then
             SELECTED_SHARDS="${ordered_shards}"
         else
             echo "   ⚠️ timing ordering unavailable; preserving canonical shard order"
@@ -1175,7 +1175,7 @@ else
                HONUA_SERVER_TEST_LOG_NAME="${log_name}" \
                HONUA_SERVER_TEST_TIMEOUT_MINUTES="${HONUA_PRE_PR_SERVER_TEST_TIMEOUT_MINUTES:-${test_timeout_minutes}}" \
                HONUA_SERVER_TEST_MAX_CPU_COUNT="${HONUA_PRE_PR_MAX_CPU_COUNT:-${max_cpu_count}}" \
-               HONUA_SERVER_TEST_RESULTS_DIR="./tests/TestResults" \
+               HONUA_SERVER_TEST_RESULTS_DIR="./artifacts/test-results" \
                HONUA_SERVER_TEST_CONFIGURATION="Release" \
                HONUA_SERVER_TEST_HEARTBEAT_SECONDS="${HONUA_PRE_PR_HEARTBEAT_SECONDS:-30}" \
                scripts/ci/run-server-test-shard.sh > "${SHARD_STATUS_DIR}/${safe}.log" 2>&1; then
@@ -1225,7 +1225,7 @@ else
         --no-restore \
         --configuration Release \
         --logger "console;verbosity=minimal" \
-        --results-directory ./tests/TestResults \
+        --results-directory ./artifacts/test-results \
         -- RunConfiguration.MaxCpuCount=1
 fi
 
@@ -1239,7 +1239,7 @@ else
         --no-restore \
         --configuration Release \
         --logger "console;verbosity=minimal" \
-        --results-directory ./tests/TestResults \
+        --results-directory ./artifacts/test-results \
         -- RunConfiguration.MaxCpuCount=1
 fi
 
@@ -1263,7 +1263,6 @@ elif [[ "${AFFECTED}" == "ALL" ]] || affected_contains "Honua.Server.csproj"; th
             -p:HonuaSkipAdminClientForAotVerification=true \
             -p:HonuaSkipOracleForAotVerification=true \
             -p:HonuaSkipSnowflakeForAotVerification=true \
-            -p:HonuaIncludeStacOpsDemo=false \
             -p:StripSymbols=true \
             -o ./publish
     )

@@ -433,7 +433,7 @@ public sealed class ServingImageBoundaryTests
         foreach (var project in new[]
                  {
                      "Honua.Db/Redshift",
-                     "Honua.Snowflake",
+                     "Honua.Db/Snowflake",
                      "Honua.Db/Databricks",
                      "Honua.Protocols.SensorThings"
                  })
@@ -475,7 +475,6 @@ public sealed class ServingImageBoundaryTests
                  {
                      "'src/**'",
                      "'eng/**'",
-                     "'samples/Honua.StacOpsDemo/**'",
                      "'docs/gis/data/feature-catalog.json'",
                      "'docs/developer/api-specs/admin-api.json'",
                      "'tests/fixtures/ai-builder/**'",
@@ -539,7 +538,7 @@ public sealed class ServingImageBoundaryTests
         workflow.Should().Contain("uses: ./.github/actions/setup-dotnet-ci");
         workflow.Should().Contain("--filter FullyQualifiedName~ProductionWorkerContainerHandoffTests");
         workflow.Should().Contain("--filter 'Category=NativePublicApi'");
-        workflow.Should().Contain("ET.parse('tests/TestResults/native-public-api.trx')");
+        workflow.Should().Contain("ET.parse('artifacts/test-results/native-public-api.trx')");
         workflow.Should().Contain("if passed < 1 or nonpassing:");
         workflow.Should().Contain("redis:");
         workflow.Should().Contain("aquasecurity/trivy-action");

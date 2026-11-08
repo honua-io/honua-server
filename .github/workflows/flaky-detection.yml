@@ -274,12 +274,12 @@ jobs:
           HONUA_SERVER_TEST_MAX_CPU_COUNT: ${{ matrix.max_cpu_count }}
           HONUA_SERVER_TEST_EXCLUDE_SLOW: ${{ matrix.exclude_slow }}
           HONUA_SERVER_TEST_EXCLUDE_FAST: ${{ matrix.exclude_fast }}
-          HONUA_SERVER_TEST_RESULTS_DIR: ./tests/TestResults
+          HONUA_SERVER_TEST_RESULTS_DIR: ./artifacts/test-results
           HONUA_SERVER_TEST_CONFIGURATION: Release
         run: |
           set -uo pipefail
           export HONUA_SERVER_TEST_CSPROJ="${SHARD_CSPROJ:-tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj}"
-          mkdir -p ./tests/TestResults
+          mkdir -p ./artifacts/test-results
 
           # Each iteration gets a FRESH database. PostgresFixture uses
           # HONUA_TEST_DB_URL verbatim when it is set and never resets the
@@ -328,9 +328,9 @@ jobs:
         with:
           name: flaky-detection-${{ matrix.suffix }}
           path: |
-            tests/TestResults/flake-*.trx
-            tests/TestResults/flake-*.log
-            tests/TestResults/flake-*.timing.json
+            artifacts/test-results/flake-*.trx
+            artifacts/test-results/flake-*.log
+            artifacts/test-results/flake-*.timing.json
           if-no-files-found: warn
           retention-days: 30
 
@@ -364,17 +364,17 @@ jobs:
           EXPECT_ITERATIONS: ${{ needs.plan.outputs.iterations }}
         run: |
           set -euo pipefail
-          mkdir -p tests/TestResults
+          mkdir -p artifacts/test-results
           rc=0
           python3 scripts/ci/summarize-flaky-detection.py \
             --results flake-evidence \
             --expect-shards "${EXPECT_SHARDS}" \
             --expect-iterations "${EXPECT_ITERATIONS}" \
-            --output tests/TestResults/flaky-report.json \
-            --markdown tests/TestResults/flaky-report.md || rc=$?
+            --output artifacts/test-results/flaky-report.json \
+            --markdown artifacts/test-results/flaky-report.md || rc=$?
           {
             printf '_Window: %s_\n\n' "${WINDOW}"
-            cat tests/TestResults/flaky-report.md
+            cat artifacts/test-results/flaky-report.md
           } >> "${GITHUB_STEP_SUMMARY}"
           exit "${rc}"
 
@@ -386,7 +386,7 @@ jobs:
         with:
           name: flaky-detection-report
           path: |
-            tests/TestResults/flaky-report.json
-            tests/TestResults/flaky-report.md
+            artifacts/test-results/flaky-report.json
+            artifacts/test-results/flaky-report.md
           if-no-files-found: warn
           retention-days: 30

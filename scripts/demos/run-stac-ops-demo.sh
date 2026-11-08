@@ -37,7 +37,6 @@ export HONUA_CONNECTION_ENCRYPTION_MASTER_KEY="${HONUA_CONNECTION_ENCRYPTION_MAS
 export HONUA_CONNECTION_ENCRYPTION_SALT="${HONUA_CONNECTION_ENCRYPTION_SALT:-c3RhYy1vcHMtZGVtby1zYWx0LXN0YWJsZS0wMDE=}"
 
 readonly BASE_URL="http://localhost:${HONUA_HTTP_PORT}"
-readonly SAMPLE_URL="${BASE_URL}/samples/stac-ops/"
 readonly READY_URL="${BASE_URL}/healthz/ready"
 readonly BASE_SEED="${ROOT_DIR}/tests/seed/stac-ops-demo-v1.sql"
 readonly DELTA_SEED="${ROOT_DIR}/tests/seed/stac-ops-demo-cache-delta.sql"
@@ -117,8 +116,9 @@ Scenario: ${SCENARIO}
 STAC landing page: ${BASE_URL}/stac
 STAC collections: ${BASE_URL}/stac/collections
 
-The hosted dashboard at ${SAMPLE_URL} is an optional development image surface and is
-not part of the release-image sample contract.
+Run the standalone operator dashboard from:
+https://github.com/honua-io/honua-samples/tree/4efc272e58789ec17ebec2125cec06304b2ce4e4/samples/stac-ops
+Point it at ${BASE_URL}.
 
 Expected signals:
 - baseline: one healthy collection, one warning collection, passing search/paging probes.

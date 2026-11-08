@@ -1005,7 +1005,7 @@ public static class GpCli
         if (fixtureRoot is null)
         {
             throw new GpCliUsageException(
-                "Could not locate a GP fixtures directory. Pass --root <dir> (e.g. --root samples/gp).");
+                "Could not locate a GP fixtures directory. Pass --root <dir> (e.g. --root tests/fixtures/gp).");
         }
 
         IReadOnlyList<GoldenFixture> fixtures;
@@ -1480,11 +1480,6 @@ public static class GpCli
         return null;
     }
 
-    /// <summary>
-    /// Resolves the GP fixtures root: the explicit <c>--root</c> when supplied, else the
-    /// first <c>samples/gp</c> found by walking up from the current directory (so the tool
-    /// works from anywhere in a checkout).
-    /// </summary>
     private static string? ResolveFixtureRoot(string? explicitRoot)
     {
         if (explicitRoot is not null)
@@ -1492,13 +1487,10 @@ public static class GpCli
             return Directory.Exists(explicitRoot) ? Path.GetFullPath(explicitRoot) : null;
         }
 
-        // dir.FullName is always an absolute directory path from DirectoryInfo, and
-        // "samples"/"gp" are compile-time literals, so Path.Combine cannot silently drop
-        // any of these segments here.
         var dir = new DirectoryInfo(Directory.GetCurrentDirectory());
         while (dir is not null)
         {
-            var candidate = Path.Join(dir.FullName, "samples", "gp");
+            var candidate = Path.Join(dir.FullName, GpScaffolder.FixtureRoot);
             if (Directory.Exists(candidate))
             {
                 return candidate;
@@ -1612,7 +1604,7 @@ public static class GpCli
         Console.WriteLine("  --input, -i <file>  Read a file and bind it (base64) to the process's primary input.");
         Console.WriteLine("  --param, -p k=v     Set a step-0 input (repeatable). Overrides --input for the same key.");
         Console.WriteLine("  --out,   -o <file>  Write the first published artifact's bytes to <file> (run only).");
-        Console.WriteLine("  --root,  -r <dir>   Golden fixtures directory (default: nearest samples/gp).");
+        Console.WriteLine("  --root,  -r <dir>   Golden fixtures directory (default: nearest tests/fixtures/gp).");
         Console.WriteLine("  --update,-u         Regenerate goldens from the produced artifacts (also via HONUA_GP_UPDATE_GOLDENS).");
         Console.WriteLine("  --kind,  -k <k>     'geometry' (managed, default) or 'gdal' (native) scaffold for `new`.");
         Console.WriteLine("  --output,-o <dir>   Preview the scaffold under <dir> instead of writing into the checkout.");
@@ -1633,7 +1625,7 @@ public static class GpCli
         Console.WriteLine("            --project <dir> reports that custom project's runtime, dependency lock, and local harness (runnableHere). It never submits to a server.");
         Console.WriteLine("  plan  Dry-run: validate params + DAG and estimate output size/cost WITHOUT executing.");
         Console.WriteLine("  run   Execute the process and emit its artifact(s).");
-        Console.WriteLine("  test  Run golden-file fixtures under samples/gp (or --root) and assert outputs;");
+        Console.WriteLine("  test  Run golden-file fixtures under tests/fixtures/gp (or --root) and assert outputs;");
         Console.WriteLine("        with --project (or a honua-gp.yaml in the cwd) run a custom-code project through its local harness");
         Console.WriteLine("        and compare the artifacts with expected/ (first difference + receipt path on failure).");
         Console.WriteLine("  init  Scaffold a custom-code project (Python or .NET) from the honua-samples templates:");
@@ -1660,7 +1652,7 @@ public static class GpCli
         Console.WriteLine("  honua gp plan geometry.buffer --param wkb=<base64> --param srid=4326 --param distance=10");
         Console.WriteLine("  honua gp run geometry.buffer --param wkb=<base64> --param srid=4326 --param distance=10");
         Console.WriteLine("  honua gp run gdal.ogr2ogr --input in.geojson --param sourceFormat=GeoJSON --param targetFormat=CSV --out out.csv");
-        Console.WriteLine("  honua gp test                       # run every golden fixture under samples/gp");
+        Console.WriteLine("  honua gp test                       # run every golden fixture under tests/fixtures/gp");
         Console.WriteLine("  honua gp test geometry-buffer-point # run one fixture by id");
         Console.WriteLine("  honua gp test --update              # regenerate goldens after an intended change");
         Console.WriteLine("  honua gp new geometry.recenter      # scaffold a registered, runnable, golden-tested process");

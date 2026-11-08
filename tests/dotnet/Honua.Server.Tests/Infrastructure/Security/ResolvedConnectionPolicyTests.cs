@@ -8,7 +8,7 @@ using Honua.Db.MySql.Features.Security;
 using Honua.Db.Oracle.Features.Security;
 using Honua.Db.Postgres.Features.Security;
 using Honua.Db.SqlServer.Features.Security;
-using Honua.Snowflake.Features.Security;
+using Honua.Db.Snowflake.Features.Security;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;

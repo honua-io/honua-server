@@ -176,11 +176,7 @@ internal static class McpWorkflowViewCatalog
                     McpWorkflowViewMemberRule.Exact("honua_studio_add_control"),
                     McpWorkflowViewMemberRule.Exact("honua_studio_remove_control"),
 
-                    // Map and app package composition. Listing grants no authority: both tools
-                    // still refuse an anonymous caller (unauthenticated), which an installed client
-                    // that resolves tools from the listing can now actually exercise.
-                    // honua_validate_package and honua_preview_package live on the review view:
-                    // adding their descriptors pushed this view over the 128 KiB aggregate ceiling.
+                    // Package review uses a separate view to keep this view within its 128 KiB descriptor budget.
                     McpWorkflowViewMemberRule.Exact("honua_create_map_package"),
                     McpWorkflowViewMemberRule.Exact("honua_create_app_package"),
                 ],

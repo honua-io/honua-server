@@ -107,10 +107,10 @@ public sealed class GpScaffolderTests
         // Managed kind does NOT declare a native runtime profile.
         executor.Contents.Should().NotContain("AcceptedRuntimeProfiles");
 
-        // Fixture + golden + note land under samples/gp/<id>/.
-        plan.Files.Should().Contain(f => f.RelativePath == "samples/gp/geometry-recenter/fixture.json");
-        plan.Files.Should().Contain(f => f.RelativePath == "samples/gp/geometry-recenter/golden.geojson");
-        plan.Files.Should().Contain(f => f.RelativePath == "samples/gp/geometry-recenter/README.md");
+        // Fixture + golden + note land under tests/fixtures/gp/<id>/.
+        plan.Files.Should().Contain(f => f.RelativePath == "tests/fixtures/gp/geometry-recenter/fixture.json");
+        plan.Files.Should().Contain(f => f.RelativePath == "tests/fixtures/gp/geometry-recenter/golden.geojson");
+        plan.Files.Should().Contain(f => f.RelativePath == "tests/fixtures/gp/geometry-recenter/README.md");
 
         // Next-steps walk edit -> run -> test -> plan.
         plan.NextSteps.Should().Contain("honua gp run geometry.recenter");
@@ -132,7 +132,7 @@ public sealed class GpScaffolderTests
         executor.Contents.Should().Contain("data:application/json;base64,");
 
         // GDAL golden is scalar JSON, asserted structurally.
-        plan.Files.Should().Contain(f => f.RelativePath == "samples/gp/gdal-warp-clip/golden.json");
+        plan.Files.Should().Contain(f => f.RelativePath == "tests/fixtures/gp/gdal-warp-clip/golden.json");
         var manifest = plan.Files.Single(f => f.RelativePath.EndsWith("fixture.json", StringComparison.Ordinal));
         manifest.Contents.Should().Contain("\"mode\": \"scalarStructural\"");
     }
@@ -148,7 +148,7 @@ public sealed class GpScaffolderTests
         Directory.CreateDirectory(fixtureDir);
         try
         {
-            foreach (var file in plan.Files.Where(f => f.RelativePath.StartsWith("samples/gp/", StringComparison.Ordinal)))
+            foreach (var file in plan.Files.Where(f => f.RelativePath.StartsWith("tests/fixtures/gp/", StringComparison.Ordinal)))
             {
                 var name = Path.GetFileName(file.RelativePath);
                 File.WriteAllText(Path.Join(fixtureDir, name), file.Contents);

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Decide whether a pull request's diff touches the CI surface: anything under
-# `.github/` (workflows, actions, `ci-shards.json`) or `scripts/ci/`. PR Gate's
+# `.github/` (workflows, actions, `ci-shards.json`), `scripts/ci/`, or the external
+# example runner and its input tests. PR Gate's
 # `ci-router-validation` job runs `scripts/ci/validate-ci-router.sh` and
 # `scripts/ci/validate-single-merge-authority.sh` only when this answers true;
 # ci.yml's trunk-only `ci-router-validation` job already runs them
@@ -71,7 +72,7 @@ trap 'trap - ERR; answer true "classifier error at line ${LINENO}; running the c
 
 matches_ci_surface() {
   case "$1" in
-    .github/*|scripts/ci/*) return 0 ;;
+    .github/*|scripts/ci/*|scripts/examples/validate-customer-paths.sh|tests/python/unit/test_validated_sample_inputs.py) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -100,4 +101,4 @@ while IFS= read -r path; do
   fi
 done < "${tmp}"
 
-answer false "no changed path is under .github/ or scripts/ci/"
+answer false "no changed path requires CI guard validation"

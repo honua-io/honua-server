@@ -1,7 +1,7 @@
 # ADR-0040: Metadata v2 Canonical Graph Design
 
 ## Status
-Accepted (cutover in progress on `feat/metadata-v2-cutover`, PR #1157)
+Accepted (cutover in progress)
 
 ## Context
 
@@ -55,6 +55,16 @@ V2 separates three orthogonal concerns into distinct entity types:
 
 The same resource can be published through multiple services (FeatureServer +
 OGC API Features + STAC) without duplication.
+
+### Service organization and product vocabulary
+
+The [Honua vocabulary](../../../concepts/domain/README.md) defines one vocabulary for users and the system: Dataset owns data identity and semantics; Layer exposes it in a Service; Connection registers a database or file. The types, fields, and table names in this ADR describe the current implementation. Resource is being renamed Dataset, publication is being renamed Layer, and Studio identities retain explicit discriminators and their actual kind names, such as Map, App, or Dashboard. Content names the library of all Studio kinds. Only storage binding and principal remain internal-only concepts. A forward migration will convert existing databases after a verified backup and draining pending Proposals; steady-state readers will use only canonical shapes. This documentation changes no runtime contract.
+
+A Folder is a first-class organization object (`MetadataV2Folder`), separate from catalog discovery. Services reference its stable ID through `folderId`; a null ID selects the root. Folders do not nest. Protocol facets of the same logical Service must agree on Folder, public name, and internal tenant scope. Folder membership does not grant permissions or change storage ownership.
+
+Folder names, previous names, and Service path aliases reserve public paths across renames and moves. Validation rejects colliding names, orphan memberships, and attempts to reuse another Service's reserved path. Nonempty Folders cannot be deleted. This organization is distinct from the rejected generic Catalog hierarchy below.
+
+An Environment is one Honua server managed by a Console. Its profile identifies endpoints and authentication configuration; the graph's `environment` value partitions metadata snapshots. Map and App are Studio content with Draft, Version, and Released states. Activating a saved Version is distinct from exposing a Dataset as a Layer in a Service.
 
 ### Principle 2: Layered semantic vocabulary
 
@@ -201,15 +211,11 @@ projections becomes inevitable, and the projection logic still has to live
 somewhere. Layer 3 derivation at render time is the right call.
 
 ### Alternative E: Catalog as a first-class entity
-Add `MetadataV2Catalog` with parent/child hierarchy for STAC catalogs / Esri
-folders / OGC Records hierarchies.
+Add a generic `MetadataV2Catalog` parent/child hierarchy for protocol catalog structures.
 
-**Rejected (deleted in slice 63/N)** because: catalog *projection* is an output
-concern, not a graph-storage concern. Endpoints walk publications filtered by
-`PublicationType` and project to each catalog's wire format. Esri folder
-grouping handled by convention (dotted `Metadata.Name` or future `Service.Group`
-slot). STAC parent/child can be modeled via `Relationships` with role `parent`
-or `child` when a concrete consumer needs it.
+**Rejected as a generic hierarchy** because catalog discovery is derived from accessible resources, Services, Layers, and saved content. STAC parent/child relationships can use `Relationships` with role `parent` or `child` when a concrete consumer requires them. The graph still serializes a `catalogs` collection; that compatibility shape is not the canonical Service-grouping model.
+
+Service grouping uses the explicit Folder model above, rather than dotted Service names or a generic Catalog tree. A Folder has durable identity and public-path reservations, so deriving it from a display name would lose the invariants enforced by Folder validation.
 
 ## Consequences
 

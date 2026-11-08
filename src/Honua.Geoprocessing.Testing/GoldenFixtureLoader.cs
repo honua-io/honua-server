@@ -9,7 +9,7 @@ namespace Honua.Geoprocessing.Testing;
 /// <summary>
 /// Discovers and loads golden GP fixtures from on-disk JSON manifests (GP Devkit P6, issue
 /// #2127). A fixture directory holds a <c>fixture.json</c> manifest next to its input + golden
-/// files; <c>honua gp test</c> walks <c>samples/gp/</c> (or any root) to find them. The
+/// files; <c>honua gp test</c> walks <c>tests/fixtures/gp/</c> (or any root) to find them. The
 /// manifests double as copy-paste authoring examples.
 ///
 /// <para>Manifest shape (<c>fixture.json</c>):</para>
@@ -42,7 +42,7 @@ public static class GoldenFixtureLoader
     /// Recursively discovers every fixture under <paramref name="rootDirectory"/> (each
     /// directory containing a <see cref="ManifestFileName"/>), ordered by id.
     /// </summary>
-    /// <param name="rootDirectory">The root to search (e.g. <c>samples/gp</c>).</param>
+    /// <param name="rootDirectory">The root to search (e.g. <c>tests/fixtures/gp</c>).</param>
     /// <returns>The loaded fixtures, ordered by id.</returns>
     /// <exception cref="DirectoryNotFoundException">The root does not exist.</exception>
     public static IReadOnlyList<GoldenFixture> Discover(string rootDirectory)

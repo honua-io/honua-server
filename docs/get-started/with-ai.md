@@ -18,6 +18,8 @@ relations:
 ---
 # Get started with AI
 
+See the [Honua vocabulary](../concepts/domain/README.md) for the meanings of Connection, Dataset, Layer, Service, Folder, and Environment.
+
 **Set up Honua with AI. Add services and layers and operate Honua with AI.
 Make maps and apps in realtime with AI.**
 

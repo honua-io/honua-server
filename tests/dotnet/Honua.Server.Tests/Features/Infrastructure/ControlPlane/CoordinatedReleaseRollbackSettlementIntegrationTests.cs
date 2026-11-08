@@ -741,7 +741,7 @@ public sealed class CoordinatedReleaseRollbackSettlementIntegrationTests(ITestOu
             var root = Environment.GetEnvironmentVariable("HONUA_SERVER_TEST_RESULTS_DIR");
             if (string.IsNullOrWhiteSpace(root))
             {
-                root = Path.Join(FindRepositoryRoot(), "tests", "TestResults");
+                root = Path.Join(FindRepositoryRoot(), "artifacts", "test-results");
             }
 
             Directory.CreateDirectory(root);

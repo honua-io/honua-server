@@ -153,6 +153,8 @@ public sealed record GeoservicesImportRequest
 
     public string? ServiceName { get; init; }
 
+    public GeoservicesImportTarget? Target { get; init; }
+
     // Queued imports must carry secret references, not plaintext tokens or passwords.
     public GeoservicesCredentialDescriptor? Credentials { get; init; }
 

@@ -283,7 +283,7 @@ public sealed class DeployBackendRollbackTruthfulnessTests
     {
         var root = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var directory = Environment.GetEnvironmentVariable("HONUA_SERVER_TEST_RESULTS_DIR")
-            ?? ArchitectureTestHelpers.CombinePath(root, "tests", "TestResults");
+            ?? ArchitectureTestHelpers.CombinePath(root, "artifacts", "test-results");
         Directory.CreateDirectory(directory);
         File.WriteAllText(ArchitectureTestHelpers.CombinePath(directory, "deploy-backend-rollback-matrix.json"), JsonSerializer.Serialize(new
         {
