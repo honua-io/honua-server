@@ -20,6 +20,12 @@ internal static class Program
 
     public static int Main(string[] args)
     {
+        if (args is ["--write-soak-license", var licensePath])
+        {
+            Console.WriteLine(CapacitySoakLicense.WriteLicenseAndReturnTrustedKey(licensePath));
+            return 0;
+        }
+
         if (!LoadTestOptions.TryParse(args, out var options, out var error))
         {
             Console.Error.WriteLine(error);
@@ -461,6 +467,7 @@ internal static class Program
         writer.WriteLine("  --max-failure-rate <n>   Max failed request ratio (0-1, e.g. 0.0001 = 0.01%)");
         writer.WriteLine("  --stats-out <path>       Write aggregate/per-scenario statistics as JSON");
         writer.WriteLine("  --print-profile          Print the resolved profile as JSON and exit");
+        writer.WriteLine("  --write-soak-license <path> Write a test Pro license and print its trusted public key; use alone");
         writer.WriteLine("  --report-formats <csv>   NBomber report formats (html,csv,md,txt or none; default html,csv)");
         writer.WriteLine("  --help                   Show this help");
         writer.WriteLine("");

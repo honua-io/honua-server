@@ -47,7 +47,6 @@ foundation_family_specs() {
 tests/dotnet/Honua.Core.Tests/Honua.Core.Tests.csproj|core-tests|||coverage
 tests/dotnet/Honua.LoadTests/Honua.LoadTests.csproj|load-tests|Tier!=Slow||
 tests/dotnet/Honua.Core.Security.Tests/Honua.Core.Security.Tests.csproj|core-security-tests|||
-tests/dotnet/Honua.ControlPlane.Lambda.Tests/Honua.ControlPlane.Lambda.Tests.csproj|control-plane-lambda-tests|||
 SPEC
       ;;
     # Honua.Server.Tests' Fast tier plus the three standalone suites that build

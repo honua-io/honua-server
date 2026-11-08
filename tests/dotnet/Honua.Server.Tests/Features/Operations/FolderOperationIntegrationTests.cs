@@ -4,6 +4,9 @@
 using System.Net;
 using System.Security.Claims;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Identity.Abstractions;
+using Honua.Core.Features.Licensing.Abstractions;
+using Microsoft.AspNetCore.Authentication;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Security.Domain;
 using System.Net.Http.Json;
@@ -27,10 +30,12 @@ namespace Honua.Server.Tests.Features.OperationsToolset;
 [Collection(RedisFixture.CollectionName)]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Configuration)]
-public sealed class FolderOperationIntegrationTests(RedisFixture redis) : IAsyncLifetime
+public sealed partial class FolderOperationIntegrationTests(RedisFixture redis) : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
     private ReplayServiceAuthorization _authorization = null!;
+    private readonly FolderRequesterMembership _memberships = new();
+    private readonly FolderRequesterLicense _licensing = new();
     private HttpClient _proposer = null!;
     private HttpClient _approver = null!;
     private IOperationProposalStore _proposals = null!;
@@ -49,6 +54,10 @@ public sealed class FolderOperationIntegrationTests(RedisFixture redis) : IAsync
         }).ConfigureServices(services =>
         {
             FolderPostgresTestHost.Configure(services, () => _fixture.CurrentSchema);
+            services.AddSingleton<IPrincipalMembershipSource>(_memberships);
+            services.AddSingleton<ILicenseEntitlementService>(_licensing);
+            services.AddAuthentication().AddScheme<AuthenticationSchemeOptions, RlsClaimsTestAuthHandler>(
+                RlsClaimsTestAuthHandler.SchemeName, _ => { });
             services.AddSingleton<IOperatorAuthorizationEvaluator>(provider =>
                 _authorization = new ReplayServiceAuthorization(ActivatorUtilities.CreateInstance<OperatorAuthorizationEvaluator>(provider)));
         });
