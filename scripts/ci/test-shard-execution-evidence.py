@@ -149,6 +149,44 @@ sys.exit(int(os.environ['CHILD_EXIT']))
             self.assertEqual(0, run.returncode, run.stdout + run.stderr)
             self.assertEqual(1, timing['execution']['counts']['executed'])
 
+    def test_protocol_crash_capture_preserves_failure_and_other_suite_execution(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            stub = root / 'dotnet'
+            stub.write_text('#!' + sys.executable + '\n'
+                            'import json, os, sys\n'
+                            'with open(os.environ["CAPTURE"], "a") as out: out.write(json.dumps(sys.argv[1:]) + "\\n")\n'
+                            'sys.exit(139 if "Honua.Protocols.GeoServices.Tests.csproj" in sys.argv[2] else 0)\n')
+            stub.chmod(0o755)
+            capture = root / 'args.jsonl'
+            env = {**os.environ, 'PATH': str(root) + os.pathsep + os.environ['PATH'],
+                   'CAPTURE': str(capture), 'FOUNDATION_RESULTS_DIR': str(root / 'results')}
+            run = subprocess.run(['bash', str(ROOT / 'scripts/ci/run-foundation-family.sh'), 'run', 'protocols'],
+                                 env=env, capture_output=True, text=True, timeout=30)
+            self.assertNotEqual(0, run.returncode, run.stdout + run.stderr)
+            calls = [json.loads(line) for line in capture.read_text().splitlines()]
+            self.assertEqual(7, len(calls))
+            for args in calls:
+                with self.subTest(project=args[1]):
+                    self.assertEqual('--blame-crash' in args, 'Honua.Protocols.GeoServices.Tests.csproj' in args[1])
+                    if '--blame-crash' in args:
+                        self.assertEqual('mini', args[args.index('--blame-crash-dump-type') + 1])
+
+    def test_protocol_crash_artifact_has_short_retention_outside_normal_results(self):
+        import yaml
+        workflow = yaml.safe_load((ROOT / '.github/workflows/ci.yml').read_text())
+        steps = workflow['jobs']['dotnet-foundation-family-tests']['steps']
+        uploads = [step for step in steps if step.get('name') == 'Upload protocol crash diagnostics']
+        self.assertEqual(1, len(uploads))
+        upload = uploads[0]
+        self.assertEqual("failure() && matrix.family == 'protocols'", upload['if'])
+        self.assertEqual(1, upload['with']['retention-days'])
+        self.assertEqual('ignore', upload['with']['if-no-files-found'])
+        self.assertIn('artifacts/test-results/**/*.dmp', upload['with']['path'])
+        self.assertIn('artifacts/test-results/**/Sequence*.xml', upload['with']['path'])
+        results = next(step for step in steps if step.get('name') == 'Upload foundation family test results')
+        self.assertIn('!artifacts/test-results/**/*.dmp', results['with']['path'])
+
     def test_foundation_security_failure_is_gating(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
