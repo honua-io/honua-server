@@ -208,7 +208,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
     private static PublishedLayerSummary ReadPublishedLayer(NpgsqlDataReader reader, string serviceName)
         => new()
         {
-            LayerId = reader.GetInt32(0),
+            StorageLayerId = reader.GetInt32(0),
             LayerName = reader.GetString(1),
             Description = reader.IsDBNull(2) ? null : reader.GetString(2),
             Schema = reader.GetString(3),

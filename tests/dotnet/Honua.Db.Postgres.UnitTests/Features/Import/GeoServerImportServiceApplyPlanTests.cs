@@ -620,7 +620,7 @@ public sealed class GeoServerImportServiceApplyPlanTests
             string? primaryKey = null)
             => new()
             {
-                LayerId = layerId,
+                StorageLayerId = layerId,
                 LayerName = layerName ?? table,
                 Schema = schema,
                 Table = table,

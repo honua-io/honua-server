@@ -98,7 +98,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         MetadataV2ObjectMetadata metadata)
         => new()
         {
-            LayerId = layer.StorageLayerId,
+            StorageLayerId = layer.StorageLayerId,
             LayerName = layer.LayerName,
             Description = layer.Description,
             Schema = layer.Schema,

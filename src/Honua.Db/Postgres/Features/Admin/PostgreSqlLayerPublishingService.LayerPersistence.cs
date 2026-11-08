@@ -888,7 +888,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             return null;
         }
 
-        return ReadPublishedLayerSummary(reader, serviceName);
+        return ReadPublishedLayer(reader, serviceName);
     }
 
     private static async Task<PublishedLayerSummary?> GetLayerSummaryByIdAsync(
@@ -934,24 +934,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
             return null;
         }
 
-        return ReadPublishedLayerSummary(reader, DefaultServiceName);
+        return ReadPublishedLayer(reader, DefaultServiceName);
     }
-
-    private static PublishedLayerSummary ReadPublishedLayerSummary(NpgsqlDataReader reader, string serviceName)
-        => new()
-        {
-            StorageLayerId = reader.GetInt32(0),
-            LayerName = reader.GetString(1),
-            Description = reader.IsDBNull(2) ? null : reader.GetString(2),
-            Schema = reader.GetString(3),
-            Table = reader.GetString(4),
-            PrimaryKey = reader.IsDBNull(5) ? null : reader.GetString(5),
-            GeometryType = reader.GetString(6),
-            Srid = reader.GetInt32(7),
-            Enabled = reader.GetBoolean(8),
-            FieldCount = reader.GetInt32(9),
-            ServiceName = serviceName
-        };
 
     private static async Task SetLayerEnabledCoreAsync(
         NpgsqlConnection connection,

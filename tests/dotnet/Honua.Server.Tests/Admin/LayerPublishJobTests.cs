@@ -741,7 +741,7 @@ public sealed class LayerPublishJobTests
     private static PublishedLayerSummary Summary()
         => new()
         {
-            LayerId = 7,
+            StorageLayerId = 7,
             LayerName = "Roads",
             Schema = "public",
             Table = "roads",
