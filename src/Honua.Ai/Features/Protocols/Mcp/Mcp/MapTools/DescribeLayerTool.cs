@@ -70,12 +70,12 @@ internal sealed class DescribeLayerTool : IMcpTool
             "serviceId": {
               "type": "string",
               "minLength": 1,
-              "description": "Published service identifier or name (from honua_list_layers.serviceId)."
+              "description": "Service ID or name from honua_list_layers.serviceId."
             },
             "serviceLayerIndex": {
               "type": "integer",
               "minimum": 0,
-              "description": "Service-local layer index (from honua_list_layers.serviceLayerIndex)."
+              "description": "Service-local index from honua_list_layers.serviceLayerIndex."
             },
             "includeRowCount": {
               "type": "boolean",

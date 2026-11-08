@@ -454,7 +454,6 @@ internal sealed partial class Wfs20Handler
         }
 
         if (resource.Metadata.Name.Equals("Other", StringComparison.Ordinal) &&
-            IsWfs10CiteLayerName(resource.Metadata.Name) &&
             !resolved.Any(existing => existing.Equals("string1", StringComparison.OrdinalIgnoreCase)) &&
             GetVisibleAttributeFields(resource).Any(field => field.Name.Equals("string1", StringComparison.OrdinalIgnoreCase)))
         {
@@ -1937,7 +1936,7 @@ internal sealed partial class Wfs20Handler
 
     private sealed record WfsFeatureTypeDescriptor(
         MetadataV2Resource Resource,
-        MetadataV2Publication? Publication,
+        MetadataV2Publication Publication,
         MetadataV2Service? Service,
         int StorageLayerId,
         string QualifiedName,

@@ -59,12 +59,12 @@ internal static class MapToolSchemas
             "serviceId": {
               "type": "string",
               "minLength": 1,
-              "description": "Published service identifier or name (from honua_list_layers.serviceId)."
+              "description": "Service ID or name from honua_list_layers.serviceId."
             },
             "serviceLayerIndex": {
               "type": "integer",
               "minimum": 0,
-              "description": "Service-local layer index (from honua_list_layers.serviceLayerIndex)."
+              "description": "Service-local index from honua_list_layers.serviceLayerIndex."
             },
             "where": {
               "type": "string",
@@ -146,12 +146,12 @@ internal static class MapToolSchemas
                   "serviceId": {
                     "type": "string",
                     "minLength": 1,
-                    "description": "Published service identifier or name (from honua_list_layers.serviceId)."
+                    "description": "Service ID or name from honua_list_layers.serviceId."
                   },
                   "serviceLayerIndex": {
                     "type": "integer",
                     "minimum": 0,
-                    "description": "Service-local layer index (from honua_list_layers.serviceLayerIndex)."
+                    "description": "Service-local index from honua_list_layers.serviceLayerIndex."
                   }
                 }
               }
@@ -218,12 +218,12 @@ internal static class MapToolSchemas
             "serviceId": {
               "type": "string",
               "minLength": 1,
-              "description": "Published service identifier or name (from honua_list_layers.serviceId). Paired with serviceLayerIndex, resolves that layer's primary/default style when styleId is omitted."
+              "description": "Service ID or name from honua_list_layers.serviceId. Paired with serviceLayerIndex, resolves that layer's primary/default style when styleId is omitted."
             },
             "serviceLayerIndex": {
               "type": "integer",
               "minimum": 0,
-              "description": "Service-local layer index (from honua_list_layers.serviceLayerIndex). Paired with serviceId, resolves that layer's primary/default style when styleId is omitted."
+              "description": "Service-local index from honua_list_layers.serviceLayerIndex. Paired with serviceId, resolves that layer's primary/default style when styleId is omitted."
             },
             "encoding": {
               "type": "string",

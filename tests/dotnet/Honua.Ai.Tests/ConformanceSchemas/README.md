@@ -118,7 +118,7 @@ matching server candidate passes.
 
 - `geospatial-mcp/skills/` vendors `skills/catalog.json`,
   `skills/catalog.schema.json` from
-  geospatial-mcp commit **`bed89302a8b9ea0a168aa89554d867681ee732dd`**.
+  the reviewed service-local selector commit **`7a6132ef66393139fe03648ac4670c7db18cec5e`**.
 - `skills/contracts/live-surface.json` is copied byte for byte from the
   reviewed service-local selector commit above.
 - The MCP conformance suite resolves the contract's canonical tool names to

@@ -457,7 +457,7 @@ internal static class OgcRecordsEndpoints
         {
             // Pick the primary publication if any (prefer IsPrimary, else first).
             var resource = item.Resource;
-            var primary = item.Primary;
+            var primary = item.Primary!;
             MetadataV2Service? primaryService = primary is not null && snapshot.Index.ServicesById.TryGetValue(primary.ServiceId, out var svc)
                 ? svc
                 : null;
@@ -541,14 +541,15 @@ internal static class OgcRecordsEndpoints
 
     private static CatalogRecord CreateResourceRecord(
         MetadataV2Resource resource,
-        MetadataV2Publication? publication,
+        MetadataV2Publication publication,
         MetadataV2Service? service,
         MetadataV2GraphSnapshot snapshot,
         string baseUrl,
         ImmutableArray<double>? bbox)
     {
-        var publicationId = publication!.Metadata.Id;
-        var collectionId = Uri.EscapeDataString(LayerValidationHelpers.AdvertisedCollectionId(publication, resource));
+        var publicationId = publication.Metadata.Id;
+        var collectionId = Uri.EscapeDataString(
+            LayerValidationHelpers.AdvertisedCollectionId(publication, resource) ?? resource.Metadata.Id);
         var serviceLayerIndex = Uri.EscapeDataString(publication.Identifier.Value);
 
         var links = ImmutableArray.CreateBuilder<Link>();
