@@ -64,7 +64,7 @@ A Dataset owns logical identity and data semantics. An internal [storage binding
 
 An internal [principal](domain/identity.md) identifies the User or automation for authorization and audit. Credentials authenticate that principal. Storage binding and principal are the only internal-only concepts in the vocabulary; the model uses Dataset, Layer, Map, and App just as users do.
 
-The current implementation still uses legacy resource, publication, and content-item names in some types, stored metadata, and APIs. Those names are being migrated with N-1 readers for persisted metadata; they do not define additional concepts. Use current API references for exact fields and routes until the changes land. Protocol adapters preserve required protocol wire names. Declarative metadata export, diff, Approval, and apply operate on this same graph.
+The current implementation still uses legacy resource, publication, and content-item names in some types, stored metadata, and APIs. A forward migration will convert existing databases after a verified backup and draining pending Proposals; steady-state readers will use only canonical shapes. These legacy names do not define additional concepts. Studio's Content library retains each kind's explicit discriminator and name, including Map, App, Dashboard, Report, Form, Process, Query, Workflow, GP, and ETL. Use current API references for exact fields and routes until the changes land. Protocol adapters preserve required protocol wire names. Declarative metadata export, diff, Approval, and apply operate on this same graph.
 
 ## Where to go next
 

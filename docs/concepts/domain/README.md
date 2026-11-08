@@ -20,8 +20,9 @@ Use the same words in the Console, Studio, SDKs, guides, error messages, APIs, d
 | [Style](style.md) | Drawing and label rules for a Layer or Map. Map overrides do not change shared Layer defaults. |
 | [Map](map.md) | Ordered drawing layers, data references, styles, labels, and view state, with a Draft and saved Versions. |
 | [App](app.md) | A Map with controls, widgets, and interactions, with the same saved-content lifecycle. |
-| [Draft](content-version.md) | Mutable authoring state for a Map or App, with a generation for optimistic concurrency. |
-| [Version](content-version.md) | An immutable saved snapshot of a Map or App, identified by its version identifier and content hash. |
+| Content | The Studio library of Maps, Apps, Dashboards, Reports, Forms, Processes, Queries, Workflows, GP, and ETL. Each kind retains its own name and explicit discriminator. |
+| [Draft](content-version.md) | Mutable authoring state for a supported Studio kind, with a generation for optimistic concurrency. |
+| [Version](content-version.md) | An immutable saved snapshot of a supported Studio kind, identified by its version identifier and content hash. |
 | [Released](content-version.md) | A Version active at its governed route. Go live means activate that Version; saving and previewing do not activate it. |
 | [Catalog](catalog.md) | The browsable listing of accessible Services, Layers, and Apps. Listing grants no access. |
 | [Proposal](approval.md) | A requested change and its target and evidence, submitted for an authorized decision. |
@@ -59,18 +60,18 @@ The [data-model narrative](../data-model.md) follows these same relationships.
 
 ## Implementation transition
 
-The canonical names are Dataset, Layer, Map, and App throughout the system. Existing code and persisted metadata still contain `MetadataV2Resource`, `MetadataV2Publication`, and Studio content-item names. These are legacy names scheduled for migration, not a second vocabulary. Until that migration lands, use the current API reference for literal routes and fields. This glossary changes no runtime contract. Persisted metadata needs N-1 readers during the rename; protocol wire names required by clients remain unchanged.
+The canonical names are Dataset, Layer, Map, App, and each other named Studio kind throughout the system. Existing code and persisted metadata still contain `MetadataV2Resource`, `MetadataV2Publication`, and Studio content-item names. These are legacy names scheduled for migration, not a second vocabulary. Until that migration lands, use the current API reference for literal routes and fields. This glossary changes no runtime contract. A forward migration will convert existing databases after a verified backup and draining pending Proposals; steady-state readers will use only canonical shapes. Protocol wire names required by clients remain unchanged.
 
 ## Vocabulary review rules
 
 Review new UI labels, model types, database names, API fields, MCP schemas, public SDK names, guides, and error messages against this table. Block additions that use:
 
-- resource for Dataset, publication for Layer, or content item for Map or App;
+- resource for Dataset, publication for Layer, or content item for a named Studio kind;
 - workspace for grouping or tenancy; use Folder or Environment for the corresponding concept;
 - slot, serving target, or projection as object names; use Layer or Service;
 - vendor type names, hosted layer, portal item, or web map for Honua objects;
 - HonuaApiToken for an API key;
-- package, family, or composition as Studio object names; use Map or App;
+- package, family, or composition as Studio object names; use the actual kind, such as Map, App, or Dashboard;
 - tenant selection as a product surface; internal isolation checks still apply.
 
 Ordinary technical uses such as HTTP resource, MCP resource, coordinate projection, and package dependency are not product-object names. Historical filenames and existing implementation references remain readable during migration. A compatibility exception must identify the exact literal, location, and reason; never split a retired term to evade a scan. Keep protocol-defined wire names where clients depend on them. Prefer `feature-service` and `feature-layer` for Honua's own type names.
