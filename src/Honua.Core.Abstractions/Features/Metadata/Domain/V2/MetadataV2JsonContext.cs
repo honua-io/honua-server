@@ -9,16 +9,14 @@ namespace Honua.Core.Features.Metadata.Domain.V2;
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, Converters = new[]
 {
-    typeof(TolerantStringEnumJsonConverter<MetadataV2ResourceType>),
-    typeof(TolerantStringEnumJsonConverter<MetadataV2ConnectionType>),
-    typeof(TolerantStringEnumJsonConverter<MetadataV2StorageType>),
-    typeof(TolerantStringEnumJsonConverter<MetadataV2ServiceType>),
-    typeof(TolerantStringEnumJsonConverter<MetadataV2PublicationType>),
-    typeof(TolerantStringEnumJsonConverter<MetadataV2StorageBindingCapability>),
-    typeof(TolerantStringEnumJsonConverter<MetadataV2LifecycleStatus>),
-    typeof(TolerantStringEnumJsonConverter<MetadataV2OperationalState>),
-    typeof(TolerantStringEnumJsonConverter<MetadataV2GeometryType>),
-    typeof(TolerantStringEnumJsonConverter<MetadataV2FieldType>),
+    typeof(TolerantEnumJsonConverter<MetadataV2ResourceType>),
+    typeof(TolerantEnumJsonConverter<MetadataV2ConnectionType>),
+    typeof(TolerantEnumJsonConverter<MetadataV2StorageType>),
+    typeof(TolerantEnumJsonConverter<MetadataV2ServiceType>),
+    typeof(TolerantEnumJsonConverter<MetadataV2PublicationType>),
+    typeof(TolerantEnumJsonConverter<MetadataV2StorageBindingCapability>),
+    typeof(TolerantEnumJsonConverter<MetadataV2GeometryType>),
+    typeof(TolerantEnumJsonConverter<MetadataV2FieldType>),
     typeof(TolerantNumericEnumJsonConverter<MetadataV2AttributeRuleType>),
     typeof(TolerantNumericEnumJsonConverter<Symbology3DComparison>)
 })]

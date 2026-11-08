@@ -96,8 +96,16 @@ public sealed record MetadataV2ResourceSpatial : ExtensibleJsonRecord
     [JsonPropertyName("spatialReference")]
     public MetadataV2SpatialReference? SpatialReference { get; init; }
 
+    [JsonIgnore]
+    public MetadataV2GeometryType GeometryType
+    {
+        get => GeometryTypeValue.Value;
+        init => GeometryTypeValue = value;
+    }
+
     [JsonPropertyName("geometryType")]
-    public MetadataV2GeometryType GeometryType { get; init; } = MetadataV2GeometryType.None;
+    [JsonConverter(typeof(PreservedEnumJsonConverter<MetadataV2GeometryType>))]
+    public PreservedEnum<MetadataV2GeometryType> GeometryTypeValue { get; init; } = MetadataV2GeometryType.None;
 
     [JsonPropertyName("bbox")]
     public MetadataV2Bbox? Bbox { get; init; }

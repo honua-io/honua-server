@@ -120,11 +120,27 @@ public sealed record MetadataV2ObjectMetadata : ExtensibleJsonRecord
 [JsonConverter(typeof(MetadataV2StatusJsonConverter))]
 public sealed record MetadataV2Status : ExtensibleJsonRecord
 {
+    [JsonIgnore]
+    public MetadataV2LifecycleStatus Lifecycle
+    {
+        get => LifecycleValue.Value;
+        init => LifecycleValue = value;
+    }
+
     [JsonPropertyName("lifecycle")]
-    public MetadataV2LifecycleStatus Lifecycle { get; init; } = MetadataV2LifecycleStatus.Active;
+    [JsonConverter(typeof(PreservedEnumJsonConverter<MetadataV2LifecycleStatus>))]
+    public PreservedEnum<MetadataV2LifecycleStatus> LifecycleValue { get; init; } = MetadataV2LifecycleStatus.Active;
+
+    [JsonIgnore]
+    public MetadataV2OperationalState State
+    {
+        get => StateValue.Value;
+        init => StateValue = value;
+    }
 
     [JsonPropertyName("state")]
-    public MetadataV2OperationalState State { get; init; } = MetadataV2OperationalState.Unknown;
+    [JsonConverter(typeof(PreservedEnumJsonConverter<MetadataV2OperationalState>))]
+    public PreservedEnum<MetadataV2OperationalState> StateValue { get; init; } = MetadataV2OperationalState.Unknown;
 
     [JsonPropertyName("conditions")]
     public IReadOnlyList<MetadataV2Condition> Conditions { get; init; } = Array.Empty<MetadataV2Condition>();
@@ -215,8 +231,16 @@ public sealed record MetadataV2Field : ExtensibleJsonRecord
     [JsonPropertyName("name")]
     public string Name { get; init; } = string.Empty;
 
+    [JsonIgnore]
+    public MetadataV2FieldType Type
+    {
+        get => TypeValue.Value;
+        init => TypeValue = value;
+    }
+
     [JsonPropertyName("type")]
-    public MetadataV2FieldType Type { get; init; } = MetadataV2FieldType.Unknown;
+    [JsonConverter(typeof(PreservedEnumJsonConverter<MetadataV2FieldType>))]
+    public PreservedEnum<MetadataV2FieldType> TypeValue { get; init; } = MetadataV2FieldType.Unknown;
 
     [JsonPropertyName("title")]
     public string? Title { get; init; }
@@ -395,8 +419,16 @@ public sealed record MetadataV2AttributeRule : ExtensibleJsonRecord
     [JsonPropertyName("name")]
     public string Name { get; init; } = string.Empty;
 
+    [JsonIgnore]
+    public MetadataV2AttributeRuleType Type
+    {
+        get => TypeValue.Value;
+        init => TypeValue = value;
+    }
+
     [JsonPropertyName("type")]
-    public MetadataV2AttributeRuleType Type { get; init; } = MetadataV2AttributeRuleType.Calculation;
+    [JsonConverter(typeof(PreservedNumericEnumJsonConverter<MetadataV2AttributeRuleType>))]
+    public PreservedEnum<MetadataV2AttributeRuleType> TypeValue { get; init; } = MetadataV2AttributeRuleType.Calculation;
 
     [JsonPropertyName("fieldName")]
     public string? FieldName { get; init; }

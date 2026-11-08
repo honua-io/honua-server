@@ -6,13 +6,13 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Core.Serialization;
 
-internal class TolerantStringEnumJsonConverter<TEnum> : JsonConverter<TEnum>
+internal class TolerantEnumJsonConverter<TEnum> : JsonConverter<TEnum>
     where TEnum : struct, Enum
 {
     private static readonly TEnum UnknownValue = Enum.Parse<TEnum>("Unknown");
     private readonly JsonConverter<TEnum> _knownValues;
 
-    public TolerantStringEnumJsonConverter()
+    public TolerantEnumJsonConverter()
     {
         var factory = new JsonStringEnumConverter<TEnum>();
         _knownValues = (JsonConverter<TEnum>)factory.CreateConverter(typeof(TEnum), JsonSerializerOptions.Default);

@@ -25,9 +25,14 @@ public static class MetadataV2GraphSnapshotExtensions
         }
 
         var binding = snapshot.ResolveStorageBinding(publication);
-        return binding is null || binding.IsRoutable(resource) &&
-            IsUnderstoodConnection(snapshot.ResolveConnection(binding));
+        return binding is null || snapshot.IsRoutable(binding, resource);
     }
+
+    public static bool IsRoutable(
+        this MetadataV2GraphSnapshot snapshot,
+        MetadataV2StorageBinding binding,
+        MetadataV2Resource? resource)
+        => binding.IsRoutable(resource) && IsUnderstoodConnection(snapshot.ResolveConnection(binding));
 
     public static bool IsRoutable(this MetadataV2Service service)
     {
@@ -43,7 +48,7 @@ public static class MetadataV2GraphSnapshotExtensions
     {
         ArgumentNullException.ThrowIfNull(publication);
         return IsKnownEnumValue(publication.PublicationType, MetadataV2PublicationType.Unknown) &&
-               IsServingStatus(publication.Status) && IsServingDataset(resource);
+               IsServingStatus(publication.Status) && IsServingResource(resource);
     }
 
     public static bool IsRoutable(
@@ -52,12 +57,12 @@ public static class MetadataV2GraphSnapshotExtensions
     {
         ArgumentNullException.ThrowIfNull(binding);
         return IsKnownEnumValue(binding.StorageType, MetadataV2StorageType.Unknown) &&
-               IsServingStatus(binding.Status) && IsServingDataset(resource);
+               IsServingStatus(binding.Status) && IsServingResource(resource);
     }
 
-    private static bool IsServingDataset(MetadataV2Resource? dataset)
-        => dataset is not null &&
-           IsKnownEnumValue(dataset.Type, MetadataV2ResourceType.Unknown) && IsServingStatus(dataset.Status);
+    private static bool IsServingResource(MetadataV2Resource? resource)
+        => resource is not null &&
+           IsKnownEnumValue(resource.Type, MetadataV2ResourceType.Unknown) && IsServingStatus(resource.Status);
 
     private static bool IsUnderstoodConnection(MetadataV2Connection? connection)
         => connection is null ||

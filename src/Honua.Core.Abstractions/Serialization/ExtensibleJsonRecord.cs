@@ -6,9 +6,15 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Core.Serialization;
 
-/// <summary>Retains unrecognized JSON properties across serialization and record copies.</summary>
 public abstract record ExtensibleJsonRecord
 {
     [JsonExtensionData]
-    public Dictionary<string, JsonElement>? AdditionalProperties { get; set; }
+    public Dictionary<string, JsonElement>? AdditionalProperties { get; init; }
+
+    public virtual bool Equals(ExtensibleJsonRecord? other)
+        => other is not null && EqualityContract == other.EqualityContract &&
+           JsonExtensionDataEquality.Equals(AdditionalProperties, other.AdditionalProperties);
+
+    public override int GetHashCode()
+        => HashCode.Combine(EqualityContract, JsonExtensionDataEquality.PropertyNamesHashCode(AdditionalProperties));
 }

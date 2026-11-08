@@ -6,7 +6,7 @@ using System.Text.Json;
 
 namespace Honua.Core.Serialization;
 
-internal sealed class TolerantNumericEnumJsonConverter<TEnum> : TolerantStringEnumJsonConverter<TEnum>
+internal sealed class TolerantNumericEnumJsonConverter<TEnum> : TolerantEnumJsonConverter<TEnum>
     where TEnum : struct, Enum
 {
     public override void Write(Utf8JsonWriter writer, TEnum value, JsonSerializerOptions options)

@@ -22,7 +22,16 @@ public sealed record Symbology3DRule : ExtensibleJsonRecord
 {
     public required string Attribute { get; init; }
 
-    public Symbology3DComparison Comparison { get; init; } = Symbology3DComparison.Equals;
+    [JsonIgnore]
+    public Symbology3DComparison Comparison
+    {
+        get => ComparisonValue.Value;
+        init => ComparisonValue = value;
+    }
+
+    [JsonPropertyName("comparison")]
+    [JsonConverter(typeof(PreservedNumericEnumJsonConverter<Symbology3DComparison>))]
+    public PreservedEnum<Symbology3DComparison> ComparisonValue { get; init; } = Symbology3DComparison.Equals;
 
     public string? Value { get; init; }
 
@@ -54,6 +63,13 @@ public readonly record struct Symbology3DColor(byte Red, byte Green, byte Blue)
 {
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? AdditionalProperties { get; init; }
+
+    public bool Equals(Symbology3DColor other)
+        => Red == other.Red && Green == other.Green && Blue == other.Blue &&
+           JsonExtensionDataEquality.Equals(AdditionalProperties, other.AdditionalProperties);
+
+    public override int GetHashCode()
+        => HashCode.Combine(Red, Green, Blue, JsonExtensionDataEquality.PropertyNamesHashCode(AdditionalProperties));
 
     public static Symbology3DColor White => new(255, 255, 255);
 
