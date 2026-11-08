@@ -3,7 +3,6 @@
 
 using System.Text.Json.Serialization;
 using Honua.Core.Features.Scene.Domain;
-using Honua.Core.Serialization;
 
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
