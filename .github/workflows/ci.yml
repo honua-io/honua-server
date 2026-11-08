@@ -3104,6 +3104,14 @@ jobs:
           # outside a diff. Do not "align" this with PR Gate either.
           format-scope: full
 
+  store-image-proofs:
+    name: Store image proofs
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.full_ci == true) || github.event_name == 'schedule' }}
+    uses: ./.github/workflows/store-image-size.yml
+    permissions:
+      contents: read
+      packages: read
+
   # Summary gate: a single job that branch-protection can require.
   # Add every job whose failure should block merge.
   ci-gate:
@@ -3117,7 +3125,7 @@ jobs:
     # NOT this one. Keeping CI Gate off merge_group avoids a misleading all-
     # skipped "pass" status appearing in the queue context.
     if: ${{ github.event_name != 'merge_group' && always() && !cancelled() }}
-    needs: [pr-template-check, pr-readiness, changes, targeted-shards, ci-router-validation, build, format, test-all, aot-build, js-integration-tests, esri-leaflet-browser-tests, maplibre-compat, mcp-certification, core-package-compatibility, postgres-compat, docker-build, quickstart-console-smoke]
+    needs: [pr-template-check, pr-readiness, changes, targeted-shards, ci-router-validation, build, format, test-all, aot-build, js-integration-tests, esri-leaflet-browser-tests, maplibre-compat, mcp-certification, core-package-compatibility, postgres-compat, docker-build, quickstart-console-smoke, store-image-proofs]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -3125,8 +3133,10 @@ jobs:
         env:
           REQUIRE_MANAGED_BUILD: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && (needs.changes.outputs.build_changes == 'true' || needs.changes.outputs.integration_changes == 'true') }}
           REQUIRE_FORMAT: ${{ (github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]') && needs.changes.outputs.build_changes == 'true' }}
+          REQUIRE_STORE_IMAGES: ${{ (github.event_name == 'workflow_dispatch' && inputs.full_ci == true) || github.event_name == 'schedule' }}
           BUILD_RESULT: ${{ needs.build.result }}
           FORMAT_RESULT: ${{ needs.format.result }}
+          STORE_IMAGE_RESULT: ${{ needs.store-image-proofs.result }}
         run: |
           if [[ "${REQUIRE_MANAGED_BUILD}" == true && "${BUILD_RESULT}" != success ]]; then
             echo "::error::Selected managed producer must succeed, got ${BUILD_RESULT}."
@@ -3134,6 +3144,10 @@ jobs:
           fi
           if [[ "${REQUIRE_FORMAT}" == true && "${FORMAT_RESULT}" != success ]]; then
             echo "::error::Selected full-format verification must succeed, got ${FORMAT_RESULT}."
+            exit 1
+          fi
+          if [[ "${REQUIRE_STORE_IMAGES}" == true && "${STORE_IMAGE_RESULT}" != success ]]; then
+            echo "::error::Selected store image proofs must succeed, got ${STORE_IMAGE_RESULT}."
             exit 1
           fi
           if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" ]]; then

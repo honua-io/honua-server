@@ -456,6 +456,12 @@ jobs:
         if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
         run: timeout 175s scripts/ci/server-boot-smoke.sh
 
+      # Switching store profiles changes the canonical output directories, so
+      # preserve full-profile test artifacts and finish their boot proof first.
+      - name: Compile default PostGIS store profile
+        if: (env.REVIEW_FIRST_MODE != 'enforce' || github.event_name != 'pull_request' || github.run_attempt > 1) && steps.docs-only.outputs.docs_only != 'true' && steps.generated-only.outputs.generated_only != 'true'
+        run: dotnet build src/Honua.Server/Honua.Server.csproj --configuration Release -p:HonuaStoreProfile=postgis -p:TreatWarningsAsErrors=true
+
       - name: Revalidate exact-head review before success
         if: env.REVIEW_FIRST_MODE == 'enforce' && github.event_name == 'pull_request' && github.run_attempt > 1
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0

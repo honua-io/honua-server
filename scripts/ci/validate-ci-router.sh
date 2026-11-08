@@ -2087,6 +2087,7 @@ fi
 
 if [[ -n "${PYTHON_BIN}" ]]; then
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-shard-resources.py
+  "${PYTHON_BIN}" scripts/ci/test-store-profile-workflows.py
 fi
 
 echo "CI router validation passed."

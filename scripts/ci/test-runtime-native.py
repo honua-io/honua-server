@@ -54,12 +54,22 @@ class NativeRuntimeGateTests(unittest.TestCase):
     def test_complete_root_passes(self):
         result = self.verify()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn(str(self.runtime), result.stdout)
 
     def test_dependency_available_only_on_build_host_fails(self):
         self.host_only_dependency(self.app / 'ParquetSharpNative.so')
         result = self.verify()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('libhostonlyfixture.so', result.stderr)
+
+    def test_undefined_native_function_is_rejected(self):
+        source = self.base / 'unresolved.c'
+        source.write_text('#include <stdio.h>\nextern int unavailable(void);int reader(void){puts("reader");return unavailable();}\n')
+        subprocess.run(['cc', '-shared', '-fPIC', str(source), '-o',
+                        str(self.app / 'ParquetSharpNative.so')], check=True)
+        result = self.verify()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('undefined symbol', result.stdout + result.stderr)
 
     def test_alternate_native_variant_is_left_to_runtime_selection(self):
         self.host_only_dependency(self.app / 'centos8-librdkafka.so')

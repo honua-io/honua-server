@@ -8,7 +8,7 @@ on:
       - 'docker/Dockerfile.aot'
       - 'docker/runtime/**'
       - 'eng/Honua.BuildProfiles.props'
-      - 'src/**'
+      - 'src/**/*.csproj'
       - 'Directory.*.props'
       - 'Directory.*.targets'
       - 'src/Honua.Server/Startup/DataStoreBuildPolicy.cs'
@@ -22,6 +22,7 @@ on:
       - 'scripts/ci/requirements-image-smoke.txt'
       - '.github/workflows/store-image-size.yml'
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
