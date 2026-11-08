@@ -194,7 +194,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
             persisted = await RedisClientFault.RetryCompletedReaderAsync(
                 () => _redis!.GetDatabase().HashGetAsync(key, "data"),
                 cancellationToken).ConfigureAwait(false);
-            current = persisted.HasValue ? DeserializeProgress(persisted.ToString()) : null;
+            current = persisted.HasValue ? DeserializeProgress(persisted.ToString(), operationId) : null;
         }
         if (current is null)
         {
@@ -387,15 +387,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
             throw CreateDistributedStateUnavailableException("get progress", ex);
         }
 
-        try
-        {
-            return DeserializeProgress(json);
-        }
-        catch (InvalidPersistedExportProgressException exception)
-        {
-            Log.InvalidProgressRead(_logger, operationId, exception);
-            throw;
-        }
+        return DeserializeProgress(json, operationId);
     }
 
     public async Task QuarantineProgressAsync(
@@ -497,7 +489,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
         return JsonSerializer.Serialize(wrapper, UniversalProgressJsonContext.Default.ProgressWrapper);
     }
 
-    private static IOperationProgress? DeserializeProgress(string json)
+    private IOperationProgress? DeserializeProgress(string json, string operationId)
     {
         var wrapper = JsonSerializer.Deserialize(json, UniversalProgressJsonContext.Default.ProgressWrapper);
         if (wrapper?.Data == null)
@@ -513,7 +505,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
             nameof(UploadProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.UploadProgress),
             nameof(IngestProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.IngestProgress),
             nameof(TileOperationProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.TileOperationProgress),
-            nameof(ExportProgress) => DeserializeExportProgress(wrapper.Data),
+            nameof(ExportProgress) => DeserializeExportProgress(wrapper.Data, operationId),
             nameof(PrintProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.PrintProgress),
             nameof(RasterImportProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.RasterImportProgress),
             nameof(GeoprocessingProgress) => wrapper.Data.Deserialize(UniversalProgressJsonContext.Default.GeoprocessingProgress),
@@ -526,7 +518,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
         };
     }
 
-    private static ExportProgress? DeserializeExportProgress(JsonElement data)
+    private ExportProgress? DeserializeExportProgress(JsonElement data, string operationId)
     {
         try
         {
@@ -534,6 +526,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
         }
         catch (JsonException exception)
         {
+            Log.InvalidProgressRead(_logger, operationId, exception);
             throw new InvalidPersistedExportProgressException(exception);
         }
     }
@@ -903,7 +896,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore, 
                 return null;
             }
 
-            var progress = DeserializeProgress(progressValue.ToString());
+            var progress = DeserializeProgress(progressValue.ToString(), operationId);
             return progress?.Type;
         }
         // Intentional: operation-type lookup is a best-effort convenience for index
