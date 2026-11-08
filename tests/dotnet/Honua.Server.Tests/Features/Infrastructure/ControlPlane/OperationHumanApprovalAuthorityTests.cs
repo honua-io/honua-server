@@ -9,6 +9,9 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Security;
 using Honua.Server.Features.Operations;
 using Honua.TestKit.Attributes;
+using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Infrastructure.MultiTenancy;
+using Microsoft.Extensions.DependencyInjection;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Caching.Distributed;
@@ -232,6 +235,26 @@ public sealed class OperationHumanApprovalAuthorityTests
         {
             directory.Delete(recursive: true);
         }
+    }
+
+    [UnitTheory]
+    [InlineData(TenantContextSource.Default, true)]
+    [InlineData(TenantContextSource.Header, false)]
+    [InlineData(TenantContextSource.Claim, false)]
+    public async Task OpenReviewAsync_GlobalProposal_OnlyIgnoresTheAnonymousDefaultTenant(
+        TenantContextSource source, bool accepted)
+    {
+        using var host = new OperationHumanApprovalTestHost();
+        var human = await host.CreateHumanAsync();
+        host.ReviewRequest(human);
+        host.Context.RequestServices.GetRequiredService<RequestTenantContext>().Set("public", source);
+        var original = OperationHumanApprovalTestHost.Proposal();
+        var proposal = original with { TenantId = null, Initiation = original.Initiation! with { TenantId = null } };
+
+        var review = () => host.Authority.OpenReviewAsync(proposal, host.Context);
+
+        if (accepted) (await review()).Capability.Should().NotBeNullOrEmpty();
+        else await review.Should().ThrowAsync<HumanApprovalRequiredException>();
     }
 
     private static OperationProposal ChangedProposal(OperationProposal proposal, string change)
