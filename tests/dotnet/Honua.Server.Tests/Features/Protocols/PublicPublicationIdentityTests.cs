@@ -273,6 +273,33 @@ public sealed partial class PublicPublicationIdentityTests : IAsyncLifetime
         (await response.Content.ReadAsStringAsync()).Should().Contain("LayerNotDefined");
     }
 
+    [IntegrationTest]
+    [Protocol(TestProtocols.OgcApiRecords)]
+    [Operation(Operations.GetById)]
+    [Endpoint("GET /ogc/records/collections/{collectionId}/items/{recordId}")]
+    public async Task RecordsService_ProtocolRowsShareResource_EveryLayerIdResolvesToRecord()
+    {
+        var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        SetGraph(graph with
+        {
+            Revision = graph.Revision + 1,
+            Services = graph.Services.Select(service => service with
+            {
+                Metadata = service.Metadata with { Name = ServiceName },
+            }).ToArray(),
+        });
+
+        var layerIds = await ServiceRecordLayerIdsAsync();
+
+        layerIds.Should().Equal(PublicationId);
+        foreach (var publicationId in layerIds)
+        {
+            using var response = await _fixture.Client.GetAsync(
+                $"/ogc/records/collections/honua-catalog/items/{Uri.EscapeDataString($"layer:{publicationId}")}");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+    }
+
     private async Task<string[]> WfsNamesAsync()
     {
         var xml = await ReadXmlAsync("/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=2.0.0");

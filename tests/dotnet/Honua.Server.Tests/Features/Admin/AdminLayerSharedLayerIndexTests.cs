@@ -192,6 +192,44 @@ public sealed class AdminLayerSharedLayerIndexTests : IAsyncLifetime
         after.Index.ResourcesById[TwinResourceId].Should().BeEquivalentTo(before.Index.ResourcesById[TwinResourceId]);
     }
 
+    [IntegrationTheory]
+    [InlineData("discovery")]
+    [InlineData("validation")]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/discovery")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/validation")]
+    public async Task GetMetadata_AmbiguousStorageHandle_ReturnsConflict(string endpoint)
+    {
+        var (before, _) = AddTwinAtLayerId(retireTwin: false);
+        using var client = _fixture.CreateAdminClient();
+
+        using var response = await client.GetAsync($"/api/v1/admin/metadata/layers/{LayerId}/{endpoint}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await response.Content.ReadAsStringAsync()).Should().Contain(TwinServiceName);
+        _fixture.GetCurrentV2GraphSnapshot().Etag.Should().Be(before.Etag);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/discovery")]
+    public async Task UpdateDiscovery_AmbiguousStorageHandle_ReturnsConflictWithoutMutation()
+    {
+        var (before, _) = AddTwinAtLayerId(retireTwin: false);
+        using var client = _fixture.CreateAdminClient();
+        using var content = JsonContent.Create(new DiscoveryMetadataUpdateRequest
+        {
+            Etag = before.Etag,
+            Title = "Changed title",
+        }, DiscoveryMetadataJsonContext.Default.DiscoveryMetadataUpdateRequest);
+
+        using var response = await client.PutAsync($"/api/v1/admin/metadata/layers/{LayerId}/discovery", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await response.Content.ReadAsStringAsync()).Should().Contain(TwinServiceName);
+        _fixture.GetCurrentV2GraphSnapshot().Graph.Should().BeEquivalentTo(before.Graph);
+    }
+
     private async Task AssertAmbiguousPutRejectedAsync(string path, HttpContent content)
     {
         var (before, targetResourceId) = AddTwinAtLayerId(retireTwin: false);
