@@ -62,6 +62,19 @@ jobs:
             runner: ubuntu-24.04-arm
             provenance: true
             sbom: true
+          - image_key: ecs-jit-full
+            image_name: ECS Full JIT Image
+            dockerfile: Dockerfile
+            tag_suffix: -ecs-jit-full
+            cache_scope: honua-jit-full
+            sarif_output: trivy-results-ecs-full
+            sarif_category: trivy-ecs-full
+            arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            provenance: true
+            sbom: true
+            store_profile: full
           - image_key: ecs-aot
             image_name: ECS AOT Image
             dockerfile: docker/Dockerfile.aot
@@ -338,6 +351,7 @@ jobs:
           # excludes .git, so without this the image reports a null deployment revision.
           build-args: |
             HONUA_GIT_SHA=${{ github.sha }}
+            HONUA_STORE_PROFILE=${{ matrix.store_profile || 'postgis' }}
             LAMBDA_ADAPTER_IMAGE=${{ steps.lambda_adapter.outputs.image }}
           outputs: type=image,name=${{ steps.targets.outputs.scan_image }},push-by-digest=true,name-canonical=true,push=true
           labels: ${{ steps.meta.outputs.labels }}
@@ -420,6 +434,7 @@ jobs:
           # null — the exact evidence binding the revision plumbing exists to provide.
           build-args: |
             HONUA_GIT_SHA=${{ github.sha }}
+            HONUA_STORE_PROFILE=${{ matrix.store_profile || 'postgis' }}
             LAMBDA_ADAPTER_IMAGE=${{ steps.lambda_adapter.outputs.image }}
           secrets: |
             github_actor=${{ github.actor }}
@@ -441,6 +456,7 @@ jobs:
           # Kept identical to the publish step so the scanned image is the image that ships.
           build-args: |
             HONUA_GIT_SHA=${{ github.sha }}
+            HONUA_STORE_PROFILE=${{ matrix.store_profile || 'postgis' }}
             LAMBDA_ADAPTER_IMAGE=${{ steps.lambda_adapter.outputs.image }}
           secrets: |
             github_actor=${{ github.actor }}
@@ -578,6 +594,10 @@ jobs:
         include:
           - image_name: ECS Development JIT Image
             tag_suffix: -ecs-jit
+            source_arches: "arm64"
+            publish_aot_alias: false
+          - image_name: ECS Full JIT Image
+            tag_suffix: -ecs-jit-full
             source_arches: "arm64"
             publish_aot_alias: false
           - image_name: ECS AOT Image

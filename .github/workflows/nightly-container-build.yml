@@ -1039,9 +1039,9 @@ jobs:
 
   build-jit:
     if: needs.select-candidate.outputs.publish == 'true'
-    name: Build & Push JIT (${{ matrix.arch }})
+    name: Build & Push JIT (${{ matrix.arch }}${{ matrix.store_suffix }})
     concurrency:
-      group: nightly-publish-${{ needs.select-candidate.outputs.sha }}-jit-${{ matrix.arch }}
+      group: nightly-publish-${{ needs.select-candidate.outputs.sha }}-jit${{ matrix.store_suffix }}-${{ matrix.arch }}
       cancel-in-progress: false
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
@@ -1053,9 +1053,23 @@ jobs:
           - arch: amd64
             platform: linux/amd64
             runner: ubuntu-24.04
+            store_profile: postgis
+            store_suffix: ''
           - arch: arm64
             platform: linux/arm64
             runner: ubuntu-24.04-arm
+            store_profile: postgis
+            store_suffix: ''
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-24.04
+            store_profile: full
+            store_suffix: -full
+          - arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            store_profile: full
+            store_suffix: -full
     permissions:
       contents: read
       packages: write
@@ -1099,10 +1113,10 @@ jobs:
             ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}
             docker.io/${{ env.IMAGE_NAME_DOCKERHUB }}
           tags: |
-            type=raw,value=nightly-jit
-            type=raw,value=nightly-jit-${{ needs.mirror-base-images.outputs.build_date }}
-            type=raw,value=nightly-jit-${{ needs.select-candidate.outputs.sha7 }}
-            type=raw,value=trunk-jit
+            type=raw,value=nightly-jit${{ matrix.store_suffix }}
+            type=raw,value=nightly-jit-${{ needs.mirror-base-images.outputs.build_date }}${{ matrix.store_suffix }}
+            type=raw,value=nightly-jit-${{ needs.select-candidate.outputs.sha7 }}${{ matrix.store_suffix }}
+            type=raw,value=trunk-jit${{ matrix.store_suffix }}
           flavor: |
             suffix=-${{ matrix.arch }}
           labels: |
@@ -1132,6 +1146,7 @@ jobs:
             DOTNET_ASPNET_IMAGE=${{ env.BASE_REPO }}:aspnet-10.0
             VERSION=${{ needs.select-candidate.outputs.version }}
             HONUA_GIT_SHA=${{ needs.select-candidate.outputs.sha }}
+            HONUA_STORE_PROFILE=${{ matrix.store_profile }}
           platforms: ${{ matrix.platform }}
           push: true
           tags: ${{ steps.immutable_tags.outputs.tags }}
@@ -1142,12 +1157,12 @@ jobs:
             github_token=${{ github.token }}
           # Share one cache per Dockerfile variant and architecture with PR/release builds.
           # BuildKit validates layer inputs, including the digest-pinned mirrored bases.
-          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-jit-${{ matrix.arch }}
+          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-jit${{ matrix.store_suffix }}-${{ matrix.arch }}
           # ignore-error: a failed/interrupted registry cache export (common on the
           # hosted arm64 runner fleet, which can be preempted mid-export) must
           # not fail an otherwise-successful build+push. The cache is a build
           # accelerator, not a release artifact.
-          cache-to: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-jit-${{ matrix.arch }},mode=max,ignore-error=true
+          cache-to: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-jit${{ matrix.store_suffix }}-${{ matrix.arch }},mode=max,ignore-error=true
           provenance: true
           sbom: true
 
@@ -1385,14 +1400,20 @@ jobs:
           if-no-files-found: error
 
   manifest-jit:
-    name: Publish JIT Manifests
+    name: Publish JIT Manifests${{ matrix.store_suffix }}
     concurrency:
-      group: nightly-publish-${{ needs.select-candidate.outputs.sha }}-jit-index
+      group: nightly-publish-${{ needs.select-candidate.outputs.sha }}-jit${{ matrix.store_suffix }}-index
       cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [select-candidate, build-jit, mirror-base-images]
     if: ${{ needs.select-candidate.outputs.publish == 'true' && needs.build-jit.result == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - store_suffix: ''
+          - store_suffix: -full
     permissions:
       contents: read
       packages: write
@@ -1441,10 +1462,10 @@ jobs:
             ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}
             docker.io/${{ env.IMAGE_NAME_DOCKERHUB }}
           tags: |
-            type=raw,value=nightly-jit
-            type=raw,value=nightly-jit-${{ needs.mirror-base-images.outputs.build_date }}
-            type=raw,value=nightly-jit-${{ needs.select-candidate.outputs.sha7 }}
-            type=raw,value=trunk-jit
+            type=raw,value=nightly-jit${{ matrix.store_suffix }}
+            type=raw,value=nightly-jit-${{ needs.mirror-base-images.outputs.build_date }}${{ matrix.store_suffix }}
+            type=raw,value=nightly-jit-${{ needs.select-candidate.outputs.sha7 }}${{ matrix.store_suffix }}
+            type=raw,value=trunk-jit${{ matrix.store_suffix }}
 
       - name: Create and push multi-arch manifests
         env:

@@ -86,6 +86,16 @@ cat "$OUT/image.txt" "$OUT/http.txt"
 if [[ "$head_magic" != PAR1 || "$tail_magic" != PAR1 ]]; then
   fail "f=parquet body is not a Parquet file (${bytes} bytes): $(head -c 300 "$OUT/cng.parquet" | tr -cd '[:print:]')"
 fi
+path="/rest/services/cng/MapServer/export?bbox=-180,-90,180,90&bboxSR=4326&size=256,256&format=png&f=image"
+code="$(curl -sS --retry 3 --retry-all-errors -o "$OUT/cng.png" -w '%{http_code}' "http://localhost:${PORT}${path}")" \
+  || fail "render request failed"
+[[ "$code" == 200 ]] || fail "map export answered HTTP ${code}"
+python3 - "$OUT/cng.png" <<'PYPNG'
+from pathlib import Path
+import sys
+if Path(sys.argv[1]).read_bytes()[:8] != b'\x89PNG\r\n\x1a\n':
+    raise SystemExit('Map export did not produce a PNG')
+PYPNG
 # The container must still be serving after the encoder ran: a native crash exits the process.
 wait_healthy honua-server 60
 echo "AOT GeoParquet smoke passed: ${bytes} bytes of GeoParquet from ${IMAGE}"

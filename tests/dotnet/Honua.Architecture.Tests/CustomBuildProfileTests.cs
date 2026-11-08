@@ -41,7 +41,7 @@ public sealed class CustomBuildProfileTests
             reference.Condition == "'$(HonuaIncludeAzure)' == 'true'");
         projectReferences.Should().Contain(reference =>
             reference.Include == @"..\Honua.Db\Oracle\Honua.Oracle.csproj" &&
-            reference.Condition == "'$(HonuaIncludeOracle)' == 'true'");
+            reference.Condition == "'$(HonuaIncludeOracle)' == 'true' and '$(HonuaStoreProfile)' == 'full'");
     }
 
     [ArchitectureTest]
@@ -90,6 +90,24 @@ public sealed class CustomBuildProfileTests
     }
 
     [ArchitectureTest]
+    public void PostgisStoreProfile_ExcludesAdditionalStoresAndKeepsImportProjects()
+    {
+        var references = GetProjectReferenceNames("-p:HonuaStoreProfile=postgis");
+
+        references.Should().Contain(["Honua.Postgres", "Honua.Import", "Honua.Io", "Honua.Geometry"]);
+        references.Should().NotContain([
+            "Honua.DuckDB", "Honua.SqlServer", "Honua.MySql", "Honua.Redshift",
+            "Honua.Oracle", "Honua.Snowflake", "Honua.Databricks", "Honua.GeoServicesRest"]);
+        GetMsBuildProperty("DefineConstants", "-p:HonuaStoreProfile=postgis")
+            .Should().Contain("HONUA_POSTGIS_ONLY");
+
+        var fullReferences = GetProjectReferenceNames("-p:HonuaStoreProfile=full");
+        fullReferences.Should().Contain([
+            "Honua.DuckDB", "Honua.SqlServer", "Honua.MySql", "Honua.Redshift",
+            "Honua.Oracle", "Honua.Snowflake", "Honua.Databricks", "Honua.GeoServicesRest"]);
+    }
+
+    [ArchitectureTest]
     public void Dockerfiles_ShouldExposeAndForwardCustomBuildProfileArguments()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
@@ -104,6 +122,8 @@ public sealed class CustomBuildProfileTests
             var contents = File.ReadAllText(dockerfile);
 
             contents.Should().Contain("ARG HONUA_BUILD_PROFILE=full", dockerfile);
+            contents.Should().Contain("ARG HONUA_STORE_PROFILE=postgis", dockerfile);
+            contents.Should().Contain("-p:HonuaStoreProfile=${HONUA_STORE_PROFILE:-postgis}", dockerfile);
             contents.Should().Contain("ARG HONUA_INCLUDE_AWS=", dockerfile);
             contents.Should().Contain("ARG HONUA_INCLUDE_AZURE=", dockerfile);
             contents.Should().Contain("ARG HONUA_INCLUDE_ORACLE=", dockerfile);

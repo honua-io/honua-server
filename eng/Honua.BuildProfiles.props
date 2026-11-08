@@ -1,5 +1,6 @@
 <Project>
   <PropertyGroup>
+    <HonuaStoreProfile Condition="'$(HonuaStoreProfile)' == ''">full</HonuaStoreProfile>
     <HonuaBuildProfile Condition="'$(HonuaBuildProfile)' == ''">full</HonuaBuildProfile>
   </PropertyGroup>
 
@@ -25,6 +26,7 @@
   </PropertyGroup>
 
   <PropertyGroup>
+    <DefineConstants Condition="'$(HonuaStoreProfile)' == 'postgis'">$(DefineConstants);HONUA_POSTGIS_ONLY</DefineConstants>
     <DefineConstants Condition="'$(HonuaIncludeAws)' != 'true'">$(DefineConstants);HONUA_EXCLUDE_AWS</DefineConstants>
     <DefineConstants Condition="'$(HonuaIncludeAzure)' != 'true'">$(DefineConstants);HONUA_EXCLUDE_AZURE</DefineConstants>
     <DefineConstants Condition="'$(HonuaIncludeOracle)' != 'true'">$(DefineConstants);HONUA_SKIP_ORACLE;HONUA_EXCLUDE_ORACLE</DefineConstants>
@@ -32,6 +34,8 @@
   </PropertyGroup>
 
   <Target Name="ValidateHonuaBuildProfile" BeforeTargets="PrepareForBuild;Restore">
+    <Error Condition="'$(HonuaStoreProfile)' != 'full' and '$(HonuaStoreProfile)' != 'postgis'"
+           Text="Unsupported HonuaStoreProfile '$(HonuaStoreProfile)'. Supported store profiles: postgis, full." />
     <Error
       Condition="'$(HonuaBuildProfile)' != 'full' and '$(HonuaBuildProfile)' != 'no-cloud' and '$(HonuaBuildProfile)' != 'slim'"
       Text="Unsupported HonuaBuildProfile '$(HonuaBuildProfile)'. Supported profiles: full, no-cloud, slim." />

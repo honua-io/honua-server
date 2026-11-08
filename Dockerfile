@@ -13,12 +13,14 @@
 # digest pinned 2026-08-12
 ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:de4fe90a98845d75910b9769662465c84de1a934665c431279d1382b2bddc02b
 # digest pinned 2026-08-20
-ARG DOTNET_ASPNET_IMAGE=mcr.microsoft.com/dotnet/aspnet:10.0@sha256:de0ee358cdd672f7017a003bed21e9ac9ed48a27c922a59b18175b6e82fa7fee
+ARG DOTNET_ASPNET_IMAGE=mcr.microsoft.com/dotnet/aspnet:10.0-noble-chiseled-extra@sha256:a9298ccc39c6258ae71228479e2f3f8d2ceb6639a9927262a4b0ff7d319a0e7e
 
 # Build stage
 # Extract restore inputs with their directory structure. Ordinary source edits,
 # including JSON content, rerun this inexpensive extraction but leave the
 # downstream restore input tree unchanged.
+FROM ${DOTNET_ASPNET_IMAGE} AS chiseled-base
+
 FROM ${DOTNET_SDK_IMAGE} AS restore-inputs
 # Bind-mounted context. WORKDIR avoids `cd` (hadolint DL3003) without changing
 # the relative paths `find` and `cp --parents` write under /restore-inputs.
@@ -51,6 +53,7 @@ COPY scripts/docker/restore-dotnet-with-github-packages.sh scripts/docker/
 ARG TARGETARCH
 # Slim by default: set HONUA_INCLUDE_STAC_OPS_DEMO=true to keep the hosted STAC ops demo assets.
 ARG HONUA_INCLUDE_STAC_OPS_DEMO=false
+ARG HONUA_STORE_PROFILE=postgis
 ARG HONUA_BUILD_PROFILE=full
 ARG HONUA_PROTOCOL_PROFILE=all
 ARG HONUA_INCLUDE_AWS=
@@ -70,7 +73,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
         arm64) RUNTIME_ID="linux-arm64" ;; \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
-    MODULE_MSBUILD_ARGS="-p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full} -p:HonuaProtocolProfile=${HONUA_PROTOCOL_PROFILE:-all}" && \
+    MODULE_MSBUILD_ARGS="-p:HonuaStoreProfile=${HONUA_STORE_PROFILE:-postgis} -p:HonuaUseSkiaNoDependencies=true -p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full} -p:HonuaProtocolProfile=${HONUA_PROTOCOL_PROFILE:-all}" && \
     if [ -n "${HONUA_INCLUDE_AWS:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeAws=$HONUA_INCLUDE_AWS"; fi && \
     if [ -n "${HONUA_INCLUDE_AZURE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeAzure=$HONUA_INCLUDE_AZURE"; fi && \
     if [ -n "${HONUA_INCLUDE_ORACLE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeOracle=$HONUA_INCLUDE_ORACLE"; fi && \
@@ -102,7 +105,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
         arm64) RUNTIME_ID="linux-arm64" ;; \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
-    MODULE_MSBUILD_ARGS="-p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full} -p:HonuaProtocolProfile=${HONUA_PROTOCOL_PROFILE:-all}" && \
+    MODULE_MSBUILD_ARGS="-p:HonuaStoreProfile=${HONUA_STORE_PROFILE:-postgis} -p:HonuaUseSkiaNoDependencies=true -p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full} -p:HonuaProtocolProfile=${HONUA_PROTOCOL_PROFILE:-all}" && \
     if [ -n "${HONUA_INCLUDE_AWS:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeAws=$HONUA_INCLUDE_AWS"; fi && \
     if [ -n "${HONUA_INCLUDE_AZURE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeAzure=$HONUA_INCLUDE_AZURE"; fi && \
     if [ -n "${HONUA_INCLUDE_ORACLE:-}" ]; then MODULE_MSBUILD_ARGS="$MODULE_MSBUILD_ARGS -p:HonuaIncludeOracle=$HONUA_INCLUDE_ORACLE"; fi && \
@@ -139,64 +142,25 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     find /app -type f \( -name '*.pdb' -o -name '*.dbg' \) -delete
 
 # Runtime stage
-FROM ${DOTNET_ASPNET_IMAGE} AS runtime
+FROM ${DOTNET_SDK_IMAGE} AS runtime-assets
+WORKDIR /src
+COPY docker/runtime/ docker/runtime/
+COPY --from=chiseled-base / /runtime-root/
+# hadolint ignore=DL3008
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends gcc libatomic1 libgssapi-krb5-2 fonts-dejavu-core && \
+    sh docker/runtime/stage-runtime.sh /runtime-root /runtime-additions && \
+    rm -rf /var/lib/apt/lists/*
+COPY --from=build /app /runtime-root/app
+RUN sh docker/runtime/verify-native.sh /runtime-root /app
 
-# The current upstream digest predates available OS fixes. The revision is
-# echoed in the upgrade RUN so a bump invalidates the cached apt layer.
-# 2026-10-08: pick up libfreetype6 2.13.2+dfsg-1ubuntu0.2 (CVE-2026-95512).
-# 2026-10-29: pick up libbrotli1 1.1.0-2ubuntu0.1 (CVE-2026-111497).
-# 2026-10-30: pick up zlib1g 1:1.3.dfsg-3.1ubuntu2.3 (CVE-2026-85091).
-# dpkg-query needs the version field with one dollar. Two dollars emit a leading dollar and fail the epoch check.
-ARG RUNTIME_PACKAGE_REVISION=20261105
+FROM chiseled-base AS runtime
+COPY --from=runtime-assets /runtime-additions/ /
 
-# Security: Install runtime dependencies. The glibc runtime is required by
-# ParquetSharp's native library, which backs the GeoParquet writer.
-# The base is digest-pinned; compatible security updates and dependency versions
-# intentionally follow that Debian snapshot's configured repositories.
-# hadolint ignore=DL3005,DL3008
-RUN echo "runtime package revision ${RUNTIME_PACKAGE_REVISION}" && \
-    apt-get update && \
-    apt-get upgrade -y && \
-    apt-get install -y --no-install-recommends \
-    ca-certificates \
-    fontconfig \
-    libatomic1 \
-    libbrotli1 \
-    libgssapi-krb5-2 \
-    tzdata && \
-    dpkg --compare-versions "$(dpkg-query -W -f '${Version}' libbrotli1)" ge "1.1.0-2ubuntu0.1" && \
-    dpkg --compare-versions "$(dpkg-query -W -f '${Version}' zlib1g)" ge "1:1.3.dfsg-3.1ubuntu2.3" && \
-    dpkg --compare-versions "$(dpkg-query -W -f '${Version}' apt)" ge "2.8.4ubuntu0.1" && \
-    dpkg --compare-versions "$(dpkg-query -W -f '${Version}' libapt-pkg6.0t64)" ge "2.8.4ubuntu0.1" && \
-    rm -rf /var/lib/apt/lists/* /tmp/*
-
-# Security: Create non-root user with minimal privileges
-RUN groupadd --gid 1001 --system honua && \
-    useradd --uid 1001 --gid 1001 --system --no-create-home --shell /usr/sbin/nologin honua
 
 WORKDIR /app
 COPY --from=build --chown=1001:1001 /app .
 COPY --chown=1001:1001 LICENSE THIRD-PARTY-NOTICES.md /app/
-
-# Security: Create runtime directories with proper permissions.
-# This set MUST include every writable directory the default configuration writes
-# to at runtime. Under the read-only root filesystem this image is built for
-# (security.read-only-root="true"), any path not provisioned here — and not backed
-# by a writable volume mount by the deployment — is read-only, so a write attempt
-# throws. /tmp/honua-temp and /tmp/honua-storage back the default temporary and
-# local-storage paths; /var/lib/honua/storage is the persistent Compose override.
-# These paths back the map-image export href/f=json responses
-# (MapServer export, ImageServer exportImage, OGC API Maps); omitting them here made
-# every rendered-image export fail with a 500 while inline f=image responses (which
-# never touch temp storage) still succeeded. Keep this list in sync with the default
-# storage directories in appsettings.json — DockerfileWritableStorageDirectoryTests
-# enforces it.
-RUN mkdir -p /tmp/honua-logs /tmp/honua-cache /tmp/dotnet-diagnostics /tmp/honua-temp /tmp/honua-storage /var/lib/honua/storage && \
-    chown -R 1001:1001 /tmp/honua-logs /tmp/honua-cache /tmp/dotnet-diagnostics /tmp/honua-temp /tmp/honua-storage /var/lib/honua/storage && \
-    chmod 750 /tmp/honua-logs /tmp/honua-cache /tmp/dotnet-diagnostics /tmp/honua-temp /tmp/honua-storage /var/lib/honua/storage
-
-# Security: Remove unnecessary setuid/setgid binaries
-RUN find / -xdev -perm /6000 -type f -exec chmod a-s {} \; 2>/dev/null || true
 
 USER 1001:1001
 
@@ -229,6 +193,7 @@ LABEL org.opencontainers.image.revision="${HONUA_GIT_SHA}"
 ENV HONUA_GIT_SHA=${HONUA_GIT_SHA}
 
 ENV ASPNETCORE_ENVIRONMENT=Production \
+    HONUA_DEFAULT_FONT_PATH=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf \
     ASPNETCORE_HTTP_PORTS= \
     Kestrel__Endpoints__Http__Url=http://+:8080 \
     Kestrel__Endpoints__Http__Protocols=Http1 \
@@ -238,9 +203,9 @@ ENV ASPNETCORE_ENVIRONMENT=Production \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \
     DOTNET_EnableDiagnostics=0
 
-# Health check. The runtime image has bash and no HTTP client.
+# The compiled probe runs without a shell.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD ["bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /healthz/live HTTP/1.0\\r\\nHost: 127.0.0.1\\r\\nConnection: close\\r\\n\\r\\n' >&3 && IFS= read -r status <&3 && case \"$status\" in *' 200 '*) exit 0 ;; *) exit 1 ;; esac"]
+    CMD ["/app/honua-healthcheck"]
 
 EXPOSE 8080/tcp 8081/tcp
 

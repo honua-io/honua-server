@@ -38,6 +38,7 @@ on:
     branches: [trunk]
     paths:
       - '.dockerignore'
+      - 'docker/runtime/**'
       - 'docker/Dockerfile.aot'
       - 'docker/Dockerfile.lambda.aot'
       - 'docker/Dockerfile.functions.aot'
@@ -116,7 +117,7 @@ jobs:
           # both and fails closed when they diverge.
           while IFS= read -r path; do
             case "$path" in
-              .dockerignore|scripts/docker/restore-dotnet-with-github-packages.sh|scripts/ci/verify-serving-image-boundary.py|scripts/ci/serving-image-reuse.py|scripts/ci/verify-native-migration-refusal.py|scripts/ci/fixtures/validate-native-migration-refusal.py|scripts/ci/fixtures/validate-serving-image-boundary.py|.github/workflows/serving-image-boundary.yml)
+              .dockerignore|docker/runtime/*|scripts/docker/restore-dotnet-with-github-packages.sh|scripts/ci/verify-serving-image-boundary.py|scripts/ci/serving-image-reuse.py|scripts/ci/verify-native-migration-refusal.py|scripts/ci/fixtures/validate-native-migration-refusal.py|scripts/ci/fixtures/validate-serving-image-boundary.py|.github/workflows/serving-image-boundary.yml)
                 generic=true
                 lambda=true
                 functions=true

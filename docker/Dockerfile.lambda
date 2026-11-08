@@ -10,6 +10,7 @@ ARG LAMBDA_RUNTIME_IMAGE=public.ecr.aws/lambda/provided:al2023@sha256:612c98f126
 ARG LAMBDA_ADAPTER_IMAGE=public.ecr.aws/awsguru/aws-lambda-adapter:0.9.1@sha256:46d6625e68cbbdd2efab4a20245977664513f13ffef47915b000d431adcea0b4
 
 FROM ${LAMBDA_ADAPTER_IMAGE} AS lambda-adapter
+ARG HONUA_STORE_PROFILE=postgis
 
 FROM ${DOTNET_SDK_IMAGE} AS build
 WORKDIR /src
@@ -75,6 +76,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
       *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
     sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj \
+      -p:HonuaStoreProfile=${HONUA_STORE_PROFILE:-postgis} \
       --runtime "$RUNTIME_ID" \
       -p:RuntimeIdentifier="$RUNTIME_ID" \
       -p:HonuaIncludeStacOpsDemo=false \
@@ -99,6 +101,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
       *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
     sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj \
+      -p:HonuaStoreProfile=${HONUA_STORE_PROFILE:-postgis} \
       --runtime "$RUNTIME_ID" \
       --force \
       -p:RuntimeIdentifier="$RUNTIME_ID" \
@@ -106,6 +109,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
       -p:PublishAot=false \
       -p:SelfContained=true && \
     dotnet publish src/Honua.Server/Honua.Server.csproj \
+      -p:HonuaStoreProfile=${HONUA_STORE_PROFILE:-postgis} \
       ${VERSION:+-p:Version="$VERSION"} \
       ${VERSION:+-p:InformationalVersion="$VERSION$(if [ -n "$HONUA_GIT_SHA" ]; then printf '+%.7s' "$HONUA_GIT_SHA"; fi)"} \
       ${VERSION:+-p:IncludeSourceRevisionInInformationalVersion=false} \

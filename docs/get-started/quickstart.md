@@ -11,6 +11,10 @@ management service and a separate Compose executor. The executor only executes
 approved proposals; a different principal must approve the proposer's request.
 The serving container has no Docker access.
 
+The default serving image includes only the PostGIS data store and retains file-format
+import and export support. Keep the install's default image for PostGIS. Additional
+stores require the [full JIT image variant](../ops/nightly-images.md#data-store-image-variants).
+
 ## Install the customer package
 
 Use `honua-compose-quickstart.tar.gz` from your release's install assets. The nightly

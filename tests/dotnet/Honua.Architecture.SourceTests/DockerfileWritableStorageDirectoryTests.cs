@@ -51,6 +51,10 @@ public sealed class DockerfileWritableStorageDirectoryTests
         foreach (var dockerfilePath in readOnlyRootDockerfiles)
         {
             var dockerfile = File.ReadAllText(dockerfilePath);
+            if (dockerfile.Contains("sh docker/runtime/stage-runtime.sh", StringComparison.Ordinal))
+            {
+                dockerfile += File.ReadAllText(Path.Join(repositoryRoot, "docker/runtime/stage-runtime.sh"));
+            }
             var relativePath = Path.GetRelativePath(repositoryRoot, dockerfilePath);
 
             foreach (var (configPath, directory) in requiredDirectories)
@@ -124,13 +128,14 @@ public sealed class DockerfileWritableStorageDirectoryTests
     {
         var createdDirectories = CollectTokensFromDirective(dockerfile, "mkdir");
         var ownedDirectories = CollectTokensFromDirective(dockerfile, "chown");
-        return createdDirectories.Contains(directory) && ownedDirectories.Contains(directory);
+        return createdDirectories.Contains(directory) && ownedDirectories.Any(parent =>
+            directory == parent || directory.StartsWith(parent.TrimEnd('/') + "/", StringComparison.Ordinal));
     }
 
     private static HashSet<string> CollectTokensFromDirective(string dockerfile, string directive)
     {
         var tokens = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var line in dockerfile.Split('\n').Select(rawLine => rawLine.Trim()))
+        foreach (var line in dockerfile.Replace("\\\n", " ", StringComparison.Ordinal).Split('\n').Select(rawLine => rawLine.Trim()))
         {
             var directiveIndex = line.IndexOf(directive, StringComparison.Ordinal);
             if (directiveIndex < 0)
@@ -139,7 +144,8 @@ public sealed class DockerfileWritableStorageDirectoryTests
             }
 
             foreach (var token in line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
-                .Where(token => token.StartsWith("/tmp/", StringComparison.Ordinal)))
+                .Select(token => token.Trim('"').Replace("$additions", string.Empty, StringComparison.Ordinal))
+                .Where(token => token.StartsWith("/tmp", StringComparison.Ordinal)))
             {
                 tokens.Add(token);
             }

@@ -76,14 +76,14 @@
     <!-- Code follows dependency inversion: Server → Core ← Infrastructure -->
     <!-- Program registers Postgres services via AddPostgreSqlServices -->
     <ProjectReference Include="..\Honua.Db\Postgres\Honua.Postgres.csproj" />
-    <ProjectReference Include="..\Honua.Db\DuckDB\Honua.DuckDB.csproj" />
-    <ProjectReference Include="..\Honua.Db\SqlServer\Honua.SqlServer.csproj" />
-    <ProjectReference Include="..\Honua.Db\MySql\Honua.MySql.csproj" />
-    <ProjectReference Include="..\Honua.Db\Redshift\Honua.Redshift.csproj" />
-    <ProjectReference Include="..\Honua.GeoServicesRest\Honua.GeoServicesRest.csproj" />
-    <ProjectReference Include="..\Honua.Db\Databricks\Honua.Databricks.csproj" />
-    <ProjectReference Include="..\Honua.Db\Oracle\Honua.Oracle.csproj" Condition="'$(HonuaIncludeOracle)' == 'true'" />
-    <ProjectReference Include="..\Honua.Snowflake\Honua.Snowflake.csproj" Condition="'$(HonuaIncludeSnowflake)' == 'true'" />
+    <ProjectReference Include="..\Honua.Db\DuckDB\Honua.DuckDB.csproj" Condition="'$(HonuaStoreProfile)' == 'full'" />
+    <ProjectReference Include="..\Honua.Db\SqlServer\Honua.SqlServer.csproj" Condition="'$(HonuaStoreProfile)' == 'full'" />
+    <ProjectReference Include="..\Honua.Db\MySql\Honua.MySql.csproj" Condition="'$(HonuaStoreProfile)' == 'full'" />
+    <ProjectReference Include="..\Honua.Db\Redshift\Honua.Redshift.csproj" Condition="'$(HonuaStoreProfile)' == 'full'" />
+    <ProjectReference Include="..\Honua.GeoServicesRest\Honua.GeoServicesRest.csproj" Condition="'$(HonuaStoreProfile)' == 'full'" />
+    <ProjectReference Include="..\Honua.Db\Databricks\Honua.Databricks.csproj" Condition="'$(HonuaStoreProfile)' == 'full'" />
+    <ProjectReference Include="..\Honua.Db\Oracle\Honua.Oracle.csproj" Condition="'$(HonuaIncludeOracle)' == 'true' and '$(HonuaStoreProfile)' == 'full'" />
+    <ProjectReference Include="..\Honua.Snowflake\Honua.Snowflake.csproj" Condition="'$(HonuaIncludeSnowflake)' == 'true' and '$(HonuaStoreProfile)' == 'full'" />
     <ProjectReference Include="..\Honua.ServiceDefaults\Honua.ServiceDefaults.csproj" />
     <ProjectReference Include="..\Honua.Hosting\Honua.Hosting.csproj" />
     <ProjectReference Include="..\Honua.Jobs\Honua.Jobs.csproj" />

@@ -34,7 +34,8 @@
     ".github/workflows/release-bundle.yml",
     ".github/workflows/deploy.yml",
     ".github/workflows/deploy-platform-images.yml",
-    ".github/workflows/nightly-container-build.yml"
+    ".github/workflows/nightly-container-build.yml",
+    "docker/runtime/**"
   ],
   "serving_variant_patterns": {
     "generic": [

@@ -26,6 +26,37 @@ each of the newest candidates. Nothing is published. To image one specific sha, 
 workflow on trunk with `candidate_sha=<full sha>`. That sha must itself be
 certified.
 
+## Data-store image variants
+
+The default serving images contain the PostGIS store. Import and export formats remain
+available, including GeoPackage, Shapefile, GeoTIFF and Parquet. SQLite supports file I/O;
+it is not an additional server data store. The runtime is chiseled-extra, with ICU,
+rendering fonts and required native libraries, and no shell or package manager.
+
+Use the JIT full variant for additional stores: `nightly-jit-full`,
+`nightly-jit-<candidate-sha7>-full`, or a release's `-ecs-jit-full` tag. Pin the selected
+image by digest. Full includes DuckDB, SQL Server, MySQL, Oracle, Redshift, Snowflake,
+Databricks and the REST read-through backend. Oracle and Snowflake require the JIT
+runtime; the full variant preserves that existing constraint. Both variants use the
+same source revision and workflow. The full variant retains the JIT image's existing
+support classification.
+
+Configuring an additional primary store, secondary store section or warehouse feature
+gate on the default image refuses startup and names the full variant. Explicitly disabled
+store sections can remain in shared configuration. This does not change the default
+PostGIS connection settings or enable experimental stores in the full variant.
+
+Custom image builds use `HONUA_STORE_PROFILE=postgis` (default) or `full`. This axis
+is independent of `HONUA_BUILD_PROFILE` and `HONUA_PROTOCOL_PROFILE`. Local source
+builds and existing provider tests retain the full store profile; an MSBuild publish can
+select `-p:HonuaStoreProfile=postgis` explicitly.
+
+The Store Image Size workflow measures both JIT variants and the default AOT image.
+Its artifacts contain before/after byte counts, publish file manifests, startup-refusal
+logs, format smoke evidence and scan results. It verifies that default publish output
+has no excluded store assemblies or native libraries, retains file I/O libraries, and
+contains no satellite resource assemblies.
+
 ## One sha per image
 
 Image contents, `HONUA_GIT_SHA`, the `org.opencontainers.image.revision`

@@ -21,6 +21,7 @@
 ARG AZURE_FUNCTIONS_BASE_IMAGE=mcr.microsoft.com/azure-functions/dotnet-isolated:4.1055.300-2-dotnet-isolated9.0-appservice@sha256:4bed140e217027464567f68e3e630486663922e4bc4d5ec6ecd5408b5bbb540f
 
 FROM ${AZURE_FUNCTIONS_BASE_IMAGE} AS build
+ARG HONUA_STORE_PROFILE=postgis
 WORKDIR /src
 
 ENV DOTNET_ROOT=/usr/share/dotnet
@@ -98,6 +99,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
       *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
     sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj \
+      -p:HonuaStoreProfile=${HONUA_STORE_PROFILE:-postgis} \
       --runtime "$RUNTIME_ID" \
       -p:RuntimeIdentifier="$RUNTIME_ID" \
       -p:HonuaSkipOracleForAotVerification=true \
@@ -128,11 +130,13 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     max_attempts="${AOT_PUBLISH_MAX_ATTEMPTS:-3}" && \
     until \
         sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj \
+      -p:HonuaStoreProfile=${HONUA_STORE_PROFILE:-postgis} \
           --runtime "$RUNTIME_ID" \
           -p:RuntimeIdentifier="$RUNTIME_ID" \
           -p:HonuaSkipOracleForAotVerification=true \
           -p:HonuaSkipSnowflakeForAotVerification=true && \
         dotnet publish src/Honua.Server/Honua.Server.csproj \
+      -p:HonuaStoreProfile=${HONUA_STORE_PROFILE:-postgis} \
           ${VERSION:+-p:Version="$VERSION"} \
           ${VERSION:+-p:InformationalVersion="$VERSION$(if [ -n "$HONUA_GIT_SHA" ]; then printf '+%.7s' "$HONUA_GIT_SHA"; fi)"} \
           ${VERSION:+-p:IncludeSourceRevisionInInformationalVersion=false} \

@@ -144,6 +144,7 @@ if (Honua.Server.Hosting.ComposeExecutor.ComposeExecutorMode.Resolve(builder.Con
     return;
 }
 
+DataStoreBuildPolicy.Validate(builder.Configuration, DataStoreBuildPolicy.AdditionalStoresIncluded);
 Honua.Infrastructure.Hosting.ProtocolProfile.ValidateRuntime(builder.Configuration);
 
 // Typed composition switch (resolved once, never consulted by services): a process a batch compute
@@ -598,6 +599,7 @@ if (registerProviderInfrastructure)
 // ADO.NET provider instead of always speaking Npgsql. Registered unconditionally — independent of the primary
 // data-source provider — because any of these engines can be an external secured connection.
 Honua.Db.Postgres.Features.Security.PostgresConnectionDriverServiceCollectionExtensions.AddPostgresConnectionDriver(builder.Services);
+#if !HONUA_POSTGIS_ONLY
 Honua.Db.MySql.Features.Security.MySqlConnectionDriverServiceCollectionExtensions.AddMySqlConnectionDriver(builder.Services);
 Honua.Db.SqlServer.Features.Security.SqlServerConnectionDriverServiceCollectionExtensions.AddSqlServerConnectionDriver(builder.Services);
 Honua.Db.Redshift.Features.Security.RedshiftConnectionDriverServiceCollectionExtensions.AddRedshiftConnectionDriver(builder.Services);
@@ -617,6 +619,7 @@ Honua.Snowflake.Features.Security.SnowflakeConnectionDriverServiceCollectionExte
 // registered beside Redshift and Snowflake so admin connection tests resolve the provider
 // even when the experimental feature gate has not enabled the read-through provider.
 Honua.Db.Databricks.Features.Security.DatabricksConnectionDriverServiceCollectionExtensions.AddDatabricksConnectionDriver(builder.Services);
+#endif
 builder.Services.AddSingleton<Honua.Core.Features.Security.Abstractions.IConnectionDriverRegistry, Honua.Core.Features.Security.Abstractions.ConnectionDriverRegistry>();
 
 // IGeometryService is a pure NTS-backed compute service (its only dependency is

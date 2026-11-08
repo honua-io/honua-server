@@ -11,10 +11,8 @@ namespace Honua.Architecture.Tests;
 /// </summary>
 public sealed class RuntimeImageCveTests
 {
-    private const string PackageRevision = "ARG RUNTIME_PACKAGE_REVISION=20261105";
-
     [ArchitectureTest]
-    public void RuntimeStages_DoNotInstallWgetAndProbeWithBash()
+    public void RuntimeStages_UseChiseledAndACompiledProbe()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         foreach (var relativePath in new[] { "Dockerfile", "docker/Dockerfile.aot" })
@@ -23,16 +21,11 @@ public sealed class RuntimeImageCveTests
             var runtimeStage = dockerfile[dockerfile.LastIndexOf("AS runtime", StringComparison.Ordinal)..];
 
             runtimeStage.Should().NotContain("wget", $"{relativePath} runtime stage must not install or call wget");
-            runtimeStage.Should().Contain(PackageRevision, relativePath);
-            runtimeStage.Should().Contain("apt-get upgrade -y", relativePath);
-            runtimeStage.Should().Contain("dpkg-query -W -f '${Version}' zlib1g", relativePath);
-            runtimeStage.Should().Contain("dpkg-query -W -f '${Version}' apt", relativePath);
-            runtimeStage.Should().Contain("dpkg-query -W -f '${Version}' libapt-pkg6.0t64", relativePath);
-            runtimeStage.Should().NotContain("dpkg-query -W -f '$${Version}'",
-                $"{relativePath} must pass dpkg-query ${{Version}}; a doubled dollar emits a leading dollar and compare-versions rejects the epoch");
+            dockerfile.Should().Contain("10.0-noble-chiseled-extra@sha256:");
+            runtimeStage.Should().NotContain("RUN ");
+            runtimeStage.Should().NotContain("bash");
             runtimeStage.Should().Contain("HEALTHCHECK", relativePath);
-            runtimeStage.Should().Contain("/dev/tcp/127.0.0.1/8080", relativePath);
-            runtimeStage.Should().Contain("GET /healthz/live HTTP/1.0", relativePath);
+            runtimeStage.Should().Contain("CMD [\"/app/honua-healthcheck\"]", relativePath);
         }
     }
 
@@ -60,18 +53,15 @@ public sealed class RuntimeImageCveTests
     }
 
     [ArchitectureTest]
-    public void LambdaAotRuntime_RefreshesTheSameAptRevisionAsTheServingImages()
+    public void LambdaAotRuntime_UsesChiseledWithoutAPackageManager()
     {
         var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var dockerfile = File.ReadAllText(Path.Join(repositoryRoot, "docker", "Dockerfile.lambda.aot"));
         var runtimeStage = dockerfile[dockerfile.LastIndexOf("AS runtime", StringComparison.Ordinal)..];
 
-        runtimeStage.Should().Contain(PackageRevision);
-        runtimeStage.Should().Contain("apt-get upgrade -y");
-        runtimeStage.Should().Contain("dpkg-query -W -f '${Version}' zlib1g");
-        runtimeStage.Should().Contain("dpkg-query -W -f '${Version}' apt");
-        runtimeStage.Should().Contain("dpkg-query -W -f '${Version}' libapt-pkg6.0t64");
-        runtimeStage.Should().NotContain("dpkg-query -W -f '$${Version}'");
+        dockerfile.Should().Contain("10.0-noble-chiseled-extra@sha256:");
+        runtimeStage.Should().NotContain("RUN ");
+        runtimeStage.Should().NotContain("apt-get");
         runtimeStage.Should().NotContain("wget");
     }
 

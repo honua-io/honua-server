@@ -58,11 +58,11 @@ public sealed class AotNativeLibraryRuntimeTests
             var contents = File.ReadAllText(Path.Join(repositoryRoot, relativePath));
             var runtimeStage = contents[contents.IndexOf("AS runtime", StringComparison.Ordinal)..];
 
-            runtimeStage.Should().MatchRegex(@"for native in [^;]*\bParquetSharpNative\.so\b[^;]*\blibduckdb\.so\b|for native in [^;]*\blibduckdb\.so\b[^;]*\bParquetSharpNative\.so\b",
-                $"{relativePath} must link-check both glibc-only native libraries in the runtime stage");
-            runtimeStage.Should().Contain("ldd -r \"", relativePath);
-            runtimeStage.Should().Contain("grep -Eq 'not found|undefined symbol|not a dynamic executable'", relativePath);
-            runtimeStage.Should().Contain("exit 1", relativePath);
+            runtimeStage.Should().Contain("sh docker/runtime/verify-native.sh", relativePath);
+            var verification = File.ReadAllText(Path.Join(repositoryRoot, "docker/runtime/verify-native.sh"));
+            verification.Should().Contain("ParquetSharpNative.so");
+            verification.Should().Contain("libSkiaSharp.so");
+            verification.Should().Contain("chroot \"$runtime_root\" \"$loader\" --list");
         }
     }
 
@@ -87,7 +87,7 @@ public sealed class AotNativeLibraryRuntimeTests
         var restoreStepCount = buildStage.Split(
             "sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj").Length - 1;
         var argumentListCount = buildStage.Split(
-            "set -- \"-p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full}\" \"-p:HonuaUseSkiaNoDependencies=true\"").Length - 1;
+            "set -- \"-p:HonuaStoreProfile=${HONUA_STORE_PROFILE:-postgis}\" \"-p:HonuaNobleRuntimePublish=true\" \"-p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full}\" \"-p:HonuaUseSkiaNoDependencies=true\"").Length - 1;
         restoreStepCount.Should().Be(2);
         argumentListCount.Should().Be(restoreStepCount,
             "the RID restore layer and the restore+publish retry unit must both select the NoDependencies asset; "
@@ -100,10 +100,11 @@ public sealed class AotNativeLibraryRuntimeTests
             var runtimeStage = contents[contents.IndexOf("AS runtime", StringComparison.Ordinal)..];
 
             contents.Should().Contain("-p:HonuaUseSkiaNoDependencies=true", relativePath);
-            runtimeStage.Should().Contain("libSkiaSharp.so",
+            runtimeStage.Should().Contain("sh docker/runtime/verify-native.sh",
                 $"{relativePath}: the Skia native must stay under the ldd -r gate, not be excluded to go green");
             runtimeStage.Should().Contain("fonts-dejavu-core", relativePath);
-            runtimeStage.Should().Contain("test -r /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", relativePath);
+            File.ReadAllText(Path.Join(repositoryRoot, "docker/runtime/verify-native.sh"))
+                .Should().Contain("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
             runtimeStage.Should().Contain("HONUA_DEFAULT_FONT_PATH=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
                 $"{relativePath}: the NoDependencies asset has no Fontconfig lookup, so text renders blank without a font file");
         }

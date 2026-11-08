@@ -1,0 +1,104 @@
+name: Store Image Size
+
+on:
+  pull_request:
+    branches: [trunk]
+    paths:
+      - 'Dockerfile'
+      - 'docker/Dockerfile.aot'
+      - 'docker/runtime/**'
+      - 'eng/Honua.BuildProfiles.props'
+      - 'src/Honua.Server/Honua.Server.csproj'
+      - 'src/Honua.Server/Startup/DataStoreBuildPolicy.cs'
+      - 'scripts/ci/*measure-serving-image.py'
+      - '.github/workflows/store-image-size.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: store-image-size-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  measure:
+    name: Measure ${{ matrix.profile }} (${{ matrix.compilation }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - profile: postgis
+            compilation: jit
+            dockerfile: Dockerfile
+            baseline: ghcr.io/honua-io/honua-server@sha256:e150fc0b7990cff9e161bfca3a4cf3231f3a8680c0d9622c3eb4ef6633c5278d
+          - profile: full
+            compilation: jit
+            dockerfile: Dockerfile
+            baseline: ghcr.io/honua-io/honua-server@sha256:e150fc0b7990cff9e161bfca3a4cf3231f3a8680c0d9622c3eb4ef6633c5278d
+          - profile: postgis
+            compilation: aot
+            dockerfile: docker/Dockerfile.aot
+            baseline: ghcr.io/honua-io/honua-server@sha256:1320e634c1f3b304043f4423780ab76202136c07c5d4bde26c178c457f3796b5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Test measurement and health probe
+        run: |
+          python3 scripts/ci/test-measure-serving-image.py
+          python3 scripts/ci/test-health-probe.py
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - name: Build serving image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          load: true
+          tags: honua-store-measure:current
+          build-args: |
+            HONUA_GIT_SHA=${{ github.sha }}
+            HONUA_STORE_PROFILE=${{ matrix.profile }}
+          secrets: |
+            github_actor=${{ github.actor }}
+            github_token=${{ github.token }}
+          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-${{ matrix.compilation }}-amd64
+      - name: Record image size and verify store and format files
+        env:
+          BASELINE: ${{ matrix.baseline }}
+          PROFILE: ${{ matrix.profile }}
+        run: |
+          docker pull --platform linux/amd64 "$BASELINE"
+          python3 scripts/ci/measure-serving-image.py honua-store-measure:current \
+            --profile "$PROFILE" --baseline "$BASELINE" --output artifacts/image-size.json
+      - name: Refuse excluded providers at startup
+        if: matrix.profile == 'postgis'
+        run: |
+          mkdir -p artifacts
+          for provider in duckdb mysql mssql oracle redshift snowflake dbsql; do
+            if timeout 30 docker run --rm --env "DataSource__Provider=$provider" \
+              honua-store-measure:current > "artifacts/startup-$provider.log" 2>&1; then
+              echo "::error::Excluded provider was accepted"
+              exit 1
+            fi
+            grep -F -- '-full' "artifacts/startup-$provider.log"
+          done
+      - name: Smoke import format support and rendering
+        run: bash scripts/ci/smoke-aot-geoparquet.sh honua-store-measure:current artifacts/formats
+      - name: Scan chiseled image
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD/.trivyignore:/config/ignore:ro" aquasec/trivy:0.68.1 \
+            image --severity HIGH,CRITICAL --ignore-unfixed --ignorefile /config/ignore \
+            --exit-code 1 honua-store-measure:current
+      - name: Upload measurement evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: store-image-${{ matrix.profile }}-${{ matrix.compilation }}
+          path: artifacts/
+          if-no-files-found: error

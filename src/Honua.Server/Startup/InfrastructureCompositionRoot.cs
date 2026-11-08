@@ -32,6 +32,7 @@ internal static class InfrastructureCompositionRoot
     public static void RegisterInfrastructureServices(IServiceCollection services, IConfiguration configuration)
     {
         RenamedConfigurationSections.ThrowIfRetiredSectionPresent(configuration);
+        DataStoreBuildPolicy.Validate(configuration, DataStoreBuildPolicy.AdditionalStoresIncluded);
         var warehouseProviders = new WarehouseProviderDecisions(configuration);
         warehouseProviders.MarkInfrastructureCompositionApplied();
         services.TryAddSingleton(warehouseProviders);
@@ -49,12 +50,14 @@ internal static class InfrastructureCompositionRoot
                 // process-local sharing state before the Hosting defaults are added.
                 services.AddPostgresPortalSharing(configuration);
                 break;
+#if !HONUA_POSTGIS_ONLY
             case DataProviderNames.DuckDb:
                 Honua.Db.DuckDB.ServiceCollectionExtensions.AddDuckDBServices(services, configuration);
                 break;
             case DataProviderNames.MySql:
                 Honua.Db.MySql.ServiceCollectionExtensions.AddMySqlServices(services, configuration);
                 break;
+#endif
             default:
                 throw new InvalidOperationException($"Unsupported data source provider '{configuredProvider}'.");
         }
@@ -84,6 +87,7 @@ internal static class InfrastructureCompositionRoot
             Honua.Core.Features.Shared.Models.IGeographicSridClassifier,
             Honua.Core.Features.Shared.Services.RegistryGeographicSridClassifier>();
 
+#if !HONUA_POSTGIS_ONLY
         // Register the SQL Server spatial provider as an additional read-only feature backend (#850).
         // Metadata v2 publications whose connection resolves to provider 'sqlserver'/'mssql' are routed here
         // through the shared FeatureProviderQueryRouter. Disabled when SqlServer:Enabled is explicitly false.
@@ -157,6 +161,8 @@ internal static class InfrastructureCompositionRoot
         {
             Honua.Db.Databricks.ServiceCollectionExtensions.AddDatabricksFeatureProvider(services, configuration);
         }
+
+#endif
 
         services.TryAddScoped<IFeatureDataProviderRegistry>(serviceProvider =>
             new FeatureDataProviderRegistry(serviceProvider.GetServices<IFeatureDataProvider>()));
