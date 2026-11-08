@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
@@ -51,6 +52,8 @@ public sealed class AdminLayerLegacyFieldConfigurationTests
         store.LastSaved.Resources.Single().SchemaFields.Single(field => field.Name == "notes").Alias.Should().Be("Notes");
         applied.Configurations.Should().ContainSingle(field => field.Name == "name" && field.Alias == "Display name" && field.Hidden);
         store.LastSaved.Publications.Single().Identifier.Should().BeNull();
+        JsonSerializer.Serialize(store.LastSaved.Publications.Single(), MetadataV2JsonContext.Default.MetadataV2Publication)
+            .Should().Contain("\"identifier\":null").And.Contain("\"layerIndex\":4");
     }
 
     [UnitTest]
@@ -139,6 +142,8 @@ public sealed class AdminLayerLegacyFieldConfigurationTests
         store.SaveCount.Should().Be(1);
         store.LastSaved!.Resources.Single().PermanentFilter!.Expression.Should().Be("category = 'test'");
         store.LastSaved.Publications.Single().Identifier.Should().BeNull();
+        JsonSerializer.Serialize(store.LastSaved.Publications.Single(), MetadataV2JsonContext.Default.MetadataV2Publication)
+            .Should().Contain("\"identifier\":null").And.Contain("\"layerIndex\":4");
     }
 
     private static MetadataV2GraphSnapshot LegacySnapshot(int layerIndex)

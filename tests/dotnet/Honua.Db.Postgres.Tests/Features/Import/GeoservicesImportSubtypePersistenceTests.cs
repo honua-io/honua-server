@@ -10,6 +10,7 @@ using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.Shared.Models;
@@ -20,6 +21,7 @@ using Honua.Db.Postgres.Features.Metadata;
 using Honua.Db.Postgres.Features.Migration;
 using Honua.TestKit;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.ObjectPool;
 using Moq;
 
@@ -271,10 +273,12 @@ public sealed partial class GeoservicesImportSubtypePersistenceTests(PostgresFix
         }
     }
 
-    private GeoservicesImportService CreateService(PostgresMetadataV2GraphStore graphStore, string dataSchema, bool featureTypes,
+    private GeoservicesImportService CreateService(IMetadataV2GraphStore graphStore, string dataSchema, bool featureTypes,
         bool hasZ = false, bool hasM = false, HttpMessageHandler? handler = null,
         Honua.Core.Features.Attachments.Abstractions.IAttachmentStore? attachmentStore = null,
-        bool nonSpatial = false, bool temporalFields = false)
+        bool nonSpatial = false, bool temporalFields = false,
+        Honua.Core.Features.MultiTenancy.Abstractions.ITenantContext? tenantContext = null,
+        ILogger<GeoservicesLayerPublicationService>? publicationLogger = null)
     {
         var restClient = new GeoServicesRestClient(
             new HttpClient(handler ?? new SubtypeFeatureServerHandler(featureTypes, hasZ, hasM, nonSpatial, temporalFields)),
@@ -297,7 +301,8 @@ public sealed partial class GeoservicesImportSubtypePersistenceTests(PostgresFix
                 schemaConfiguration: schemaConfiguration),
             graphStore,
             NullLogger<PostgreSqlLayerPublishingService>.Instance,
-            schemaConfiguration: schemaConfiguration);
+            schemaConfiguration: schemaConfiguration,
+            tenantContext: tenantContext);
 
         return new GeoservicesImportService(
             restClient,
@@ -306,7 +311,7 @@ public sealed partial class GeoservicesImportSubtypePersistenceTests(PostgresFix
             new GeoServicesConstructCapabilityRegistry(GeoServicesConstructCapabilityRegistry.BuiltInDescriptors),
             NullLogger<GeoservicesImportService>.Instance,
             new GeoservicesLayerPublicationService(
-                NullLogger<GeoservicesLayerPublicationService>.Instance,
+                publicationLogger ?? NullLogger<GeoservicesLayerPublicationService>.Instance,
                 layerPublishingService: publishingService),
             attachmentStore: attachmentStore,
             schemaConfiguration: schemaConfiguration);
@@ -347,11 +352,14 @@ public sealed partial class GeoservicesImportSubtypePersistenceTests(PostgresFix
     // Minimal ArcGIS FeatureServer mock that advertises an integer subtype field
     // 'buildingtype' with two subtypes; the 'Residential' subtype carries a per-subtype
     // default value and a coded-value domain on 'status'.
-    private sealed class SubtypeFeatureServerHandler(bool featureTypes, bool hasZ, bool hasM, bool nonSpatial, bool temporalFields) : HttpMessageHandler
+    private sealed class SubtypeFeatureServerHandler(bool featureTypes, bool hasZ, bool hasM, bool nonSpatial, bool temporalFields,
+        string servicePath = "/arcgis/rest/services/Subtypes/FeatureServer") : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var pathAndQuery = request.RequestUri?.PathAndQuery ?? string.Empty;
+            if (pathAndQuery.StartsWith(servicePath, StringComparison.Ordinal))
+                pathAndQuery = "/arcgis/rest/services/Subtypes/FeatureServer" + pathAndQuery[servicePath.Length..];
 
             var payload = pathAndQuery switch
             {

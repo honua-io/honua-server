@@ -13,6 +13,9 @@ public sealed class LayerPublishRequest
 
     public string? PublicName { get; init; }
 
+    [JsonIgnore]
+    public Honua.Core.Features.Migration.Domain.GeoservicesImportTarget? ImportTarget { get; init; }
+
     public bool CreateEditableCopy { get; init; }
 
     public bool AllowEmptyTable { get; init; }

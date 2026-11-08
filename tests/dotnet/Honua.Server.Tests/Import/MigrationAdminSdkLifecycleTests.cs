@@ -7,9 +7,12 @@ using System.Data.Common;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
+using System.Runtime.ExceptionServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using DbUp;
+using DbUp.Helpers;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
@@ -511,17 +514,27 @@ public sealed class MigrationAdminSdkLifecycleTests : IClassFixture<MigrationAdm
         {
             await Web.InitializeAsync();
 
-            // Test hosts skip application migrations. The batch catalog is the real Postgres one here, so
-            // apply the production batch-run DDL (045, and 117 for the fidelity verdict columns) under the
-            // shared seed lock: the tables are literal honua.* objects that search_path does not isolate.
             var assembly = typeof(Program).Assembly;
-            foreach (var script in new[] { "045_CreateMigrationBatchRuns.sql", "117_AddMigrationBatchFidelityVerdict.sql" })
+            var batchMigrations = new[]
             {
-                var resource = assembly.GetManifestResourceNames().Single(name => name.EndsWith(script, StringComparison.Ordinal));
-                await using var stream = assembly.GetManifestResourceStream(resource)!;
-                using var reader = new StreamReader(stream);
-                await Web.Postgres.ApplyGlobalSeedSqlAsync("CREATE SCHEMA IF NOT EXISTS honua;\n" + await reader.ReadToEndAsync());
-            }
+                "045_CreateMigrationBatchRuns.sql",
+                "117_AddMigrationBatchFidelityVerdict.sql",
+                "146_AddMigrationBatchPublicationTarget.sql"
+            }.Select(script => assembly.GetManifestResourceNames()
+                .Single(name => name.EndsWith(script, StringComparison.Ordinal))).ToArray();
+            await Web.Postgres.RunUnderSchemaMutationLockAsync(() =>
+            {
+                var upgrade = DeployChanges.To
+                    .PostgresqlDatabase(Web.Postgres.ConnectionString)
+                    .WithScriptsEmbeddedInAssembly(assembly, name => batchMigrations.Contains(name))
+                    .JournalTo(new NullJournal())
+                    .WithTransaction()
+                    .Build()
+                    .PerformUpgrade();
+                if (!upgrade.Successful) ExceptionDispatchInfo.Throw(upgrade.Error);
+                upgrade.Scripts.Select(script => script.Name).Should().BeEquivalentTo(batchMigrations);
+                return Task.CompletedTask;
+            });
         }
 
         public async Task DisposeAsync()
