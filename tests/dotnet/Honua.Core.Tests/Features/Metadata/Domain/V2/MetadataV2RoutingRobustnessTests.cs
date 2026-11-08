@@ -11,6 +11,100 @@ namespace Honua.Core.Tests.Features.Metadata.Domain.V2;
 
 public sealed class MetadataV2RoutingRobustnessTests
 {
+    [UnitTheory]
+    [InlineData("shape", "\"future-field\"")]
+    [InlineData("start", "\"future-field\"")]
+    [InlineData("end", "\"future-field\"")]
+    [InlineData("shape", "18446744073709551616")]
+    [InlineData("start", "987")]
+    [InlineData("end", "-9223372036854775809")]
+    [InlineData("shape", "\"unknown\"")]
+    [InlineData("start", "\"unknown\"")]
+    public void IsRoutable_UnsupportedSemanticField_BlocksOnlyAffectedDataset(string fieldName, string token)
+    {
+        var graph = SemanticFieldGraph();
+        var dataset = graph.Resources[0];
+        var fieldNode = JsonSerializer.SerializeToNode(dataset.SchemaFields.Single(field => field.Name == fieldName),
+            MetadataV2JsonContext.Default.MetadataV2Field)!;
+        fieldNode["type"] = JsonNode.Parse(token);
+        var unsupportedField = JsonSerializer.Deserialize(fieldNode.ToJsonString(), MetadataV2JsonContext.Default.MetadataV2Field)!;
+        var unsupported = dataset with
+        {
+            Metadata = dataset.Metadata with { Id = "future-dataset" },
+            SchemaFields = dataset.SchemaFields.Select(field => field.Name == fieldName ? unsupportedField : field).ToArray(),
+            StorageBindingIds = ["future-binding"]
+        };
+        var binding = graph.StorageBindings[0] with
+        {
+            Metadata = new() { Id = "future-binding" }, ResourceId = "future-dataset", StorageLayerId = 18
+        };
+        var layer = graph.Publications[0] with
+        {
+            Metadata = new() { Id = "future-layer" }, ResourceId = "future-dataset", StorageBindingId = "future-binding"
+        };
+        graph = graph with
+        {
+            Resources = [dataset, unsupported], StorageBindings = [graph.StorageBindings[0], binding],
+            Publications = [graph.Publications[0], layer]
+        };
+        var snapshot = new MetadataV2GraphSnapshot(graph, "\"test\"", DateTimeOffset.UnixEpoch);
+
+        snapshot.IsRoutable(layer).Should().BeFalse();
+        layer.IsRoutable(unsupported).Should().BeFalse();
+        snapshot.IsRoutable(binding, unsupported).Should().BeFalse();
+        snapshot.IsRoutable(graph.Publications[0]).Should().BeTrue();
+        MetadataV2GraphValidator.Validate(graph).Errors.Should().BeEmpty();
+    }
+
+    [UnitTheory]
+    [InlineData("shape", MetadataV2FieldType.String)]
+    [InlineData("start", MetadataV2FieldType.Integer)]
+    [InlineData("end", MetadataV2FieldType.Geometry)]
+    public void Validate_KnownIncorrectSemanticField_RejectsGraph(string fieldName, MetadataV2FieldType fieldType)
+    {
+        var graph = SemanticFieldGraph();
+        var dataset = graph.Resources[0];
+        graph = graph with { Resources = [dataset with
+        {
+            SchemaFields = dataset.SchemaFields.Select(field => field.Name == fieldName ? field with { Type = fieldType } : field).ToArray()
+        }] };
+
+        MetadataV2GraphValidator.Validate(graph).IsValid.Should().BeFalse();
+        new MetadataV2GraphSnapshot(graph, "\"test\"", DateTimeOffset.UnixEpoch)
+            .IsRoutable(graph.Publications[0]).Should().BeFalse();
+    }
+
+    [UnitTheory]
+    [InlineData("shape")]
+    [InlineData("start")]
+    [InlineData("end")]
+    public void Validate_MissingSemanticField_RejectsGraph(string fieldName)
+    {
+        var graph = SemanticFieldGraph();
+        var dataset = graph.Resources[0];
+        graph = graph with { Resources = [dataset with { SchemaFields = dataset.SchemaFields.Where(field => field.Name != fieldName).ToArray() }] };
+
+        MetadataV2GraphValidator.Validate(graph).IsValid.Should().BeFalse();
+        new MetadataV2GraphSnapshot(graph, "\"test\"", DateTimeOffset.UnixEpoch)
+            .IsRoutable(graph.Publications[0]).Should().BeFalse();
+    }
+
+    private static MetadataV2Graph SemanticFieldGraph()
+    {
+        var graph = JsonSerializer.Deserialize(KnownGraph, MetadataV2JsonContext.Default.MetadataV2Graph)!;
+        return graph with { Resources = [graph.Resources[0] with
+        {
+            Spatial = new() { PrimaryGeometryField = "SHAPE" },
+            Temporal = new() { StartTimeField = "START", EndTimeField = "END" },
+            SchemaFields =
+            [
+                new() { Name = "shape", Type = MetadataV2FieldType.Geometry },
+                new() { Name = "start", Type = MetadataV2FieldType.Date },
+                new() { Name = "end", Type = MetadataV2FieldType.DateTime }
+            ]
+        }] };
+    }
+
     private const string KnownGraph = """
         {"catalogs":[],"projectionProfiles":[],"policies":[],"roles":[],"services":[{"metadata":{"id":"service","name":"service"}}],
          "resources":[{"metadata":{"id":"dataset","name":"dataset"},"storageBindingIds":["binding"]}],
