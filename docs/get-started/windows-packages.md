@@ -6,6 +6,8 @@ resource: "https://github.com/honua-io/honua-server/releases"
 ---
 # Install on Windows from published packages
 
+See the [Honua vocabulary](../concepts/domain/README.md) for the meanings of Connection, Dataset, Layer, Service, Folder, and Environment.
+
 Run these blocks in order in **Windows PowerShell 5.1 or PowerShell 7**, from a
 directory where you can create a private installation folder. You need Docker
 Desktop running Linux containers, Docker Compose **2.23.1+**, and Python **3.11+**

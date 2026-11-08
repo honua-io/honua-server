@@ -579,7 +579,7 @@ seeded schema per run.
 
 ### Report artifact
 
-Each run emits `tests/TestResults/eval-report.json` (override with
+Each run emits `artifacts/test-results/eval-report.json` (override with
 `HONUA_EVAL_REPORT_DIR`) serialized through `EvalJsonContext`. The document is
 pinned to `reportSchemaVersion = "1"` (`EvalReportSchema.Version`) and
 includes:

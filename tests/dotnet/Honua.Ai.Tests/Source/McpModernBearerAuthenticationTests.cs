@@ -282,7 +282,7 @@ public sealed class McpModernBearerAuthenticationTests : IAsyncLifetime
         _ => BuildModernDiscovery(bearer)
     };
 
-    private static HttpRequestMessage BuildModernDiscovery(string bearer) => BuildModernRequest("server/discover", bearer);
+    internal static HttpRequestMessage BuildModernDiscovery(string bearer) => BuildModernRequest("server/discover", bearer);
 
     private static HttpRequestMessage BuildModernRequest(string method, string bearer, string? name = null)
     {

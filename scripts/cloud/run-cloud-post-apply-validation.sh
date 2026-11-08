@@ -35,7 +35,7 @@ Environment variables:
   HONUA_CLOUD_TEST_PUBLISH_DB_PASSWORD         Required for the live import publish/query round-trip when import mutation checks are enabled.
   HONUA_CLOUD_TEST_PUBLISH_DB_SSL_MODE         Optional DB SSL mode for the live import publish/query round-trip.
   HONUA_CLOUD_TEST_PUBLISH_DB_SSL_REQUIRED     Optional DB SSL-required flag for the live import publish/query round-trip.
-  HONUA_CLOUD_TEST_RESULTS_DIR                 Optional directory for the TRX counts evidence (default ./tests/TestResults).
+  HONUA_CLOUD_TEST_RESULTS_DIR                 Optional directory for the TRX counts evidence (default ./artifacts/test-results).
 
 Optional scale validation environment variables:
   INCLUDE_SCALE_TESTS=true                     Enables existing multi-node scale tests.
@@ -241,7 +241,7 @@ scripts/cloud/post-deployment-verification.sh
 # fails when its inputs are absent, and `dotnet test` exits 0 either way — so
 # without counts, a run that validated nothing is indistinguishable from a run
 # that validated everything. `scripts/ci/assert-trx-executed.py` reads these.
-RESULTS_DIR="${HONUA_CLOUD_TEST_RESULTS_DIR:-./tests/TestResults}"
+RESULTS_DIR="${HONUA_CLOUD_TEST_RESULTS_DIR:-./artifacts/test-results}"
 mkdir -p "$RESULTS_DIR"
 
 dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \

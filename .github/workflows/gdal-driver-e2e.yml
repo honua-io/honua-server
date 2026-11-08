@@ -64,7 +64,7 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
           base-seed-path: ${{ env.GDAL_E2E_SEED_SOURCE }}
-          log-path: tests/TestResults/server.log
+          log-path: artifacts/test-results/server.log
 
       - name: Pull GDAL container image
         run: docker pull "$GDAL_IMAGE"
@@ -81,17 +81,17 @@ jobs:
         id: ogrinfo
         run: |
           set -euo pipefail
-          mkdir -p tests/TestResults/gdal
+          mkdir -p artifacts/test-results/gdal
           docker run --rm --network=host \
-            -v "${PWD}/tests/TestResults/gdal:/out" \
+            -v "${PWD}/artifacts/test-results/gdal:/out" \
             "$GDAL_IMAGE" \
             ogrinfo -ro -so "OAPIF:${GDAL_E2E_BASE_URL}${GDAL_E2E_OAPIF_PATH}" \
-            | tee tests/TestResults/gdal/ogrinfo.txt
+            | tee artifacts/test-results/gdal/ogrinfo.txt
           # GDAL's ogrinfo prints one layer per line as: `<index>: <name>[ (geom)]`.
           # Match the seeded collection id (`0`) at the layer-name position so we
           # don't false-match on incidental zeros elsewhere in the output.
           if ! grep -Eq "^[0-9]+: ${GDAL_E2E_COLLECTION_ID}([[:space:]]|\(|$)" \
-              tests/TestResults/gdal/ogrinfo.txt; then
+              artifacts/test-results/gdal/ogrinfo.txt; then
             echo "::error::ogrinfo did not list the seeded collection '${GDAL_E2E_COLLECTION_ID}'"
             exit 1
           fi
@@ -116,15 +116,15 @@ jobs:
         id: ogr2ogr
         run: |
           set -euo pipefail
-          rm -f tests/TestResults/gdal/out.gpkg
+          rm -f artifacts/test-results/gdal/out.gpkg
           docker run --rm --network=host \
-            -v "${PWD}/tests/TestResults/gdal:/out" \
+            -v "${PWD}/artifacts/test-results/gdal:/out" \
             "$GDAL_IMAGE" \
             ogr2ogr \
               -f GPKG /out/out.gpkg \
               "OAPIF:${GDAL_E2E_BASE_URL}${GDAL_E2E_OAPIF_PATH}" \
               "${GDAL_E2E_COLLECTION_ID}"
-          if [ ! -s tests/TestResults/gdal/out.gpkg ]; then
+          if [ ! -s artifacts/test-results/gdal/out.gpkg ]; then
             echo "::error::ogr2ogr did not produce a non-empty GeoPackage"
             exit 1
           fi
@@ -138,7 +138,7 @@ jobs:
           # carriage returns in ogrinfo output cannot cause the string
           # comparison below to false-fail.
           gpkg_count=$(docker run --rm \
-            -v "${PWD}/tests/TestResults/gdal:/out" \
+            -v "${PWD}/artifacts/test-results/gdal:/out" \
             "$GDAL_IMAGE" \
             ogrinfo -ro -al -so /out/out.gpkg \
             | awk -F': *' '/^Feature Count/ {print $2+0; exit}')
@@ -165,14 +165,14 @@ jobs:
             exit 1
           fi
           docker run --rm \
-            -v "${PWD}/tests/TestResults/gdal:/out" \
+            -v "${PWD}/artifacts/test-results/gdal:/out" \
             "$GDAL_IMAGE" \
-            ogrinfo -ro -al -so /out/out.gpkg > tests/TestResults/gdal/gpkg-ogrinfo.txt
-          if ! grep -E 'AUTHORITY\["OGC","CRS84"\]|ID\["OGC","CRS84"\]' tests/TestResults/gdal/gpkg-ogrinfo.txt >/dev/null; then
+            ogrinfo -ro -al -so /out/out.gpkg > artifacts/test-results/gdal/gpkg-ogrinfo.txt
+          if ! grep -E 'AUTHORITY\["OGC","CRS84"\]|ID\["OGC","CRS84"\]' artifacts/test-results/gdal/gpkg-ogrinfo.txt >/dev/null; then
             echo "::error::Round-tripped GeoPackage lost OGC:CRS84 (WGS 84 lon/lat) CRS metadata"
             exit 1
           fi
-          if ! grep -E '^Data axis to CRS axis mapping: 1,2$' tests/TestResults/gdal/gpkg-ogrinfo.txt >/dev/null; then
+          if ! grep -E '^Data axis to CRS axis mapping: 1,2$' artifacts/test-results/gdal/gpkg-ogrinfo.txt >/dev/null; then
             echo "::error::Round-tripped GeoPackage does not keep longitude/latitude axis order"
             exit 1
           fi
@@ -180,7 +180,7 @@ jobs:
       - name: Write evidence summary
         if: always()
         run: |
-          mkdir -p tests/TestResults/gdal
+          mkdir -p artifacts/test-results/gdal
           {
             echo "## GDAL Driver E2E"
             echo ""
@@ -194,7 +194,7 @@ jobs:
             echo ""
             echo "- \`ogrinfo\` listed the seeded collection (see \`ogrinfo.txt\`)."
             echo "- \`ogr2ogr\` round-tripped the collection to GeoPackage with matching feature count and OGC:CRS84 (WGS 84 lon/lat) CRS."
-          } > tests/TestResults/gdal/summary.md
+          } > artifacts/test-results/gdal/summary.md
 
       - name: Upload GDAL E2E evidence
         if: always()
@@ -202,7 +202,7 @@ jobs:
         with:
           kind: evidence
           path: |
-            tests/TestResults/gdal/
-            tests/TestResults/server.log
+            artifacts/test-results/gdal/
+            artifacts/test-results/server.log
           tier: nightly
-          summary-file: tests/TestResults/gdal/summary.md
+          summary-file: artifacts/test-results/gdal/summary.md

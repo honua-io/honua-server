@@ -18,10 +18,10 @@ jobs:
           python-version: '3.13'
       - run: python -m pip install pytest
       - name: Recount individual request ledgers and reject invalid comparisons
-        run: python -m pytest scripts/scale/test_check_distributed_availability.py -q --junitxml=test-results/availability.xml
+        run: python -m pytest scripts/scale/test_check_distributed_availability.py -q --junitxml=artifacts/test-results/availability.xml
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: availability-checker-tests
-          path: test-results/availability.xml
+          path: artifacts/test-results/availability.xml
           if-no-files-found: error

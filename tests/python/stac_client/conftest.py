@@ -20,6 +20,7 @@ import httpx
 import pytest
 from _pytest.reports import TestReport
 
+from shared.canonical_fixture import TEST_RESULTS_ROOT
 from shared.cert_envelope import CertificationEvidenceCollector
 from shared.postgis import PostGISFixture
 from shared.server import HonuaServer
@@ -30,7 +31,6 @@ from . import cert_lane
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 TESTS_ROOT = Path(__file__).resolve().parents[2]
 PYTHON_TESTS_ROOT = Path(__file__).resolve().parents[1]
-TEST_RESULTS_ROOT = TESTS_ROOT / "TestResults"
 DEFAULT_SEED_PATH = TESTS_ROOT / "seed" / "client-compat-v1.sql"
 DEFAULT_SERVICE_ID = "test_service"
 DEFAULT_COLLECTION_ID = "0"
@@ -226,8 +226,7 @@ def _results_root() -> Path:
 
     ``HONUA_PYSTAC_OUTPUT_DIR`` (set to ``/output`` by the container lane)
     overrides the in-repo default because ``tests/`` is bind-mounted read-only
-    inside the client-compat containers. Unset — every local/CI invocation
-    today — this is exactly the previous ``tests/TestResults`` behavior.
+    inside the client-compat containers.
     """
     override = os.environ.get(cert_lane.OUTPUT_DIR_ENV)
     if override and override.strip():

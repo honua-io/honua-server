@@ -161,8 +161,8 @@ lane against the live seeded `/stac` fixture. It validates the catalog,
 collection, item, and search flows with PySTAC/PySTAC-Client, then runs
 `stac-api-validator` for the `collections` and `filter` conformance classes.
 The lane records the raw client and validator transcripts in
-`tests/TestResults/stac-client-compat-results*.json` and
-`tests/TestResults/stac-api-validator-results*.json` during CI.
+`artifacts/test-results/stac-client-compat-results*.json` and
+`artifacts/test-results/stac-api-validator-results*.json` during CI.
 Broader advertised-class validator gaps for `core`, `features`, and
 item-search-related extensions remain tracked separately by issues #956 and
 #957 and are not included in the passing public claim above.
