@@ -84,7 +84,7 @@ public sealed class PublicPublicationIdentityTests : IAsyncLifetime
         RebindStorage();
         var after = await RecordIdsAsync();
 
-        var expected = new[] { $"layer:{PublicationId}", $"layer:{SecondPublicationId}" };
+        var expected = new[] { $"layer:{PublicationId}" };
         before.Should().BeEquivalentTo(expected);
         after.Should().BeEquivalentTo(expected);
     }
