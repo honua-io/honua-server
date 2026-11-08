@@ -79,4 +79,3 @@ internal sealed record OperationProposalEvidenceV1(
         ExpiresAt: evidence.ExpiresAt,
         VerifierDecision: evidence.VerifierDecision);
 }
-
