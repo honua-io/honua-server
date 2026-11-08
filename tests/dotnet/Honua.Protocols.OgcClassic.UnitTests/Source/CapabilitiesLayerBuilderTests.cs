@@ -42,7 +42,7 @@ public sealed class CapabilitiesLayerBuilderTests
         var sample = Assert.Single(samples);
         Assert.Equal(1, sample.Count);
         Assert.Collection(sample.Tags,
-            tag => Assert.Equal(new KeyValuePair<string, object?>("layer.id", publicationId), tag),
+            tag => Assert.Equal(new KeyValuePair<string, object?>(HonuaTelemetry.Tags.LayerId, publicationId), tag),
             tag => Assert.Equal(new KeyValuePair<string, object?>("error.type", nameof(IOException)), tag));
         Assert.Equal($"OGC capabilities omitted layer {publicationId}: IOException", logger.Warning);
         Assert.Null(logger.Exception);

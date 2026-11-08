@@ -58,6 +58,9 @@ internal sealed partial class Wfs20Handler
         {
             var featureTypes = await GetPublishedFeatureTypesAsync(context, cancellationToken);
             var wfsUrl = BaseUrlResolver.PreserveToken(context.Request, $"{baseUrl}/wfs");
+            var builtTypes = ShouldIncludeCapabilitiesSection(requestedSections, "FeatureTypeList")
+                ? await BuildFeatureTypesAsync(featureTypes, cancellationToken).ConfigureAwait(false)
+                : [];
 
             var capabilities = new WfsCapabilities
             {
@@ -71,11 +74,8 @@ internal sealed partial class Wfs20Handler
                 OperationsMetadata = ShouldIncludeCapabilitiesSection(requestedSections, "OperationsMetadata")
                     ? BuildOperationsMetadata(wfsUrl)
                     : null,
-                FeatureTypeList = ShouldIncludeCapabilitiesSection(requestedSections, "FeatureTypeList")
-                    ? new FeatureTypeList
-                    {
-                        FeatureTypes = await BuildFeatureTypesAsync(featureTypes, cancellationToken).ConfigureAwait(false)
-                    }
+                FeatureTypeList = builtTypes.Length > 0
+                    ? new FeatureTypeList { FeatureTypes = builtTypes }
                     : null,
                 FilterCapabilities = ShouldIncludeCapabilitiesSection(requestedSections, "Filter_Capabilities")
                     ? BuildFilterCapabilities()

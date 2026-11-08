@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Honua.Protocols.Ogc.Classic;
 
-internal static partial class CapabilitiesLayerBuilder
+internal static class CapabilitiesLayerBuilder
 {
     private static readonly Counter<long> OmittedLayers =
         HonuaTelemetry.Meter.CreateCounter<long>("honua.ogc.capabilities.omitted_layers");
@@ -22,13 +22,9 @@ internal static partial class CapabilitiesLayerBuilder
         catch (Exception exception) when (exception is not OperationCanceledException and not OutOfMemoryException)
         {
             var errorClass = exception.GetType().Name;
-            OmittedLayers.Add(1, new("layer.id", publicationId), new("error.type", errorClass));
-            LayerOmitted(logger, publicationId, errorClass);
+            OmittedLayers.Add(1, new(HonuaTelemetry.Tags.LayerId, publicationId), new("error.type", errorClass));
+            OgcClassicLog.LayerOmitted(logger, publicationId, errorClass);
             return null;
         }
     }
-
-    [LoggerMessage(EventId = 5646, Level = LogLevel.Warning,
-        Message = "OGC capabilities omitted layer {PublicationId}: {ErrorClass}")]
-    private static partial void LayerOmitted(ILogger logger, string publicationId, string errorClass);
 }

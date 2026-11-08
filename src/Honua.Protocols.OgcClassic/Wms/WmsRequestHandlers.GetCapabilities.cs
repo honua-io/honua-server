@@ -134,7 +134,7 @@ internal static partial class WmsRequestHandlers
 
         var logger = context.RequestServices
             .GetRequiredService<ILoggerFactory>()
-            .CreateLogger("Honua.Protocols.Ogc.Classic.Wms.WmsRequestHandlers");
+            .CreateLogger(LoggerCategory);
 
         // Fan out DB aggregate queries concurrently; each is a MIN/MAX scan on one table.
         // Resolve each layer defensively: a single layer whose temporal column cannot be
@@ -370,7 +370,7 @@ internal static partial class WmsRequestHandlers
         var serviceTitle = service.Metadata.Title ?? service.EffectivePublicName;
         var serviceAbstract = service.Metadata.Description ?? "Honua WMS service";
         var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()
-            .CreateLogger("Honua.Protocols.Ogc.Classic.Wms.WmsRequestHandlers");
+            .CreateLogger(LoggerCategory);
         var preparedLayers = (await Task.WhenAll(accessibleLayers.Select(layer =>
             CapabilitiesLayerBuilder.TryBuildAsync(
                 () => PrepareWmsCapabilitiesLayerAsync(context, layer),
