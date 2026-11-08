@@ -64,10 +64,16 @@ public sealed class MetadataV2RoutingRobustnessTests
     {
         var graph = SemanticFieldGraph();
         var dataset = graph.Resources[0];
-        graph = graph with { Resources = [dataset with
+        graph = graph with
         {
-            SchemaFields = dataset.SchemaFields.Select(field => field.Name == fieldName ? field with { Type = fieldType } : field).ToArray()
-        }] };
+            Resources =
+            [
+                dataset with
+                {
+                    SchemaFields = dataset.SchemaFields.Select(field => field.Name == fieldName ? field with { Type = fieldType } : field).ToArray()
+                }
+            ]
+        };
 
         MetadataV2GraphValidator.Validate(graph).IsValid.Should().BeFalse();
         new MetadataV2GraphSnapshot(graph, "\"test\"", DateTimeOffset.UnixEpoch)
@@ -92,17 +98,99 @@ public sealed class MetadataV2RoutingRobustnessTests
     private static MetadataV2Graph SemanticFieldGraph()
     {
         var graph = JsonSerializer.Deserialize(KnownGraph, MetadataV2JsonContext.Default.MetadataV2Graph)!;
-        return graph with { Resources = [graph.Resources[0] with
+        return graph with
         {
-            Spatial = new() { PrimaryGeometryField = "SHAPE" },
-            Temporal = new() { StartTimeField = "START", EndTimeField = "END" },
-            SchemaFields =
+            Resources =
             [
-                new() { Name = "shape", Type = MetadataV2FieldType.Geometry },
-                new() { Name = "start", Type = MetadataV2FieldType.Date },
-                new() { Name = "end", Type = MetadataV2FieldType.DateTime }
+                graph.Resources[0] with
+                {
+                    Spatial = new() { PrimaryGeometryField = "SHAPE" },
+                    Temporal = new() { StartTimeField = "START", EndTimeField = "END" },
+                    SchemaFields =
+                    [
+                        new() { Name = "shape", Type = MetadataV2FieldType.Geometry },
+                        new() { Name = "start", Type = MetadataV2FieldType.Date },
+                        new() { Name = "end", Type = MetadataV2FieldType.DateTime }
+                    ]
+                }
             ]
-        }] };
+        };
+    }
+
+    [UnitTheory]
+    [InlineData(MetadataV2FieldType.Geometry, MetadataV2FieldType.Date)]
+    [InlineData(MetadataV2FieldType.Geometry, MetadataV2FieldType.DateTime)]
+    [InlineData(MetadataV2FieldType.Geometry, MetadataV2FieldType.Time)]
+    [InlineData(MetadataV2FieldType.Geography, MetadataV2FieldType.Date)]
+    [InlineData(MetadataV2FieldType.Geography, MetadataV2FieldType.DateTime)]
+    [InlineData(MetadataV2FieldType.Geography, MetadataV2FieldType.Time)]
+    public void IsRoutable_SupportedSemanticFieldsWithDifferentCase_ServesDataset(
+        MetadataV2FieldType geometryType, MetadataV2FieldType timeType)
+    {
+        var graph = SemanticFieldGraph();
+        var dataset = graph.Resources[0];
+        graph = graph with
+        {
+            Resources =
+            [
+                dataset with
+                {
+                    SchemaFields = dataset.SchemaFields.Select(field => field with
+                    {
+                        Type = field.Name == "shape" ? geometryType : timeType
+                    }).ToArray()
+                }
+            ]
+        };
+
+        MetadataV2GraphValidator.Validate(graph).Errors.Should().BeEmpty();
+        new MetadataV2GraphSnapshot(graph, "\"test\"", DateTimeOffset.UnixEpoch)
+            .IsRoutable(graph.Publications[0]).Should().BeTrue();
+    }
+
+    [UnitTheory]
+    [InlineData("shape")]
+    [InlineData("start")]
+    [InlineData("end")]
+    public void IsRoutable_UndefinedSemanticField_DoesNotServe(string fieldName)
+    {
+        var graph = SemanticFieldGraph();
+        var dataset = graph.Resources[0];
+        graph = graph with
+        {
+            Resources =
+            [
+                dataset with
+                {
+                    SchemaFields = dataset.SchemaFields.Select(field => field.Name == fieldName
+                        ? field with { Type = (MetadataV2FieldType)987 } : field).ToArray()
+                }
+            ]
+        };
+
+        new MetadataV2GraphSnapshot(graph, "\"test\"", DateTimeOffset.UnixEpoch)
+            .IsRoutable(graph.Publications[0]).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public void IsRoutable_UnfamiliarNonCriticalField_StillServesDataset()
+    {
+        var graph = SemanticFieldGraph();
+        var dataset = graph.Resources[0];
+        graph = graph with
+        {
+            Resources =
+            [
+                dataset with
+                {
+                    SchemaFields = [..dataset.SchemaFields, new() { Name = "future", Type = MetadataV2FieldType.Unknown }]
+                }
+            ]
+        };
+
+        MetadataV2GraphValidator.Validate(graph).Errors.Should().BeEmpty();
+        new MetadataV2GraphSnapshot(graph, "\"test\"", DateTimeOffset.UnixEpoch)
+            .IsRoutable(graph.Publications[0]).Should().BeTrue();
     }
 
     private const string KnownGraph = """

@@ -18,6 +18,29 @@ namespace Honua.Core.Tests.Features.Scene.Generation;
 public sealed class TileStyleSpecWriterTests
 {
     [UnitTheory]
+    [InlineData(Symbology3DComparison.Equals, 7)]
+    [InlineData(Symbology3DComparison.NotEquals, 6)]
+    [InlineData(Symbology3DComparison.GreaterThan, 8)]
+    [InlineData(Symbology3DComparison.GreaterThanOrEqual, 7)]
+    [InlineData(Symbology3DComparison.LessThan, 6)]
+    [InlineData(Symbology3DComparison.LessThanOrEqual, 7)]
+    public void Build_SupportedComparison_StillMatchesResolver(Symbology3DComparison comparison, int attributeValue)
+    {
+        var symbology = new Symbology3D
+        {
+            Rules = [new() { Attribute = "height", Comparison = comparison, Value = "7", Color = new(0, 128, 0), Visible = false }]
+        };
+        var attributes = Attributes(("height", attributeValue));
+        var resolved = Symbology3DResolver.Resolve(symbology, attributes);
+        var spec = TileStyleSpecWriter.Build(symbology);
+
+        resolved.Color.Should().Be(new Symbology3DColor(0, 128, 0));
+        resolved.Visible.Should().BeFalse();
+        EvaluateColor(spec.Style.Color!, attributes).Should().Be("color('#008000', 1)");
+        EvaluateColor(spec.Style.Show!, attributes).Should().Be("false");
+    }
+
+    [UnitTheory]
     [InlineData(Symbology3DComparison.Unknown, "tree")]
     [InlineData((Symbology3DComparison)987, "tree")]
     [InlineData(Symbology3DComparison.Unknown, "7")]

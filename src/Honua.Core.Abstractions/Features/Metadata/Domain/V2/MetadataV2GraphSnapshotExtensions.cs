@@ -62,7 +62,8 @@ public static class MetadataV2GraphSnapshotExtensions
 
     private static bool IsServingResource(MetadataV2Resource? resource)
         => resource is not null &&
-           IsKnownEnumValue(resource.Type, MetadataV2ResourceType.Unknown) && IsServingStatus(resource.Status);
+           IsKnownEnumValue(resource.Type, MetadataV2ResourceType.Unknown) && IsServingStatus(resource.Status) &&
+           MetadataV2FieldSemantics.HasSupportedReferences(resource);
 
     private static bool IsUnderstoodConnection(MetadataV2Connection? connection)
         => connection is null ||
