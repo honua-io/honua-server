@@ -33,11 +33,20 @@ public static class LicenseTestSupport
         string[]? entitlements = null,
         string? keyId = null,
         bool tamperSignature = false,
-        LicenseCapacityTerms? capacity = null,
-        byte[]? signingSeed = null)
+        LicenseCapacityTerms? capacity = null)
+        => CreateSignedLicenseWithOptions(edition, new SignedLicenseTestOptions
+        {
+            ExpiresAt = expiresAt,
+            Entitlements = entitlements,
+            KeyId = keyId ?? KeyId,
+            TamperSignature = tamperSignature,
+            Capacity = capacity
+        });
+
+    public static SignedLicenseTestFile CreateSignedLicenseWithOptions(
+        HonuaEdition edition,
+        SignedLicenseTestOptions options)
     {
-        var privateKey = new Ed25519PrivateKeyParameters(signingSeed ?? SigningSeed, 0);
-        var publicKey = privateKey.GeneratePublicKey().GetEncoded();
         var payload = JsonSerializer.Serialize(
             new
             {
@@ -46,18 +55,22 @@ public static class LicenseTestSupport
                 licensedTo = "Honua Test Operator",
                 edition = edition.ToString(),
                 issuedAt = DateTimeOffset.UtcNow.AddDays(-1),
-                expiresAt,
-                entitlements = entitlements ?? ActiveEntitlementsFor(edition),
-                capacity
+                expiresAt = options.ExpiresAt,
+                entitlements = options.Entitlements ?? ActiveEntitlementsFor(edition),
+                capacity = options.Capacity
             },
             PayloadJsonOptions);
-        var payloadBytes = Encoding.UTF8.GetBytes(payload);
+        return SignPayload(Encoding.UTF8.GetBytes(payload), options);
+    }
 
+    private static SignedLicenseTestFile SignPayload(byte[] payloadBytes, SignedLicenseTestOptions options)
+    {
+        var privateKey = new Ed25519PrivateKeyParameters(options.SigningSeed ?? SigningSeed, 0);
         var signer = new Ed25519Signer();
         signer.Init(true, privateKey);
         signer.BlockUpdate(payloadBytes, 0, payloadBytes.Length);
         var signature = signer.GenerateSignature();
-        if (tamperSignature)
+        if (options.TamperSignature)
         {
             signature[0] ^= 0xFF;
         }
@@ -65,14 +78,14 @@ public static class LicenseTestSupport
         var envelope = JsonSerializer.Serialize(new
         {
             version = 1,
-            keyId = keyId ?? KeyId,
+            keyId = options.KeyId,
             payload = Base64Url(payloadBytes),
             signature = Base64Url(signature)
         });
 
         return new SignedLicenseTestFile(
             Encoding.UTF8.GetBytes(envelope),
-            "base64url:" + Base64Url(publicKey));
+            "base64url:" + Base64Url(privateKey.GeneratePublicKey().GetEncoded()));
     }
 
     public static string[] ActiveEntitlementsFor(HonuaEdition edition)
@@ -119,6 +132,16 @@ public static class LicenseTestSupport
             .Replace('+', '-')
             .Replace('/', '_');
 
+}
+
+public sealed record SignedLicenseTestOptions
+{
+    public DateTimeOffset? ExpiresAt { get; init; }
+    public string[]? Entitlements { get; init; }
+    public string KeyId { get; init; } = LicenseTestSupport.KeyId;
+    public bool TamperSignature { get; init; }
+    public LicenseCapacityTerms? Capacity { get; init; }
+    public byte[]? SigningSeed { get; init; }
 }
 
 public sealed record SignedLicenseTestFile(byte[] LicenseData, string PublicKeySetting);

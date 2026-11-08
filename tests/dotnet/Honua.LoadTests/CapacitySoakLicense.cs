@@ -15,11 +15,14 @@ internal static class CapacitySoakLicense
         var seed = RandomNumberGenerator.GetBytes(Ed25519PrivateKeyParameters.KeySize);
         try
         {
-            var license = LicenseTestSupport.CreateSignedLicense(
+            var license = LicenseTestSupport.CreateSignedLicenseWithOptions(
                 HonuaEdition.Pro,
-                expiresAt: DateTimeOffset.UtcNow.AddDays(2),
-                keyId: "soak",
-                signingSeed: seed);
+                new SignedLicenseTestOptions
+                {
+                    ExpiresAt = DateTimeOffset.UtcNow.AddDays(2),
+                    KeyId = "soak",
+                    SigningSeed = seed
+                });
             File.WriteAllBytes(path, license.LicenseData);
             return license.PublicKeySetting;
         }
