@@ -165,7 +165,7 @@ train_regenerate_derived_artifacts() {
   local status
 
   train_log "regenerating derived artifacts on ${batch} (feature-catalog, geoservices-parity, capability-matrix)"
-  if ! bash "${repo_root}/scripts/generate-feature-catalog.sh" 1>&2; then
+  if ! bash "${repo_root}/scripts/ci/generate-feature-catalog.sh" 1>&2; then
     train_err "feature-catalog generation failed for ${batch}"
     return 1
   fi
@@ -173,7 +173,7 @@ train_regenerate_derived_artifacts() {
   # checkout. The feature-catalog invocation above owns restore + build; reuse
   # that exact output for parity instead of paying for a second project
   # evaluation before the batch branch can even be pushed to smart CI.
-  if ! bash "${repo_root}/scripts/generate-geoservices-parity.sh" --no-build --no-restore 1>&2; then
+  if ! bash "${repo_root}/scripts/ci/generate-geoservices-parity.sh" --no-build --no-restore 1>&2; then
     train_err "GeoServices parity generation failed for ${batch}"
     return 1
   fi

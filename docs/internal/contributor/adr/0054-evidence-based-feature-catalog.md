@@ -106,7 +106,7 @@ The same `Generate()` backs both the **regeneration entry point** and the
 **drift guard**, so the two can never disagree. Regeneration is a `[Fact]`
 emitter (`FeatureCatalogEmitter`) gated behind `HONUA_EMIT_FEATURE_CATALOG=1`
 (so ordinary `dotnet test` runs stay read-only), invoked by
-`scripts/generate-feature-catalog.sh`.
+`scripts/ci/generate-feature-catalog.sh`.
 
 **Freshness-gate contract (drift = red build).** `FeatureCatalogDriftTests` (in
 `Honua.Architecture.Tests`, `[ArchitectureTest]`, mirroring the proof-ledger

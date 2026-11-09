@@ -268,7 +268,7 @@ internal sealed class StudioAiProxyService : IStudioAiProxyService
         {
             try
             {
-                invocation = builtInHttp.Prepare(ownedOptions, request);
+                invocation = builtInHttp.Prepare(ownedOptions, request, executionContext);
             }
             catch (Exception exception) when (exception is JsonException or InvalidOperationException or ArgumentException)
             {

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "lastReviewed": "2026-10-12",
   "trackingIssue": "#2863",
-  "readme": "HAND-AUTHORED JUDGEMENT SOURCE for the published GeoServices REST parity matrix. This file carries ONLY what is human judgement: how completely each Esri operation is implemented, and the gap prose. It deliberately does NOT carry a route roster \u2014 which routes exist is derived from the generated capability data (EndpointRegistry.All via FeatureCatalogGenerator) by GeoServicesRouteRoster, and the published matrix (docs/gis/data/geoservices-rest-parity.json) is GENERATED from the join of the two. Regenerate with scripts/generate-geoservices-parity.sh after editing this file. The geoServicesPaths below are the join keys: they are the served routes normalized to their Esri-relative form by collapsing the service-instance address (see GeoServicesRouteRoster). GeoServicesParityMatrixDriftTests fails if any served operation is unclassified here, or if any geoServicesPath here is not served. Status vocabulary: implemented | partial | stub. Lifecycle maturity (including Preview) is derived from the capability catalog, not this completeness verdict. \"stub\" means the route exists and returns the spec-shaped response but the backing model is deferred \u2014 read-stubs return empty/false and mutation-stubs return HTTP 400 rather than fabricating success. NEVER upgrade a status to make a gate pass; if a gate creates that pressure, the gate is wrong.",
+  "readme": "HAND-AUTHORED JUDGEMENT SOURCE for the published GeoServices REST parity matrix. This file carries ONLY what is human judgement: how completely each Esri operation is implemented, and the gap prose. It deliberately does NOT carry a route roster \u2014 which routes exist is derived from the generated capability data (EndpointRegistry.All via FeatureCatalogGenerator) by GeoServicesRouteRoster, and the published matrix (docs/gis/data/geoservices-rest-parity.json) is GENERATED from the join of the two. Regenerate with scripts/ci/generate-geoservices-parity.sh after editing this file. The geoServicesPaths below are the join keys: they are the served routes normalized to their Esri-relative form by collapsing the service-instance address (see GeoServicesRouteRoster). GeoServicesParityMatrixDriftTests fails if any served operation is unclassified here, or if any geoServicesPath here is not served. Status vocabulary: implemented | partial | stub. Lifecycle maturity (including Preview) is derived from the capability catalog, not this completeness verdict. \"stub\" means the route exists and returns the spec-shaped response but the backing model is deferred \u2014 read-stubs return empty/false and mutation-stubs return HTTP 400 rather than fabricating success. NEVER upgrade a status to make a gate pass; if a gate creates that pressure, the gate is wrong.",
   "statusVocabulary": {
     "operation": [
       "implemented",
@@ -61,14 +61,14 @@
       ],
       "evidence": {
         "code": [
-          "src/Honua.Protocols.GeoServices/FeatureServer/FeatureServerEndpoints.cs",
-          "src/Honua.Protocols.GeoServices/FeatureServer/AttachmentEndpoints.cs",
-          "src/Honua.Protocols.GeoServices/FeatureServer/FeatureServerRequestHandlers.Query.cs",
-          "src/Honua.Protocols.GeoServices/FeatureServer/FeatureServerRequestHandlers.Edits.cs",
-          "src/Honua.Protocols.GeoServices/FeatureServer/FeatureServerRequestHandlers.Replication.cs",
-          "src/Honua.Protocols.GeoServices/FeatureServer/FeatureServerRequestHandlers.TemporalExtent.cs",
-          "src/Honua.Protocols.GeoServices/FeatureServer/FeatureServerRequestHandlers.Tiles.cs",
-          "src/Honua.Protocols.GeoServices/FeatureServer/FeatureServerRequestHandlers.NotImplementedService.cs",
+          "src/Honua.Protocols/GeoServices/FeatureServer/FeatureServerEndpoints.cs",
+          "src/Honua.Protocols/GeoServices/FeatureServer/AttachmentEndpoints.cs",
+          "src/Honua.Protocols/GeoServices/FeatureServer/FeatureServerRequestHandlers.Query.cs",
+          "src/Honua.Protocols/GeoServices/FeatureServer/FeatureServerRequestHandlers.Edits.cs",
+          "src/Honua.Protocols/GeoServices/FeatureServer/FeatureServerRequestHandlers.Replication.cs",
+          "src/Honua.Protocols/GeoServices/FeatureServer/FeatureServerRequestHandlers.TemporalExtent.cs",
+          "src/Honua.Protocols/GeoServices/FeatureServer/FeatureServerRequestHandlers.Tiles.cs",
+          "src/Honua.Protocols/GeoServices/FeatureServer/FeatureServerRequestHandlers.NotImplementedService.cs",
           "src/Honua.Server/Features/Protocols/SpatialAnalytics/SpatialAnalyticsEndpoints.cs",
           "src/Honua.Server/Features/Protocols/SpatialAnalytics/SpatialAnalyticsRequestHandlers.Clusters.cs",
           "src/Honua.Server/Features/Protocols/SpatialAnalytics/SpatialAnalyticsRequestHandlers.SpatialJoin.cs",
@@ -748,18 +748,18 @@
       ],
       "evidence": {
         "code": [
-          "src/Honua.Protocols.GeoServices/MapServer/MapServerEndpoints.cs",
-          "src/Honua.Protocols.GeoServices/MapServer/MapServerRequestHandlers.Export.cs",
-          "src/Honua.Protocols.GeoServices/MapServer/MapServerRequestHandlers.ExportTiles.cs",
-          "src/Honua.Protocols.GeoServices/MapServer/MapServerRequestHandlers.DynamicLayer.cs",
-          "src/Honua.Protocols.GeoServices/MapServer/MapServerRequestHandlers.Identify.cs",
-          "src/Honua.Protocols.GeoServices/MapServer/MapServerRequestHandlers.Find.cs",
-          "src/Honua.Protocols.GeoServices/MapServer/MapServerRequestHandlers.Legend.cs",
-          "src/Honua.Protocols.GeoServices/MapServer/MapServerRequestHandlers.RelatedAndRenderer.cs",
-          "src/Honua.Protocols.GeoServices/MapServer/MapServerRequestHandlers.Tile.cs",
-          "src/Honua.Protocols.GeoServices/GeoServicesCloudTileCache.cs",
-          "src/Honua.Protocols.OgcClassic/Wms/WmsRequestHandlers.cs",
-          "src/Honua.Protocols.OgcClassic/Wmts/WmtsRequestHandlers.cs"
+          "src/Honua.Protocols/GeoServices/MapServer/MapServerEndpoints.cs",
+          "src/Honua.Protocols/GeoServices/MapServer/MapServerRequestHandlers.Export.cs",
+          "src/Honua.Protocols/GeoServices/MapServer/MapServerRequestHandlers.ExportTiles.cs",
+          "src/Honua.Protocols/GeoServices/MapServer/MapServerRequestHandlers.DynamicLayer.cs",
+          "src/Honua.Protocols/GeoServices/MapServer/MapServerRequestHandlers.Identify.cs",
+          "src/Honua.Protocols/GeoServices/MapServer/MapServerRequestHandlers.Find.cs",
+          "src/Honua.Protocols/GeoServices/MapServer/MapServerRequestHandlers.Legend.cs",
+          "src/Honua.Protocols/GeoServices/MapServer/MapServerRequestHandlers.RelatedAndRenderer.cs",
+          "src/Honua.Protocols/GeoServices/MapServer/MapServerRequestHandlers.Tile.cs",
+          "src/Honua.Protocols/GeoServices/GeoServicesCloudTileCache.cs",
+          "src/Honua.Protocols/OgcClassic/Wms/WmsRequestHandlers.cs",
+          "src/Honua.Protocols/OgcClassic/Wmts/WmtsRequestHandlers.cs"
         ],
         "tests": [
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/MapServer/MapServerEndpointTests.cs",
@@ -1100,29 +1100,29 @@
       ],
       "evidence": {
         "code": [
-          "src/Honua.Protocols.GeoServices/ImageServer/ImageServerEndpoints.cs",
-          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerMetadataHandler.cs",
-          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerExportHandler.cs",
-          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerIdentifyHandler.cs",
-          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerTileHandler.cs",
-          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerWmtsHandler.cs",
-          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerCatalogQueryHandler.cs",
-          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerStatisticsHistogramsHandler.cs",
-          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerCoordinateMetadataHandler.cs",
-          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerProjectHandler.cs",
-          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerKmlHandler.cs",
-          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerExportTilesHandler.cs",
-          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerFindHandler.cs",
-          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerMeasureHandler.cs",
-          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerLegendHandler.cs",
-          "src/Honua.Protocols.GeoServices/ImageServer/Services/ImageServerCatalogReader.cs",
-          "src/Honua.Protocols.GeoServices/ImageServer/Services/ImageServerCatalogFilterEvaluator.cs",
-          "src/Honua.Protocols.GeoServices/ImageServer/Services/ImageServerMosaicHelpers.cs",
-          "src/Honua.Protocols.GeoServices/ImageServer/Services/ImageServerLegendSwatchBuilder.cs",
-          "src/Honua.Protocols.GeoServices/ImageServer/Services/ImageServerRasterFunctionPlanner.cs",
-          "src/Honua.Protocols.GeoServices/GeoServicesCloudTileCache.cs",
-          "src/Honua.Protocols.OgcClassic/Wcs20/Wcs20Endpoints.cs",
-          "src/Honua.Protocols.OgcClassic/Wcs20/Wcs20Handler.cs"
+          "src/Honua.Protocols/GeoServices/ImageServer/ImageServerEndpoints.cs",
+          "src/Honua.Protocols/GeoServices/ImageServer/Handlers/ImageServerMetadataHandler.cs",
+          "src/Honua.Protocols/GeoServices/ImageServer/Handlers/ImageServerExportHandler.cs",
+          "src/Honua.Protocols/GeoServices/ImageServer/Handlers/ImageServerIdentifyHandler.cs",
+          "src/Honua.Protocols/GeoServices/ImageServer/Handlers/ImageServerTileHandler.cs",
+          "src/Honua.Protocols/GeoServices/ImageServer/Handlers/ImageServerWmtsHandler.cs",
+          "src/Honua.Protocols/GeoServices/ImageServer/Handlers/ImageServerCatalogQueryHandler.cs",
+          "src/Honua.Protocols/GeoServices/ImageServer/Handlers/ImageServerStatisticsHistogramsHandler.cs",
+          "src/Honua.Protocols/GeoServices/ImageServer/Handlers/ImageServerCoordinateMetadataHandler.cs",
+          "src/Honua.Protocols/GeoServices/ImageServer/Handlers/ImageServerProjectHandler.cs",
+          "src/Honua.Protocols/GeoServices/ImageServer/Handlers/ImageServerKmlHandler.cs",
+          "src/Honua.Protocols/GeoServices/ImageServer/Handlers/ImageServerExportTilesHandler.cs",
+          "src/Honua.Protocols/GeoServices/ImageServer/Handlers/ImageServerFindHandler.cs",
+          "src/Honua.Protocols/GeoServices/ImageServer/Handlers/ImageServerMeasureHandler.cs",
+          "src/Honua.Protocols/GeoServices/ImageServer/Handlers/ImageServerLegendHandler.cs",
+          "src/Honua.Protocols/GeoServices/ImageServer/Services/ImageServerCatalogReader.cs",
+          "src/Honua.Protocols/GeoServices/ImageServer/Services/ImageServerCatalogFilterEvaluator.cs",
+          "src/Honua.Protocols/GeoServices/ImageServer/Services/ImageServerMosaicHelpers.cs",
+          "src/Honua.Protocols/GeoServices/ImageServer/Services/ImageServerLegendSwatchBuilder.cs",
+          "src/Honua.Protocols/GeoServices/ImageServer/Services/ImageServerRasterFunctionPlanner.cs",
+          "src/Honua.Protocols/GeoServices/GeoServicesCloudTileCache.cs",
+          "src/Honua.Protocols/OgcClassic/Wcs20/Wcs20Endpoints.cs",
+          "src/Honua.Protocols/OgcClassic/Wcs20/Wcs20Handler.cs"
         ],
         "tests": [
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerBasicTests.cs",
@@ -1714,12 +1714,12 @@
       ],
       "evidence": {
         "code": [
-          "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.cs",
-          "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.Tile.cs",
-          "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.TileMap.cs",
-          "src/Honua.Protocols.GeoServices/VectorTileServer/VectorTileServerEndpoints.Resources.cs",
-          "src/Honua.Protocols.GeoServices/VectorTileServer/Services/VectorTileStyleComposer.cs",
-          "src/Honua.Protocols.GeoServices/VectorTileServer/Services/VectorTileEmbeddedAssets.cs",
+          "src/Honua.Protocols/GeoServices/VectorTileServer/VectorTileServerEndpoints.cs",
+          "src/Honua.Protocols/GeoServices/VectorTileServer/VectorTileServerEndpoints.Tile.cs",
+          "src/Honua.Protocols/GeoServices/VectorTileServer/VectorTileServerEndpoints.TileMap.cs",
+          "src/Honua.Protocols/GeoServices/VectorTileServer/VectorTileServerEndpoints.Resources.cs",
+          "src/Honua.Protocols/GeoServices/VectorTileServer/Services/VectorTileStyleComposer.cs",
+          "src/Honua.Protocols/GeoServices/VectorTileServer/Services/VectorTileEmbeddedAssets.cs",
           "src/Honua.Server/EndpointRegistry.VectorTileServer.cs"
         ],
         "tests": [
@@ -1826,9 +1826,9 @@
       "knownGaps": [],
       "evidence": {
         "code": [
-          "src/Honua.Protocols.GeoServices/GeometryService/GeometryServiceEndpoints.cs",
-          "src/Honua.Protocols.GeoServices/GeometryService/Services/GeometryServiceRequestParser.cs",
-          "src/Honua.Protocols.GeoServices/GeometryService/Services/GeometryServiceHandler.cs"
+          "src/Honua.Protocols/GeoServices/GeometryService/GeometryServiceEndpoints.cs",
+          "src/Honua.Protocols/GeoServices/GeometryService/Services/GeometryServiceRequestParser.cs",
+          "src/Honua.Protocols/GeoServices/GeometryService/Services/GeometryServiceHandler.cs"
         ],
         "tests": [
           "tests/dotnet/Honua.Protocols.GeoServices.ComponentTests/GeometryService/GeometryServiceBufferTests.cs",
@@ -2112,11 +2112,11 @@
         "code": [
           "src/Honua.Server/Features/PrintingTools/PrintingToolsEndpoints.cs",
           "src/Honua.Server/Features/PrintingTools/PrintingToolsEndpoints.GpServer.cs",
-          "src/Honua.Protocols.GeoServices/Catalog/PrintingToolsServiceCatalog.cs",
-          "src/Honua.Protocols.GeoServices/GPServer/GPServerEndpoints.cs",
-          "src/Honua.Protocols.GeoServices/GPServer/GPServerEsriTaskAliases.cs",
-          "src/Honua.Protocols.GeoServices/GPServer/GPServerExecutionPolicy.cs",
-          "src/Honua.Geoprocessing/Features/Geoprocessing/RedisGeoprocessingResultPackageStore.cs",
+          "src/Honua.Protocols/GeoServices/Catalog/PrintingToolsServiceCatalog.cs",
+          "src/Honua.Protocols/GeoServices/GPServer/GPServerEndpoints.cs",
+          "src/Honua.Protocols/GeoServices/GPServer/GPServerEsriTaskAliases.cs",
+          "src/Honua.Protocols/GeoServices/GPServer/GPServerExecutionPolicy.cs",
+          "src/Honua.Geoprocessing/Core/Features/Geoprocessing/RedisGeoprocessingResultPackageStore.cs",
           "src/Honua.Server/EndpointRegistry.cs"
         ],
         "tests": [
@@ -2476,12 +2476,12 @@
       ],
       "evidence": {
         "code": [
-          "src/Honua.Protocols.GeoServices/NAServer/NAServerEndpoints.cs",
-          "src/Honua.Protocols.GeoServices/NAServer/FindRoutesWebTool.cs",
-          "src/Honua.Protocols.GeoServices/NAServer/GenerateServiceAreasWebTool.cs",
-          "src/Honua.Protocols.GeoServices/NAServer/NAServerMetadata.cs",
-          "src/Honua.Protocols.GeoServices/NAServer/NAServerParameterTranslation.cs",
-          "src/Honua.Protocols.GeoServices/NAServer/NAServerResultMapping.cs",
+          "src/Honua.Protocols/GeoServices/NAServer/NAServerEndpoints.cs",
+          "src/Honua.Protocols/GeoServices/NAServer/FindRoutesWebTool.cs",
+          "src/Honua.Protocols/GeoServices/NAServer/GenerateServiceAreasWebTool.cs",
+          "src/Honua.Protocols/GeoServices/NAServer/NAServerMetadata.cs",
+          "src/Honua.Protocols/GeoServices/NAServer/NAServerParameterTranslation.cs",
+          "src/Honua.Protocols/GeoServices/NAServer/NAServerResultMapping.cs",
           "src/Honua.Routing/Features/Routing/Abstractions/IRoutingProvider.cs"
         ],
         "tests": [
@@ -2635,12 +2635,12 @@
       ],
       "evidence": {
         "code": [
-          "src/Honua.Protocols.GeoServices/VersionManagementServer/VersionManagementServerEndpoints.cs",
-          "src/Honua.Protocols.GeoServices/VersionManagementServer/VersionManagementAuthorization.cs",
-          "src/Honua.Protocols.GeoServices/VersionManagementServer/Models/VersionManagementModels.cs",
+          "src/Honua.Protocols/GeoServices/VersionManagementServer/VersionManagementServerEndpoints.cs",
+          "src/Honua.Protocols/GeoServices/VersionManagementServer/VersionManagementAuthorization.cs",
+          "src/Honua.Protocols/GeoServices/VersionManagementServer/Models/VersionManagementModels.cs",
           "src/Honua.Db/Postgres/Features/FeatureStore/Services/PostgresVersionManager.cs",
           "src/Honua.Db/Postgres/Features/FeatureStore/Services/PostgresVersionManager.ReconcilePost.cs",
-          "src/Honua.Core/Features/FeatureStore/ReadOnlyProviders/NoOpVersionManager.cs"
+          "src/Honua.Core/Core/Features/FeatureStore/ReadOnlyProviders/NoOpVersionManager.cs"
         ],
         "tests": [
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VersionManagementServer/VersionManagementServerEndpointTests.cs",
@@ -2738,9 +2738,9 @@
       ],
       "evidence": {
         "code": [
-          "src/Honua.Protocols.GeoServices/Catalog/GeoservicesCatalogEndpoints.cs",
-          "src/Honua.Protocols.GeoServices/Catalog/GeoservicesCatalogModels.cs",
-          "src/Honua.Protocols.GeoServices/Catalog/PrintingToolsServiceCatalog.cs"
+          "src/Honua.Protocols/GeoServices/Catalog/GeoservicesCatalogEndpoints.cs",
+          "src/Honua.Protocols/GeoServices/Catalog/GeoservicesCatalogModels.cs",
+          "src/Honua.Protocols/GeoServices/Catalog/PrintingToolsServiceCatalog.cs"
         ],
         "tests": [
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Catalog/GeoservicesCatalogEndpointTests.cs",
@@ -2821,10 +2821,10 @@
       ],
       "evidence": {
         "code": [
-          "src/Honua.Protocols.GeoServices/Sharing/SharingRestEndpoints.cs",
-          "src/Honua.Protocols.GeoServices/Sharing/SharingRestModels.cs",
-          "src/Honua.Core/Features/Authorization/Abstractions/IPortalTokenIssuer.cs",
-          "src/Honua.Core/Features/Authorization/Abstractions/IPortalCredentialVerifier.cs",
+          "src/Honua.Protocols/GeoServices/Sharing/SharingRestEndpoints.cs",
+          "src/Honua.Protocols/GeoServices/Sharing/SharingRestModels.cs",
+          "src/Honua.Core/Core/Features/Authorization/Abstractions/IPortalTokenIssuer.cs",
+          "src/Honua.Core/Core/Features/Authorization/Abstractions/IPortalCredentialVerifier.cs",
           "src/Honua.Hosting/Features/Authentication/PortalTokenIssuer.cs",
           "src/Honua.Hosting/Features/Authentication/AdminPortalCredentialVerifier.cs",
           "src/Honua.Hosting/Features/Authentication/PortalTokenAuthenticationHandler.cs",

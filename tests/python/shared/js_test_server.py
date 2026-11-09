@@ -28,10 +28,11 @@ def main() -> None:
 
     from shared.postgis import PostGISFixture
     from shared.server import HonuaServer
+    from shared.process_ports import server_port
 
     service_id = os.getenv("HONUA_SERVICE_ID", "test_service_gw0")
     layer_id = int(os.getenv("HONUA_LAYER_ID", "1000"))
-    port = int(os.getenv("HONUA_TEST_PORT", "5555"))
+    port = server_port("HONUA_TEST_PORT", HonuaServer.DEFAULT_PORT)
     timeout = float(os.getenv("HONUA_TEST_TIMEOUT", "120"))
 
     postgis = PostGISFixture()

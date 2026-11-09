@@ -1,9 +1,9 @@
 {
   "$schema": "./mcp-tool-roster.v1.schema.json",
   "schemaVersion": 1,
-  "serverSha": "a054afcbf371e07a4bc4fe1749eebf543c6a4822",
-  "generatedAt": "2026-11-04T23:53:35Z",
-  "regenerate": "bash scripts/generate-mcp-tool-roster.sh",
+  "serverSha": "d99f9597fa84dd43fcd20031469a321b703b4cba",
+  "generatedAt": "2026-11-08T10:09:59Z",
+  "regenerate": "bash scripts/ci/generate-mcp-tool-roster.sh",
   "static": [
     "honua_alert_events",
     "honua_apply_style_preset",

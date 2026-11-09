@@ -197,7 +197,7 @@ def native_receipt(
             for name in MODULE.IMAGE_INPUT_CLASSES
         }
     if changed_paths is None:
-        changed_paths = ["src/Honua.Core/Models/Resource.cs"]
+        changed_paths = ["src/Honua.Core/Core/Models/Resource.cs"]
     return {
         "schema": MODULE.NATIVE_CONTRACT,
         "repository": MODULE.REPOSITORY,

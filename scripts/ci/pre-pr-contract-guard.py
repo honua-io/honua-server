@@ -25,9 +25,9 @@ TEST_DISCOVERY = re.compile(
     r"\b(?:class|namespace)\s|\b(?:public|protected)\s.*\(",
 )
 SAFE_SOURCE_ROOTS = (
-    "src/Honua.Geometry/", "src/Honua.Core/", "src/Honua.Core.Abstractions/",
+    "src/Honua.Geometry/", "src/Honua.Core/Core/", "src/Honua.Core/Abstractions/",
     "src/Honua.Db/", "src/Honua.Hosting/", "src/Honua.Io/",
-    "src/Honua.Protocols.", "src/Honua.Server/Features/", "src/Honua.Import/",
+    "src/Honua.Protocols/", "src/Honua.Server/Features/", "src/Honua.Import/",
 )
 
 
