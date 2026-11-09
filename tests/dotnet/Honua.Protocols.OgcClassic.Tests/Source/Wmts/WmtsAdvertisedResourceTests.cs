@@ -126,5 +126,4 @@ public sealed class WmtsAdvertisedResourceTests : IAsyncLifetime
             provider.SetGraph(original, schema: _fixture.CurrentSchema);
         }
     }
-
 }
