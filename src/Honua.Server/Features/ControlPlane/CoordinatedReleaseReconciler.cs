@@ -501,6 +501,14 @@ internal sealed partial class CoordinatedReleaseReconciler(
         string phase)
     {
         var context = operation.CoordinatedRelease!;
+        if (operation.Status == WorkflowOperationStatus.AwaitingApproval
+            && context.CurrentStep == step
+            && context.Steps.Any(state => state.Step == step
+                && state.Status == CoordinatedReleaseStepStatus.AwaitingApproval))
+        {
+            return operation;
+        }
+
         var steps = UpsertStep(context.Steps, step, CoordinatedReleaseStepStatus.AwaitingApproval, phase);
 
         return operation with

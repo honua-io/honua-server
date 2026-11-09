@@ -59,7 +59,7 @@ internal sealed partial class OperationHumanApprovalAuthority
         return new HumanApprovalTarget("coordinated-release-gate", operation.OperationId, operation.Version,
             operation.Audit.TenantId, CoordinatedReleaseApprovalBinding.ComputePlanHash(operation, gate), null,
             principal => PlatformDeployAuthority.IsAuthorized(principal, tenantOptions)
-                && OperationApprovalAuthorization.PermitsOperationScope(principal, kind, null, null));
+                && OperationApprovalAuthorization.PermitsOperationScope(principal, new OperationApprovalScopeRequest(kind)));
     }
 
     private static void ValidateGateTarget(WorkflowOperationRecord operation, CoordinatedReleaseStep gate)

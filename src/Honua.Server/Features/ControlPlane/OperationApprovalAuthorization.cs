@@ -39,31 +39,31 @@ internal sealed class OperationApprovalAuthorization(
     }
 
     public static bool PermitsOperationScope(ClaimsPrincipal principal, OperationProposal proposal)
-        => PermitsOperationScope(principal, proposal.Kind, proposal.OperationId,
-            proposal.ActionDiscriminator ?? proposal.AutonomyMetadata?.ActionDiscriminator);
+        => PermitsOperationScope(principal, new OperationApprovalScopeRequest(proposal.Kind, proposal.OperationId,
+            proposal.ActionDiscriminator ?? proposal.AutonomyMetadata?.ActionDiscriminator));
 
     public static bool PermitsOperationScope(
-        ClaimsPrincipal principal, OperationClass kind, string? operationId, string? actionDiscriminator)
+        ClaimsPrincipal principal, OperationApprovalScopeRequest scope)
     {
         if (!OperatorScopeCatalog.IsScopeGoverned(principal))
         {
             return true;
         }
 
-        var legacyId = kind is OperationClass.Deploy or OperationClass.Seed
+        var legacyId = scope.Kind is OperationClass.Deploy or OperationClass.Seed
             or OperationClass.AdminConfigChange or OperationClass.MetadataRelease
             or OperationClass.Geoprocess or OperationClass.ServicePublish
-            ? LegacyOperationIds.For(kind)
+            ? LegacyOperationIds.For(scope.Kind)
             : null;
-        operationId ??= legacyId ?? string.Empty;
+        var operationId = scope.OperationId ?? legacyId ?? string.Empty;
         var request = new OperationRequest
         {
             OperationId = operationId,
             GatewayRequest = legacyId is not null && string.Equals(operationId, legacyId, StringComparison.Ordinal)
                 ? new OperationGatewayRequest
                 {
-                    Kind = kind,
-                    ActionDiscriminator = actionDiscriminator,
+                    Kind = scope.Kind,
+                    ActionDiscriminator = scope.ActionDiscriminator,
                 }
                 : null,
         };
@@ -72,3 +72,6 @@ internal sealed class OperationApprovalAuthorization(
                 OperatorScopeCatalog.CollectRecognizedScopes(principal), operation);
     }
 }
+
+internal sealed record OperationApprovalScopeRequest(
+    OperationClass Kind, string? OperationId = null, string? ActionDiscriminator = null);
