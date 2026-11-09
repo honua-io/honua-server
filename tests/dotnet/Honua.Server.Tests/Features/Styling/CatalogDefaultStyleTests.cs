@@ -49,7 +49,7 @@ public sealed class CatalogDefaultStyleTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Operation(Operations.Read)]
+    [Operation(Operations.Metadata)]
     [Endpoint("GET /ogc/styles/{styleId}")]
     public async Task GetLayerStyleAsync_AlternateAssociation_DoesNotReplaceLayerFallback()
     {
