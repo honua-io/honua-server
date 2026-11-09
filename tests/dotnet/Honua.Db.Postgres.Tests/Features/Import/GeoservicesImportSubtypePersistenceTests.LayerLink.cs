@@ -41,20 +41,20 @@ public sealed partial class GeoservicesImportSubtypePersistenceTests
             var layer = await PublishLinkSourcesAsync(publisher, schema, sourceService);
             if (targetPresence == TargetServicePresence.Existing)
             {
-                await publisher.LinkExistingLayerToServiceAsync(fixture.ConnectionString, layer.LayerId, targetService, true);
+                await publisher.LinkExistingLayerToServiceAsync(fixture.ConnectionString, layer.StorageLayerId, targetService, true);
             }
             var current = await store.GetCurrentAsync();
             await store.SaveAsync(WithRetainedStatuses(current.Graph), current.Etag);
             var before = await CreateLinkGraphStore(environment).GetCurrentAsync();
 
             var result = await publisher.LinkExistingLayerToServiceAsync(
-                fixture.ConnectionString, layer.LayerId, targetService, lifecycle == MetadataV2LifecycleStatus.Active);
+                fixture.ConnectionString, layer.StorageLayerId, targetService, lifecycle == MetadataV2LifecycleStatus.Active);
 
             result.Should().NotBeNull();
             var after = await CreateLinkGraphStore(environment).GetCurrentAsync();
             after.Revision.Should().BeGreaterThan(before.Revision);
-            AssertLinkedStatusRetention(before.Graph, after.Graph, layer.LayerId);
-            after.Graph.StorageBindings.Single(binding => binding.StorageLayerId == layer.LayerId)
+            AssertLinkedStatusRetention(before.Graph, after.Graph, layer.StorageLayerId);
+            after.Graph.StorageBindings.Single(binding => binding.StorageLayerId == layer.StorageLayerId)
                 .Status.Lifecycle.Should().Be(lifecycle);
         }
         finally
