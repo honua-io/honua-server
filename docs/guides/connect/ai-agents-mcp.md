@@ -292,6 +292,10 @@ The curated prompts select the view that owns each stage. Dashboard authoring us
 | `setup` | The bounded terminal path (`setup.v7`): readiness, read-only connection and table discovery, inline ingest and completed job-artifact ingest, publish, verify, style and render, bounded GP, Studio composition and lifecycle (including `honua_studio_get_version`), map and app package composition (`honua_create_map_package`, `honua_create_app_package`; anonymous calls are still refused), and publication submit. `honua_studio_propose_publication` stays in the publication stage. The setup-and-publish prompt uses `configure` for the admin roster and switches here for Studio authoring. |
 | `default` | The 12-tool discovery surface. It does not contain the admin roster. |
 
+Required-input descriptions identify caller-supplied values or their producer tools. Input-validation refusals include source guidance in both JSON channels; missing fields and invalid types also carry field paths.
+
+Use storage layer IDs from `honua_admin_connection_layers_list` with `honua_admin_layer_set_enabled`. Query and render tools use the service-local `layerId` from `honua_list_layers`. Pass the selected `serviceName` to the connection-layer read; omission selects `default`.
+
 A view is **discovery, not authority**:
 
 - Selecting one can only *narrow* what `tools/list` returns. Membership grants nothing, caches no prior allow decision, and never widens a principal's reach.

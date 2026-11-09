@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json;
+using System.Net.Http.Json;
 using FluentAssertions;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Models;
@@ -53,6 +54,40 @@ public sealed partial class McpConnectionDiscoveryIntegrationTests
         IsInputRefusal(result).Should().BeTrue();
         result.GetProperty("structuredContent").GetProperty("violations").EnumerateArray()
             .Should().Contain(violation => HasInputGuidance(violation, "jobId", "honua_list_jobs"));
+        AssertRefusalMirror(result);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("POST /mcp")]
+    public async Task InputRefusals_UnexpectedEvidence_PreservesAuthorityRefusalBeforeInputGuidance()
+    {
+        await using var fixture = CreateStockFixture();
+        await fixture.InitializeAsync();
+        using var admin = fixture.CreateAdminClient();
+        using var response = await admin.PostAsJsonAsync("/mcp", new
+        {
+            jsonrpc = "2.0",
+            id = 1,
+            method = "tools/call",
+            @params = new
+            {
+                name = "honua_get_job_results",
+                arguments = new { },
+                _meta = new Dictionary<string, object>
+                {
+                    [ProposalEvidenceVerifier.MetaProperty] = new { proof = "private-evidence-value" }
+                }
+            }
+        });
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var result = body.RootElement.GetProperty("result");
+        IsInputRefusal(result).Should().BeTrue();
+        var payload = result.GetProperty("structuredContent");
+        payload.GetProperty("message").GetString().Should().Contain("Signed model output");
+        var hasRemediation = payload.TryGetProperty("remediation", out var remediation) && remediation.ValueKind != JsonValueKind.Null;
+        hasRemediation.Should().BeFalse();
+        payload.GetRawText().Should().NotContain("private-evidence-value");
         AssertRefusalMirror(result);
     }
 
