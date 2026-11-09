@@ -156,6 +156,19 @@ class OwnedServerTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "owner changed"):
                     check.wait()
 
+    def test_published_container_does_not_require_host_process_visibility(self):
+        with child(HTTP) as process:
+            check = probe(process)
+            check.options.pid = None
+            check.launcher = None
+            check.options.container = "owned"
+            check.options.container_port = 8080
+            state = {"id": "a" * 64, "running": True, "pid": 987654321, "started": "one",
+                     "ports": {"8080/tcp": [{"HostIp": "127.0.0.1", "HostPort": str(check.port)}]}}
+            with patch.object(OWNED, "container_state", return_value=state), \
+                 patch.object(OWNED, "process_identity", side_effect=RuntimeError("host PID is invisible")):
+                check.wait()
+
     def test_docker_published_port_is_bound_to_the_exact_container(self):
         with child(HTTP) as process:
             check = probe(process)

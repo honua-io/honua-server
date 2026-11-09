@@ -106,7 +106,8 @@ class ReadinessProbe:
             state = container_state(self.options.container)
             if state and state["running"]:
                 pid = state["pid"]
-                identity = state["id"], state["started"], process_identity(pid)
+                # Docker owns the container PID namespace; its PID need not exist in host procfs.
+                identity = state["id"], state["started"], pid
             elif self.owner or (state and state["status"] in {"exited", "dead"}):
                 raise RuntimeError("launched server container exited")
             else:

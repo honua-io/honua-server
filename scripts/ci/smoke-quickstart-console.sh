@@ -14,6 +14,7 @@ REDIS_PORT="$(python3 "${OWNED_SERVER}" port --variable HONUA_QUICKSTART_SMOKE_R
 ADMIN_PASSWORD="${HONUA_ADMIN_PASSWORD:-quickstart-admin-password}"
 # Disposable credentials for this isolated smoke project; never print them.
 export POSTGRES_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+export AuditLog__ChainVerification__Key="$(python3 -c 'import base64, secrets; print(base64.b64encode(secrets.token_bytes(32)).decode())')"
 export MINIO_ROOT_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
 
 compose() {
