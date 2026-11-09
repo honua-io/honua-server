@@ -80,15 +80,6 @@ public sealed class RedisOffDirectPublishHostTests : IAsyncLifetime
         resolver.ResolveConnectionStringAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns("Host=localhost;Database=test");
 
-        var graph = new TestMetadataV2GraphBuilder()
-            .AddResource("res-parcels", "Parcels")
-            .AddStorageBinding("bind-parcels", "res-parcels", "public.parcels", storageLayerId: 321)
-            .AddService("svc-parcels", "default")
-            .AddPublication("pub-parcels", "svc-parcels", "res-parcels",
-                layerIndex: 3, storageBindingId: "bind-parcels",
-                publicationType: MetadataV2PublicationType.EsriFeatureLayer)
-            .BuildProvider();
-
         _fixture
             .UseEnvironment(Environments.Production)
             .ConfigureWebHost(builder =>
@@ -108,7 +99,7 @@ public sealed class RedisOffDirectPublishHostTests : IAsyncLifetime
             })
             .ReplaceService(_publishing)
             .ReplaceService(resolver)
-            .ReplaceService<IMetadataV2GraphProvider>(graph);
+            .ReplaceService<IMetadataV2GraphProvider>(PublishedLayerGraphProvider());
         await _fixture.InitializeAsync();
     }
 
@@ -185,6 +176,15 @@ public sealed class RedisOffDirectPublishHostTests : IAsyncLifetime
             .Single(entry => entry.GetProperty("id").GetString() == CapabilityUnavailableCodes.ControlPlaneProposalsCapability);
         proposals.GetProperty("available").GetBoolean().Should().BeFalse(proposals.GetRawText());
     }
+
+    private static TestMetadataV2GraphProvider PublishedLayerGraphProvider() => new TestMetadataV2GraphBuilder()
+            .AddResource("res-parcels", "Parcels")
+            .AddStorageBinding("bind-parcels", "res-parcels", "public.parcels", storageLayerId: 321)
+            .AddService("svc-parcels", "default")
+            .AddPublication("pub-parcels", "svc-parcels", "res-parcels",
+                layerIndex: 3, storageBindingId: "bind-parcels",
+                publicationType: MetadataV2PublicationType.EsriFeatureLayer)
+            .BuildProvider();
 
     private void AssertCanonicalDirectPublish(JsonElement output)
     {

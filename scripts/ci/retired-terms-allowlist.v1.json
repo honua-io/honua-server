@@ -738,6 +738,36 @@
       "rule": "dataset-reference",
       "line": "                  <fes:Filter><fes:ResourceId rid=\"pub-{layer}.{layer * 11}\" /></fes:Filter>",
       "reason": "WFS/FES ResourceId and RESOURCEID are standards-defined feature identifiers, including the variables that carry those identifiers; they are not Honua Dataset references."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Operations/RedisOffDirectPublishHostTests.cs",
+      "rule": "graph-publication",
+      "line": "                publicationType: MetadataV2PublicationType.EsriFeatureLayer)",
+      "reason": "Regression fixture uses the existing metadata graph publication type and discriminator. The approved C# and wire migration updates that canonical model separately; no public selector alias is added."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Operations/RedisOffDirectPublishHostTests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2PublicationType.EsriFeatureLayer)",
+      "reason": "Regression fixture uses the existing metadata graph publication type and discriminator. The approved C# and wire migration updates that canonical model separately; no public selector alias is added."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Operations/SynchronousPublishIdentityTests.cs",
+      "rule": "dataset-reference",
+      "line": "        handle.ResourceIds.Should().NotContainKey(\"serviceName\").And.NotContainKey(\"serviceLayerIndex\");",
+      "reason": "ResourceIds is the existing canonical operation-handle property. This regression verifies that completed publication withholds ambiguous public selectors; the admin/jobs vocabulary migration owns the property rename."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Operations/SynchronousPublishIdentityTests.cs",
+      "rule": "graph-publication",
+      "line": "                publicationType: MetadataV2PublicationType.EsriFeatureLayer)",
+      "reason": "Regression fixture uses the existing metadata graph publication type and discriminator. The approved C# and wire migration updates that canonical model separately; no public selector alias is added."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Operations/SynchronousPublishIdentityTests.cs",
+      "rule": "layer-type",
+      "line": "                publicationType: MetadataV2PublicationType.EsriFeatureLayer)",
+      "reason": "Regression fixture uses the existing metadata graph publication type and discriminator. The approved C# and wire migration updates that canonical model separately; no public selector alias is added."
     }
   ]
 }
