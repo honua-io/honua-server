@@ -205,9 +205,7 @@ internal sealed partial class ConsoleJobService(
 
         var itemCount = Math.Min(artifactRefs.Length, effectiveLimit);
         var items = new ConsoleJobArtifact[itemCount];
-        var projection = new ArtifactProjection(
-            serviceProvider.GetService<IArtifactStore>(),
-            ResultsExpired(job, timeProvider.GetUtcNow()) ? MapExpiredDirectArtifact : MapDirectArtifact);
+        var projection = CreateArtifactProjection(job, timeProvider.GetUtcNow());
 
         for (var i = 0; i < itemCount; i++)
         {
@@ -621,6 +619,10 @@ internal sealed partial class ConsoleJobService(
     }
 
     private sealed record ArtifactProjection(IArtifactStore? Store, Func<string, ConsoleJobArtifact> MapDirect);
+
+    private ArtifactProjection CreateArtifactProjection(ExecutionJobRecord job, DateTimeOffset now) => new(
+        serviceProvider.GetService<IArtifactStore>(),
+        ResultsExpired(job, now) ? MapExpiredDirectArtifact : MapDirectArtifact);
 
     private async Task<ConsoleJobArtifact> MapArtifactAsync(
         string reference,
