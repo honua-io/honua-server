@@ -51,6 +51,7 @@ public sealed class McpGetJobResultsToolTests
 
         view.Members.Select(member => member.ToolName).Should().Contain(
             [ExecutePlanTool.ToolName, ListJobsTool.ToolName, GetJobResultsTool.ToolName]);
+        view.Members.Should().HaveCountLessThanOrEqualTo(12);
         view.BudgetViolations.Should().BeEmpty();
     }
 

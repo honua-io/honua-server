@@ -53,7 +53,6 @@ internal static class McpWorkflowViewCatalog
                     McpWorkflowViewMemberRule.Exact("honua_execute_plan"),
                     McpWorkflowViewMemberRule.Exact("honua_list_jobs"),
                     McpWorkflowViewMemberRule.Exact("honua_get_job_results"),
-                    McpWorkflowViewMemberRule.Exact("honua_render_map"),
                 ],
             },
         ],
