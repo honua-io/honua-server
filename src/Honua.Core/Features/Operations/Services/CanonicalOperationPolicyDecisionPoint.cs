@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Guardrails.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.Guardrails;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Operations.Abstractions;
@@ -101,9 +102,7 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
 
     private static bool IsDefaultPrivateDraftApproval(
         GuardrailDecision guardrail, OperationGatewayRequest request, string operationId) =>
-        guardrail is { Tier: GuardrailTier.RequiresApproval, Source: "default-policy" }
+        guardrail is { Tier: GuardrailTier.RequiresApproval, Source: DefaultGuardrailLadder.DefaultPolicySource }
         && request is { Kind: OperationClass.StudioDraftMutation, ActionDiscriminator: null }
-        && operationId is ("studio.draft.create" or "studio.draft.update" or "studio.draft.delete" or
-            "studio.draft.validate" or "studio.draft.preview-plan" or "studio.draft.save-version" or
-            "studio.content.reopen-version");
+        && StudioDraftMutationContext.IsPrivateDraftOperation(operationId);
 }

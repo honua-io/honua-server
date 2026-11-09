@@ -64,6 +64,18 @@ public interface IStudioDraftMutationRuntime
 /// <summary>Trusted evidence supplied by an authorized protocol adapter.</summary>
 public sealed record StudioDraftMutationContext
 {
+    public const string CreateOperationId = "studio.draft.create";
+    public const string UpdateOperationId = "studio.draft.update";
+    public const string DeleteOperationId = "studio.draft.delete";
+    public const string ValidateOperationId = "studio.draft.validate";
+    public const string PreviewPlanOperationId = "studio.draft.preview-plan";
+    public const string SaveVersionOperationId = "studio.draft.save-version";
+    public const string ReopenVersionOperationId = "studio.content.reopen-version";
+
+    public static bool IsPrivateDraftOperation(string operationId) => operationId is
+        CreateOperationId or UpdateOperationId or DeleteOperationId or ValidateOperationId or
+        PreviewPlanOperationId or SaveVersionOperationId or ReopenVersionOperationId;
+
     public string? PrincipalId { get; init; }
     public string? TenantId { get; init; }
     public string? SchemaName { get; init; }
