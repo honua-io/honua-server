@@ -20,6 +20,18 @@ internal static class AdminListContractAssertions
             ["$ref"] = responseSchema["$ref"]!.DeepClone(),
             ["components"] = document["components"]!.DeepClone()
         };
+        foreach (var property in schema.DescendantsAndSelf().OfType<JObject>()
+                     .Where(property => property["nullable"] is JValue { Value: true }))
+        {
+            if (property["type"] is JValue { Value: string type })
+            {
+                property["type"] = new JArray(type, "null");
+            }
+            if (property["enum"] is JArray values)
+            {
+                values.Add(JValue.CreateNull());
+            }
+        }
         var valid = JToken.Parse(payload).IsValid(JSchema.Parse(schema.ToString()), out IList<string> errors);
         Assert.True(valid, string.Join(Environment.NewLine, errors));
     }
