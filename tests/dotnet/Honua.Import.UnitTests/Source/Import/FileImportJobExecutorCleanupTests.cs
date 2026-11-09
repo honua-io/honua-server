@@ -1,6 +1,7 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
@@ -72,10 +73,34 @@ public sealed class FileImportJobExecutorCleanupTests
         storage.DeletedWhileScopeAlive.Should().BeTrue();
     }
 
+    [UnitTest]
+    public async Task CompletedImport_RetainsPhysicalTableIdentity()
+    {
+        var progress = new MemoryProgress();
+        var importer = new ScriptedImporter((_, _) => Task.FromResult(
+            ImportResult.CreateSuccess("roads", SupportedFileFormat.GeoPackage, 7,
+                detectedSrid: 2193, physicalTableName: "import_roads", schema: "staging")));
+
+        var result = await ExecuteAsync(new RecordingStorage(), importer, SixGiB, progressStore: progress);
+
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+        var completed = progress.Current.Should().BeOfType<ImportProgress>().Subject;
+        completed.Status.Should().Be(ImportStatus.Completed);
+        completed.FeaturesProcessed.Should().Be(7);
+        completed.TableName.Should().Be("roads");
+        completed.DetectedSrid.Should().Be(2193);
+        var document = JsonSerializer.SerializeToElement(completed, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        document.TryGetProperty("physicalTableName", out var table).Should().BeTrue();
+        table.GetString().Should().Be("import_roads");
+        document.TryGetProperty("schema", out var schema).Should().BeTrue();
+        schema.GetString().Should().Be("staging");
+    }
+
     private static Task<JobExecutionResult> ExecuteAsync(
         RecordingStorage storage,
         ScriptedImporter importer,
         long fileSize,
+        MemoryProgress? progressStore = null,
         CancellationToken cancellationToken = default)
     {
         var request = new ImportRequest
@@ -108,7 +133,7 @@ public sealed class FileImportJobExecutorCleanupTests
         storage.Scope = scope;
         var executor = new FileImportJobExecutor(
             new SingleScopeFactory(scope),
-            new MemoryProgress(),
+            progressStore ?? new MemoryProgress(),
             NullLogger<FileImportJobExecutor>.Instance);
         return executor.ExecuteAsync(job, new RecordingContext("job-1"), cancellationToken);
     }
@@ -151,12 +176,17 @@ public sealed class FileImportJobExecutorCleanupTests
 
     private sealed class MemoryProgress : IUniversalProgressStore
     {
+        public IOperationProgress? Current { get; private set; }
+
         public Task SetProgressAsync(
             string operationId,
             IOperationProgress progress,
             TimeSpan? ttl = null,
             CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
+        {
+            Current = progress;
+            return Task.CompletedTask;
+        }
 
         public Task<ProgressCompareAndSetResult> TrySetProgressAsync(
             string operationId,
@@ -168,10 +198,10 @@ public sealed class FileImportJobExecutorCleanupTests
 
         public Task<TProgress?> GetProgressAsync<TProgress>(string operationId, CancellationToken cancellationToken = default)
             where TProgress : class, IOperationProgress
-            => Task.FromResult<TProgress?>(null);
+            => Task.FromResult(Current as TProgress);
 
         public Task<IOperationProgress?> GetProgressAsync(string operationId, CancellationToken cancellationToken = default)
-            => Task.FromResult<IOperationProgress?>(null);
+            => Task.FromResult(Current);
 
         public Task DeleteProgressAsync(string operationId, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
