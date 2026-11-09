@@ -296,4 +296,4 @@ contract and clause grammar.
   `SpecMutationKind` enum
 - `src/Honua.Server/Features/Grounding/` — service, engine, drafter,
   evaluator, MCP mappers, and spec grounding endpoints
-- `src/Honua.Core/Features/Grounding/` — domain types and abstractions
+- `src/Honua.Core/Core/Features/Grounding/` — domain types and abstractions

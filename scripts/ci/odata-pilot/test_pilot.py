@@ -316,11 +316,11 @@ class InputTests(unittest.TestCase):
         self.assertNotEqual(initial, changed["key"])
 
     def test_source_edit_restores_original_even_on_failed_command(self):
-        source = self.root / "src/Honua.Protocols.OData/Example.cs"
-        source.parent.mkdir()
+        source = self.root / "src/Honua.Protocols/OData/Example.cs"
+        source.parent.mkdir(parents=True)
         source.write_bytes(b"original\r\n")
         with self.assertRaisesRegex(ValueError, "stage failed"):
-            with pilot.edit_source(self.root, "odata-only-edit", "src/Honua.Protocols.OData/Example.cs", 1):
+            with pilot.edit_source(self.root, "odata-only-edit", "src/Honua.Protocols/OData/Example.cs", 1):
                 self.assertIn(b"paired edit 1", source.read_bytes())
                 raise ValueError("stage failed")
         self.assertEqual(b"original\r\n", source.read_bytes())

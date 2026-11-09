@@ -45,7 +45,7 @@ Implement a **shared Filter AST (Abstract Syntax Tree)** in `Honua.Core` that al
          ▼                 ▼                       ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                    FilterExpression (AST)                        │
-│  Honua.Core/Queries/Filters/                                    │
+│  Honua.Core/Core/Queries/Filters/                                    │
 └─────────────────────────────────┬───────────────────────────────┘
                                   │
                                   ▼
@@ -64,7 +64,7 @@ Implement a **shared Filter AST (Abstract Syntax Tree)** in `Honua.Core` that al
 ### Filter AST Types
 
 ```csharp
-// Honua.Core/Queries/Filters/FilterExpression.cs
+// Honua.Core/Core/Queries/Filters/FilterExpression.cs
 namespace Honua.Core.Queries.Filters;
 
 /// <summary>Base class for all filter expressions</summary>
@@ -155,7 +155,7 @@ public enum SpatialOperator
 ### SQL Translation
 
 ```csharp
-// Honua.Core/Queries/Filters/SqlFilterTranslator.cs
+// Honua.Core/Core/Queries/Filters/SqlFilterTranslator.cs
 public sealed class SqlFilterTranslator
 {
     public SqlFragment Translate(FilterExpression filter, LayerDefinition layer)
