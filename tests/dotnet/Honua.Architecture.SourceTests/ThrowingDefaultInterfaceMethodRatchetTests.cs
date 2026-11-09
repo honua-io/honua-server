@@ -15,10 +15,10 @@ public sealed class ThrowingDefaultInterfaceMethodRatchetTests
 {
     private static readonly string[] _v2InterfaceFiles =
     {
-        "src/Honua.Core/Features/Validation/Abstractions/IResourceValidator.cs",
-        "src/Honua.Core/Features/Query/IQueryProcessor.cs",
-        "src/Honua.Core/Features/Query/IQueryParameterAdapter.cs",
-        "src/Honua.Core/Features/Edit/IEditParameterAdapter.cs",
+        "src/Honua.Core/Core/Features/Validation/Abstractions/IResourceValidator.cs",
+        "src/Honua.Core/Core/Features/Query/IQueryProcessor.cs",
+        "src/Honua.Core/Core/Features/Query/IQueryParameterAdapter.cs",
+        "src/Honua.Core/Core/Features/Edit/IEditParameterAdapter.cs",
     };
 
     // Interface file -> why its throwing default is deferred, and where the follow-up is tracked.

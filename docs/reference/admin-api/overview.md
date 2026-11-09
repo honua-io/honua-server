@@ -50,6 +50,16 @@ Each capability record reports:
 
 The document also carries `transports` (REST, GeoServices, OGC, OData, STAC, tiles, gRPC, MCP, QGIS, mTLS), `limits` (query, analysis, upload, and job limits), and `policies` (license and entitlement state). The manifest is informational only — operation endpoints remain the source of truth for authorization and resource checks. Do not persist it as an authorization cache.
 
+Authenticated responses also include `dataStores` for connection clients:
+
+| Field | Meaning |
+|---|---|
+| `installedProviders` | Sorted, distinct provider identifiers from the running server's registered feature-data providers. An empty array means no providers are registered. This is not a list inferred from image tags or referenced assemblies. |
+| `fullImageTagSuffix` | `-full`, the opt-in image suffix for additional data stores. Use a published variant for the same server revision. |
+| `documentationHref` | Link to [data-store variant guidance](../../ops/nightly-images.md#data-store-variants). |
+
+Anonymous responses omit `dataStores`. Clients must treat a missing section as unknown availability, not as a default provider list. Registration does not prove connection health, access rights, or that an experimental provider is available for every operation. File-format readers used by imports are separate from data stores.
+
 Customer alert zones, rules, evaluation, and delivery channels are Preview in
 2026.1. Enable both `Capabilities:Experimental:alerts.geofence:Enabled=true` and
 `Alerts:Enabled=true` before use. Startup reports the Preview opt-in through the
