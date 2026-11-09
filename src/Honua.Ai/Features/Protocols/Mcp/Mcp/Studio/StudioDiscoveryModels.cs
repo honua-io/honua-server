@@ -10,13 +10,13 @@ internal sealed record McpStudioListItemsArgument
     [JsonPropertyName("q")]
     public string? Query { get; init; }
     public string? Cursor { get; init; }
-    public int Limit { get; init; } = 25;
+    public int? Limit { get; init; }
 }
 
 internal sealed record McpStudioListVersionsArgument
 {
     public Guid ItemId { get; init; }
-    public int Limit { get; init; } = 25;
+    public int? Limit { get; init; }
     public int? BeforeVersionNumber { get; init; }
 }
 
