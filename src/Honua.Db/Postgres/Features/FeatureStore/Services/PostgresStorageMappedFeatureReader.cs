@@ -618,13 +618,17 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             fields,
             useMapping ? _mapping.AttributesColumn : null,
             addParameter,
-            distinctObjectIdExpression);
+            distinctObjectIdExpression,
+            useMapping && string.IsNullOrWhiteSpace(_mapping.AttributesColumn) ? _qualifiedTableName : null,
+            _resource.Fields.Select(field => field.Name).ToArray());
 
     private static string BuildAttributesJsonbExpression(
         MetadataV2Field[] fields,
         string? attributesColumn,
         Func<object?, string> addParameter,
-        string? distinctObjectIdExpression = null)
+        string? distinctObjectIdExpression = null,
+        string? sourceTable = null,
+        IReadOnlyList<string>? exportedColumns = null)
     {
         var chunks = fields
             .Chunk(MaxJsonbBuildObjectPairs)
@@ -632,7 +636,9 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
                 chunk,
                 attributesColumn,
                 addParameter,
-                distinctObjectIdExpression));
+                distinctObjectIdExpression,
+                sourceTable,
+                exportedColumns));
 
         return $"({string.Join(" || ", chunks)})";
     }
@@ -641,7 +647,9 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         IEnumerable<MetadataV2Field> fields,
         string? attributesColumn,
         Func<object?, string> addParameter,
-        string? distinctObjectIdExpression = null)
+        string? distinctObjectIdExpression = null,
+        string? sourceTable = null,
+        IReadOnlyList<string>? exportedColumns = null)
     {
         var parts = new List<string>();
         var jsonbAccessor = string.IsNullOrWhiteSpace(attributesColumn)
@@ -673,7 +681,10 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             }
             else
             {
-                parts.Add(ValidateAndQuoteIdentifier(field.Name));
+                var value = ValidateAndQuoteIdentifier(field.Name);
+                parts.Add(field.Name == "properties" && sourceTable is not null
+                    ? ImportTableOwnership.ResidualPropertiesSql(value, sourceTable, exportedColumns ?? [])
+                    : value);
             }
         }
 

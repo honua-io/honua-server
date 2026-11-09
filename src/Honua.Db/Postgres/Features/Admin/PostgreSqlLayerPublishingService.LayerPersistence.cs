@@ -234,7 +234,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var canonicalGeometry = string.IsNullOrWhiteSpace(geometryColumn)
             ? "NULL::geometry"
             : BuildCanonicalGeometryExpression($"src.{QuoteIdentifier(geometryColumn)}");
-        var attributesExpression = BuildAttributesExpression(attributeColumns);
+        var attributesExpression = BuildAttributesExpression(attributeColumns, sourceTable);
 
         // A managed-store publish names the exact features table its binding reads; the
         // source snapshot keeps resolving the table through the connection search path.

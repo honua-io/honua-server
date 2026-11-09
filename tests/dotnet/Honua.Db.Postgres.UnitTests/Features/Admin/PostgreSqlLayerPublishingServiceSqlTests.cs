@@ -4812,7 +4812,7 @@ public sealed partial class PostgreSqlLayerPublishingServiceSqlTests
 
         method.Should().NotBeNull();
 
-        var expression = (string)method!.Invoke(null, [columns])!;
+        var expression = (string)method!.Invoke(null, [columns, "public.source"])!;
 
         expression.Split("jsonb_build_object", StringSplitOptions.None).Length.Should().Be(3);
         expression.Should().Contain(" || ");

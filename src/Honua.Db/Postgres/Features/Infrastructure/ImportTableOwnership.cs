@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using Honua.Core.Features.Import.Domain;
+using Honua.Core.Features.FileImport.Services;
 using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Infrastructure;
@@ -52,6 +53,19 @@ internal static class ImportTableOwnership
         exists.Parameters.AddWithValue("relation", $"{Quote(schema)}.{Quote(table)}");
         return await exists.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is true;
     }
+
+    internal static string ResidualPropertiesSql(
+        string propertiesExpression, string qualifiedTable, IEnumerable<string> exportedColumns)
+    {
+        var promoted = exportedColumns.Where(ImportTypedColumnInference.IsPromotableName)
+            .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
+        if (promoted.Length == 0) return propertiesExpression;
+        var keys = string.Join(", ", promoted.Select(QuoteLiteral));
+        return $"CASE WHEN (SELECT obj_description(to_regclass({QuoteLiteral(qualifiedTable)}), 'pg_class') = '{Marker}') "
+            + $"THEN ({propertiesExpression} - ARRAY[{keys}]::text[]) ELSE {propertiesExpression} END";
+    }
+
+    private static string QuoteLiteral(string value) => "'" + value.Replace("'", "''", StringComparison.Ordinal) + "'";
 
     private static string Quote(string value) => "\"" + value.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
 }

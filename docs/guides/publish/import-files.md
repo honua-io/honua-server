@@ -174,3 +174,10 @@ permission to replace that table; never apply it to an unrelated customer table.
 Existing table comments must be recorded before this explicit adoption replaces them.
 New imported tables retain the marker through successful staging promotion. WFS
 imports retain the stable `wfs_` prefix for derived target names.
+
+Imported scalar attributes promoted to typed columns appear once in published feature output.
+The typed column is authoritative, including after an edit. The nested `properties` document
+retains unpromoted source values, such as nested objects and reserved names; it omits promoted
+keys that the published schema exposes as fields. This applies to GeoJSON, OGC API Features,
+FeatureServer and canonical snapshots, including existing publications. Ordinary source tables
+retain their JSON documents independently of other columns.

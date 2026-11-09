@@ -73,7 +73,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         return schema;
     }
 
-    private static string BuildAttributesExpression(IReadOnlyList<ColumnInfo> attributeColumns)
+    private static string BuildAttributesExpression(IReadOnlyList<ColumnInfo> attributeColumns, string sourceTable)
     {
         if (attributeColumns.Count == 0)
         {
@@ -82,22 +82,26 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
         if (attributeColumns.Count <= MaxJsonbBuildObjectPairs)
         {
-            return BuildAttributesExpressionChunk(attributeColumns);
+            return BuildAttributesExpressionChunk(attributeColumns, sourceTable, attributeColumns.Select(column => column.Name));
         }
 
         var chunks = attributeColumns
             .Chunk(MaxJsonbBuildObjectPairs)
-            .Select(BuildAttributesExpressionChunk);
+            .Select(chunk => BuildAttributesExpressionChunk(chunk, sourceTable, attributeColumns.Select(column => column.Name)));
         return string.Join(" || ", chunks);
     }
 
-    private static string BuildAttributesExpressionChunk(IReadOnlyList<ColumnInfo> attributeColumns)
+    private static string BuildAttributesExpressionChunk(
+        IReadOnlyList<ColumnInfo> attributeColumns, string sourceTable, IEnumerable<string> exportedColumns)
     {
         var parts = new List<string>(attributeColumns.Count * 2);
         foreach (var column in attributeColumns)
         {
             parts.Add(QuoteLiteral(column.Name));
-            parts.Add($"src.{QuoteIdentifier(column.Name)}");
+            var value = $"src.{QuoteIdentifier(column.Name)}";
+            parts.Add(column.Name == "properties"
+                ? ImportTableOwnership.ResidualPropertiesSql(value, sourceTable, exportedColumns)
+                : value);
         }
 
         return $"jsonb_build_object({string.Join(", ", parts)})";

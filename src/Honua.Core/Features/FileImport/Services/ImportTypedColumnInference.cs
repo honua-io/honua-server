@@ -70,7 +70,7 @@ internal sealed partial class ImportTypedColumnInference(bool preserveStringScal
         return columns;
     }
 
-    private static bool IsPromotableName(string name)
+    internal static bool IsPromotableName(string name)
         => name.Length is > 0 and <= 63
             && IdentifierPattern().IsMatch(name)
             && !ReservedNames.Contains(name);
