@@ -46,7 +46,6 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
         content.Should().Contain("<WMS_Capabilities");
         content.Should().Contain("<Name>WMS</Name>");
         content.Should().Contain("EPSG:4326");
-        content.Should().Contain("EPSG:4326");
         content.Should().Contain("<GetMap>");
         content.Should().Contain("<GetFeatureInfo>");
         // WMS GML FeatureInfo conformance class (ets-wms11 wms:wms-getfeatureinfo)

@@ -219,6 +219,7 @@ public sealed class CatalogCapabilitiesMetadataTests : IAsyncLifetime
                 Metadata = WithAuthoredIdentification(service.Metadata, "Service survey")
             }).ToArray()
         };
+        // Round-trip authored statements to verify their persisted JSON property names.
         var json = JsonSerializer.SerializeToNode(graph, MetadataV2JsonContext.Default.MetadataV2Graph)!;
         foreach (var metadata in json["services"]!.AsArray().Select(service => service!["metadata"]!).Prepend(json["metadata"]!))
         {

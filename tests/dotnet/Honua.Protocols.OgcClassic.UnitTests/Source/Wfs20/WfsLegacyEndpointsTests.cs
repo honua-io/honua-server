@@ -7,8 +7,8 @@ using System.Xml.Linq;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Protocols.Ogc.Classic.Wfs20.Models;
-using Honua.Protocols.Ogc.Classic.Wfs20.Services;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using NSubstitute;
@@ -31,7 +31,7 @@ public sealed class WfsLegacyEndpointsTests
         var reader = Substitute.For<IFeatureReader, IFeatureDataProvider>();
         ((IFeatureDataProvider)reader).Capabilities.Returns(capabilities);
         var content = Wfs20HandlerTestFactory.Create(reader, Substitute.For<IFeatureWriter>()).BuildWfs11Capabilities(
-            "https://owned.example/wfs", Array.Empty<FeatureType>(), new Honua.Core.Features.Metadata.Domain.V2.MetadataV2ObjectMetadata());
+            "https://owned.example/wfs", Array.Empty<FeatureType>(), new MetadataV2ObjectMetadata());
         XNamespace wfs = "http://www.opengis.net/wfs";
         var featureTypeList = XElement.Parse(content).Element(wfs + "FeatureTypeList")!;
         var operations = featureTypeList.Element(wfs + "Operations")!;
@@ -44,7 +44,7 @@ public sealed class WfsLegacyEndpointsTests
     {
         var reader = Substitute.For<IFeatureReader>();
         var content = Wfs20HandlerTestFactory.Create(reader, Substitute.For<IFeatureWriter>()).BuildWfs11Capabilities(
-            "https://owned.example/wfs", Array.Empty<FeatureType>(), new Honua.Core.Features.Metadata.Domain.V2.MetadataV2ObjectMetadata());
+            "https://owned.example/wfs", Array.Empty<FeatureType>(), new MetadataV2ObjectMetadata());
         XNamespace wfs = "http://www.opengis.net/wfs";
         XElement.Parse(content).Element(wfs + "FeatureTypeList")!
             .Element(wfs + "Operations")!.Elements(wfs + "Operation").Select(element => element.Value)
@@ -60,7 +60,7 @@ public sealed class WfsLegacyEndpointsTests
             Edits = new FeatureProviderEditCapabilities { SupportsUpdate = true }
         });
         var content = Wfs20HandlerTestFactory.Create(reader, Substitute.For<IFeatureWriter>()).BuildWfs11Capabilities(
-            "https://owned.example/wfs", Array.Empty<FeatureType>(), new Honua.Core.Features.Metadata.Domain.V2.MetadataV2ObjectMetadata());
+            "https://owned.example/wfs", Array.Empty<FeatureType>(), new MetadataV2ObjectMetadata());
         XNamespace wfs = "http://www.opengis.net/wfs";
         XElement.Parse(content).Element(wfs + "FeatureTypeList")!
             .Element(wfs + "Operations")!.Elements(wfs + "Operation").Select(element => element.Value)

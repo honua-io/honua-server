@@ -183,7 +183,8 @@ internal static partial class WmsRequestHandlers
                         : StatusCodes.Status401Unauthorized);
             }
 
-            if (wmsLayers.Length == 0)
+            if (wmsLayers.Length == 0 && !string.IsNullOrWhiteSpace(requestType) &&
+                !string.Equals(requestType, "GetCapabilities", StringComparison.OrdinalIgnoreCase))
             {
                 return CreateWmsServiceException(context, "LayerNotDefined", "No accessible WMS layers are available for this service.");
             }

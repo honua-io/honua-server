@@ -4,28 +4,19 @@
 using System.Collections.Immutable;
 using System.Security.Claims;
 using FluentAssertions;
-using Honua.Core.Configuration;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Query;
-using Honua.Core.Queries.Filters;
 using Honua.Infrastructure.Authentication;
-using Honua.Infrastructure.Events;
-using Honua.Infrastructure.Validation;
 using Honua.Protocols.Ogc.Classic.Wfs20;
-using Honua.Protocols.Ogc.Common;
 using Honua.TestKit.Attributes;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using NSubstitute;
 
 namespace Honua.Protocols.OgcClassic.UnitTests.Wfs20;
 

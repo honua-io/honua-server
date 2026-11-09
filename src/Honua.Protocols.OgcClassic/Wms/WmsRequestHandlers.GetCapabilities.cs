@@ -3,7 +3,6 @@
 
 using System.Globalization;
 using System.Text;
-using Honua.Core.Features.Metadata.Services;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -404,7 +403,7 @@ internal static partial class WmsRequestHandlers
         AppendWmsOnlineResource(sb, "    ", wmsEndpoint, isWms111);
         var contact = CatalogCapabilitiesXml.WmsContact(service.Metadata);
         if (contact is not null)
-            sb.AppendLine(contact.ToString());
+            sb.Append("    ").AppendLine(contact.ToString());
         sb.Append("    <Fees>").Append(EscapeXml(service.Metadata.Fees ?? string.Empty)).AppendLine("</Fees>");
         sb.Append("    <AccessConstraints>").Append(EscapeXml(service.Metadata.AccessConstraints ?? string.Empty)).AppendLine("</AccessConstraints>");
         sb.AppendLine("  </Service>");
@@ -476,7 +475,7 @@ internal static partial class WmsRequestHandlers
             accessibleLayers,
             coordinateTransformService,
             cancellationToken).ConfigureAwait(false) ?? WorldWgs84Extent;
-        await AppendWmsGeographicBoundsAsync(sb, new(rootExtent, "      ", isWms111, [])).ConfigureAwait(false);
+        await AppendWmsGeographicBoundsAsync(sb, new(rootExtent, "      ", isWms111, []), context).ConfigureAwait(false);
 
         // Pre-fetch temporal extent ranges for all time-aware layers concurrently so the
         // per-layer capabilities loop does not issue a sequential DB round-trip per layer.
@@ -490,7 +489,7 @@ internal static partial class WmsRequestHandlers
         {
             var layerName = GetWmsLayerDisplayName(layer);
             var layerMetadata = layer.Resource.Metadata;
-            var resourceTitle = layerMetadata.Title ?? layer.Resource.Metadata.Name ?? layerName;
+            var resourceTitle = layerMetadata.Title ?? layerMetadata.Name ?? layerName;
             var layerAbstract = layerMetadata.Description ?? $"WMS layer {layerName}";
 
             sb.AppendLine("      <Layer queryable=\"1\">");
@@ -509,7 +508,7 @@ internal static partial class WmsRequestHandlers
 
             var layerExtent = await TryGetLayerWgs84ExtentAsync(
                 layer.Resource, coordinateTransformService, cancellationToken).ConfigureAwait(false) ?? rootExtent;
-            await AppendWmsGeographicBoundsAsync(sb, new(layerExtent, "        ", isWms111, crsNames)).ConfigureAwait(false);
+            await AppendWmsGeographicBoundsAsync(sb, new(layerExtent, "        ", isWms111, crsNames), context).ConfigureAwait(false);
 
             // Preserve the CITE fixture dimensions (elevation on cite:Lakes and
             // time on cite:Autos) alongside the dynamic dimensions advertised by
@@ -626,22 +625,28 @@ internal static partial class WmsRequestHandlers
     private readonly record struct WmsGeographicBounds(
         Wgs84Extent Extent, string Indent, bool IsWms111, IReadOnlyList<string> DeclaredCrs);
 
-    private static Task AppendWmsGeographicBoundsAsync(StringBuilder builder, WmsGeographicBounds bounds)
+    private static async Task AppendWmsGeographicBoundsAsync(
+        StringBuilder builder, WmsGeographicBounds bounds, HttpContext context)
     {
         var extent = bounds.Extent;
         if (bounds.IsWms111)
-        {
             AppendWms111LatLonBoundingBox(builder, extent.MinLon, extent.MinLat, extent.MaxLon, extent.MaxLat, bounds.Indent);
-        }
         else
-        {
             AppendWmsGeographicBoundingBox(builder, extent.MinLon, extent.MinLat, extent.MaxLon, extent.MaxLat, bounds.Indent);
-            if (bounds.DeclaredCrs.Contains("CRS:84", StringComparer.OrdinalIgnoreCase))
-                AppendWmsBoundingBox(builder, "CRS:84", extent.MinLon, extent.MinLat, extent.MaxLon, extent.MaxLat, bounds.Indent, bounds.IsWms111);
+
+        var geographicExtent = new SkiaMapRenderer.RenderExtent(extent.MinLon, extent.MinLat, extent.MaxLon, extent.MaxLat);
+        foreach (var crs in bounds.DeclaredCrs.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (!TryParseWmsCrs(crs, out var srid, out _))
+                continue;
+            var transformed = await TryTransformExtentAsync(context, geographicExtent, 4326, srid,
+                TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context)).ConfigureAwait(false);
+            if (!transformed.IsSuccess)
+                continue;
+            var projected = transformed.Extent;
+            AppendWmsBoundingBox(builder, crs, projected.MinX, projected.MinY, projected.MaxX, projected.MaxY,
+                bounds.Indent, bounds.IsWms111);
         }
-        if (bounds.DeclaredCrs.Contains("EPSG:4326", StringComparer.OrdinalIgnoreCase))
-            AppendWmsBoundingBox(builder, "EPSG:4326", extent.MinLon, extent.MinLat, extent.MaxLon, extent.MaxLat, bounds.Indent, bounds.IsWms111);
-        return Task.CompletedTask;
     }
 
     private static void AppendWmsKeywords(StringBuilder builder, IEnumerable<string> keywords, string indent)
