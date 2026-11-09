@@ -73,7 +73,7 @@ public sealed class CatalogDefaultStyleTests : IAsyncLifetime
         var provider = Substitute.For<IAdoNetDatabaseConnectionProvider>();
         provider.OpenConnectionAsync(Arg.Any<CancellationToken>()).Returns(async call =>
             (DbConnection)await source.OpenConnectionAsync(call.Arg<CancellationToken>()));
-        var catalog = new PostgresLayerStyleCatalog(provider, _fixture.CurrentSchema);
+        var catalog = new PostgresLayerStyleCatalog(provider);
 
         var style = await catalog.SetDrawingInfoAsync(LayerId, "{}");
 
