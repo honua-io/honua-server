@@ -590,7 +590,7 @@ internal sealed class PublishedOperationTool : IMcpTool
 
     private static void WriteSchema(Utf8JsonWriter writer, Honua.Core.Features.WorkflowPackages.Domain.WorkflowSchemaDefinition schema)
     {
-        writer.WriteString("type", schema.Type switch
+        var type = schema.Type switch
         {
             Honua.Core.Features.WorkflowPackages.Domain.WorkflowSchemaValueType.WholeNumber => "integer",
             Honua.Core.Features.WorkflowPackages.Domain.WorkflowSchemaValueType.DecimalNumber => "number",
@@ -598,12 +598,24 @@ internal sealed class PublishedOperationTool : IMcpTool
             Honua.Core.Features.WorkflowPackages.Domain.WorkflowSchemaValueType.List => "array",
             Honua.Core.Features.WorkflowPackages.Domain.WorkflowSchemaValueType.Structured => "object",
             _ => "string"
-        });
+        };
+        if (schema.AllowsNull)
+        {
+            writer.WriteStartArray("type");
+            writer.WriteStringValue(type);
+            writer.WriteStringValue("null");
+            writer.WriteEndArray();
+        }
+        else
+        {
+            writer.WriteString("type", type);
+        }
         if (!string.IsNullOrWhiteSpace(schema.Format)) writer.WriteString("format", schema.Format);
         if (schema.EnumValues.Count > 0)
         {
             writer.WriteStartArray("enum");
             foreach (var value in schema.EnumValues) writer.WriteStringValue(value);
+            if (schema.AllowsNull) writer.WriteNullValue();
             writer.WriteEndArray();
         }
         if (schema.Items is not null)

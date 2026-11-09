@@ -212,21 +212,17 @@ internal static class AdminOperateOperationCatalog
         return false;
     }
 
-    private static JsonElement Resolve(JsonElement root, JsonElement schema)
-    {
-        if (!schema.TryGetProperty("$ref", out var reference)) return schema;
-        var current = root;
-        foreach (var segment in reference.GetString()![2..].Split('/')) current = current.GetProperty(segment);
-        return current;
-    }
+    private static JsonElement Resolve(JsonElement root, JsonElement schema) =>
+        AdminOperationSchema.Resolve(root, schema).Schema;
 
     internal static WorkflowSchemaDefinition ConvertSchema(JsonElement root, JsonElement schema)
     {
-        var resolved = Resolve(root, schema);
+        var (resolved, allowsNull) = AdminOperationSchema.Resolve(root, schema);
         var type = resolved.TryGetProperty("type", out var typeElement) ? typeElement.GetString() : "object";
         return new WorkflowSchemaDefinition
         {
             Type = type switch { "integer" => WorkflowSchemaValueType.WholeNumber, "number" => WorkflowSchemaValueType.DecimalNumber, "boolean" => WorkflowSchemaValueType.Flag, "array" => WorkflowSchemaValueType.List, "object" => WorkflowSchemaValueType.Structured, _ => WorkflowSchemaValueType.Text },
+            AllowsNull = allowsNull,
             Format = resolved.TryGetProperty("format", out var format) ? format.GetString() : null,
             EnumValues = resolved.TryGetProperty("enum", out var values) ? values.EnumerateArray().Select(static value => value.ToString()).ToArray() : [],
             Items = resolved.TryGetProperty("items", out var items) ? ConvertSchema(root, items) : null,

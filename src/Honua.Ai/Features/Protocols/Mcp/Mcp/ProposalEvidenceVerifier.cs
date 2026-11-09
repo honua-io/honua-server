@@ -256,7 +256,7 @@ internal sealed class ProposalEvidenceVerifier(
             }
 
             if (propertySchema.TryGetProperty("type", out var expectedType)
-                && !MatchesType(property.Value, expectedType.GetString()))
+                && !MatchesDeclaredType(property.Value, expectedType))
             {
                 throw Invalid($"Invocation property '{property.Name}' has the wrong JSON type.");
             }
@@ -274,8 +274,17 @@ internal sealed class ProposalEvidenceVerifier(
         }
     }
 
+    internal static bool MatchesDeclaredType(JsonElement value, JsonElement declaredType) => declaredType.ValueKind switch
+    {
+        JsonValueKind.String => MatchesType(value, declaredType.GetString()),
+        JsonValueKind.Array => declaredType.EnumerateArray().Any(type =>
+            type.ValueKind == JsonValueKind.String && MatchesType(value, type.GetString())),
+        _ => false,
+    };
+
     private static bool MatchesType(JsonElement value, string? type) => type switch
     {
+        "null" => value.ValueKind == JsonValueKind.Null,
         "string" => value.ValueKind == JsonValueKind.String,
         "integer" => value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out _),
         "number" => value.ValueKind == JsonValueKind.Number,

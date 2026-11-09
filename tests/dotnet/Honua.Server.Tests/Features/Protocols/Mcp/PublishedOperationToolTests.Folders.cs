@@ -2,10 +2,13 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Newtonsoft.Json.Linq;
+using Newtonsoft.Json.Schema;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Operations.Services;
+using Honua.Core.Features.WorkflowPackages.Domain;
 using Honua.Server.Features.Operations;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -61,4 +64,52 @@ public sealed partial class PublishedOperationToolTests
         bridge.Request.Parameters["If-Match"].Should().Be("etag");
         executor.SubmitCount.Should().Be(0);
     }
+
+    [UnitTheory]
+    [InlineData("null", true)]
+    [InlineData("\"survey\"", true)]
+    [InlineData("42", false)]
+    [InlineData(null, false)]
+    public void Describe_ServiceMove_ValidatesRequiredRootOrFolderSelection(string? selection, bool expected)
+    {
+        var operation = AdminApiOperationCatalog.Descriptors.Single(descriptor => descriptor.OperationId == "service.move");
+        var advertised = new PublishedOperationTool(operation, "catalog", NullLogger.Instance).Describe().InputSchema;
+        var schema = JSchema.Parse(advertised.GetRawText());
+        var arguments = JObject.Parse("""{"serviceName":"survey","If-Match":"etag"}""");
+        if (selection is not null)
+        {
+            arguments["folderId"] = JToken.Parse(selection);
+        }
+
+        arguments.IsValid(schema).Should().Be(expected);
+    }
+
+    [UnitTheory]
+    [InlineData(true, "null", true)]
+    [InlineData(true, "\"survey\"", true)]
+    [InlineData(true, "\"other\"", false)]
+    [InlineData(true, "42", false)]
+    [InlineData(false, "null", false)]
+    [InlineData(false, "\"survey\"", true)]
+    public void Describe_EnumSelection_ValidatesNullableAndNonnullableValues(bool allowsNull, string selection, bool expected)
+    {
+        var operation = DeterministicReadOnlyDescriptor() with
+        {
+            InputSchema = [Param("selection", true) with
+            {
+                Schema = new WorkflowSchemaDefinition
+                {
+                    Type = WorkflowSchemaValueType.Text,
+                    AllowsNull = allowsNull,
+                    EnumValues = ["survey"]
+                }
+            }]
+        };
+        var advertised = new PublishedOperationTool(operation, "catalog", NullLogger.Instance).Describe().InputSchema;
+        var schema = JSchema.Parse(advertised.GetRawText());
+        var arguments = new JObject { ["selection"] = JToken.Parse(selection) };
+
+        arguments.IsValid(schema).Should().Be(expected);
+    }
+
 }
