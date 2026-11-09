@@ -330,6 +330,7 @@ internal sealed partial class OperationGateway : IOperationGateway
         var status = OperationProposalStatus.Failed;
         string? failureMessage = null;
         var approvalAuditRecorded = false;
+        var canonicalDispatchStarted = false;
 
         try
         {
@@ -363,28 +364,32 @@ internal sealed partial class OperationGateway : IOperationGateway
                 {
                     failureMessage = FolderApprovalAuthorization.FreshProposalRequired;
                 }
-                else handle = await invoker.SubmitAsync(
-                    replay?.Request ?? new OperationRequest
-                    {
-                        OperationId = operationId,
-                        GatewayRequest = request,
-                    },
-                    new OperationPolicyContext
-                    {
-                        OperationInstanceId = proposal.Audit.OperationInstanceId,
-                        CorrelationId = proposal.Audit.CorrelationId,
-                        PrincipalId = proposal.RequestedBy,
-                        TenantId = replay?.TenantId,
-                        SchemaName = replay?.SchemaName,
-                        AuthorizationOutcome = "approved",
-                        ApprovedProposalId = proposal.ProposalId,
-                        ApprovedPlanHash = proposal.SealedPlanHash,
-                        ScopeGoverned = proposal.ScopeGoverned,
-                        RecognizedScopes = proposal.RecognizedScopes,
-                        RootProvisioningOperationId = request.RootProvisioningOperationId,
-                    },
-                    cancellationToken)
-                    .ConfigureAwait(false);
+                else
+                {
+                    canonicalDispatchStarted = true;
+                    handle = await invoker.SubmitAsync(
+                        replay?.Request ?? new OperationRequest
+                        {
+                            OperationId = operationId,
+                            GatewayRequest = request,
+                        },
+                        new OperationPolicyContext
+                        {
+                            OperationInstanceId = proposal.Audit.OperationInstanceId,
+                            CorrelationId = proposal.Audit.CorrelationId,
+                            PrincipalId = proposal.RequestedBy,
+                            TenantId = replay?.TenantId,
+                            SchemaName = replay?.SchemaName,
+                            AuthorizationOutcome = "approved",
+                            ApprovedProposalId = proposal.ProposalId,
+                            ApprovedPlanHash = proposal.SealedPlanHash,
+                            ScopeGoverned = proposal.ScopeGoverned,
+                            RecognizedScopes = proposal.RecognizedScopes,
+                            RootProvisioningOperationId = request.RootProvisioningOperationId,
+                        },
+                        cancellationToken)
+                        .ConfigureAwait(false);
+                }
             }
             finally
             {
@@ -453,7 +458,7 @@ internal sealed partial class OperationGateway : IOperationGateway
 
         using var completionTimeout = new CancellationTokenSource(CompletionPersistenceTimeout);
         await PersistResolutionAsync(resolved, OperationProposalStatus.Executing, completionTimeout.Token).ConfigureAwait(false);
-        if (!approvalAuditRecorded)
+        if (!canonicalDispatchStarted)
         {
             await PersistCanonicalResolutionAsync(resolved, OperationHandleStatus.Failed, completionTimeout.Token)
                 .ConfigureAwait(false);
