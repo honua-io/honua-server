@@ -6,12 +6,15 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
+using Honua.TestKit.Infrastructure;
 using Npgsql;
 using SkiaSharp;
 using MetadataV2ServiceProtocols = Honua.Core.Features.Metadata.Domain.V2.ServiceProtocols;
@@ -42,7 +45,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
         response.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
         content.Should().Contain("<WMS_Capabilities");
         content.Should().Contain("<Name>WMS</Name>");
-        content.Should().Contain("EPSG:3857");
+        content.Should().Contain("EPSG:4326");
         content.Should().Contain("EPSG:4326");
         content.Should().Contain("<GetMap>");
         content.Should().Contain("<GetFeatureInfo>");
@@ -198,6 +201,19 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
         // V2 cutover: capabilities reads the layer display name off MetadataV2Resource.
         // Update the V2 graph so the cite:Autos dimension branch fires.
         _fixture.UpdateV2ResourceName(WebAppFixture.TestLayerId, "cite:Autos");
+        _fixture.MutateV2ResourceObjectMetadata(WebAppFixture.TestLayerId, metadata => metadata with
+        {
+            Links = [new MetadataV2Link { Rel = "metadata", Href = "https://example.com/metadata/autos", Type = "application/xml" }]
+        });
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        ((TestMetadataV2GraphProvider)_fixture.GetService<IMetadataV2GraphProvider>()).SetGraph(snapshot.Graph with
+        {
+            Services = snapshot.Graph.Services.Select(service => service with
+            {
+                Metadata = service.Metadata with { ContactPoint = new MetadataV2ContactPoint { Name = "Operations", Email = "ops@example.com" } }
+            }).ToArray()
+        }, schema: _fixture.CurrentSchema);
+
         // #2020: route the global honua.layers UPDATE through the schema-mutation advisory lock.
         await _fixture.Postgres.ApplyGlobalSeedSqlAsync(
             "UPDATE honua.layers SET layer_name = @layerName WHERE layer_id = @layerId;",
