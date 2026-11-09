@@ -89,6 +89,18 @@ internal sealed class AnthropicStreamFrame
 
     [JsonPropertyName("usage")]
     public AnthropicStreamUsage? Usage { get; set; }
+
+    [JsonPropertyName("error")]
+    public AnthropicStreamError? Error { get; set; }
+}
+
+internal sealed class AnthropicStreamError
+{
+    [JsonPropertyName("type")]
+    public string? Type { get; set; }
+
+    [JsonPropertyName("code")]
+    public string? Code { get; set; }
 }
 
 internal sealed class AnthropicStreamMessage

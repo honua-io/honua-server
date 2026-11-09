@@ -26,7 +26,7 @@ namespace Honua.Server.Tests.Features.StudioAiProxy;
 /// correctly populated <see cref="StudioAiProxyCallSummary"/>) even when a fake adapter misbehaves.
 /// </summary>
 [Protocol(TestProtocols.TestQuality)]
-public sealed class StudioAiProxyServiceTests
+public sealed partial class StudioAiProxyServiceTests
 {
     [UnitTest]
     public async Task GetCapabilitiesAsync_WhenDisabled_ReturnsEnabledFalse()
