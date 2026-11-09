@@ -3827,7 +3827,7 @@
             "$ref": "#/components/responses/NotFound"
           },
           "409": {
-            "description": "The layer index resolves to multiple resources."
+            "description": "The service has no FeatureServer publication, or the layer index resolves to multiple resources."
           }
         }
       }
@@ -22333,7 +22333,7 @@
             "$ref": "#/components/responses/NotFound"
           },
           "409": {
-            "description": "The layer index resolves to multiple resources."
+            "description": "The service has no FeatureServer publication, or the layer index resolves to multiple resources."
           }
         },
         "summary": "Get Layer Display",
@@ -22379,7 +22379,7 @@
             "$ref": "#/components/responses/NotFound"
           },
           "409": {
-            "description": "The layer index resolves to multiple resources."
+            "description": "The service has no FeatureServer publication, or the layer index resolves to multiple resources."
           }
         },
         "summary": "Update Layer Display",
@@ -22437,7 +22437,7 @@
             "$ref": "#/components/responses/NotFound"
           },
           "409": {
-            "description": "The layer index resolves to multiple resources."
+            "description": "The service has no FeatureServer publication, or the layer index resolves to multiple resources."
           }
         },
         "summary": "Get Layer Spatial",
@@ -22483,7 +22483,7 @@
             "$ref": "#/components/responses/NotFound"
           },
           "409": {
-            "description": "The layer index resolves to multiple resources."
+            "description": "The service has no FeatureServer publication, or the layer index resolves to multiple resources."
           }
         },
         "summary": "Update Layer Spatial",

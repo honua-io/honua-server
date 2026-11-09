@@ -238,7 +238,10 @@ public sealed class AdminLayerDisplaySpatialTests : IAsyncLifetime
         var competing = publication with
         {
             Metadata = publication.Metadata with { Id = "competing-feature-publication" },
-            ServiceId = duplicate.Metadata.Id, LayerIndex = 0, ServiceLocalId = "0", IsPrimary = false
+            ServiceId = duplicate.Metadata.Id,
+            LayerIndex = 0,
+            ServiceLocalId = "0",
+            IsPrimary = false
         };
         ((TestMetadataV2GraphProvider)_fixture.GetService<IMetadataV2GraphProvider>()).SetGraph(snapshot.Graph with
         {

@@ -137,9 +137,14 @@ internal static partial class AdminLayerAuthoringEndpoints
         var display = resource.Display ?? new();
         return Results.Json(ApiResponse<LayerDisplayResponse>.CreateSuccess(new()
         {
-            LayerId = layerId, MinScale = display.MinScale, MaxScale = display.MaxScale,
-            DefaultVisibility = display.DefaultVisibility, DisplayField = display.DisplayField,
-            Queryable = display.Queryable, HasZ = display.HasZ, HasM = display.HasM
+            LayerId = layerId,
+            MinScale = display.MinScale,
+            MaxScale = display.MaxScale,
+            DefaultVisibility = display.DefaultVisibility,
+            DisplayField = display.DisplayField,
+            Queryable = display.Queryable,
+            HasZ = display.HasZ,
+            HasM = display.HasM
         }), LayerDisplaySpatialJsonContext.Default.ApiResponseLayerDisplayResponse);
     }
 
@@ -148,8 +153,11 @@ internal static partial class AdminLayerAuthoringEndpoints
         var spatial = resource.Spatial ?? new();
         return Results.Json(ApiResponse<LayerSpatialResponse>.CreateSuccess(new()
         {
-            LayerId = layerId, SpatialReference = spatial.SpatialReference, GeometryType = spatial.GeometryType,
-            SupportedCrs = spatial.SupportedCrs, StorageCrs = spatial.StorageCrs,
+            LayerId = layerId,
+            SpatialReference = spatial.SpatialReference,
+            GeometryType = spatial.GeometryType,
+            SupportedCrs = spatial.SupportedCrs,
+            StorageCrs = spatial.StorageCrs,
             StorageCrsCoordinateEpoch = spatial.StorageCrsCoordinateEpoch
         }), LayerDisplaySpatialJsonContext.Default.ApiResponseLayerSpatialResponse);
     }
