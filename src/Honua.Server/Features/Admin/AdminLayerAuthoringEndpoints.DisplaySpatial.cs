@@ -20,13 +20,13 @@ internal static partial class AdminLayerAuthoringEndpoints
         ReadLayerConfigurationAsync(layerId, context, resource => DisplayResponse(layerId, resource));
 
     private static Task<IResult> HandleSetDisplay(int layerId, LayerDisplayUpdateRequest request, HttpContext context) =>
-        WriteLayerConfigurationAsync(layerId, context, resource => ApplyDisplay(resource, request), resource => DisplayResponse(layerId, resource));
+        WriteLayerConfigurationAsync(layerId, context, (resource => ApplyDisplay(resource, request), resource => DisplayResponse(layerId, resource)));
 
     private static Task<IResult> HandleGetSpatial(int layerId, HttpContext context) =>
         ReadLayerConfigurationAsync(layerId, context, resource => SpatialResponse(layerId, resource));
 
     private static Task<IResult> HandleSetSpatial(int layerId, LayerSpatialUpdateRequest request, HttpContext context) =>
-        WriteLayerConfigurationAsync(layerId, context, resource => ApplySpatial(resource, request), resource => SpatialResponse(layerId, resource));
+        WriteLayerConfigurationAsync(layerId, context, (resource => ApplySpatial(resource, request), resource => SpatialResponse(layerId, resource)));
 
     private static async Task<IResult> ReadLayerConfigurationAsync(int layerId, HttpContext context,
         Func<MetadataV2Resource, IResult> respond)
@@ -42,13 +42,13 @@ internal static partial class AdminLayerAuthoringEndpoints
     }
 
     private static async Task<IResult> WriteLayerConfigurationAsync(int layerId, HttpContext context,
-        Func<MetadataV2Resource, MetadataV2Resource> mutate, Func<MetadataV2Resource, IResult> respond)
+        (Func<MetadataV2Resource, MetadataV2Resource> Mutate, Func<MetadataV2Resource, IResult> Respond) edit)
     {
         var store = context.RequestServices.GetRequiredService<IMetadataV2GraphStore>();
         AdminLayerConfigurationTargets.AdminLayerConfigurationTarget target;
         try
         {
-            target = await AdminLayerConfigurationTargets.WriteAsync(store, layerId, mutate, context.RequestAborted)
+            target = await AdminLayerConfigurationTargets.WriteAsync(store, layerId, edit.Mutate, context.RequestAborted)
                 .ConfigureAwait(false);
         }
         catch (LayerConfigurationValidationException exception)
@@ -61,7 +61,7 @@ internal static partial class AdminLayerAuthoringEndpoints
             return ProblemDetailsHelpers.CreateAdminProblem(context, 404, "Layer not found.");
         await context.RequestServices.GetRequiredService<OutputCacheInvalidationService>()
             .InvalidateServiceCatalogAsync(null, null, context.RequestAborted).ConfigureAwait(false);
-        return await ReadLayerConfigurationAsync(layerId, context, respond).ConfigureAwait(false);
+        return await ReadLayerConfigurationAsync(layerId, context, edit.Respond).ConfigureAwait(false);
     }
 
     private static MetadataV2Resource ApplyDisplay(MetadataV2Resource resource, LayerDisplayUpdateRequest request)

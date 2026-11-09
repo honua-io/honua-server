@@ -36,7 +36,7 @@ internal static partial class ServiceSettingsEndpoints
     }
 
     private static string[] FindLayerMetadataResourceIds(MetadataV2GraphSnapshot snapshot,
-        IReadOnlySet<string> serviceIds, int layerId) => snapshot.Graph.Publications
+        HashSet<string> serviceIds, int layerId) => snapshot.Graph.Publications
         .Where(publication => serviceIds.Contains(publication.ServiceId) &&
             publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
             snapshot.IsRoutable(publication) && publication.LayerIndex == layerId)
