@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.MultiTenancy.Abstractions;
@@ -22,6 +23,8 @@ internal static partial class FeatureStreamEndpoints
     private const int SubscriptionBboxSrid = 4326;
     private const string WebSocketTransport = "WebSocket";
     private const string SseTransport = "SSE";
+    private const int BaselineGuidanceMaxProbeFeatures = 5000;
+    private static readonly TimeSpan BaselineGuidanceLookupBudget = TimeSpan.FromSeconds(1);
 
     public static void MapFeatureStreamEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -174,7 +177,6 @@ internal static partial class FeatureStreamEndpoints
         [FromServices] FeatureStreamDependencies deps,
         [FromServices] DeploymentIdentity deploymentIdentity,
         [FromServices] Conformance.FeatureStreamConformanceRunRegistry conformance,
-        ILogger<FeatureStreamEndpointsLog> logger,
         HttpContext context)
     {
         var options = deps.Options.Value;
@@ -193,6 +195,7 @@ internal static partial class FeatureStreamEndpoints
             .ToArray();
         using var baselineBudget = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
         baselineBudget.CancelAfter(BaselineGuidanceLookupBudget);
+        var logger = context.RequestServices.GetRequiredService<ILogger<FeatureStreamEndpointsLog>>();
         var layerCapabilities = new List<FeatureStreamLayerCapability>(visibleLayers.Length);
         foreach (var layer in visibleLayers)
         {
@@ -212,7 +215,7 @@ internal static partial class FeatureStreamEndpoints
                 Name = layer.Resource.Metadata.Name,
                 CanSubscribe = enabled,
                 CanCompleteBaseline = enabled
-                    ? await ProbeBaselineCompletionAsync(deps, layer.LayerId, context, logger, baselineBudget.Token).ConfigureAwait(false)
+                    ? await ProbeBaselineCompletionAsync(layer.LayerId).ConfigureAwait(false)
                     : null,
                 SupportsSpatialFilters = layer.Resource.ReadGeometryType() is not MetadataV2GeometryType.None,
                 SupportsTemporalFilters = supportsTemporalFilters,
@@ -254,6 +257,32 @@ internal static partial class FeatureStreamEndpoints
         return Results.Json(
             ApiResponse<FeatureStreamCapabilitiesResponse>.CreateSuccess(response),
             FeatureStreamJsonContext.Default.ApiResponseFeatureStreamCapabilitiesResponse);
+
+        async Task<bool?> ProbeBaselineCompletionAsync(int layerId)
+        {
+            context.RequestAborted.ThrowIfCancellationRequested();
+            var cancellationToken = baselineBudget.Token;
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return null;
+            }
+
+            try
+            {
+                var featureCap = options.MaxSnapshotFeatures;
+                var probeLimit = Math.Min(featureCap, BaselineGuidanceMaxProbeFeatures) + 1;
+                var ids = await deps.FeatureReader.QueryObjectIdsAsync(layerId,
+                    new FeatureQuery { Limit = probeLimit }, cancellationToken)
+                    .WaitAsync(cancellationToken).ConfigureAwait(false);
+                // Visible ids beyond the cap prove truncation; fewer ids cannot prove the byte budget fits.
+                return ids.Length > featureCap ? false : null;
+            }
+            catch (Exception exception) when (exception is not OutOfMemoryException && !context.RequestAborted.IsCancellationRequested)
+            {
+                FeatureStreamLog.BaselineGuidanceUnavailable(logger, layerId, exception);
+                return null;
+            }
+        }
     }
 
     private static IResult HandleListSessions(
