@@ -2091,4 +2091,10 @@ if [[ -n "${PYTHON_BIN}" ]]; then
   "${PYTHON_BIN}" scripts/ci/fixtures/validate-shard-resources.py
 fi
 
+if [[ -n "${PYTHON_BIN}" ]]; then
+  "${PYTHON_BIN}" scripts/ci/fixtures/test-js-bootstrap-cleanup.py
+  "${PYTHON_BIN}" scripts/ci/fixtures/test-owned-server.py
+  "${PYTHON_BIN}" scripts/ci/fixtures/test-shell-server-ownership.py
+fi
+
 echo "CI router validation passed."
