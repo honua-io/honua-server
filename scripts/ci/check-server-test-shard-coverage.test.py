@@ -652,10 +652,10 @@ public class Tests
     assert MODULE.unresolved_method_classes(found) == ["Ns.Tests"]
 
 
-def test_gp_nas_partition_preserves_every_runnable_method_and_budget() -> None:
+def test_geoservices_partition_preserves_every_runnable_method_and_budget() -> None:
     config = json.loads((REPOSITORY_ROOT / ".github/ci-shards.json").read_text())
     partition = next(p for p in config["shard_partitions"]
-                     if p["name"] == "GPServer and NAServer capacity partition")
+                     if p["name"] == "GeoServices FeatureServer and GPServer Integration")
     assert partition["granularity"] == "method"
     shards = {s["name"]: s for s in config["shards"]}
     parsed = {name: MODULE._FilterParser(s["filter"]).parse() for name, s in shards.items()}
@@ -673,20 +673,21 @@ def test_gp_nas_partition_preserves_every_runnable_method_and_budget() -> None:
     assert selected > 100
     soap = "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests"
     for method, expected in (("GetJobStatus_InvalidProgressHint_ReturnsSoapFaultBeforeJobLookup",
-                             "GeoServices GPServer SOAP Progress"),
+                             "GeoServices Maintenance and Durable Jobs"),
                             ("SoapSubmitJob_PublishedName_UsesCanonicalPlanAndBinding",
-                             "GeoServices GPServer SOAP")):
+                             "GeoServices SOAP and MVT Tiles")):
         assert method in classes[f"{shards[partition['children'][0]]['csproj']}::{soap}"]["methods"]
         assert [name for name in partition["children"]
                 if MODULE._eval(parsed[name], soap + "." + method)] == [expected]
     for name in partition["children"]:
-        assert shards[name]["test_timeout_minutes"] == 22
-        assert shards[name]["timeout_minutes"] == 32
+        test_budget, job_budget = (28, 38) if name == "FeatureServer Replica" else (22, 32)
+        assert shards[name]["test_timeout_minutes"] == test_budget
+        assert shards[name]["timeout_minutes"] == job_budget
 
 
 test_method_partition_rejects_holes_duplicates_and_leaks()
 test_method_partition_rejects_unresolved_runnable_methods()
-test_gp_nas_partition_preserves_every_runnable_method_and_budget()
+test_geoservices_partition_preserves_every_runnable_method_and_budget()
 
 
 
