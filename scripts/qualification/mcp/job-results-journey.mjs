@@ -84,10 +84,10 @@ function verifyGeometry(bytes) {
 
 export async function jobResultsJourney({ baseUrl, apiKey, otherApiKey, missingJobId = `missing-${randomUUID()}` }) {
   if (!apiKey || !otherApiKey || apiKey === otherApiKey) throw new Error('distinct-callers-required');
-  const owner = await openInstalledClient({ baseUrl, apiKey, name: 'honua-job-tools-owner', view: 'analyze', timeoutMs: 60_000 });
+  const owner = await openInstalledClient({ baseUrl, apiKey, name: 'honua-job-tools-owner', timeoutMs: 60_000 });
   let other;
   try {
-    other = await openInstalledClient({ baseUrl, apiKey: otherApiKey, name: 'honua-job-tools-other', view: 'analyze', timeoutMs: 60_000 });
+    other = await openInstalledClient({ baseUrl, apiKey: otherApiKey, name: 'honua-job-tools-other', timeoutMs: 60_000 });
     for (const client of [owner.client, other.client]) {
       const tools = await discoverInstalledTools(client);
       for (const name of ['honua_execute_plan', 'honua_list_jobs', 'honua_get_job_results']) {

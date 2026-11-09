@@ -33,7 +33,7 @@ async function run(mode = 'positive') {
     for await (const chunk of request) chunks.push(chunk);
     const body = JSON.parse(Buffer.concat(chunks).toString());
     const foreign = request.headers['x-api-key'] === 'other-key';
-    calls.push({ body, foreign });
+    calls.push({ body, foreign, path: request.url });
     if (!('id' in body)) { response.writeHead(202).end(); return; }
     let result;
     if (body.method === 'initialize') {
@@ -99,6 +99,7 @@ test('published SDK submits, polls and checks result geometry through tools and 
   assert.equal(result.crossUserListed, false);
   assert.match(result.geometry.sha256, /^[a-f0-9]{64}$/);
   assert.ok(calls.every(({ body }) => !body.method.startsWith('resources/')));
+  assert.ok(calls.filter(({ body }) => body.method === 'tools/list').every(({ path }) => path === '/mcp'));
   assert.ok(calls.some(({ body }) => body.method === 'tools/call' && body.params.name === 'honua_execute_plan'));
   assert.ok(calls.filter(({ body, foreign }) => !foreign && body.params?.name === 'honua_list_jobs').length >= 2);
 });

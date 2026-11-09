@@ -46,7 +46,7 @@ The workflow retains separate control-count/source evidence with
 ## Job status and result tools
 
 `job-results-journey.mjs` uses that same published SDK and immutable dependency
-lock. In the `analyze` view it discovers `honua_execute_plan`, `honua_list_jobs`
+lock. Through default discovery it finds `honua_execute_plan`, `honua_list_jobs`
 and `honua_get_job_results`, submits a point buffer in EPSG:3857, polls the
 caller-scoped job list to `Succeeded`, and reads the completed result package.
 It verifies the returned GeoJSON bytes, input parameters, polygon radius,
