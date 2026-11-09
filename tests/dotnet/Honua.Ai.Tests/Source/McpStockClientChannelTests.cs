@@ -14,6 +14,8 @@ using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Newtonsoft.Json.Linq;
+using Newtonsoft.Json.Schema;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
 
@@ -27,6 +29,8 @@ public sealed partial class McpConnectionDiscoveryIntegrationTests
         await using var fixture = CreateStockFixture();
         await fixture.InitializeAsync();
         using var admin = fixture.CreateAdminClient();
+        var descriptors = (await fixture.Services.GetRequiredService<McpDataAccessSurface>().GetAllToolsAsync())
+            .ToDictionary(tool => tool.Name, tool => McpWorkflowViewDescriptorClassifier.Describe(tool), StringComparer.Ordinal);
         var largestPayloadBytes = 0;
         var views = McpWorkflowViewCatalog.All.Keys.Append("full");
         foreach (var view in views)
@@ -50,6 +54,11 @@ public sealed partial class McpConnectionDiscoveryIntegrationTests
                 mirroredPayloads.Should().Be(1, $"{view}/{name} must mirror the complete JSON payload exactly once");
                 if (!result.TryGetProperty("isError", out var isError) || !isError.GetBoolean())
                 {
+                    if (descriptors[name].OutputSchema is { } outputSchema)
+                    {
+                        var valid = JToken.Parse(structured.GetRawText()).IsValid(JSchema.Parse(outputSchema.GetRawText()), out IList<ValidationError> errors);
+                        valid.Should().BeTrue($"{view}/{name} must honor its output schema: {string.Join(", ", errors.Select(error => $"{error.ErrorType} at {error.Path}"))}");
+                    }
                     largestPayloadBytes = Math.Max(largestPayloadBytes, Encoding.UTF8.GetByteCount(structured.GetRawText()));
                 }
             }
