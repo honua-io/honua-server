@@ -43,9 +43,9 @@ and Snowflake retain their JIT runtime requirement. Check each provider's
    [Compose](docker-compose.md), [Kubernetes](kubernetes.md), or
    [upgrade procedure](upgrade-and-rollback.md). Changing image variant does
    not replace migration and rollback checks.
-4. After startup, inspect the authenticated capabilities manifest through your
-   installed Honua client. Where available, `dataStores.installedProviders`
-   reports runtime provider registrations. An absent inventory means unknown
+4. After startup, inspect the authenticated capabilities manifest's data-store
+   inventory through your installed Honua client, where your release documents
+   one. An absent inventory means unknown
    availability; it does not mean that every store is supported. A registration
    also does not prove connectivity or permission to use a particular database.
 5. Check readiness and open the expected Connection as the intended operator.

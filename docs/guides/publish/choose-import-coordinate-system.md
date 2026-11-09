@@ -18,6 +18,11 @@ Do not assume that leaving a target blank preserves a projected source on an
 older installation. Use an explicit supported target matching the source, or
 wait for the updated server and client.
 
+On older installations, MCP `ingest_dataset` always stores EPSG:4326 and accepts
+no target. Use the Admin import through a compatible Honua SDK with an explicit
+`targetSrid` matching the source to retain a projected system until the updated
+server is installed.
+
 The updated direct file-preview contract includes `coordinateSystem` and a
 successful import reports `sourceSrid`, `storedSrid` and `reprojected`. If those
 fields or the corresponding Console controls are absent, this guide does not

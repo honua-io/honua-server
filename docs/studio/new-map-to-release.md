@@ -48,22 +48,22 @@ server approval outcome; do not turn a pending result into a completed edit.
    draft.
 
 Standalone Studio's lifecycle panel uses **Validate** and **Save as version**
-for the equivalent lifecycle actions. Follow the labels in your installed
+for the equivalent lifecycle actions and asks you to type the package key
+before confirming publication or rollback. Follow the labels in your installed
 client rather than assuming that every host has identical controls.
 
 ## Review and release
 
 1. Choose **Review publication** on the saved version to publish. Check its
-   version and content hash, then review the **Publication route** and
+   saved version number and package key, then review the **Publication route** and
    **Who can see this map?** audience,
    including who can read every layer dependency. Resolve validation errors and
    explicitly acknowledge any warning the client requires.
 2. Choose **Publish reviewed version** once. Keep the
-   returned operation and proposal identities. If a confirmation asks for the
-   package key, type the key of this map after reviewing the version.
+   returned operation and proposal identities.
 3. Follow the actual result. A completed publication can return its viewer
    link immediately; an awaiting-approval result remains pending. In that case,
-   follow **Open approval** and use the
+   follow **Review approvals** and use the
    [interactive human approval flow](../guides/secure/approve-agent-changes.md).
    The requesting person can approve in the updated one-human model.
 4. Return to the original publication and choose **Refresh publication status**.

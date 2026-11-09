@@ -30,7 +30,7 @@ grant approval authority.
 3. Select that proposal. Review its target environment, resource, requested
    change, warnings, and exact saved version or revision. Check that it is the
    action you intended, rather than a newer edit or another user's request.
-4. Choose **Approve** only if the displayed change is acceptable. Choose
+4. Choose **Approve & submit** only if the displayed change is acceptable. Choose
    **Reject** and give a reason if it is not. If the human verification has
    expired, sign in again before making the decision.
 5. Follow the same operation to its terminal result and read back the changed
