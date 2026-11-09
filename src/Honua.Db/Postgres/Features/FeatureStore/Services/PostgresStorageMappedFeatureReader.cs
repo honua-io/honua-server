@@ -620,7 +620,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             addParameter,
             distinctObjectIdExpression,
             useMapping && string.IsNullOrWhiteSpace(_mapping.AttributesColumn) ? _qualifiedTableName : null,
-            _resource.Fields.Select(field => field.Name).ToArray());
+            _resource.SchemaFields.Select(field => field.Name).ToArray());
 
     private static string BuildAttributesJsonbExpression(
         MetadataV2Field[] fields,
