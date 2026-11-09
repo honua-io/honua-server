@@ -42,7 +42,7 @@ jobs:
           python-version: '3.12'
       - name: Check archive and assertion refusal controls
         run: |
-          python3 -m unittest discover -s scripts/docker -p 'test_shipped_quickstart.py' -v
+          python3 -m unittest discover -s scripts/docker -p 'test_shipped_quickstart*.py' -v
           python3 -m unittest discover -s scripts/docs-validation -p 'test_install_artifacts.py' -v
 
   package:
