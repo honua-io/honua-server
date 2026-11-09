@@ -22051,6 +22051,7 @@
     },
     "/metadata/layers/{layerId}/discovery": {
       "get": {
+        "operationId": "getAdminLayerDiscovery",
         "tags": [
           "Metadata"
         ],
@@ -22089,6 +22090,7 @@
         }
       },
       "put": {
+        "operationId": "updateAdminLayerDiscovery",
         "tags": [
           "Metadata"
         ],
@@ -22145,6 +22147,7 @@
     },
     "/services/{serviceName}/discovery": {
       "get": {
+        "operationId": "getAdminServiceDiscovery",
         "tags": [
           "Metadata"
         ],
@@ -22183,6 +22186,7 @@
         }
       },
       "put": {
+        "operationId": "updateAdminServiceDiscovery",
         "tags": [
           "Metadata"
         ],
