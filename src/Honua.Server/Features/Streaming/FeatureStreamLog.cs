@@ -155,6 +155,6 @@ internal static partial class FeatureStreamLog
     public static partial void SubscriberPolicyRefreshFailed(ILogger logger, Guid sessionId, Exception exception);
 
     [LoggerMessage(EventId = 5031, Level = LogLevel.Debug,
-        Message = "Feature stream baseline guidance for layer {LayerId} is unknown because its count was unavailable.")]
+        Message = "Feature stream baseline guidance for layer {LayerId} is unknown because its bounded id probe was unavailable.")]
     public static partial void BaselineGuidanceUnavailable(ILogger logger, int layerId, Exception exception);
 }

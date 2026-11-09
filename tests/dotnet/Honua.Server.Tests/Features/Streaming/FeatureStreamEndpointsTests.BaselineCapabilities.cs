@@ -1,6 +1,8 @@
 // Copyright (c) Honua Geo Inc. All rights reserved.
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
+using System.Collections.Immutable;
+using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
@@ -28,7 +30,8 @@ public sealed partial class FeatureStreamEndpointsTests
     public async Task Capabilities_BaselineSize_ReportsOnlyProvenOverLimit(long count, bool? expected)
     {
         var reader = Substitute.For<IFeatureReader>();
-        reader.CountAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>()).Returns(count);
+        reader.QueryObjectIdsAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Enumerable.Range(0, checked((int)count)).Select(value => (long)value).ToImmutableArray());
         var fixture = BaselineCapabilityFixture(reader);
         await fixture.InitializeAsync();
         try
@@ -50,9 +53,10 @@ public sealed partial class FeatureStreamEndpointsTests
                     "a feature count within the cap does not prove that the byte budget can complete");
             }
 
-            await reader.DidNotReceive().CountAsync(9, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+            await reader.DidNotReceive().QueryObjectIdsAsync(9, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
             await reader.Received(1)
-                .CountAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+                .QueryObjectIdsAsync(0, Arg.Is<FeatureQuery>(query => query.Limit == 6), Arg.Any<CancellationToken>());
+            await reader.DidNotReceive().CountAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
         }
         finally
         {
@@ -65,8 +69,8 @@ public sealed partial class FeatureStreamEndpointsTests
     public async Task Capabilities_BaselineReaderUnavailable_ReportsUnknown()
     {
         var reader = Substitute.For<IFeatureReader>();
-        reader.CountAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromException<long>(new InvalidOperationException("provider detail")));
+        reader.QueryObjectIdsAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<ImmutableArray<long>>(new InvalidOperationException("provider detail")));
         var fixture = BaselineCapabilityFixture(reader);
         await fixture.InitializeAsync();
         try
@@ -87,17 +91,17 @@ public sealed partial class FeatureStreamEndpointsTests
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/streaming/features/capabilities")]
-    public async Task Capabilities_BaselineCountExceedsLookupBudget_ReportsUnknown()
+    public async Task Capabilities_BaselineProbeExceedsLookupBudget_ReportsUnknown()
     {
         var reader = Substitute.For<IFeatureReader>();
         CancellationToken observedToken = default;
-        reader.CountAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+        reader.QueryObjectIdsAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
             .Returns(async call =>
             {
                 var cancellationToken = call.ArgAt<CancellationToken>(2);
                 observedToken = cancellationToken;
                 await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
-                return 0L;
+                return ImmutableArray<long>.Empty;
             });
         var fixture = BaselineCapabilityFixture(reader);
         await fixture.InitializeAsync();
@@ -132,6 +136,32 @@ public sealed partial class FeatureStreamEndpointsTests
             var layer = document.RootElement.GetProperty("data").GetProperty("layers")[0];
             layer.GetProperty("canSubscribe").GetBoolean().Should().BeFalse();
             layer.GetProperty("canCompleteBaseline").ValueKind.Should().Be(JsonValueKind.Null);
+            await reader.DidNotReceive().QueryObjectIdsAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/streaming/features/capabilities")]
+    public async Task Capabilities_LargeFeatureCap_KeepsProbeBoundedAndUnknown()
+    {
+        var reader = Substitute.For<IFeatureReader>();
+        reader.QueryObjectIdsAsync(0, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Enumerable.Range(0, 5001).Select(value => (long)value).ToImmutableArray());
+        var fixture = BaselineCapabilityFixture(reader, int.MaxValue);
+        await fixture.InitializeAsync();
+        try
+        {
+            using var response = await fixture.CreateAdminClient().GetAsync("/api/v1/streaming/features/capabilities");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            document.RootElement.GetProperty("data").GetProperty("layers")[0]
+                .GetProperty("canCompleteBaseline").ValueKind.Should().Be(JsonValueKind.Null);
+            await reader.Received(1).QueryObjectIdsAsync(0,
+                Arg.Is<FeatureQuery>(query => query.Limit == 5001), Arg.Any<CancellationToken>());
             await reader.DidNotReceive().CountAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
         }
         finally
@@ -140,10 +170,14 @@ public sealed partial class FeatureStreamEndpointsTests
         }
     }
 
-    private static WebAppFixture BaselineCapabilityFixture(IFeatureReader reader)
+    private static WebAppFixture BaselineCapabilityFixture(IFeatureReader reader, int maximumSnapshotFeatures = 5)
         => new WebAppFixture()
             .ReplaceService<ILicenseEntitlementService>(new TestLicenseEntitlementService(HonuaEdition.Pro))
             .ReplaceService<IMetadataV2GraphProvider>(ServiceLevelAccessStreamLayerCatalog.BuildMetadataProvider())
             .ReplaceService(reader)
-            .ConfigureWebHost(builder => builder.UseSetting("FeatureStreaming:MaxSnapshotFeatures", "5"));
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("FeatureStreaming:MaxSnapshotFeatures", maximumSnapshotFeatures.ToString(CultureInfo.InvariantCulture));
+                builder.UseSetting("FeatureStreaming:MaxSnapshotScanRows", Math.Max(20000, maximumSnapshotFeatures).ToString(CultureInfo.InvariantCulture));
+            });
 }

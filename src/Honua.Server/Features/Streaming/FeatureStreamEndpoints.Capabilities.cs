@@ -7,6 +7,9 @@ namespace Honua.Server.Features.Streaming;
 
 internal static partial class FeatureStreamEndpoints
 {
+    private const int BaselineGuidanceMaxProbeFeatures = 5000;
+    private static readonly TimeSpan BaselineGuidanceLookupBudget = TimeSpan.FromSeconds(1);
+
     private static async Task<bool?> ProbeBaselineCompletionAsync(
         FeatureStreamDependencies deps,
         int layerId,
@@ -22,11 +25,12 @@ internal static partial class FeatureStreamEndpoints
 
         try
         {
-            var count = await deps.FeatureReader.CountAsync(layerId, new FeatureQuery(), cancellationToken)
+            var featureCap = deps.Options.Value.MaxSnapshotFeatures;
+            var probeLimit = Math.Min(featureCap, BaselineGuidanceMaxProbeFeatures) + 1;
+            var ids = await deps.FeatureReader.QueryObjectIdsAsync(layerId, new FeatureQuery { Limit = probeLimit }, cancellationToken)
                 .WaitAsync(cancellationToken).ConfigureAwait(false);
-            // The shared reader enforces row visibility. Estimates cannot prove an overflow,
-            // and a count inside the feature cap cannot prove the byte budget will fit.
-            return count > deps.Options.Value.MaxSnapshotFeatures ? false : null;
+            // Visible ids beyond the cap prove truncation; fewer ids cannot prove the byte budget fits.
+            return ids.Length > featureCap ? false : null;
         }
         catch (Exception exception) when (exception is not OutOfMemoryException && !context.RequestAborted.IsCancellationRequested)
         {

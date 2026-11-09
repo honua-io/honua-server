@@ -73,16 +73,19 @@ Streamed framing:
 - **`reason`** is `initial` for a fresh subscription, or `cursor-expired` / `cursor-invalid` when you reconnected with a `cursor` the server can no longer replay from. In those cases the server sends a **replacement snapshot** instead of silently continuing with deltas.
 - **`complete: false`** means the baseline hit `FeatureStreaming__MaxSnapshotFeatures` (default 5000), `FeatureStreaming__MaxSnapshotScanRows` (default 20000), or `FeatureStreaming__MaxSnapshotBytes` (default 4 MiB). Do not treat a truncated baseline as authoritative state — narrow the subscription scope or raise the bounds. All three are advertised on `/api/v1/streaming/features/capabilities`, and the stream sends a terminating `status: error` frame naming which bound it hit. The byte budget is the one a large-geometry layer reaches first, and it is what keeps a baseline deliverable through a response path that buffers before returning (API gateways and serverless invoke responses are commonly capped at 6 MB).
 
-Each advertised layer also carries `canCompleteBaseline`, separately from `canSubscribe`.
-`false` means an exact count of the caller's visible features exceeded the feature cap
-when capabilities were read. `null` means unknown: the count fits, the store could not
-answer within the shared one-second lookup budget, or streaming is disabled. A count
-alone cannot establish that the byte budget fits, so the server currently never emits
-`true`. This guidance concerns an unfiltered, single-layer baseline; it does not reserve
-a snapshot or predict later edits. Always check the actual baseline's `complete` value.
 - **An unservable snapshot is a typed problem, not a dead stream.** If a layer in the subscription scope has left the catalog, or its backing store will not accept the baseline read, the request is refused with an RFC 7807 `503` problem document naming the condition — before the stream is opened, since a committed stream can no longer carry a status code.
 - **On SSE, only `snapshot-end` carries an `id:`.** A baseline becomes a resumable cursor only once it is whole, so a connection that drops mid-baseline reconnects (via `Last-Event-ID`) into another snapshot rather than a delta tail with a half-applied baseline.
 - **A replay-window gap ends the stream before the first post-gap delta is emitted.** Reconnect with the last complete cursor; snapshot mode then returns a replacement snapshot instead of letting a retention race leave stale state marked current.
+
+Each advertised layer also carries `canCompleteBaseline`, separately from `canSubscribe`.
+`false` means a bounded probe found more of the caller's visible feature IDs than the
+feature cap allows when capabilities were read. `null` means unknown: fewer IDs were
+found, the store returned an error, its shared one-second lookup budget expired, or
+streaming is disabled. The probe reads at most 5001 IDs per layer and does not count
+the whole dataset. It cannot establish that the byte budget fits, so the server
+currently never emits `true`. This guidance concerns an unfiltered, single-layer
+baseline; it does not reserve a snapshot or predict later edits. Always check the
+actual baseline's `complete` value.
 
 Reconnecting with a still-replayable `cursor` continues with deltas and no snapshot, so steady-state reconnects stay cheap.
 

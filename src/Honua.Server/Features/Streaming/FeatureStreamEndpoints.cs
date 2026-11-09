@@ -192,7 +192,7 @@ internal static partial class FeatureStreamEndpoints
                     layer.Service))
             .ToArray();
         using var baselineBudget = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
-        baselineBudget.CancelAfter(TimeSpan.FromSeconds(1));
+        baselineBudget.CancelAfter(BaselineGuidanceLookupBudget);
         var layerCapabilities = new List<FeatureStreamLayerCapability>(visibleLayers.Length);
         foreach (var layer in visibleLayers)
         {
