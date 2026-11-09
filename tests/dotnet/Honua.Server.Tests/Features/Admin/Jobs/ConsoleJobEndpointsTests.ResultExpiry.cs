@@ -20,20 +20,23 @@ namespace Honua.Server.Tests.Features.Admin.Jobs;
 public sealed partial class ConsoleJobEndpointsTests
 {
     [IntegrationTheory]
-    [InlineData(-1, false)]
-    [InlineData(0, true)]
-    [InlineData(1, true)]
+    [InlineData(-1, false, ExecutionJobStatus.Succeeded, true)]
+    [InlineData(0, true, ExecutionJobStatus.Succeeded, true)]
+    [InlineData(1, true, ExecutionJobStatus.Succeeded, true)]
+    [InlineData(0, true, ExecutionJobStatus.Failed, true)]
+    [InlineData(0, true, ExecutionJobStatus.Cancelled, true)]
+    [InlineData(0, true, ExecutionJobStatus.Succeeded, false)]
     [Endpoint("GET /api/v1/admin/jobs/{jobId}/diagnostics")]
     [Endpoint("GET /api/v1/admin/jobs/{jobId}/artifacts")]
-    public async Task GetJobDiagnostics_ResultRetentionBoundary_AgreesWithArtifactListing(long offsetTicks, bool expired)
+    public async Task GetJobDiagnostics_ResultRetentionBoundary_AgreesWithArtifactListing(long offsetTicks, bool expired, ExecutionJobStatus status, bool hasCompletionTime)
     {
         var completedAt = _retentionClock.GetUtcNow();
         var retention = _fixture.Services.GetRequiredService<IOptionsMonitor<GeoprocessingExecutorOptions>>().CurrentValue.ResultRetention;
         _retentionClock.UtcNow = completedAt + retention + TimeSpan.FromTicks(offsetTicks);
-        _jobStore.Set(CreateJob("job-result-retention", ExecutionJobStatus.Succeeded, completedAt.AddMinutes(-1), "corr-retention") with
+        _jobStore.Set(CreateJob("job-result-retention", status, completedAt.AddMinutes(-1), "corr-retention") with
         {
-            CompletedAt = completedAt,
-            UpdatedAt = _retentionClock.GetUtcNow(),
+            CompletedAt = hasCompletionTime ? completedAt : null,
+            UpdatedAt = hasCompletionTime ? _retentionClock.GetUtcNow() : completedAt,
             ArtifactReferences = ["https://example.test/results/output.json", "data:text/plain,private-result-value"]
         });
 
@@ -54,7 +57,10 @@ public sealed partial class ConsoleJobEndpointsTests
         items[1].GetProperty("availability").GetString().Should().Be(expired ? "Expired" : "Redacted");
         if (expired)
         {
-            foreach (var item in items) item.TryGetProperty("providerLink", out _).Should().BeFalse();
+            foreach (var item in items)
+            {
+                item.TryGetProperty("providerLink", out _).Should().BeFalse();
+            }
         }
         listing.RootElement.GetRawText().Should().NotContain("private-result-value");
     }
