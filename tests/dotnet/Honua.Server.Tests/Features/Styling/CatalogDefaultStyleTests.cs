@@ -181,8 +181,8 @@ public sealed class CatalogDefaultStyleTests : IAsyncLifetime
         return styleId;
     }
 
-    private static string CircleStyle(string color) => $$$"""
-        {"version":8,"sources":{},"layers":[{"id":"points","type":"circle","source":"features",
-        "paint":{"circle-color":"{{{color}}}","circle-radius":10}}]}
-        """;
+    private static string CircleStyle(string color) => """
+        {"version":8,"sources":{"features":{"type":"geojson","data":{"type":"FeatureCollection","features":[]}}},"layers":[{"id":"points","type":"circle","source":"features",
+        "paint":{"circle-color":"#000000","circle-radius":10}}]}
+        """.Replace("#000000", color, StringComparison.Ordinal);
 }
