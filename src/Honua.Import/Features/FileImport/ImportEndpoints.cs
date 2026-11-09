@@ -73,8 +73,9 @@ internal static partial class ImportEndpoints
             .RequireAdminAuthorization();
 
         MapImportRoutes(v1Group, isV1: true);
-        app.MapGet("/api/v{version:apiVersion}/admin/coordinate-systems", HandleCoordinateSystemsAsync)
-            .WithApiVersionSet().HasApiVersion(1, 0)
+        var adminGroup = app.MapGroup("/api/v{version:apiVersion}/admin")
+            .WithApiVersionSet().HasApiVersion(1, 0);
+        adminGroup.MapGet("/coordinate-systems", HandleCoordinateSystemsAsync)
             .WithTags("Import").WithName("SearchCoordinateSystemsV1")
             .RequireAdminAuthorization();
 
