@@ -9,6 +9,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Extensions;
 using Honua.TestKit.Infrastructure;
 
 namespace Honua.Server.Tests.Features.Catalog;
@@ -51,5 +52,29 @@ public sealed class CatalogEndpointLinksTests : IAsyncLifetime
             using var target = await _fixture.Client.GetAsync(href);
             Assert.Equal(HttpStatusCode.OK, target.StatusCode);
         }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/catalogs/{catalogId}/items")]
+    public async Task ListItems_ServiceInFolder_UsesSharedPublicPathAndResolvableEndpoint()
+    {
+        var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        var service = graph.Services.Single(service => service.Metadata.Name == WebAppFixture.TestServiceId);
+        var provider = (TestMetadataV2GraphProvider)_fixture.GetService<IMetadataV2GraphProvider>();
+        provider.SetGraph(graph with
+        {
+            Folders = [new() { Metadata = new() { Id = "survey", Name = "survey" } }],
+            Services = graph.Services.Select(current => current.Metadata.Id == service.Metadata.Id
+                ? current with { FolderId = "survey", PublicName = "parcels" } : current).ToArray()
+        }, schema: _fixture.CurrentSchema);
+        using var response = await _fixture.Client.GetAsync("/api/v1/catalogs/links/items/service?id=" + Uri.EscapeDataString(service.Metadata.Id));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var endpoint = Assert.Single(document.RootElement.GetProperty("endpoints").EnumerateArray(),
+            endpoint => endpoint.GetProperty("protocol").GetString() == ServiceProtocols.FeatureServer);
+        var href = endpoint.GetProperty("href").GetString()!;
+        Assert.Contains("/rest/services/survey/parcels/FeatureServer", href, StringComparison.Ordinal);
+        using var target = await _fixture.Client.GetAsync(href);
+        Assert.Equal(HttpStatusCode.OK, target.StatusCode);
     }
 }

@@ -39,7 +39,7 @@ public sealed partial class CatalogAudienceEndpointsTests
     private static MetadataV2Catalog Catalog(string id, string audience)
     {
         var json = $$$"""
-            {"metadata":{"id":"{{{id}}}","name":"{{{id}}}","title":"{{{id}}}"},"target":"discovery",
+            {"metadata":{"id":"{{{id}}}","name":"{{{id}}}","title":"{{{id}}}"},"target":"discovery","status":{},
              "configuration":{"audience":{"kind":"{{{audience}}}","roleIds":["responder"]},
              "scope":{"folderIds":[],"tags":[],"kinds":["service","layer","dataset","map","app"]},
              "defaultListing":"automatic"}}

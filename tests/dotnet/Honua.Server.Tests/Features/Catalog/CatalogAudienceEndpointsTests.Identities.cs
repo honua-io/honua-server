@@ -53,6 +53,23 @@ public sealed partial class CatalogAudienceEndpointsTests
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/catalogs/{catalogId}/items")]
+    public async Task ListItems_HiddenLayerMembership_RemovesDependentServiceAndDatasetSummaries()
+    {
+        var graph = Graph();
+        var catalog = graph.Catalogs[0];
+        _provider.SetGraph(graph with { Catalogs = [catalog with { Configuration = catalog.Configuration! with
+        {
+            Memberships = [new() { Item = new() { Kind = "layer", Id = "public-layer" }, HiddenHere = true }]
+        } }] });
+        using var response = await _anonymous.GetAsync("/api/v1/catalogs/public/items");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(0, document.RootElement.GetProperty("total").GetInt32());
+        Assert.All(document.RootElement.GetProperty("facets").EnumerateObject(), facet => Assert.Empty(facet.Value.EnumerateArray()));
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/catalogs/{catalogId}/items")]
     public async Task ListItems_FolderScope_SelectsExactFolderIdentity()
     {
         var graph = Graph();
