@@ -81,7 +81,8 @@ internal sealed class AnthropicStudioAiProxyAdapter : IStudioAiProxyAdapter, ISt
             var body = JsonSerializer.SerializeToUtf8Bytes(BuildRequest(scope), StudioAiProxyJsonContext.Default.AnthropicProxyRequest);
             requiredCredentialFingerprint = scope.RestoredCredentials.SingleOrDefault();
             return body;
-        }, identity) { RequiredCredentialFingerprint = requiredCredentialFingerprint };
+        }, identity)
+        { RequiredCredentialFingerprint = requiredCredentialFingerprint };
     }
 
     public async IAsyncEnumerable<StudioAiChatEvent> StreamPreparedAsync(
