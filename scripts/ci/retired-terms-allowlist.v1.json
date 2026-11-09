@@ -226,8 +226,14 @@
     {
       "path": "src/Honua.Server/Features/Operations/ServicePublishExecutor.cs",
       "rule": "dataset-reference",
-      "line": "                    resourceIds[\"serviceLayerIndex\"] = indexText;",
-      "reason": "ResourceIds is the current canonical operation-result map. This change splits selectors inside that map; the operation DTO vocabulary changes in the approved later admin/jobs migration."
+      "line": "                AddServiceLayerIndex(publishedLayer, details, resourceIds);",
+      "reason": "ResourceIds is the current canonical operation-result map. Synchronous and queued publishing both return its persisted service index; regression assertions retain the current DTO until the approved admin/jobs vocabulary migration."
+    },
+    {
+      "path": "src/Honua.Server/Features/Operations/ServicePublishExecutor.cs",
+      "rule": "dataset-reference",
+      "line": "                AddServiceLayerIndex(publishedLayer, resultDetails, resourceIds);",
+      "reason": "ResourceIds is the current canonical operation-result map. Synchronous and queued publishing both return its persisted service index; regression assertions retain the current DTO until the approved admin/jobs vocabulary migration."
     },
     {
       "path": "src/Honua.Server/Features/Operations/ServicePublishExecutor.cs",
@@ -238,8 +244,32 @@
     {
       "path": "src/Honua.Server/Features/Operations/ServicePublishExecutor.cs",
       "rule": "dataset-reference",
+      "line": "            ResourceIds = resourceIds,",
+      "reason": "ResourceIds is the current canonical operation-result map. Synchronous and queued publishing both return its persisted service index; regression assertions retain the current DTO until the approved admin/jobs vocabulary migration."
+    },
+    {
+      "path": "src/Honua.Server/Features/Operations/ServicePublishExecutor.cs",
+      "rule": "dataset-reference",
+      "line": "            resourceIds[\"serviceLayerIndex\"] = indexText;",
+      "reason": "ResourceIds is the current canonical operation-result map. Synchronous and queued publishing both return its persisted service index; regression assertions retain the current DTO until the approved admin/jobs vocabulary migration."
+    },
+    {
+      "path": "src/Honua.Server/Features/Operations/ServicePublishExecutor.cs",
+      "rule": "dataset-reference",
+      "line": "            resourceIds[\"serviceName\"] = summary.ServiceName;",
+      "reason": "ResourceIds is the current canonical operation-result map. Synchronous and queued publishing both return its persisted service index; regression assertions retain the current DTO until the approved admin/jobs vocabulary migration."
+    },
+    {
+      "path": "src/Honua.Server/Features/Operations/ServicePublishExecutor.cs",
+      "rule": "dataset-reference",
       "line": "            resourceIds[\"storageLayerId\"] = layerText;",
       "reason": "ResourceIds is the current canonical operation-result map. This change splits selectors inside that map; the operation DTO vocabulary changes in the approved later admin/jobs migration."
+    },
+    {
+      "path": "src/Honua.Server/Features/Operations/ServicePublishExecutor.cs",
+      "rule": "dataset-reference",
+      "line": "        Dictionary<string, string> resourceIds)",
+      "reason": "ResourceIds is the current canonical operation-result map. Synchronous and queued publishing both return its persisted service index; regression assertions retain the current DTO until the approved admin/jobs vocabulary migration."
     },
     {
       "path": "src/Honua.Server/Features/Operations/ServicePublishExecutor.cs",
@@ -252,6 +282,12 @@
       "rule": "dataset-reference",
       "line": "        resourceIds.Remove(\"serviceLayerIndex\");",
       "reason": "ResourceIds is the current canonical operation-result map. This change splits selectors inside that map; the operation DTO vocabulary changes in the approved later admin/jobs migration."
+    },
+    {
+      "path": "src/Honua.Server/Features/Operations/ServicePublishExecutor.cs",
+      "rule": "dataset-reference",
+      "line": "        var resourceIds = new Dictionary<string, string>(StringComparer.Ordinal)",
+      "reason": "ResourceIds is the current canonical operation-result map. Synchronous and queued publishing both return its persisted service index; regression assertions retain the current DTO until the approved admin/jobs vocabulary migration."
     },
     {
       "path": "tests/dotnet/Honua.Ai.Tests/ConformanceSchemas/geospatial-mcp/skills/contracts/live-surface.json",
@@ -522,6 +558,24 @@
       "rule": "graph-resource",
       "line": "        public Task<ResourceValidationResult<MetadataV2Resource>> ValidateStorageLayerV2Async(",
       "reason": "Uses the current canonical metadata graph type. The approved C# kind rename is a separate migration step; this identifier change must compile against the existing graph API."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Operations/SynchronousPublishIdentityTests.cs",
+      "rule": "dataset-reference",
+      "line": "        handle.ResourceIds.Should().Contain(\"serviceLayerIndex\", indexText).And.Contain(\"storageLayerId\", \"321\");",
+      "reason": "ResourceIds is the current canonical operation-result map. Synchronous and queued publishing both return its persisted service index; regression assertions retain the current DTO until the approved admin/jobs vocabulary migration."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Operations/SynchronousPublishIdentityTests.cs",
+      "rule": "dataset-reference",
+      "line": "        handle.ResourceIds.Should().Contain(\"serviceName\", \"parcels\").And.NotContainKey(\"serviceLayerIndex\");",
+      "reason": "ResourceIds is the current canonical operation-result map. Synchronous and queued publishing both return its persisted service index; regression assertions retain the current DTO until the approved admin/jobs vocabulary migration."
+    },
+    {
+      "path": "tests/dotnet/Honua.Server.Tests/Features/Operations/SynchronousPublishIdentityTests.cs",
+      "rule": "dataset-reference",
+      "line": "        handle.ResourceIds.Should().NotContainKey(\"serviceLayerIndex\");",
+      "reason": "ResourceIds is the current canonical operation-result map. Synchronous and queued publishing both return its persisted service index; regression assertions retain the current DTO until the approved admin/jobs vocabulary migration."
     },
     {
       "path": "tests/dotnet/Honua.Server.Tests/Features/Protocols/PublicPublicationIdentityTests.Schemas.cs",
