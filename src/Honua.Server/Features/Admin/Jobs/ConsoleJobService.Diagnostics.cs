@@ -723,12 +723,11 @@ internal sealed partial class ConsoleJobService
             };
         }
 
-        var artifactStore = serviceProvider.GetService<IArtifactStore>();
+        var projection = CreateArtifactProjection(job, now);
         var items = new List<ConsoleJobArtifact>(job.ArtifactReferences.Count);
-        var resultsExpired = ResultsExpired(job, now);
         foreach (var reference in job.ArtifactReferences)
         {
-            items.Add(await MapArtifactAsync(reference, artifactStore, resultsExpired, cancellationToken).ConfigureAwait(false));
+            items.Add(await MapArtifactAsync(reference, projection, cancellationToken).ConfigureAwait(false));
         }
 
         var available = items.Count(static a => a.Availability is "Available" or "Redacted");
