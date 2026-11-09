@@ -22,7 +22,7 @@ namespace Honua.Server.Tests.Import;
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.Import)]
-public sealed class DirectImportCrsContractTests : IAsyncLifetime
+public sealed partial class DirectImportCrsContractTests : IAsyncLifetime
 {
     private const string ProjectedPoint = "SRID=2193;POINT (1740000 5420000)";
     private readonly WebAppFixture _fixture = new WebAppFixture().ConfigureWebHost(builder =>

@@ -189,6 +189,21 @@ public sealed class ImportDatasetJobExecutorTests : IAsyncLifetime
             }
         };
 
+    [IntegrationTest]
+    public async Task ExecuteAsync_ProjectedSource_PublishesStoredCoordinateSystem()
+    {
+        await File.WriteAllTextAsync(_stagedFilePath,
+            "{\"type\":\"FeatureCollection\",\"crs\":{\"type\":\"name\",\"properties\":{\"name\":\"EPSG:2193\"}},\"features\":[{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[1740000,5420000]},\"properties\":{\"name\":\"Projected\"}}]}");
+        var executor = _fixture.Services.GetRequiredService<ImportDatasetJobExecutor>();
+        var result = await executor.ExecuteAsync(BuildJobRecord(), new RecordingJobExecutionContext("projected-import"), CancellationToken.None);
+        result.Status.Should().Be(ExecutionJobStatus.Succeeded, result.ErrorMessage);
+        var layerId = await ReadPublishedLayerIdAsync();
+        await using var connection = await _fixture.Postgres.GetConnectionAsync();
+        await using var command = new NpgsqlCommand("SELECT srid FROM honua.layers WHERE layer_id = @layerId", connection);
+        command.Parameters.AddWithValue("layerId", layerId);
+        (await command.ExecuteScalarAsync()).Should().Be(4326);
+    }
+
     private Dictionary<string, string> BuildBaseParameters()
     {
         var prefix = $"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}0.";
