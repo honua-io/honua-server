@@ -37,13 +37,14 @@ public sealed class OgcStylesGraphSyncFailureTests : IAsyncLifetime
     private const string MapboxStyleMediaType = "application/vnd.mapbox.style+json";
 
     private readonly WebAppFixture _fixture = new();
+    private readonly ThrowingStyleGraphSync _graphSync = new();
 
     public Task InitializeAsync()
     {
-        _fixture.ConfigureServices(static services =>
+        _fixture.ConfigureServices(services =>
         {
             services.RemoveAll<IMetadataV2StyleGraphSync>();
-            services.AddScoped<IMetadataV2StyleGraphSync, ThrowingStyleGraphSync>();
+            services.AddSingleton<IMetadataV2StyleGraphSync>(_graphSync);
         });
 
         return _fixture.InitializeAsync();
@@ -68,6 +69,8 @@ public sealed class OgcStylesGraphSyncFailureTests : IAsyncLifetime
             var catalog = scope.ServiceProvider.GetRequiredService<IStyleCatalog>();
             (await catalog.AssociateLayerAsync(WebAppFixture.TestLayerId, styleId, ordinal: 1)).Should().BeTrue();
         }
+
+        _graphSync.ThrowOnSync = true;
 
         using var content = new StringContent(
             BuildStyleJson(MetadataV2GeometryType.LineString),
@@ -126,14 +129,23 @@ public sealed class OgcStylesGraphSyncFailureTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// Stands in for the real graph sync and always fails, simulating a losing optimistic
+    /// Stands in for the real graph sync and fails after setup, simulating a losing optimistic
     /// ETag check against a concurrent metadata writer.
     /// </summary>
     private sealed class ThrowingStyleGraphSync : IMetadataV2StyleGraphSync
     {
+        public bool ThrowOnSync { get; set; }
+
         public Task SyncLayerStylesAsync(int layerId, CancellationToken cancellationToken = default)
-            => throw new InvalidOperationException(
-                $"Simulated metadata-v2 graph synchronization failure for layer {layerId}.");
+        {
+            if (ThrowOnSync)
+            {
+                throw new InvalidOperationException(
+                    $"Simulated metadata-v2 graph synchronization failure for layer {layerId}.");
+            }
+
+            return Task.CompletedTask;
+        }
     }
 }
 

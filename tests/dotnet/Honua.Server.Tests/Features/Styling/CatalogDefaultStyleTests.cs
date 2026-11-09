@@ -34,6 +34,8 @@ public sealed class CatalogDefaultStyleTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/style")]
     public async Task GetLayerStyleAsync_CatalogDefault_ReadsCurrentStyleAndPreservesFallback()
     {
         var layerStyles = _fixture.GetService<ILayerStyleCatalog>();
@@ -60,6 +62,8 @@ public sealed class CatalogDefaultStyleTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/style")]
     public async Task SetDrawingInfo_CatalogDefault_ReleasesConnectionBeforeReread()
     {
         await AssociateStyleAsync("#ff0000");
@@ -83,6 +87,8 @@ public sealed class CatalogDefaultStyleTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/style")]
     public async Task GetLayerStyle_SharedMigratedCatalogStyle_ProjectsOnlyRequestedSource()
     {
         var document = SharedSourceStyle();
@@ -102,6 +108,8 @@ public sealed class CatalogDefaultStyleTests : IAsyncLifetime
     }
 
     [IntegrationTheory]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/style")]
     [InlineData(false)]
     [InlineData(true)]
     public async Task GetLayerStyle_UnsharedMultiSourceStyle_PreservesContext(bool catalogAssociation)
@@ -123,6 +131,8 @@ public sealed class CatalogDefaultStyleTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/style")]
     public async Task GetLayerStyleAsync_AlternateAssociation_DoesNotReplaceLayerFallback()
     {
         var layerStyles = _fixture.GetService<ILayerStyleCatalog>();
@@ -167,6 +177,8 @@ public sealed class CatalogDefaultStyleTests : IAsyncLifetime
         "/static/test/bbox/-123,37,-122,38/256x256.png?layers=1");
 
     [IntegrationTest]
+    [Operation(Operations.Update)]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/style")]
     public async Task UpdateStyle_CatalogWriteFails_DoesNotReportSuccess()
     {
         var layerStyles = _fixture.GetService<ILayerStyleCatalog>();
@@ -186,6 +198,8 @@ public sealed class CatalogDefaultStyleTests : IAsyncLifetime
     }
 
     [IntegrationTheory]
+    [Operation(Operations.Update)]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/style")]
     [InlineData("maplibre")]
     [InlineData("drawingInfo")]
     public async Task UpdateStyle_CatalogRevisionDiffersFromLayerRow_ReturnsTheFollowingGetRevision(string input)
@@ -212,6 +226,8 @@ public sealed class CatalogDefaultStyleTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/style")]
     public async Task GetLayerStyleAsync_UnknownLayer_ReturnsNull()
     {
         var catalog = _fixture.GetService<ILayerStyleCatalog>();

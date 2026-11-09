@@ -844,7 +844,7 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
         using (var scope = _fixture.Services.CreateScope())
         {
             var catalog = scope.ServiceProvider.GetRequiredService<IStyleCatalog>();
-            (await catalog.AssociateLayerAsync(WebAppFixture.TestLayerId, styleId, ordinal: 0)).Should().BeTrue();
+            (await catalog.AssociateLayerAsync(WebAppFixture.TestLayerId, styleId, ordinal: 1)).Should().BeTrue();
         }
 
         using var content = new StringContent(
