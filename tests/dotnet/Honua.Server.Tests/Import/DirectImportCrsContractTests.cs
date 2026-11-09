@@ -105,6 +105,59 @@ public sealed class DirectImportCrsContractTests : IAsyncLifetime
         result.RootElement.GetProperty("errorCode").GetString().Should().Be("import.source_srid_required");
     }
 
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/upload")]
+    public async Task ImportFile_SourceOverride_PreservesDetectionAndStoresOverride()
+    {
+        var fields = NewImportFields();
+        fields["SourceSrid"] = "3857";
+        using var result = await PostFileAsync("upload", new("point.wkt", ProjectedPoint, fields));
+        var imported = result.RootElement;
+        imported.GetProperty("success").GetBoolean().Should().BeTrue(imported.GetRawText());
+        var schema = imported.GetProperty("schema").GetString()!;
+        var table = imported.GetProperty("physicalTableName").GetString()!;
+        _importedTables.Add((schema, table));
+        imported.GetProperty("detectedSrid").GetInt32().Should().Be(2193);
+        imported.GetProperty("sourceSrid").GetInt32().Should().Be(3857);
+        imported.GetProperty("storedSrid").GetInt32().Should().Be(3857);
+        imported.GetProperty("reprojected").GetBoolean().Should().BeFalse();
+        await using var connection = await _fixture.Postgres.GetConnectionAsync();
+        await using var query = new NpgsqlCommand($"SELECT ST_SRID(geometry) FROM {QualifiedTable(schema, table)}", connection);
+        Convert.ToInt32(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture).Should().Be(3857);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/upload")]
+    public async Task ImportFile_UndeclaredSourceWithOverride_StoresOverride()
+    {
+        var fields = NewImportFields();
+        fields["SourceSrid"] = "2193";
+        using var result = await PostFileAsync("upload", new("point.csv", "geometry,name\n\"POINT (1740000 5420000)\",Known\n", fields));
+        var imported = result.RootElement;
+        imported.GetProperty("success").GetBoolean().Should().BeTrue(imported.GetRawText());
+        _importedTables.Add((imported.GetProperty("schema").GetString()!, imported.GetProperty("physicalTableName").GetString()!));
+        imported.TryGetProperty("detectedSrid", out var detected).Should().BeTrue();
+        detected.ValueKind.Should().Be(JsonValueKind.Null);
+        imported.GetProperty("sourceSrid").GetInt32().Should().Be(2193);
+        imported.GetProperty("storedSrid").GetInt32().Should().Be(2193);
+    }
+
+    [IntegrationTheory]
+    [InlineData("TargetSrid", "1.5")]
+    [InlineData("TargetSrid", "not-a-code")]
+    [InlineData("SourceSrid", "1.5")]
+    [Endpoint("POST /api/v1/admin/import/upload")]
+    public async Task ImportFile_MalformedSrid_ReturnsBadRequest(string field, string value)
+    {
+        var fields = NewImportFields();
+        fields[field] = value;
+        using var content = new MultipartFormDataContent();
+        content.Add(new StringContent(ProjectedPoint), "File", "point.wkt");
+        foreach (var (name, entry) in fields) content.Add(new StringContent(entry), name);
+        using var response = await _fixture.Client.PostAsync("/api/v1/admin/import/upload", content);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     [IntegrationTheory]
     [InlineData("2193")]
     [InlineData("EPSG:2193")]

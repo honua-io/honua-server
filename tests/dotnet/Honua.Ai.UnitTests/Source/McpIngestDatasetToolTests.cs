@@ -79,45 +79,46 @@ public sealed class McpIngestDatasetToolTests
             .Should().Contain(w => w.GetString()!.Contains("connectionId"));
 
         captured.Should().NotBeNull();
-        captured!.FileName.Should().Be("landmarks.geojson");
+        captured!.SourceSrid.Should().BeNull();
+        captured.FileName.Should().Be("landmarks.geojson");
         captured.TableName.Should().Be("landmarks");
-        captured.TargetSrid.Should().Be(4326);
+        captured.TargetSrid.Should().BeNull();
         captured.CsvOptions.Should().BeNull();
 
     }
 
-    [Theory]
-    [Trait("Category", "Unit")]
-    [Trait("Tier", "Fast")]
-    [InlineData("geojson", 3857)]
-    [InlineData("geojson", 32610)]
-    [InlineData("csv", 3857)]
-    [InlineData("csv", 32610)]
+    [UnitTheory]
+    [InlineData("geojson", 2193, null, 2193)]
+    [InlineData("geojson", 2193, 4326, 4326)]
+    [InlineData("csv", 2193, null, 2193)]
+    [InlineData("csv", 2193, 4326, 4326)]
     [Operation(Operations.Create)]
     [Endpoint("POST /mcp tools/call honua_ingest_dataset")]
     [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
-    public async Task ToolsCall_ProjectedInput_ReturnsStoredTargetSridForPublication(string format, int sourceSrid)
+    public async Task ToolsCall_ProjectedInput_ReturnsStoredTargetSridForPublication(
+        string format, int sourceSrid, int? targetSrid, int storedSrid)
     {
         var importService = Substitute.For<IFileImportService>();
         ImportRequest? captured = null;
         importService.ImportFileAsync(Arg.Do<ImportRequest>(request => captured = request), Arg.Any<CancellationToken>())
-            .Returns(ImportResult.CreateSuccess(
-                "projected", format == "csv" ? SupportedFileFormat.Csv : SupportedFileFormat.GeoJson,
-                featureCount: 1, detectedSrid: sourceSrid,
-                physicalTableName: "imported_projected", schema: "honua_data"));
+            .Returns(call => JsonSerializer.Deserialize<ImportResult>(
+                $$"""{"success":true,"tableName":"projected","format":0,"featureCount":1,"detectedSrid":{{sourceSrid}},"sourceSrid":{{sourceSrid}},"storedSrid":{{storedSrid}},"reprojected":{{(storedSrid != sourceSrid).ToString().ToLowerInvariant()}},"physicalTableName":"imported_projected","schema":"honua_data"}""",
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!);
         var data = format == "csv"
             ? "id,wkt\n1,POINT (1000 0)\n"
             : """{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[1000,0]},"properties":{"id":1}}]}""";
-        var arguments = $$"""{"format":"{{format}}","data":{{JsonSerializer.Serialize(data)}},"datasetName":"projected","sourceSrid":{{sourceSrid}}}""";
+        var arguments = JsonSerializer.Serialize(new { format, data, datasetName = "projected", sourceSrid, targetSrid });
 
         var structured = AssertToolSucceeded(await DispatchAsync(BuildServices(importService), arguments));
 
         structured.GetProperty("success").GetBoolean().Should().BeTrue();
-        structured.GetProperty("srid").GetInt32().Should().Be(4326,
-            "the publish hint describes the stored table, while DetectedSrid describes its input");
+        structured.GetProperty("srid").GetInt32().Should().Be(storedSrid);
+        structured.GetProperty("sourceSrid").GetInt32().Should().Be(sourceSrid);
+        structured.GetProperty("storedSrid").GetInt32().Should().Be(storedSrid);
+        structured.GetProperty("reprojected").GetBoolean().Should().Be(storedSrid != sourceSrid);
         captured.Should().NotBeNull();
         captured!.SourceSrid.Should().Be(sourceSrid);
-        captured.TargetSrid.Should().Be(4326);
+        captured.TargetSrid.Should().Be(targetSrid);
         structured.GetProperty("table").GetString().Should().Be("imported_projected");
     }
 
