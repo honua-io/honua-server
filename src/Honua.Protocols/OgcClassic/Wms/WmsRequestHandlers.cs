@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
@@ -165,10 +166,13 @@ internal static partial class WmsRequestHandlers
             // cluster established earlier in the cutover.
             var wmsLayers = ResolveWmsLayers(snapshot, svcDef, context);
 
-            var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
-                context,
-                wmsLayers.Select(l => l.Resource),
-                svcDef);
+            var accessError = wmsLayers.Length == 0
+                ? await AccessPolicyHelpers.RequireServiceAccessAsync(
+                    context, svcDef, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false)
+                : AccessPolicyHelpers.RequireAnyResourceAccess(
+                    context,
+                    wmsLayers.Select(l => l.Resource),
+                    svcDef);
             if (accessError != null)
             {
                 var isAuthenticated = context.User?.Identity?.IsAuthenticated == true;
