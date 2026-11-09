@@ -30,13 +30,14 @@ public sealed class CatalogDefaultStyleTests : IAsyncLifetime
     public async Task GetLayerStyleAsync_CatalogPromotionAndEdit_ReplaceCachedLayerStyle()
     {
         var layerStyles = _fixture.GetService<ILayerStyleCatalog>();
-        await layerStyles.SetMapLibreStyleAsync(LayerId, CircleStyle("#0000ff"));
+        await layerStyles.SetStyleAsync(LayerId, CircleStyle("#0000ff"), "{}");
         (await layerStyles.GetLayerStyleAsync(LayerId))!.MapLibreStyleJson.Should().Contain("#0000ff");
         var catalog = _fixture.GetService<IStyleCatalog>();
         var styleId = await AssociateStyleAsync("#ff0000");
 
         var promoted = await layerStyles.GetLayerStyleAsync(LayerId);
         promoted!.MapLibreStyleJson.Should().Contain("#ff0000");
+        promoted.DrawingInfoJson.Should().BeNull();
         await catalog.UpdateStyleAsync(styleId, CircleStyle("#00ff00"), revisedBy: "operator");
         var edited = await layerStyles.GetLayerStyleAsync(LayerId);
 
@@ -45,6 +46,22 @@ public sealed class CatalogDefaultStyleTests : IAsyncLifetime
         edited.StyleRevisedBy.Should().Be("operator");
         await catalog.DeleteStyleAsync(styleId);
         (await layerStyles.GetLayerStyleAsync(LayerId))!.MapLibreStyleJson.Should().Contain("#0000ff");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Read)]
+    [Endpoint("GET /ogc/styles/{styleId}")]
+    public async Task GetLayerStyleAsync_AlternateAssociation_DoesNotReplaceLayerFallback()
+    {
+        var layerStyles = _fixture.GetService<ILayerStyleCatalog>();
+        await layerStyles.SetMapLibreStyleAsync(LayerId, CircleStyle("#0000ff"));
+        var catalog = _fixture.GetService<IStyleCatalog>();
+        var styleId = $"alternate-{Guid.NewGuid():N}";
+        await catalog.CreateStyleAsync(styleId, CircleStyle("#ff0000"));
+        (await catalog.AssociateLayerAsync(LayerId, styleId, ordinal: 1)).Should().BeTrue();
+
+        (await layerStyles.GetLayerStyleAsync(LayerId))!.MapLibreStyleJson.Should().Contain("#0000ff");
+        (await layerStyles.GetLayerStyleAsync(int.MaxValue)).Should().BeNull();
     }
 
     [IntegrationTheory]
