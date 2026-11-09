@@ -1441,7 +1441,7 @@ internal static class WmtsRequestHandlers
                     ?? layerId;
                 sb.Append("      <ows:Title>").Append(EscapeXml(layerTitle)).AppendLine("</ows:Title>");
                 sb.Append("      <ows:Identifier>").Append(EscapeXml(layerId)).AppendLine("</ows:Identifier>");
-                await AppendWmtsWgs84BoundingBoxAsync(sb, layer.Resource, coordinateTransformService, cancellationToken)
+                await AppendWmtsWgs84BoundingBoxAsync(sb, layer.Resource, request.HttpContext, cancellationToken)
                     .ConfigureAwait(false);
                 sb.AppendLine("      <Style isDefault=\"true\">");
                 sb.AppendLine("        <ows:Identifier>default</ows:Identifier>");
@@ -2451,12 +2451,12 @@ internal static class WmtsRequestHandlers
     private static async Task AppendWmtsWgs84BoundingBoxAsync(
         StringBuilder sb,
         MetadataV2Resource resource,
-        ICoordinateTransformService? coordinateTransformService,
+        HttpContext context,
         CancellationToken cancellationToken)
     {
         var boundingBox = await TryGetWmtsWgs84BoundingBoxAsync(
                 resource,
-                coordinateTransformService,
+                context,
                 cancellationToken)
             .ConfigureAwait(false);
         if (boundingBox is null)
@@ -2472,7 +2472,7 @@ internal static class WmtsRequestHandlers
 
     private static async Task<(string LowerCorner, string UpperCorner)?> TryGetWmtsWgs84BoundingBoxAsync(
         MetadataV2Resource resource,
-        ICoordinateTransformService? coordinateTransformService,
+        HttpContext context,
         CancellationToken cancellationToken)
     {
         var bbox = resource.ReadBbox();
@@ -2485,6 +2485,7 @@ internal static class WmtsRequestHandlers
         // to WGS84 when the resource doesn't declare one. OgcExtentTransformer short-circuits
         // the 4326 case so the fallback doesn't introduce a spurious transform call.
         var srid = resource.ReadSrid() ?? 4326;
+        var coordinateTransformService = context.RequestServices.GetService<ICoordinateTransformService>();
         var transformedExtent = await OgcExtentTransformer
             .TryTransformExtentToCrs84Async(
                 bbox.West,
@@ -2500,10 +2501,11 @@ internal static class WmtsRequestHandlers
             return null;
         }
 
-        var minLon = Math.Min(transformedExtent.Value.MinLon, transformedExtent.Value.MaxLon);
-        var minLat = Math.Min(transformedExtent.Value.MinLat, transformedExtent.Value.MaxLat);
-        var maxLon = Math.Max(transformedExtent.Value.MinLon, transformedExtent.Value.MaxLon);
-        var maxLat = Math.Max(transformedExtent.Value.MinLat, transformedExtent.Value.MaxLat);
+        var extent = OgcTileExtent.ExpandDegenerateAxes(transformedExtent.Value, ResolveWmtsMaxZoom(context));
+        var minLon = Math.Min(extent.MinLon, extent.MaxLon);
+        var minLat = Math.Min(extent.MinLat, extent.MaxLat);
+        var maxLon = Math.Max(extent.MinLon, extent.MaxLon);
+        var maxLat = Math.Max(extent.MinLat, extent.MaxLat);
 
         return (
             $"{FormatWmtsCoordinate(minLon)} {FormatWmtsCoordinate(minLat)}",

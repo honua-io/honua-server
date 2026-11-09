@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Xml.Linq;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Protocols.Ogc.Common;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -21,17 +22,19 @@ public sealed class DegenerateTileExtentTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTheory]
-    [InlineData(-156.45, 20.88, -156.45, 20.88)]
-    [InlineData(-156.45, 20.0, -156.45, 21.0)]
-    [InlineData(-157.0, 20.88, -156.0, 20.88)]
-    [InlineData(-157.0, 20.0, -156.0, 21.0)]
+    [InlineData("-156.45 20.88 -156.45 20.88")]
+    [InlineData("-156.45 20.0 -156.45 21.0")]
+    [InlineData("-157.0 20.88 -156.0 20.88")]
+    [InlineData("-157.0 20.0 -156.0 21.0")]
     [Protocol(TestProtocols.Wmts10, TestProtocols.OgcApiTiles)]
     [Operation(Operations.Wmts, Operations.GetMetadata)]
     [Endpoint("GET /ogc/services/{serviceId}/wmts")]
     [Endpoint("GET /ogc/tiles/collections/{collectionId}")]
     [InterfaceOperation(TestProtocols.Wmts10, "GetCapabilities")]
-    public async Task Discovery_PointLineOrArea_AdvertisesPositiveContainingBounds(double west, double south, double east, double north)
+    public async Task Discovery_PointLineOrArea_AdvertisesPositiveContainingBounds(string sourceExtent)
     {
+        var source = Coordinates(sourceExtent);
+        var (west, south, east, north) = (source[0], source[1], source[2], source[3]);
         var resource = _fixture.GetCurrentV2GraphSnapshot().Index.ResourcesByStorageLayerId[1];
         _fixture.UpdateV2ResourceMetadata(1, spatial: resource.Spatial! with
         {
@@ -63,6 +66,26 @@ public sealed class DegenerateTileExtentTests : IAsyncLifetime
         AssertContainingArea(bbox, [west, south, east, north]);
         _fixture.GetCurrentV2GraphSnapshot().Index.ResourcesByStorageLayerId[1].Spatial!.Bbox.Should()
             .BeEquivalentTo(new MetadataV2Bbox { West = west, South = south, East = east, North = north });
+    }
+
+    [UnitTheory]
+    [InlineData(0)]
+    [InlineData(18)]
+    [InlineData(24)]
+    public void ExpandDegenerateAxes_WorldBoundary_ContainsPointWithinValidCoordinates(int maxZoom)
+    {
+        var northeast = OgcTileExtent.ExpandDegenerateAxes((180, 90, 180, 90), maxZoom);
+        northeast.MinLon.Should().BeLessThan(northeast.MaxLon);
+        northeast.MinLat.Should().BeLessThan(northeast.MaxLat);
+        northeast.MinLon.Should().BeGreaterThanOrEqualTo(-180);
+        northeast.MinLat.Should().BeGreaterThanOrEqualTo(-90);
+        northeast.MaxLon.Should().Be(180);
+        northeast.MaxLat.Should().Be(90);
+        var southwest = OgcTileExtent.ExpandDegenerateAxes((-180, -90, -180, -90), maxZoom);
+        southwest.MinLon.Should().Be(-180);
+        southwest.MinLat.Should().Be(-90);
+        southwest.MaxLon.Should().BeGreaterThan(southwest.MinLon).And.BeLessThanOrEqualTo(180);
+        southwest.MaxLat.Should().BeGreaterThan(southwest.MinLat).And.BeLessThanOrEqualTo(90);
     }
 
     private static double[] Coordinates(string value) => value.Split(' ', StringSplitOptions.RemoveEmptyEntries)
