@@ -106,6 +106,7 @@ def create_identity_fixture(project_dir, human_port, identity_port):
         "extra_hosts": ["lifecycle-identity:host-gateway"],
         "volumes": ["./identity-fixture:/identity-fixture:ro"],
         "environment": {
+            "Security__DisableHttpsRedirection": "true",
             "Kestrel__Endpoints__Human__Url": "https://+:8443",
             "Kestrel__Endpoints__Human__Protocols": "Http1",
             "Kestrel__Endpoints__Human__Certificate__Path": "/identity-fixture/server.pfx",
