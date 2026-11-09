@@ -70,7 +70,7 @@ public sealed class RedisOffDirectPublishTests
         handle.AuthorizationOutcome.Should().Be("admin-authorized");
         handle.ProposalId.Should().BeNull("a direct publish involves no governed proposal");
         handle.EvidenceRefs.Should().Contain(NonDurableDirectOperationInstanceStore.NonDurableEvidenceRef);
-        handle.Result!.Details.Should().ContainKey("layerId");
+        handle.Result!.Details.Should().Contain("storageLayerId", "123").And.NotContainKey("layerId");
         await publishing.Received(1).PublishLayerAsync(
             Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>());
 
@@ -388,7 +388,7 @@ public sealed class RedisOffDirectPublishTests
             .PublishLayerAsync(Arg.Any<string>(), Arg.Any<LayerPublishRequest>(), Arg.Any<CancellationToken>())
             .Returns(new PublishedLayerSummary
             {
-                LayerId = 123,
+                StorageLayerId = 123,
                 LayerName = "Parcels",
                 Schema = "public",
                 Table = "parcels",
@@ -450,7 +450,7 @@ public sealed class RedisOffDirectPublishTests
         Parameters = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             ["serviceId"] = StyleServiceId,
-            ["layerId"] = StyleLayerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["serviceLayerIndex"] = StyleLayerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
             ["styleId"] = StyleId,
         },
     };

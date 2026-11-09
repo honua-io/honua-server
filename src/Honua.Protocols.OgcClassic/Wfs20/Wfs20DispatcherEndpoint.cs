@@ -1508,13 +1508,11 @@ internal static class Wfs20DispatcherEndpoint
             // the conventional prefix (as GeoServer/MapServer do) is a pure addition: element
             // names, schema validity and every namespace-correct client are unaffected.
             writer.WriteAttributeString("xmlns", "wfs", null, Wfs20Utilities.WfsNamespace);
-            writer.WriteAttributeString("xmlns", "ows", null, Wfs20Utilities.OwsNamespace);
-            writer.WriteAttributeString("xmlns", "fes", null, Wfs20Utilities.FesNamespace);
-            writer.WriteAttributeString("xmlns", "gml", null, Wfs20Utilities.GmlNamespace);
-            writer.WriteAttributeString("xmlns", "honua", null, "http://honua.io/wfs");
-            writer.WriteAttributeString("xmlns", "xlink", null, Wfs20Utilities.XLinkNamespace);
-            writer.WriteAttributeString("xmlns", "xsd", null, Wfs20Utilities.XsdNamespace);
-            writer.WriteAttributeString("xmlns", "xsi", null, Wfs20Utilities.XsiNamespace);
+            foreach (var binding in capabilities.Namespaces.ToArray()
+                .Where(binding => !string.IsNullOrEmpty(binding.Name) && binding.Name != "wfs"))
+            {
+                writer.WriteAttributeString("xmlns", binding.Name, null, binding.Namespace);
+            }
 
             writer.WriteAttributeString("version", capabilities.Version);
             if (!string.IsNullOrEmpty(capabilities.UpdateSequence))

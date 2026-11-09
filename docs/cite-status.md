@@ -116,9 +116,10 @@ accurate `/conformance` declaration:
   `tests/dotnet/Honua.Server.Tests/Features/Styling/OgcStylesEndpointTests.cs`.
   When the official OGC Styles ETS becomes available it will be wired in like the
   other suites and reflected here (issue #1417 item 3). The canonical `styleId`
-  surface supersedes the deprecated layerId-keyed style aliases
-  (`/api/styles/{layerId}.json`, admin `…/layers/{layerId}/style`), which remain
-  working but emit advisory `Deprecation`/`Sunset` headers pending removal.
+  surface serves named styles independently of a Layer. The public Layer style
+  route `/api/styles/{publicationId}.json` uses the exact graph Layer ID; global
+  admin `…/layers/{storageLayerId}/style` addresses the storage handle. Public
+  storage-handle aliases are removed in rc.2.
   See [`docs/gis/style-engine-protocol-consumption.md`](guides/style/style-maps.md).
 
 ### WPS 2.0.2 evidence

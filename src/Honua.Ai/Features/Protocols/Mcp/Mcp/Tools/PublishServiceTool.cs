@@ -147,9 +147,13 @@ internal sealed class PublishServiceTool : IMcpTool
 
         if (handle.Result is { } result)
         {
-            if (result.Details.TryGetValue("layerId", out var layerId))
+            if (result.Details.TryGetValue("storageLayerId", out var storageLayerId))
             {
-                output.LayerId = layerId;
+                output.StorageLayerId = storageLayerId;
+            }
+            if (result.Details.TryGetValue("serviceLayerIndex", out var serviceLayerIndex))
+            {
+                output.ServiceLayerIndex = serviceLayerIndex;
             }
 
             if (result.Details.TryGetValue("serviceName", out var serviceName))

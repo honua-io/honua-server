@@ -94,7 +94,7 @@ export class PostgresCancellationObserver {
   }
 
   async bind(fixture) {
-    if (fixture.serviceName !== "test_service" || fixture.layerId !== 0) throw new PostgresObservationError("FIXTURE_BINDING");
+    if (fixture.serviceName !== "test_service" || fixture.serviceLayerIndex !== 0) throw new PostgresObservationError("FIXTURE_BINDING");
     const bindings = await this.sql(`SELECT COALESCE(json_agg(json_build_object(
       'schema', COALESCE(NULLIF(l.table_schema,''),'public'), 'table', l.table_name,
       'primaryKey', l.primary_key_column, 'geometry', l.geometry_column)), '[]'::json)

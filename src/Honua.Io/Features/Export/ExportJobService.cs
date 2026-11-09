@@ -5,6 +5,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text.Json;
 using System.Threading.Channels;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Authorization;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -89,7 +90,7 @@ internal sealed class ExportJobService(
         _jobRequests[job.JobId] = CreateCachedRequest(job);
         await PersistJobRequestAsync(job.JobId, job, cancellationToken).ConfigureAwait(false);
 
-        var progress = ExportProgress.CreateInitial(job.JobId, job.Format, job.ServiceName, job.LayerId, job.TotalFeatures);
+        var progress = ExportProgress.CreateInitial(job.JobId, job.Format, job.ServiceName, job.ServiceLayerIndex, job.TotalFeatures);
         try
         {
             await _progressStore.SetProgressAsync(job.JobId, progress, _jobRetention, cancellationToken).ConfigureAwait(false);
@@ -219,7 +220,7 @@ internal sealed class ExportJobService(
 
             var progress = existing is ExportProgress queued
                 ? queued with { Status = OperationStatus.Processing, CurrentPhase = "Exporting features" }
-                : ExportProgress.CreateInitial(job.JobId, job.Format, job.ServiceName, job.LayerId, job.TotalFeatures) with
+                : ExportProgress.CreateInitial(job.JobId, job.Format, job.ServiceName, job.ServiceLayerIndex, job.TotalFeatures) with
                 {
                     Status = OperationStatus.Processing,
                     CurrentPhase = "Exporting features"
@@ -256,7 +257,7 @@ internal sealed class ExportJobService(
             activity?.SetTag("export.job_id", job.JobId);
             activity?.SetTag("export.format", job.Format);
             activity?.SetTag("export.service_name", job.ServiceName);
-            activity?.SetTag("export.layer_id", job.LayerId);
+            activity?.SetTag("export.storage_layer_id", job.StorageLayerId);
             activity?.SetTag("export.total_features", job.TotalFeatures);
 
             using var securityScope = JobSecurityScope.Begin(job.Submitter);
@@ -280,7 +281,7 @@ internal sealed class ExportJobService(
                 var streamingStore = scope.ServiceProvider.GetRequiredService<IStreamingFeatureStore>();
                 var crsRegistry = scope.ServiceProvider.GetRequiredService<ICrsRegistry>();
 
-                var features = streamingStore.StreamFeaturesAsync(job.LayerId, job.Query, processingToken);
+                var features = streamingStore.StreamFeaturesAsync(job.StorageLayerId, job.Query, processingToken);
                 var output = await WriteToFileAsync(job, features, scratchDir, crsRegistry, _logger, processingToken).ConfigureAwait(false);
                 var fileInfo = new FileInfo(output.Path);
 
@@ -540,7 +541,16 @@ internal sealed class ExportJobService(
             return null;
         }
 
-        var persistedRequest = JsonSerializer.Deserialize(json, ExportJsonContext.Default.PersistedExportJobRequest);
+        PersistedExportJobRequest? persistedRequest;
+        try
+        {
+            persistedRequest = JsonSerializer.Deserialize(json, ExportJsonContext.Default.PersistedExportJobRequest);
+        }
+        catch (JsonException)
+        {
+            await RemovePersistedJobRequestAsync(jobId, cancellationToken).ConfigureAwait(false);
+            return null;
+        }
         if (persistedRequest?.Job == null)
         {
             await RemovePersistedJobRequestAsync(jobId, cancellationToken).ConfigureAwait(false);
@@ -633,7 +643,18 @@ internal sealed class ExportJobService(
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var progress = await _progressStore.GetProgressAsync<ExportProgress>(jobId, cancellationToken).ConfigureAwait(false);
+            ExportProgress? progress;
+            try
+            {
+                progress = await _progressStore.GetProgressAsync<ExportProgress>(jobId, cancellationToken).ConfigureAwait(false);
+            }
+            catch (InvalidPersistedExportProgressException exception)
+            {
+                ExportJobServiceLog.InvalidRecoveryProgress(_logger, jobId, exception);
+                await MarkMissingRequestAsync(jobId, progress: null, CancellationToken.None).ConfigureAwait(false);
+                await _progressStore.QuarantineProgressAsync(jobId, OperationType.Export, CancellationToken.None).ConfigureAwait(false);
+                continue;
+            }
             if (progress == null || progress.Status is not (OperationStatus.Queued or OperationStatus.Processing))
             {
                 continue;

@@ -4,7 +4,7 @@
   "validates": "inputs",
   "inputs": {
     "serviceId": "county_parcels",
-    "layerId": 0,
+    "serviceLayerIndex": 0,
     "where": "zoning = 'R1'",
     "limit": 200,
     "geometryPrecision": 6,

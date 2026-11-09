@@ -216,7 +216,7 @@ internal sealed partial class GeoservicesLayerPublicationService
                             request.ServiceName,
                             cancellationToken)
                         .ConfigureAwait(false);
-                    existingLayer = existingLayers.FirstOrDefault(layer => layer.LayerId == ex.LayerId.Value);
+                    existingLayer = existingLayers.FirstOrDefault(layer => layer.StorageLayerId == ex.LayerId.Value);
                 }
 
                 if (existingLayer is not null)
@@ -294,14 +294,14 @@ internal sealed partial class GeoservicesLayerPublicationService
         try
         {
             await importedAttachmentStore.RemapImportedAttachmentsAsync(
-                    published.LayerId,
+                    published.StorageLayerId,
                     replacedSourceObjectIds,
                     cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            Log.AttachmentObjectIdRemapFailed(_logger, published.LayerId, exception);
+            Log.AttachmentObjectIdRemapFailed(_logger, published.StorageLayerId, exception);
             warnings.Add("Existing attachments could not be remapped onto the replaced object ids.");
         }
     }
@@ -341,13 +341,13 @@ internal sealed partial class GeoservicesLayerPublicationService
             var geometryType = MapEsriGeometryTypeToMetadataV2(layerInfo.GeometryType);
             var conversion = _styleConverter.Convert(
                 drawingInfoElement,
-                published.LayerId,
+                published.StorageLayerId,
                 published.LayerName,
                 geometryType);
 
             await _styleCatalog
                 .SetStyleAsync(
-                    published.LayerId,
+                    published.StorageLayerId,
                     conversion.MapLibreStyleJson,
                     layerInfo.DrawingInfoJson!,
                     revisedBy: GeoservicesStyleRevisedBy,
@@ -359,7 +359,7 @@ internal sealed partial class GeoservicesLayerPublicationService
             {
                 Log.AutoPublishStyleUnsupportedSymbolizer(
                     _logger,
-                    published.LayerId,
+                    published.StorageLayerId,
                     unsupported.Code,
                     unsupported.SymbolizerType);
                 warnings.Add(BuildUnsupportedSymbolizerWarning(unsupported));
@@ -367,7 +367,7 @@ internal sealed partial class GeoservicesLayerPublicationService
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            Log.AutoPublishStyleAttachFailed(_logger, published.LayerId, ex);
+            Log.AutoPublishStyleAttachFailed(_logger, published.StorageLayerId, ex);
             warnings.Add(
                 "AutoPublish succeeded, but attaching the converted MapLibre style to the published layer failed; drawingInfo was not persisted.");
         }

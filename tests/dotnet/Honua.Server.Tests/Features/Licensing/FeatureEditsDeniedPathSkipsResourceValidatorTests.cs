@@ -106,6 +106,9 @@ public sealed class FeatureEditsDeniedPathSkipsResourceValidatorTests : IAsyncLi
         private static InvalidOperationException Poisoned() =>
             new("IResourceValidator must not be resolved or called for a license-denied FeatureServer edit (#4640).");
 
+        public Task<ResourceValidationResult<MetadataV2Resource>> ValidateStorageLayerV2Async(
+            int storageLayerId, CancellationToken cancellationToken = default) => throw Poisoned();
+
         public Task<ResourceValidationResult<MetadataV2Resource>> ValidateLayerV2Async(
             int layerId, CancellationToken cancellationToken = default) => throw Poisoned();
 

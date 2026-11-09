@@ -362,7 +362,7 @@
       "capability_key": "styling.auto-suggest",
       "catalog_capability_key": "admin.control-plane",
       "surface": "control-plane-admin",
-      "operation": "POST /api/v1/admin/metadata/layers/{layerId}/suggest-style",
+      "operation": "POST /api/v1/admin/metadata/layers/{storageLayerId}/suggest-style",
       "test_ids": ["StyleSuggestionEndpointsTests.SuggestStyle_ReturnsStyleSuggestion"],
       "scenario_facets": ["positive", "media-schema"]
     },

@@ -1433,7 +1433,7 @@ internal static class WmtsRequestHandlers
                 var tileTemplate = BaseUrlResolver.PreserveToken(request, $"{wmtsRestEndpoint}/{layerId}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}.png{dimensionTemplateSuffix}");
                 var featureInfoTextTemplate = BaseUrlResolver.PreserveToken(request, $"{wmtsRestEndpoint}/{layerId}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}/{{J}}/{{I}}.txt{dimensionTemplateSuffix}");
                 var featureInfoJsonTemplate = BaseUrlResolver.PreserveToken(request, $"{wmtsRestEndpoint}/{layerId}/{{Style}}/{{TileMatrixSet}}/{{TileMatrix}}/{{TileRow}}/{{TileCol}}/{{J}}/{{I}}.json{dimensionTemplateSuffix}");
-                var legendHref = BaseUrlResolver.PreserveToken(request, $"{wmtsEndpoint[..^"WMTS".Length]}WMS?SERVICE=WMS&REQUEST=GetLegendGraphic&VERSION=1.3.0&LAYER={Uri.EscapeDataString(GetWmsLayerName(layer.Resource, layer.Publication))}&STYLE=default&FORMAT=image/png{legendDimensionSuffix}");
+                var legendHref = BaseUrlResolver.PreserveToken(request, $"{wmtsEndpoint[..^"WMTS".Length]}WMS?SERVICE=WMS&REQUEST=GetLegendGraphic&VERSION=1.3.0&LAYER={Uri.EscapeDataString(GetServiceLayerIdentifier(layer.Publication) ?? string.Empty)}&STYLE=default&FORMAT=image/png{legendDimensionSuffix}");
 
                 sb.AppendLine("    <Layer>");
                 var layerTitle = layer.Resource.Metadata.Title

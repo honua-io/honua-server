@@ -1318,16 +1318,19 @@
       "capability": "scene.catalog"
     },
     {
-      "id": "get-api-styles-layerid-json",
-      "route": "/api/styles/{layerId}.json",
+      "id": "get-api-styles-publicationid-json",
+      "route": "/api/styles/{publicationId}.json",
       "method": "GET",
       "family": "MVT \u002B TileJSON \u002B PMTiles",
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.PublicPublicationIdentityTests.Style_DistinctPublications_KeepsCachedRepresentationsSeparate",
+        "Honua.Server.Tests.Features.Protocols.PublicPublicationIdentityTests.Style_PrivatePublication_ConcealsOrChallengesBeforeStyleRead",
+        "Honua.Server.Tests.Features.Protocols.PublicPublicationIdentityTests.Style_StorageRebound_KeepsPublicationUrlAndResolvesCurrentStorage",
         "Honua.Server.Tests.Features.Protocols.Tiles.TileJsonCredentialEndpointTests.ProtectedStyle_OnlyOwnedTileSourcesInheritToken",
         "Honua.Server.Tests.Features.Protocols.Tiles.TileJsonCredentialEndpointTests.ProtectedTileJson_AdvertisedStyleAndTilesKeepBoundToken",
-        "Honua.Server.Tests.Features.Protocols.Tiles.TileJsonEndpointTests.GetStyle_DeprecatedLayerIdAlias_EmitsDeprecationHeaders",
+        "Honua.Server.Tests.Features.Protocols.Tiles.TileJsonEndpointTests.GetStyle_PublicationId_DoesNotAdvertiseStorageAliasDeprecation",
         "Honua.Server.Tests.Features.Protocols.Tiles.TileJsonEndpointTests.GetStyle_ReturnsMapLibreStyle"
       ],
       "proof_ledger_surface": "vector-tiles-mvt",
@@ -2987,8 +2990,8 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "get-api-v1-admin-metadata-layers-layerid-discovery",
-      "route": "/api/v1/admin/metadata/layers/{layerId}/discovery",
+      "id": "get-api-v1-admin-metadata-layers-storagelayerid-discovery",
+      "route": "/api/v1/admin/metadata/layers/{storageLayerId}/discovery",
       "method": "GET",
       "family": "Admin API",
       "protocol": "http-route-family",
@@ -2998,36 +3001,39 @@
         "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.Discovery_LegacyPublicationIdentifier_ReturnsStoredLocalId",
         "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.Discovery_UnknownTarget_ReturnsNotFound",
         "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.Discovery_WithoutAdminCredentials_RejectsReadAndWrite",
-        "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.UpdateLayer_RoundTripsThroughProtocolAndPreservesOtherMetadata"
+        "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.UpdateLayer_RoundTripsThroughProtocolAndPreservesOtherMetadata",
+        "Honua.Server.Tests.Features.Admin.AdminLayerSharedLayerIndexTests.GetMetadata_AmbiguousStorageHandle_ReturnsConflict"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
       "capability": "admin.control-plane"
     },
     {
-      "id": "get-api-v1-admin-metadata-layers-layerid-drawing-info",
-      "route": "/api/v1/admin/metadata/layers/{layerId}/drawing-info",
+      "id": "get-api-v1-admin-metadata-layers-storagelayerid-drawing-info",
+      "route": "/api/v1/admin/metadata/layers/{storageLayerId}/drawing-info",
       "method": "GET",
       "family": "Admin API",
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminLayerAuthoringEndpointsTests.PutDrawingInfo_ThenGet_RoundTripsRenderer",
-        "Honua.Server.Tests.Features.Admin.AdminLayerAuthoringEndpointsTests.PutDrawingInfo_WithNullBody_ClearsStoredDocument"
+        "Honua.Server.Tests.Features.Admin.AdminLayerAuthoringEndpointsTests.PutDrawingInfo_WithNullBody_ClearsStoredDocument",
+        "Honua.Server.Tests.Features.Admin.AdminLayerSharedLayerIndexTests.GetConfiguration_ServiceIndexDiffersFromStorage_UsesStorageId"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
       "capability": "admin.control-plane"
     },
     {
-      "id": "get-api-v1-admin-metadata-layers-layerid-fields",
-      "route": "/api/v1/admin/metadata/layers/{layerId}/fields",
+      "id": "get-api-v1-admin-metadata-layers-storagelayerid-fields",
+      "route": "/api/v1/admin/metadata/layers/{storageLayerId}/fields",
       "method": "GET",
       "family": "Admin API",
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.GetLayerFields_WithoutAuth_Returns401",
+        "Honua.Server.Tests.Features.Admin.AdminLayerSharedLayerIndexTests.GetConfiguration_ServiceIndexDiffersFromStorage_UsesStorageId",
         "Honua.Server.Tests.Features.Admin.LayerFieldConfigurationEndpointsTests.UpdateLayerFields_WithAliasDomainAndHiddenField_PersistsAndHydratesCatalog",
         "Honua.Server.Tests.Features.Infrastructure.MultiTenancy.TenantContextMiddlewareTests.BearerWithoutTenantClaim_TenantBoundAdminMetadataIsRejected"
       ],
@@ -3036,14 +3042,15 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "get-api-v1-admin-metadata-layers-layerid-filter",
-      "route": "/api/v1/admin/metadata/layers/{layerId}/filter",
+      "id": "get-api-v1-admin-metadata-layers-storagelayerid-filter",
+      "route": "/api/v1/admin/metadata/layers/{storageLayerId}/filter",
       "method": "GET",
       "family": "Admin API",
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.GetLayerFilter_WithoutAuth_Returns401",
+        "Honua.Server.Tests.Features.Admin.AdminLayerSharedLayerIndexTests.GetConfiguration_ServiceIndexDiffersFromStorage_UsesStorageId",
         "Honua.Server.Tests.Features.Admin.LayerFieldConfigurationEndpointsTests.UpdateLayerFilter_WithValidPermanentFilter_PersistsAndFiltersPublicQueries"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -3051,22 +3058,23 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "get-api-v1-admin-metadata-layers-layerid-popup-info",
-      "route": "/api/v1/admin/metadata/layers/{layerId}/popup-info",
+      "id": "get-api-v1-admin-metadata-layers-storagelayerid-popup-info",
+      "route": "/api/v1/admin/metadata/layers/{storageLayerId}/popup-info",
       "method": "GET",
       "family": "Admin API",
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.AdminLayerAuthoringEndpointsTests.PutPopupInfo_ThenGet_RoundTripsStoredDocument"
+        "Honua.Server.Tests.Features.Admin.AdminLayerAuthoringEndpointsTests.PutPopupInfo_ThenGet_RoundTripsStoredDocument",
+        "Honua.Server.Tests.Features.Admin.AdminLayerSharedLayerIndexTests.GetConfiguration_ServiceIndexDiffersFromStorage_UsesStorageId"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
       "capability": "admin.control-plane"
     },
     {
-      "id": "get-api-v1-admin-metadata-layers-layerid-relationships",
-      "route": "/api/v1/admin/metadata/layers/{layerId}/relationships",
+      "id": "get-api-v1-admin-metadata-layers-storagelayerid-relationships",
+      "route": "/api/v1/admin/metadata/layers/{storageLayerId}/relationships",
       "method": "GET",
       "family": "Admin API",
       "protocol": "http-route-family",
@@ -3079,8 +3087,8 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "get-api-v1-admin-metadata-layers-layerid-style",
-      "route": "/api/v1/admin/metadata/layers/{layerId}/style",
+      "id": "get-api-v1-admin-metadata-layers-storagelayerid-style",
+      "route": "/api/v1/admin/metadata/layers/{storageLayerId}/style",
       "method": "GET",
       "family": "Admin API",
       "protocol": "http-route-family",
@@ -3090,15 +3098,16 @@
         "Honua.Server.Tests.Features.Admin.LayerStyleEndpointsTests.GetLayerStyle_DeprecatedLayerIdAlias_EmitsDeprecationHeaders",
         "Honua.Server.Tests.Features.Admin.LayerStyleEndpointsTests.GetLayerStyle_ReturnsMapLibreAndDrawingInfo",
         "Honua.Server.Tests.Features.Admin.LayerStyleEndpointsTests.UnstyledLayer_ReadsAtVersionZero_AndFirstPutLandsAsRevisionOne",
-        "Honua.Server.Tests.Features.Admin.LayerStyleEndpointsTests.UpdateLayerStyle_WithMapLibreStyle_UpdatesAndReturnsStyle"
+        "Honua.Server.Tests.Features.Admin.LayerStyleEndpointsTests.UpdateLayerStyle_WithMapLibreStyle_UpdatesAndReturnsStyle",
+        "Honua.Server.Tests.Features.Protocols.PublicPublicationIdentityTests.StorageStyle_DistinctResourcesShareStorage_RejectsAmbiguousTarget"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
       "capability": "admin.control-plane"
     },
     {
-      "id": "get-api-v1-admin-metadata-layers-layerid-style-export-sld",
-      "route": "/api/v1/admin/metadata/layers/{layerId}/style/export-sld",
+      "id": "get-api-v1-admin-metadata-layers-storagelayerid-style-export-sld",
+      "route": "/api/v1/admin/metadata/layers/{storageLayerId}/style/export-sld",
       "method": "GET",
       "family": "Admin API",
       "protocol": "http-route-family",
@@ -3114,13 +3123,14 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "get-api-v1-admin-metadata-layers-layerid-validation",
-      "route": "/api/v1/admin/metadata/layers/{layerId}/validation",
+      "id": "get-api-v1-admin-metadata-layers-storagelayerid-validation",
+      "route": "/api/v1/admin/metadata/layers/{storageLayerId}/validation",
       "method": "GET",
       "family": "Admin API",
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AdminLayerSharedLayerIndexTests.GetMetadata_AmbiguousStorageHandle_ReturnsConflict",
         "Honua.Server.Tests.Features.Admin.LayerValidationEndpointsTests.GetLayerValidation_WhenDeclaredColumnIsDropped_ReturnsInvalid",
         "Honua.Server.Tests.Features.Admin.LayerValidationEndpointsTests.GetLayerValidation_WithAttributeOnlyStorage_ReturnsValid",
         "Honua.Server.Tests.Features.Admin.LayerValidationEndpointsTests.GetLayerValidation_WithInvalidSavedPermanentFilter_ReturnsInvalid",
@@ -3801,7 +3811,8 @@
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.ListActiveOperations_PublishingType_ReturnsWorkflowFields",
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.ListActiveOperations_WhenFiltered_ReturnsOnlyActive",
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.ListActiveOperations_WhenMixedTypesPresent_PreservesUnifiedOperationIdentityFields",
-        "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.ListActiveOperations_WhenNoneActive_ReturnsEmptyList"
+        "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.ListActiveOperations_WhenNoneActive_ReturnsEmptyList",
+        "Honua.Server.Tests.Features.Admin.PersistedExportProgressTests.ListOperations_InvalidExportRecord_KeepsHealthyOperationsVisible"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -3930,7 +3941,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.GetOperationsByType_DeploymentType_ReturnsOperations",
-        "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.GetOperationsByType_WhenMatching_ReturnsOperations"
+        "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.GetOperationsByType_WhenMatching_ReturnsOperations",
+        "Honua.Server.Tests.Features.Admin.PersistedExportProgressTests.ListOperations_InvalidExportRecord_KeepsHealthyOperationsVisible"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -3948,7 +3960,8 @@
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.GetOperationStatus_DeploymentType_ReturnsLifecycleFields",
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.GetOperationStatus_NonexistentId_ReturnsNotFound",
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.GetOperationStatus_PublishingType_ReturnsWorkflowFields",
-        "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.GetOperationStatus_WhenExists_ReturnsProgress"
+        "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.GetOperationStatus_WhenExists_ReturnsProgress",
+        "Honua.Server.Tests.Features.Admin.PersistedExportProgressTests.ReadOperation_InvalidExportRecord_ReturnsSafeRecordProblem"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -4466,8 +4479,8 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "get-api-v1-admin-services-servicename-layers-layerid-export",
-      "route": "/api/v1/admin/services/{serviceName}/layers/{layerId}/export",
+      "id": "get-api-v1-admin-services-servicename-layers-servicelayerindex-export",
+      "route": "/api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/export",
       "method": "GET",
       "family": "Admin API",
       "protocol": "http-route-family",
@@ -4485,15 +4498,17 @@
         "Honua.Server.Tests.Features.Export.ExportEndpointTests.Export_WithOutFields_PushesProjectionIntoStreamingQuery",
         "Honua.Server.Tests.Features.Export.ExportEndpointTests.Export_WithOutFields_ReturnsSelectedAttributes",
         "Honua.Server.Tests.Features.Export.ExportEndpointTests.Export_WithOutSR_ReprojectsCoordinates",
-        "Honua.Server.Tests.Features.Export.ExportEndpointTests.Export_WithWhereClause_ReturnsFilteredFeatures"
+        "Honua.Server.Tests.Features.Export.ExportEndpointTests.Export_WithWhereClause_ReturnsFilteredFeatures",
+        "Honua.Server.Tests.Features.Export.ExportLayerIdentityTests.Export_ServiceIndexDiffersFromStorage_QueuesResolvedStorage",
+        "Honua.Server.Tests.Features.Export.ExportLayerIdentityTests.Export_ServiceIndexDiffersFromStorage_StreamsResolvedStorage"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
       "capability": "admin.control-plane"
     },
     {
-      "id": "get-api-v1-admin-services-servicename-layers-layerid-share-traffic",
-      "route": "/api/v1/admin/services/{serviceName}/layers/{layerId}/share/traffic",
+      "id": "get-api-v1-admin-services-servicename-layers-servicelayerindex-share-traffic",
+      "route": "/api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/share/traffic",
       "method": "GET",
       "family": "Admin API",
       "protocol": "http-route-family",
@@ -4509,8 +4524,8 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "get-api-v1-admin-services-servicename-layers-layerid-share-traffic-series",
-      "route": "/api/v1/admin/services/{serviceName}/layers/{layerId}/share/traffic/series",
+      "id": "get-api-v1-admin-services-servicename-layers-servicelayerindex-share-traffic-series",
+      "route": "/api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/share/traffic/series",
       "method": "GET",
       "family": "Admin API",
       "protocol": "http-route-family",
@@ -8291,7 +8306,8 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsTemporalAndTitleTests.GetItems_QMatchesThePrefixedRecordId",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsTemporalAndTitleTests.GetItems_QMatchesTheRecordTitle",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.RecordsLandingAndLimitTests.GetItems_WithLimitAboveMaximum_PagingLinksCarryTheClampedLimit",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.RecordsLandingAndLimitTests.GetItems_WithLimitAboveMaximum_ServesTheMaximumInsteadOfRejecting"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.RecordsLandingAndLimitTests.GetItems_WithLimitAboveMaximum_ServesTheMaximumInsteadOfRejecting",
+        "Honua.Server.Tests.Features.Protocols.PublicPublicationIdentityTests.Records_StorageRebound_KeepsPublicationRecordIds"
       ],
       "proof_ledger_surface": "ogc-api-records",
       "maturity": "implemented",
@@ -8316,7 +8332,10 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsEndpointTests.GetRecords_WithMixedCrs_TransformsExtentsBeforeCombining",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsEndpointTests.Issue5565_RecordsWithExtent_ReturnBboxPolygonGeometry",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsTemporalAndTitleTests.GetItem_ReturnsTheDistinctTitleRatherThanTheName",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.RecordsLandingAndLimitTests.GetItem_ServiceRecord_ListsEachLayerIdOnce"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.RecordsLandingAndLimitTests.GetItem_ServiceRecord_ListsEachLayerIdOnce",
+        "Honua.Server.Tests.Features.Protocols.PublicPublicationIdentityTests.RecordsService_ProtocolRowsShareResource_EveryLayerIdResolvesToRecord",
+        "Honua.Server.Tests.Features.Protocols.PublicPublicationIdentityTests.RecordsService_StorageRebound_ListsStablePublicationIds",
+        "Honua.Server.Tests.Features.Protocols.PublicPublicationIdentityTests.Records_LegacyPublication_UsesOnlyNumericFeatureServerIndex"
       ],
       "proof_ledger_surface": "ogc-api-records",
       "maturity": "implemented",
@@ -8409,7 +8428,12 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_OgcRoute_GetFeatureInfo_WithWmsEnabledAndMapServerDisabled_ReturnsSeededFeature",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_OgcRoute_GetMap_InvalidLayer_ReturnsXmlServiceException",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.OgcClassicWmsTests.Wms_OgcRoute_GetMap_WithWmsEnabledAndMapServerDisabled_RendersStyledFeature",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.WmsGetLegendGraphicTests.Wms_GetLegendGraphic_OnOgcRoute_ReturnsPngLegend"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wms.WmsGetLegendGraphicTests.Wms_GetLegendGraphic_OnOgcRoute_ReturnsPngLegend",
+        "Honua.Server.Tests.Features.Protocols.PublicPublicationIdentityTests.WmsCapabilities_DistinctIdentifiersShareResource_PreservesBothNames",
+        "Honua.Server.Tests.Features.Protocols.PublicPublicationIdentityTests.WmsCapabilities_DistinctResourcesShareIdentifier_RejectsAmbiguousName",
+        "Honua.Server.Tests.Features.Protocols.PublicPublicationIdentityTests.WmsCapabilities_LegacyPublication_UsesServiceLocalIdentifier",
+        "Honua.Server.Tests.Features.Protocols.PublicPublicationIdentityTests.WmsCapabilities_ProtocolPublicationsShareResource_AdvertisesIdentifierOnce",
+        "Honua.Server.Tests.Features.Protocols.PublicPublicationIdentityTests.WmsCapabilities_StorageRebound_KeepsServiceLocalIdentifier"
       ],
       "proof_ledger_surface": "wms-1.3",
       "maturity": "implemented",
@@ -15347,6 +15371,10 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.WfsLegacyEndpointsTests.Wfs11_GetFeature_UnsupportedSrsName_ReturnsOws10ExceptionReport",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.WfsLegacyGeometryMetadataTests.GetFeature_GeometryMetadataWithoutSchemaField_PreservesGeometryAndControls",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20.WfsWmsStorageBoundReadTests.Wfs_GetFeature_And_Wms_GetFeatureInfo_ReadRowsFromPublishedSourceTable",
+        "Honua.Server.Tests.Features.Protocols.PublicPublicationIdentityTests.DescribeFeatureType_AdvertisedNamespace_DefinesPublicationInThatNamespace",
+        "Honua.Server.Tests.Features.Protocols.PublicPublicationIdentityTests.DescribeFeatureType_MixedNamespaces_ImportsResolvablePublicationSchema",
+        "Honua.Server.Tests.Features.Protocols.PublicPublicationIdentityTests.WfsCapabilities_EscapedPublicationId_DoesNotCollideWithLiteralEscape",
+        "Honua.Server.Tests.Features.Protocols.PublicPublicationIdentityTests.WfsCapabilities_StorageRebound_UsesDistinctEncodedPublicationIds",
         "Honua.Server.Tests.Features.Security.ApiKeyTokenParameterTests.TokenParameter_FixedManagedKeyWithSqlCommentBytes_IsAccepted",
         "Honua.Server.Tests.Features.Security.ApiKeyTokenParameterTests.WfsCapabilities_AdminApiKeyInTokenParameter_IsRefused",
         "Honua.Server.Tests.Features.Security.ApiKeyTokenParameterTests.WfsCapabilities_ApiKeyInTokenParameter_ListsWhatXApiKeyLists",
@@ -16719,8 +16747,8 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "post-api-v1-admin-connections-id-layers-layerid-features-refresh",
-      "route": "/api/v1/admin/connections/{id}/layers/{layerId}/features/refresh",
+      "id": "post-api-v1-admin-connections-id-layers-storagelayerid-features-refresh",
+      "route": "/api/v1/admin/connections/{id}/layers/{storageLayerId}/features/refresh",
       "method": "POST",
       "family": "Admin API",
       "protocol": "http-route-family",
@@ -18067,8 +18095,8 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "post-api-v1-admin-metadata-layers-layerid-style-import-sld",
-      "route": "/api/v1/admin/metadata/layers/{layerId}/style/import-sld",
+      "id": "post-api-v1-admin-metadata-layers-storagelayerid-style-import-sld",
+      "route": "/api/v1/admin/metadata/layers/{storageLayerId}/style/import-sld",
       "method": "POST",
       "family": "Admin API",
       "protocol": "http-route-family",
@@ -18090,8 +18118,8 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "post-api-v1-admin-metadata-layers-layerid-suggest-style",
-      "route": "/api/v1/admin/metadata/layers/{layerId}/suggest-style",
+      "id": "post-api-v1-admin-metadata-layers-storagelayerid-suggest-style",
+      "route": "/api/v1/admin/metadata/layers/{storageLayerId}/suggest-style",
       "method": "POST",
       "family": "Admin API",
       "protocol": "http-route-family",
@@ -18560,6 +18588,7 @@
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.CancelOperation_WhenRemoteQueuedNeverSubmitted_CancelsLocallyWithoutCallingBackend",
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.CancelOperation_WhenRemoteQueuedNeverSubmitted_CasFailure_Returns409",
         "Honua.Server.Tests.Features.Admin.OperationsProgressEndpointsTests.CancelOperation_WhenRemoteQueuedRetryAwaitingResubmission_CancelsLocallyWithoutCallingBackend",
+        "Honua.Server.Tests.Features.Admin.PersistedExportProgressTests.ReadOperation_InvalidExportRecord_ReturnsSafeRecordProblem",
         "Honua.Server.Tests.Import.GeoServerImportEndpointTests.CancelJob_AfterDequeueBeforeRequestRead_PreservesCancelledWithoutImporting"
       ],
       "proof_ledger_surface": "control-plane-admin",
@@ -25320,8 +25349,8 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "put-api-v1-admin-connections-id-layers-layerid-enabled",
-      "route": "/api/v1/admin/connections/{id}/layers/{layerId}/enabled",
+      "id": "put-api-v1-admin-connections-id-layers-storagelayerid-enabled",
+      "route": "/api/v1/admin/connections/{id}/layers/{storageLayerId}/enabled",
       "method": "PUT",
       "family": "Admin API",
       "protocol": "http-route-family",
@@ -25570,8 +25599,8 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "put-api-v1-admin-metadata-layers-layerid-discovery",
-      "route": "/api/v1/admin/metadata/layers/{layerId}/discovery",
+      "id": "put-api-v1-admin-metadata-layers-storagelayerid-discovery",
+      "route": "/api/v1/admin/metadata/layers/{storageLayerId}/discovery",
       "method": "PUT",
       "family": "Admin API",
       "protocol": "http-route-family",
@@ -25585,15 +25614,16 @@
         "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.UpdateDiscovery_InvalidInput_DoesNotMutate",
         "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.UpdateDiscovery_NullTextAndEmptyKeywords_ClearsOnlyDiscovery",
         "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.UpdateDiscovery_WithStaleEtag_RejectsOverwrite",
-        "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.UpdateLayer_RoundTripsThroughProtocolAndPreservesOtherMetadata"
+        "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.UpdateLayer_RoundTripsThroughProtocolAndPreservesOtherMetadata",
+        "Honua.Server.Tests.Features.Admin.AdminLayerSharedLayerIndexTests.UpdateDiscovery_AmbiguousStorageHandle_ReturnsConflictWithoutMutation"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
       "capability": "admin.control-plane"
     },
     {
-      "id": "put-api-v1-admin-metadata-layers-layerid-drawing-info",
-      "route": "/api/v1/admin/metadata/layers/{layerId}/drawing-info",
+      "id": "put-api-v1-admin-metadata-layers-storagelayerid-drawing-info",
+      "route": "/api/v1/admin/metadata/layers/{storageLayerId}/drawing-info",
       "method": "PUT",
       "family": "Admin API",
       "protocol": "http-route-family",
@@ -25601,21 +25631,23 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminLayerAuthoringEndpointsTests.PutDrawingInfo_ThenGet_RoundTripsRenderer",
         "Honua.Server.Tests.Features.Admin.AdminLayerAuthoringEndpointsTests.PutDrawingInfo_WithNullBody_ClearsStoredDocument",
-        "Honua.Server.Tests.Features.Admin.AdminLayerSharedLayerIndexTests.SetDrawingInfo_LayerIdSharedByTwoResources_Returns409AndChangesNeither"
+        "Honua.Server.Tests.Features.Admin.AdminLayerSharedLayerIndexTests.SetDrawingInfo_LayerIdSharedByTwoResources_Returns409AndChangesNeither",
+        "Honua.Server.Tests.Features.Admin.AdminLayerSharedLayerIndexTests.UpdateConfiguration_SharedIndexWithDistinctStorageIds_UpdatesOnlyRequestedStorage"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
       "capability": "admin.control-plane"
     },
     {
-      "id": "put-api-v1-admin-metadata-layers-layerid-fields",
-      "route": "/api/v1/admin/metadata/layers/{layerId}/fields",
+      "id": "put-api-v1-admin-metadata-layers-storagelayerid-fields",
+      "route": "/api/v1/admin/metadata/layers/{storageLayerId}/fields",
       "method": "PUT",
       "family": "Admin API",
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.PutLayerFields_WithoutAuth_Returns401",
+        "Honua.Server.Tests.Features.Admin.AdminLayerSharedLayerIndexTests.UpdateConfiguration_SharedIndexWithDistinctStorageIds_UpdatesOnlyRequestedStorage",
         "Honua.Server.Tests.Features.Admin.AdminLayerSharedLayerIndexTests.UpdateLayerFields_LayerIdSharedByTwoResources_Returns409AndChangesNeither",
         "Honua.Server.Tests.Features.Admin.LayerFieldConfigurationEndpointsTests.UpdateLayerFields_WithAliasDomainAndHiddenField_PersistsAndHydratesCatalog",
         "Honua.Server.Tests.Features.Admin.LayerFieldConfigurationEndpointsTests.UpdateLayerFields_WithUnknownField_ReturnsBadRequest"
@@ -25625,14 +25657,15 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "put-api-v1-admin-metadata-layers-layerid-filter",
-      "route": "/api/v1/admin/metadata/layers/{layerId}/filter",
+      "id": "put-api-v1-admin-metadata-layers-storagelayerid-filter",
+      "route": "/api/v1/admin/metadata/layers/{storageLayerId}/filter",
       "method": "PUT",
       "family": "Admin API",
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.PutLayerFilter_WithoutAuth_Returns401",
+        "Honua.Server.Tests.Features.Admin.AdminLayerSharedLayerIndexTests.UpdateConfiguration_SharedIndexWithDistinctStorageIds_UpdatesOnlyRequestedStorage",
         "Honua.Server.Tests.Features.Admin.AdminLayerSharedLayerIndexTests.UpdateLayerFilter_LayerIdSharedByTwoResources_Returns409AndChangesNeither",
         "Honua.Server.Tests.Features.Admin.AdminLayerSharedLayerIndexTests.UpdateLayerFilter_RetiredTwinAtSameLayerId_WritesOnlyTheResolvedResource",
         "Honua.Server.Tests.Features.Admin.LayerFieldConfigurationEndpointsTests.UpdateLayerFilter_WithInvalidPermanentFilter_ReturnsBadRequest",
@@ -25643,8 +25676,8 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "put-api-v1-admin-metadata-layers-layerid-popup-info",
-      "route": "/api/v1/admin/metadata/layers/{layerId}/popup-info",
+      "id": "put-api-v1-admin-metadata-layers-storagelayerid-popup-info",
+      "route": "/api/v1/admin/metadata/layers/{storageLayerId}/popup-info",
       "method": "PUT",
       "family": "Admin API",
       "protocol": "http-route-family",
@@ -25653,15 +25686,16 @@
         "Honua.Server.Tests.Features.Admin.AdminDiscoveryMetadataEndpointsTests.UpdateLayer_RoundTripsThroughProtocolAndPreservesOtherMetadata",
         "Honua.Server.Tests.Features.Admin.AdminLayerAuthoringEndpointsTests.PutPopupInfo_ThenGet_RoundTripsStoredDocument",
         "Honua.Server.Tests.Features.Admin.AdminLayerAuthoringEndpointsTests.PutPopupInfo_WithNonObjectBody_ReturnsBadRequest",
-        "Honua.Server.Tests.Features.Admin.AdminLayerSharedLayerIndexTests.SetPopupInfo_LayerIdSharedByTwoResources_Returns409AndChangesNeither"
+        "Honua.Server.Tests.Features.Admin.AdminLayerSharedLayerIndexTests.SetPopupInfo_LayerIdSharedByTwoResources_Returns409AndChangesNeither",
+        "Honua.Server.Tests.Features.Admin.AdminLayerSharedLayerIndexTests.UpdateConfiguration_SharedIndexWithDistinctStorageIds_UpdatesOnlyRequestedStorage"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
       "capability": "admin.control-plane"
     },
     {
-      "id": "put-api-v1-admin-metadata-layers-layerid-relationships",
-      "route": "/api/v1/admin/metadata/layers/{layerId}/relationships",
+      "id": "put-api-v1-admin-metadata-layers-storagelayerid-relationships",
+      "route": "/api/v1/admin/metadata/layers/{storageLayerId}/relationships",
       "method": "PUT",
       "family": "Admin API",
       "protocol": "http-route-family",
@@ -25676,14 +25710,15 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "put-api-v1-admin-metadata-layers-layerid-style",
-      "route": "/api/v1/admin/metadata/layers/{layerId}/style",
+      "id": "put-api-v1-admin-metadata-layers-storagelayerid-style",
+      "route": "/api/v1/admin/metadata/layers/{storageLayerId}/style",
       "method": "PUT",
       "family": "Admin API",
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.AdminAuthorizationTests.PutLayerStyle_WithoutAuth_Returns401",
+        "Honua.Server.Tests.Features.Admin.AdminLayerSharedLayerIndexTests.UpdateStyle_AmbiguousStorageHandle_ReturnsConflictWithoutChangingGraph",
         "Honua.Server.Tests.Features.Admin.LayerStyleEndpointsTests.UnstyledLayer_ReadsAtVersionZero_AndFirstPutLandsAsRevisionOne",
         "Honua.Server.Tests.Features.Admin.LayerStyleEndpointsTests.UpdateLayerStyle_InvalidatesCachedLegendResponses",
         "Honua.Server.Tests.Features.Admin.LayerStyleEndpointsTests.UpdateLayerStyle_InvalidatesCachedTileResponses",
@@ -25922,8 +25957,8 @@
       "capability": "admin.control-plane"
     },
     {
-      "id": "put-api-v1-admin-services-servicename-layers-layerid-metadata",
-      "route": "/api/v1/admin/services/{serviceName}/layers/{layerId}/metadata",
+      "id": "put-api-v1-admin-services-servicename-layers-servicelayerindex-metadata",
+      "route": "/api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata",
       "method": "PUT",
       "family": "Admin API",
       "protocol": "http-route-family",

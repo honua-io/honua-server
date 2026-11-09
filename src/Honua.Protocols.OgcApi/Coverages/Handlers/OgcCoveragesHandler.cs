@@ -235,7 +235,7 @@ internal sealed class OgcCoveragesHandler
             var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
             var byCollection = await LayerValidationHelpers.ResolveStorageCollectionsWithAccessV2Async(
-                context, snapshot, CoveragesProtocol, cancellationToken: cancellationToken).ConfigureAwait(false);
+                context, snapshot, new(CoveragesProtocol) { CancellationToken = cancellationToken }).ConfigureAwait(false);
             var visible = byCollection
                 .Where(entry => entry.Value.IsValid)
                 .OrderBy(entry => entry.Key)

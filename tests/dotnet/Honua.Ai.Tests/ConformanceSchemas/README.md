@@ -100,11 +100,27 @@ tools (the map/app composition and publish families, the `mutation` profile's
 geoprocessing verbs) are tracked as **known-gaps**: their absence does not
 fail the suite; only NON-CONFORMANCE of an implemented tool fails.
 
+## Service-local selectors (pre-merge pin)
+
+The `query_features`, `render_map`, `get_style`, `apply_style_preset`,
+`list_layers` and `resolve_entity` input/result schema files and fixture
+directories, plus `common/service-layer-reference.schema.json`, are copied
+byte for byte from geospatial-mcp commit
+**`7a6132ef66393139fe03648ac4670c7db18cec5e`**, reviewed in
+[PR #187](https://github.com/honua-io/geospatial-mcp/pull/187).
+They use `serviceLayerIndex` and reject the obsolete `layerId` selector.
+The existing index and other schema families retain their separately documented
+pins; this scoped refresh does not change their implementation declarations.
+Refresh this pin to the merged upstream commit after certification against the
+matching server candidate passes.
+
 ## Skills live-surface contract provenance
 
 - `geospatial-mcp/skills/` vendors `skills/catalog.json`,
-  `skills/catalog.schema.json`, and `skills/contracts/live-surface.json` from
-  geospatial-mcp commit **`bed89302a8b9ea0a168aa89554d867681ee732dd`**.
+  `skills/catalog.schema.json` from
+  the reviewed service-local selector commit **`7a6132ef66393139fe03648ac4670c7db18cec5e`**.
+- `skills/contracts/live-surface.json` is copied byte for byte from the
+  reviewed service-local selector commit above.
 - The MCP conformance suite resolves the contract's canonical tool names to
   Honua's production descriptors and checks their advertised input schemas.
 - Skill prose and evaluation artifacts remain owned by geospatial-mcp and are

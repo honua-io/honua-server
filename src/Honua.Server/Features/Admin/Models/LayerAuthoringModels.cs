@@ -12,7 +12,7 @@ public sealed class LayerRelationshipBatchUpdateRequest
 
 public sealed class LayerRelationshipBatchUpdateItem
 {
-    public required int LayerId { get; init; }
+    public required int StorageLayerId { get; init; }
 
     public IReadOnlyList<LayerRelationshipUpdateItem> Relationships { get; init; } = Array.Empty<LayerRelationshipUpdateItem>();
 }
@@ -35,7 +35,7 @@ public sealed class LayerRelationshipUpdateItem
 
     public string? Description { get; init; }
 
-    public required int RelatedLayerId { get; init; }
+    public required int RelatedStorageLayerId { get; init; }
 
     public string Role { get; init; } = "origin";
 
@@ -54,7 +54,7 @@ public sealed class LayerRelationshipUpdateItem
 
 public sealed class LayerRelationshipResponse
 {
-    public int LayerId { get; init; }
+    public int StorageLayerId { get; init; }
 
     public IReadOnlyList<LayerRelationshipItem> Relationships { get; init; } = Array.Empty<LayerRelationshipItem>();
 }
@@ -67,7 +67,7 @@ public sealed class LayerRelationshipItem
 
     public string? Description { get; init; }
 
-    public int RelatedLayerId { get; init; }
+    public int RelatedStorageLayerId { get; init; }
 
     public required string Role { get; init; }
 
@@ -85,7 +85,7 @@ public sealed class LayerRelationshipItem
 
 public sealed class LayerAuthoringDocumentResponse
 {
-    public int LayerId { get; init; }
+    public int StorageLayerId { get; init; }
 
     public System.Text.Json.JsonElement? Document { get; init; }
 }

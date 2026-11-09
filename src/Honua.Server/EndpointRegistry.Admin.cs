@@ -78,8 +78,8 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/admin/connections/{id}/layers"),
         new("GET", "/api/v1/admin/connections/{id}/layers/jobs/{jobId}"),
         new("POST", "/api/v1/admin/connections/{id}/layers/extents/refresh"),
-        new("POST", "/api/v1/admin/connections/{id}/layers/{layerId}/features/refresh"),
-        new("PUT", "/api/v1/admin/connections/{id}/layers/{layerId}/enabled"),
+        new("POST", "/api/v1/admin/connections/{id}/layers/{storageLayerId}/features/refresh"),
+        new("PUT", "/api/v1/admin/connections/{id}/layers/{storageLayerId}/enabled"),
         new("PUT", "/api/v1/admin/connections/{id}/layers/enabled"),
         new("GET", "/api/v1/admin/version"),
         new("GET", "/api/v1/admin/capabilities"),
@@ -124,7 +124,7 @@ public static partial class EndpointRegistry
         new("PUT", "/api/v1/admin/services/{serviceName}/mapserver"),
         new("PUT", "/api/v1/admin/services/{serviceName}/access-policy"),
         new("PUT", "/api/v1/admin/services/{serviceName}/timeinfo"),
-        new("PUT", "/api/v1/admin/services/{serviceName}/layers/{layerId}/metadata"),
+        new("PUT", "/api/v1/admin/services/{serviceName}/layers/{serviceLayerIndex}/metadata"),
 
         // v1 admin named-replica management endpoints (#1167, slice 1)
         new("GET", "/api/v1/admin/services/{serviceId}/replicas"),

@@ -32,12 +32,12 @@ public sealed class AdminDiscoveryMetadataEndpointsTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/discovery")]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/discovery")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/discovery")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/discovery")]
     [Endpoint("GET /ogc/features/collections/{collectionId}")]
     [Endpoint("GET /ogc/services/{serviceId}/wms")]
     [InterfaceOperation(TestProtocols.Wms13, "GetCapabilities")]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/popup-info")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/popup-info")]
     public async Task UpdateLayer_RoundTripsThroughProtocolAndPreservesOtherMetadata()
     {
         var snapshot = SeedLayerGovernance();
@@ -99,7 +99,7 @@ public sealed class AdminDiscoveryMetadataEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTheory]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/discovery")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/discovery")]
     [Endpoint("PUT /api/v1/admin/services/{serviceName}/discovery")]
     [InlineData("/api/v1/admin/metadata/layers/0/discovery")]
     [InlineData("/api/v1/admin/services/test/discovery")]
@@ -112,8 +112,8 @@ public sealed class AdminDiscoveryMetadataEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTheory]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/discovery")]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/discovery")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/discovery")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/discovery")]
     [Endpoint("GET /api/v1/admin/services/{serviceName}/discovery")]
     [Endpoint("PUT /api/v1/admin/services/{serviceName}/discovery")]
     [InlineData("/api/v1/admin/metadata/layers/0/discovery")]
@@ -126,7 +126,7 @@ public sealed class AdminDiscoveryMetadataEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTheory]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/discovery")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/discovery")]
     [InlineData("{\"etag\":\"stale\",\"title\":\"\\u0000\"}")]
     [InlineData("{\"etag\":\"stale\",\"keywords\":[null]}")]
     [InlineData("{\"etag\":\"\"}")]
@@ -140,8 +140,8 @@ public sealed class AdminDiscoveryMetadataEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/discovery")]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/discovery")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/discovery")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/discovery")]
     public async Task Discovery_GlobalLayerId_DoesNotUsePublicationLocalId()
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
@@ -168,8 +168,8 @@ public sealed class AdminDiscoveryMetadataEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTheory]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/discovery")]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/discovery")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/discovery")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/discovery")]
     [Endpoint("GET /api/v1/admin/services/{serviceName}/discovery")]
     [Endpoint("PUT /api/v1/admin/services/{serviceName}/discovery")]
     [InlineData("/api/v1/admin/metadata/layers/2147483647/discovery")]
@@ -182,7 +182,7 @@ public sealed class AdminDiscoveryMetadataEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTheory]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/discovery")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/discovery")]
     [Endpoint("PUT /api/v1/admin/services/{serviceName}/discovery")]
     [InlineData("/api/v1/admin/metadata/layers/0/discovery")]
     [InlineData("/api/v1/admin/services/test/discovery")]
@@ -203,8 +203,8 @@ public sealed class AdminDiscoveryMetadataEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTheory]
-    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/discovery")]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/discovery")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{storageLayerId}/discovery")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/discovery")]
     [InlineData("null", "legacy-layer")]
     [InlineData("empty", "legacy-layer")]
     [InlineData("null", null)]

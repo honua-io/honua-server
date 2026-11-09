@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geospatial-mcp.honua.io/spec/schemas/tools/render_map.result.schema.json",
+  "title": "render_map result payload",
+  "x-honua-reference-shape": true,
+  "type": "object",
+  "description": "Map result with the ordered service-scoped layers used for rendering.",
+  "required": [
+    "layers"
+  ],
+  "properties": {
+    "layers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "../common/service-layer-reference.schema.json"
+      }
+    }
+  }
+}

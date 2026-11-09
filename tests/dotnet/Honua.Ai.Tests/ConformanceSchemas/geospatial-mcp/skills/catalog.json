@@ -8,13 +8,43 @@
       "path": "choosing-a-visualization",
       "description": "Use when an agent must choose, compose, validate, or prepare to publish a geospatial visualization.",
       "workflowFamilies": ["Analyze", "Publish Data", "Build App"],
-      "coverage": ["choosing-visualization", "layer-composition", "query-shaping", "publishing", "anti-patterns"],
+      "coverage": ["choosing-visualization", "anti-patterns"],
       "standardTools": [
         "list_layers", "query_features", "summarize_statistics", "plan_analysis",
         "reproject_features", "create_map_package", "refine_map_package",
         "compose_mixed_protocol_map", "apply_style_preset", "render_map",
         "preview_map_package", "publish_result"
       ]
+    },
+    {
+      "name": "layer-composition",
+      "path": "layer-composition",
+      "description": "Use when an agent must combine geospatial layers into a legible map or decide which layers to omit.",
+      "workflowFamilies": ["Analyze", "Build App"],
+      "coverage": ["layer-composition", "anti-patterns"],
+      "standardTools": [
+        "list_layers", "create_map_package", "refine_map_package",
+        "compose_mixed_protocol_map", "render_map", "preview_map_package"
+      ]
+    },
+    {
+      "name": "query-shaping",
+      "path": "query-shaping",
+      "description": "Use when an agent must retrieve, summarize, sample, page, or reproject geospatial data without unbounded provider work.",
+      "workflowFamilies": ["Analyze", "Build App"],
+      "coverage": ["query-shaping", "anti-patterns"],
+      "standardTools": [
+        "list_layers", "query_features", "summarize_statistics",
+        "plan_analysis", "validate_plan", "execute_plan", "reproject_features"
+      ]
+    },
+    {
+      "name": "publishing",
+      "path": "publishing",
+      "description": "Use when an agent must decide whether a geospatial result is ready to share or promote it from private preview to a published endpoint.",
+      "workflowFamilies": ["Publish Data", "Build App"],
+      "coverage": ["publishing", "anti-patterns"],
+      "standardTools": ["create_map_package", "preview_map_package", "publish_result"]
     }
   ]
 }

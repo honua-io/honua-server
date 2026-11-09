@@ -28,7 +28,7 @@ public sealed class AdminDiscoveryMetadataEndpointsConcurrencyTests : IAsyncLife
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTheory]
-    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/discovery")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{storageLayerId}/discovery")]
     [Endpoint("PUT /api/v1/admin/services/{serviceName}/discovery")]
     [InlineData("/api/v1/admin/metadata/layers/0/discovery")]
     [InlineData("/api/v1/admin/services/test/discovery")]

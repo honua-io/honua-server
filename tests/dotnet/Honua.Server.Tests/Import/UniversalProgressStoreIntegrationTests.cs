@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using FluentAssertions;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Deployment.Domain;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Import;
@@ -29,6 +30,52 @@ public sealed class UniversalProgressStoreIntegrationTests
     public UniversalProgressStoreIntegrationTests(RedisFixture redis)
     {
         _redis = redis;
+    }
+
+    [IntegrationTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task GetProgressAsync_InvalidExportRecord_DoesNotDisableOtherProgress(bool legacyShape)
+    {
+        using var provider = BuildRedisServices();
+        var cache = provider.GetRequiredService<IDistributedCache>();
+        var store = new UniversalProgressStore(cache, NullLogger<UniversalProgressStore>.Instance);
+        var operationId = $"invalid-export-{Guid.NewGuid():N}";
+        var healthyId = $"healthy-print-{Guid.NewGuid():N}";
+        var wrapper = new ProgressWrapper
+        {
+            Type = OperationType.Export,
+            ProgressType = nameof(ExportProgress),
+            Data = System.Text.Json.JsonSerializer.SerializeToElement(
+                ExportProgress.CreateInitial(operationId, "csv", "svc", 3, 10),
+                UniversalProgressJsonContext.Default.ExportProgress),
+        };
+        var json = System.Text.Json.Nodes.JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(
+            wrapper, UniversalProgressJsonContext.Default.ProgressWrapper))!;
+        var export = json["Data"]!.AsObject();
+        if (legacyShape)
+        {
+            export.Remove("ServiceLayerIndex").Should().BeTrue();
+            export["LayerId"] = 3;
+        }
+        else
+        {
+            export["ServiceLayerIndex"] = "invalid";
+        }
+        await cache.SetStringAsync($"universal:progress:{operationId}", json.ToJsonString());
+        await store.SetProgressAsync(healthyId, PrintProgress.CreateInitial(healthyId, "pdf", "map", 1));
+        try
+        {
+            var read = () => store.GetProgressAsync(operationId);
+            await read.Should().ThrowAsync<InvalidPersistedExportProgressException>().WithMessage("Persisted export progress is invalid.*");
+            store.IsUsingFallback.Should().BeFalse();
+            (await store.GetProgressAsync<PrintProgress>(healthyId))!.JobId.Should().Be(healthyId);
+        }
+        finally
+        {
+            await cache.RemoveAsync($"universal:progress:{operationId}");
+            await cache.RemoveAsync($"universal:progress:{healthyId}");
+        }
     }
 
     [IntegrationTest]

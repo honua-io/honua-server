@@ -4,7 +4,7 @@
   "validates": "inputs",
   "inputs": {
     "serviceId": "county_parcels",
-    "layerId": 0,
+    "serviceLayerIndex": 0,
     "where": "zoning = 'R1'",
     "bbox": [-97.95, 30.15, -97.55, 30.55],
     "bboxSrid": 4326,

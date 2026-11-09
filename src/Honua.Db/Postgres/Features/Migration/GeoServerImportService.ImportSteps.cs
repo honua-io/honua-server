@@ -399,7 +399,7 @@ internal sealed partial class GeoServerImportService
         // SLD parsing/conversion is delegated to ISldStyleConverter (Honua.Server) and
         // executed by TryConvertSldStyle so warnings/errors are surfaced in the import
         // result. Per-layer style persistence is performed by the admin SLD endpoint
-        // (POST /api/v1/admin/metadata/layers/{layerId}/style/import-sld); this method
+        // (POST /api/v1/admin/metadata/layers/{storageLayerId}/style/import-sld); this method
         // remains a single-responsibility conversion hook for the bulk import path and
         // does not write the converted MapLibre JSON to the catalog.
         Log.StyleConversionStarted(_logger, style.Name);
