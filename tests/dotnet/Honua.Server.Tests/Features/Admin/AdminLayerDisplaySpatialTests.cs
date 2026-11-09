@@ -8,6 +8,7 @@ using FluentAssertions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Admin;
@@ -122,6 +123,27 @@ public sealed class AdminLayerDisplaySpatialTests : IAsyncLifetime
         using var client = _fixture.CreateClient();
         using var response = await client.GetAsync(path);
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTheory]
+    [InlineData("/api/v1/admin/metadata/layers/0/display")]
+    [InlineData("/api/v1/admin/metadata/layers/0/spatial")]
+    [InlineData("/api/v1/admin/services/alpha/layers/0/metadata")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/display")]
+    [Endpoint("GET /api/v1/admin/metadata/layers/{layerId}/spatial")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/display")]
+    [Endpoint("PUT /api/v1/admin/metadata/layers/{layerId}/spatial")]
+    public async Task Metadata_AuthenticatedReader_IsForbidden(string path)
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory();
+        using var client = ServiceRbacTestFixture.CreateClient(factory, "viewer");
+        using var read = await client.GetAsync(path);
+        read.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        if (path.EndsWith("/metadata", StringComparison.Ordinal))
+            return;
+        using var write = await PutAsync(client, path, "{}");
+        write.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
     private static async Task<JsonElement> ReadAsync(HttpClient client, string path)

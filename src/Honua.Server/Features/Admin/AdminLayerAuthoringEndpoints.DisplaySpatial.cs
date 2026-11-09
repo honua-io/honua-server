@@ -11,6 +11,11 @@ namespace Honua.Server.Features.Admin;
 
 internal static partial class AdminLayerAuthoringEndpoints
 {
+    private sealed class LayerConfigurationValidationException(string detail) : Exception
+    {
+        public string Detail { get; } = detail;
+    }
+
     private static Task<IResult> HandleGetDisplay(int layerId, HttpContext context) =>
         ReadLayerConfigurationAsync(layerId, context, resource => DisplayResponse(layerId, resource));
 
@@ -46,9 +51,9 @@ internal static partial class AdminLayerAuthoringEndpoints
             target = await AdminLayerConfigurationTargets.WriteAsync(store, layerId, mutate, context.RequestAborted)
                 .ConfigureAwait(false);
         }
-        catch (ArgumentException exception)
+        catch (LayerConfigurationValidationException exception)
         {
-            return ProblemDetailsHelpers.CreateAdminProblem(context, 400, exception.Message);
+            return ProblemDetailsHelpers.CreateAdminProblem(context, 400, exception.Detail);
         }
         if (target.IsAmbiguous)
             return ProblemDetailsHelpers.CreateAdminProblem(context, 409, target.ConflictDetail!);
@@ -74,12 +79,12 @@ internal static partial class AdminLayerAuthoringEndpoints
         };
         if (display.MinScale is { } min && (!double.IsFinite(min) || min < 0) ||
             display.MaxScale is { } max && (!double.IsFinite(max) || max < 0))
-            throw new ArgumentException("Scale denominators must be finite and nonnegative.");
+            throw new LayerConfigurationValidationException("Scale denominators must be finite and nonnegative.");
         if (display.MinScale is > 0 && display.MaxScale is > 0 && display.MinScale < display.MaxScale)
-            throw new ArgumentException("The minimum visible scale denominator must be at least the maximum visible denominator.");
+            throw new LayerConfigurationValidationException("The minimum visible scale denominator must be at least the maximum visible denominator.");
         if (!string.IsNullOrWhiteSpace(display.DisplayField) && !resource.SchemaFields.Any(field =>
                 string.Equals(field.Name, display.DisplayField, StringComparison.OrdinalIgnoreCase)))
-            throw new ArgumentException("The display field must name a declared field.");
+            throw new LayerConfigurationValidationException("The display field must name a declared field.");
         return resource with { Display = display };
     }
 
@@ -97,14 +102,14 @@ internal static partial class AdminLayerAuthoringEndpoints
         };
         if (request.GeometryType is { } geometryType &&
             (!Enum.IsDefined(geometryType) || geometryType == MetadataV2GeometryType.Unknown))
-            throw new ArgumentException("A supported geometry type is required.");
+            throw new LayerConfigurationValidationException("A supported geometry type is required.");
         if (spatial.SpatialReference is { } reference && reference.ResolveSrid() is not > 0)
-            throw new ArgumentException("The spatial reference must resolve to a positive SRID.");
+            throw new LayerConfigurationValidationException("The spatial reference must resolve to a positive SRID.");
         if (spatial.SupportedCrs.Any(crs => crs is null || crs.ResolveSrid() is not > 0) ||
             spatial.StorageCrs is { } storage && storage.ResolveSrid() is not > 0)
-            throw new ArgumentException("CRS values must resolve to a positive SRID.");
+            throw new LayerConfigurationValidationException("CRS values must resolve to a positive SRID.");
         if (spatial.StorageCrsCoordinateEpoch is { } epoch && (!double.IsFinite(epoch) || epoch < 0))
-            throw new ArgumentException("The coordinate epoch must be finite and nonnegative.");
+            throw new LayerConfigurationValidationException("The coordinate epoch must be finite and nonnegative.");
         return resource with { Spatial = spatial };
     }
 
