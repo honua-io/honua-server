@@ -277,7 +277,8 @@ internal static class OperationsServiceCollectionExtensions
         services.TryAddSingleton<IOperationPolicyDecisionPoint>(sp => new CanonicalOperationPolicyDecisionPoint(
             sp.GetRequiredService<IOptions<OperationPolicyOptions>>(),
             sp.GetRequiredService<Honua.Core.Features.Guardrails.Abstractions.IGuardrailLadder>(),
-            productionEnvironment));
+            productionEnvironment,
+            sp.GetRequiredService<OperationInitiationResolver>()));
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IHostedService, OperationPolicyStartupReporter>());
 

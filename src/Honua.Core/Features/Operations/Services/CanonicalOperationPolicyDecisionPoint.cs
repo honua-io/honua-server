@@ -3,6 +3,8 @@
 
 using Honua.Core.Features.Guardrails.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Operations.Policy;
@@ -15,19 +17,22 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
 {
     private readonly ConfigurableOperationPolicyDecisionPoint _typedPolicy;
     private readonly IGuardrailLadder _legacyGuardrails;
+    private readonly IOperationInitiationResolver? _initiationResolver;
 
     public CanonicalOperationPolicyDecisionPoint(
         IOptions<OperationPolicyOptions> options,
         IGuardrailLadder legacyGuardrails,
-        bool productionEnvironment = false)
+        bool productionEnvironment = false,
+        IOperationInitiationResolver? initiationResolver = null)
     {
         _typedPolicy = new ConfigurableOperationPolicyDecisionPoint(options, productionEnvironment);
         _legacyGuardrails = legacyGuardrails;
+        _initiationResolver = initiationResolver;
     }
 
     public OperationPolicyComposition TypedPolicy => _typedPolicy.Composition;
 
-    public Task<PolicyDecision> EvaluateAsync(
+    public async Task<PolicyDecision> EvaluateAsync(
         IOperationDescriptor descriptor,
         OperationRequest request,
         OperationPolicyContext context,
@@ -35,12 +40,12 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
     {
         if (request.GatewayRequest is not { } gatewayRequest)
         {
-            return _typedPolicy.EvaluateAsync(descriptor, request, context, cancellationToken);
+            return await _typedPolicy.EvaluateAsync(descriptor, request, context, cancellationToken).ConfigureAwait(false);
         }
 
         if (!string.IsNullOrWhiteSpace(context.ApprovedProposalId))
         {
-            return Task.FromResult(PolicyDecision.Allowed);
+            return PolicyDecision.Allowed;
         }
 
         // Autonomous actions have already passed the registered autonomy evaluator.
@@ -48,7 +53,7 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
         // approved proposal (proposal identity must only identify a real proposal).
         if (string.Equals(context.AuthorizationOutcome, "autonomy-authorized", StringComparison.Ordinal))
         {
-            return Task.FromResult(PolicyDecision.Allowed);
+            return PolicyDecision.Allowed;
         }
 
         // An admin Studio publication executes before the proposal guardrail. The
@@ -58,13 +63,25 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
         if (string.Equals(context.AuthorizationOutcome, StudioDraftMutationContext.AdminDirectPublicationOutcome, StringComparison.Ordinal)
             && string.Equals(request.OperationId, StudioDraftMutationContext.PublicationOperationId, StringComparison.Ordinal))
         {
-            return Task.FromResult(PolicyDecision.Allowed);
+            return PolicyDecision.Allowed;
         }
 
         var guardrail = gatewayRequest.ActionDiscriminator is null
             ? _legacyGuardrails.Resolve(gatewayRequest.Kind)
             : _legacyGuardrails.Resolve(gatewayRequest.Kind, gatewayRequest.ActionDiscriminator);
-        return Task.FromResult(guardrail.Tier switch
+        if (guardrail is { Tier: GuardrailTier.RequiresApproval, Source: "default-policy" }
+            && gatewayRequest is { Kind: OperationClass.StudioDraftMutation, ActionDiscriminator: null }
+            && IsPrivateDraftEdit(descriptor.OperationId)
+            && _initiationResolver is not null)
+        {
+            var initiation = await _initiationResolver.ResolveAsync(cancellationToken).ConfigureAwait(false);
+            if (initiation is (OperationInitiationKind.Human, OperationInitiationChannel.InteractiveOidc))
+            {
+                return PolicyDecision.Allowed;
+            }
+        }
+
+        return guardrail.Tier switch
         {
             GuardrailTier.DirectExecute => PolicyDecision.Allowed,
             GuardrailTier.RequiresApproval => new PolicyDecision
@@ -78,6 +95,11 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
                 Kind = PolicyDecisionKind.Deny,
                 Reason = guardrail.Source,
             },
-        });
+        };
     }
+
+    private static bool IsPrivateDraftEdit(string operationId) => operationId is
+        "studio.draft.create" or "studio.draft.update" or "studio.draft.delete" or
+        "studio.draft.validate" or "studio.draft.preview-plan" or "studio.draft.save-version" or
+        "studio.content.reopen-version";
 }
