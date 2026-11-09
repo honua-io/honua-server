@@ -38,12 +38,12 @@ public sealed class ProductionHealthMetricsTests
     }
 
     [Theory]
-    [InlineData(0, 0, HealthStatus.Healthy)]
-    [InlineData(0, 1, HealthStatus.Degraded)]
-    [InlineData(7, 3, HealthStatus.Degraded)]
-    [InlineData(8, 2, HealthStatus.Healthy)]
+    [InlineData(0, 0, true)]
+    [InlineData(0, 1, false)]
+    [InlineData(7, 3, false)]
+    [InlineData(8, 2, true)]
     public async Task CheckHealthAsync_CacheSamples_DistinguishesUnobservedFromLowHitRatio(
-        long hits, long misses, HealthStatus expectedStatus)
+        long hits, long misses, bool expectedCacheHealthy)
     {
         var tracker = Substitute.For<IActiveDbConnectionTracker>();
         using var pool = new ConnectionPoolMetrics(tracker);
@@ -58,17 +58,40 @@ public sealed class ProductionHealthMetricsTests
 
         var result = await check.CheckHealthAsync(new HealthCheckContext());
 
-        result.Status.Should().Be(expectedStatus);
+        var metrics = collector.GetHealthMetrics();
+        metrics.GetAlertConditions().Any(alert => alert.StartsWith("Low cache hit ratio", StringComparison.Ordinal))
+            .Should().Be(!expectedCacheHealthy);
+        result.Data["hasCacheSamples"].Should().Be(hits + misses > 0);
         if (hits + misses == 0)
         {
-            result.Description.Should().Contain("no samples yet");
-            result.Data["hasCacheSamples"].Should().Be(false);
+            result.Data["cacheSampleStatus"].Should().Be("no samples yet");
+            if (result.Status == HealthStatus.Healthy)
+            {
+                result.Description.Should().Contain("no samples yet");
+            }
             result.Data.Should().NotContainKey("cacheHitRatio");
         }
         else
         {
+            result.Data["cacheSampleStatus"].Should().Be("available");
             result.Data["cacheHitRatio"].Should().Be((double)hits / (hits + misses));
         }
+    }
+
+    [Theory]
+    [InlineData(false, 0.0, true)]
+    [InlineData(true, 0.0, false)]
+    [InlineData(true, 0.7, false)]
+    [InlineData(true, 0.8, true)]
+    public void IsHealthy_CacheSamples_OnlyAppliesThresholdAfterObservations(
+        bool hasSamples, double hitRatio, bool expectedHealthy)
+    {
+        var metrics = CreateHealthyMetrics();
+        metrics.HasCacheSamples = hasSamples;
+        metrics.CacheHitRatio = hitRatio;
+
+        metrics.IsHealthy().Should().Be(expectedHealthy);
+        metrics.GetAlertConditions().Should().HaveCount(expectedHealthy ? 0 : 1);
     }
 
     [Fact]
