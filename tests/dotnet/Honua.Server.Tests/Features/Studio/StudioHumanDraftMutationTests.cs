@@ -114,7 +114,7 @@ public sealed class StudioHumanDraftMutationTests : IAsyncLifetime
 
     private static Task<HttpResponseMessage> CreateDraftAsync(HttpClient client) => client.PostAsync(
         "/api/v1/studio/package-drafts", new StringContent(
-            $$"""{"packageKey":"human-draft-{{Guid.NewGuid():N}}","workspaceId":"studio","envelope":{"family":"query","format":"studio_query_package.v1","schemaVersion":"1.0","body":{"where":"1=1"}}}""",
+            $$$"""{"packageKey":"human-draft-{{{Guid.NewGuid():N}}}","workspaceId":"studio","envelope":{"family":"query","format":"studio_query_package.v1","schemaVersion":"1.0","body":{"where":"1=1"}}}""",
             Encoding.UTF8, "application/json"));
 
     private static async Task AssertPendingAsync(HttpResponseMessage response)
