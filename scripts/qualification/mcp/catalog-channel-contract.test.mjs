@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { verifyCatalogChannels } from './catalog-channel-contract.mjs';
+import { requiredInputs, verifyCatalogChannels } from './catalog-channel-contract.mjs';
 
 function fixture(change = result => result) {
   const calls = [];
@@ -58,4 +58,24 @@ test('rejects an empty denominator and a run without a large result', async () =
   await assert.rejects(verifyCatalogChannels({ rosters: {} }), { message: 'empty-view-denominator' });
   const peer = fixture(() => ({ structuredContent: {}, content: [{ type: 'text', text: '{}' }] }));
   await assert.rejects(verifyCatalogChannels(peer), { message: 'size-boundary-not-exercised' });
+});
+
+test('a large refusal cannot substitute for exercising successful payload elision', async () => {
+  const peer = fixture(result => ({ ...result, isError: true }));
+  await assert.rejects(verifyCatalogChannels(peer), { message: 'size-boundary-not-exercised' });
+});
+
+test('documents nested required fields through arrays and schema variants', () => {
+  const schema = { type: 'object', properties: { plan: { oneOf: [{
+    type: 'object', required: ['steps'], properties: { steps: {
+      type: 'array', description: 'Caller-authored steps.', items: { type: 'object', required: ['id'],
+        properties: { id: { type: 'string', description: 'Caller-authored step id.' } } },
+    } },
+  }] } } };
+  assert.deepEqual(requiredInputs(schema), [
+    { field: 'plan.steps', description: 'Caller-authored steps.' },
+    { field: 'plan.steps[].id', description: 'Caller-authored step id.' },
+  ]);
+  delete schema.properties.plan.oneOf[0].properties.steps.items.properties.id.description;
+  assert.throws(() => requiredInputs(schema), { message: 'undocumented-required-input' });
 });

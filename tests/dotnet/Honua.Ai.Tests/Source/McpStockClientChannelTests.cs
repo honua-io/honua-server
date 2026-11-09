@@ -21,14 +21,7 @@ public sealed partial class McpConnectionDiscoveryIntegrationTests
     [Endpoint("POST /mcp")]
     public async Task AuthenticatedCatalogCalls_EmptyArguments_PreserveBothContentChannels()
     {
-        await using var fixture = new WebAppFixture().UseKestrel().WithTestLicense(HonuaEdition.Pro)
-            .ConfigureWebHost(builder =>
-            {
-                builder.UseSetting("ConnectionStrings:redis", _redis.ConnectionString);
-                builder.UseSetting("HONUA_DEV_AUTH", "false");
-                builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false");
-                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
-            });
+        await using var fixture = CreateStockFixture();
         await fixture.InitializeAsync();
         using var admin = fixture.CreateAdminClient();
         var largestPayloadBytes = 0;
@@ -52,12 +45,24 @@ public sealed partial class McpConnectionDiscoveryIntegrationTests
                     .Select(block => block.GetProperty("text").GetString()!)
                     .Count(text => IsSameJson(text, structured));
                 mirroredPayloads.Should().Be(1, $"{view}/{name} must mirror the complete JSON payload exactly once");
-                largestPayloadBytes = Math.Max(largestPayloadBytes, Encoding.UTF8.GetByteCount(structured.GetRawText()));
+                if (!result.TryGetProperty("isError", out var isError) || !isError.GetBoolean())
+                {
+                    largestPayloadBytes = Math.Max(largestPayloadBytes, Encoding.UTF8.GetByteCount(structured.GetRawText()));
+                }
             }
         }
 
-        largestPayloadBytes.Should().BeGreaterThanOrEqualTo(1024, "the live catalog calls must exercise the former size-elision boundary");
+        largestPayloadBytes.Should().BeGreaterThanOrEqualTo(1024, "successful live reads must exercise the former size-elision boundary");
     }
+
+    private WebAppFixture CreateStockFixture() => new WebAppFixture().UseKestrel().WithTestLicense(HonuaEdition.Pro)
+        .ConfigureWebHost(builder =>
+        {
+            builder.UseSetting("ConnectionStrings:redis", _redis.ConnectionString);
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_DEV_AUTH_ALLOW_BYPASS", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+        });
 
     private static bool IsSameJson(string text, JsonElement expected)
     {

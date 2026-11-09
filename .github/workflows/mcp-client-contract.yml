@@ -1,0 +1,122 @@
+name: MCP Client Contract
+
+on:
+  pull_request:
+    branches: [trunk]
+    paths:
+      - 'src/Honua.Ai/Features/Protocols/Mcp/**'
+      - 'src/Honua.Core/Features/WorkflowPackages/Domain/WorkflowNodeRegistryModels.cs'
+      - 'src/Honua.Server/Features/Operations/**'
+      - 'tests/dotnet/Honua.Ai.Tests/Source/Mcp*'
+      - 'scripts/qualification/mcp/**'
+      - 'docs/gis/data/mcp-tool-roster.v1.json'
+      - '.github/workflows/mcp-client-contract.yml'
+  push:
+    branches: [trunk]
+    paths:
+      - 'src/Honua.Ai/Features/Protocols/Mcp/**'
+      - 'src/Honua.Core/Features/WorkflowPackages/Domain/WorkflowNodeRegistryModels.cs'
+      - 'src/Honua.Server/Features/Operations/**'
+      - 'tests/dotnet/Honua.Ai.Tests/Source/Mcp*'
+      - 'scripts/qualification/mcp/**'
+      - 'docs/gis/data/mcp-tool-roster.v1.json'
+      - '.github/workflows/mcp-client-contract.yml'
+  schedule:
+    - cron: '40 11 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Every-view MCP channel and input contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-dotnet-ci
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22.19.0'
+      - name: Check contract failure controls
+        run: node --test scripts/qualification/mcp/catalog-channel-contract.test.mjs
+      - name: Invoke every advertised tool and audit its inputs and discovery
+        run: |
+          set -euo pipefail
+          dotnet test tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj --configuration Release \
+            --filter 'FullyQualifiedName~LiveWorkflowViews_|FullyQualifiedName~AuthenticatedCatalogCalls_|FullyQualifiedName~ConfigureOperateAndAnalyze_SelectTheOperatorPath_WithinBudget|FullyQualifiedName~McpToolRosterDriftTests' \
+            --logger 'trx;LogFileName=contract.trx' --results-directory artifacts/mcp-client-contract
+          python3 - <<'PYTHON'
+          import xml.etree.ElementTree as ET
+          rows = ET.parse('artifacts/mcp-client-contract/contract.trx').getroot().findall('.//{*}UnitTestResult')
+          assert rows and all(row.get('outcome') == 'Passed' for row in rows)
+          names = {row.get('testName', '').replace(' ', '').replace('_', '') for row in rows}
+          for required in [
+              'LiveWorkflowViews_RequiredInputs_HaveDescriptions',
+              'LiveWorkflowViews_ConnectionPublication_ProvidesReadOnlyConnectionAndTableDiscovery',
+              'LiveWorkflowViews_JobConsumers_ProvideReadOnlyJobDiscovery',
+              'AuthenticatedCatalogCalls_EmptyArguments_PreserveBothContentChannels',
+              'ConfigureOperateAndAnalyze_SelectTheOperatorPath_WithinBudget',
+          ]:
+              assert required.replace('_', '') in names, required
+          PYTHON
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: mcp-contract-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/mcp-client-contract/
+          if-no-files-found: error
+          retention-days: 30
+
+  stock-clients:
+    name: Published SDK and Inspector nightly
+    if: github.event_name == 'schedule'
+    needs: contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-dotnet-ci
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22.19.0'
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: honua-io/geospatial-mcp
+          ref: 372d9ad1366a5fa28165e7ebbc7481e6e1ca13c4
+          path: .mcp-client
+          persist-credentials: false
+      - name: Install pinned published clients and test their adapters
+        run: |
+          set -euo pipefail
+          cd .mcp-client/certification
+          echo '5e6b28f4c29b82b799190e9e92083c7aca38b879afc7e242bee4320a711e195f  package-lock.json' | sha256sum -c -
+          npm ci --ignore-scripts
+          cd "$GITHUB_WORKSPACE"
+          ln -s "$GITHUB_WORKSPACE/.mcp-client/certification/node_modules" scripts/qualification/mcp/node_modules
+          node --test scripts/qualification/mcp/stock-client-adapters.test.mjs
+      - name: Invoke every view through both published clients
+        env:
+          HONUA_MCP_STOCK_CLIENT: '1'
+        run: |
+          set -euo pipefail
+          dotnet test tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj --configuration Release \
+            --filter 'FullyQualifiedName~PublishedSdk_AllViews_|FullyQualifiedName~PublishedInspector_AllViews_' \
+            --logger 'trx;LogFileName=stock-clients.trx' --results-directory artifacts/mcp-stock-clients
+          python3 - <<'PYTHON'
+          import xml.etree.ElementTree as ET
+          rows = ET.parse('artifacts/mcp-stock-clients/stock-clients.trx').getroot().findall('.//{*}UnitTestResult')
+          assert len(rows) == 2 and all(row.get('outcome') == 'Passed' for row in rows)
+          PYTHON
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: mcp-stock-clients-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/mcp-stock-clients/
+          if-no-files-found: error
+          retention-days: 30
