@@ -3,9 +3,11 @@
 
 using System.Text.Json.Serialization;
 
+using Honua.Core.Serialization;
+
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
-public sealed record MetadataV2TimeRange
+public sealed record MetadataV2TimeRange : ExtensibleJsonRecord
 {
     [JsonPropertyName("start")]
     public DateTimeOffset? Start { get; init; }
@@ -14,7 +16,7 @@ public sealed record MetadataV2TimeRange
     public DateTimeOffset? End { get; init; }
 }
 
-public sealed record MetadataV2ResourceTemporal
+public sealed record MetadataV2ResourceTemporal : ExtensibleJsonRecord
 {
     [JsonPropertyName("startTimeField")]
     public string? StartTimeField { get; init; }
