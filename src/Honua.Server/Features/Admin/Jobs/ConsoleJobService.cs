@@ -13,8 +13,8 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Geoprocessing;
-using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure;
+using Honua.Infrastructure.Authentication;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Server.Features.Admin.Jobs;
