@@ -186,7 +186,7 @@ Canonical pipelines:
 Adapter rules:
 
 - **Where entrypoints live.** Most protocol families have their own project,
-  `src/Honua.Protocols.*`:
+  `src/Honua.Protocols/<Family>/`:
   - `GeoServices`;
   - `OgcApi`, `OgcClassic` and `Ogc.Shared`;
   - `OData`;
@@ -291,7 +291,7 @@ shared infrastructure.
   generated bindings through the published `Geospatial.Grpc` package. Make new services, fields,
   enum values and other wire-contract changes in `geospatial-grpc` first, then consume them here
   by bumping the package version. Do not reintroduce a local proto source-of-truth tree under
-  `src/Honua.Core/`.
+  `src/Honua.Core/Core/`.
 - **SDKs.** When server-side tools or tests need .NET SDK client behaviour, consume `Honua.Sdk.*`
   as published, versioned NuGet packages. Do not copy SDK source into this repo. Avoid
   long-lived sibling `ProjectReference` links to `honua-sdk-dotnet`; a temporary local reference
@@ -353,7 +353,7 @@ When porting behaviour, cite the source:
 #### BLOCKING: dependency direction
 
 ```csharp
-// VIOLATION: Core depending on infrastructure (file under src/Honua.Core/)
+// VIOLATION: Core depending on infrastructure (file under src/Honua.Core/Core/)
 using Honua.Db.Postgres;   // BLOCKING: Core cannot depend on a provider
 using Honua.Server;        // BLOCKING: Core cannot depend on Server
 
@@ -378,7 +378,7 @@ project files are `src/Honua.Db/<Provider>/Honua.<Provider>.csproj`, and their n
 public class FeaturesController : ControllerBase { }   // BLOCKING: no controllers
 
 // CORRECT: Minimal API endpoint mapping
-// (see src/Honua.Protocols.GeoServices/FeatureServer/FeatureServerEndpoints.cs)
+// (see src/Honua.Protocols/GeoServices/FeatureServer/FeatureServerEndpoints.cs)
 public static void MapFeatureServerEndpoints(this WebApplication app)
 {
     app.MapGet("/rest/services/{id}/FeatureServer/{layerId}/query",
@@ -400,7 +400,7 @@ Organise code in vertical feature slices, not in layer-based folders (`Controlle
 `Services/`, `Models/`, `Repositories/`):
 
 ```text
-src/Honua.Protocols.GeoServices/FeatureServer/
+src/Honua.Protocols/GeoServices/FeatureServer/
 ├── FeatureServerEndpoints.cs      // API endpoints
 ├── FeatureServerEditsHandler.cs   // adapter to the canonical edit pipeline
 └── AttachmentEndpoints.cs         // one slice per feature, not per layer

@@ -21,12 +21,12 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Honua.Core.Abstractions\Honua.Core.Abstractions.csproj" />
-    <ProjectReference Include="..\Honua.Core\Honua.Core.csproj" />
-    <ProjectReference Include="..\Honua.Geometry\Honua.Geometry.csproj" />
-    <ProjectReference Include="..\Honua.Hosting\Honua.Hosting.csproj" />
-    <ProjectReference Include="..\Honua.ServiceDefaults\Honua.ServiceDefaults.csproj" />
-    <ProjectReference Include="..\Honua.Protocols.Ogc.Shared\Honua.Protocols.Ogc.Shared.csproj" />
+    <ProjectReference Include="..\..\Honua.Core\Abstractions\Honua.Core.Abstractions.csproj" />
+    <ProjectReference Include="..\..\Honua.Core\Core\Honua.Core.csproj" />
+    <ProjectReference Include="..\..\Honua.Geometry\Honua.Geometry.csproj" />
+    <ProjectReference Include="..\..\Honua.Hosting\Honua.Hosting.csproj" />
+    <ProjectReference Include="..\..\Honua.ServiceDefaults\Honua.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\Ogc.Shared\Honua.Protocols.Ogc.Shared.csproj" />
   </ItemGroup>
 
   <ItemGroup>
