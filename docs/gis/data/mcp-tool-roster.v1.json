@@ -1,8 +1,8 @@
 {
   "$schema": "./mcp-tool-roster.v1.schema.json",
   "schemaVersion": 1,
-  "serverSha": "42773e92f437468fa2e5b34b570b1e57a241ae41",
-  "generatedAt": "2026-11-08T12:17:27Z",
+  "serverSha": "1096c6d600bf0444f3080bc8f244d36f658b7725",
+  "generatedAt": "2026-11-09T02:42:31Z",
   "regenerate": "bash scripts/generate-mcp-tool-roster.sh",
   "static": [
     "honua_alert_events",
@@ -211,17 +211,12 @@
       "honua_admin_layer_publish",
       "honua_admin_server_status",
       "honua_admin_services_access_policy_set",
-      "honua_admin_services_list",
       "honua_apply_style_preset",
-      "honua_create_folder",
-      "honua_delete_folder",
       "honua_describe_layer",
       "honua_get_style",
       "honua_ingest_dataset",
       "honua_ingest_job_artifact",
-      "honua_list_folders",
       "honua_list_layers",
-      "honua_move_service",
       "honua_publish_result",
       "honua_publish_service",
       "honua_query_features",
@@ -245,8 +240,7 @@
       "honua_studio_set_layer_visibility",
       "honua_studio_set_view",
       "honua_studio_update_draft",
-      "honua_studio_validate_draft",
-      "honua_update_folder"
+      "honua_studio_validate_draft"
     ],
     "default": [
       "honua_describe_layer",
@@ -261,6 +255,14 @@
       "honua_resolve_entity",
       "honua_supported_operation_kinds",
       "honua_validate_plan"
+    ],
+    "folders": [
+      "honua_admin_services_list",
+      "honua_create_folder",
+      "honua_delete_folder",
+      "honua_list_folders",
+      "honua_move_service",
+      "honua_update_folder"
     ],
     "operate": [
       "honua_alert_events",
