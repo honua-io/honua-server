@@ -23,19 +23,26 @@ export function requireMirroredPayload(result) {
   return Buffer.byteLength(JSON.stringify(result.structuredContent));
 }
 
-export function requiredInputs(schema, path = '') {
+function valueOrigin(description, inherited) {
+  return typeof description === 'string' && /\bcaller\b|\bhonua_[a-z0-9_]+\b/i.test(description) ? description : inherited;
+}
+
+export function requiredInputs(schema, path = '', inheritedOrigin) {
   if (!schema || typeof schema !== 'object') return [];
+  const origin = valueOrigin(schema.description, inheritedOrigin);
   const inputs = (schema.required ?? []).map(name => {
     const description = schema.properties?.[name]?.description;
     requireContract(typeof description === 'string' && description.trim().length > 0, 'undocumented-required-input');
-    return { field: path ? `${path}.${name}` : name, description };
+    const source = valueOrigin(description, origin);
+    requireContract(typeof source === 'string' && source.trim().length > 0, 'missing-required-input-source');
+    return { field: path ? `${path}.${name}` : name, description, source };
   });
   for (const [name, child] of Object.entries(schema.properties ?? {})) {
-    inputs.push(...requiredInputs(child, path ? `${path}.${name}` : name));
+    inputs.push(...requiredInputs(child, path ? `${path}.${name}` : name, origin));
   }
-  if (schema.items) inputs.push(...requiredInputs(schema.items, `${path}[]`));
+  if (schema.items) inputs.push(...requiredInputs(schema.items, `${path}[]`, origin));
   for (const keyword of ['allOf', 'anyOf', 'oneOf']) {
-    for (const variant of schema[keyword] ?? []) inputs.push(...requiredInputs(variant, path));
+    for (const variant of schema[keyword] ?? []) inputs.push(...requiredInputs(variant, path, origin));
   }
   return inputs;
 }
@@ -59,8 +66,7 @@ export async function verifyCatalogChannels({ rosters, discover, call }) {
     let successes = 0;
     let refusals = 0;
     for (const name of names) {
-      // These authenticated empty-argument calls cover reads and refusals.
-      // Successful mutation semantics have separate workflow tests.
+      // Empty arguments exercise reads and refusal payloads without supplying mutation inputs.
       const result = await call(view, name, {});
       const payloadBytes = requireMirroredPayload(result);
       largestPayloadBytes = Math.max(largestPayloadBytes, payloadBytes);

@@ -73,8 +73,8 @@ test('documents nested required fields through arrays and schema variants', () =
     } },
   }] } } };
   assert.deepEqual(requiredInputs(schema), [
-    { field: 'plan.steps', description: 'Caller-authored steps.' },
-    { field: 'plan.steps[].id', description: 'Caller-authored step id.' },
+    { field: 'plan.steps', description: 'Caller-authored steps.', source: 'Caller-authored steps.' },
+    { field: 'plan.steps[].id', description: 'Caller-authored step id.', source: 'Caller-authored step id.' },
   ]);
   delete schema.properties.plan.oneOf[0].properties.steps.items.properties.id.description;
   assert.throws(() => requiredInputs(schema), { message: 'undocumented-required-input' });
@@ -89,4 +89,25 @@ test('roster diagnostics contain canonical missing names and counts without echo
     assert.equal(JSON.stringify(error.details).includes('untrusted-server-value'), false);
     return true;
   });
+});
+
+test('rejects a nonblank required description without a value origin', () => {
+  const schema = { type: 'object', required: ['id'], properties: {
+    id: { type: 'string', description: 'Dataset identifier.' },
+  } };
+  assert.throws(() => requiredInputs(schema), { message: 'missing-required-input-source' });
+});
+
+test('inherits a caller-owned object source while retaining each required field description', () => {
+  const schema = { type: 'object', description: 'Caller-authored configuration.', required: ['id'], properties: {
+    id: { type: 'string', description: 'Stable id.' },
+  } };
+  assert.deepEqual(requiredInputs(schema), [{ field: 'id', description: 'Stable id.', source: 'Caller-authored configuration.' }]);
+});
+
+test('records the named producer of a required value', () => {
+  const schema = { type: 'object', required: ['jobId'], properties: {
+    jobId: { type: 'string', description: 'Job id from honua_list_jobs.' },
+  } };
+  assert.equal(requiredInputs(schema)[0].source, 'Job id from honua_list_jobs.');
 });

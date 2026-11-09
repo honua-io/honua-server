@@ -40,6 +40,7 @@ public sealed partial class McpWorkflowViewTests
             }
         }
         _output.WriteLine($"Write descriptors audited: {writes}");
+        foreach (var gap in gaps) _output.WriteLine(gap);
         writes.Should().BePositive();
         gaps.Should().BeEmpty("write resources and read prerequisites must be reachable in the selected view");
     }

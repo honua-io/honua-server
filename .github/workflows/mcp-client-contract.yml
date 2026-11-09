@@ -60,6 +60,8 @@ jobs:
               'LiveWorkflowViews_StudioDraftConsumers_NameTheDraftCreator',
               'LiveWorkflowViews_NativeLayerWrites_ExposeStorageLayerDiscovery',
               'LiveWorkflowViews_ServiceWrites_ProvideReadOnlyServiceDiscovery',
+              'LiveWorkflowViews_EveryWriteTool_ProvidesReadOnlyResourceDiscovery',
+              'LiveWorkflowViews_RemovedDraftReadback_IsRejected',
               'InputRefusals_MissingArguments_NameFieldsAndValueSources',
               'InputRefusals_InvalidJobIdType_NamesFieldAndProducer',
               'ConnectionDiscovery_AdminAndNonAdminKeys_MatchRestPermissionsAndReturnOnlySafeFields',

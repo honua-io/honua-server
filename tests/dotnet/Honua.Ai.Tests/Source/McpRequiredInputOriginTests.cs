@@ -30,6 +30,7 @@ public sealed partial class McpWorkflowViewTests
 
     private sealed class RequiredInputOriginAudit(HashSet<string> toolNames)
     {
+        private static readonly Regex SourceIntroduction = new(@"\bfrom\b|\bsource\s*:", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
         private static readonly Regex ToolReference = new(@"\bhonua_[a-z0-9_]+\b", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
         public SortedSet<string> Missing { get; } = new(StringComparer.Ordinal);
         public HashSet<string> ProducerReferences { get; } = new(StringComparer.Ordinal);
@@ -37,7 +38,8 @@ public sealed partial class McpWorkflowViewTests
         public void Inspect(JsonElement schema, InputOriginPath context)
         {
             if (schema.ValueKind != JsonValueKind.Object) return;
-            ProducerReferences.UnionWith(FindReferences(ReadDescription(schema)));
+            var description = ReadDescription(schema);
+            if (SourceIntroduction.IsMatch(description)) ProducerReferences.UnionWith(FindReferences(description));
             var source = HasNamedOrigin(schema) ? ReadDescription(schema) : context.SourceDescription;
             InspectRequired(schema, context with { SourceDescription = source });
             InspectChildren(schema, context with { SourceDescription = source });
