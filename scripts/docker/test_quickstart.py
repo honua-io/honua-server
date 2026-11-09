@@ -116,7 +116,9 @@ class QuickstartTests(unittest.TestCase):
         function = source.split("assert_all_health_checks() {", 1)[1].split("\n}\n", 1)[0]
         healthy = {"status": "Healthy", "entries": {"audit-chain-integrity": {
             "status": "Healthy", "data": {"last_verified_at": "2026-11-09T19:00:00Z"}}}}
-        reports = [healthy, {**healthy, "status": "Unhealthy"},
+        reports = [healthy,
+                   {"status": "Healthy", "entries": {"audit-chain-integrity": {"status": "Healthy",
+                       "data": {"last_verified_at": "2026-11-09T18:59:59Z"}}}}, {**healthy, "status": "Unhealthy"},
                    {"status": "Healthy", "entries": {"audit-chain-integrity": {"status": "Healthy"}}},
                    {"status": "Healthy", "entries": {}},
                    {"status": "Healthy", "entries": {"database": {"status": "Healthy"}}}]
@@ -129,7 +131,8 @@ class QuickstartTests(unittest.TestCase):
                 report_file.write_text(json.dumps(report))
                 result = subprocess.run(["bash", "-c",
                     'set -euo pipefail; curl() { cat "$REPORT_FILE"; }; '
-                    'HONUA_HTTP_PORT=18080; ADMIN_PASSWORD=unused; sleep() { :; }; '
+                    'HONUA_HTTP_PORT=18080; ADMIN_PASSWORD=unused; '
+                    'AUDIT_VERIFIED_AFTER=2026-11-09T18:59:59Z; sleep() { :; }; '
                     'assert_all_health_checks() {' + function + '\n}; assert_all_health_checks 1'],
                     env={**os.environ, "REPORT_FILE": str(report_file)}, capture_output=True)
                 self.assertEqual(result.returncode == 0, index == 0, "Smoke must reject unhealthy or incomplete health")

@@ -75,9 +75,10 @@ assert_all_health_checks() {
   for _ in $(seq 1 "${attempts}"); do
     if curl -fsS -H "X-API-Key: ${ADMIN_PASSWORD}" \
       "http://127.0.0.1:${HONUA_HTTP_PORT}/monitoring/health/comprehensive" \
-      | jq -e '.status == "Healthy" and (.entries | type == "object")
+      | jq -e --arg verified_after "${AUDIT_VERIFIED_AFTER}" '.status == "Healthy" and (.entries | type == "object")
           and (.entries | has("audit-chain-integrity"))
           and (.entries["audit-chain-integrity"].data.last_verified_at | type == "string" and length > 0)
+          and (.entries["audit-chain-integrity"].data.last_verified_at > $verified_after)
           and (.entries | all(.status == "Healthy"))' >/dev/null; then
       echo "all registered health checks: Healthy (audit chain verified)"
       return 0
@@ -156,6 +157,8 @@ compose up -d --build postgres redis honua console
 
 wait_for_url "http://127.0.0.1:${HONUA_HTTP_PORT}/healthz/ready" "honua ready" 90
 assert_proposal_roundtrip
+# Require a verification in a later second than the completed audit-producing request.
+AUDIT_VERIFIED_AFTER="$(date -u +%Y-%m-%dT%H:%M:%S).9999999+00:00"
 assert_all_health_checks
 wait_for_url "http://127.0.0.1:${HONUA_CONSOLE_PORT}/version.json" "console version" 60
 wait_for_url "http://127.0.0.1:${HONUA_CONSOLE_PORT}/operate" "console operate" 60
