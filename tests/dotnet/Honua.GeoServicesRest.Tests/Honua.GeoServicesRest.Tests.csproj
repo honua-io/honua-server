@@ -9,7 +9,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\src\Honua.Db\GeoServicesRest\Honua.GeoServicesRest.csproj" />
-    <ProjectReference Include="..\..\..\src\Honua.Core\Honua.Core.csproj" />
+    <ProjectReference Include="..\..\..\src\Honua.Core\Core\Honua.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>
