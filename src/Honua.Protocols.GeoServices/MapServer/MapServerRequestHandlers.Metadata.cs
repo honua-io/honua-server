@@ -39,7 +39,7 @@ internal static partial class MapServerEndpoints
         int StorageLayerId,
         string Name,
         MetadataV2Layer Publication,
-        MetadataV2Resource Resource);
+        MetadataV2Object Resource);
 
     private static async Task<IResult> HandleGetServiceMetadata(HttpContext context)
     {
@@ -416,7 +416,7 @@ internal static partial class MapServerEndpoints
     internal static MapServerLayerResponse MapLayerToMapServerLayerResponse(
         MetadataV2Service service,
         MetadataV2Layer publication,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2GraphSnapshot snapshot,
         int maxRecordCount,
         GeoServicesExtent mapExtent,
@@ -540,7 +540,7 @@ internal static partial class MapServerEndpoints
     }
 
     private static async Task<FeatureServerTimeInfo?> BuildTimeInfoSafeAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2Layer publication,
         MetadataV2GraphSnapshot snapshot,
         IFeatureReader featureReader,
@@ -642,7 +642,7 @@ internal static partial class MapServerEndpoints
 
     internal static async Task<GeoServicesExtent> ResolveCachedExtentAsync(
         MetadataV2Service service,
-        IEnumerable<MetadataV2Resource> resources,
+        IEnumerable<MetadataV2Object> resources,
         ICoordinateTransformService transformService,
         CancellationToken cancellationToken)
     {
@@ -692,7 +692,7 @@ internal static partial class MapServerEndpoints
         };
     }
 
-    private static GeoServicesExtent? ResolveLayerExtent(MetadataV2Resource resource, GeoServicesExtent? serviceExtent)
+    private static GeoServicesExtent? ResolveLayerExtent(MetadataV2Object resource, GeoServicesExtent? serviceExtent)
     {
         var layerSpatialReference = ResolveLayerSpatialReference(resource);
         var bbox = resource.ReadBbox();
@@ -783,7 +783,7 @@ internal static partial class MapServerEndpoints
                .FirstOrDefault(static spatialReference => spatialReference is not null)
            ?? MetadataV2SpatialReference.Wgs84;
 
-    private static MetadataV2SpatialReference ResolveLayerSpatialReference(MetadataV2Resource resource)
+    private static MetadataV2SpatialReference ResolveLayerSpatialReference(MetadataV2Object resource)
         => resource.Spatial?.SpatialReference ?? MetadataV2SpatialReference.Wgs84;
 
     private static SpatialReferenceJson ToEsriSpatialReference(MetadataV2SpatialReference spatialReference)
@@ -797,7 +797,7 @@ internal static partial class MapServerEndpoints
             ? "esriDecimalDegrees"
             : "esriMeters";
 
-    private static bool HasMapServerGeometry(MetadataV2Resource resource)
+    private static bool HasMapServerGeometry(MetadataV2Object resource)
     {
         var geometryType = resource.ReadGeometryType();
         return geometryType != MetadataV2GeometryType.None ||
@@ -830,7 +830,7 @@ internal static partial class MapServerEndpoints
     private static string BuildMapServerCapabilities()
         => DefaultMapServerCapabilities;
 
-    private static string BuildMapServerLayerCapabilities(MetadataV2Resource resource)
+    private static string BuildMapServerLayerCapabilities(MetadataV2Object resource)
     {
         var capabilities = new List<string>();
         if (HasMapServerGeometry(resource))
@@ -845,7 +845,7 @@ internal static partial class MapServerEndpoints
     }
 
     private static JsonElement? ResolveMapServerDrawingInfo(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2GraphSnapshot snapshot)
     {
         if (TryResolveMapServerDrawingInfoExtension(resource, out var extensionDrawingInfo))
@@ -856,7 +856,7 @@ internal static partial class MapServerEndpoints
         foreach (var styleResourceId in resource.StyleResourceIds ?? Array.Empty<string>())
         {
             if (!snapshot.Index.ResourcesById.TryGetValue(styleResourceId, out var styleResource)
-                || styleResource.Type != MetadataV2ResourceType.Style
+                || styleResource.Type != MetadataV2ObjectType.Style
                 || styleResource.Style is null)
             {
                 continue;
@@ -881,7 +881,7 @@ internal static partial class MapServerEndpoints
     }
 
     private static bool TryResolveMapServerDrawingInfoExtension(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         out JsonElement drawingInfo)
     {
         if (resource.Extensions is not null

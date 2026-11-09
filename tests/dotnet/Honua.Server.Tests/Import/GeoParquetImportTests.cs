@@ -415,7 +415,7 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
     public async Task Upload_WithBoundedQueryWriterOutput_PreservesRowsAcrossRowGroupBoundaries()
     {
         const int rowCount = 10000;
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "query-export", Name = "query_export" },
             SchemaFields =
@@ -424,7 +424,7 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
                 new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String },
                 new MetadataV2Field { Name = "geometry", Type = MetadataV2FieldType.Geometry, SemanticRoles = ["geometry.primary"] }
             ],
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = MetadataV2GeometryType.Point,

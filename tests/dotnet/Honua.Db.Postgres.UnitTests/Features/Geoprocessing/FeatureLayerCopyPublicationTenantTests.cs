@@ -93,14 +93,14 @@ public sealed class FeatureLayerCopyPublicationTenantTests
         }, "test", DateTimeOffset.UtcNow);
     }
 
-    private static MetadataV2Resource CreateResource() => new()
+    private static MetadataV2Object CreateResource() => new()
     {
         Metadata = new MetadataV2ObjectMetadata { Id = "resource", Name = "shared" },
-        Type = MetadataV2ResourceType.FeatureDataset,
+        Type = MetadataV2ObjectType.FeatureDataset,
         PrimaryStorageBindingId = "binding-allowed",
         StorageBindingIds = ["binding-allowed", "binding-hidden"],
         SchemaFields = [new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, SemanticRoles = ["id.primary"] }],
-        Spatial = new MetadataV2ResourceSpatial { SpatialReference = MetadataV2SpatialReference.Wgs84, PrimaryGeometryField = "geometry" }
+        Spatial = new MetadataV2ObjectSpatial { SpatialReference = MetadataV2SpatialReference.Wgs84, PrimaryGeometryField = "geometry" }
     };
 
     private static MetadataV2StorageBinding CreateBinding(string suffix, int storageLayerId) => new()

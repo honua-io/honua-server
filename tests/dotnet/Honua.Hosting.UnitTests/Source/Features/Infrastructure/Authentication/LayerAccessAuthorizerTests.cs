@@ -276,7 +276,7 @@ public sealed class LayerAccessAuthorizerTests
             Metadata = new MetadataV2ObjectMetadata { Id = "open-service", Name = "open-service" },
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Draft },
         };
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "staff", Name = "staff" },
             StorageBindingIds = ["staff-binding"],
@@ -337,7 +337,7 @@ public sealed class LayerAccessAuthorizerTests
             Metadata = new MetadataV2ObjectMetadata { Id = "service", Name = "service" },
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
         };
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource", Name = "resource" },
             StorageBindingIds = ["binding"],

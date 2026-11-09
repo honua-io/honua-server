@@ -269,7 +269,7 @@ internal static class ReflectionDisabledAotJsonProbe
                 ["observed"] = new TimeOnly(13, 5, 9, 123, 456),
                 ["extra"] = extra.RootElement.Clone()
             }.ToImmutableDictionary());
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "stac-probe", Name = "probe" },
             SchemaFields =

@@ -79,11 +79,11 @@ public sealed class FeatureServerServiceEstimateLayerIdsTests
             "\"estimates\"",
             DateTimeOffset.UtcNow);
 
-    private static MetadataV2Resource FeatureResource(string id, string? storageBindingId)
+    private static MetadataV2Object FeatureResource(string id, string? storageBindingId)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = id, Name = id },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             StorageBindingIds = storageBindingId is null ? [] : [storageBindingId],
             PrimaryStorageBindingId = storageBindingId,

@@ -20,7 +20,7 @@ internal static class FeatureServerResourceValidationHelpers
         bool IsValid,
         MetadataV2Service? Service,
         MetadataV2Layer? Publication,
-        MetadataV2Resource? Resource,
+        MetadataV2Object? Resource,
         IResult? ErrorResult);
 
     public static async Task<ServiceValidationV2Result> ValidateServiceV2Async(

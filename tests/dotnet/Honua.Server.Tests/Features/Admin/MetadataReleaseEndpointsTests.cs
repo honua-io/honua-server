@@ -76,7 +76,7 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
         inventory.Entries.Should().ContainSingle(entry =>
             entry.SemanticId == "res.parcels" &&
             entry.ArtifactKind == MetadataSemanticArtifactKind.Resource &&
-            entry.ResourceType == MetadataV2ResourceType.Map);
+            entry.ResourceType == MetadataV2ObjectType.Map);
     }
 
     [IntegrationTest]
@@ -867,7 +867,7 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
             GeneratedAt = DateTimeOffset.UtcNow,
             Resources =
             [
-                new MetadataV2Resource
+                new MetadataV2Object
                 {
                     Metadata = new MetadataV2ObjectMetadata
                     {
@@ -879,7 +879,7 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
                             ["honua.io/content-version-id"] = "content-v1",
                         },
                     },
-                    Type = MetadataV2ResourceType.Map,
+                    Type = MetadataV2ObjectType.Map,
                     StorageBindingIds = ["storage.parcels"],
                     PrimaryStorageBindingId = "storage.parcels",
                     SchemaFields = BuildSchemaFields(includeSchemaField),
@@ -968,7 +968,7 @@ public sealed class MetadataReleaseEndpointsTests : IAsyncLifetime
                 {
                     SemanticId = "res.parcels",
                     ArtifactKind = MetadataSemanticArtifactKind.Resource,
-                    ResourceType = MetadataV2ResourceType.Map,
+                    ResourceType = MetadataV2ObjectType.Map,
                     DesiredMetadataRevision = 41,
                 },
             ],

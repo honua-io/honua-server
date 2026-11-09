@@ -85,7 +85,7 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
     public async Task<AccessDecision> AuthorizePublicationAsync(
         ClaimsPrincipal principal,
         MetadataV2Layer publication,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2Service? service,
         AuthorizationOperation operation,
         CancellationToken cancellationToken = default)
@@ -205,7 +205,7 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
         // sort first, even though the synchronous query surface would have allowed it through B.
         // Every live publication is therefore evaluated and ANY grant admits — matching what the
         // caller could already do interactively (honua-server#3046 review).
-        var candidates = new List<(MetadataV2Resource Resource, MetadataV2Service? Service)>();
+        var candidates = new List<(MetadataV2Object Resource, MetadataV2Service? Service)>();
         var hasLivePublication = false;
         var publications = snapshot.Index.PublicationsByResource[storageResource.Metadata.Id].ToList();
 
@@ -307,7 +307,7 @@ internal sealed class LayerAccessAuthorizer : ILayerAccessAuthorizer
         string? tenantId,
         bool applyTenantScope,
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Resource storageResource,
+        MetadataV2Object storageResource,
         IReadOnlyList<MetadataV2Layer> publications,
         AuthorizationOperation operation,
         IDictionary<object, object?> requestCache,

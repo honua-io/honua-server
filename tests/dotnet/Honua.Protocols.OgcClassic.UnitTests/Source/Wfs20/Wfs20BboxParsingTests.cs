@@ -41,7 +41,7 @@ public sealed class Wfs20BboxParsingTests
         new WKBReader().Read(spatialFilter.Geometry).Should().BeOfType<MultiPolygon>();
     }
 
-    private static SpatialFilter InvokeParseBboxFilter(string bbox, MetadataV2Resource resource)
+    private static SpatialFilter InvokeParseBboxFilter(string bbox, MetadataV2Object resource)
     {
         var method = typeof(Wfs20Handler).GetMethod(
             "ParseBboxFilterForResource",
@@ -56,12 +56,12 @@ public sealed class Wfs20BboxParsingTests
         return (SpatialFilter)result!;
     }
 
-    private static MetadataV2Resource CreateResource()
+    private static MetadataV2Object CreateResource()
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res.wfs-layer", Name = "wfs-layer" },
-            Type = MetadataV2ResourceType.FeatureDataset,
-            Spatial = new MetadataV2ResourceSpatial
+            Type = MetadataV2ObjectType.FeatureDataset,
+            Spatial = new MetadataV2ObjectSpatial
             {
                 GeometryType = MetadataV2GeometryType.Point,
                 SpatialReference = MetadataV2SpatialReference.Wgs84

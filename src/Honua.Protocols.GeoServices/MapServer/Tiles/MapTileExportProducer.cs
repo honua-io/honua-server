@@ -117,7 +117,7 @@ internal static class MapTileExportLayerResolver
         ImmutableArray<TileExportMapLayerSelection> pinnedLayers,
         out int serviceSrid)
     {
-        var resolved = new List<(int StorageLayerId, MetadataV2Resource Resource)>(pinnedLayers.Length);
+        var resolved = new List<(int StorageLayerId, MetadataV2Object Resource)>(pinnedLayers.Length);
         var publicationsByLayerId = ResolvePublicationsByLayerId(snapshot, service);
         foreach (var selection in pinnedLayers)
         {
@@ -189,7 +189,7 @@ internal static class MapTileExportLayerResolver
                 snapshot, service, JobSecurityScope.Current?.Submitter?.TenantId)
             .ToDictionary(static publication => publication.LayerIndex!.Value);
 
-    private static bool HasMapServerGeometry(MetadataV2Resource resource)
+    private static bool HasMapServerGeometry(MetadataV2Object resource)
         => resource.ReadGeometryType() != MetadataV2GeometryType.None
             || resource.FindPrimaryGeometryField() is not null;
 

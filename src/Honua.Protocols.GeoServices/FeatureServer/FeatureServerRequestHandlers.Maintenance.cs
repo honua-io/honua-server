@@ -215,7 +215,7 @@ internal static partial class FeatureServerEndpoints
         int layerId,
         MetadataV2Layer publication,
         MetadataV2Service service,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IReadOnlyDictionary<string, StringValues> values,
         GeoServicesFeature[] features,
         CancellationToken cancellationToken)
@@ -985,7 +985,7 @@ internal static partial class FeatureServerEndpoints
 
     private static DomainInfo MapDomainInfoV2(
         MetadataV2Layer publication,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2Field field,
         MetadataV2GraphSnapshot snapshot)
     {
@@ -1884,7 +1884,7 @@ internal static partial class FeatureServerEndpoints
         IFilterExpressionService filterService,
         string sqlExpression,
         string sqlType,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         if (string.Equals(sqlType, "orderBy", StringComparison.OrdinalIgnoreCase))
         {

@@ -17,7 +17,7 @@ public sealed class StacTemporalMappingTests
     [Fact]
     public void StringTimestamp_IsNotPresentedAsAResolvedAcquisitionDate()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             SchemaFields = [new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.String }]
         };
@@ -33,7 +33,7 @@ public sealed class StacTemporalMappingTests
     [Fact]
     public async Task TypedFallback_UsesSamePhysicalFieldForMappingFilterAndExtent()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             SchemaFields = [new MetadataV2Field { Name = "TIMESTAMP", Type = MetadataV2FieldType.DateTime }]
         };

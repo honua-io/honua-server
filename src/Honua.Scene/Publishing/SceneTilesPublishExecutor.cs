@@ -624,7 +624,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
     }
 
     private async Task<CollectedFeatures> CollectFeaturesAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int storageLayerId,
         IReadOnlyList<string> includeAttributes,
         int maxFeatures,
@@ -890,7 +890,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
     }
 
     private static List<SceneAttributeSchema> BuildAttributeSchemas(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IReadOnlyList<string> includeAttributes)
     {
         var allow = includeAttributes.Count == 0
@@ -953,7 +953,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         _ => (null, string.Empty)
     };
 
-    private async Task<(MetadataV2Resource Resource, int StorageLayerId)> ResolveSourceResourceAsync(
+    private async Task<(MetadataV2Object Resource, int StorageLayerId)> ResolveSourceResourceAsync(
         int layerId,
         CancellationToken cancellationToken)
     {
@@ -988,7 +988,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
     private static bool IsSupportedKind(SceneGeometryKind kind)
         => kind is SceneGeometryKind.Point or SceneGeometryKind.LineString or SceneGeometryKind.Polygon;
 
-    private static string ResolveSceneId(PublishIntent intent, MetadataV2Resource resource)
+    private static string ResolveSceneId(PublishIntent intent, MetadataV2Object resource)
     {
         var explicitId = TryGetTargetConfig(intent, TargetConfigSceneId);
         if (!string.IsNullOrEmpty(explicitId))
@@ -1018,7 +1018,7 @@ internal sealed partial class SceneTilesPublishExecutor : IPublishExecutor
         return candidate;
     }
 
-    private static string ResolveDisplayName(PublishIntent intent, MetadataV2Resource resource, string sceneId)
+    private static string ResolveDisplayName(PublishIntent intent, MetadataV2Object resource, string sceneId)
     {
         var name = TryGetTargetConfig(intent, TargetConfigDisplayName);
         if (!string.IsNullOrEmpty(name))

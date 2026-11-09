@@ -218,7 +218,7 @@ internal static class TerrainEndpoints
 
     private static TerrainMetadataResponse BuildMetadataResponse(
         string datasetId,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int layerId,
         TerrainDatasetMetadata metadata,
         int minZoom,

@@ -161,19 +161,19 @@ public sealed class CogRegistrationTileTests
     private static TestMetadataV2GraphBuilder CreateGraph(bool withCollision)
     {
         var builder = new TestMetadataV2GraphBuilder()
-            .AddResource("resource-a", "imagery-a", MetadataV2ResourceType.RasterDataset)
+            .AddResource("resource-a", "imagery-a", MetadataV2ObjectType.RasterDataset)
             .AddStorageBinding("binding-a", "resource-a", "rasters:42", storageLayerId: 42)
             .AddService("service-a", "imagery-a", protocols: [ServiceProtocols.ImageServer])
             .AddPublication("publication-a", "service-a", "resource-a", layerIndex: 1,
                 storageBindingId: "binding-a", publicationType: MetadataV2LayerType.EsriImageLayer)
-            .AddResource("resource-b", "imagery-b", MetadataV2ResourceType.RasterDataset)
+            .AddResource("resource-b", "imagery-b", MetadataV2ObjectType.RasterDataset)
             .AddStorageBinding("binding-b", "resource-b", "rasters:1", storageLayerId: 1)
             .AddService("service-b", "imagery-b", protocols: [ServiceProtocols.ImageServer])
             .AddPublication("publication-b", "service-b", "resource-b", layerIndex: 2,
                 storageBindingId: "binding-b", publicationType: MetadataV2LayerType.EsriImageLayer);
         return withCollision
             ? builder
-                .AddResource("resource-c", "imagery-c", MetadataV2ResourceType.RasterDataset)
+                .AddResource("resource-c", "imagery-c", MetadataV2ObjectType.RasterDataset)
                 .AddStorageBinding("binding-c", "resource-c", "rasters:7", storageLayerId: 7)
                 .AddService("service-c", "imagery-c", protocols: [ServiceProtocols.ImageServer])
                 .AddPublication("publication-c", "service-c", "resource-c", layerIndex: 1,

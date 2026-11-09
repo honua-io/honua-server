@@ -23,7 +23,7 @@ public sealed class FeatureReadSecurityIntegrationTests
     public async Task GetAsync_FeatureAndRasterShareNumericLayer_EnforcesFeatureMask()
     {
         var masks = Substitute.For<IFieldMaskSource>();
-        masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+        masks.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(ImmutableArray<string>.Empty));
         var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
             .ReplaceService(masks);
@@ -31,14 +31,14 @@ public sealed class FeatureReadSecurityIntegrationTests
         try
         {
             var graph = fixture.GetCurrentV2GraphSnapshot().Graph;
-            Assert.Contains(graph.Resources, resource => resource.Type == MetadataV2ResourceType.RasterDataset);
+            Assert.Contains(graph.Resources, resource => resource.Type == MetadataV2ObjectType.RasterDataset);
             Assert.Contains(graph.StorageBindings, binding => binding.Locator == "rasters" && binding.StorageLayerId == 0);
             Assert.Contains(graph.StorageBindings, binding => binding.Locator == "features" && binding.StorageLayerId == 0);
             var id = await fixture.InsertFeatureAsync(0, "visible name");
             var original = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;
             await fixture.GetService<IFeatureWriter>().UpdateAsync(0,
                 original with { Attributes = original.Attributes.SetItem("population", 12345L) });
-            masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+            masks.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
                 .Returns(Task.FromResult(ImmutableArray.Create("population")));
 
             var feature = (await fixture.GetService<IFeatureReader>().GetAsync(0, id))!.Value;

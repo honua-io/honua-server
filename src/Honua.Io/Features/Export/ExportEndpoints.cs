@@ -498,12 +498,12 @@ internal static class ExportEndpoints
     internal static string SanitizeExportFilename(string serviceName, string layerName)
         => FileUploadSecurity.SanitizeFileName($"{serviceName}_{layerName}");
 
-    private static string ResolveLayerName(MetadataV2Resource resource, int layerId)
+    private static string ResolveLayerName(MetadataV2Object resource, int layerId)
         => string.IsNullOrWhiteSpace(resource.Metadata.Name)
             ? $"layer-{layerId.ToString(CultureInfo.InvariantCulture)}"
             : resource.Metadata.Name;
 
-    private static ExportField[] ResolveOutputFields(MetadataV2Resource resource, string? outFields)
+    private static ExportField[] ResolveOutputFields(MetadataV2Object resource, string? outFields)
     {
         var attributeFields = resource.SchemaFields
             .Where(static field => field.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography))

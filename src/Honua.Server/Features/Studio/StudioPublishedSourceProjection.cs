@@ -358,7 +358,7 @@ internal static class StudioPublishedSourceProjection
         string Id,
         MetadataV2Service Service,
         MetadataV2Layer Publication,
-        MetadataV2Resource Resource,
+        MetadataV2Object Resource,
         int LayerId,
         string? BindingId,
         string? BindingProtocol);

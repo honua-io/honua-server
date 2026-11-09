@@ -401,12 +401,12 @@ internal static class PrintingToolsRequestHandlers
         }
     }
 
-    private static MetadataV2Resource? ResolveResource(
+    private static MetadataV2Object? ResolveResource(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Layer publication)
         => snapshot.ResolveResource(publication);
 
-    private static int ResolveServiceSrid(MetadataV2Service service, MetadataV2Resource resource)
+    private static int ResolveServiceSrid(MetadataV2Service service, MetadataV2Object resource)
         => service.SpatialReference?.ResolveSrid()
             ?? resource.ReadSrid()
             ?? 4326;
@@ -415,7 +415,7 @@ internal static class PrintingToolsRequestHandlers
         WebMapOperationalLayer OperationalLayer,
         MetadataV2Service Service,
         MetadataV2Layer Publication,
-        MetadataV2Resource Resource,
+        MetadataV2Object Resource,
         int StorageLayerId,
         MetadataV2GeometryType GeometryType,
         MapLibreStyleLayer[] StyleLayers);

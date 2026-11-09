@@ -726,7 +726,7 @@ public sealed class MetadataReleaseService(
         return dependencies.Distinct(StringComparer.Ordinal).ToArray();
     }
 
-    private static MetadataSemanticInventoryEntry ToInventoryEntry(MetadataV2Resource resource)
+    private static MetadataSemanticInventoryEntry ToInventoryEntry(MetadataV2Object resource)
         => new()
         {
             SemanticId = resource.Metadata.Id,
@@ -742,7 +742,7 @@ public sealed class MetadataReleaseService(
             PolicyIds = resource.PolicyIds,
         };
 
-    private static MetadataSemanticInventoryEntry ToInventoryEntry(MetadataV2Resource resource, MetadataV2Field field)
+    private static MetadataSemanticInventoryEntry ToInventoryEntry(MetadataV2Object resource, MetadataV2Field field)
         => new()
         {
             SemanticId = GetFieldSemanticId(resource, field),
@@ -775,7 +775,7 @@ public sealed class MetadataReleaseService(
 
     private static MetadataSemanticInventoryEntry ToInventoryEntry(
         MetadataV2Layer publication,
-        MetadataV2Resource? resource)
+        MetadataV2Object? resource)
         => new()
         {
             SemanticId = publication.Metadata.Id,
@@ -835,7 +835,7 @@ public sealed class MetadataReleaseService(
             PolicyIds = role.PolicyIds,
         };
 
-    private static MetadataBoundResourceSummary ToResourceSummary(MetadataV2Resource resource)
+    private static MetadataBoundResourceSummary ToResourceSummary(MetadataV2Object resource)
         => new()
         {
             Id = resource.Metadata.Id,
@@ -846,7 +846,7 @@ public sealed class MetadataReleaseService(
             PrimaryStorageBindingId = resource.PrimaryStorageBindingId,
         };
 
-    private static MetadataBoundFieldSummary ToFieldSummary(MetadataV2Resource resource, MetadataV2Field field)
+    private static MetadataBoundFieldSummary ToFieldSummary(MetadataV2Object resource, MetadataV2Field field)
         => new()
         {
             SemanticId = GetFieldSemanticId(resource, field),
@@ -951,7 +951,7 @@ public sealed class MetadataReleaseService(
         return false;
     }
 
-    private static string GetFieldSemanticId(MetadataV2Resource resource, MetadataV2Field field)
+    private static string GetFieldSemanticId(MetadataV2Object resource, MetadataV2Field field)
         => string.IsNullOrWhiteSpace(field.SemanticId)
             ? $"field.{resource.Metadata.Id}.{field.Name}"
             : field.SemanticId.Trim();
@@ -1077,8 +1077,8 @@ public sealed class MetadataReleaseService(
     private sealed record ResolvedSemanticArtifact(
         string SemanticId,
         MetadataSemanticArtifactKind Kind,
-        MetadataV2Resource? Resource = null,
-        MetadataV2Resource? ParentResource = null,
+        MetadataV2Object? Resource = null,
+        MetadataV2Object? ParentResource = null,
         MetadataV2Field? Field = null,
         MetadataV2Service? Service = null,
         MetadataV2Layer? Publication = null,

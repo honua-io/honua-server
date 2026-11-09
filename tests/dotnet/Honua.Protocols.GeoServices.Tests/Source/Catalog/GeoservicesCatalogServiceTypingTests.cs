@@ -143,7 +143,7 @@ public sealed class GeoservicesCatalogServiceTypingTests
         foreach (var suffix in new[] { "a", "b" })
         {
             builder
-                .AddResource($"res-typing-duplicate-{suffix}", "Duplicate Layer", MetadataV2ResourceType.FeatureDataset,
+                .AddResource($"res-typing-duplicate-{suffix}", "Duplicate Layer", MetadataV2ObjectType.FeatureDataset,
                     spatial: PointSpatial(), accessPolicy: anonymous)
                 .AddService($"svc-typing-duplicate-{suffix}", DuplicateServiceName,
                     protocols: [ServiceProtocols.FeatureServer], accessPolicy: anonymous)
@@ -227,7 +227,7 @@ public sealed class GeoservicesCatalogServiceTypingTests
 
         // Vector feature service -> FeatureServer.
         builder
-            .AddResource("res-typing-vector", "Vector Layer", MetadataV2ResourceType.FeatureDataset,
+            .AddResource("res-typing-vector", "Vector Layer", MetadataV2ObjectType.FeatureDataset,
                 spatial: PointSpatial(), accessPolicy: anonymous)
             .AddService("svc-typing-vector", VectorServiceName,
                 protocols: [ServiceProtocols.FeatureServer], accessPolicy: anonymous)
@@ -237,7 +237,7 @@ public sealed class GeoservicesCatalogServiceTypingTests
 
         // Raster/coverage service -> ImageServer (must not flatten to FeatureServer).
         builder
-            .AddResource("res-typing-raster", "Raster Layer", MetadataV2ResourceType.RasterDataset,
+            .AddResource("res-typing-raster", "Raster Layer", MetadataV2ObjectType.RasterDataset,
                 accessPolicy: anonymous)
             .AddStorageBinding(
                 "binding-typing-raster",
@@ -253,7 +253,7 @@ public sealed class GeoservicesCatalogServiceTypingTests
 
         // Service reachable under multiple Esri types -> one entry per type.
         builder
-            .AddResource("res-typing-multi", "Multi Layer", MetadataV2ResourceType.FeatureDataset,
+            .AddResource("res-typing-multi", "Multi Layer", MetadataV2ObjectType.FeatureDataset,
                 spatial: PointSpatial(), accessPolicy: anonymous)
             .AddService("svc-typing-multi", MultiTypeServiceName,
                 protocols: [ServiceProtocols.FeatureServer, ServiceProtocols.MapServer],
@@ -270,7 +270,7 @@ public sealed class GeoservicesCatalogServiceTypingTests
         return builder.Build();
     }
 
-    private static MetadataV2ResourceSpatial PointSpatial()
+    private static MetadataV2ObjectSpatial PointSpatial()
         => new()
         {
             GeometryType = MetadataV2GeometryType.Point,

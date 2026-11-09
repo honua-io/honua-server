@@ -167,7 +167,7 @@ internal sealed class MetadataV2ImageServerLayerResolver(
             // the access policy (#6452).
             .Where(candidate =>
                 candidate.StorageLayerId == layerId
-                && candidate.Resource is { Type: MetadataV2ResourceType.RasterDataset }
+                && candidate.Resource is { Type: MetadataV2ObjectType.RasterDataset }
                 && TenantScopeHelpers.IsPublicationVisible(context, candidate.Publication, candidate.Resource, candidate.Service))
             .ToArray();
 
@@ -277,11 +277,11 @@ internal sealed class MetadataV2ImageServerLayerResolver(
         string PublicationId,
         int? PublicationLayerIndex,
         int? StorageLayerId,
-        MetadataV2Resource? Resource);
+        MetadataV2Object? Resource);
 
     private readonly record struct ImageServerPublishedLayer(
         MetadataV2Layer Publication,
         int? StorageLayerId,
-        MetadataV2Resource? Resource,
+        MetadataV2Object? Resource,
         MetadataV2Service? Service);
 }

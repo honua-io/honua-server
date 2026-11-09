@@ -337,7 +337,7 @@ public sealed class CatalogRasterSourceResolverTests
             Metadata = new MetadataV2ObjectMetadata { Id = $"service-{index}", Name = $"service-{index}" },
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
         }).ToArray();
-        var resources = layers.Select((_, index) => new MetadataV2Resource
+        var resources = layers.Select((_, index) => new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = $"resource-{index}", Name = $"resource-{index}" },
             StorageBindingIds = [$"binding-{index}"],

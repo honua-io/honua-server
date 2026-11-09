@@ -24,10 +24,10 @@ public sealed class FeatureServerReplicaServerStateCapturerTests
         const long publicObjectId = 7001;
         const long internalObjectId = 19;
 
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "assets", Name = "Assets" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             SchemaFields =
             [
                 new MetadataV2Field
@@ -54,7 +54,7 @@ public sealed class FeatureServerReplicaServerStateCapturerTests
         var sut = new FeatureServerReplicaServerStateCapturer(
             reader,
             filters,
-            new Dictionary<int, MetadataV2Resource> { [publicLayerId] = resource });
+            new Dictionary<int, MetadataV2Object> { [publicLayerId] = resource });
 
         var tokens = await sut.CaptureTokensAsync(
             [new ReplicaConflictCaptureTarget(publicLayerId, storageLayerId, publicObjectId)]);
@@ -73,10 +73,10 @@ public sealed class FeatureServerReplicaServerStateCapturerTests
         const int publicLayerId = 3;
         const int storageLayerId = 42;
         const long objectId = 19;
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "assets", Name = "Assets" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
         };
         var stored = Feature.Create(objectId, geometry: null);
         var reader = Substitute.For<IFeatureReader>();
@@ -85,7 +85,7 @@ public sealed class FeatureServerReplicaServerStateCapturerTests
         var sut = new FeatureServerReplicaServerStateCapturer(
             reader,
             Substitute.For<IFilterExpressionService>(),
-            new Dictionary<int, MetadataV2Resource> { [publicLayerId] = resource });
+            new Dictionary<int, MetadataV2Object> { [publicLayerId] = resource });
 
         var states = await sut.CaptureAsync(
             [new ReplicaConflictCaptureTarget(publicLayerId, storageLayerId, objectId)]);

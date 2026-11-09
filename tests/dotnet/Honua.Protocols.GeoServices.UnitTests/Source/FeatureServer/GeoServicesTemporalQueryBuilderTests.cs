@@ -189,11 +189,11 @@ public sealed class GeoServicesTemporalQueryBuilderTests
         bracketed.Should().BeEquivalentTo(plain, options => options.RespectingRuntimeTypes());
     }
 
-    private static MetadataV2Resource BuildNonTemporalResource()
+    private static MetadataV2Object BuildNonTemporalResource()
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-non-temporal", Name = "plain_layer" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             SchemaFields =
             [
                 new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String },
@@ -201,16 +201,16 @@ public sealed class GeoServicesTemporalQueryBuilderTests
             // No Temporal configuration: the layer is not time-enabled.
         };
 
-    private static MetadataV2Resource BuildTemporalResource()
+    private static MetadataV2Object BuildTemporalResource()
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-temporal", Name = "time_layer" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             SchemaFields =
             [
                 new MetadataV2Field { Name = "start_time", Type = MetadataV2FieldType.DateTime },
             ],
-            Temporal = new MetadataV2ResourceTemporal
+            Temporal = new MetadataV2ObjectTemporal
             {
                 StartTimeField = "start_time",
             },

@@ -109,7 +109,7 @@ internal static class TileJsonEndpoints
     internal static int ResolveExtentStorageLayerId(
         MetadataV2GraphSnapshot? snapshot,
         MetadataV2Layer publication,
-        MetadataV2Resource? resource,
+        MetadataV2Object? resource,
         int routeLayerId)
     {
         var storageLayerId = snapshot?.ResolveStorageLayerId(publication, resource);
@@ -120,7 +120,7 @@ internal static class TileJsonEndpoints
         => publication.LayerIndex ?? routeLayerId;
 
     private static async Task<FeatureExtent?> ResolveExtentAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int layerId,
         IFeatureReader featureReader,
         CancellationToken cancellationToken)
@@ -148,7 +148,7 @@ internal static class TileJsonEndpoints
     }
 
     private static TileJsonVectorLayer BuildVectorLayer(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string title,
         string? description,
         int minZoom,

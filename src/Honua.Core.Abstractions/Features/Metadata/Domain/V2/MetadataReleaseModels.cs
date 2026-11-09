@@ -26,7 +26,7 @@ public sealed record MetadataSemanticInventoryFilter
 {
     public MetadataSemanticArtifactKind? ArtifactKind { get; init; }
 
-    public MetadataV2ResourceType? ResourceType { get; init; }
+    public MetadataV2ObjectType? ResourceType { get; init; }
 }
 
 public sealed record MetadataSemanticInventoryResponse
@@ -57,7 +57,7 @@ public sealed record MetadataSemanticInventoryEntry
     public required MetadataSemanticArtifactKind ArtifactKind { get; init; }
 
     [JsonPropertyName("resourceType")]
-    public MetadataV2ResourceType? ResourceType { get; init; }
+    public MetadataV2ObjectType? ResourceType { get; init; }
 
     [JsonPropertyName("serviceType")]
     public MetadataV2ServiceType? ServiceType { get; init; }
@@ -175,7 +175,7 @@ public sealed record MetadataBoundResourceSummary
     public string? Title { get; init; }
 
     [JsonPropertyName("resourceType")]
-    public required MetadataV2ResourceType ResourceType { get; init; }
+    public required MetadataV2ObjectType ResourceType { get; init; }
 
     [JsonPropertyName("primaryStorageBindingId")]
     public string? PrimaryStorageBindingId { get; init; }
@@ -471,7 +471,7 @@ public sealed record MetadataReleaseEntry
     public required MetadataSemanticArtifactKind ArtifactKind { get; init; }
 
     [JsonPropertyName("resourceType")]
-    public MetadataV2ResourceType? ResourceType { get; init; }
+    public MetadataV2ObjectType? ResourceType { get; init; }
 
     [JsonPropertyName("sourceField")]
     public MetadataBoundFieldSummary? SourceField { get; init; }
@@ -575,7 +575,7 @@ public sealed record GitOpsMetadataReleaseEntry
     public required MetadataSemanticArtifactKind ArtifactKind { get; init; }
 
     [JsonPropertyName("resourceType")]
-    public MetadataV2ResourceType? ResourceType { get; init; }
+    public MetadataV2ObjectType? ResourceType { get; init; }
 
     [JsonPropertyName("sourceField")]
     public MetadataBoundFieldSummary? SourceField { get; init; }

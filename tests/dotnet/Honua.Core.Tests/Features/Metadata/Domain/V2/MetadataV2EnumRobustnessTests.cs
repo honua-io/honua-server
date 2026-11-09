@@ -13,7 +13,7 @@ public sealed class MetadataV2EnumRobustnessTests
 {
     private static readonly Type[] EnumTypes =
     [
-        typeof(MetadataV2ResourceType), typeof(MetadataV2ConnectionType),
+        typeof(MetadataV2ObjectType), typeof(MetadataV2ConnectionType),
         typeof(MetadataV2StorageType), typeof(MetadataV2ServiceType),
         typeof(MetadataV2LayerType), typeof(MetadataV2StorageBindingCapability),
         typeof(MetadataV2GeometryType), typeof(MetadataV2FieldType),
@@ -76,8 +76,8 @@ public sealed class MetadataV2EnumRobustnessTests
     }
 
     [UnitTheory]
-    [InlineData(typeof(MetadataV2ResourceType), "\"feature-dataset\"", 0)]
-    [InlineData(typeof(MetadataV2ResourceType), "\"etl-pipeline\"", 14)]
+    [InlineData(typeof(MetadataV2ObjectType), "\"feature-dataset\"", 0)]
+    [InlineData(typeof(MetadataV2ObjectType), "\"etl-pipeline\"", 14)]
     [InlineData(typeof(MetadataV2ConnectionType), "\"database\"", 0)]
     [InlineData(typeof(MetadataV2ConnectionType), "\"managed\"", 5)]
     [InlineData(typeof(MetadataV2StorageType), "\"relational-table\"", 0)]
@@ -103,7 +103,7 @@ public sealed class MetadataV2EnumRobustnessTests
     }
 
     [UnitTheory]
-    [InlineData(typeof(MetadataV2ResourceType), "\"FEATURE-DATASET\"")]
+    [InlineData(typeof(MetadataV2ObjectType), "\"FEATURE-DATASET\"")]
     [InlineData(typeof(MetadataV2ConnectionType), "\"DATABASE\"")]
     public void Deserialize_UnsupportedCasing_UsesUnknownSentinel(Type enumType, string json)
     {

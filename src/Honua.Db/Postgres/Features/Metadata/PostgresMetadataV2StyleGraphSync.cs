@@ -82,11 +82,11 @@ internal sealed class PostgresMetadataV2StyleGraphSync : IMetadataV2StyleGraphSy
         var now = DateTimeOffset.UtcNow;
         var styles = await _styleCatalog.GetStylesForLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
 
-        var styleResources = new List<MetadataV2Resource>(styles.Count);
+        var styleResources = new List<MetadataV2Object>(styles.Count);
         var styleResourceIds = new List<string>(styles.Count);
         foreach (var style in styles)
         {
-            styleResources.Add(MetadataV2StyleResourceFactory.BuildStyleResource(
+            styleResources.Add(MetadataV2StyleFactory.BuildStyleResource(
                 style.StyleId,
                 style.MapLibreStyleJson,
                 style.Title,
@@ -95,13 +95,13 @@ internal sealed class PostgresMetadataV2StyleGraphSync : IMetadataV2StyleGraphSy
                 style.StyleVersion,
                 style.CreatedAt == default ? now : style.CreatedAt,
                 style.UpdatedAt == default ? now : style.UpdatedAt));
-            styleResourceIds.Add(MetadataV2StyleResourceFactory.BuildStyleResourceId(style.StyleId));
+            styleResourceIds.Add(MetadataV2StyleFactory.BuildStyleResourceId(style.StyleId));
         }
 
         // Replace the data resource's StyleResourceIds with the current catalog order.
         var updatedDataResource = dataResource with { StyleResourceIds = styleResourceIds };
 
-        var resources = new List<MetadataV2Resource>(graph.Resources.Count + styleResources.Count);
+        var resources = new List<MetadataV2Object>(graph.Resources.Count + styleResources.Count);
         foreach (var resource in graph.Resources)
         {
             if (string.Equals(resource.Metadata.Id, updatedDataResource.Metadata.Id, StringComparison.Ordinal))
@@ -135,7 +135,7 @@ internal sealed class PostgresMetadataV2StyleGraphSync : IMetadataV2StyleGraphSy
             .SelectMany(r => r.StyleResourceIds)
             .ToHashSet(StringComparer.Ordinal);
         resources.RemoveAll(r =>
-            r.Type == MetadataV2ResourceType.Style
+            r.Type == MetadataV2ObjectType.Style
             && !referencedStyleIds.Contains(r.Metadata.Id));
 
         var updatedGraph = graph with

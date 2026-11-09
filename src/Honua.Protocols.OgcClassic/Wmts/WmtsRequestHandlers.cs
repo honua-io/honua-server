@@ -56,7 +56,7 @@ internal static class WmtsRequestHandlers
     private static readonly char[] _wmtsAdditionalQuerySeparators = ['&', ';'];
 
     private readonly record struct WmtsLayer(
-        MetadataV2Resource Resource,
+        MetadataV2Object Resource,
         MetadataV2Layer Publication,
         int StorageLayerId,
         string Identifier);
@@ -1056,12 +1056,12 @@ internal static class WmtsRequestHandlers
             .ToArray();
     }
 
-    private static int ResolveServiceSrid(MetadataV2Service service, MetadataV2Resource resource)
+    private static int ResolveServiceSrid(MetadataV2Service service, MetadataV2Object resource)
         => service.SpatialReference?.ResolveSrid()
             ?? resource.ReadSrid()
             ?? 4326;
 
-    private static bool ResourceHasGeometry(MetadataV2Resource resource)
+    private static bool ResourceHasGeometry(MetadataV2Object resource)
     {
         if (resource.ReadGeometryType() != MetadataV2GeometryType.None)
         {
@@ -1938,7 +1938,7 @@ internal static class WmtsRequestHandlers
     private static bool TryValidateWmtsDimensionParameters(
         HttpContext context,
         IQueryCollection query,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         out IResult errorResult)
     {
         errorResult = Results.Empty;
@@ -2450,7 +2450,7 @@ internal static class WmtsRequestHandlers
 
     private static async Task AppendWmtsWgs84BoundingBoxAsync(
         StringBuilder sb,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         ICoordinateTransformService? coordinateTransformService,
         CancellationToken cancellationToken)
     {
@@ -2471,7 +2471,7 @@ internal static class WmtsRequestHandlers
     }
 
     private static async Task<(string LowerCorner, string UpperCorner)?> TryGetWmtsWgs84BoundingBoxAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         ICoordinateTransformService? coordinateTransformService,
         CancellationToken cancellationToken)
     {

@@ -617,7 +617,7 @@ public class ImageServerBasicTests : IClassFixture<WebAppFixture>
             .ConfigureServices(services =>
             {
                 var graphProvider = new TestMetadataV2GraphBuilder()
-                    .AddResource("res-2024-imagery", "Imagery", MetadataV2ResourceType.RasterDataset)
+                    .AddResource("res-2024-imagery", "Imagery", MetadataV2ObjectType.RasterDataset)
                     .AddStorageBinding(
                         "binding-2024-imagery",
                         "res-2024-imagery",

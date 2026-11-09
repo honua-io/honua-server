@@ -860,7 +860,7 @@ internal sealed class ODataCrudHandler(
         // V2 path: walk the metadata-v2 graph snapshot, pick the OData-enabled
         // publications via the BuildPrimaryServiceMapV2 tie-break, and run the V2
         // resource-data-editor RBAC check. Mirrors the v1 RequireLayerDataEditorAsync
-        // walk but stays entirely on MetadataV2Resource / MetadataV2Service.
+        // walk but stays entirely on MetadataV2Object / MetadataV2Service.
         var provider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         var snapshot = await provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var primaryServices = LayerValidationHelpers.BuildPrimaryServiceMapV2(snapshot, ODataProtocolConstants.ProtocolName);

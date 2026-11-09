@@ -92,8 +92,8 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
         WebAppFixture fixture,
         int layerIndex,
         AccessPolicy? accessPolicy,
-        MetadataV2ResourceTemporal? temporal,
-        MetadataV2ResourceSpatial? spatial,
+        MetadataV2ObjectTemporal? temporal,
+        MetadataV2ObjectSpatial? spatial,
         MetadataV2PermanentFilter? permanentFilter,
         MetadataV2ExtrusionInfo? extrusion,
         JsonElement? stacExtension,
@@ -304,7 +304,7 @@ internal static class WebAppFixtureMetadataV2GraphMutationMixin
     internal static void UpdateResourceEditing(
         WebAppFixture fixture,
         int layerIndex,
-        MetadataV2ResourceEditing? editing)
+        MetadataV2ObjectEditing? editing)
     {
         var provider = RequireProvider(fixture);
         var snapshot = ReadCurrent(fixture, provider);

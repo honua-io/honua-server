@@ -134,10 +134,10 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
         const double maxX = 600_000d;
         const double maxY = 4_200_000d;
 
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-projected", Name = "projected-layer" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             SchemaFields =
             [
@@ -147,7 +147,7 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
                     Type = MetadataV2FieldType.Geometry,
                 },
             ],
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 GeometryType = MetadataV2GeometryType.Point,
                 SpatialReference = new MetadataV2SpatialReference

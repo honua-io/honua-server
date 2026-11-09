@@ -13,7 +13,7 @@ internal static class ODataV2Lookups
 {
     internal readonly record struct ResolvedODataPublication(
         MetadataV2Layer Publication,
-        MetadataV2Resource Resource,
+        MetadataV2Object Resource,
         MetadataV2Service Service,
         int LayerIndex,
         int StorageLayerId);
@@ -84,7 +84,7 @@ internal static class ODataV2Lookups
     public static async Task<int?> ResolveStorageLayerIdAsync(
         HttpContext context,
         MetadataV2Layer? publication,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -97,7 +97,7 @@ internal static class ODataV2Lookups
     internal static int? ResolveStorageLayerId(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Layer? publication,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
         => publication is null
             ? snapshot.ResolveStorageLayerId(resource)
             : snapshot.ResolveStorageLayerId(publication, resource);

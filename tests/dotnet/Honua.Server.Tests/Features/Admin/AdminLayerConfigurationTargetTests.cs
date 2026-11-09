@@ -55,7 +55,7 @@ public sealed class AdminLayerConfigurationTargetTests
         var store = new RecordingGraphStore(Graph(
             Layer("res-feature", "svc-a", "parcels", layerIndex: 0),
             Layer("res-twin", "svc-b", "twin", layerIndex: 0, retired: true),
-            Layer("res-raster", "svc-image", "image", layerIndex: 0, type: MetadataV2ResourceType.RasterDataset)));
+            Layer("res-raster", "svc-image", "image", layerIndex: 0, type: MetadataV2ObjectType.RasterDataset)));
 
         var target = await AdminLayerConfigurationTargets.WriteAsync(
             store,
@@ -109,13 +109,13 @@ public sealed class AdminLayerConfigurationTargetTests
         int layerIndex,
         bool retired = false,
         bool legacyIdentifier = false,
-        MetadataV2ResourceType type = MetadataV2ResourceType.FeatureDataset)
+        MetadataV2ObjectType type = MetadataV2ObjectType.FeatureDataset)
     {
         return new MetadataV2Graph
         {
             Resources =
             [
-                new MetadataV2Resource
+                new MetadataV2Object
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = resourceId, Name = resourceId },
                     Type = type,

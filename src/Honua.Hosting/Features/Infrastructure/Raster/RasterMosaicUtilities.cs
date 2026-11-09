@@ -9,7 +9,7 @@ namespace Honua.Infrastructure.Raster;
 
 internal static class RasterMosaicUtilities
 {
-    internal static RasterMergeStrategy ResolveMergeStrategy(MetadataV2Resource? resource, string? mosaicRule = null)
+    internal static RasterMergeStrategy ResolveMergeStrategy(MetadataV2Object? resource, string? mosaicRule = null)
     {
         if (TryParseMergeStrategy(mosaicRule, out var requestStrategy))
         {

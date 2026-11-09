@@ -59,12 +59,12 @@ public sealed class DuckDbSqlFilterTranslatorTests
         Assert.Contains("<= ", result.Sql, StringComparison.Ordinal);
     }
 
-    private static MetadataV2Resource CreateNad27PointResource()
+    private static MetadataV2Object CreateNad27PointResource()
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-nad27", Name = "nad27-stations" },
-            Type = MetadataV2ResourceType.FeatureDataset,
-            Spatial = new MetadataV2ResourceSpatial
+            Type = MetadataV2ObjectType.FeatureDataset,
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = new MetadataV2SpatialReference
                 {
@@ -91,11 +91,11 @@ public sealed class DuckDbSqlFilterTranslatorTests
         return wkb;
     }
 
-    private static MetadataV2Resource CreateResource()
+    private static MetadataV2Object CreateResource()
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-parcels", Name = "parcels" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             SchemaFields =
             [
                 new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String },

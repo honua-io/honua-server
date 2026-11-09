@@ -110,14 +110,14 @@ public sealed class PublicationTenantVisibilityTests
     private static MetadataV2Graph CreateGraph()
     {
         var active = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active };
-        var resources = ResourceNames.Select(name => new MetadataV2Resource
+        var resources = ResourceNames.Select(name => new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = name, Name = name, Title = name },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             Status = active,
             AccessPolicy = new AccessPolicy { AllowAnonymous = true },
             SchemaFields = [new MetadataV2Field { Name = "shape", Type = MetadataV2FieldType.Geometry }],
-            Spatial = new MetadataV2ResourceSpatial { GeometryType = MetadataV2GeometryType.Point },
+            Spatial = new MetadataV2ObjectSpatial { GeometryType = MetadataV2GeometryType.Point },
             StorageBindingIds = [name + "-binding"]
         }).ToArray();
         return new MetadataV2Graph

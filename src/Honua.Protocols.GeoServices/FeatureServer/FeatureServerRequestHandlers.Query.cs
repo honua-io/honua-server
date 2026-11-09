@@ -323,7 +323,7 @@ internal static partial class FeatureServerEndpoints
     private static int ResolveServiceQueryLayerId(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Layer publication,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
         => publication.LayerIndex
            ?? snapshot.ResolveStorageLayerId(publication)
            ?? snapshot.ResolveStorageLayerId(resource)

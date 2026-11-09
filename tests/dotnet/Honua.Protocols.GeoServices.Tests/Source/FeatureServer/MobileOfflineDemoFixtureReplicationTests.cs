@@ -181,7 +181,7 @@ public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime
         });
     }
 
-    private static MetadataV2Resource CreateMobileOfflineResource(
+    private static MetadataV2Object CreateMobileOfflineResource(
         int layerId,
         string name,
         string description,
@@ -193,7 +193,7 @@ public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime
         AccessPolicy accessPolicy)
     {
         var bindingId = $"binding-layer-{layerId.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
-        return new MetadataV2Resource
+        return new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata
             {
@@ -202,13 +202,13 @@ public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime
                 Title = name,
                 Description = description
             },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             StorageBindingIds = [bindingId],
             PrimaryStorageBindingId = bindingId,
             AccessPolicy = accessPolicy,
             SchemaFields = fields,
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = geometryType,
@@ -217,9 +217,9 @@ public sealed class MobileOfflineDemoFixtureReplicationTests : IAsyncLifetime
             },
             Temporal = temporalField is null
                 ? null
-                : new MetadataV2ResourceTemporal { StartTimeField = temporalField },
-            Display = new MetadataV2ResourceDisplay { DisplayField = displayField },
-            Editing = new MetadataV2ResourceEditing { CanModify = true },
+                : new MetadataV2ObjectTemporal { StartTimeField = temporalField },
+            Display = new MetadataV2ObjectDisplay { DisplayField = displayField },
+            Editing = new MetadataV2ObjectEditing { CanModify = true },
         };
     }
 

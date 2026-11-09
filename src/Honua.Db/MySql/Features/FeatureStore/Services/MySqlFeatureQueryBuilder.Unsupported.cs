@@ -25,13 +25,13 @@ internal sealed partial class MySqlFeatureQueryBuilder
 
     /// <inheritdoc />
     public ParameterizedQuery BuildSelectFlatGeobufQuery(
-        MetadataV2Resource resource, int layerId, FeatureQuery query,
+        MetadataV2Object resource, int layerId, FeatureQuery query,
         GeometryStorageType geometryStorageType = GeometryStorageType.Geometry)
         => ThrowNotSupported();
 
     /// <inheritdoc />
     public ParameterizedQuery BuildSelectGeobufQuery(
-        MetadataV2Resource resource, int layerId, FeatureQuery query,
+        MetadataV2Object resource, int layerId, FeatureQuery query,
         GeometryStorageType geometryStorageType = GeometryStorageType.Geometry)
         => ThrowNotSupported();
 

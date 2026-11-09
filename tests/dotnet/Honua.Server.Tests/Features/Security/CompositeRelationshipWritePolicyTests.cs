@@ -47,7 +47,7 @@ public sealed class CompositeRelationshipWritePolicyTests
         };
         var service = new MetadataV2Service { Metadata = new MetadataV2ObjectMetadata { Id = "svc", Name = "Summary" } };
         var resources = new[] { "esriRelRoleOrigin", "esriRelRoleDestination" }
-            .Select(role => new MetadataV2Resource
+            .Select(role => new MetadataV2Object
             {
                 Metadata = new MetadataV2ObjectMetadata { Id = role, Name = role },
                 Relationships = [new MetadataV2Relationship { Id = "summary", Composite = true, Role = role }]

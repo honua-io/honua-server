@@ -235,7 +235,7 @@ public sealed class PortalResourceReadAuthorizerTests
             AccessPolicy = new AccessPolicy { AllowedRoles = ["service-reader"], AllowedWriteRoles = ["service-writer"] },
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
         };
-        public MetadataV2Resource Resource { get; } = new()
+        public MetadataV2Object Resource { get; } = new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource-points", Name = "points" },
             AccessPolicy = new AccessPolicy { AllowedWriteRoles = ["layer-writer"] },

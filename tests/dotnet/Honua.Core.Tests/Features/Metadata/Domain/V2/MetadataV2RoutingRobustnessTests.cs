@@ -140,7 +140,7 @@ public sealed class MetadataV2RoutingRobustnessTests
             },
             "resources" => original with
             {
-                Resources = [original.Resources.Single() with { Type = (MetadataV2ResourceType)undefinedKind }]
+                Resources = [original.Resources.Single() with { Type = (MetadataV2ObjectType)undefinedKind }]
             },
             "publications" => original with
             {

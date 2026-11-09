@@ -337,7 +337,7 @@ public sealed class MapServerDynamicJoinTests
             .AddResource(
                 "res-left",
                 "left_parcels",
-                MetadataV2ResourceType.FeatureDataset,
+                MetadataV2ObjectType.FeatureDataset,
                 fields: leftFields,
                 accessPolicy: openAccessPolicy)
             .AddStorageBinding(
@@ -358,7 +358,7 @@ public sealed class MapServerDynamicJoinTests
             .AddResource(
                 "res-right",
                 "right_parcels",
-                MetadataV2ResourceType.FeatureDataset,
+                MetadataV2ObjectType.FeatureDataset,
                 fields: rightFields,
                 accessPolicy: rightAccessPolicy)
             .AddStorageBinding(

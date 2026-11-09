@@ -308,8 +308,8 @@ public sealed class OutputCacheInvalidationServiceTests
             .AddResource(
                 "res-parcels",
                 "Named Parcels",
-                MetadataV2ResourceType.FeatureDataset,
-                spatial: new MetadataV2ResourceSpatial
+                MetadataV2ObjectType.FeatureDataset,
+                spatial: new MetadataV2ObjectSpatial
                 {
                     SpatialReference = MetadataV2SpatialReference.Wgs84,
                     GeometryType = MetadataV2GeometryType.Point,
@@ -387,8 +387,8 @@ public sealed class OutputCacheInvalidationServiceTests
                 .AddResource(
                     resourceId,
                     layerId == 42 ? "Named Layer" : $"Layer {layerId}",
-                    MetadataV2ResourceType.FeatureDataset,
-                    spatial: new MetadataV2ResourceSpatial
+                    MetadataV2ObjectType.FeatureDataset,
+                    spatial: new MetadataV2ObjectSpatial
                     {
                         SpatialReference = MetadataV2SpatialReference.Wgs84,
                         GeometryType = MetadataV2GeometryType.Point,

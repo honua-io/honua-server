@@ -240,7 +240,7 @@ public sealed class MetadataPostTests : IClassFixture<WebAppFixture>
         {
             var policy = ServiceRbacTestFixture.CreateServiceMetadata(readRoles: ["raster-reader"]);
             return new TestMetadataV2GraphBuilder()
-                .AddResource("evidence-raster", "Evidence raster", MetadataV2ResourceType.RasterDataset, accessPolicy: policy)
+                .AddResource("evidence-raster", "Evidence raster", MetadataV2ObjectType.RasterDataset, accessPolicy: policy)
                 .AddStorageBinding("evidence-binding", "evidence-raster", "raster_data", storageLayerId: 0)
                 .AddService("evidence-service", "test", protocols: [ServiceProtocols.ImageServer], accessPolicy: policy)
                 .AddPublication("evidence-publication", "evidence-service", "evidence-raster", layerIndex: 0,

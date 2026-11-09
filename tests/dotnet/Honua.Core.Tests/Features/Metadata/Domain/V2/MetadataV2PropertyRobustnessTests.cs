@@ -15,8 +15,8 @@ public sealed class MetadataV2PropertyRobustnessTests
 {
     public static TheoryData<Type> GraphRecords() => new()
     {
-        typeof(MetadataV2Graph), typeof(MetadataV2Resource), typeof(MetadataV2ResourceDisplay),
-        typeof(MetadataV2ResourceEditing), typeof(MetadataV2ResourceStyle), typeof(MetadataV2StyleEncoding),
+        typeof(MetadataV2Graph), typeof(MetadataV2Object), typeof(MetadataV2ObjectDisplay),
+        typeof(MetadataV2ObjectEditing), typeof(MetadataV2Style), typeof(MetadataV2StyleEncoding),
         typeof(MetadataV2Connection), typeof(MetadataV2StorageBinding), typeof(MetadataV2Service),
         typeof(MetadataV2ServiceSettings), typeof(MetadataV2Layer), typeof(MetadataV2Catalog),
         typeof(MetadataV2ProjectionProfile), typeof(MetadataV2Policy), typeof(MetadataV2Role),
@@ -28,8 +28,8 @@ public sealed class MetadataV2PropertyRobustnessTests
         typeof(MetadataV2ContingentValueGroup), typeof(MetadataV2ContingentValue),
         typeof(MetadataV2ContingentFieldValue), typeof(MetadataV2OwnerEditPolicy),
         typeof(MetadataV2Relationship), typeof(MetadataV2LayerIdentifier),
-        typeof(MetadataV2SpatialReference), typeof(MetadataV2Bbox), typeof(MetadataV2ResourceSpatial),
-        typeof(MetadataV2TimeRange), typeof(MetadataV2ResourceTemporal), typeof(MetadataV2PermanentFilter),
+        typeof(MetadataV2SpatialReference), typeof(MetadataV2Bbox), typeof(MetadataV2ObjectSpatial),
+        typeof(MetadataV2TimeRange), typeof(MetadataV2ObjectTemporal), typeof(MetadataV2PermanentFilter),
         typeof(MetadataV2ExtrusionInfo), typeof(MetadataV2Folder), typeof(MetadataV2ServicePathAlias),
         typeof(AccessPolicy), typeof(Symbology3D), typeof(Symbology3DRule), typeof(Symbology3DColor)
     };

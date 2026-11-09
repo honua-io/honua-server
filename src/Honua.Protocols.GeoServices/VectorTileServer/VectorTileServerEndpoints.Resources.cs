@@ -190,14 +190,14 @@ internal static partial class VectorTileServerEndpoints
         }
     }
 
-    private static async Task<(MetadataV2Layer Publication, MetadataV2Resource Resource)?> ResolvePrimaryVectorTilePublicationAsync(
+    private static async Task<(MetadataV2Layer Publication, MetadataV2Object Resource)?> ResolvePrimaryVectorTilePublicationAsync(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service,
         HttpContext context,
         AuthorizationOperation operation,
         CancellationToken cancellationToken)
     {
-        (MetadataV2Layer Publication, MetadataV2Resource Resource)? best = null;
+        (MetadataV2Layer Publication, MetadataV2Object Resource)? best = null;
         foreach (var publication in TenantScopeHelpers.FilterVisiblePublications(
                      context, snapshot, snapshot.Index.PublicationsByService[service.Metadata.Id]))
         {

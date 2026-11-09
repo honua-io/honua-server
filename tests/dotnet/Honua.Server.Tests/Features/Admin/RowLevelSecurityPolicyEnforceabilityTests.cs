@@ -224,10 +224,10 @@ public sealed class RowLevelSecurityPolicyEnforceabilityTests
         return new MetadataV2GraphSnapshot(graph, "test", DateTimeOffset.UtcNow);
     }
 
-    private static MetadataV2Resource CreateResource(string id, string name, string bindingId) => new()
+    private static MetadataV2Object CreateResource(string id, string name, string bindingId) => new()
     {
         Metadata = new MetadataV2ObjectMetadata { Id = id, Name = name },
-        Type = MetadataV2ResourceType.FeatureDataset,
+        Type = MetadataV2ObjectType.FeatureDataset,
         StorageBindingIds = [bindingId]
     };
 

@@ -24,7 +24,7 @@ public sealed partial class ReadPolicyLookupTests
     [UnitTest]
     public async Task ResolveAsync_ValidatedSnapshot_ReusesScopesButReadsCurrentPoliciesAndPrincipal()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource", Name = "parcels" }
         };
@@ -46,9 +46,9 @@ public sealed partial class ReadPolicyLookupTests
         await AddPoliciesAsync("alpha", "*", "initial");
         await AddPoliciesAsync("beta", "*", "next_graph");
         var filters = Substitute.For<IFilterExpressionService>();
-        filters.Normalize(Arg.Any<FilterExpression>(), Arg.Any<MetadataV2Resource>())
+        filters.Normalize(Arg.Any<FilterExpression>(), Arg.Any<MetadataV2Object>())
             .Returns(call => call.ArgAt<FilterExpression>(0));
-        filters.Translate(Arg.Any<FilterExpression>(), Arg.Any<MetadataV2Resource>())
+        filters.Translate(Arg.Any<FilterExpression>(), Arg.Any<MetadataV2Object>())
             .Returns(call => FilterTranslationResult.Success(call.ArgAt<FilterExpression>(0), new SqlFragment("TRUE", [])));
         var options = Options.Create(new RbacOptions());
         var rls = new RowLevelSecurityFilterSource(accessor, rows, graph, filters, options, NullLogger<RowLevelSecurityFilterSource>.Instance);
@@ -143,7 +143,7 @@ public sealed partial class ReadPolicyLookupTests
                 return maskStore.GetEffectivePoliciesAsync(call.ArgAt<IReadOnlyList<string>>(0), call.ArgAt<string>(1), call.ArgAt<string>(2), call.ArgAt<CancellationToken>(3));
             });
 
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource", Name = "parcels" }
         };
@@ -217,7 +217,7 @@ public sealed partial class ReadPolicyLookupTests
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
         var token = cancellation.Token;
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource", Name = "parcels" }
         };
@@ -237,7 +237,7 @@ public sealed partial class ReadPolicyLookupTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => masks.ResolveAsync(resource, token));
     }
 
-    private static StubGraphProvider CreateGraph(MetadataV2Resource resource, int serviceCount)
+    private static StubGraphProvider CreateGraph(MetadataV2Object resource, int serviceCount)
     {
         if (serviceCount < 0)
         {

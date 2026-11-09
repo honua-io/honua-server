@@ -403,7 +403,7 @@ internal static class ItemEndpoints
         IFeatureReader featureReader,
         int layerId,
         int layerSrid,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string itemId,
         CancellationToken cancellationToken)
     {
@@ -455,7 +455,7 @@ internal static class ItemEndpoints
         IFeatureReader featureReader,
         int storageLayerId,
         int layerSrid,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string itemId,
         CancellationToken cancellationToken)
     {
@@ -503,7 +503,7 @@ internal static class ItemEndpoints
         return null;
     }
 
-    private static int? GetCanonicalItemMatchRank(Feature? feature, string itemId, MetadataV2Resource resource)
+    private static int? GetCanonicalItemMatchRank(Feature? feature, string itemId, MetadataV2Object resource)
     {
         if (feature is not { } resolvedFeature ||
             !string.Equals(

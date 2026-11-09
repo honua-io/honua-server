@@ -21,7 +21,7 @@ internal static partial class FeatureServerEndpoints
 {
     internal static FeatureServerResponse MapServiceToResponseV2(
         MetadataV2Service service,
-        IReadOnlyList<(MetadataV2Layer Publication, MetadataV2Resource Resource)> publications,
+        IReadOnlyList<(MetadataV2Layer Publication, MetadataV2Object Resource)> publications,
         MetadataV2GraphSnapshot snapshot,
         QueryLimits queryLimits,
         bool supportsGeobufOutput,
@@ -65,9 +65,9 @@ internal static partial class FeatureServerEndpoints
             License = service.Metadata.License,
             Publisher = service.Metadata.Publisher,
             Links = GeoServicesGovernanceProjection.ProjectLinks(service.Metadata),
-            Layers = [.. publications.Where(pair => pair.Resource.Type != MetadataV2ResourceType.Table)
+            Layers = [.. publications.Where(pair => pair.Resource.Type != MetadataV2ObjectType.Table)
                 .Select(pair => MapLayerInfoV2(pair.Resource, pair.Publication, snapshot))],
-            Tables = [.. publications.Where(pair => pair.Resource.Type == MetadataV2ResourceType.Table)
+            Tables = [.. publications.Where(pair => pair.Resource.Type == MetadataV2ObjectType.Table)
                 .Select(pair => MapLayerInfoV2(pair.Resource, pair.Publication, snapshot))],
             SpatialReference = spatialReference,
             InitialExtent = serviceExtent,
@@ -100,7 +100,7 @@ internal static partial class FeatureServerEndpoints
 
     internal static LayerResponse MapLayerToResponseV2(
         MetadataV2Service service,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2Layer publication,
         MetadataV2GraphSnapshot snapshot,
         QueryLimits queryLimits,
@@ -146,7 +146,7 @@ internal static partial class FeatureServerEndpoints
             supportsPagination,
             supportsQueryAttachments,
             supportsReturningGeometryCentroid,
-            hasGeometry: resource.Type != MetadataV2ResourceType.Table);
+            hasGeometry: resource.Type != MetadataV2ObjectType.Table);
 
         var srid = resource.ReadSrid();
         var spatialReference = srid.HasValue
@@ -168,16 +168,16 @@ internal static partial class FeatureServerEndpoints
             License = governance.License,
             Publisher = governance.Publisher,
             Links = GeoServicesGovernanceProjection.ProjectLinks(governance),
-            Type = resource.Type == MetadataV2ResourceType.Table ? "Table" : "Feature Layer",
-            GeometryType = resource.Type == MetadataV2ResourceType.Table
+            Type = resource.Type == MetadataV2ObjectType.Table ? "Table" : "Feature Layer",
+            GeometryType = resource.Type == MetadataV2ObjectType.Table
                 ? null : MapGeometryTypeV2(resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None),
-            SpatialReference = resource.Type == MetadataV2ResourceType.Table ? null : spatialReference,
+            SpatialReference = resource.Type == MetadataV2ObjectType.Table ? null : spatialReference,
             // Advertise hasZ/hasM from the authored Metadata v2 display flags so 3D/measured
             // layers self-describe to Esri clients (#1877 Part C). Both default to false and are
             // omitted from the response when unset to keep 2D documents CITE/byte-stable.
             HasZ = resource.Display?.HasZ ?? false,
             HasM = resource.Display?.HasM ?? false,
-            Extent = resource.Type == MetadataV2ResourceType.Table ? null : extent,
+            Extent = resource.Type == MetadataV2ObjectType.Table ? null : extent,
             TimeInfo = timeInfo,
             ExtrusionInfo = extrusionInfo,
             Fields = [.. ResolveVisibleFieldsV2(resource).Select(field => MapFieldInfoV2(field, objectIdField, globalIdField))],
@@ -196,7 +196,7 @@ internal static partial class FeatureServerEndpoints
             SupportsDistinct = supportsDistinct,
             SupportsPagination = supportsPagination,
             SupportsTrueCurve = false,
-            SupportsReturningQueryExtent = supportsAdvancedQueries && resource.Type != MetadataV2ResourceType.Table,
+            SupportsReturningQueryExtent = supportsAdvancedQueries && resource.Type != MetadataV2ObjectType.Table,
             SupportsRollbackOnFailureParameter = supportsEditing,
             SupportsApplyEditsWithGlobalIds = false,
             IsDataVersioned = branchVersioningEnabled,
@@ -250,7 +250,7 @@ internal static partial class FeatureServerEndpoints
     }
 
     private static LayerInfo MapLayerInfoV2(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2Layer publication,
         MetadataV2GraphSnapshot snapshot)
     {
@@ -269,8 +269,8 @@ internal static partial class FeatureServerEndpoints
             SubLayerIds = null,
             MinScale = null,
             MaxScale = null,
-            Type = resource.Type == MetadataV2ResourceType.Table ? "Table" : "Feature Layer",
-            GeometryType = resource.Type == MetadataV2ResourceType.Table
+            Type = resource.Type == MetadataV2ObjectType.Table ? "Table" : "Feature Layer",
+            GeometryType = resource.Type == MetadataV2ObjectType.Table
                 ? null : MapGeometryTypeV2(resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None)
         };
     }
@@ -314,12 +314,12 @@ internal static partial class FeatureServerEndpoints
 
     internal static string BuildServiceCapabilitiesV2(
         MetadataV2Service service,
-        IReadOnlyList<(MetadataV2Layer Publication, MetadataV2Resource Resource)> publications)
+        IReadOnlyList<(MetadataV2Layer Publication, MetadataV2Object Resource)> publications)
         => BuildServiceCapabilitiesV2(service, publications, supportsAttachmentUploads: false, offlineSyncEnabled: true);
 
     private static string BuildServiceCapabilitiesV2(
         MetadataV2Service service,
-        IReadOnlyList<(MetadataV2Layer Publication, MetadataV2Resource Resource)> publications,
+        IReadOnlyList<(MetadataV2Layer Publication, MetadataV2Object Resource)> publications,
         bool supportsAttachmentUploads,
         bool offlineSyncEnabled)
     {
@@ -361,7 +361,7 @@ internal static partial class FeatureServerEndpoints
 
     private static string BuildLayerCapabilitiesV2(
         MetadataV2Service service,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2Layer publication,
         bool supportsAttachmentUploads,
         bool offlineSyncEnabled)
@@ -419,7 +419,7 @@ internal static partial class FeatureServerEndpoints
         return candidates.Length == 1 ? candidates[0] : FieldNames.ObjectId;
     }
 
-    private static ExtentInfo? ResolveLayerExtentV2(MetadataV2Resource resource, int fallbackSrid)
+    private static ExtentInfo? ResolveLayerExtentV2(MetadataV2Object resource, int fallbackSrid)
     {
         ArgumentNullException.ThrowIfNull(resource);
 
@@ -434,7 +434,7 @@ internal static partial class FeatureServerEndpoints
     }
 
     private static ExtentInfo? ResolveServiceExtentV2(
-        IReadOnlyList<(MetadataV2Layer Publication, MetadataV2Resource Resource)> publications,
+        IReadOnlyList<(MetadataV2Layer Publication, MetadataV2Object Resource)> publications,
         int fallbackSrid)
     {
         double? west = null;
@@ -461,7 +461,7 @@ internal static partial class FeatureServerEndpoints
             : null;
     }
 
-    private static string ResolveDisplayFieldFromResource(MetadataV2Resource resource, string objectIdField)
+    private static string ResolveDisplayFieldFromResource(MetadataV2Object resource, string objectIdField)
     {
         ArgumentNullException.ThrowIfNull(resource);
 
@@ -490,13 +490,13 @@ internal static partial class FeatureServerEndpoints
         return firstStringField?.Name ?? objectIdField;
     }
 
-    private static IEnumerable<MetadataV2Field> ResolveVisibleFieldsV2(MetadataV2Resource resource)
+    private static IEnumerable<MetadataV2Field> ResolveVisibleFieldsV2(MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
         return resource.SchemaFields.Where(static field => !field.Hidden);
     }
 
-    private static IEnumerable<MetadataV2Field> ResolveVisibleAttributeFieldsV2(MetadataV2Resource resource)
+    private static IEnumerable<MetadataV2Field> ResolveVisibleAttributeFieldsV2(MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
         return resource.SchemaFields.Where(field =>
@@ -505,7 +505,7 @@ internal static partial class FeatureServerEndpoints
     }
 
     internal static async Task<FeatureServerTimeInfo?> BuildTimeInfoV2Async(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2Layer publication,
         MetadataV2GraphSnapshot snapshot,
         IFeatureReader featureReader,
@@ -553,7 +553,7 @@ internal static partial class FeatureServerEndpoints
         };
     }
 
-    internal static (MetadataV2Layer Publication, MetadataV2Resource Resource)[] GetRoutableServicePublicationsV2(
+    internal static (MetadataV2Layer Publication, MetadataV2Object Resource)[] GetRoutableServicePublicationsV2(
         MetadataV2Service service, MetadataV2GraphSnapshot snapshot, HttpContext context)
         => snapshot.Index.PublicationsByService[service.Metadata.Id]
             .Where(snapshot.IsRoutable)
@@ -570,7 +570,7 @@ internal static partial class FeatureServerEndpoints
 
     internal static bool TryResolveRequestedServiceLayersV2(
         ServiceLayerSelectionRequest request,
-        out (MetadataV2Layer Publication, MetadataV2Resource Resource)[] layers,
+        out (MetadataV2Layer Publication, MetadataV2Object Resource)[] layers,
         out bool selectorSpecified,
         out string? error)
     {
@@ -635,10 +635,10 @@ internal static partial class FeatureServerEndpoints
         return true;
     }
 
-    internal static (MetadataV2Layer Publication, MetadataV2Resource Resource)[] FilterAccessibleLayersV2(
+    internal static (MetadataV2Layer Publication, MetadataV2Object Resource)[] FilterAccessibleLayersV2(
         ResourceAccessSet access,
         MetadataV2GraphSnapshot snapshot,
-        IEnumerable<(MetadataV2Layer Publication, MetadataV2Resource Resource)> layers)
+        IEnumerable<(MetadataV2Layer Publication, MetadataV2Object Resource)> layers)
     {
         ArgumentNullException.ThrowIfNull(access);
         ArgumentNullException.ThrowIfNull(snapshot);
@@ -653,7 +653,7 @@ internal static partial class FeatureServerEndpoints
     }
 
     internal static LayerRelationshipInfo[] BuildRelationshipResponseV2(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service)
     {
@@ -815,7 +815,7 @@ internal static partial class FeatureServerEndpoints
 
     private static bool ServiceSupportsEditingV2(
         MetadataV2Service service,
-        IReadOnlyList<(MetadataV2Layer Publication, MetadataV2Resource Resource)> publications)
+        IReadOnlyList<(MetadataV2Layer Publication, MetadataV2Object Resource)> publications)
         => publications.Count == 0
             ? ServiceSupportsEditingV2(service)
             : publications.Any(pair =>
@@ -841,7 +841,7 @@ internal static partial class FeatureServerEndpoints
     private static void AddDeclaredEditCapabilities(
         List<string> capabilities,
         MetadataV2Service service,
-        IReadOnlyList<(MetadataV2Layer Publication, MetadataV2Resource Resource)>? publications = null)
+        IReadOnlyList<(MetadataV2Layer Publication, MetadataV2Object Resource)>? publications = null)
     {
         var hasPublications = publications is { Count: > 0 };
         var supportsCreate = hasPublications
@@ -880,7 +880,7 @@ internal static partial class FeatureServerEndpoints
         => ReadServiceCapabilitiesV2(service)
             .Any(capability => capability.Equals("Sync", StringComparison.OrdinalIgnoreCase));
 
-    internal static EditFieldsInfo? ResolveEditFieldsInfo(MetadataV2Resource resource)
+    internal static EditFieldsInfo? ResolveEditFieldsInfo(MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
         var editing = resource.Editing;
@@ -905,11 +905,11 @@ internal static partial class FeatureServerEndpoints
     private static string? BlankToNull(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value;
 
-    internal static string? ResolveGlobalIdFieldV2(MetadataV2Resource resource)
+    internal static string? ResolveGlobalIdFieldV2(MetadataV2Object resource)
         => resource.SchemaFields.FirstOrDefault(field => !field.Hidden && field.Type == MetadataV2FieldType.Uuid &&
             field.Name.Equals(resource.Editing?.GlobalIdField, StringComparison.OrdinalIgnoreCase))?.Name;
 
-    internal static bool ResourceSupportsAttachmentsV2(MetadataV2Resource resource)
+    internal static bool ResourceSupportsAttachmentsV2(MetadataV2Object resource)
     {
         return resource.Editing?.SupportsAttachments ??
                TryReadBoolAnnotation(resource.Metadata.Annotations, "honua.io/attachments") ??

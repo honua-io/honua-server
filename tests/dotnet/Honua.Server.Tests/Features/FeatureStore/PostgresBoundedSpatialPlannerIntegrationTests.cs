@@ -428,12 +428,12 @@ public sealed class PostgresBoundedSpatialPlannerIntegrationTests(DatabaseFixtur
             preferSerialBoundedSpatialReads: enabled);
     }
 
-    private static MetadataV2Resource CreateResource(MetadataV2GeometryType geometryType) =>
+    private static MetadataV2Object CreateResource(MetadataV2GeometryType geometryType) =>
         new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "planner-probe", Name = "Planner probe" },
-            Type = MetadataV2ResourceType.FeatureDataset,
-            Spatial = new MetadataV2ResourceSpatial { GeometryType = geometryType },
+            Type = MetadataV2ObjectType.FeatureDataset,
+            Spatial = new MetadataV2ObjectSpatial { GeometryType = geometryType },
             SchemaFields =
             [
                 new() { Name = "id", Type = MetadataV2FieldType.BigInteger, SemanticRoles = ["id.primary"] },

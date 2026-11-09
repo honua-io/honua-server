@@ -401,7 +401,7 @@ internal sealed partial class Wfs20Handler
         return (Results.Json(payload, OgcClassicJsonContext.Default.FeatureCollection, contentType: contentType), features.Count);
     }
 
-    private static ValueReferenceResolution ResolveValueReference(MetadataV2Resource resource, string valueReference)
+    private static ValueReferenceResolution ResolveValueReference(MetadataV2Object resource, string valueReference)
     {
         var resolvedName = WfsPropertyNameResolver.Resolve(resource, valueReference, allowGeometryAlias: true)
             ?? throw new ArgumentException($"Unknown valueReference '{valueReference}' for feature type '{resource.Metadata.Name}'.");

@@ -13,7 +13,7 @@ public static class FilterExpressionNormalizer
 {
     public const int MaxExpressionDepth = 50;
 
-    public static FilterExpression Normalize(FilterExpression expression, MetadataV2Resource resource)
+    public static FilterExpression Normalize(FilterExpression expression, MetadataV2Object resource)
     {
         EnsureWithinMaxDepth(expression);
         return NormalizeCore(expression, FilterFieldSchema.From(resource));

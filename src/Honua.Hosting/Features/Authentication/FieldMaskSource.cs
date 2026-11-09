@@ -52,7 +52,7 @@ internal sealed partial class FieldMaskSource : IFieldMaskSource
            && ReferenceEquals(_rbacOptions, options)
            && ReferenceEquals(_backgroundServices, backgroundServices);
 
-    public async Task<ImmutableArray<string>> ResolveAsync(MetadataV2Resource resource, CancellationToken cancellationToken = default)
+    public async Task<ImmutableArray<string>> ResolveAsync(MetadataV2Object resource, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(resource);
 
@@ -116,7 +116,7 @@ internal sealed partial class FieldMaskSource : IFieldMaskSource
     }
 
     private async Task<IReadOnlyCollection<string>> ResolveServiceNamesAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         CancellationToken cancellationToken)
     {
         try

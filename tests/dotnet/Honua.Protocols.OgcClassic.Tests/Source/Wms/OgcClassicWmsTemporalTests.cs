@@ -379,12 +379,12 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
 
     private Task ConfigureLayerAsTimeAwareAsync()
     {
-        // V2 cutover (#1035 72/N): time-info now lives on MetadataV2Resource.Temporal.
+        // V2 cutover (#1035 72/N): time-info now lives on MetadataV2Object.Temporal.
         // Use the seeded "timestamp" DateTime field on the shared test layer; resolvers
         // emit an extent only when the field resolves to a real Date/DateTime attribute.
         _fixture.UpdateV2ResourceMetadata(
             WebAppFixture.TestLayerId,
-            temporal: new MetadataV2ResourceTemporal { StartTimeField = "timestamp" });
+            temporal: new MetadataV2ObjectTemporal { StartTimeField = "timestamp" });
         return Task.CompletedTask;
     }
 
@@ -392,7 +392,7 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
     {
         _fixture.UpdateV2ResourceMetadata(
             WebAppFixture.TestLayerId,
-            temporal: new MetadataV2ResourceTemporal
+            temporal: new MetadataV2ObjectTemporal
             {
                 StartTimeField = "timestamp",
                 EndTimeField = "event_date",
@@ -408,7 +408,7 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
         // capabilities/request gate must treat this layer as not time-aware.
         _fixture.UpdateV2ResourceMetadata(
             WebAppFixture.TestLayerId,
-            temporal: new MetadataV2ResourceTemporal
+            temporal: new MetadataV2ObjectTemporal
             {
                 StartTimeField = "timestamp",
                 EndTimeField = "name",
@@ -423,7 +423,7 @@ public sealed class OgcClassicWmsTemporalTests : IAsyncLifetime
         // the metadata update path allows today.
         _fixture.UpdateV2ResourceMetadata(
             WebAppFixture.TestLayerId,
-            temporal: new MetadataV2ResourceTemporal { StartTimeField = "name" });
+            temporal: new MetadataV2ObjectTemporal { StartTimeField = "name" });
         return Task.CompletedTask;
     }
 

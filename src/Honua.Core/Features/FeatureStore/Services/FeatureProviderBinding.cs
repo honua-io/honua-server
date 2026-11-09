@@ -21,7 +21,7 @@ namespace Honua.Core.Features.FeatureStore.Services;
 /// <param name="Connection">Secure connection used to select the provider, when any.</param>
 public sealed record FeatureProviderBinding(
     MetadataV2Service Service,
-    MetadataV2Resource Resource,
+    MetadataV2Object Resource,
     MetadataV2Layer Publication,
     MetadataV2StorageBinding StorageBinding,
     FeatureStorageMapping StorageMapping,

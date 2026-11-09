@@ -196,7 +196,7 @@ public class OidcAuthenticationTests
                         SemanticRoles = ["geometry.primary"],
                     },
                 ],
-                spatial: new MetadataV2ResourceSpatial
+                spatial: new MetadataV2ObjectSpatial
                 {
                     SpatialReference = MetadataV2SpatialReference.Wgs84,
                     GeometryType = MetadataV2GeometryType.Point,

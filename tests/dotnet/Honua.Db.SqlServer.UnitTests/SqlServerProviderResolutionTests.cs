@@ -289,7 +289,7 @@ public class SqlServerProviderResolutionTests
             connection);
     }
 
-    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Service Service, MetadataV2Resource Resource, MetadataV2Layer Publication)
+    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Service Service, MetadataV2Object Resource, MetadataV2Layer Publication)
         CreateSnapshot(Guid connectionId)
     {
         var service = new MetadataV2Service
@@ -297,10 +297,10 @@ public class SqlServerProviderResolutionTests
             Metadata = new MetadataV2ObjectMetadata { Id = "svc-parcels", Name = "Parcels" },
             SpatialReference = MetadataV2SpatialReference.Wgs84
         };
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-parcels", Name = "Parcels" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             StorageBindingIds = ["binding-parcels"],
             SchemaFields =
             [
@@ -320,7 +320,7 @@ public class SqlServerProviderResolutionTests
                 },
                 new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String }
             ],
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = MetadataV2GeometryType.Polygon,
@@ -386,10 +386,10 @@ public class SqlServerProviderResolutionTests
     {
         public ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
         {
-            var resource = new MetadataV2Resource
+            var resource = new MetadataV2Object
             {
                 Metadata = new MetadataV2ObjectMetadata { Id = "res-stub", Name = "Stub" },
-                Type = MetadataV2ResourceType.FeatureDataset,
+                Type = MetadataV2ObjectType.FeatureDataset,
                 PermanentFilter = permanentFilterExpression == null ? null : new MetadataV2PermanentFilter
                 {
                     Expression = permanentFilterExpression,
@@ -424,7 +424,7 @@ public class SqlServerProviderResolutionTests
     {
         public string? LastResourceId { get; private set; }
 
-        public Task<Honua.Core.Queries.Filters.SqlFragment?> ResolveAsync(MetadataV2Resource resource, CancellationToken cancellationToken = default)
+        public Task<Honua.Core.Queries.Filters.SqlFragment?> ResolveAsync(MetadataV2Object resource, CancellationToken cancellationToken = default)
         {
             LastResourceId = resource.Metadata.Id;
             return Task.FromResult(fragment);
@@ -437,7 +437,7 @@ public class SqlServerProviderResolutionTests
         public string? LastResourceId { get; private set; }
 
         public Task<System.Collections.Immutable.ImmutableArray<string>> ResolveAsync(
-            MetadataV2Resource resource, CancellationToken cancellationToken = default)
+            MetadataV2Object resource, CancellationToken cancellationToken = default)
         {
             LastResourceId = resource.Metadata.Id;
             return Task.FromResult(System.Collections.Immutable.ImmutableArray.Create(maskedFields));

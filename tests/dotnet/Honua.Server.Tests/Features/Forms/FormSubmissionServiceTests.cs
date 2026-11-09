@@ -719,7 +719,7 @@ public sealed class FormSubmissionServiceTests
                     new MetadataV2Field { Name = "owner", Type = MetadataV2FieldType.String, Length = 255, Editable = true },
                     new MetadataV2Field { Name = "shape", Type = MetadataV2FieldType.Geometry, Editable = false }
                 ],
-                spatial: new MetadataV2ResourceSpatial
+                spatial: new MetadataV2ObjectSpatial
                 {
                     GeometryType = MetadataV2GeometryType.Point,
                     SpatialReference = new MetadataV2SpatialReference
@@ -1212,13 +1212,13 @@ public sealed class FormSubmissionServiceTests
 
     private sealed class PassThroughEditProcessor : IEditProcessor
     {
-        public EditValidationResult ValidateEdit(UnifiedEditRequest editRequest, MetadataV2Resource resource)
+        public EditValidationResult ValidateEdit(UnifiedEditRequest editRequest, MetadataV2Object resource)
             => EditValidationResult.Success();
 
-        public UnifiedEditRequest OptimizeEdit(UnifiedEditRequest editRequest, MetadataV2Resource resource)
+        public UnifiedEditRequest OptimizeEdit(UnifiedEditRequest editRequest, MetadataV2Object resource)
             => editRequest;
 
-        public FeatureEditBatch ToFeatureEditBatch(UnifiedEditRequest editRequest, MetadataV2Resource resource)
+        public FeatureEditBatch ToFeatureEditBatch(UnifiedEditRequest editRequest, MetadataV2Object resource)
             => FeatureEditBatch.Create(
                 creates: editRequest.Creates is { } creates
                     ? creates.Select(static feature => Feature.Create(0, feature.Geometry,
@@ -1231,15 +1231,15 @@ public sealed class FormSubmissionServiceTests
                     : ImmutableArray<Feature>.Empty,
                 deletes: editRequest.Deletes ?? ImmutableArray<long>.Empty);
 
-        public TransactionValidationResult ValidateTransaction(EditTransaction transaction, MetadataV2Resource resource)
+        public TransactionValidationResult ValidateTransaction(EditTransaction transaction, MetadataV2Object resource)
             => TransactionValidationResult.Success();
 
-        public EditExecutionStrategy DetermineExecutionStrategy(UnifiedEditRequest editRequest, MetadataV2Resource resource)
+        public EditExecutionStrategy DetermineExecutionStrategy(UnifiedEditRequest editRequest, MetadataV2Object resource)
             => new();
 
         public Task<EditPerformanceEstimate> EstimatePerformanceAsync(
             UnifiedEditRequest editRequest,
-            MetadataV2Resource resource,
+            MetadataV2Object resource,
             CancellationToken cancellationToken)
             => Task.FromResult(new EditPerformanceEstimate());
     }

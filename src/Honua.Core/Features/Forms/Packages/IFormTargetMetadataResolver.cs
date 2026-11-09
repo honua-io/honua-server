@@ -15,5 +15,5 @@ public interface IFormTargetMetadataResolver
 public readonly record struct FormTargetMetadataResolution(
     MetadataV2Service? Service,
     MetadataV2Layer? Publication,
-    MetadataV2Resource? Resource,
+    MetadataV2Object? Resource,
     int? StorageLayerId);

@@ -40,7 +40,7 @@ public sealed record MetadataV2Graph : ExtensibleJsonRecord
     public IReadOnlyList<MetadataV2Catalog> Catalogs { get; init; } = Array.Empty<MetadataV2Catalog>();
 
     [JsonPropertyName("resources")]
-    public IReadOnlyList<MetadataV2Resource> Resources { get; init; } = Array.Empty<MetadataV2Resource>();
+    public IReadOnlyList<MetadataV2Object> Resources { get; init; } = Array.Empty<MetadataV2Object>();
 
     [JsonPropertyName("connections")]
     public IReadOnlyList<MetadataV2Connection> Connections { get; init; } = Array.Empty<MetadataV2Connection>();
@@ -88,7 +88,7 @@ public sealed record MetadataV2Graph : ExtensibleJsonRecord
     public IReadOnlyDictionary<string, JsonElement> Extensions { get; init; } = new Dictionary<string, JsonElement>();
 }
 
-public sealed record MetadataV2Resource : ExtensibleJsonRecord
+public sealed record MetadataV2Object : ExtensibleJsonRecord
 {
     private string? _primaryStorageBindingId;
     private IReadOnlyList<string>? _storageBindingIds;
@@ -104,15 +104,15 @@ public sealed record MetadataV2Resource : ExtensibleJsonRecord
     public MetadataV2ObjectMetadata Metadata { get; init; } = new();
 
     [JsonIgnore]
-    public MetadataV2ResourceType Type
+    public MetadataV2ObjectType Type
     {
         get => TypeValue.Value;
         init => TypeValue = value;
     }
 
     [JsonPropertyName("type")]
-    [JsonConverter(typeof(PreservedEnumJsonConverter<MetadataV2ResourceType>))]
-    public PreservedEnumValue<MetadataV2ResourceType> TypeValue { get; init; } = MetadataV2ResourceType.FeatureDataset;
+    [JsonConverter(typeof(PreservedEnumJsonConverter<MetadataV2ObjectType>))]
+    public PreservedEnumValue<MetadataV2ObjectType> TypeValue { get; init; } = MetadataV2ObjectType.FeatureDataset;
 
     [JsonPropertyName("storageBindingIds")]
     public IReadOnlyList<string> StorageBindingIds
@@ -154,10 +154,10 @@ public sealed record MetadataV2Resource : ExtensibleJsonRecord
     public AccessPolicy? AccessPolicy { get; init; }
 
     [JsonPropertyName("spatial")]
-    public MetadataV2ResourceSpatial? Spatial { get; init; }
+    public MetadataV2ObjectSpatial? Spatial { get; init; }
 
     [JsonPropertyName("temporal")]
-    public MetadataV2ResourceTemporal? Temporal { get; init; }
+    public MetadataV2ObjectTemporal? Temporal { get; init; }
 
     [JsonPropertyName("permanentFilter")]
     public MetadataV2PermanentFilter? PermanentFilter { get; init; }
@@ -197,13 +197,13 @@ public sealed record MetadataV2Resource : ExtensibleJsonRecord
     }
 
     [JsonPropertyName("style")]
-    public MetadataV2ResourceStyle? Style { get; init; }
+    public MetadataV2Style? Style { get; init; }
 
     [JsonPropertyName("display")]
-    public MetadataV2ResourceDisplay? Display { get; init; }
+    public MetadataV2ObjectDisplay? Display { get; init; }
 
     [JsonPropertyName("editing")]
-    public MetadataV2ResourceEditing? Editing { get; init; }
+    public MetadataV2ObjectEditing? Editing { get; init; }
 
     [JsonPropertyName("status")]
     public MetadataV2Status Status { get; init; } = new();
@@ -219,7 +219,7 @@ public sealed record MetadataV2Resource : ExtensibleJsonRecord
         new Dictionary<string, JsonElement>();
 }
 
-public sealed record MetadataV2ResourceDisplay : ExtensibleJsonRecord
+public sealed record MetadataV2ObjectDisplay : ExtensibleJsonRecord
 {
     [JsonPropertyName("minScale")]
     public double? MinScale { get; init; }
@@ -243,7 +243,7 @@ public sealed record MetadataV2ResourceDisplay : ExtensibleJsonRecord
     public bool HasM { get; init; }
 }
 
-public sealed record MetadataV2ResourceEditing : ExtensibleJsonRecord
+public sealed record MetadataV2ObjectEditing : ExtensibleJsonRecord
 {
     [JsonPropertyName("globalIdField")]
     public string? GlobalIdField { get; init; }

@@ -76,9 +76,9 @@ public sealed class AttachmentDeclaredCapabilityTests
     [UnitTest]
     public void AnyScope_WhenLayerDoesNotSupportAttachments_Refuses()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
-            Editing = new MetadataV2ResourceEditing { SupportsAttachments = false }
+            Editing = new MetadataV2ObjectEditing { SupportsAttachments = false }
         };
 
         AttachmentEndpoints.DescribeDeniedAttachmentAccess(
@@ -110,10 +110,10 @@ public sealed class AttachmentDeclaredCapabilityTests
             .Should().BeNull();
     }
 
-    private static MetadataV2Resource AttachmentLayer()
+    private static MetadataV2Object AttachmentLayer()
         => new()
         {
-            Editing = new MetadataV2ResourceEditing { SupportsAttachments = true }
+            Editing = new MetadataV2ObjectEditing { SupportsAttachments = true }
         };
 
     private static MetadataV2Service ServiceCapabilities(params string[] capabilities)

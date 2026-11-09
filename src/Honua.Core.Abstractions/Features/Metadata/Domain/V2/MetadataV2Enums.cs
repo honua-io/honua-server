@@ -5,8 +5,8 @@ using System.Text.Json.Serialization;
 
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
-[JsonConverter(typeof(JsonStringEnumConverter<MetadataV2ResourceType>))]
-public enum MetadataV2ResourceType
+[JsonConverter(typeof(JsonStringEnumConverter<MetadataV2ObjectType>))]
+public enum MetadataV2ObjectType
 {
     [JsonStringEnumMemberName("feature-dataset")]
     FeatureDataset,

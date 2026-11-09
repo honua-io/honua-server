@@ -99,12 +99,12 @@ public sealed class GeoservicesImportCatalogProjectionTests
         Fields = [new GeoservicesFieldInfo { Name = geometryField, Type = "esriFieldTypeGeometry" }]
     };
 
-    private static MetadataV2Resource PublishedResource() => new()
+    private static MetadataV2Object PublishedResource() => new()
     {
         Metadata = new MetadataV2ObjectMetadata { Id = "res-layer-7", Name = "States" },
-        Type = MetadataV2ResourceType.FeatureDataset,
+        Type = MetadataV2ObjectType.FeatureDataset,
         SchemaFields = [new MetadataV2Field { Name = "geom", Type = MetadataV2FieldType.Geometry }],
-        Spatial = new MetadataV2ResourceSpatial
+        Spatial = new MetadataV2ObjectSpatial
         {
             PrimaryGeometryField = "geom",
             GeometryType = MetadataV2GeometryType.MultiPolygon

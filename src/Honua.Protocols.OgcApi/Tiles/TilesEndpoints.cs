@@ -1649,7 +1649,7 @@ internal static partial class TilesEndpoints
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Layer publication,
         MetadataV2Service service,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         var storageLayerId = snapshot.ResolveStorageLayerId(publication) ?? snapshot.ResolveStorageLayerId(resource);
         if (!storageLayerId.HasValue)
@@ -1745,7 +1745,7 @@ internal static partial class TilesEndpoints
             "which does not support vector tile generation."));
     }
 
-    private static string ResolveCollectionId(MetadataV2Layer publication, MetadataV2Resource resource)
+    private static string ResolveCollectionId(MetadataV2Layer publication, MetadataV2Object resource)
     {
         var collectionId = publication.ServiceLocalId ?? publication.Path ?? resource.Metadata.Name;
         return string.IsNullOrWhiteSpace(collectionId) ? resource.Metadata.Id : collectionId;
@@ -2067,7 +2067,7 @@ internal static partial class TilesEndpoints
         int StorageLayerId,
         string DisplayName,
         string? Description,
-        MetadataV2Resource Resource,
+        MetadataV2Object Resource,
         MetadataV2Layer Publication,
         MetadataV2Service Service,
         MetadataV2GraphSnapshot Snapshot)

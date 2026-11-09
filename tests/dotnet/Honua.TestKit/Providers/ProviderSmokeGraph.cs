@@ -111,7 +111,7 @@ public static class ProviderSmokeGraph
             new MetadataV2Field { Name = "type", Type = MetadataV2FieldType.String, Nullable = true, Description = "Parcel type" },
         };
 
-        var spatial = new MetadataV2ResourceSpatial
+        var spatial = new MetadataV2ObjectSpatial
         {
             SpatialReference = MetadataV2SpatialReference.Wgs84,
             GeometryType = MetadataV2GeometryType.Point,
@@ -155,7 +155,7 @@ public static class ProviderSmokeGraph
             .AddResource(
                 ResourceId,
                 "parcels",
-                MetadataV2ResourceType.FeatureDataset,
+                MetadataV2ObjectType.FeatureDataset,
                 fields: fields,
                 accessPolicy: anonymous,
                 spatial: spatial)

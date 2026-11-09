@@ -128,7 +128,7 @@ internal static class AdminLayerFieldConfigurationEndpoints
             LayerFieldConfigurationJsonContext.Default.ApiResponseLayerFieldConfigurationResponse);
     }
 
-    private static async Task<(MetadataV2Resource? Resource, IResult? Problem)> ValidateLayerAsync(
+    private static async Task<(MetadataV2Object? Resource, IResult? Problem)> ValidateLayerAsync(
         int layerId,
         HttpContext context,
         IResourceValidator resourceValidator,
@@ -149,7 +149,7 @@ internal static class AdminLayerFieldConfigurationEndpoints
 
     private static string? ValidateRequest(
         int layerId,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         LayerFieldConfigurationUpdateRequest request)
     {
         if (request.Fields.Count == 0)
@@ -256,7 +256,7 @@ internal static class AdminLayerFieldConfigurationEndpoints
 
     private static LayerFieldConfigurationResponse BuildResponse(
         int layerId,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IReadOnlyList<LayerFieldConfiguration> configurations)
     {
         var configurationMap = configurations.ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
@@ -353,8 +353,8 @@ internal static class AdminLayerFieldConfigurationEndpoints
         return merged;
     }
 
-    private static MetadataV2Resource ApplyFieldConfigurations(
-        MetadataV2Resource resource,
+    private static MetadataV2Object ApplyFieldConfigurations(
+        MetadataV2Object resource,
         IReadOnlyList<LayerFieldConfiguration> configurations)
     {
         var configurationMap = configurations.ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);

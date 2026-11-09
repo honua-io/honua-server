@@ -516,12 +516,12 @@ internal sealed class FeatureServerEditsHandler(
     private static int? ResolveStorageLayerIdV2(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Layer publication,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
         => snapshot.ResolveStorageLayerId(publication, resource);
 
     private async Task<EditOperationContext> ProcessEditOperationsAsync(
         ApplyEditsRequest request,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int storageLayerId,
         EditPrincipal principal,
         EditLockScope? lockScope,
@@ -559,7 +559,7 @@ internal sealed class FeatureServerEditsHandler(
     private async Task ProcessAddOperationsAsync(
         ApplyEditsRequest request,
         EditOperationContext context,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         EditPrincipal principal,
         CancellationToken cancellationToken)
     {
@@ -626,7 +626,7 @@ internal sealed class FeatureServerEditsHandler(
     internal async Task ProcessUpdateOperationsAsync(
         ApplyEditsRequest request,
         EditOperationContext context,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int storageLayerId,
         EditPrincipal principal,
         bool guardUpdateSnapshot,
@@ -824,7 +824,7 @@ internal sealed class FeatureServerEditsHandler(
 
     internal async Task ProcessDeleteOperationsAsync(
         ApplyEditsRequest request,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int storageLayerId,
         EditOperationContext context,
         EditPrincipal principal,
@@ -994,7 +994,7 @@ internal sealed class FeatureServerEditsHandler(
 
     private async Task<FeatureEditResult> ExecuteEdits(
         int layerId,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         EditOperationContext context,
         ApplyEditsRequest request,
         string serviceId,
@@ -1295,7 +1295,7 @@ internal sealed class FeatureServerEditsHandler(
     private async Task ApplyPluginEditPipelineAsync(
         string serviceId,
         int layerId,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         EditOperationContext context,
         CancellationToken cancellationToken)
     {
@@ -1340,7 +1340,7 @@ internal sealed class FeatureServerEditsHandler(
     private async Task RunPluginAfterHooksAsync(
         string serviceId,
         int layerId,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         EditOperationContext context,
         CancellationToken cancellationToken)
     {
@@ -1366,7 +1366,7 @@ internal sealed class FeatureServerEditsHandler(
     private EditHookContext BuildEditHookContext(
         string serviceId,
         int layerId,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         EditOperationContext context,
         bool committedOnly = false)
     {
@@ -1591,7 +1591,7 @@ internal sealed class FeatureServerEditsHandler(
     }
 
     private async Task<IReadOnlyDictionary<long, Feature>> ResolveFeaturesByGeoServicesObjectIdsAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int storageLayerId,
         long?[] slotObjectIds,
         VersionContext? versionContext,
@@ -1673,7 +1673,7 @@ internal sealed class FeatureServerEditsHandler(
         return resolved;
     }
 
-    private static bool ShouldUseInternalObjectIdFastPath(MetadataV2Resource resource)
+    private static bool ShouldUseInternalObjectIdFastPath(MetadataV2Object resource)
         => GeoServicesObjectIdFieldResolver.ResolveObjectIdField(resource)?.Name.Equals(
             FieldNames.ObjectId,
             StringComparison.OrdinalIgnoreCase) != false;
@@ -1681,7 +1681,7 @@ internal sealed class FeatureServerEditsHandler(
     internal async Task<Feature> BuildFeatureFromGeoServicesAsync(
         GeoServicesFeature feature,
         long objectId,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         AttributeRuleEditEvent editEvent,
         EditPrincipal principal,
         CancellationToken cancellationToken,
@@ -1959,7 +1959,7 @@ internal sealed class FeatureServerEditsHandler(
         Feature snapshot,
         GeoServicesFeature request,
         bool requestHasGeometry,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         if (request.ReplaceAttributes || !merged.PreserveOmittedMaskedAttributes)
         {
@@ -2031,7 +2031,7 @@ internal sealed class FeatureServerEditsHandler(
 
     // A null owner load means this caller does not need the stored owner, so inserts and administrators skip the query.
     private async Task<IReadOnlyDictionary<long, OwnerFieldSnapshot>?> ReadOwnerSnapshotsAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int storageLayerId,
         IEnumerable<Feature> existingFeatures,
         EditPrincipal principal,
@@ -2074,7 +2074,7 @@ internal sealed class FeatureServerEditsHandler(
 
     private static void CaptureOwnerGuard(
         EditOperationContext context,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IReadOnlyDictionary<long, OwnerFieldSnapshot>? snapshots,
         long objectId)
     {
@@ -2086,7 +2086,7 @@ internal sealed class FeatureServerEditsHandler(
 
     private static bool TryCaptureOwnerGuard(
         EditOperationContext context,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IReadOnlyDictionary<long, OwnerFieldSnapshot>? snapshots,
         long objectId)
     {
@@ -2170,7 +2170,7 @@ internal sealed class FeatureServerEditsHandler(
     // Attribute-rule expressions outside the safe subset are warned and skipped, and the edit still proceeds.
     private sealed class UnsupportedExpressionLogger(ILogger logger) : IUnsupportedExpressionSink
     {
-        public void OnUnsupported(MetadataV2Resource resource, MetadataV2AttributeRule rule)
+        public void OnUnsupported(MetadataV2Object resource, MetadataV2AttributeRule rule)
         {
             var resourceId = string.IsNullOrEmpty(resource.Metadata.Id)
                 ? (string.IsNullOrEmpty(resource.Metadata.Name) ? "unknown" : resource.Metadata.Name)
@@ -2273,7 +2273,7 @@ internal sealed class FeatureServerEditsHandler(
             _ => geometryType.ToString()
         };
 
-    private static bool TryGetObjectId(Dictionary<string, object?>? attributes, MetadataV2Resource resource, out long objectId)
+    private static bool TryGetObjectId(Dictionary<string, object?>? attributes, MetadataV2Object resource, out long objectId)
     {
         objectId = 0;
 
@@ -2559,7 +2559,7 @@ internal sealed class FeatureServerEditsHandler(
     private async Task RunPostCommitSideEffectsAsync(
         string serviceId,
         int layerId,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         EditOperationContext context,
         CancellationToken cancellationToken = default)
     {

@@ -53,13 +53,13 @@ internal static class OgcFeatureIdentifierResolver
         };
     }
 
-    public static object GetPublicId(Feature feature, MetadataV2Resource resource)
+    public static object GetPublicId(Feature feature, MetadataV2Object resource)
         => GetPublicId(feature.Id, feature.Attributes, resource);
 
-    public static object GetPublicId(EncodedGeoJsonFeature feature, MetadataV2Resource resource)
+    public static object GetPublicId(EncodedGeoJsonFeature feature, MetadataV2Object resource)
         => GetPublicId(feature.Id, feature.Attributes, resource);
 
-    public static object GetPublicId(long objectId, IReadOnlyDictionary<string, object?> attributes, MetadataV2Resource resource)
+    public static object GetPublicId(long objectId, IReadOnlyDictionary<string, object?> attributes, MetadataV2Object resource)
     {
         var objectIdFieldName = ResolveObjectIdFieldName(resource);
 
@@ -79,17 +79,17 @@ internal static class OgcFeatureIdentifierResolver
         return objectId;
     }
 
-    public static string FormatPublicId(Feature feature, MetadataV2Resource resource)
+    public static string FormatPublicId(Feature feature, MetadataV2Object resource)
         => Convert.ToString(GetPublicId(feature, resource), CultureInfo.InvariantCulture)
            ?? feature.Id.ToString(CultureInfo.InvariantCulture);
 
-    public static string FormatPublicId(EncodedGeoJsonFeature feature, MetadataV2Resource resource)
+    public static string FormatPublicId(EncodedGeoJsonFeature feature, MetadataV2Object resource)
         => Convert.ToString(GetPublicId(feature, resource), CultureInfo.InvariantCulture)
            ?? feature.Id.ToString(CultureInfo.InvariantCulture);
 
     public static string? FormatPayloadPublicId(
         IReadOnlyDictionary<string, object?>? properties,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
 
@@ -113,7 +113,7 @@ internal static class OgcFeatureIdentifierResolver
         return null;
     }
 
-    public static MetadataV2Field? ResolveWritablePublicIdField(MetadataV2Resource resource)
+    public static MetadataV2Field? ResolveWritablePublicIdField(MetadataV2Object resource)
     {
         var objectIdFieldName = ResolveObjectIdFieldName(resource);
         var field = resource.SchemaFields.FirstOrDefault(f =>
@@ -130,7 +130,7 @@ internal static class OgcFeatureIdentifierResolver
 
     public static bool TryCreateIdsFilter(
         string? rawIds,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IFilterExpressionTranslator filterExpressionTranslator,
         out ImmutableArray<long>? objectIds,
         out SqlFragment? sqlFilter,
@@ -187,7 +187,7 @@ internal static class OgcFeatureIdentifierResolver
         IQueryProcessor queryProcessor,
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Layer publication,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string featureId,
         CancellationToken cancellationToken)
         => ResolveAsync(featureReader, queryProcessor, snapshot, publication, resource, featureId, false, cancellationToken);
@@ -197,7 +197,7 @@ internal static class OgcFeatureIdentifierResolver
         IQueryProcessor queryProcessor,
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Layer publication,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string featureId,
         bool requireEditSnapshot,
         CancellationToken cancellationToken)
@@ -255,7 +255,7 @@ internal static class OgcFeatureIdentifierResolver
         IQueryProcessor queryProcessor,
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Layer publication,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IReadOnlyCollection<string> featureIds,
         CancellationToken cancellationToken)
     {
@@ -448,13 +448,13 @@ internal static class OgcFeatureIdentifierResolver
         };
     }
 
-    private static string ResolveObjectIdFieldName(MetadataV2Resource resource)
+    private static string ResolveObjectIdFieldName(MetadataV2Object resource)
         => resource.FindPrimaryIdField()?.Name ?? "objectid";
 
     private static bool IsGeometryField(MetadataV2Field field)
         => field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography;
 
-    private static PublicIdField ResolvePublicIdField(MetadataV2Resource resource)
+    private static PublicIdField ResolvePublicIdField(MetadataV2Object resource)
     {
         var objectIdFieldName = ResolveObjectIdFieldName(resource);
         var match = resource.SchemaFields.FirstOrDefault(f =>

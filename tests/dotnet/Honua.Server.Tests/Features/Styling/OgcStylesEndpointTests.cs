@@ -435,7 +435,7 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
         };
         (await client.SendAsync(updateRequest)).StatusCode.Should().Be(HttpStatusCode.NoContent);
 
-        var styleResourceId = MetadataV2StyleResourceFactory.BuildStyleResourceId(styleId);
+        var styleResourceId = MetadataV2StyleFactory.BuildStyleResourceId(styleId);
         _fixture.GetCurrentV2GraphSnapshot().Index.ResourcesByStorageLayerId[WebAppFixture.TestLayerId]
             .StyleResourceIds.Should().Contain(styleResourceId);
 
@@ -872,7 +872,7 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
             .GetProperty("layers")[0].GetProperty("type").GetString().Should().Be("circle");
 
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
-        var styleResourceId = MetadataV2StyleResourceFactory.BuildStyleResourceId(styleId);
+        var styleResourceId = MetadataV2StyleFactory.BuildStyleResourceId(styleId);
         snapshot.Index.ResourcesByStorageLayerId[WebAppFixture.TestLayerId]
             .StyleResourceIds.Should().Contain(styleResourceId);
         var graphStyle = snapshot.Index.ResourcesById[styleResourceId].Style!;

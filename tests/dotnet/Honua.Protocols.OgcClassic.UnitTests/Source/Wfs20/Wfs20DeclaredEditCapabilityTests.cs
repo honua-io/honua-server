@@ -202,13 +202,13 @@ public sealed class Wfs20DeclaredEditCapabilityTests
         return context;
     }
 
-    private static MetadataV2Resource Resource()
+    private static MetadataV2Object Resource()
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-layer-1", Name = "cities" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             SchemaFields = Fields(),
-            Editing = new MetadataV2ResourceEditing { GlobalIdField = "globalid" }
+            Editing = new MetadataV2ObjectEditing { GlobalIdField = "globalid" }
         };
 
     private static MetadataV2Field[] Fields()
@@ -230,7 +230,7 @@ public sealed class Wfs20DeclaredEditCapabilityTests
     private static TestMetadataV2GraphProvider CreateProvider(string[]? capabilities)
     {
         var builder = new TestMetadataV2GraphBuilder()
-            .AddResource("res-layer-1", "cities", MetadataV2ResourceType.FeatureDataset, fields: Fields())
+            .AddResource("res-layer-1", "cities", MetadataV2ObjectType.FeatureDataset, fields: Fields())
             .AddStorageBinding("binding-layer-1", "res-layer-1", "test.layers.1", storageLayerId: 1)
             .AddService("svc-cities", "cities", protocols: [MetadataV2ServiceProtocols.Wfs20])
             .AddPublication(
@@ -250,7 +250,7 @@ public sealed class Wfs20DeclaredEditCapabilityTests
         {
             Resources = graph.Resources.Select(resource => resource with
             {
-                Editing = new MetadataV2ResourceEditing { GlobalIdField = "globalid" }
+                Editing = new MetadataV2ObjectEditing { GlobalIdField = "globalid" }
             }).ToArray()
         });
     }

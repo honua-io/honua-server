@@ -1001,7 +1001,7 @@ public sealed class GeoArrowQueryFormatterTests
     /// <summary>
     /// honua-server#4666: the GeoArrow writer shared the GeoParquet writer's one-sided spatial
     /// predicate, so a resource declaring geometry only through its schema fields (no
-    /// <see cref="MetadataV2Resource.Spatial"/> slot) was streamed as attribute-only Arrow.
+    /// <see cref="MetadataV2Object.Spatial"/> slot) was streamed as attribute-only Arrow.
     /// </summary>
     [Fact]
     public async Task FormatAsGeoArrowAsync_WhenSpatialSlotIsAbsentButSchemaDeclaresGeometry_StillWritesGeometryColumn()
@@ -1057,9 +1057,9 @@ public sealed class GeoArrowQueryFormatterTests
 
     /// <summary>
     /// A resource whose geometry is declared only by a <see cref="MetadataV2FieldType.Geometry"/>
-    /// schema field, with no <see cref="MetadataV2Resource.Spatial"/> slot at all.
+    /// schema field, with no <see cref="MetadataV2Object.Spatial"/> slot at all.
     /// </summary>
-    private static MetadataV2Resource CreateResourceWithoutSpatialSlot(params MetadataV2Field[] fields)
+    private static MetadataV2Object CreateResourceWithoutSpatialSlot(params MetadataV2Field[] fields)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata
@@ -1140,13 +1140,13 @@ public sealed class GeoArrowQueryFormatterTests
             .Select(element => element.GetString()).Should().Equal("Point", "Point Z");
     }
 
-    private static MetadataV2Resource CreateLayer(params MetadataV2Field[] fields)
+    private static MetadataV2Object CreateLayer(params MetadataV2Field[] fields)
         => CreateResource(fields);
 
-    private static MetadataV2Resource CreateResource(params MetadataV2Field[] fields)
+    private static MetadataV2Object CreateResource(params MetadataV2Field[] fields)
         => CreateResourceWithGeometryType(MetadataV2GeometryType.Point, fields);
 
-    private static MetadataV2Resource CreateResourceWithGeometryType(
+    private static MetadataV2Object CreateResourceWithGeometryType(
         MetadataV2GeometryType geometryType,
         params MetadataV2Field[] fields)
         => new()
@@ -1168,7 +1168,7 @@ public sealed class GeoArrowQueryFormatterTests
                     SemanticRoles = ["geometry.primary"]
                 }
             ],
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = geometryType,

@@ -788,7 +788,7 @@ internal sealed partial class ODataQueryHandler(
         string? filter,
         string? orderby,
         Honua.Core.Features.Validation.PaginationValues pagination,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string? select,
         string? expand,
         bool? count,
@@ -850,7 +850,7 @@ internal sealed partial class ODataQueryHandler(
 
     private IResult WriteGeoParquetResult(
         HttpContext context,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         QueryResult<Feature> queryResult,
         string? select)
     {

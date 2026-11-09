@@ -118,7 +118,7 @@ internal static class AdminLayerFilterConfigurationEndpoints
     }
 
     private static (MetadataV2PermanentFilter? Filter, string? Error) ValidateAndBuildPermanentFilter(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         LayerPermanentFilterConfiguration? configuration,
         IFilterExpressionService filterExpressionService)
     {
@@ -145,7 +145,7 @@ internal static class AdminLayerFilterConfigurationEndpoints
 
         // V2 cutover: validate the candidate filter against the resource's V2 schema fields
         // via ParseAndNormalize + Translate(expression, resource). Field types come from
-        // MetadataV2Resource.SchemaFields, which is the canonical post-cutover schema source.
+        // MetadataV2Object.SchemaFields, which is the canonical post-cutover schema source.
         var parseResult = filterExpressionService.ParseAndNormalize(filterLanguage, expression, resource);
         if (!parseResult.IsSuccess)
         {
@@ -198,7 +198,7 @@ internal static class AdminLayerFilterConfigurationEndpoints
         }
     }
 
-    private static async Task<(MetadataV2Resource? Resource, IResult? Problem)> ValidateLayerAsync(
+    private static async Task<(MetadataV2Object? Resource, IResult? Problem)> ValidateLayerAsync(
         int layerId,
         HttpContext context,
         IResourceValidator resourceValidator,

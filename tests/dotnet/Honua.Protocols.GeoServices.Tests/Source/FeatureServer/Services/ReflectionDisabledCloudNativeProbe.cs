@@ -186,7 +186,7 @@ internal static class ReflectionDisabledCloudNativeProbe
             }.ToImmutableDictionary());
     }
 
-    private static MetadataV2Resource CreateResource()
+    private static MetadataV2Object CreateResource()
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata
@@ -208,7 +208,7 @@ internal static class ReflectionDisabledCloudNativeProbe
                     SemanticRoles = ["geometry.primary"],
                 },
             ],
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = MetadataV2GeometryType.Point,

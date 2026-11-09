@@ -110,7 +110,7 @@ public sealed class SourceBackedRelationshipStoreIntegrationTests(PostgresFixtur
     public async Task QueryRelatedAsync_MaskedJoinKeys_MatchesWithoutExposingMaskedAttributes(bool explicitProjection)
     {
         var masks = Substitute.For<IFieldMaskSource>();
-        masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+        masks.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(ImmutableArray.Create("join_id", "details"));
         var result = await CreateStore(fieldMasks: masks).QueryRelatedAsync(13,
             RelatedQuery.ForObjects([901, 902, 903], 14, "join_id", "join_id") with
@@ -129,7 +129,7 @@ public sealed class SourceBackedRelationshipStoreIntegrationTests(PostgresFixtur
     public async Task QueryRelatedAsync_CallerPredicateOnMaskedJoinKey_IsRejected()
     {
         var masks = Substitute.For<IFieldMaskSource>();
-        masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+        masks.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(ImmutableArray.Create("join_id"));
         var action = () => CreateStore(fieldMasks: masks).QueryRelatedAsync(13,
             RelatedQuery.ForObjects([901], 14, "join_id", "join_id") with { Where = "join_id = 2055" });
@@ -226,10 +226,10 @@ public sealed class SourceBackedRelationshipStoreIntegrationTests(PostgresFixtur
             fieldMasks);
     }
 
-    private static MetadataV2Resource Resource(string name, int layerId, MetadataV2FieldType keyType) => new()
+    private static MetadataV2Object Resource(string name, int layerId, MetadataV2FieldType keyType) => new()
     {
         Metadata = new() { Id = name },
-        Type = MetadataV2ResourceType.Table,
+        Type = MetadataV2ObjectType.Table,
         StorageBindingIds = ["binding-" + layerId.ToString(System.Globalization.CultureInfo.InvariantCulture)],
         SchemaFields =
         [

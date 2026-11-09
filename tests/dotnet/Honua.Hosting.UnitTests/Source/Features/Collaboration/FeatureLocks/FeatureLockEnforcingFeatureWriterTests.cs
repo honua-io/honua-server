@@ -274,11 +274,11 @@ public sealed class FeatureLockEnforcingFeatureWriterTests
         return new MetadataV2GraphSnapshot(graph, "aliased-etag", DateTimeOffset.UnixEpoch);
     }
 
-    private static MetadataV2Resource AliasedResource(string id, string name, string bindingId)
+    private static MetadataV2Object AliasedResource(string id, string name, string bindingId)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = id, Name = name },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             StorageBindingIds = [bindingId],
             PrimaryStorageBindingId = bindingId
         };

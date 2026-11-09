@@ -685,10 +685,10 @@ public sealed class GrpcApplyEditsIdempotencyTests
             Protocols = ["Grpc"],
         };
 
-        private static MetadataV2Resource CreateResource() => new()
+        private static MetadataV2Object CreateResource() => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource-test", Name = "test" },
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 GeometryType = MetadataV2GeometryType.Point,
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
@@ -714,7 +714,7 @@ public sealed class GrpcApplyEditsIdempotencyTests
 
         private static MetadataV2ServiceLayerTriple CreateTriple(
             MetadataV2Service service,
-            MetadataV2Resource resource)
+            MetadataV2Object resource)
             => new(
                 service,
                 new MetadataV2Layer

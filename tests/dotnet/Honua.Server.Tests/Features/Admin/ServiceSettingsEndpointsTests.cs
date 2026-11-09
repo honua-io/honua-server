@@ -247,7 +247,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
         {
             Revision = snapshot.Graph.Revision + 1,
             Resources = snapshot.Graph.Resources.Select(resource => resource.Metadata.Id == publication.ResourceId
-                ? resource with { Editing = new MetadataV2ResourceEditing { CanModify = false } } : resource).ToArray()
+                ? resource with { Editing = new MetadataV2ObjectEditing { CanModify = false } } : resource).ToArray()
         }, schema: _fixture.MetadataGraphSchema);
         var before = _fixture.GetCurrentV2GraphSnapshot().Graph;
 
@@ -332,11 +332,11 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
         {
             Revision = snapshot.Graph.Revision + 1,
             Resources = snapshot.Graph.Resources.Select(resource => resource.Metadata.Id == parent.Metadata.Id
-                ? resource with { Editing = new MetadataV2ResourceEditing { CanModify = false }, Relationships = [relationship] }
+                ? resource with { Editing = new MetadataV2ObjectEditing { CanModify = false }, Relationships = [relationship] }
                 : resource.Metadata.Id == child.Metadata.Id
                     ? resource with
                     {
-                        Editing = new MetadataV2ResourceEditing { CanModify = false },
+                        Editing = new MetadataV2ObjectEditing { CanModify = false },
                         Relationships = [relationship with
                         {
                             Id = "composite-child", RelatedResourceId = parent.Metadata.Id,

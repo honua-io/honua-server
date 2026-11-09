@@ -28,7 +28,7 @@ public sealed class MetadataReleaseServiceTests
             ActivityStopped = activity => activities.Add(activity),
         };
         ActivitySource.AddActivityListener(listener);
-        var service = CreateService(BuildGraph("dev", 41, MetadataV2ResourceType.Map));
+        var service = CreateService(BuildGraph("dev", 41, MetadataV2ObjectType.Map));
 
         await service.GetSemanticInventoryAsync(
             "dev",
@@ -47,15 +47,15 @@ public sealed class MetadataReleaseServiceTests
     public async Task GetSemanticInventoryAsync_WithKindAndResourceTypeFilters_ReturnsRevisionStampedEntries()
     {
         var service = CreateService(
-            BuildGraph("dev", 41, MetadataV2ResourceType.Map),
-            BuildGraph("staging", 7, MetadataV2ResourceType.Map));
+            BuildGraph("dev", 41, MetadataV2ObjectType.Map),
+            BuildGraph("staging", 7, MetadataV2ObjectType.Map));
 
         var response = await service.GetSemanticInventoryAsync(
             "dev",
             new MetadataSemanticInventoryFilter
             {
                 ArtifactKind = MetadataSemanticArtifactKind.Resource,
-                ResourceType = MetadataV2ResourceType.Map,
+                ResourceType = MetadataV2ObjectType.Map,
             });
 
         response.Should().NotBeNull();
@@ -65,7 +65,7 @@ public sealed class MetadataReleaseServiceTests
         response.Entries.Should().ContainSingle(entry =>
             entry.SemanticId == "res.parcels" &&
             entry.ArtifactKind == MetadataSemanticArtifactKind.Resource &&
-            entry.ResourceType == MetadataV2ResourceType.Map &&
+            entry.ResourceType == MetadataV2ObjectType.Map &&
             entry.ContentVersionId == "content-v1");
     }
 
@@ -73,8 +73,8 @@ public sealed class MetadataReleaseServiceTests
     public async Task GetEnvironmentBindingsAsync_WithMissingAndUnavailableStates_ScrubsConnectionOptions()
     {
         var service = CreateService(
-            BuildGraph("dev", 41, MetadataV2ResourceType.FeatureDataset),
-            BuildGraph("staging", 7, MetadataV2ResourceType.FeatureDataset));
+            BuildGraph("dev", 41, MetadataV2ObjectType.FeatureDataset),
+            BuildGraph("staging", 7, MetadataV2ObjectType.FeatureDataset));
 
         var response = await service.GetEnvironmentBindingsAsync(new MetadataEnvironmentBindingsRequest
         {
@@ -130,8 +130,8 @@ public sealed class MetadataReleaseServiceTests
     public async Task CreateReleasePackageAsync_WithSourceAndTarget_CapturesDesiredAndCurrentRevisions()
     {
         var service = CreateService(
-            BuildGraph("dev", 41, MetadataV2ResourceType.FeatureDataset),
-            BuildGraph("staging", 7, MetadataV2ResourceType.FeatureDataset));
+            BuildGraph("dev", 41, MetadataV2ObjectType.FeatureDataset),
+            BuildGraph("staging", 7, MetadataV2ObjectType.FeatureDataset));
 
         var package = await service.CreateReleasePackageAsync(
             new CreateMetadataReleasePackageRequest
@@ -172,9 +172,9 @@ public sealed class MetadataReleaseServiceTests
     public async Task CreateReleasePackageAsync_WithDesiredRevision_ResolvesArtifactsFromRequestedSourceSnapshot()
     {
         var service = CreateService(
-            BuildGraph("dev", 40, MetadataV2ResourceType.FeatureDataset, "content-v40"),
-            BuildGraph("dev", 41, MetadataV2ResourceType.FeatureDataset, "content-v41"),
-            BuildGraph("staging", 7, MetadataV2ResourceType.FeatureDataset));
+            BuildGraph("dev", 40, MetadataV2ObjectType.FeatureDataset, "content-v40"),
+            BuildGraph("dev", 41, MetadataV2ObjectType.FeatureDataset, "content-v41"),
+            BuildGraph("staging", 7, MetadataV2ObjectType.FeatureDataset));
 
         var package = await service.CreateReleasePackageAsync(
             new CreateMetadataReleasePackageRequest
@@ -196,8 +196,8 @@ public sealed class MetadataReleaseServiceTests
     public async Task CreateReleasePackageAsync_WithFieldAndMissingTarget_PersistsSourceFieldIdentity()
     {
         var service = CreateService(
-            BuildGraph("dev", 41, MetadataV2ResourceType.FeatureDataset),
-            BuildGraph("staging", 7, MetadataV2ResourceType.FeatureDataset, includeSchemaField: false));
+            BuildGraph("dev", 41, MetadataV2ObjectType.FeatureDataset),
+            BuildGraph("staging", 7, MetadataV2ObjectType.FeatureDataset, includeSchemaField: false));
 
         var package = await service.CreateReleasePackageAsync(
             new CreateMetadataReleasePackageRequest
@@ -241,8 +241,8 @@ public sealed class MetadataReleaseServiceTests
     public async Task CreateReleasePackageAsync_WithGeneratedTitleKey_CreatesUniquePackageNames()
     {
         var service = CreateService(
-            BuildGraph("dev", 41, MetadataV2ResourceType.FeatureDataset),
-            BuildGraph("staging", 7, MetadataV2ResourceType.FeatureDataset));
+            BuildGraph("dev", 41, MetadataV2ObjectType.FeatureDataset),
+            BuildGraph("staging", 7, MetadataV2ObjectType.FeatureDataset));
 
         var first = await service.CreateReleasePackageAsync(
             new CreateMetadataReleasePackageRequest
@@ -272,8 +272,8 @@ public sealed class MetadataReleaseServiceTests
     public async Task CreateReleasePackageAsync_WithRequestContentVersion_KeepsArtifactContentVersionWhenPresent()
     {
         var service = CreateService(
-            BuildGraph("dev", 41, MetadataV2ResourceType.FeatureDataset),
-            BuildGraph("staging", 7, MetadataV2ResourceType.FeatureDataset));
+            BuildGraph("dev", 41, MetadataV2ObjectType.FeatureDataset),
+            BuildGraph("staging", 7, MetadataV2ObjectType.FeatureDataset));
 
         var package = await service.CreateReleasePackageAsync(
             new CreateMetadataReleasePackageRequest
@@ -293,8 +293,8 @@ public sealed class MetadataReleaseServiceTests
     public async Task CreateReleasePackageAsync_WithRequestContentVersion_UsesRequestFallbackWhenArtifactHasNone()
     {
         var service = CreateService(
-            BuildGraph("dev", 41, MetadataV2ResourceType.FeatureDataset),
-            BuildGraph("staging", 7, MetadataV2ResourceType.FeatureDataset));
+            BuildGraph("dev", 41, MetadataV2ObjectType.FeatureDataset),
+            BuildGraph("staging", 7, MetadataV2ObjectType.FeatureDataset));
 
         var package = await service.CreateReleasePackageAsync(
             new CreateMetadataReleasePackageRequest
@@ -314,8 +314,8 @@ public sealed class MetadataReleaseServiceTests
     public async Task CreateReleasePackageAsync_WithNullRequestArrays_ThrowsValidationError()
     {
         var service = CreateService(
-            BuildGraph("dev", 41, MetadataV2ResourceType.FeatureDataset),
-            BuildGraph("staging", 7, MetadataV2ResourceType.FeatureDataset));
+            BuildGraph("dev", 41, MetadataV2ObjectType.FeatureDataset),
+            BuildGraph("staging", 7, MetadataV2ObjectType.FeatureDataset));
 
         var nullTargets = await Assert.ThrowsAsync<ArgumentException>(() =>
             service.CreateReleasePackageAsync(
@@ -356,8 +356,8 @@ public sealed class MetadataReleaseServiceTests
     public async Task GetGitOpsManifestAsync_ForPersistedPackage_UsesSourceGeneratedSecretSafeShape()
     {
         var service = CreateService(
-            BuildGraph("dev", 42, MetadataV2ResourceType.FeatureDataset),
-            BuildGraph("staging", 7, MetadataV2ResourceType.FeatureDataset));
+            BuildGraph("dev", 42, MetadataV2ObjectType.FeatureDataset),
+            BuildGraph("staging", 7, MetadataV2ObjectType.FeatureDataset));
         var package = await service.CreateReleasePackageAsync(
             new CreateMetadataReleasePackageRequest
             {
@@ -519,7 +519,7 @@ public sealed class MetadataReleaseServiceTests
     private static MetadataV2Graph BuildGraph(
         string environment,
         long revision,
-        MetadataV2ResourceType resourceType,
+        MetadataV2ObjectType resourceType,
         string contentVersionId = "content-v1",
         bool includeSchemaField = true)
     {
@@ -531,7 +531,7 @@ public sealed class MetadataReleaseServiceTests
             GeneratedAt = DateTimeOffset.UtcNow,
             Resources =
             [
-                new MetadataV2Resource
+                new MetadataV2Object
                 {
                     Metadata = new MetadataV2ObjectMetadata
                     {

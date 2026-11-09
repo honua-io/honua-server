@@ -14,7 +14,7 @@ public sealed class OgcCollectionPublicationSelectionTests
     public void AdvertisedCollectionId_PrefersServiceLocalIdOverTitle()
     {
         var publication = Publication("pub-a", "parcels", title: "Something else", isPrimary: false);
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-a", Name = "resource-name", Title = "parcels" }
         };

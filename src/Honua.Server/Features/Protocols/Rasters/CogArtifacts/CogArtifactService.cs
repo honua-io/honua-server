@@ -32,7 +32,7 @@ internal sealed record CogArtifactPublishOutcome(
 internal sealed record CogArtifactSource(
     int LayerId,
     MetadataV2Layer Publication,
-    MetadataV2Resource Resource,
+    MetadataV2Object Resource,
     MetadataV2Service Service,
     MetadataV2StorageBinding Binding);
 

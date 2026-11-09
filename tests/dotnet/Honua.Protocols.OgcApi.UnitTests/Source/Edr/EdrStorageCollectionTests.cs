@@ -65,9 +65,9 @@ public sealed class EdrStorageCollectionTests
 
         var graph = new TestMetadataV2GraphBuilder()
             .AddService("svc", "coverages", protocols: [ServiceProtocols.OgcApiCoverages])
-            .AddResource("west", "west-dem", MetadataV2ResourceType.RasterDataset, accessPolicy: Anonymous())
-            .AddResource("east", "east-dem", MetadataV2ResourceType.RasterDataset, accessPolicy: Anonymous())
-            .AddResource("decoy", "decoy-dem", MetadataV2ResourceType.RasterDataset, accessPolicy: Anonymous())
+            .AddResource("west", "west-dem", MetadataV2ObjectType.RasterDataset, accessPolicy: Anonymous())
+            .AddResource("east", "east-dem", MetadataV2ObjectType.RasterDataset, accessPolicy: Anonymous())
+            .AddResource("decoy", "decoy-dem", MetadataV2ObjectType.RasterDataset, accessPolicy: Anonymous())
             .AddStorageBinding("west-binding", "west", "west", storageLayerId: SharedStorageId)
             .AddStorageBinding("east-binding", "east", "east", storageLayerId: SharedStorageId)
             .AddStorageBinding("decoy-binding", "decoy", "decoy", storageLayerId: DecoyStorageId)

@@ -11,7 +11,7 @@ internal static class StyleSuggestionGenerator
     // The fallback color must stay in sync with the MapLibre match and step fallback.
     private const string FallbackColor = "#CCCCCC";
     public static Dictionary<string, object?> GenerateMapLibreStyle(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int storageLayerId,
         StyleSuggestion suggestion)
     {
@@ -30,7 +30,7 @@ internal static class StyleSuggestionGenerator
     }
 
     public static Dictionary<string, object?> GenerateDrawingInfo(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         StyleSuggestion suggestion)
         => GenerateDrawingInfo(resource.ReadGeometryType(), suggestion);
 
@@ -52,7 +52,7 @@ internal static class StyleSuggestionGenerator
         return BuildClassBreaksDrawingInfo(geometryType, suggestion);
     }
 
-    public static Dictionary<string, object?> GenerateEnhancedDrawingInfo(MetadataV2Resource resource)
+    public static Dictionary<string, object?> GenerateEnhancedDrawingInfo(MetadataV2Object resource)
         => GenerateEnhancedDrawingInfo(resource.ReadGeometryType());
 
     public static Dictionary<string, object?> GenerateEnhancedDrawingInfo(StyleLayerDescriptor layer)
@@ -62,7 +62,7 @@ internal static class StyleSuggestionGenerator
         => StyleDefaults.BuildDefaultDrawingInfo(geometryType);
 
     public static Dictionary<string, object?> GenerateEnhancedDefaults(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int storageLayerId)
     {
         var sourceId = StyleDefaults.GetSourceId(storageLayerId);

@@ -20,7 +20,7 @@ public sealed class CompositeRelationshipMetadataTests
     [UnitTest]
     public void RelationshipResponse_PreservesCompositeAndBothKeyFields()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "parent" },
             Relationships =
@@ -38,7 +38,7 @@ public sealed class CompositeRelationshipMetadataTests
             ]
         };
         var (service, snapshot) = RelationshipSnapshot(resource,
-            new MetadataV2Resource { Metadata = new MetadataV2ObjectMetadata { Id = "child" } });
+            new MetadataV2Object { Metadata = new MetadataV2ObjectMetadata { Id = "child" } });
         var response = FeatureServerEndpoints.BuildRelationshipResponseV2(resource, snapshot, service).Should().ContainSingle().Subject;
         response.Composite.Should().BeTrue();
         response.Id.Should().Be(0);
@@ -54,7 +54,7 @@ public sealed class CompositeRelationshipMetadataTests
     public void Issue5493_RelationshipResponse_UsesProtocolRolesAndTheCurrentSidesKeyField(
         string originRole, string destinationRole)
     {
-        var origin = new MetadataV2Resource
+        var origin = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "origin" },
             Relationships =
@@ -69,7 +69,7 @@ public sealed class CompositeRelationshipMetadataTests
                 }
             ]
         };
-        var destination = new MetadataV2Resource
+        var destination = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "destination" },
             Relationships =
@@ -112,13 +112,13 @@ public sealed class CompositeRelationshipMetadataTests
             }
         };
         var publication = new MetadataV2Layer();
-        var composite = new MetadataV2Resource
+        var composite = new MetadataV2Object
         {
             Relationships = [new MetadataV2Relationship { Composite = true }]
         };
         FeatureServerEndpoints.BuildServiceCapabilitiesV2(service, [(publication, composite)]).Should().Be("Query");
         FeatureServerEndpoints.BuildServiceCapabilitiesV2(service,
-                [(publication, composite), (new MetadataV2Layer(), new MetadataV2Resource())])
+                [(publication, composite), (new MetadataV2Layer(), new MetadataV2Object())])
             .Should().Contain("Create").And.Contain("Update").And.Contain("Delete");
 
         var snapshot = new MetadataV2GraphSnapshot(new MetadataV2Graph(), "test", DateTimeOffset.UnixEpoch);
@@ -133,7 +133,7 @@ public sealed class CompositeRelationshipMetadataTests
             service, [(publication, composite)], snapshot, new QueryLimits(), false, false, false, false, offlineSyncEnabled: false);
         readOnlyService.AllowGeometryUpdates.Should().BeFalse();
         var mixedService = FeatureServerEndpoints.MapServiceToResponseV2(
-            service, [(publication, composite), (new MetadataV2Layer(), new MetadataV2Resource())],
+            service, [(publication, composite), (new MetadataV2Layer(), new MetadataV2Object())],
             snapshot, new QueryLimits(), false, false, false, false, offlineSyncEnabled: false);
         mixedService.AllowGeometryUpdates.Should().BeTrue();
     }
@@ -150,8 +150,8 @@ public sealed class CompositeRelationshipMetadataTests
             .AddResource(
                 "parent",
                 "Aggregated Polygons",
-                spatial: new MetadataV2ResourceSpatial { GeometryType = MetadataV2GeometryType.MultiPolygon })
-            .AddResource("child", "groupbySummary", MetadataV2ResourceType.Table)
+                spatial: new MetadataV2ObjectSpatial { GeometryType = MetadataV2GeometryType.MultiPolygon })
+            .AddResource("child", "groupbySummary", MetadataV2ObjectType.Table)
             .AddStorageBinding("bind-parent", "parent", "aggregated_polygons", storageLayerId: 579)
             .AddStorageBinding("bind-child", "child", "groupby_summary", storageLayerId: 877)
             .AddPublication(
@@ -174,7 +174,7 @@ public sealed class CompositeRelationshipMetadataTests
         var drafted = builder.Build();
         var parent = drafted.Resources.Single(resource => resource.Metadata.Id == "parent") with
         {
-            Editing = new MetadataV2ResourceEditing { CanModify = false },
+            Editing = new MetadataV2ObjectEditing { CanModify = false },
             Relationships =
             [
                 new MetadataV2Relationship
@@ -193,7 +193,7 @@ public sealed class CompositeRelationshipMetadataTests
         };
         var child = drafted.Resources.Single(resource => resource.Metadata.Id == "child") with
         {
-            Editing = new MetadataV2ResourceEditing { CanModify = false },
+            Editing = new MetadataV2ObjectEditing { CanModify = false },
             Relationships =
             [
                 parent.Relationships[0] with
@@ -267,7 +267,7 @@ public sealed class CompositeRelationshipMetadataTests
 
     private static LayerResponse MapLayer(
         MetadataV2Service service,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2Layer publication,
         MetadataV2GraphSnapshot snapshot)
         => FeatureServerEndpoints.MapLayerToResponseV2(
@@ -275,7 +275,7 @@ public sealed class CompositeRelationshipMetadataTests
             null, null, null, null, false, false, false, offlineSyncEnabled: false);
 
     private static (MetadataV2Service Service, MetadataV2GraphSnapshot Snapshot) RelationshipSnapshot(
-        params MetadataV2Resource[] resources)
+        params MetadataV2Object[] resources)
     {
         var builder = new TestMetadataV2GraphBuilder().AddService("service", "relationship-metadata");
         for (var index = 0; index < resources.Length; index++)

@@ -18,7 +18,7 @@ public sealed class ResourceValidator : IResourceValidator
         _v2Provider = v2Provider ?? throw new ArgumentNullException(nameof(v2Provider));
     }
 
-    public async Task<ResourceValidationResult<MetadataV2Resource>> ValidateLayerV2Async(
+    public async Task<ResourceValidationResult<MetadataV2Object>> ValidateLayerV2Async(
         int layerId,
         CancellationToken cancellationToken = default)
     {
@@ -34,7 +34,7 @@ public sealed class ResourceValidator : IResourceValidator
         // such as OGC API Maps unable to resolve the layer). Fall back to any
         // matching publication's resource so existing single-publication and
         // non-storage-backed cases keep their previous behaviour.
-        MetadataV2Resource? firstResource = null;
+        MetadataV2Object? firstResource = null;
         foreach (var candidate in snapshot.Graph.Publications)
         {
             if (candidate.LayerIndex != layerId)
@@ -62,20 +62,20 @@ public sealed class ResourceValidator : IResourceValidator
 
         if (firstResource is null)
         {
-            return ResourceValidationResult.NotFound<MetadataV2Resource>(
+            return ResourceValidationResult.NotFound<MetadataV2Object>(
                 ErrorMessages.NotFound.FormatLayer(layerId));
         }
 
         return ResourceValidationResult.Success(firstResource);
     }
 
-    public async Task<ResourceValidationResult<MetadataV2Resource>> ValidateCollectionV2Async(
+    public async Task<ResourceValidationResult<MetadataV2Object>> ValidateCollectionV2Async(
         string collectionId,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(collectionId))
         {
-            return ResourceValidationResult.InvalidIdentifier<MetadataV2Resource>(
+            return ResourceValidationResult.InvalidIdentifier<MetadataV2Object>(
                 ErrorMessages.Validation.CollectionIdRequired);
         }
 
@@ -108,7 +108,7 @@ public sealed class ResourceValidator : IResourceValidator
             }
         }
 
-        return ResourceValidationResult.NotFound<MetadataV2Resource>(
+        return ResourceValidationResult.NotFound<MetadataV2Object>(
             ErrorMessages.NotFound.FormatCollection(collectionId));
     }
 

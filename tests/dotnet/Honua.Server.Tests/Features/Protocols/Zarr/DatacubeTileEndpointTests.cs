@@ -143,7 +143,7 @@ public sealed class DatacubeTileEndpointTests : IAsyncLifetime
             .AddResource(
                 "res-public-collision",
                 "Unrelated Public Raster",
-                MetadataV2ResourceType.RasterDataset,
+                MetadataV2ObjectType.RasterDataset,
                 accessPolicy: new AccessPolicy { AllowAnonymous = true })
             .AddStorageBinding(
                 "binding-public-collision",
@@ -154,7 +154,7 @@ public sealed class DatacubeTileEndpointTests : IAsyncLifetime
             .AddResource(
                 "res-zarr-layer-0",
                 "Protected Zarr Layer",
-                MetadataV2ResourceType.RasterDataset)
+                MetadataV2ObjectType.RasterDataset)
             .AddStorageBinding(
                 "binding-zarr-layer-0",
                 "res-zarr-layer-0",

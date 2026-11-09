@@ -62,7 +62,7 @@ public static class MigrationCatalogReconciler
 
     public static MigrationCatalogReconciliationResource ReconcileResource(
         MigrationInventoryResource resource,
-        MetadataV2Resource? publishedResource,
+        MetadataV2Object? publishedResource,
         IEnumerable<MigrationManifestRelationshipRecord>? expectedRelationships = null,
         double[]? sourceBbox = null,
         string? targetResourceId = null,
@@ -75,7 +75,7 @@ public static class MigrationCatalogReconciler
 
     private static MigrationCatalogReconciliationResource ReconcileResourceInternal(
         MigrationInventoryResource resource,
-        MetadataV2Resource? published,
+        MetadataV2Object? published,
         MigrationManifestRelationshipRecord[] expectedRelationships,
         double[]? sourceBbox,
         string? targetResourceId,
@@ -128,7 +128,7 @@ public static class MigrationCatalogReconciler
 
     private static void CollectSchemaFindings(
         MigrationInventoryResource resource,
-        MetadataV2Resource published,
+        MetadataV2Object published,
         List<MigrationCatalogReconciliationFinding> findings)
     {
         var publishedByName = published.SchemaFields
@@ -274,7 +274,7 @@ public static class MigrationCatalogReconciler
 
     private static void CollectSpatialFindings(
         MigrationInventoryResource resource,
-        MetadataV2Resource published,
+        MetadataV2Object published,
         double[]? sourceBbox,
         List<MigrationCatalogReconciliationFinding> findings,
         int? plannedTargetSrid,
@@ -374,7 +374,7 @@ public static class MigrationCatalogReconciler
 
     private static void CollectIdentifierFindings(
         MigrationInventoryResource resource,
-        MetadataV2Resource published,
+        MetadataV2Object published,
         List<MigrationCatalogReconciliationFinding> findings)
     {
         var hasObjectIdInInventory = resource.Fields.Any(static field =>
@@ -421,7 +421,7 @@ public static class MigrationCatalogReconciler
 
     private static void CollectRelationshipFindings(
         MigrationManifestRelationshipRecord[] expectedRelationships,
-        MetadataV2Resource published,
+        MetadataV2Object published,
         List<MigrationCatalogReconciliationFinding> findings)
     {
         if (expectedRelationships.Length == 0)
@@ -482,7 +482,7 @@ public static class MigrationCatalogReconciler
     }
 
     private static List<MetadataV2Relationship> FindPublishedRelationships(
-        MetadataV2Resource published,
+        MetadataV2Object published,
         MigrationManifestRelationshipRecord expected)
     {
         var identified = new List<MetadataV2Relationship>();
@@ -609,7 +609,7 @@ public static class MigrationCatalogReconciler
 
     internal static void CollectAttachmentFindings(
         MigrationInventoryResource resource,
-        MetadataV2Resource published,
+        MetadataV2Object published,
         List<MigrationCatalogReconciliationFinding> findings)
     {
         // Only assert when the source explicitly reported attachment support. A null
@@ -638,7 +638,7 @@ public static class MigrationCatalogReconciler
 
     internal static void CollectSubtypeFindings(
         MetadataV2Subtypes? expectedSubtypes,
-        MetadataV2Resource published,
+        MetadataV2Object published,
         List<MigrationCatalogReconciliationFinding> findings)
     {
         if (expectedSubtypes is null || expectedSubtypes.Subtypes.Count == 0)

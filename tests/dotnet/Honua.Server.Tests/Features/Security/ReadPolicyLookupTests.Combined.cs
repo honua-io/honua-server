@@ -24,7 +24,7 @@ public sealed partial class ReadPolicyLookupTests
     [UnitTest]
     public async Task ApplyAsync_CombinedPolicies_ReadsBothPolicySetsOncePerOperation()
     {
-        var resource = new MetadataV2Resource { Metadata = new() { Id = "resource", Name = "parcels" } };
+        var resource = new MetadataV2Object { Metadata = new() { Id = "resource", Name = "parcels" } };
         var graph = CreateGraph(resource, 2);
         var context = new DefaultHttpContext { User = Principal("reader", "west") };
         var accessor = new HttpContextAccessor { HttpContext = context };
@@ -90,7 +90,7 @@ public sealed partial class ReadPolicyLookupTests
     [UnitTest]
     public void CanResolveWith_IndependentContextOptionsStoreOrCustomSource_RejectsCombination()
     {
-        var resource = new MetadataV2Resource { Metadata = new() { Id = "resource", Name = "parcels" } };
+        var resource = new MetadataV2Object { Metadata = new() { Id = "resource", Name = "parcels" } };
         var graph = CreateGraph(resource, 1);
         var accessor = new HttpContextAccessor { HttpContext = new DefaultHttpContext() };
         var options = Options.Create(new RbacOptions());
@@ -116,7 +116,7 @@ public sealed partial class ReadPolicyLookupTests
     [UnitTest]
     public async Task ResolveCombinedAsync_CancellationOrStoreFailure_RefusesRead()
     {
-        var resource = new MetadataV2Resource { Metadata = new() { Id = "resource", Name = "parcels" } };
+        var resource = new MetadataV2Object { Metadata = new() { Id = "resource", Name = "parcels" } };
         var graph = CreateGraph(resource, 1);
         var accessor = new HttpContextAccessor { HttpContext = new DefaultHttpContext() };
         var rows = Substitute.For<IRlsPolicyStore, ICombinedReadPolicyStore>();

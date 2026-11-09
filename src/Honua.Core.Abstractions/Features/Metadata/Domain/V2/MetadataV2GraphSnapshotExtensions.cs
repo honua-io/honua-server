@@ -31,7 +31,7 @@ public static class MetadataV2GraphSnapshotExtensions
     public static bool IsRoutable(
         this MetadataV2GraphSnapshot snapshot,
         MetadataV2StorageBinding binding,
-        MetadataV2Resource? resource)
+        MetadataV2Object? resource)
         => binding.IsRoutable(resource) && IsUnderstoodConnection(snapshot.ResolveConnection(binding));
 
     public static bool IsRoutable(this MetadataV2Service service)
@@ -44,7 +44,7 @@ public static class MetadataV2GraphSnapshotExtensions
     // Retired entries stay addressable for administration and must not be served.
     public static bool IsRoutable(
         this MetadataV2Layer publication,
-        MetadataV2Resource? resource)
+        MetadataV2Object? resource)
     {
         ArgumentNullException.ThrowIfNull(publication);
         return IsKnownEnumValue(publication.PublicationType, MetadataV2LayerType.Unknown) &&
@@ -53,16 +53,16 @@ public static class MetadataV2GraphSnapshotExtensions
 
     private static bool IsRoutable(
         this MetadataV2StorageBinding binding,
-        MetadataV2Resource? resource)
+        MetadataV2Object? resource)
     {
         ArgumentNullException.ThrowIfNull(binding);
         return IsKnownEnumValue(binding.StorageType, MetadataV2StorageType.Unknown) &&
                IsServingStatus(binding.Status) && IsServingResource(resource);
     }
 
-    private static bool IsServingResource(MetadataV2Resource? resource)
+    private static bool IsServingResource(MetadataV2Object? resource)
         => resource is not null &&
-           IsKnownEnumValue(resource.Type, MetadataV2ResourceType.Unknown) && IsServingStatus(resource.Status);
+           IsKnownEnumValue(resource.Type, MetadataV2ObjectType.Unknown) && IsServingStatus(resource.Status);
 
     private static bool IsUnderstoodConnection(MetadataV2Connection? connection)
         => connection is null ||
@@ -97,7 +97,7 @@ public static class MetadataV2GraphSnapshotExtensions
         return snapshot.Index.PublicationsByService[serviceId].ToArray();
     }
 
-    public static MetadataV2Resource? ResolveResource(
+    public static MetadataV2Object? ResolveResource(
         this MetadataV2GraphSnapshot snapshot, MetadataV2Layer publication)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
@@ -143,7 +143,7 @@ public static class MetadataV2GraphSnapshotExtensions
     public static int? ResolveStorageLayerId(
         this MetadataV2GraphSnapshot snapshot,
         MetadataV2Layer publication,
-        MetadataV2Resource? resource)
+        MetadataV2Object? resource)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(publication);
@@ -178,7 +178,7 @@ public static class MetadataV2GraphSnapshotExtensions
 
     public static int? ResolveStorageLayerId(
         this MetadataV2GraphSnapshot snapshot,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(resource);
@@ -268,7 +268,7 @@ public static class MetadataV2GraphSnapshotExtensions
     }
 
     public static IEnumerable<MetadataV2Field> FieldsWithSemanticRole(
-        this MetadataV2Resource resource, string semanticRole)
+        this MetadataV2Object resource, string semanticRole)
     {
         ArgumentNullException.ThrowIfNull(resource);
         if (string.IsNullOrEmpty(semanticRole))

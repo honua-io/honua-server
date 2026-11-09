@@ -11,7 +11,7 @@ internal static class OrderByParsing
 {
     public static ImmutableArray<OrderByClause>? ParseFeatureServerOrderBy(
         string? orderByFields,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IReadOnlySet<string> allowedCoreFields)
     {
         return ParseOrderByV2(
@@ -29,7 +29,7 @@ internal static class OrderByParsing
 
     private static ImmutableArray<OrderByClause>? ParseOrderByV2(
         string? orderBy,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         Func<string, bool> fieldNameValidator,
         IReadOnlySet<string>? allowedCoreFields,
         bool allowUnknownFields,

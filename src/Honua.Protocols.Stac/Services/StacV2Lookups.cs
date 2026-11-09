@@ -12,7 +12,7 @@ internal static class StacV2Lookups
 {
     internal readonly record struct ResolvedStacPublication(
         MetadataV2Layer Publication,
-        MetadataV2Resource Resource,
+        MetadataV2Object Resource,
         MetadataV2Service Service,
         int LayerIndex,
         MetadataV2GraphSnapshot Snapshot)

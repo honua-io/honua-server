@@ -129,7 +129,7 @@ public sealed class StacItemsTests : IAsyncLifetime
     public async Task GetItems_IncludeDeclaredStacExtensionsWhenConfigured()
     {
         UpdateLayerMetadata(
-            new MetadataV2ResourceTemporal { StartTimeField = "timestamp" },
+            new MetadataV2ObjectTemporal { StartTimeField = "timestamp" },
             JsonSerializer.SerializeToElement(new
             {
                 extensions = ExpectedItemExtensions
@@ -477,7 +477,7 @@ public sealed class StacItemsTests : IAsyncLifetime
     }
 
     private void UpdateLayerMetadata(
-        MetadataV2ResourceTemporal? temporal = null,
+        MetadataV2ObjectTemporal? temporal = null,
         JsonElement? stac = null)
         => _fixture.UpdateV2ResourceMetadata(WebAppFixture.TestLayerId, stacExtension: stac, temporal: temporal);
 

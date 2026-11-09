@@ -196,7 +196,7 @@ public sealed partial class FeatureProviderQueryRouterTests
         return provider.Object;
     }
 
-    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Service Service, MetadataV2Resource Resource, MetadataV2Layer Publication)
+    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Service Service, MetadataV2Object Resource, MetadataV2Layer Publication)
         CreateSnapshot(string connectionId, string providerName = DataProviderNames.DuckDb)
     {
         var service = new MetadataV2Service
@@ -204,10 +204,10 @@ public sealed partial class FeatureProviderQueryRouterTests
             Metadata = new MetadataV2ObjectMetadata { Id = "svc-maps", Name = "Maps" },
             SpatialReference = MetadataV2SpatialReference.Wgs84
         };
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-roads", Name = "roads" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             StorageBindingIds = ["binding-roads"],
             SchemaFields =
             [
@@ -227,7 +227,7 @@ public sealed partial class FeatureProviderQueryRouterTests
                 },
                 new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String }
             ],
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = MetadataV2GeometryType.LineString,

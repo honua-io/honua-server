@@ -62,7 +62,7 @@ public sealed class Wfs20EnablementTests
         descriptors.Should().ContainSingle();
         GetDescriptorProperty<int>(descriptors[0], "StorageLayerId").Should().Be(1);
         GetDescriptorProperty<string>(descriptors[0], "LocalName").Should().Be("layer1");
-        GetDescriptorProperty<MetadataV2Resource>(descriptors[0], "Resource").Metadata.Name.Should().Be("Layer1");
+        GetDescriptorProperty<MetadataV2Object>(descriptors[0], "Resource").Metadata.Name.Should().Be("Layer1");
         GetDescriptorProperty<MetadataV2Service>(descriptors[0], "Service").Metadata.Name.Should().Be("alpha");
     }
 

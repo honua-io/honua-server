@@ -416,7 +416,7 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
 
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             MetadataV2Layer? matchedPub = null;
-            MetadataV2Resource? matchedResource = null;
+            MetadataV2Object? matchedResource = null;
 
             if (int.TryParse(collectionId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
             {
@@ -463,7 +463,7 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
     private static void AddPublicationCollectionAliases(
         HashSet<string> collectionIds,
         MetadataV2Layer publication,
-        MetadataV2Resource? resource)
+        MetadataV2Object? resource)
     {
         if (!string.IsNullOrWhiteSpace(publication.Metadata.Id))
         {
@@ -497,7 +497,7 @@ internal sealed partial class OutputCacheInvalidationService : IQueryResponseCac
         }
     }
 
-    private static void AddResourceCollectionAliases(HashSet<string> collectionIds, MetadataV2Resource resource)
+    private static void AddResourceCollectionAliases(HashSet<string> collectionIds, MetadataV2Object resource)
     {
         if (!string.IsNullOrWhiteSpace(resource.Metadata.Id))
         {

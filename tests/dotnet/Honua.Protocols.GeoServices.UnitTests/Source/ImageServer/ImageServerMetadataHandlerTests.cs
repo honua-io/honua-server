@@ -544,7 +544,7 @@ public class ImageServerMetadataHandlerTests
     [Operation(Operations.GetServiceInfo)]
     public async Task GetServiceInfoAsync_TemporalHintsAbsentFromCatalog_AreNotAdvertised()
     {
-        var handler = CreateHandler(new MetadataV2ResourceTemporal
+        var handler = CreateHandler(new MetadataV2ObjectTemporal
         {
             StartTimeField = "timestamp",
             EndTimeField = "event_date",
@@ -562,7 +562,7 @@ public class ImageServerMetadataHandlerTests
     [Operation(Operations.GetServiceInfo)]
     public async Task GetServiceInfoAsync_CatalogTemporalHints_AreAdvertisedByCanonicalName()
     {
-        var handler = CreateHandler(new MetadataV2ResourceTemporal
+        var handler = CreateHandler(new MetadataV2ObjectTemporal
         {
             StartTimeField = "acquisitiondate",
             EndTimeField = "timestamp",
@@ -656,10 +656,10 @@ public class ImageServerMetadataHandlerTests
         time.EndTimeField.Should().BeNull("CreatedAt is masked for this caller");
     }
 
-    private ImageServerMetadataHandler CreateHandler(MetadataV2ResourceTemporal temporal)
+    private ImageServerMetadataHandler CreateHandler(MetadataV2ObjectTemporal temporal)
         => new(
             new TestMetadataV2GraphBuilder()
-                .AddResource("resource-1", "test-layer", MetadataV2ResourceType.RasterDataset, temporal: temporal)
+                .AddResource("resource-1", "test-layer", MetadataV2ObjectType.RasterDataset, temporal: temporal)
                 .AddService("service-1", "image-svc-1", protocols: [ServiceProtocols.ImageServer])
                 .AddPublication(
                     "publication-1",
@@ -716,7 +716,7 @@ public class ImageServerMetadataHandlerTests
 
     private static TestMetadataV2GraphProvider BuildGraphWithLayer(int layerIndex)
         => new TestMetadataV2GraphBuilder()
-            .AddResource($"resource-{layerIndex}", "test-layer", MetadataV2ResourceType.RasterDataset)
+            .AddResource($"resource-{layerIndex}", "test-layer", MetadataV2ObjectType.RasterDataset)
             .AddService($"service-{layerIndex}", $"image-svc-{layerIndex}", protocols: [ServiceProtocols.ImageServer])
             .AddPublication(
                 $"publication-{layerIndex}",

@@ -1083,7 +1083,7 @@ internal sealed partial class TileOperationExecutionCore
         return new TileCoordinateSelection(result, WasTruncated: false, maxTiles);
     }
 
-    private static MetadataV2Resource? ResolveArchiveResource(
+    private static MetadataV2Object? ResolveArchiveResource(
         MetadataV2GraphSnapshot snapshot,
         TileOperationStartRequest request,
         int layerId)
@@ -1113,7 +1113,7 @@ internal sealed partial class TileOperationExecutionCore
         return null;
     }
 
-    private static Dictionary<string, string> BuildVectorFields(MetadataV2Resource? resource)
+    private static Dictionary<string, string> BuildVectorFields(MetadataV2Object? resource)
     {
         var fields = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         if (resource is null)

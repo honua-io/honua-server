@@ -585,7 +585,7 @@ internal sealed partial class Wcs20Handler
         // Walk publications on the WCS-enabled service, dedupe by resource (prefer
         // IsPrimary) so a resource exposed through multiple publications is listed once,
         // then keep only those backed by a raster the IRasterStore can serve.
-        var byResource = new Dictionary<string, (MetadataV2Layer Publication, MetadataV2Resource Resource, int StorageLayerId)>(StringComparer.Ordinal);
+        var byResource = new Dictionary<string, (MetadataV2Layer Publication, MetadataV2Object Resource, int StorageLayerId)>(StringComparer.Ordinal);
         foreach (var publication in snapshot.Index.PublicationsByService[service.Service!.Metadata.Id])
         {
             var resource = snapshot.ResolveResource(publication);
@@ -739,7 +739,7 @@ internal sealed partial class Wcs20Handler
         HttpContext context,
         MetadataV2GraphSnapshot snapshot,
         int layerId,
-        out MetadataV2Resource resource,
+        out MetadataV2Object resource,
         out MetadataV2Service? owningService)
     {
         var matchingBindings = snapshot.Graph.StorageBindings
@@ -760,7 +760,7 @@ internal sealed partial class Wcs20Handler
             .Select(candidate => candidate!)
             .ToArray();
 
-        var preferred = routable.FirstOrDefault(candidate => candidate.Type == MetadataV2ResourceType.RasterDataset)
+        var preferred = routable.FirstOrDefault(candidate => candidate.Type == MetadataV2ObjectType.RasterDataset)
             ?? routable.FirstOrDefault();
         if (preferred is not null)
         {
@@ -796,7 +796,7 @@ internal sealed partial class Wcs20Handler
         if (fallbackOwners.Length > 0)
         {
             var rasterOwners = fallbackOwners
-                .Where(entry => entry.Resource.Type == MetadataV2ResourceType.RasterDataset)
+                .Where(entry => entry.Resource.Type == MetadataV2ObjectType.RasterDataset)
                 .ToArray();
             (resource, owningService) = SelectCoverageOwner(
                 context,
@@ -813,12 +813,12 @@ internal sealed partial class Wcs20Handler
     private static bool TryFindOwningService(
         HttpContext context,
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         out MetadataV2Service? owningService)
     {
         owningService = null;
         var hasCoveragePublication = false;
-        var visible = new List<(MetadataV2Resource Resource, MetadataV2Service Service)>();
+        var visible = new List<(MetadataV2Object Resource, MetadataV2Service Service)>();
         foreach (var publication in snapshot.Graph.Publications)
         {
             if (!string.Equals(publication.ResourceId, resource.Metadata.Id, StringComparison.Ordinal))
@@ -848,12 +848,12 @@ internal sealed partial class Wcs20Handler
         return true;
     }
 
-    private static (MetadataV2Resource Resource, MetadataV2Service Service) SelectCoverageOwner(
+    private static (MetadataV2Object Resource, MetadataV2Service Service) SelectCoverageOwner(
         HttpContext context,
-        IReadOnlyList<(MetadataV2Resource Resource, MetadataV2Service Service)> visible)
+        IReadOnlyList<(MetadataV2Object Resource, MetadataV2Service Service)> visible)
     {
-        (MetadataV2Resource Resource, MetadataV2Service Service)? policyBearing = null;
-        (MetadataV2Resource Resource, MetadataV2Service Service)? grantMatch = null;
+        (MetadataV2Object Resource, MetadataV2Service Service)? policyBearing = null;
+        (MetadataV2Object Resource, MetadataV2Service Service)? grantMatch = null;
         var scopeGoverned = LayerScopedWriteKey.IsScopeGovernedPrincipal(context.User);
         foreach (var candidate in visible)
         {
@@ -3144,7 +3144,7 @@ internal sealed partial class Wcs20Handler
     private readonly record struct ServiceResolutionResult(MetadataV2Service? Service, IResult? Error);
 
     private readonly record struct WcsCoverage(
-        MetadataV2Resource Resource,
+        MetadataV2Object Resource,
         int LayerId,
         RasterInfo Raster,
         MetadataV2Service? Service,

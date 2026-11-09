@@ -224,7 +224,7 @@ public sealed class TestMetadataV2GraphBuilder
 {
     private long _revision = 1;
     private string _environment = "test";
-    private readonly List<MetadataV2Resource> _resources = [];
+    private readonly List<MetadataV2Object> _resources = [];
     private readonly List<MetadataV2Connection> _connections = [];
     private readonly List<MetadataV2StorageBinding> _bindings = [];
     private readonly List<MetadataV2Service> _services = [];
@@ -260,15 +260,15 @@ public sealed class TestMetadataV2GraphBuilder
     public TestMetadataV2GraphBuilder AddResource(
         string id,
         string name,
-        MetadataV2ResourceType type = MetadataV2ResourceType.FeatureDataset,
+        MetadataV2ObjectType type = MetadataV2ObjectType.FeatureDataset,
         IEnumerable<MetadataV2Field>? fields = null,
         AccessPolicy? accessPolicy = null,
-        MetadataV2ResourceSpatial? spatial = null,
-        MetadataV2ResourceTemporal? temporal = null,
+        MetadataV2ObjectSpatial? spatial = null,
+        MetadataV2ObjectTemporal? temporal = null,
         IReadOnlyDictionary<string, string>? annotations = null,
         IReadOnlyDictionary<string, JsonElement>? extensions = null)
     {
-        _resources.Add(new MetadataV2Resource
+        _resources.Add(new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata
             {

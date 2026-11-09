@@ -141,7 +141,7 @@ public static class MetadataCompatibilityAnalyzer
     }
 
     private static void CompareResource(
-        MetadataV2Resource source,
+        MetadataV2Object source,
         MetadataV2GraphSnapshot sourceSnapshot,
         MetadataV2GraphSnapshot targetSnapshot,
         List<MetadataCompatibilityFinding> findings)
@@ -190,8 +190,8 @@ public static class MetadataCompatibilityAnalyzer
     }
 
     private static void CompareResourceFields(
-        MetadataV2Resource source,
-        MetadataV2Resource target,
+        MetadataV2Object source,
+        MetadataV2Object target,
         List<MetadataCompatibilityFinding> findings)
     {
         foreach (var sourceField in source.SchemaFields)
@@ -201,7 +201,7 @@ public static class MetadataCompatibilityAnalyzer
     }
 
     private static void CompareFieldEntry(
-        MetadataV2Resource sourceParent,
+        MetadataV2Object sourceParent,
         MetadataV2Field sourceField,
         MetadataV2GraphSnapshot targetSnapshot,
         List<MetadataCompatibilityFinding> findings)
@@ -228,9 +228,9 @@ public static class MetadataCompatibilityAnalyzer
     }
 
     private static void CompareField(
-        MetadataV2Resource sourceResource,
+        MetadataV2Object sourceResource,
         MetadataV2Field sourceField,
-        MetadataV2Resource targetResource,
+        MetadataV2Object targetResource,
         List<MetadataCompatibilityFinding> findings)
     {
         var fieldSemanticId = GetFieldSemanticId(sourceResource, sourceField);
@@ -313,9 +313,9 @@ public static class MetadataCompatibilityAnalyzer
     }
 
     private static void CompareCanonicalFieldTokens(
-        MetadataV2Resource sourceResource,
+        MetadataV2Object sourceResource,
         MetadataV2Field sourceField,
-        MetadataV2Resource targetResource,
+        MetadataV2Object targetResource,
         MetadataV2Field targetField,
         string[] expectedTokens,
         string[] actualTokens,
@@ -353,8 +353,8 @@ public static class MetadataCompatibilityAnalyzer
     }
 
     private static void CompareIdentifiers(
-        MetadataV2Resource source,
-        MetadataV2Resource target,
+        MetadataV2Object source,
+        MetadataV2Object target,
         List<MetadataCompatibilityFinding> findings)
     {
         var sourceIdentifier = FindPrimaryIdentifierField(source);
@@ -387,8 +387,8 @@ public static class MetadataCompatibilityAnalyzer
     }
 
     private static void CompareSpatial(
-        MetadataV2Resource source,
-        MetadataV2Resource target,
+        MetadataV2Object source,
+        MetadataV2Object target,
         List<MetadataCompatibilityFinding> findings)
     {
         var expectedGeometryType = source.ReadGeometryType();
@@ -469,8 +469,8 @@ public static class MetadataCompatibilityAnalyzer
     }
 
     private static void CompareTemporal(
-        MetadataV2Resource source,
-        MetadataV2Resource target,
+        MetadataV2Object source,
+        MetadataV2Object target,
         List<MetadataCompatibilityFinding> findings)
     {
         var expected = source.ReadTemporalFields();
@@ -501,8 +501,8 @@ public static class MetadataCompatibilityAnalyzer
     }
 
     private static void CompareStorage(
-        MetadataV2Resource source,
-        MetadataV2Resource target,
+        MetadataV2Object source,
+        MetadataV2Object target,
         MetadataV2GraphSnapshot sourceSnapshot,
         MetadataV2GraphSnapshot targetSnapshot,
         List<MetadataCompatibilityFinding> findings)
@@ -1572,7 +1572,7 @@ public static class MetadataCompatibilityAnalyzer
             MetadataCompatibilityCode.StorageCapabilityMissing;
 
     private static MetadataV2StorageBinding? ResolvePrimaryStorage(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2GraphSnapshot snapshot)
     {
         if (!string.IsNullOrWhiteSpace(resource.PrimaryStorageBindingId) &&
@@ -1649,7 +1649,7 @@ public static class MetadataCompatibilityAnalyzer
         return null;
     }
 
-    private static MetadataV2Field? FindMatchingField(MetadataV2Resource resource, MetadataV2Field sourceField)
+    private static MetadataV2Field? FindMatchingField(MetadataV2Object resource, MetadataV2Field sourceField)
     {
         var sourceSemanticId = GetFieldSemanticId(resource, sourceField);
         return resource.SchemaFields.FirstOrDefault(field =>
@@ -1657,18 +1657,18 @@ public static class MetadataCompatibilityAnalyzer
             string.Equals(field.Name, sourceField.Name, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static MetadataV2Field? FindPrimaryIdentifierField(MetadataV2Resource resource)
+    private static MetadataV2Field? FindPrimaryIdentifierField(MetadataV2Object resource)
         => resource.SchemaFields.FirstOrDefault(static field =>
                 field.SemanticRoles.Contains("id.primary", StringComparer.OrdinalIgnoreCase) ||
                 field.SemanticRoles.Contains("identifier.primary", StringComparer.OrdinalIgnoreCase))
             ?? resource.FindPrimaryIdField();
 
-    private static string GetFieldSemanticId(MetadataV2Resource resource, MetadataV2Field field)
+    private static string GetFieldSemanticId(MetadataV2Object resource, MetadataV2Field field)
         => string.IsNullOrWhiteSpace(field.SemanticId)
             ? $"field.{resource.Metadata.Id}.{field.Name}"
             : field.SemanticId.Trim();
 
-    private static Dictionary<string, string> FieldDetails(MetadataV2Resource resource, MetadataV2Field field)
+    private static Dictionary<string, string> FieldDetails(MetadataV2Object resource, MetadataV2Field field)
         => new(StringComparer.Ordinal)
         {
             ["semanticId"] = GetFieldSemanticId(resource, field),
@@ -1858,8 +1858,8 @@ public static class MetadataCompatibilityAnalyzer
         string SemanticId,
         MetadataSemanticArtifactKind Kind,
         string? DisplayName,
-        MetadataV2Resource? Resource = null,
-        MetadataV2Resource? ParentResource = null,
+        MetadataV2Object? Resource = null,
+        MetadataV2Object? ParentResource = null,
         MetadataV2Field? Field = null,
         MetadataV2Service? Service = null,
         MetadataV2Layer? Publication = null,
@@ -1867,7 +1867,7 @@ public static class MetadataCompatibilityAnalyzer
         MetadataV2Policy? Policy = null,
         MetadataV2Role? Role = null)
     {
-        public static ResolvedArtifact ForField(string semanticId, MetadataV2Resource parent, MetadataV2Field field)
+        public static ResolvedArtifact ForField(string semanticId, MetadataV2Object parent, MetadataV2Field field)
             => new(
                 semanticId,
                 MetadataSemanticArtifactKind.Field,

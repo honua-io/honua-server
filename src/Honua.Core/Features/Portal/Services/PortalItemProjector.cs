@@ -110,7 +110,7 @@ public sealed class PortalItemProjector : IPortalItemProjector
 
     private static PortalItem BuildItem(
         MetadataV2Service service,
-        MetadataV2Resource? resource,
+        MetadataV2Object? resource,
         string itemType,
         string access,
         string url)
@@ -183,7 +183,7 @@ public sealed class PortalItemProjector : IPortalItemProjector
     }
 
     private static (IReadOnlyList<IReadOnlyList<double>> Extent, string? SpatialReference) BuildExtent(
-        MetadataV2Resource? resource)
+        MetadataV2Object? resource)
     {
         if (resource?.Spatial is not { Bbox: { } bbox } spatial)
         {

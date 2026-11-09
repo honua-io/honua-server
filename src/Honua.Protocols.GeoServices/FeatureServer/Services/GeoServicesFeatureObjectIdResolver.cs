@@ -16,7 +16,7 @@ internal static class GeoServicesFeatureObjectIdResolver
     public static async Task<Feature?> ResolveAsync(
         IFeatureReader featureReader,
         IFilterExpressionService filterExpressionService,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int storageLayerId,
         long objectId,
         CancellationToken cancellationToken)
@@ -59,7 +59,7 @@ internal static class GeoServicesFeatureObjectIdResolver
     public static async Task<IReadOnlyDictionary<long, long>> ResolveStorageIdsAsync(
         IFeatureReader featureReader,
         IFilterExpressionService filterExpressionService,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int storageLayerId,
         IReadOnlyList<long> objectIds,
         CancellationToken cancellationToken)

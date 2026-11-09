@@ -43,7 +43,7 @@ public readonly struct FilterTranslationContext
 
     public string ResourceName { get; }
 
-    public static FilterTranslationContext FromResource(MetadataV2Resource resource)
+    public static FilterTranslationContext FromResource(MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
 

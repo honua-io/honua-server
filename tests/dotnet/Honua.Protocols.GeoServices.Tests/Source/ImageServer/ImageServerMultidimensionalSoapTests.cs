@@ -204,7 +204,7 @@ public sealed class ImageServerMultidimensionalSoapTests
         snapshot.ResolveStorageLayerId(publication).Should().Be(WebAppFixture.TestLayerId);
         var resource = snapshot.ResolveResource(publication);
         resource.Should().NotBeNull();
-        resource!.Type.Should().Be(MetadataV2ResourceType.RasterDataset);
+        resource!.Type.Should().Be(MetadataV2ObjectType.RasterDataset);
         var status = new MetadataV2Status
         {
             Lifecycle = enabled ? MetadataV2LifecycleStatus.Active : MetadataV2LifecycleStatus.Retired,

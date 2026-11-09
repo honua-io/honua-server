@@ -278,10 +278,10 @@ public sealed class PostgresMetadataV2GraphStoreCompatFallbackTests(PostgresFixt
                 GeneratedAt = DateTimeOffset.UtcNow,
                 Resources =
                 [
-                    new MetadataV2Resource
+                    new MetadataV2Object
                     {
                         Metadata = new MetadataV2ObjectMetadata { Id = "res-activated-v2", Name = "activated-v2-layer" },
-                        Type = MetadataV2ResourceType.FeatureDataset,
+                        Type = MetadataV2ObjectType.FeatureDataset,
                     },
                 ],
             };
@@ -322,10 +322,10 @@ public sealed class PostgresMetadataV2GraphStoreCompatFallbackTests(PostgresFixt
                 Resources =
                 [
                     .. compatibility.Graph.Resources,
-                    new MetadataV2Resource
+                    new MetadataV2Object
                     {
                         Metadata = new MetadataV2ObjectMetadata { Id = "res-first-v2", Name = "first-v2-mutation" },
-                        Type = MetadataV2ResourceType.FeatureDataset,
+                        Type = MetadataV2ObjectType.FeatureDataset,
                     },
                 ],
             };
@@ -368,10 +368,10 @@ public sealed class PostgresMetadataV2GraphStoreCompatFallbackTests(PostgresFixt
                 GeneratedAt = DateTimeOffset.UtcNow,
                 Resources =
                 [
-                    new MetadataV2Resource
+                    new MetadataV2Object
                     {
                         Metadata = new MetadataV2ObjectMetadata { Id = "res-first-empty", Name = "first-empty-mutation" },
-                        Type = MetadataV2ResourceType.FeatureDataset,
+                        Type = MetadataV2ObjectType.FeatureDataset,
                     },
                 ],
             };

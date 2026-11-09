@@ -411,7 +411,7 @@ public sealed class TestWebApplicationFactory : WebApplicationFactory<Program>
 
     private sealed class AllowAllSqlFilterTranslator : ISqlFilterTranslator
     {
-        public SqlFragment Translate(FilterExpression filter, Core.Features.Metadata.Domain.V2.MetadataV2Resource resource)
+        public SqlFragment Translate(FilterExpression filter, Core.Features.Metadata.Domain.V2.MetadataV2Object resource)
             => new("1=1", Array.Empty<object?>());
     }
 

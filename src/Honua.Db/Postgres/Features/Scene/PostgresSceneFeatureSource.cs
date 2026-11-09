@@ -40,7 +40,7 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
     }
 
     public async IAsyncEnumerable<SceneFeature> StreamAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int storageLayerId,
         IReadOnlyList<string> includeAttributes,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
@@ -238,7 +238,7 @@ internal sealed partial class PostgresSceneFeatureSource : ISceneFeatureSource
     }
 
     private static List<MetadataV2Field> ResolveAttributeFields(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IReadOnlyList<string> includeAttributes)
     {
         var candidates = resource.SchemaFields

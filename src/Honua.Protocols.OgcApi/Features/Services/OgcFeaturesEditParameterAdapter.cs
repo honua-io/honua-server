@@ -79,7 +79,7 @@ internal sealed class OgcFeaturesEditParameterAdapter(
 
     public Task<EditAdapterResult> ConvertAsync(
         OgcFeaturesEditRequest protocolRequest,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         CancellationToken cancellationToken = default)
         => ConvertCoreAsync(protocolRequest, cancellationToken);
 

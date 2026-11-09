@@ -405,7 +405,7 @@ public sealed class RelatedRecordsServiceTests
         grouped.Groups.Single(g => g.ObjectId == 9L).RelatedRecords.Should().ContainSingle();
     }
 
-    private static MetadataV2Resource CreateRelatedResource()
+    private static MetadataV2Object CreateRelatedResource()
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "child", Name = "child" },

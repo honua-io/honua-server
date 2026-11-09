@@ -931,7 +931,7 @@ public sealed partial class GeoservicesCatalogEndpointTests : IClassFixture<WebA
             .AddResource(
                 "res-soap-competing",
                 "Competing SOAP raster",
-                MetadataV2ResourceType.RasterDataset,
+                MetadataV2ObjectType.RasterDataset,
                 accessPolicy: anonymous)
             .AddStorageBinding(
                 "binding-soap-competing",
@@ -954,7 +954,7 @@ public sealed partial class GeoservicesCatalogEndpointTests : IClassFixture<WebA
             .AddResource(
                 "res-soap-storage",
                 "SOAP storage raster",
-                MetadataV2ResourceType.RasterDataset,
+                MetadataV2ObjectType.RasterDataset,
                 accessPolicy: anonymous)
             .AddStorageBinding(
                 "binding-soap-storage",
@@ -1079,14 +1079,14 @@ public sealed partial class GeoservicesCatalogEndpointTests : IClassFixture<WebA
         const int rasterStorageLayerId = 9102;
         var anonymous = new AccessPolicy { AllowAnonymous = true };
         var graph = new TestMetadataV2GraphBuilder()
-            .AddResource("res-soap-empty", "Empty raster", MetadataV2ResourceType.RasterDataset, accessPolicy: anonymous)
+            .AddResource("res-soap-empty", "Empty raster", MetadataV2ObjectType.RasterDataset, accessPolicy: anonymous)
             .AddStorageBinding(
                 "binding-soap-empty",
                 "res-soap-empty",
                 "empty_raster_data",
                 storageType: MetadataV2StorageType.RelationalTable,
                 storageLayerId: emptyStorageLayerId)
-            .AddResource("res-soap-data", "Raster data", MetadataV2ResourceType.RasterDataset, accessPolicy: anonymous)
+            .AddResource("res-soap-data", "Raster data", MetadataV2ObjectType.RasterDataset, accessPolicy: anonymous)
             .AddStorageBinding(
                 "binding-soap-data",
                 "res-soap-data",

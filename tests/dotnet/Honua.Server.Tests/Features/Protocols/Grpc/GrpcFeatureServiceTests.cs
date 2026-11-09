@@ -60,7 +60,7 @@ public sealed class GrpcFeatureServiceTests
     private readonly IOutboxCapabilityProvider _outboxCapabilityProvider = Substitute.For<IOutboxCapabilityProvider>();
     private readonly HonuaFeatureService _sut;
 
-    private static readonly MetadataV2Resource _testResource = CreateResource();
+    private static readonly MetadataV2Object _testResource = CreateResource();
     private static readonly MetadataV2Service _testService = CreateService("test");
     private static readonly MetadataV2ServiceLayerTriple _testTriple = CreateTriple(_testService, _testResource);
 
@@ -632,7 +632,7 @@ public sealed class GrpcFeatureServiceTests
     {
         var polygon = CreateResource() with
         {
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 GeometryType = MetadataV2GeometryType.Polygon,
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
@@ -2211,7 +2211,7 @@ public sealed class GrpcFeatureServiceTests
         return "update";
     }
 
-    private static MetadataV2Resource CreateResource(
+    private static MetadataV2Object CreateResource(
         string name = "test",
         AccessPolicy? accessPolicy = null,
         string? tenant = null)
@@ -2224,7 +2224,7 @@ public sealed class GrpcFeatureServiceTests
                 Tenant = tenant
             },
             AccessPolicy = accessPolicy,
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 GeometryType = MetadataV2GeometryType.Point,
                 SpatialReference = MetadataV2SpatialReference.Wgs84
@@ -2250,7 +2250,7 @@ public sealed class GrpcFeatureServiceTests
 
     private static MetadataV2ServiceLayerTriple CreateTriple(
         MetadataV2Service service,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
         => new(
             service,
             new MetadataV2Layer
@@ -2308,7 +2308,7 @@ public sealed class GrpcFeatureServiceTests
         // the provider-specific SQL is not under test here.
         var sqlFilterTranslator = Substitute.For<ISqlFilterTranslator>();
         sqlFilterTranslator
-            .Translate(Arg.Any<FilterExpression>(), Arg.Any<MetadataV2Resource>())
+            .Translate(Arg.Any<FilterExpression>(), Arg.Any<MetadataV2Object>())
             .Returns(new SqlFragment("TRUE", []));
         services.AddSingleton<IFilterExpressionService>(
             new FilterExpressionService(new FilterExpressionTranslator(sqlFilterTranslator)));
@@ -2634,7 +2634,7 @@ public sealed class GrpcFeatureServiceTests
     /// <see cref="AliasedLayerIndex"/> as its own storage handle. Reading the index as a
     /// storage handle therefore lands on the neighbouring resource.
     /// </summary>
-    private (MetadataV2Service Service, MetadataV2Layer Publication, MetadataV2Resource Resource) ArrangeAliasedLayer()
+    private (MetadataV2Service Service, MetadataV2Layer Publication, MetadataV2Object Resource) ArrangeAliasedLayer()
     {
         var graph = new TestMetadataV2GraphBuilder()
             .AddResource("resource.aliased", "aliased")

@@ -756,7 +756,7 @@ internal sealed partial class FeatureServerQueryHandler
         return false;
     }
 
-    private static bool TryResolveField(MetadataV2Resource resource, string fieldName, out MetadataV2FieldType fieldType)
+    private static bool TryResolveField(MetadataV2Object resource, string fieldName, out MetadataV2FieldType fieldType)
     {
         // Publisher-hidden fields resolve exactly like unknown fields, matching /query
         // outStatistics: classifying or listing distinct values of a hidden column would
@@ -772,7 +772,7 @@ internal sealed partial class FeatureServerQueryHandler
         return false;
     }
 
-    private static bool TryResolveNumericField(MetadataV2Resource resource, string fieldName, out MetadataV2FieldType fieldType)
+    private static bool TryResolveNumericField(MetadataV2Object resource, string fieldName, out MetadataV2FieldType fieldType)
     {
         if (!TryResolveField(resource, fieldName, out fieldType))
         {

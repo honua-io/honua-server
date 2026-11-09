@@ -22,7 +22,7 @@ namespace Honua.Server.Tests.Features.Grounding.Spec;
 
 internal static class SpecGroundingTestSupport
 {
-    public static MetadataV2Resource CreateLayer(
+    public static MetadataV2Object CreateLayer(
         int id,
         string name,
         string? description = null,
@@ -33,7 +33,7 @@ internal static class SpecGroundingTestSupport
             : DefaultFields;
 
         var bindingId = $"binding-{id}";
-        return new MetadataV2Resource
+        return new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata
             {
@@ -41,12 +41,12 @@ internal static class SpecGroundingTestSupport
                 Name = name,
                 Description = description
             },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             AccessPolicy = new AccessPolicy { AllowAnonymous = true },
             StorageBindingIds = [bindingId],
             SchemaFields = layerFields,
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = MetadataV2GeometryType.Point
@@ -67,7 +67,7 @@ internal static class SpecGroundingTestSupport
             Nullable = nullable
         };
 
-    public static IMetadataV2GraphProvider CreateGraphProvider(params MetadataV2Resource[] layers)
+    public static IMetadataV2GraphProvider CreateGraphProvider(params MetadataV2Object[] layers)
         => new TestMetadataV2GraphProvider(CreateGraph(layers));
 
     public static JsonElement ParseJsonElement(string json)
@@ -100,7 +100,7 @@ internal static class SpecGroundingTestSupport
         Field("category", MetadataV2FieldType.String, length: 64)
     ];
 
-    private static MetadataV2Graph CreateGraph(IReadOnlyList<MetadataV2Resource> layers)
+    private static MetadataV2Graph CreateGraph(IReadOnlyList<MetadataV2Object> layers)
     {
         var bindings = layers.Select(layer =>
         {
@@ -153,7 +153,7 @@ internal static class SpecGroundingTestSupport
         };
     }
 
-    private static int ParseLayerId(MetadataV2Resource layer)
+    private static int ParseLayerId(MetadataV2Object layer)
     {
         const string prefix = "layer-";
         if (layer.Metadata.Id.StartsWith(prefix, StringComparison.Ordinal) &&
@@ -170,7 +170,7 @@ internal sealed class SpecGroundingHarness : IDisposable
 {
     private readonly ServiceProvider _services;
 
-    public SpecGroundingHarness(params MetadataV2Resource[] layers)
+    public SpecGroundingHarness(params MetadataV2Object[] layers)
     {
         var serviceCollection = new ServiceCollection();
         serviceCollection.AddLogging(builder => builder.SetMinimumLevel(LogLevel.Debug));

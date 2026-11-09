@@ -592,7 +592,7 @@ internal static class DataEnrichmentRequestHandlers
 
 #if HONUA_EXCLUDE_GEOSERVICES
     private static (FeatureQuery? Query, IResult? Error) BuildWhereOnlyFeatureQuery(
-        HttpContext context, MetadataV2Resource resource, string? where)
+        HttpContext context, MetadataV2Object resource, string? where)
     {
         var srid = resource.ReadSrid() ?? SpatialReference.WGS84.ToSrid();
         if (string.IsNullOrWhiteSpace(where))

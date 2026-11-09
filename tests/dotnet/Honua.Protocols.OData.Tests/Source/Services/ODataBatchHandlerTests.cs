@@ -612,7 +612,7 @@ public sealed class ODataBatchHandlerTests
             .AddResource(
                 "res-layer-1",
                 "cities",
-                MetadataV2ResourceType.FeatureDataset,
+                MetadataV2ObjectType.FeatureDataset,
                 fields:
                 [
                     new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },

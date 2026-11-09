@@ -55,9 +55,9 @@ public interface IFilterExpressionService
 {
     FilterParseResult Parse(FilterLanguage language, string? filter);
 
-    FilterParseResult ParseAndNormalize(FilterLanguage language, string? filter, MetadataV2Resource resource);
+    FilterParseResult ParseAndNormalize(FilterLanguage language, string? filter, MetadataV2Object resource);
 
-    FilterExpression Normalize(FilterExpression expression, MetadataV2Resource resource);
+    FilterExpression Normalize(FilterExpression expression, MetadataV2Object resource);
 
-    FilterTranslationResult Translate(FilterExpression? expression, MetadataV2Resource resource);
+    FilterTranslationResult Translate(FilterExpression? expression, MetadataV2Object resource);
 }

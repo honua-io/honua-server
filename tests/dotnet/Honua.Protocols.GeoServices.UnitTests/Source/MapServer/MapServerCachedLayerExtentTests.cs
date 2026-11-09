@@ -98,7 +98,7 @@ public sealed class MapServerCachedLayerExtentTests
         extent.Ymin.Should().BeLessThanOrEqualTo(extent.Ymax);
     }
 
-    private static (MetadataV2Service Service, MetadataV2Layer Publication, MetadataV2Resource Resource, MetadataV2GraphSnapshot Snapshot)
+    private static (MetadataV2Service Service, MetadataV2Layer Publication, MetadataV2Object Resource, MetadataV2GraphSnapshot Snapshot)
         Layer(double west, double south, double east, double north)
     {
         var service = new MetadataV2Service
@@ -107,11 +107,11 @@ public sealed class MapServerCachedLayerExtentTests
             Protocols = [ServiceProtocols.MapServer],
             SpatialReference = MetadataV2SpatialReference.WebMercator,
         };
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-points", Name = "points" },
-            Type = MetadataV2ResourceType.FeatureDataset,
-            Spatial = new MetadataV2ResourceSpatial
+            Type = MetadataV2ObjectType.FeatureDataset,
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = MetadataV2GeometryType.Point,

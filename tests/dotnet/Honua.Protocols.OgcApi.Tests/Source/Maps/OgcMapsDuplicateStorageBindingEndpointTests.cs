@@ -140,9 +140,9 @@ public sealed class OgcMapsDuplicateStorageBindingEndpointTests : IAsyncLifetime
     public async Task GetCollections_DuplicateLocalIds_UsesResolvableIdsAndExcludesDeniedResources(bool denyFirst, bool collideWithName, bool collideWithPublicationId, bool collideWithForeignPublication)
     {
         var graphBuilder = new TestMetadataV2GraphBuilder()
-            .AddResource("first-resource", collideWithName ? "0" : "First", MetadataV2ResourceType.FeatureDataset,
+            .AddResource("first-resource", collideWithName ? "0" : "First", MetadataV2ObjectType.FeatureDataset,
                 accessPolicy: new AccessPolicy { AllowAnonymous = !denyFirst })
-            .AddResource("second-resource", "Second", MetadataV2ResourceType.FeatureDataset,
+            .AddResource("second-resource", "Second", MetadataV2ObjectType.FeatureDataset,
                 accessPolicy: new AccessPolicy { AllowAnonymous = true })
             .AddStorageBinding("first-binding", "first-resource", "public.features", storageLayerId: 4000)
             .AddStorageBinding("second-binding", "second-resource", "public.features", storageLayerId: 4001)
@@ -223,9 +223,9 @@ public sealed class OgcMapsDuplicateStorageBindingEndpointTests : IAsyncLifetime
         var graph = new TestMetadataV2GraphBuilder()
             // Match the compatibility snapshot's ordering: the raster binding is first and
             // therefore wins the intentionally one-to-one storage-layer index.
-            .AddResource("raster-resource", "Browser Points imagery", MetadataV2ResourceType.RasterDataset,
+            .AddResource("raster-resource", "Browser Points imagery", MetadataV2ObjectType.RasterDataset,
                 accessPolicy: publicPolicy)
-            .AddResource("vector-resource", "Browser Points", MetadataV2ResourceType.FeatureDataset,
+            .AddResource("vector-resource", "Browser Points", MetadataV2ObjectType.FeatureDataset,
                 fields:
                 [
                     new MetadataV2Field { Name = "geom", Type = MetadataV2FieldType.Geometry, Nullable = false }

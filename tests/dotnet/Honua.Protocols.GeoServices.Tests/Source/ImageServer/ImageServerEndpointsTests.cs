@@ -366,7 +366,7 @@ public class ImageServerEndpointsTests
     public async Task CatalogSecondaryRead_MaskedFields_AreAbsent(string operation, string query)
     {
         var masks = Substitute.For<IFieldMaskSource>();
-        masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+        masks.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(ImmutableArray.Create("nAmE", "ACQUISITIONdate", "centerX", "MAXps"));
         var rasters = CreateRasterStoreSubstitute();
         rasters.IdentifyAsync(Arg.Any<int>(), Arg.Any<long>(), Arg.Any<double>(), Arg.Any<double>(),
@@ -708,7 +708,7 @@ public class ImageServerEndpointsTests
                 .AddResource(
                     "aliased-image-resource",
                     "Aliased image",
-                    MetadataV2ResourceType.RasterDataset,
+                    MetadataV2ObjectType.RasterDataset,
                     accessPolicy: anonymous)
                 .AddStorageBinding(
                     "aliased-image-binding",
@@ -795,7 +795,7 @@ public class ImageServerEndpointsTests
         var anonymous = new AccessPolicy { AllowAnonymous = true };
         var provider = new TestMetadataV2GraphProvider(
             new TestMetadataV2GraphBuilder()
-                .AddResource("aliased-image-resource", "Aliased image", MetadataV2ResourceType.RasterDataset, accessPolicy: anonymous)
+                .AddResource("aliased-image-resource", "Aliased image", MetadataV2ObjectType.RasterDataset, accessPolicy: anonymous)
                 .AddStorageBinding("aliased-image-binding", "aliased-image-resource", "raster_data",
                     storageType: MetadataV2StorageType.RelationalTable, storageLayerId: TestLayerId)
                 .AddService("aliased-image-service", serviceId,
@@ -803,7 +803,7 @@ public class ImageServerEndpointsTests
                 .AddPublication("aliased-image-publication", "aliased-image-service", "aliased-image-resource",
                     layerIndex: aliasedLayerIndex, storageBindingId: "aliased-image-binding",
                     publicationType: MetadataV2LayerType.EsriImageLayer)
-                .AddResource("colliding-image-resource", "Colliding image", MetadataV2ResourceType.RasterDataset, accessPolicy: anonymous)
+                .AddResource("colliding-image-resource", "Colliding image", MetadataV2ObjectType.RasterDataset, accessPolicy: anonymous)
                 .AddStorageBinding("colliding-image-binding", "colliding-image-resource", "raster_data_other",
                     storageType: MetadataV2StorageType.RelationalTable, storageLayerId: collidingStorageLayerId)
                 .AddService("colliding-image-service", collidingServiceId,

@@ -1567,7 +1567,7 @@ public sealed class McpMapToolTests
 
     private static TestMetadataV2GraphProvider BuildGraphProvider(AccessPolicy? accessPolicy = null, AccessPolicy? servicePolicy = null)
     {
-        var spatial = new MetadataV2ResourceSpatial
+        var spatial = new MetadataV2ObjectSpatial
         {
             GeometryType = MetadataV2GeometryType.Polygon,
             SpatialReference = new MetadataV2SpatialReference { Srid = 4326 },

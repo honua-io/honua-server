@@ -14,7 +14,7 @@ public sealed class TileFeatureProviderResolver(FeatureProviderQueryRouter? prov
     public async Task<IFeatureReader> ResolveFeatureReaderAsync(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2Layer publication,
         int storageLayerId,
         IFeatureReader fallbackReader,
@@ -32,7 +32,7 @@ public sealed class TileFeatureProviderResolver(FeatureProviderQueryRouter? prov
     public async Task<TileFeatureReaderResolution> ResolveFeatureReaderWithStorageAsync(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2Layer publication,
         int storageLayerId,
         IFeatureReader fallbackReader,
@@ -66,7 +66,7 @@ public sealed class TileFeatureProviderResolver(FeatureProviderQueryRouter? prov
     public async Task<TileProviderResolution> ResolveTileProviderAsync(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2Layer publication,
         int storageLayerId,
         ITileProvider fallbackProvider,
@@ -105,7 +105,7 @@ public sealed class TileFeatureProviderResolver(FeatureProviderQueryRouter? prov
     public async Task<bool> SupportsVectorTilesAsync(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2Layer publication,
         int storageLayerId,
         CancellationToken cancellationToken)

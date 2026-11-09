@@ -38,7 +38,7 @@ internal sealed class ODataAggregationHandler
 
     public async Task<ODataAggregationResult> ProcessAggregationAsync(
         int layerId,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string applyExpression,
         string? filter,
         string baseUrl,
@@ -773,7 +773,7 @@ internal sealed class ODataAggregationHandler
         return dict;
     }
 
-    private FeatureQuery ApplyODataFilter(FeatureQuery query, string? filterExpression, MetadataV2Resource resource, int? publicLayerId)
+    private FeatureQuery ApplyODataFilter(FeatureQuery query, string? filterExpression, MetadataV2Object resource, int? publicLayerId)
     {
         if (string.IsNullOrWhiteSpace(filterExpression))
         {

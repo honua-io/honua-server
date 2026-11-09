@@ -411,7 +411,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
     }
 
     public CoreParameterizedQuery BuildSelectFlatGeobufQuery(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int layerId,
         FeatureQuery query,
         CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
@@ -420,7 +420,7 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
     }
 
     public CoreParameterizedQuery BuildSelectGeobufQuery(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int layerId,
         FeatureQuery query,
         CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)

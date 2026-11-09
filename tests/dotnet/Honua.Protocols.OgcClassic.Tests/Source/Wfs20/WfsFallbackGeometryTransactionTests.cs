@@ -165,7 +165,7 @@ public sealed class WfsFallbackGeometryTransactionTests : IAsyncLifetime
         using var before = await ReadStoredAsync(1);
         before.RootElement.GetProperty("attributes").GetProperty("shape").GetString().Should().Be("survey-point");
 
-        _fixture.UpdateV2ResourceMetadata(0, spatial: new MetadataV2ResourceSpatial
+        _fixture.UpdateV2ResourceMetadata(0, spatial: new MetadataV2ObjectSpatial
         {
             SpatialReference = MetadataV2SpatialReference.Wgs84,
             GeometryType = MetadataV2GeometryType.None
@@ -183,7 +183,7 @@ public sealed class WfsFallbackGeometryTransactionTests : IAsyncLifetime
     public async Task Transaction_InsertPointIntoPolygonFeatureType_IsRejectedWithoutChangingSql()
     {
         // #6108: WFS-T shares the mutation validator that enforces the declared geometry type.
-        _fixture.UpdateV2ResourceMetadata(0, spatial: new MetadataV2ResourceSpatial
+        _fixture.UpdateV2ResourceMetadata(0, spatial: new MetadataV2ObjectSpatial
         {
             SpatialReference = MetadataV2SpatialReference.Wgs84,
             GeometryType = MetadataV2GeometryType.Polygon,
@@ -285,7 +285,7 @@ public sealed class WfsFallbackGeometryTransactionTests : IAsyncLifetime
                 new() { Name = "active", Type = MetadataV2FieldType.Boolean, Nullable = false },
                 new() { Name = "observed_at", Type = MetadataV2FieldType.DateTime, Nullable = true },
                 new() { Name = "cert_owner", Type = MetadataV2FieldType.String, Nullable = false }
-            ], accessPolicy: policy, spatial: new MetadataV2ResourceSpatial
+            ], accessPolicy: policy, spatial: new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = MetadataV2GeometryType.Point,

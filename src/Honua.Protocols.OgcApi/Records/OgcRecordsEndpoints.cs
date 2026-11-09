@@ -355,7 +355,7 @@ internal static class OgcRecordsEndpoints
         var transformService = context.RequestServices.GetService<ICoordinateTransformService>();
         var resourceBboxes = new Dictionary<string, ImmutableArray<double>?>();
 
-        async Task<ImmutableArray<double>?> GetBboxAsync(MetadataV2Resource resource)
+        async Task<ImmutableArray<double>?> GetBboxAsync(MetadataV2Object resource)
         {
             if (!resourceBboxes.TryGetValue(resource.Metadata.Id, out var result))
             {
@@ -449,7 +449,7 @@ internal static class OgcRecordsEndpoints
             .ThenBy(item => item.LayerSort)
             // Multiple protocol resources may share one legacy storage-layer id.
             // Keep the feature dataset as the canonical layer:{id} catalog record.
-            .ThenBy(item => item.Resource.Type == MetadataV2ResourceType.FeatureDataset ? 0 : 1)
+            .ThenBy(item => item.Resource.Type == MetadataV2ObjectType.FeatureDataset ? 0 : 1)
             .ThenBy(item => item.Resource.Metadata.Id, StringComparer.OrdinalIgnoreCase);
         var resourceRecordIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var item in resourceRecords)
@@ -479,7 +479,7 @@ internal static class OgcRecordsEndpoints
 
     private static CatalogRecord CreateServiceRecord(
         MetadataV2Service service,
-        (MetadataV2Layer Publication, MetadataV2Resource? Resource)[] visiblePublications,
+        (MetadataV2Layer Publication, MetadataV2Object? Resource)[] visiblePublications,
         MetadataV2GraphSnapshot snapshot,
         string baseUrl,
         DateTimeOffset? modified,
@@ -539,7 +539,7 @@ internal static class OgcRecordsEndpoints
     }
 
     private static CatalogRecord CreateResourceRecord(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2Layer? publication,
         MetadataV2Service? service,
         MetadataV2GraphSnapshot snapshot,

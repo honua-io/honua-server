@@ -33,7 +33,7 @@ public sealed class FeatureServerTopFeaturesTemporalTests
         var graph = new TestMetadataV2GraphBuilder()
             .AddService("svc", "dates", route: "/rest/services/dates/FeatureServer",
                 protocols: [ServiceProtocols.FeatureServer], accessPolicy: access)
-            .AddResource("res", "dates", MetadataV2ResourceType.FeatureDataset,
+            .AddResource("res", "dates", MetadataV2ObjectType.FeatureDataset,
                 fields: [
                     new() { Name = "objectid", Type = MetadataV2FieldType.Integer, SemanticRoles = ["id.primary"] },
                     new() { Name = "day", Type = MetadataV2FieldType.Date },

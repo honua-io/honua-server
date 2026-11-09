@@ -57,7 +57,7 @@ public class PrintingToolsRequestHandlerTests
             Metadata = new MetadataV2ObjectMetadata { Id = "service", Name = "service" },
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active }
         };
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource", Name = "resource" },
             AccessPolicy = new AccessPolicy { AllowedRoles = [coarseAllowed ? "reader" : "editor"] },
@@ -130,7 +130,7 @@ public class PrintingToolsRequestHandlerTests
             Metadata = new MetadataV2ObjectMetadata { Id = "service", Name = "service" },
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active }
         };
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource", Name = "resource" },
             AccessPolicy = new AccessPolicy { AllowAnonymous = false },

@@ -36,7 +36,7 @@ internal static class StyleDefaults
     ];
 
     public static Dictionary<string, object?> BuildDefaultMapLibreStyle(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int storageLayerId)
         => BuildDefaultMapLibreStyle(storageLayerId, resource.Metadata.Name, resource.ReadGeometryType());
 

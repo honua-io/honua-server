@@ -26,11 +26,11 @@ public sealed class ODataQueryParameterAdapterOrderByTests
         Options.Create(new ODataOptions()),
         NullLogger<ODataQueryParameterAdapter>.Instance);
 
-    private static MetadataV2Resource CreateResource()
+    private static MetadataV2Object CreateResource()
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-test", Name = "Test" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             SchemaFields =
             [
                 new MetadataV2Field { Name = "population", Type = MetadataV2FieldType.Integer },
@@ -97,13 +97,13 @@ public sealed class ODataQueryParameterAdapterOrderByTests
         public FilterParseResult Parse(FilterLanguage language, string? filter)
             => throw new NotSupportedException("Filter parsing is not exercised by these tests.");
 
-        public FilterParseResult ParseAndNormalize(FilterLanguage language, string? filter, MetadataV2Resource resource)
+        public FilterParseResult ParseAndNormalize(FilterLanguage language, string? filter, MetadataV2Object resource)
             => throw new NotSupportedException("Filter parsing is not exercised by these tests.");
 
-        public FilterExpression Normalize(FilterExpression expression, MetadataV2Resource resource)
+        public FilterExpression Normalize(FilterExpression expression, MetadataV2Object resource)
             => throw new NotSupportedException("Filter normalization is not exercised by these tests.");
 
-        public FilterTranslationResult Translate(FilterExpression? expression, MetadataV2Resource resource)
+        public FilterTranslationResult Translate(FilterExpression? expression, MetadataV2Object resource)
             => throw new NotSupportedException("Filter translation is not exercised by these tests.");
     }
 }

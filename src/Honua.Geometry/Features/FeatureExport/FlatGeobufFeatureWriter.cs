@@ -32,7 +32,7 @@ internal static class FlatGeobufFeatureWriter
 
     internal static byte[] Write(
         IReadOnlyList<Feature> features,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         FeatureQuery query,
         IEnumerable<MetadataV2Field> projectedFields,
         int? outputSrid,

@@ -389,10 +389,10 @@ public sealed class PostgresStorageMappedSpatialCountJitIntegrationTests(Postgre
         preferSerialBoundedSpatialReads: false, disableJitForSourceSpatialCounts: enabled,
         preferSerialSourceSpatialCounts: false);
 
-    private static MetadataV2Resource CreateResource(bool knownGeometry) => new()
+    private static MetadataV2Object CreateResource(bool knownGeometry) => new()
     {
         Metadata = new MetadataV2ObjectMetadata { Id = "jit-count", Name = "jit-count" },
-        Spatial = knownGeometry ? new MetadataV2ResourceSpatial { GeometryType = MetadataV2GeometryType.Point } : null,
+        Spatial = knownGeometry ? new MetadataV2ObjectSpatial { GeometryType = MetadataV2GeometryType.Point } : null,
         SchemaFields = [new() { Name = "id", Type = MetadataV2FieldType.BigInteger, SemanticRoles = ["id.primary"] }]
     };
 

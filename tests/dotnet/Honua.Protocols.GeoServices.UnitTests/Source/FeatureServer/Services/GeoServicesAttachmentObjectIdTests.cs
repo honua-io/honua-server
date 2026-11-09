@@ -217,7 +217,7 @@ public sealed class GeoServicesAttachmentObjectIdTests
         ok.Value.AttachmentGroups[0].ParentObjectId.Should().Be(7);
     }
 
-    private static MetadataV2Resource CustomObjectIdLayer()
+    private static MetadataV2Object CustomObjectIdLayer()
         => new()
         {
             SchemaFields =
@@ -231,7 +231,7 @@ public sealed class GeoServicesAttachmentObjectIdTests
             ]
         };
 
-    private static MetadataV2Resource StorageObjectIdLayer()
+    private static MetadataV2Object StorageObjectIdLayer()
         => new()
         {
             SchemaFields =
@@ -243,7 +243,7 @@ public sealed class GeoServicesAttachmentObjectIdTests
     private static IFilterExpressionService SuccessFilters()
     {
         var filters = Substitute.For<IFilterExpressionService>();
-        filters.Translate(Arg.Any<FilterExpression?>(), Arg.Any<MetadataV2Resource>())
+        filters.Translate(Arg.Any<FilterExpression?>(), Arg.Any<MetadataV2Object>())
             .Returns(FilterTranslationResult.Success(null, new SqlFragment("gid = @p", new object?[] { 7L })));
         return filters;
     }

@@ -10,13 +10,13 @@ internal static partial class FeatureServerEndpoints
 {
     // Destination-side metadata is reversed when the relationship class is described from the other resource.
     internal static ServiceRelationshipInfo[] BuildServiceRelationshipResponseV2(
-        IReadOnlyList<(MetadataV2Layer Publication, MetadataV2Resource Resource)> publications,
+        IReadOnlyList<(MetadataV2Layer Publication, MetadataV2Object Resource)> publications,
         MetadataV2GraphSnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(publications);
         ArgumentNullException.ThrowIfNull(snapshot);
 
-        var visible = new Dictionary<string, (int LayerId, MetadataV2Resource Resource)>(StringComparer.OrdinalIgnoreCase);
+        var visible = new Dictionary<string, (int LayerId, MetadataV2Object Resource)>(StringComparer.OrdinalIgnoreCase);
         foreach (var (publication, resource) in publications
             .OrderByDescending(pair => pair.Publication.IsPrimary)
             .ThenBy(pair => pair.Publication.LayerIndex ?? snapshot.ResolveStorageLayerId(pair.Resource) ?? -1))

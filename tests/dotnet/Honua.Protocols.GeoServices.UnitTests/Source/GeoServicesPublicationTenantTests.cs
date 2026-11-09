@@ -165,7 +165,7 @@ public sealed class GeoServicesPublicationTenantTests
         {
             Resources = graph.Resources.Select(resource => resource with
             {
-                Spatial = new MetadataV2ResourceSpatial
+                Spatial = new MetadataV2ObjectSpatial
                 {
                     SpatialReference = MetadataV2SpatialReference.Wgs84,
                     GeometryType = MetadataV2GeometryType.Point,

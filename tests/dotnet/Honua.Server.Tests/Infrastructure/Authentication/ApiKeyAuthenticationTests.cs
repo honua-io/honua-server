@@ -143,7 +143,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
             .AddResource(
                 "res-test-layer-0",
                 "Test Layer",
-                MetadataV2ResourceType.FeatureDataset,
+                MetadataV2ObjectType.FeatureDataset,
                 fields:
                 [
                     new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false, Alias = "Object ID" },
@@ -152,7 +152,7 @@ public class ApiKeyAuthenticationTests : IAsyncLifetime
                     new MetadataV2Field { Name = "category", Type = MetadataV2FieldType.String, Nullable = true, Alias = "Category", Length = 255 },
                     new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.DateTime, Nullable = true, Alias = "Timestamp" }
                 ],
-                spatial: new MetadataV2ResourceSpatial
+                spatial: new MetadataV2ObjectSpatial
                 {
                     SpatialReference = MetadataV2SpatialReference.Wgs84,
                     GeometryType = MetadataV2GeometryType.Point,

@@ -156,7 +156,7 @@ internal static class GeoServicesFieldConventions
         return false;
     }
 
-    internal static Dictionary<string, MetadataV2FieldType> ResolveTemporalFieldTypes(MetadataV2Resource resource)
+    internal static Dictionary<string, MetadataV2FieldType> ResolveTemporalFieldTypes(MetadataV2Object resource)
         => resource.SchemaFields
             .Where(static field => field.Type is MetadataV2FieldType.DateTime or MetadataV2FieldType.Date)
             .ToDictionary(static field => field.Name, static field => field.Type, StringComparer.OrdinalIgnoreCase);

@@ -28,7 +28,7 @@ public interface ICombinedReadSecuritySource
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The row predicate and masked fields for this operation. Permanent filters are separate.</returns>
     Task<ReadSecurityResolution> ResolveCombinedAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IFieldMaskSource fieldSource,
         CancellationToken cancellationToken = default);
 }

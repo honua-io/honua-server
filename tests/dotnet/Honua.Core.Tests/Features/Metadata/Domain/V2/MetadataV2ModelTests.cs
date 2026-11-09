@@ -86,7 +86,7 @@ public sealed class MetadataV2ModelTests
     [Operation(Operations.Query)]
     public void Records_WithExpression_PreservesOriginalValues()
     {
-        var original = new MetadataV2Resource
+        var original = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata
             {
@@ -97,7 +97,7 @@ public sealed class MetadataV2ModelTests
                     ["domain"] = "cadastre"
                 }
             },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             StorageBindingIds =
             [
                 "storage.parcels.postgis",
@@ -137,7 +137,7 @@ public sealed class MetadataV2ModelTests
     [Operation(Operations.Query)]
     public void Publication_LinksCanonicalResourceToService()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata
             {
@@ -190,7 +190,7 @@ public sealed class MetadataV2ModelTests
     [Operation(Operations.Query)]
     public void GeoServicesServiceLayers_AreServiceLocalPublicationSlots()
     {
-        var parcels = new MetadataV2Resource
+        var parcels = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata
             {
@@ -211,7 +211,7 @@ public sealed class MetadataV2ModelTests
             ]
         };
 
-        var hydrants = new MetadataV2Resource
+        var hydrants = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata
             {
@@ -355,23 +355,23 @@ public sealed class MetadataV2ModelTests
     [Operation(Operations.Query)]
     public void ResourceAndPublicationTypes_MatchCanonicalBacklogVocabulary()
     {
-        Enum.GetNames<MetadataV2ResourceType>().Should().BeEquivalentTo(
-            nameof(MetadataV2ResourceType.Unknown),
-            nameof(MetadataV2ResourceType.FeatureDataset),
-            nameof(MetadataV2ResourceType.Table),
-            nameof(MetadataV2ResourceType.RasterDataset),
-            nameof(MetadataV2ResourceType.TileDataset),
-            nameof(MetadataV2ResourceType.Process),
-            nameof(MetadataV2ResourceType.Style),
-            nameof(MetadataV2ResourceType.Document),
-            nameof(MetadataV2ResourceType.ExternalResource),
-            nameof(MetadataV2ResourceType.Map),
-            nameof(MetadataV2ResourceType.Dashboard),
-            nameof(MetadataV2ResourceType.Form),
-            nameof(MetadataV2ResourceType.App),
-            nameof(MetadataV2ResourceType.Workflow),
-            nameof(MetadataV2ResourceType.GeoprocessingService),
-            nameof(MetadataV2ResourceType.EtlPipeline));
+        Enum.GetNames<MetadataV2ObjectType>().Should().BeEquivalentTo(
+            nameof(MetadataV2ObjectType.Unknown),
+            nameof(MetadataV2ObjectType.FeatureDataset),
+            nameof(MetadataV2ObjectType.Table),
+            nameof(MetadataV2ObjectType.RasterDataset),
+            nameof(MetadataV2ObjectType.TileDataset),
+            nameof(MetadataV2ObjectType.Process),
+            nameof(MetadataV2ObjectType.Style),
+            nameof(MetadataV2ObjectType.Document),
+            nameof(MetadataV2ObjectType.ExternalResource),
+            nameof(MetadataV2ObjectType.Map),
+            nameof(MetadataV2ObjectType.Dashboard),
+            nameof(MetadataV2ObjectType.Form),
+            nameof(MetadataV2ObjectType.App),
+            nameof(MetadataV2ObjectType.Workflow),
+            nameof(MetadataV2ObjectType.GeoprocessingService),
+            nameof(MetadataV2ObjectType.EtlPipeline));
 
         Enum.GetNames<MetadataV2LayerType>().Should().Contain(
             [
@@ -417,7 +417,7 @@ public sealed class MetadataV2ModelTests
     [Operation(Operations.Query)]
     public void JsonContext_SerializesResourceSymbology3D()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource.buildings" },
             SchemaFields =
@@ -441,8 +441,8 @@ public sealed class MetadataV2ModelTests
             }
         };
 
-        var json = JsonSerializer.Serialize(resource, MetadataV2JsonContext.Default.MetadataV2Resource);
-        var roundTrip = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2Resource);
+        var json = JsonSerializer.Serialize(resource, MetadataV2JsonContext.Default.MetadataV2Object);
+        var roundTrip = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2Object);
 
         json.Should().Contain("\"symbology3D\"");
         json.Should().Contain("\"defaultOpacity\":0.75");
@@ -966,7 +966,7 @@ public sealed class MetadataV2ModelTests
         {
             Resources =
             [
-                new MetadataV2Resource
+                new MetadataV2Object
                 {
                     Metadata = new MetadataV2ObjectMetadata
                     {
@@ -1048,7 +1048,7 @@ public sealed class MetadataV2ModelTests
         {
             Resources =
             [
-                new MetadataV2Resource
+                new MetadataV2Object
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "resource.buildings" },
                     SchemaFields =
@@ -1152,7 +1152,7 @@ public sealed class MetadataV2ModelTests
         {
             Resources =
             [
-                new MetadataV2Resource
+                new MetadataV2Object
                 {
                     Metadata = new MetadataV2ObjectMetadata
                     {

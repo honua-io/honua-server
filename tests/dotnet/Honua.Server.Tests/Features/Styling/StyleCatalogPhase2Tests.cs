@@ -60,7 +60,7 @@ public sealed class StyleCatalogPhase2Tests : IAsyncLifetime
 
         var styleResourceId = dataResource.StyleResourceIds[0];
         snapshot.Index.ResourcesById.TryGetValue(styleResourceId, out var styleResource).Should().BeTrue();
-        styleResource!.Type.Should().Be(MetadataV2ResourceType.Style);
+        styleResource!.Type.Should().Be(MetadataV2ObjectType.Style);
         styleResource.Style.Should().NotBeNull();
         styleResource.Style!.Encodings.Should().Contain(e => e.Encoding == "mapbox-style");
 

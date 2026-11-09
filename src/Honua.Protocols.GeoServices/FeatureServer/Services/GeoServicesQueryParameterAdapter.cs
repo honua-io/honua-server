@@ -47,7 +47,7 @@ internal sealed class GeoServicesQueryParameterAdapter(
 
     public async Task<QueryAdapterResult> ConvertAsync(
         GeoServicesQueryRequest request,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(resource);
@@ -218,7 +218,7 @@ internal sealed class GeoServicesQueryParameterAdapter(
             .ConfigureAwait(false);
     }
 
-    private static ImmutableArray<string>? ResolveOutFields(QueryParameters queryParams, MetadataV2Resource resource)
+    private static ImmutableArray<string>? ResolveOutFields(QueryParameters queryParams, MetadataV2Object resource)
     {
         if (string.IsNullOrEmpty(queryParams.OutFields) ||
             string.Equals(queryParams.OutFields, "*", StringComparison.Ordinal))
@@ -249,7 +249,7 @@ internal sealed class GeoServicesQueryParameterAdapter(
         return fields.ToImmutableArray();
     }
 
-    private static void CanonicalizeOutFieldNames(List<string> fields, MetadataV2Resource resource)
+    private static void CanonicalizeOutFieldNames(List<string> fields, MetadataV2Object resource)
     {
         Dictionary<string, string>? canonical = null;
         for (var i = 0; i < fields.Count; i++)
@@ -268,7 +268,7 @@ internal sealed class GeoServicesQueryParameterAdapter(
         }
     }
 
-    private static Dictionary<string, string> BuildCanonicalFieldNames(MetadataV2Resource resource)
+    private static Dictionary<string, string> BuildCanonicalFieldNames(MetadataV2Object resource)
     {
         var names = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var field in resource.SchemaFields)

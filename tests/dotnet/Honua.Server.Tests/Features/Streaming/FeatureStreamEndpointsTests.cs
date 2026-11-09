@@ -2626,9 +2626,9 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
 
         public static TestMetadataV2GraphProvider BuildMetadataProvider()
             => new TestMetadataV2GraphBuilder()
-                .AddResource("res-stream-open", "Public Stream Layer", MetadataV2ResourceType.FeatureDataset)
+                .AddResource("res-stream-open", "Public Stream Layer", MetadataV2ObjectType.FeatureDataset)
                 .AddStorageBinding("binding-stream-open", "res-stream-open", "test.layers.open", storageLayerId: OpenLayerId)
-                .AddResource("res-stream-restricted-service", "Layer In Restricted Service", MetadataV2ResourceType.FeatureDataset)
+                .AddResource("res-stream-restricted-service", "Layer In Restricted Service", MetadataV2ObjectType.FeatureDataset)
                 .AddStorageBinding("binding-stream-restricted-service", "res-stream-restricted-service", "test.layers.restricted", storageLayerId: RestrictedServiceLayerId)
                 .AddService("svc-open-stream", "open-svc", protocols: MetadataV2ServiceProtocols.All)
                 .AddService(
@@ -2661,13 +2661,13 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
                 .AddResource(
                     "res-stream-visible",
                     "Public Stream Layer",
-                    MetadataV2ResourceType.FeatureDataset,
+                    MetadataV2ObjectType.FeatureDataset,
                     accessPolicy: new AccessPolicy { AllowAnonymous = true })
                 .AddStorageBinding("binding-stream-visible", "res-stream-visible", "test.layers.visible", storageLayerId: VisibleLayerId)
                 .AddResource(
                     "res-stream-restricted",
                     "Restricted Stream Layer",
-                    MetadataV2ResourceType.FeatureDataset,
+                    MetadataV2ObjectType.FeatureDataset,
                     accessPolicy: new AccessPolicy { AllowedRoles = ["restricted-stream-reader"] })
                 .AddStorageBinding("binding-stream-restricted", "res-stream-restricted", "test.layers.restricted", storageLayerId: RestrictedLayerId)
                 .AddService("svc-stream-test", "stream-test", protocols: MetadataV2ServiceProtocols.All)
@@ -2687,13 +2687,13 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
         public static TestMetadataV2GraphProvider BuildMetadataProvider()
         {
             var graph = new TestMetadataV2GraphBuilder()
-                .AddResource("res-service-only-active", "Active Layer", MetadataV2ResourceType.FeatureDataset)
+                .AddResource("res-service-only-active", "Active Layer", MetadataV2ObjectType.FeatureDataset)
                 .AddStorageBinding(
                     "binding-service-only-active",
                     "res-service-only-active",
                     "test.layers.service_only_active",
                     storageLayerId: RoutableStorageLayerId)
-                .AddResource("res-service-only-retired", "Retired Layer", MetadataV2ResourceType.FeatureDataset)
+                .AddResource("res-service-only-retired", "Retired Layer", MetadataV2ObjectType.FeatureDataset)
                 .AddStorageBinding(
                     "binding-service-only-retired",
                     "res-service-only-retired",
@@ -2734,14 +2734,14 @@ public sealed partial class FeatureStreamEndpointsTests : IAsyncLifetime
     private static TestMetadataV2GraphProvider BuildStreamMetadataProvider(bool timeAware)
     {
         var temporal = timeAware
-            ? new MetadataV2ResourceTemporal { StartTimeField = "timestamp" }
+            ? new MetadataV2ObjectTemporal { StartTimeField = "timestamp" }
             : null;
 
         return new TestMetadataV2GraphBuilder()
             .AddResource(
                 "res-layer-0",
                 "Time Aware Stream Layer",
-                MetadataV2ResourceType.FeatureDataset,
+                MetadataV2ObjectType.FeatureDataset,
                 fields:
                 [
                     new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer },

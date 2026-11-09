@@ -398,7 +398,7 @@ public class ImageServerSamplesHandlerTests
 
     private static TestMetadataV2GraphProvider BuildGraphWithLayer(int layerIndex)
         => new TestMetadataV2GraphBuilder()
-            .AddResource($"resource-{layerIndex}", "test-layer", MetadataV2ResourceType.RasterDataset)
+            .AddResource($"resource-{layerIndex}", "test-layer", MetadataV2ObjectType.RasterDataset)
             .AddService($"service-{layerIndex}", $"image-svc-{layerIndex}", protocols: [ServiceProtocols.ImageServer])
             .AddPublication(
                 $"publication-{layerIndex}",

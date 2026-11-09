@@ -404,7 +404,7 @@ internal sealed class FeatureServerRelatedRecordsHandler(
 
     private static bool TryResolveRelatedResource(
         RelatedResourceLookup request,
-        out MetadataV2Resource? resource,
+        out MetadataV2Object? resource,
         out MetadataV2Layer? publication,
         out int layerId)
     {
@@ -440,6 +440,6 @@ internal sealed class FeatureServerRelatedRecordsHandler(
     private static int? ResolveStorageLayerId(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Layer publication,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
         => snapshot.ResolveStorageLayerId(publication, resource);
 }

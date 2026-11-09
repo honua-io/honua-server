@@ -49,7 +49,7 @@ public class OgcMapsRenderingHandlerTests
     public async Task DatasetMap_ScopedKey_RendersOnlyItsGrantedLayer(string permission, bool allowed)
     {
         var graph = new TestMetadataV2GraphBuilder()
-            .AddResource("resource", "roads", MetadataV2ResourceType.FeatureDataset)
+            .AddResource("resource", "roads", MetadataV2ObjectType.FeatureDataset)
             .AddStorageBinding("binding", "resource", "roads", storageLayerId: 1)
             .AddService("service", "catalog", protocols: ["OGC-API-Maps"])
             .AddPublication("publication", "service", "resource", layerIndex: 1)
@@ -148,11 +148,11 @@ public class OgcMapsRenderingHandlerTests
     public async Task DatasetMap_TenantScopedEntity_RendersOnlyVisibleLayers(string boundary, string tenantId)
     {
         var graph = new TestMetadataV2GraphBuilder()
-            .AddResource("own", "own-layer", MetadataV2ResourceType.FeatureDataset)
+            .AddResource("own", "own-layer", MetadataV2ObjectType.FeatureDataset)
             .AddStorageBinding("own-binding", "own", "own", storageLayerId: 1)
             .AddService("own-service", "own-service", protocols: ["OGC-API-Maps"])
             .AddPublication("own-publication", "own-service", "own", layerIndex: 1)
-            .AddResource("foreign", "foreign-layer", MetadataV2ResourceType.FeatureDataset, accessPolicy: new AccessPolicy { AllowAnonymous = true })
+            .AddResource("foreign", "foreign-layer", MetadataV2ObjectType.FeatureDataset, accessPolicy: new AccessPolicy { AllowAnonymous = true })
             .AddStorageBinding("foreign-binding", "foreign", "foreign", storageLayerId: 2)
             .AddService("foreign-service", "foreign-service", protocols: ["OGC-API-Maps"])
             .AddPublication("foreign-publication", "foreign-service", "foreign", layerIndex: 2)
@@ -190,7 +190,7 @@ public class OgcMapsRenderingHandlerTests
     public async Task DatasetMap_OnlyForeignTenantLayers_ReturnsNotFound()
     {
         var graph = new TestMetadataV2GraphBuilder()
-            .AddResource("foreign", "foreign-layer", MetadataV2ResourceType.FeatureDataset, accessPolicy: new AccessPolicy { AllowAnonymous = true })
+            .AddResource("foreign", "foreign-layer", MetadataV2ObjectType.FeatureDataset, accessPolicy: new AccessPolicy { AllowAnonymous = true })
             .AddStorageBinding("foreign-binding", "foreign", "foreign", storageLayerId: 2)
             .AddService("foreign-service", "foreign-service", protocols: ["OGC-API-Maps"])
             .AddPublication("foreign-publication", "foreign-service", "foreign", layerIndex: 2)
@@ -220,7 +220,7 @@ public class OgcMapsRenderingHandlerTests
     public void IsStyleAssociatedWithResource_DoesNotTreatMatchingResourceNameAsAssociation()
     {
         const string styleId = "roads";
-        var style = MetadataV2StyleResourceFactory.BuildStyleResource(
+        var style = MetadataV2StyleFactory.BuildStyleResource(
             styleId,
             "{\"version\":8,\"layers\":[]}",
             title: null,
@@ -229,7 +229,7 @@ public class OgcMapsRenderingHandlerTests
             styleVersion: 1,
             createdAt: DateTimeOffset.UnixEpoch,
             updatedAt: DateTimeOffset.UnixEpoch);
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource-roads", Name = styleId },
             StyleResourceIds = []
@@ -262,12 +262,12 @@ public class OgcMapsRenderingHandlerTests
     public void IsStyleAssociatedWithResource_ReferencedDataResource_ReturnsFalse()
     {
         const string styleId = "roads";
-        var referencedDataResource = new MetadataV2Resource
+        var referencedDataResource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "not-a-style", Name = styleId },
-            Type = MetadataV2ResourceType.FeatureDataset
+            Type = MetadataV2ObjectType.FeatureDataset
         };
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource-roads", Name = "collection" },
             StyleResourceIds = [referencedDataResource.Metadata.Id]
@@ -285,7 +285,7 @@ public class OgcMapsRenderingHandlerTests
     [Fact]
     public void IsStyleAssociatedWithResource_MissingReferencedResource_ReturnsFalse()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource-roads", Name = "roads" },
             StyleResourceIds = ["missing-style"]
@@ -358,10 +358,10 @@ public class OgcMapsRenderingHandlerTests
     [UnitTest]
     public async Task BuildDatasetExtentAsync_NoDeclaredBounds_ReturnsNoExtentAndNoFailure()
     {
-        var undeclared = new MetadataV2Resource
+        var undeclared = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-undeclared", Name = "undeclared" },
-            Type = MetadataV2ResourceType.FeatureDataset
+            Type = MetadataV2ObjectType.FeatureDataset
         };
 
         var (extent, transformUnavailable) = await OgcMapsResourceResolver.BuildDatasetExtentAsync(
@@ -422,7 +422,7 @@ public class OgcMapsRenderingHandlerTests
     {
         var restricted = new AccessPolicy { AllowedRoles = ["gis-admin"] };
         return new TestMetadataV2GraphBuilder()
-            .AddResource("resource", "roads", MetadataV2ResourceType.FeatureDataset, accessPolicy: restricted)
+            .AddResource("resource", "roads", MetadataV2ObjectType.FeatureDataset, accessPolicy: restricted)
             .AddStorageBinding("binding", "resource", "roads", storageLayerId: 1)
             .AddService("service", "catalog", protocols: ["OGC-API-Maps"])
             .AddPublication("publication", "service", "resource", layerIndex: 1)
@@ -464,13 +464,13 @@ public class OgcMapsRenderingHandlerTests
                 : resource).ToArray()
         };
 
-    private static MetadataV2Resource ResourceWithBounds(
+    private static MetadataV2Object ResourceWithBounds(
         string id, int srid, double west, double south, double east, double north)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = $"res-{id}", Name = id },
-            Type = MetadataV2ResourceType.FeatureDataset,
-            Spatial = new MetadataV2ResourceSpatial
+            Type = MetadataV2ObjectType.FeatureDataset,
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = new MetadataV2SpatialReference { Srid = srid },
                 GeometryType = MetadataV2GeometryType.Point,

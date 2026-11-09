@@ -12,13 +12,13 @@ internal sealed class ResourceAccessSet
     private readonly HttpContext _context;
     private readonly MetadataV2Service? _service;
     private readonly AccessScope _fallbackScope;
-    private readonly Dictionary<MetadataV2Resource, AccessDecision> _decisions;
+    private readonly Dictionary<MetadataV2Object, AccessDecision> _decisions;
 
     internal ResourceAccessSet(
         HttpContext context,
         MetadataV2Service? service,
         AccessScope fallbackScope,
-        Dictionary<MetadataV2Resource, AccessDecision> decisions)
+        Dictionary<MetadataV2Object, AccessDecision> decisions)
     {
         _context = context;
         _service = service;
@@ -26,7 +26,7 @@ internal sealed class ResourceAccessSet
         _decisions = decisions;
     }
 
-    public AccessDecision Evaluate(MetadataV2Resource resource)
+    public AccessDecision Evaluate(MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
         return _decisions.TryGetValue(resource, out var decision)
@@ -34,11 +34,11 @@ internal sealed class ResourceAccessSet
             : AccessPolicyHelpers.EvaluateResourceAccess(_context, resource, _service, _fallbackScope);
     }
 
-    public bool IsAccessible(MetadataV2Resource resource) => Evaluate(resource).IsAllowed;
+    public bool IsAccessible(MetadataV2Object resource) => Evaluate(resource).IsAllowed;
 
-    public IResult? RequireAccess(MetadataV2Resource resource)
+    public IResult? RequireAccess(MetadataV2Object resource)
         => AccessPolicyHelpers.CreateAccessDeniedResult(_context, Evaluate(resource));
 
-    public IResult? RequireAny(IEnumerable<MetadataV2Resource> resources)
+    public IResult? RequireAny(IEnumerable<MetadataV2Object> resources)
         => AccessPolicyHelpers.RequireAnyDecision(_context, resources, Evaluate);
 }

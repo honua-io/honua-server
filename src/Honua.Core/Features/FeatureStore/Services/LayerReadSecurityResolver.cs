@@ -125,7 +125,7 @@ public sealed class LayerReadSecurityResolver
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The query carrying the enforced filter and masked fields.</returns>
     public async Task<FeatureQuery> ApplyAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         FeatureQuery query,
         CancellationToken cancellationToken)
     {
@@ -262,7 +262,7 @@ public sealed class LayerReadSecurityResolver
     public async Task EnsureNoUnenforcedPolicyAsync(
         string providerDisplayName,
         int layerId,
-        MetadataV2Resource? boundResource,
+        MetadataV2Object? boundResource,
         bool rejectPermanentFilter,
         CancellationToken cancellationToken)
     {
@@ -315,7 +315,7 @@ public sealed class LayerReadSecurityResolver
            && combined.CanResolveWith(_fieldMaskSource);
 
     private async Task<ImmutableArray<string>> ResolveMaskedFieldsAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         CancellationToken cancellationToken)
     {
         return _fieldMaskSource is null
@@ -324,7 +324,7 @@ public sealed class LayerReadSecurityResolver
     }
 
     private async Task<SqlFragment?> ResolveEnforcedSqlFilterAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         CancellationToken cancellationToken)
     {
         var permanentFilter = PermanentFilterResolver.Resolve(resource, _filterExpressionService);
@@ -345,11 +345,11 @@ public sealed class LayerReadSecurityResolver
     /// filters but cannot apply request-scoped row or field policies.
     /// </summary>
     public static SqlFragment? ResolvePermanentFilter(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IFilterExpressionService? filterExpressionService)
         => PermanentFilterResolver.Resolve(resource, filterExpressionService);
 
-    private async Task<MetadataV2Resource?> FindResourceAsync(int layerId, CancellationToken cancellationToken)
+    private async Task<MetadataV2Object?> FindResourceAsync(int layerId, CancellationToken cancellationToken)
     {
         if (_v2Provider is null)
         {
@@ -365,12 +365,12 @@ public sealed class LayerReadSecurityResolver
         return candidates.FirstOrDefault();
     }
 
-    private static MetadataV2Resource[] FindResourceCandidates(MetadataV2GraphSnapshot snapshot, int layerId)
+    private static MetadataV2Object[] FindResourceCandidates(MetadataV2GraphSnapshot snapshot, int layerId)
     {
         var boundResources = snapshot.Graph.StorageBindings
             .Where(binding => binding.StorageLayerId == layerId)
             .Select(binding => snapshot.Index.ResourcesById.GetValueOrDefault(binding.ResourceId))
-            .OfType<MetadataV2Resource>();
+            .OfType<MetadataV2Object>();
         var publishedResources = snapshot.Graph.Publications
             .Select(publication => (Publication: publication, Resource: snapshot.ResolveResource(publication)))
             .Where(candidate => candidate.Resource is not null &&
@@ -400,7 +400,7 @@ public sealed class LayerReadSecurityResolver
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         return candidates.Where(resource => IsFeatureResource(resource) || !UsesDistinctTables(resource)).ToArray();
 
-        bool UsesDistinctTables(MetadataV2Resource resource)
+        bool UsesDistinctTables(MetadataV2Object resource)
         {
             var resourceBindings = bindings[resource.Metadata.Id].ToArray();
             try
@@ -416,11 +416,11 @@ public sealed class LayerReadSecurityResolver
         }
     }
 
-    private static bool IsFeatureResource(MetadataV2Resource resource)
-        => resource.Type is MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table;
+    private static bool IsFeatureResource(MetadataV2Object resource)
+        => resource.Type is MetadataV2ObjectType.FeatureDataset or MetadataV2ObjectType.Table;
 
     private async Task RejectAmbiguousPolicyAsync(
-        IReadOnlyList<MetadataV2Resource> resources, CancellationToken cancellationToken)
+        IReadOnlyList<MetadataV2Object> resources, CancellationToken cancellationToken)
     {
         foreach (var resource in resources)
         {

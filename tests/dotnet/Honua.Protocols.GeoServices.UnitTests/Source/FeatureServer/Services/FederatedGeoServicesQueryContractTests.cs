@@ -195,7 +195,7 @@ public sealed class FederatedGeoServicesQueryContractTests
         bool useObjectIdsFastPath)
     {
         var adapter = new GeoServicesQueryParameterAdapter(NullLogger<GeoServicesQueryParameterAdapter>.Instance);
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "parcels", Name = "Parcels" },
             SchemaFields =

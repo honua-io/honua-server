@@ -195,10 +195,10 @@ public sealed class SqlServerFeatureStoreIntegrationTests : IAsyncLifetime
             Metadata = new MetadataV2ObjectMetadata { Id = "svc-test", Name = "Test" },
             SpatialReference = MetadataV2SpatialReference.Wgs84
         };
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-test", Name = "Test" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             StorageBindingIds = ["binding-test"],
             SchemaFields =
             [
@@ -218,7 +218,7 @@ public sealed class SqlServerFeatureStoreIntegrationTests : IAsyncLifetime
                     SemanticRoles = ["geometry.primary"]
                 }
             ],
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = MetadataV2GeometryType.Point,

@@ -74,7 +74,7 @@ internal sealed class OgcFeaturesQueryParameterAdapter(
 
     public async Task<QueryAdapterResult> ConvertAsync(
         OgcFeaturesQueryParameters parameters,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         CancellationToken cancellationToken = default)
     {
         try
@@ -181,7 +181,7 @@ internal sealed class OgcFeaturesQueryParameterAdapter(
 
     private static bool TryParseProperties(
         string? rawProperties,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         out ImmutableArray<string>? properties,
         out string? error)
     {
@@ -238,7 +238,7 @@ internal sealed class OgcFeaturesQueryParameterAdapter(
 
     private static bool TryParseSortBy(
         string? rawSortBy,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IReadOnlySet<string> allowedCoreFields,
         out ImmutableArray<OrderByClause>? orderBy,
         out string? error)

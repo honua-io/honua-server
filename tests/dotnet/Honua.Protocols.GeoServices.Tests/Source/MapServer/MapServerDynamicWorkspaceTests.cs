@@ -237,7 +237,7 @@ public sealed class MapServerDynamicWorkspaceTests
             .AddResource(
                 "res-workspace-layer",
                 "Parcels",
-                MetadataV2ResourceType.FeatureDataset,
+                MetadataV2ObjectType.FeatureDataset,
                 fields: fields,
                 accessPolicy: openAccessPolicy)
             .AddStorageBinding(

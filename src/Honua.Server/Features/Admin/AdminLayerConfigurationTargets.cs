@@ -13,12 +13,12 @@ internal static class AdminLayerConfigurationTargets
 
     // The result is a conflict when more than one resource matches the layer id.
     internal readonly record struct AdminLayerConfigurationTarget(
-        MetadataV2Resource? Resource,
+        MetadataV2Object? Resource,
         string? ConflictDetail)
     {
         public bool IsAmbiguous => ConflictDetail is not null;
 
-        public static AdminLayerConfigurationTarget Unique(MetadataV2Resource resource) => new(resource, null);
+        public static AdminLayerConfigurationTarget Unique(MetadataV2Object resource) => new(resource, null);
 
         public static AdminLayerConfigurationTarget Ambiguous(string detail) => new(null, detail);
     }
@@ -27,7 +27,7 @@ internal static class AdminLayerConfigurationTargets
     {
         ArgumentNullException.ThrowIfNull(snapshot);
 
-        var resources = new Dictionary<string, MetadataV2Resource>(StringComparer.Ordinal);
+        var resources = new Dictionary<string, MetadataV2Object>(StringComparer.Ordinal);
         var serviceNames = new List<string>();
         var seenServices = new HashSet<string>(StringComparer.Ordinal);
 
@@ -39,7 +39,7 @@ internal static class AdminLayerConfigurationTargets
             }
 
             var candidate = snapshot.ResolveResource(publication);
-            if (candidate?.Type is not (MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table))
+            if (candidate?.Type is not (MetadataV2ObjectType.FeatureDataset or MetadataV2ObjectType.Table))
             {
                 continue;
             }
@@ -71,7 +71,7 @@ internal static class AdminLayerConfigurationTargets
     internal static async Task<AdminLayerConfigurationTarget> WriteAsync(
         IMetadataV2GraphStore graphStore,
         int layerId,
-        Func<MetadataV2Resource, MetadataV2Resource> mutate,
+        Func<MetadataV2Object, MetadataV2Object> mutate,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(graphStore);

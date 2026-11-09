@@ -160,11 +160,11 @@ public sealed class Wfs20OwnerEditPolicyTests
         return (result, writer, reader);
     }
 
-    private static MetadataV2Resource Resource(MetadataV2OwnerEditPolicy? policy)
+    private static MetadataV2Object Resource(MetadataV2OwnerEditPolicy? policy)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "cities", Name = "cities" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             OwnerEditPolicy = policy,
             SchemaFields =
             [

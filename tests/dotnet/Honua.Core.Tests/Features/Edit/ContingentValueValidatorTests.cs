@@ -121,7 +121,7 @@ public sealed class ContingentValueValidatorTests
             .IsValid.Should().BeTrue();
     }
 
-    private static MetadataV2Resource ResourceWithGroup(MetadataV2ContingentValueGroup group)
+    private static MetadataV2Object ResourceWithGroup(MetadataV2ContingentValueGroup group)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res", Name = "Test" },

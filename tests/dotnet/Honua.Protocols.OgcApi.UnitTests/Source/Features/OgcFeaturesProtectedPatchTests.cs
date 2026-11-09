@@ -145,7 +145,7 @@ public sealed partial class OgcFeaturesOwnerEditPolicyTests
             new() { Name = "globalid", Type = MetadataV2FieldType.String, Nullable = true, Editable = true }
         ];
         var graph = new TestMetadataV2GraphBuilder()
-            .AddResource("resource", "cities", MetadataV2ResourceType.FeatureDataset, fields: fields)
+            .AddResource("resource", "cities", MetadataV2ObjectType.FeatureDataset, fields: fields)
             .AddStorageBinding("binding", "resource", "test.layers.7", storageLayerId: 7)
             .AddService("service", "cities", protocols: [ServiceProtocols.OgcFeatures])
             .AddPublication("pub-cities", "service", "resource", layerIndex: 1,
@@ -155,7 +155,7 @@ public sealed partial class OgcFeaturesOwnerEditPolicyTests
         {
             Resources = graph.Resources.Select(resource => resource with
             {
-                Editing = new MetadataV2ResourceEditing { GlobalIdField = "globalid" }
+                Editing = new MetadataV2ObjectEditing { GlobalIdField = "globalid" }
             }).ToArray()
         });
     }

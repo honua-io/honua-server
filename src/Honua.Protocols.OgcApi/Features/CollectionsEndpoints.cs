@@ -156,7 +156,7 @@ internal static class CollectionsEndpoints
                 canonicalByResource[resource!.Metadata.Id] = (publication, service);
             }
 
-            var publicationsByResource = new Dictionary<string, (MetadataV2Layer Publication, MetadataV2Service Service, MetadataV2Resource Resource)>(StringComparer.OrdinalIgnoreCase);
+            var publicationsByResource = new Dictionary<string, (MetadataV2Layer Publication, MetadataV2Service Service, MetadataV2Object Resource)>(StringComparer.OrdinalIgnoreCase);
             foreach (var publication in snapshot.Graph.Publications)
             {
                 if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service))
@@ -513,11 +513,11 @@ internal static class CollectionsEndpoints
     /// Metadata v2 builder for an OGC API Features <see cref="CollectionInfo"/>. The collection
     /// id is the publication's <c>ServiceLocalId</c>, falling back to its resource name when the
     /// publication carries no explicit local id. Spatial extent is read from the typed
-    /// <see cref="MetadataV2ResourceSpatial"/> slot on the resource; temporal extent is computed
+    /// <see cref="MetadataV2ObjectSpatial"/> slot on the resource; temporal extent is computed
     /// from the V2 temporal helpers keyed on the resolved storage layer id.
     /// </summary>
     private static async Task<CollectionInfo> CreateCollectionAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2Layer publication,
         MetadataV2Service? service,
         MetadataV2GraphSnapshot snapshot,
@@ -639,7 +639,7 @@ internal static class CollectionsEndpoints
         // stylesheet for every storage-bound feature collection — its stored style or the
         // layer default — so advertise the link exactly then; a link it would not serve must
         // not be advertised (#4993).
-        if (storageLayerId.HasValue && resource.Type == MetadataV2ResourceType.FeatureDataset)
+        if (storageLayerId.HasValue && resource.Type == MetadataV2ObjectType.FeatureDataset)
         {
             var styleId = Uri.EscapeDataString(resource.Metadata.Name);
 
@@ -768,11 +768,11 @@ internal static class CollectionsEndpoints
 
     /// <summary>
     /// Builds the OGC API Features queryables JSON Schema from
-    /// <see cref="MetadataV2Resource.SchemaFields"/>, with the primary geometry field
+    /// <see cref="MetadataV2Object.SchemaFields"/>, with the primary geometry field
     /// resolved via <see cref="MetadataV2SpatialExtensions.FindPrimaryGeometryField"/>.
     /// </summary>
     private static QueryablesSchema CreateQueryablesSchema(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string queryablesId)
     {
         var properties = ImmutableDictionary.CreateBuilder<string, JsonSchemaProperty>();

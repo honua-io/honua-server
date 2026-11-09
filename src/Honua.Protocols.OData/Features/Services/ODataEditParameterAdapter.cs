@@ -47,7 +47,7 @@ internal sealed class ODataEditParameterAdapter(
 
     public Task<EditAdapterResult> ConvertAsync(
         ODataEditRequest protocolRequest,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         CancellationToken cancellationToken = default)
         => ConvertCoreAsync(protocolRequest);
 

@@ -9,7 +9,7 @@ namespace Honua.Protocols.GeoServices.MapServer;
 
 internal static partial class MapServerEndpoints
 {
-    private readonly record struct DynamicLayerCandidate(int PublicLayerId, MetadataV2Resource Resource);
+    private readonly record struct DynamicLayerCandidate(int PublicLayerId, MetadataV2Object Resource);
 
     private enum DynamicLayerJoinType
     {
@@ -459,7 +459,7 @@ internal static partial class MapServerEndpoints
             return false;
         }
 
-        private MetadataV2StorageBinding? ResolveResourceBinding(MetadataV2Resource resource)
+        private MetadataV2StorageBinding? ResolveResourceBinding(MetadataV2Object resource)
         {
             if (!string.IsNullOrEmpty(resource.PrimaryStorageBindingId) &&
                 _snapshot.Index.StorageBindingsById.TryGetValue(resource.PrimaryStorageBindingId, out var primary))

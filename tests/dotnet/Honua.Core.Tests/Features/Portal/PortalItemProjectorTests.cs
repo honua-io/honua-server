@@ -100,12 +100,12 @@ public sealed class PortalItemProjectorTests
     [Operation(Operations.Metadata)]
     public void ProjectVisibleItems_ProjectsExtentFromResourceBbox()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource.parcels", Name = "parcels" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             AccessPolicy = AnonymousPolicy(),
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = MetadataV2GeometryType.Polygon,
@@ -369,10 +369,10 @@ public sealed class PortalItemProjectorTests
 
     private static MetadataV2GraphSnapshot BuildSnapshot(MetadataV2Service service, AccessPolicy? resourceAccess)
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource.parcels", Name = "parcels" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             AccessPolicy = resourceAccess,
         };
         return BuildSnapshotWithResource(service, resource);
@@ -391,7 +391,7 @@ public sealed class PortalItemProjectorTests
 
     private static MetadataV2GraphSnapshot BuildSnapshotWithResource(
         MetadataV2Service service,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         var graph = new MetadataV2Graph
         {
@@ -438,7 +438,7 @@ public sealed class PortalItemProjectorTests
     /// </summary>
     private sealed class FakePortalReadAuthorizer : IPortalResourceReadAuthorizer
     {
-        public AccessDecision Evaluate(ClaimsPrincipal principal, MetadataV2Resource? resource, MetadataV2Service service,
+        public AccessDecision Evaluate(ClaimsPrincipal principal, MetadataV2Object? resource, MetadataV2Service service,
             MetadataV2Layer? publication = null)
             => new FakeAccessPolicyEvaluator().Evaluate(principal, resource?.AccessPolicy, service.AccessPolicy);
 

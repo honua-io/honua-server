@@ -69,10 +69,10 @@ public sealed class QueryOnlyCompositeRelatedRecordGroupTests
             geometryPrecision: null,
             maxAllowableOffset: null,
             outFields: null,
-            relatedResource: new MetadataV2Resource
+            relatedResource: new MetadataV2Object
             {
                 Metadata = new MetadataV2ObjectMetadata { Id = "child", Name = "groupbySummary" },
-                Type = MetadataV2ResourceType.Table,
+                Type = MetadataV2ObjectType.Table,
                 SchemaFields =
                 [
                     new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false },

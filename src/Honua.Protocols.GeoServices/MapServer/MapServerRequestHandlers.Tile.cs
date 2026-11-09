@@ -29,7 +29,7 @@ internal static partial class MapServerEndpoints
     internal sealed record TileLayerDescriptor(
         int PublicLayerId,
         int StorageLayerId,
-        MetadataV2Resource Resource);
+        MetadataV2Object Resource);
 
     private static async Task<IResult> HandleTile(HttpContext context)
     {
@@ -292,10 +292,10 @@ internal static partial class MapServerEndpoints
             ?? layers.Select(static layer => layer.Resource.ReadSrid()).FirstOrDefault(static srid => srid.HasValue)
             ?? 4326;
 
-    private static bool IsTileLayerVisibleByDefault(MetadataV2Resource resource)
+    private static bool IsTileLayerVisibleByDefault(MetadataV2Object resource)
         => resource.Display?.DefaultVisibility ?? true;
 
-    internal static bool IsTileLayerVisibleAtScale(MetadataV2Resource resource, int z)
+    internal static bool IsTileLayerVisibleAtScale(MetadataV2Object resource, int z)
     {
         var scale = CalculateTileScale(z);
         var display = resource.Display;

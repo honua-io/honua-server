@@ -455,7 +455,7 @@ public sealed class ODataGeometryCrudTests : IAsyncLifetime
         // spatial-reference fixture layers. Mirror the v1 SpatialReferenceTestLayerCatalog
         // (EPSG:3857 / Web Mercator) so the SRID mismatch path under test
         // (4326 geometry → 3857 layer) fires.
-        var sridSpatial = new Honua.Core.Features.Metadata.Domain.V2.MetadataV2ResourceSpatial
+        var sridSpatial = new Honua.Core.Features.Metadata.Domain.V2.MetadataV2ObjectSpatial
         {
             SpatialReference = new Honua.Core.Features.Metadata.Domain.V2.MetadataV2SpatialReference
             {

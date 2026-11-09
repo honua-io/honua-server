@@ -229,7 +229,7 @@ public sealed class ProjectedCatalogDiscoveryRegistryStoreTests
     internal static MetadataV2Graph Graph(string metadataNamespace = "alpha", string suffix = "")
     {
         var graph = new TestMetadataV2GraphBuilder()
-            .AddResource("resource" + suffix, "resource" + suffix, MetadataV2ResourceType.FeatureDataset,
+            .AddResource("resource" + suffix, "resource" + suffix, MetadataV2ObjectType.FeatureDataset,
                 accessPolicy: new AccessPolicy { AllowAnonymous = true })
             .AddService("service" + suffix, "service with space",
                 protocols: [ServiceProtocols.FeatureServer, ServiceProtocols.MapServer],

@@ -27,7 +27,7 @@ internal static class OgcQueryablesUtilities
     }
 
     public static async Task<TemporalExtent?> BuildTemporalExtentAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int layerIndex,
         IFeatureReader featureReader,
         CancellationToken cancellationToken)
@@ -86,7 +86,7 @@ internal static class OgcQueryablesUtilities
     }
 
     public static bool TryResolveTemporalFieldsV2(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         out string? startFieldName,
         out TemporalPropertyType startPropertyType,
         out string? endFieldName,
@@ -131,7 +131,7 @@ internal static class OgcQueryablesUtilities
     }
 
     private static bool TryResolveSchemaTemporalType(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string fieldName,
         out TemporalPropertyType type)
     {

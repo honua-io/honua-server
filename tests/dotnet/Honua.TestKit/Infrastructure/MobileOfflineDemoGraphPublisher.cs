@@ -184,7 +184,7 @@ public static class MobileOfflineDemoGraphPublisher
     private static string BindingId(int layerId)
         => $"binding-layer-{layerId.ToString(CultureInfo.InvariantCulture)}";
 
-    private static MetadataV2Resource CreateResource(
+    private static MetadataV2Object CreateResource(
         int layerId,
         string name,
         string description,
@@ -196,7 +196,7 @@ public static class MobileOfflineDemoGraphPublisher
         AccessPolicy accessPolicy)
     {
         var bindingId = BindingId(layerId);
-        return new MetadataV2Resource
+        return new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata
             {
@@ -205,13 +205,13 @@ public static class MobileOfflineDemoGraphPublisher
                 Title = name,
                 Description = description
             },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             StorageBindingIds = [bindingId],
             PrimaryStorageBindingId = bindingId,
             AccessPolicy = accessPolicy,
             SchemaFields = fields,
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = geometryType,
@@ -220,9 +220,9 @@ public static class MobileOfflineDemoGraphPublisher
             },
             Temporal = temporalField is null
                 ? null
-                : new MetadataV2ResourceTemporal { StartTimeField = temporalField },
-            Display = new MetadataV2ResourceDisplay { DisplayField = displayField },
-            Editing = new MetadataV2ResourceEditing { CanModify = true }
+                : new MetadataV2ObjectTemporal { StartTimeField = temporalField },
+            Display = new MetadataV2ObjectDisplay { DisplayField = displayField },
+            Editing = new MetadataV2ObjectEditing { CanModify = true }
         };
     }
 

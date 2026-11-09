@@ -38,7 +38,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
     private readonly PostgresBoundConnectionProvider? _boundConnectionProvider;
     private readonly ObjectPool<Dictionary<string, object?>> _dictionaryPool;
-    private readonly MetadataV2Resource _resource;
+    private readonly MetadataV2Object _resource;
     private readonly FeatureStorageMapping _mapping;
     private readonly DataConnection? _connection;
     private readonly IConnectionEncryptionService? _connectionEncryptionService;
@@ -62,7 +62,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     public PostgresStorageMappedFeatureReader(
         IAdoNetDatabaseConnectionProvider connectionProvider,
         ObjectPool<Dictionary<string, object?>> dictionaryPool,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         FeatureStorageMapping mapping,
         DataConnection? connection,
         IConnectionEncryptionService? connectionEncryptionService,

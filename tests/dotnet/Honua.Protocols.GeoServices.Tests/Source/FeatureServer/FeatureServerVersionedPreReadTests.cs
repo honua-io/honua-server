@@ -170,7 +170,7 @@ public sealed class FeatureServerVersionedPreReadTests
             ],
         };
 
-    private static MetadataV2Resource Resource()
+    private static MetadataV2Object Resource()
         => new()
         {
             SchemaFields =

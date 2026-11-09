@@ -116,17 +116,17 @@ public sealed class Issue5635CacheResilienceTests
         Visibility = visibility,
     };
 
-    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Layer Publication, MetadataV2Resource Resource) CreateDivergentLayer()
+    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Layer Publication, MetadataV2Object Resource) CreateDivergentLayer()
     {
         var service = new MetadataV2Service
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "svc-maps", Name = "Maps" },
             SpatialReference = MetadataV2SpatialReference.Wgs84,
         };
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-roads", Name = "roads" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             StorageBindingIds = ["binding-roads"],
         };
         var binding = new MetadataV2StorageBinding

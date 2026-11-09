@@ -19,7 +19,7 @@ internal static class OgcFeaturesResponseHelpers
     public static Task<Feature?> LoadFeatureForResponseAsync(
         IFeatureReader featureReader,
         int layerId,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         long objectId,
         CrsDefinition responseCrs,
         CancellationToken cancellationToken)
@@ -41,7 +41,7 @@ internal static class OgcFeaturesResponseHelpers
     public static async Task<IReadOnlyDictionary<long, Feature>> LoadFeaturesForResponseAsync(
         IFeatureReader featureReader,
         int layerId,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IReadOnlyCollection<long> objectIds,
         CrsDefinition responseCrs,
         CancellationToken cancellationToken)

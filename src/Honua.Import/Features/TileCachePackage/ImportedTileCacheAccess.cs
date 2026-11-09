@@ -15,7 +15,7 @@ namespace Honua.Import.TileCachePackage;
 /// </summary>
 internal sealed record ImportedTileCacheSource(
     MetadataV2Layer Publication,
-    MetadataV2Resource Resource,
+    MetadataV2Object Resource,
     MetadataV2Service Service);
 
 /// <summary>
@@ -97,7 +97,7 @@ internal static class ImportedTileCacheAccess
     internal static IReadOnlyList<ImportedTileCacheSource> ResolveSources(
         MetadataV2GraphSnapshot snapshot,
         string layerIdentifier,
-        Func<MetadataV2Layer, MetadataV2Resource, MetadataV2Service, bool> isVisible)
+        Func<MetadataV2Layer, MetadataV2Object, MetadataV2Service, bool> isVisible)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(isVisible);

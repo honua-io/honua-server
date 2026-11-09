@@ -345,7 +345,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
 
     private GeoJsonFeature ToOgcFeature(
         Feature feature,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         AxisOrder axisOrder,
         ImmutableArray<Link>? links = null)
         => OgcGeoJsonFeatureBuilder.Create(
@@ -392,7 +392,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
     internal async Task<FeatureEditResult> ExecuteEditAsync(
         HttpContext context,
         int layerId,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         OgcFeaturesEditRequest request,
         CancellationToken cancellationToken)
     {

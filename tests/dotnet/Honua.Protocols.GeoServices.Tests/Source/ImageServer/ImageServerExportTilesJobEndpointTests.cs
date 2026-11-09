@@ -169,7 +169,7 @@ public sealed class ImageServerExportTilesJobEndpointTests
                 .AddResource(
                     "competing-resource",
                     "Competing image",
-                    MetadataV2ResourceType.RasterDataset,
+                    MetadataV2ObjectType.RasterDataset,
                     accessPolicy: restricted)
                 .AddStorageBinding(
                     "competing-binding",
@@ -192,7 +192,7 @@ public sealed class ImageServerExportTilesJobEndpointTests
                 .AddResource(
                     "target-resource",
                     "Target image",
-                    MetadataV2ResourceType.RasterDataset,
+                    MetadataV2ObjectType.RasterDataset,
                     accessPolicy: anonymous)
                 .AddStorageBinding(
                     "target-binding",
@@ -214,7 +214,7 @@ public sealed class ImageServerExportTilesJobEndpointTests
                 .AddResource(
                     "other-resource",
                     "Other image",
-                    MetadataV2ResourceType.RasterDataset,
+                    MetadataV2ObjectType.RasterDataset,
                     accessPolicy: anonymous)
                 .AddStorageBinding(
                     "other-binding",

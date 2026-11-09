@@ -19,7 +19,7 @@ public sealed class EditProcessorCreateValidationTests
     private static EditProcessor CreateProcessor() => new(NullLogger<EditProcessor>.Instance);
 
     // Resource with one required non-nullable string field ("name") and one nullable field ("notes").
-    private static MetadataV2Resource CreateResourceWithRequiredField() => new()
+    private static MetadataV2Object CreateResourceWithRequiredField() => new()
     {
         SchemaFields =
         [
@@ -132,7 +132,7 @@ public sealed class EditProcessorCreateValidationTests
     // seeded/published layers (e.g. WebAppFixtureMetadataV2Mixin, ServiceRbacTestFixture) that
     // declare objectid as Nullable=false without the "id.primary" role. BH2-014 (#2456) keyed its
     // primary-id skip exclusively on the role, so every create omitting objectid was rejected.
-    private static MetadataV2Resource CreateResourceWithUnroledObjectId() => new()
+    private static MetadataV2Object CreateResourceWithUnroledObjectId() => new()
     {
         SchemaFields =
         [
@@ -252,7 +252,7 @@ public sealed class EditProcessorCreateValidationTests
     // FindPrimaryIdField resolves to the roled public "id", so before this fix the conventional
     // integer "objectid" fell through the primary-id skip and a create omitting it (the normal case,
     // since the server auto-assigns it) was rejected — surfacing as an OGC HTTP 500.
-    private static MetadataV2Resource CreateResourceWithDistinctPublicIdAndObjectId() => new()
+    private static MetadataV2Object CreateResourceWithDistinctPublicIdAndObjectId() => new()
     {
         SchemaFields =
         [

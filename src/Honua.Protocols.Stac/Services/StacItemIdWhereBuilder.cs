@@ -10,7 +10,7 @@ namespace Honua.Protocols.Stac.Services;
 
 internal static class StacItemIdWhereBuilder
 {
-    public static ImmutableArray<MetadataV2Field> GetCandidateFields(MetadataV2Resource resource)
+    public static ImmutableArray<MetadataV2Field> GetCandidateFields(MetadataV2Object resource)
     {
         var source = StacItemIdentity.Resolve(resource);
         if (source.Field is null)
@@ -36,7 +36,7 @@ internal static class StacItemIdWhereBuilder
         return ImmutableArray.Create(source.Field, primary);
     }
 
-    public static IReadOnlyList<string> UnboundAttributeNames(MetadataV2Resource resource)
+    public static IReadOnlyList<string> UnboundAttributeNames(MetadataV2Object resource)
     {
         var source = StacItemIdentity.Resolve(resource);
         if (source.IsDeclaredIdentity &&
@@ -49,7 +49,7 @@ internal static class StacItemIdWhereBuilder
         return StacItemIdentity.CanonicalNames;
     }
 
-    public static string BuildUnboundAttributePredicate(MetadataV2Resource resource)
+    public static string BuildUnboundAttributePredicate(MetadataV2Object resource)
         => string.Join(
             " OR ",
             UnboundAttributeNames(resource).Select(static name =>

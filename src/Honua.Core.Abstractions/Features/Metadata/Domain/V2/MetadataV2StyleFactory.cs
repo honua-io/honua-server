@@ -3,14 +3,14 @@
 
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
-public static class MetadataV2StyleResourceFactory
+public static class MetadataV2StyleFactory
 {
     public const string StyleResourceIdPrefix = "style-";
 
     public static string BuildStyleResourceId(string styleId)
         => StyleResourceIdPrefix + SanitizeId(styleId);
 
-    public static MetadataV2Resource BuildStyleResource(
+    public static MetadataV2Object BuildStyleResource(
         string styleId,
         string mapLibreStyleJson,
         string? title,
@@ -44,7 +44,7 @@ public static class MetadataV2StyleResourceFactory
         }
 
         var resolvedTitle = string.IsNullOrWhiteSpace(title) ? styleId : title;
-        return new MetadataV2Resource
+        return new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata
             {
@@ -55,8 +55,8 @@ public static class MetadataV2StyleResourceFactory
                 CreatedAt = createdAt,
                 UpdatedAt = updatedAt
             },
-            Type = MetadataV2ResourceType.Style,
-            Style = new MetadataV2ResourceStyle
+            Type = MetadataV2ObjectType.Style,
+            Style = new MetadataV2Style
             {
                 Title = resolvedTitle,
                 Abstract = description,

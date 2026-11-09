@@ -24,7 +24,7 @@ internal static class ServiceResourceValidationHelpers
         bool IsValid,
         MetadataV2Service? Service,
         MetadataV2Layer? Publication,
-        MetadataV2Resource? Resource,
+        MetadataV2Object? Resource,
         IResult? ErrorResult);
 
     public static ResourceValidationResult<MetadataV2Service> ValidateResolvedServicePath(

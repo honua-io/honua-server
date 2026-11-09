@@ -20,7 +20,7 @@ internal static class OgcRequestCrsResolver
     /// </summary>
     internal static async Task<(bool IsValid, CrsDefinition Definition, string? Error)> TryResolveInputCrsAsync(
         HttpRequest request,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         ICrsRegistry crsRegistry,
         CancellationToken cancellationToken)
     {

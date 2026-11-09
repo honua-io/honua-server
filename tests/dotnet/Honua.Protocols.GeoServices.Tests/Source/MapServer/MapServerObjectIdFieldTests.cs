@@ -157,7 +157,7 @@ public sealed class MapServerObjectIdFieldTests
             .AddResource(
                 "res-string-id-layer",
                 "String ID Layer",
-                MetadataV2ResourceType.FeatureDataset,
+                MetadataV2ObjectType.FeatureDataset,
                 fields: fields,
                 accessPolicy: openAccessPolicy)
             .AddStorageBinding(

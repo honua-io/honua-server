@@ -61,7 +61,7 @@ internal sealed class PortalResourceReadAuthorizer(
             && string.Equals(group.TenantId, tenantId, StringComparison.Ordinal);
 
     public AccessDecision Evaluate(
-        ClaimsPrincipal principal, MetadataV2Resource? resource, MetadataV2Service service,
+        ClaimsPrincipal principal, MetadataV2Object? resource, MetadataV2Service service,
         MetadataV2Layer? publication = null)
     {
         var context = contextAccessor.HttpContext;

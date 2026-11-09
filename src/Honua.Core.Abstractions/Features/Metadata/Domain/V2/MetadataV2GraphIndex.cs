@@ -9,13 +9,13 @@ public sealed class MetadataV2GraphIndex
 {
     private MetadataV2GraphIndex(
         IReadOnlyDictionary<string, MetadataV2Catalog> catalogsById,
-        IReadOnlyDictionary<string, MetadataV2Resource> resourcesById,
-        IReadOnlyDictionary<string, MetadataV2Resource> resourcesByName,
+        IReadOnlyDictionary<string, MetadataV2Object> resourcesById,
+        IReadOnlyDictionary<string, MetadataV2Object> resourcesByName,
         IReadOnlyDictionary<string, MetadataV2Connection> connectionsById,
         IReadOnlyDictionary<string, MetadataV2StorageBinding> storageBindingsById,
         ILookup<string, MetadataV2StorageBinding> storageBindingsByResource,
         IReadOnlyDictionary<int, MetadataV2StorageBinding> storageBindingsByStorageLayerId,
-        IReadOnlyDictionary<int, MetadataV2Resource> resourcesByStorageLayerId,
+        IReadOnlyDictionary<int, MetadataV2Object> resourcesByStorageLayerId,
         IReadOnlyDictionary<string, MetadataV2Service> servicesById,
         IReadOnlyDictionary<string, MetadataV2Service> servicesByName,
         IReadOnlyDictionary<string, MetadataV2Layer> publicationsById,
@@ -26,7 +26,7 @@ public sealed class MetadataV2GraphIndex
         ILookup<string, MetadataV2ProjectionProfile> projectionProfilesByTarget,
         IReadOnlyDictionary<string, MetadataV2Policy> policiesById,
         IReadOnlyDictionary<string, MetadataV2Role> rolesById,
-        ILookup<string, MetadataV2Resource> resourcesByStyleResourceId)
+        ILookup<string, MetadataV2Object> resourcesByStyleResourceId)
     {
         CatalogsById = catalogsById;
         ResourcesById = resourcesById;
@@ -51,9 +51,9 @@ public sealed class MetadataV2GraphIndex
 
     public IReadOnlyDictionary<string, MetadataV2Catalog> CatalogsById { get; }
 
-    public IReadOnlyDictionary<string, MetadataV2Resource> ResourcesById { get; }
+    public IReadOnlyDictionary<string, MetadataV2Object> ResourcesById { get; }
 
-    public IReadOnlyDictionary<string, MetadataV2Resource> ResourcesByName { get; }
+    public IReadOnlyDictionary<string, MetadataV2Object> ResourcesByName { get; }
 
     public IReadOnlyDictionary<string, MetadataV2Connection> ConnectionsById { get; }
 
@@ -63,7 +63,7 @@ public sealed class MetadataV2GraphIndex
 
     public IReadOnlyDictionary<int, MetadataV2StorageBinding> StorageBindingsByStorageLayerId { get; }
 
-    public IReadOnlyDictionary<int, MetadataV2Resource> ResourcesByStorageLayerId { get; }
+    public IReadOnlyDictionary<int, MetadataV2Object> ResourcesByStorageLayerId { get; }
 
     public IReadOnlyDictionary<string, MetadataV2Service> ServicesById { get; }
 
@@ -85,7 +85,7 @@ public sealed class MetadataV2GraphIndex
 
     public IReadOnlyDictionary<string, MetadataV2Role> RolesById { get; }
 
-    public ILookup<string, MetadataV2Resource> ResourcesByStyleResourceId { get; }
+    public ILookup<string, MetadataV2Object> ResourcesByStyleResourceId { get; }
 
     public static MetadataV2GraphIndex Build(MetadataV2Graph graph)
     {
@@ -100,12 +100,12 @@ public sealed class MetadataV2GraphIndex
         var catalogsById = new Dictionary<string, MetadataV2Catalog>(StringComparer.Ordinal);
         foreach (var c in graph.Catalogs) catalogsById.TryAdd(c.Metadata.Id, c);
 
-        var resourcesById = new Dictionary<string, MetadataV2Resource>(StringComparer.Ordinal);
+        var resourcesById = new Dictionary<string, MetadataV2Object>(StringComparer.Ordinal);
         foreach (var r in graph.Resources) resourcesById.TryAdd(r.Metadata.Id, r);
 
         // Multiple resources may share the same display name (different IDs / namespaces).
         // First-wins keeps the index deterministic and avoids ArgumentException on construction.
-        var resourcesByName = new Dictionary<string, MetadataV2Resource>(StringComparer.OrdinalIgnoreCase);
+        var resourcesByName = new Dictionary<string, MetadataV2Object>(StringComparer.OrdinalIgnoreCase);
         foreach (var r in graph.Resources.Where(r => !string.IsNullOrEmpty(r.Metadata.Name)))
         {
             resourcesByName.TryAdd(r.Metadata.Name, r);
@@ -119,7 +119,7 @@ public sealed class MetadataV2GraphIndex
         var storageBindingsByResource = graph.StorageBindings.ToLookup(s => s.ResourceId, StringComparer.Ordinal);
 
         var storageBindingsByStorageLayerId = new Dictionary<int, MetadataV2StorageBinding>();
-        var resourcesByStorageLayerId = new Dictionary<int, MetadataV2Resource>();
+        var resourcesByStorageLayerId = new Dictionary<int, MetadataV2Object>();
         foreach (var binding in graph.StorageBindings.Where(binding => binding.StorageLayerId.HasValue))
         {
             var storageLayerId = binding.StorageLayerId.GetValueOrDefault();

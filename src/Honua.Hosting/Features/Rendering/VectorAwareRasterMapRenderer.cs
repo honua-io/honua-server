@@ -143,7 +143,7 @@ internal sealed class VectorAwareRasterMapRenderer : IRasterMapRenderer
             return fallback;
         }
 
-        var geometryLayers = new List<(int LayerId, MetadataV2Resource Resource)>(layerIds.Length);
+        var geometryLayers = new List<(int LayerId, MetadataV2Object Resource)>(layerIds.Length);
         foreach (var layerId in layerIds)
         {
             var resource = ResolveResourceForLayer(snapshot, layerId, request);
@@ -168,7 +168,7 @@ internal sealed class VectorAwareRasterMapRenderer : IRasterMapRenderer
     }
 
     private async Task<RasterResult?> RenderStyledVectorLayersAsync(
-        IReadOnlyList<(int LayerId, MetadataV2Resource Resource)> geometryLayers,
+        IReadOnlyList<(int LayerId, MetadataV2Object Resource)> geometryLayers,
         MapRenderRequest request,
         string? explicitStyleJson,
         CancellationToken cancellationToken)
@@ -315,7 +315,7 @@ internal sealed class VectorAwareRasterMapRenderer : IRasterMapRenderer
     private const int DefaultSrid = 4326;
 
     // Storage layer ids can collide, so resolution uses the canonical resource identity first and the storage index only as a fallback.
-    private static MetadataV2Resource? ResolveResourceForLayer(
+    private static MetadataV2Object? ResolveResourceForLayer(
         MetadataV2GraphSnapshot snapshot,
         int layerId,
         MapRenderRequest request)
@@ -341,11 +341,11 @@ internal sealed class VectorAwareRasterMapRenderer : IRasterMapRenderer
             : null;
     }
 
-    private static bool HasGeometry(MetadataV2Resource resource)
+    private static bool HasGeometry(MetadataV2Object resource)
         => resource.ReadGeometryType() != MetadataV2GeometryType.None ||
            resource.FindPrimaryGeometryField() is not null;
 
-    private static MetadataV2GeometryType ResolveGeometryType(MetadataV2Resource resource)
+    private static MetadataV2GeometryType ResolveGeometryType(MetadataV2Object resource)
     {
         var geometryType = resource.ReadGeometryType();
         // A layer that surfaces geometry only through its schema (no typed Spatial slot)

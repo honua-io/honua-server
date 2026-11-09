@@ -118,7 +118,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                 .AddResource(
                     resourceId,
                     GetSeededLayerName(layerIndex),
-                    MetadataV2ResourceType.FeatureDataset,
+                    MetadataV2ObjectType.FeatureDataset,
                     fields: GetSeededLayerSchemaFields(layerIndex),
                     spatial: GetSeededLayerSpatial(layerIndex),
                     temporal: GetSeededLayerTemporal(layerIndex))
@@ -147,7 +147,7 @@ internal static class WebAppFixtureMetadataV2Mixin
         // ImageServer publications for the canonical raster test layer (TestServiceId/TestLayerId).
         // ImageServer handler tests resolve their layer index against this snapshot.
         builder
-            .AddResource("res-image-test", "test-layer", MetadataV2ResourceType.RasterDataset)
+            .AddResource("res-image-test", "test-layer", MetadataV2ObjectType.RasterDataset)
             .AddStorageBinding(
                 "binding-image-test",
                 "res-image-test",
@@ -283,7 +283,7 @@ internal static class WebAppFixtureMetadataV2Mixin
         }
 
         resources = resources
-            .Append(new MetadataV2Resource
+            .Append(new MetadataV2Object
             {
                 Metadata = new MetadataV2ObjectMetadata
                 {
@@ -291,8 +291,8 @@ internal static class WebAppFixtureMetadataV2Mixin
                     Name = "Test Layer Drawing Info",
                     Description = "Default GeoServices drawingInfo for the seeded test layer",
                 },
-                Type = MetadataV2ResourceType.Style,
-                Style = new MetadataV2ResourceStyle
+                Type = MetadataV2ObjectType.Style,
+                Style = new MetadataV2Style
                 {
                     Title = "Test Layer Drawing Info",
                     Encodings =
@@ -515,7 +515,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                 .AddResource(
                     resourceId,
                     GetAdminSampleLayerName(layerIndex),
-                    MetadataV2ResourceType.FeatureDataset,
+                    MetadataV2ObjectType.FeatureDataset,
                     fields: GetAdminSampleSchemaFields(layerIndex),
                     accessPolicy: new AccessPolicy { AllowAnonymous = true },
                     spatial: GetAdminSampleSpatial(layerIndex))
@@ -557,7 +557,7 @@ internal static class WebAppFixtureMetadataV2Mixin
             .AddResource(
                 resourceId,
                 name,
-                MetadataV2ResourceType.FeatureDataset,
+                MetadataV2ObjectType.FeatureDataset,
                 fields: GetSeededLayerSchemaFields(layerIndex))
             .AddStorageBinding(
                 bindingId,
@@ -731,10 +731,10 @@ internal static class WebAppFixtureMetadataV2Mixin
             _ => $"admin-sample-{layerIndex}",
         };
 
-    private static MetadataV2ResourceSpatial GetAdminSampleSpatial(int layerIndex)
+    private static MetadataV2ObjectSpatial GetAdminSampleSpatial(int layerIndex)
         => layerIndex switch
         {
-            3000 => new MetadataV2ResourceSpatial
+            3000 => new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = MetadataV2GeometryType.Point,
@@ -748,7 +748,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                 },
                 SupportedCrs = [MetadataV2SpatialReference.Wgs84],
             },
-            3001 => new MetadataV2ResourceSpatial
+            3001 => new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.WebMercator,
                 StorageCrs = MetadataV2SpatialReference.WebMercator,
@@ -763,7 +763,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                 },
                 SupportedCrs = [MetadataV2SpatialReference.WebMercator, MetadataV2SpatialReference.Wgs84],
             },
-            3002 => new MetadataV2ResourceSpatial
+            3002 => new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = MetadataV2GeometryType.Polygon,
@@ -777,7 +777,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                 },
                 SupportedCrs = [MetadataV2SpatialReference.Wgs84],
             },
-            _ => new MetadataV2ResourceSpatial
+            _ => new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = MetadataV2GeometryType.Point,
@@ -798,10 +798,10 @@ internal static class WebAppFixtureMetadataV2Mixin
             _ => $"layer-{layerIndex}",
         };
 
-    private static MetadataV2ResourceSpatial? GetSeededLayerSpatial(int layerIndex)
+    private static MetadataV2ObjectSpatial? GetSeededLayerSpatial(int layerIndex)
         => layerIndex switch
         {
-            0 => new MetadataV2ResourceSpatial
+            0 => new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = MetadataV2GeometryType.Point,
@@ -815,14 +815,14 @@ internal static class WebAppFixtureMetadataV2Mixin
                 },
                 SupportedCrs = [MetadataV2SpatialReference.Wgs84],
             },
-            1 or 2 => new MetadataV2ResourceSpatial
+            1 or 2 => new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = MetadataV2GeometryType.Point,
                 PrimaryGeometryField = "shape",
                 SupportedCrs = [MetadataV2SpatialReference.Wgs84],
             },
-            SpatialReferenceTestLayerCatalog.PointLayerId => new MetadataV2ResourceSpatial
+            SpatialReferenceTestLayerCatalog.PointLayerId => new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.WebMercator,
                 StorageCrs = MetadataV2SpatialReference.WebMercator,
@@ -830,7 +830,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                 PrimaryGeometryField = "shape",
                 SupportedCrs = [MetadataV2SpatialReference.WebMercator, MetadataV2SpatialReference.Wgs84],
             },
-            SpatialReferenceTestLayerCatalog.LineLayerId => new MetadataV2ResourceSpatial
+            SpatialReferenceTestLayerCatalog.LineLayerId => new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.WebMercator,
                 StorageCrs = MetadataV2SpatialReference.WebMercator,
@@ -838,7 +838,7 @@ internal static class WebAppFixtureMetadataV2Mixin
                 PrimaryGeometryField = "shape",
                 SupportedCrs = [MetadataV2SpatialReference.WebMercator, MetadataV2SpatialReference.Wgs84],
             },
-            SpatialReferenceTestLayerCatalog.PolygonLayerId => new MetadataV2ResourceSpatial
+            SpatialReferenceTestLayerCatalog.PolygonLayerId => new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.WebMercator,
                 StorageCrs = MetadataV2SpatialReference.WebMercator,
@@ -849,9 +849,9 @@ internal static class WebAppFixtureMetadataV2Mixin
             _ => null,
         };
 
-    private static MetadataV2ResourceTemporal? GetSeededLayerTemporal(int layerIndex)
+    private static MetadataV2ObjectTemporal? GetSeededLayerTemporal(int layerIndex)
         => layerIndex == 0
-            ? new MetadataV2ResourceTemporal
+            ? new MetadataV2ObjectTemporal
             {
                 StartTimeField = "timestamp",
                 EndTimeField = "event_date",

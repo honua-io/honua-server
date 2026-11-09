@@ -66,7 +66,7 @@ public sealed class RedisOffDirectStylePresetHostTests : IAsyncLifetime
         _catalog.AssociateLayerAsync(StorageLayerId, StyleId, 0, Arg.Any<CancellationToken>()).Returns(true);
 
         var graph = new TestMetadataV2GraphBuilder()
-            .AddResource("res-redis-off-style", "Flood Dataset", spatial: new MetadataV2ResourceSpatial
+            .AddResource("res-redis-off-style", "Flood Dataset", spatial: new MetadataV2ObjectSpatial
             {
                 GeometryType = MetadataV2GeometryType.Polygon,
                 SpatialReference = new MetadataV2SpatialReference { Srid = 4326 },

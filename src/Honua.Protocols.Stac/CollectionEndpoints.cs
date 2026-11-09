@@ -337,7 +337,7 @@ internal static class CollectionEndpoints
     }
 
     private static QueryablesSchema BuildCollectionQueryablesSchema(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string schemaId)
     {
         var properties = ImmutableDictionary.CreateBuilder<string, JsonSchemaProperty>();

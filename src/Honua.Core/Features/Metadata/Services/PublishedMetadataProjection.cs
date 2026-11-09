@@ -100,6 +100,6 @@ public sealed record PublishedMetadataService
     public required MetadataV2Service Service { get; init; }
     public required IReadOnlyList<MetadataV2Layer> Publications { get; init; }
     public required string Access { get; init; }
-    public MetadataV2Resource? FirstResource { get; init; }
+    public MetadataV2Object? FirstResource { get; init; }
     public string? Url { get; init; }
 }

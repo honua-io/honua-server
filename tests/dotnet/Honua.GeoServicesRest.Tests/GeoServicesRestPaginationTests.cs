@@ -255,7 +255,7 @@ public sealed class GeoServicesRestPaginationTests
             connection);
     }
 
-    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Service Service, MetadataV2Resource Resource, MetadataV2Layer Publication)
+    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Service Service, MetadataV2Object Resource, MetadataV2Layer Publication)
         CreateSnapshot(Guid connectionId)
     {
         var service = new MetadataV2Service
@@ -263,10 +263,10 @@ public sealed class GeoServicesRestPaginationTests
             Metadata = new MetadataV2ObjectMetadata { Id = "svc-parcels", Name = "Parcels" },
             SpatialReference = MetadataV2SpatialReference.Wgs84
         };
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-parcels", Name = "Parcels" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             StorageBindingIds = ["binding-parcels"],
             SchemaFields =
             [
@@ -285,7 +285,7 @@ public sealed class GeoServicesRestPaginationTests
                     SemanticRoles = ["geometry.primary"]
                 }
             ],
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = MetadataV2GeometryType.Point,

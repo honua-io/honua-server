@@ -324,7 +324,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     /// </summary>
     private static async Task<IResult?> AuthorizeBatchOperationKindsAsync(
         HttpContext context,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2Service? service,
         MetadataV2Layer publication,
         BatchRequest batchRequest,
@@ -1054,7 +1054,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     internal async Task<FeatureEditResult> ExecuteEditAsync(
         HttpContext context,
         int layerId,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         OgcFeaturesEditRequest request,
         CancellationToken cancellationToken,
         IReadOnlyDictionary<string, IReadOnlyList<string>>? perOperationRequestIds = null,
@@ -1212,7 +1212,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     private async Task<IReadOnlyDictionary<string, OgcFeatureIdentifierResolver.ResolvedFeature>> ResolveBatchOperationTargetsAsync(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Layer publication,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         BatchRequest batchRequest,
         CancellationToken cancellationToken)
     {
@@ -1256,7 +1256,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
 
     private async Task<PreparedBatchValidationResult> PrepareBatchOperationAsync(
         int layerId,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         BatchOperationModel operation,
         BatchPreparationState state,
         CrsDefinition inputCrs,
@@ -1303,7 +1303,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
 
     private async Task<PreparedBatchValidationResult> PrepareCreateOperationAsync(
         int layerId,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         BatchOperationModel operation,
         CrsDefinition inputCrs,
         CancellationToken cancellationToken)
@@ -1345,7 +1345,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     }
 
     private async Task<PreparedBatchValidationResult> PrepareUpdateOperationAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         BatchOperationModel operation,
         BatchPreparationState state,
         CrsDefinition inputCrs,
@@ -1429,7 +1429,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
 
     private static bool TryValidateRequestFeaturePublicId(
         GeoJsonFeature feature,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string expectedFeatureId,
         out string? error)
     {
@@ -1456,7 +1456,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
 
     private static GeoJsonFeature EnsureFeaturePublicId(
         GeoJsonFeature feature,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string expectedFeatureId)
     {
         var publicIdField = OgcFeatureIdentifierResolver.ResolveWritablePublicIdField(resource);
@@ -1517,7 +1517,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service? service,
         MetadataV2Layer publication,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         BatchRequest batchRequest,
         CrsDefinition inputCrs,
         CancellationToken cancellationToken)
@@ -1659,7 +1659,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
     private async Task<List<BatchOperationResult>> MapBatchEditResultsAsync(
         int operationCount,
         int layerId,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         CrsDefinition inputCrs,
         ImmutableArray<PreparedBatchOperation> preparedOperations,
         FeatureEditResult editResult,
@@ -1884,7 +1884,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
 
     private static BatchOperationResult MapCreateEditResult(
         BatchOperationModel operation,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         EditOperationResult editResult,
         IReadOnlyDictionary<long, Feature> createdFeatures)
     {
@@ -2265,7 +2265,7 @@ internal sealed partial class OgcFeaturesTransactionHandler(
 
     private GeoJsonFeature ToOgcFeature(
         Feature feature,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         AxisOrder axisOrder,
         ImmutableArray<Link>? links = null)
         => OgcGeoJsonFeatureBuilder.Create(

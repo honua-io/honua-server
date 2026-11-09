@@ -99,7 +99,7 @@ internal static partial class WmsRequestHandlers
     private static readonly string[] _wms111CapabilitiesMediaTypes = [Wms111CapabilitiesMimeType, WmsCapabilitiesMimeType];
 
     private readonly record struct WmsLayer(
-        MetadataV2Resource Resource,
+        MetadataV2Object Resource,
         MetadataV2Layer Publication,
         int StorageLayerId,
         string Identifier,
@@ -335,12 +335,12 @@ internal static partial class WmsRequestHandlers
         return read.UseInjectedReader ? fallback : read.Reader;
     }
 
-    private static int ResolveServiceSrid(MetadataV2Service service, MetadataV2Resource resource)
+    private static int ResolveServiceSrid(MetadataV2Service service, MetadataV2Object resource)
         => service.SpatialReference?.ResolveSrid()
             ?? resource.ReadSrid()
             ?? 4326;
 
-    private static bool ResourceHasGeometry(MetadataV2Resource resource)
+    private static bool ResourceHasGeometry(MetadataV2Object resource)
     {
         if (resource.ReadGeometryType() != MetadataV2GeometryType.None)
         {
@@ -770,7 +770,7 @@ internal static partial class WmsRequestHandlers
         }
     }
 
-    private static TemporalPropertyType ResolveTemporalPropertyType(MetadataV2Resource resource, string fieldName)
+    private static TemporalPropertyType ResolveTemporalPropertyType(MetadataV2Object resource, string fieldName)
     {
         var field = resource.SchemaFields.FirstOrDefault(f =>
             string.Equals(f.Name, fieldName, StringComparison.OrdinalIgnoreCase));
@@ -829,7 +829,7 @@ internal static partial class WmsRequestHandlers
     internal static (SqlFragment? Filter, IResult? Error) TranslateWmsLayerFilter(
         HttpContext context,
         IFilterExpressionService filterExpressionService,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string token)
     {
         FilterExpression expression;

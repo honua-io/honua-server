@@ -13,10 +13,10 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wfs20;
 [global::Xunit.Trait("Tier", "Fast")]
 public sealed class WfsPropertyNameResolverTests
 {
-    private static readonly MetadataV2Resource _resource = new()
+    private static readonly MetadataV2Object _resource = new()
     {
         Metadata = new MetadataV2ObjectMetadata { Id = "prefixed", Name = "prefixed" },
-        Type = MetadataV2ResourceType.FeatureDataset,
+        Type = MetadataV2ObjectType.FeatureDataset,
         SchemaFields =
         [
             new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer },

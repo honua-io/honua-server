@@ -48,7 +48,7 @@ internal static class GeoServicesTemporalQueryBuilder
     internal static FilterExpression? BuildTemporalExpression(
         string? time,
         string? timeRelation,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(resource);
         if (string.IsNullOrWhiteSpace(time))
@@ -62,7 +62,7 @@ internal static class GeoServicesTemporalQueryBuilder
     private static FilterExpression? BuildTemporalExpressionCoreV2(
         string time,
         string? timeRelation,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         if (!TryParseTimeParameter(time, out var startTime, out var endTime))
         {
@@ -114,7 +114,7 @@ internal static class GeoServicesTemporalQueryBuilder
         return BuildTemporalRelationExpression(relation, startExpression, endExpression, queryStart, queryEnd);
     }
 
-    private static MetadataV2Field? FindV2Field(MetadataV2Resource resource, string fieldName)
+    private static MetadataV2Field? FindV2Field(MetadataV2Object resource, string fieldName)
     {
         return resource.SchemaFields.FirstOrDefault(field =>
             string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase));

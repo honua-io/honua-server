@@ -111,7 +111,7 @@ internal static partial class FeatureServerEndpoints
     private static async Task<IResult> GetServiceMetadataAsync(
         HttpContext context,
         MetadataV2Service service,
-        IReadOnlyList<(MetadataV2Layer Publication, MetadataV2Resource Resource)> publications,
+        IReadOnlyList<(MetadataV2Layer Publication, MetadataV2Object Resource)> publications,
         MetadataV2GraphSnapshot snapshot,
         QueryLimits limits,
         ILogger logger,
@@ -276,7 +276,7 @@ internal static partial class FeatureServerEndpoints
         string serviceId,
         MetadataV2Service service,
         MetadataV2Layer publication,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2GraphSnapshot snapshot,
         QueryLimits limits,
         ILogger logger,
@@ -364,7 +364,7 @@ internal static partial class FeatureServerEndpoints
     }
 
     private static IReadOnlyList<string> ValidateExtrusionInfoV2(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         out FeatureServerExtrusionInfo? extrusionInfo)
     {
         extrusionInfo = null;
@@ -394,7 +394,7 @@ internal static partial class FeatureServerEndpoints
     }
 
     private static JsonElement? ResolveDrawingInfoV2(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2GraphSnapshot snapshot)
     {
         if (TryResolveDrawingInfoExtension(resource, out var extensionDrawingInfo))
@@ -405,7 +405,7 @@ internal static partial class FeatureServerEndpoints
         foreach (var styleResourceId in resource.StyleResourceIds ?? Array.Empty<string>())
         {
             if (!snapshot.Index.ResourcesById.TryGetValue(styleResourceId, out var styleResource)
-                || styleResource.Type != MetadataV2ResourceType.Style
+                || styleResource.Type != MetadataV2ObjectType.Style
                 || styleResource.Style is null)
             {
                 continue;
@@ -434,7 +434,7 @@ internal static partial class FeatureServerEndpoints
         return BuildDefaultDrawingInfoV2(resource);
     }
 
-    private static JsonElement? BuildDefaultDrawingInfoV2(MetadataV2Resource resource)
+    private static JsonElement? BuildDefaultDrawingInfoV2(MetadataV2Object resource)
     {
         var geometryType = resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None;
         var symbol = BuildSimpleSymbol(geometryType);
@@ -462,7 +462,7 @@ internal static partial class FeatureServerEndpoints
     }
 
     private static bool TryResolveDrawingInfoExtension(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         out JsonElement drawingInfo)
     {
         if (resource.Extensions is not null
@@ -478,7 +478,7 @@ internal static partial class FeatureServerEndpoints
         return false;
     }
 
-    private static JsonElement? ResolvePopupInfoV2(MetadataV2Resource resource)
+    private static JsonElement? ResolvePopupInfoV2(MetadataV2Object resource)
     {
         if (resource.Extensions is not null
             && (resource.Extensions.TryGetValue("geoservices:popupInfo", out var popupInfo)

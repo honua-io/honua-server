@@ -48,7 +48,7 @@ public class ImageServerCatalogQueryHandlerTests
         // set and attribute output is byte-for-byte the pre-#2159 behavior.
         var fieldMaskSource = Substitute.For<IFieldMaskSource>();
         fieldMaskSource
-            .ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+            .ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(ImmutableArray<string>.Empty);
 
         return new ImageServerCatalogQueryHandler(
@@ -244,7 +244,7 @@ public class ImageServerCatalogQueryHandlerTests
                 AggregateExtent = null
             });
         var masks = Substitute.For<IFieldMaskSource>();
-        masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+        masks.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(ImmutableArray.Create("nAmE", "acquisitionDATE"));
         var handler = new ImageServerCatalogQueryHandler(_graphProvider, reader, masks,
             NullLogger<ImageServerCatalogQueryHandler>.Instance);
@@ -271,7 +271,7 @@ public class ImageServerCatalogQueryHandlerTests
 
         var fieldMaskSource = Substitute.For<IFieldMaskSource>();
         fieldMaskSource
-            .ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+            .ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(maskedFields.ToImmutableArray());
 
         return new ImageServerCatalogQueryHandler(
@@ -1172,7 +1172,7 @@ public class ImageServerCatalogQueryHandlerTests
 
     private static TestMetadataV2GraphProvider BuildGraphWithLayer(int layerIndex)
         => new TestMetadataV2GraphBuilder()
-            .AddResource($"resource-{layerIndex}", "test-layer", MetadataV2ResourceType.RasterDataset)
+            .AddResource($"resource-{layerIndex}", "test-layer", MetadataV2ObjectType.RasterDataset)
             .AddService($"service-{layerIndex}", $"image-svc-{layerIndex}", protocols: [ServiceProtocols.ImageServer])
             .AddPublication(
                 $"publication-{layerIndex}",

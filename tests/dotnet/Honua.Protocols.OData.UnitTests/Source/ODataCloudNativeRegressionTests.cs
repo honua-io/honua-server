@@ -153,10 +153,10 @@ public sealed class ODataCloudNativeRegressionTests
             Arg.Any<CancellationToken>());
     }
 
-    private static MetadataV2Resource Resource() => new()
+    private static MetadataV2Object Resource() => new()
     {
         Metadata = new MetadataV2ObjectMetadata { Id = "res", Name = "test" },
-        Type = MetadataV2ResourceType.FeatureDataset
+        Type = MetadataV2ObjectType.FeatureDataset
     };
 
     private static async IAsyncEnumerable<Feature> Features(int count)

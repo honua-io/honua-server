@@ -169,7 +169,7 @@ public sealed class ImageServerNumericLayerAuthorizationTests
 
     private static TestMetadataV2GraphProvider BuildCollidingGraph(AccessPolicy featurePolicy, AccessPolicy rasterPolicy)
         => new TestMetadataV2GraphBuilder()
-            .AddResource("res-features", "features", MetadataV2ResourceType.FeatureDataset, accessPolicy: featurePolicy)
+            .AddResource("res-features", "features", MetadataV2ObjectType.FeatureDataset, accessPolicy: featurePolicy)
             .AddStorageBinding("binding-features", "res-features", "features", storageLayerId: StorageLayerId)
             .AddService(
                 "svc-features",
@@ -183,7 +183,7 @@ public sealed class ImageServerNumericLayerAuthorizationTests
                 layerIndex: StorageLayerId,
                 publicationType: MetadataV2LayerType.EsriFeatureLayer,
                 isPrimary: true)
-            .AddResource("res-raster", "imagery", MetadataV2ResourceType.RasterDataset, accessPolicy: rasterPolicy)
+            .AddResource("res-raster", "imagery", MetadataV2ObjectType.RasterDataset, accessPolicy: rasterPolicy)
             .AddStorageBinding("binding-raster", "res-raster", "rasters", storageLayerId: StorageLayerId)
             .AddService("svc-imagery", "zzz-imagery", protocols: [ServiceProtocols.ImageServer])
             .AddPublication(

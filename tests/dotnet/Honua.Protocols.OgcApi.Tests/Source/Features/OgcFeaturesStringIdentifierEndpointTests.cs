@@ -575,7 +575,7 @@ public sealed class OgcFeaturesStringIdentifierEndpointTests
 
     private sealed class StringIdSqlFilterTranslator : ISqlFilterTranslator
     {
-        public SqlFragment Translate(FilterExpression filter, MetadataV2Resource resource)
+        public SqlFragment Translate(FilterExpression filter, MetadataV2Object resource)
             => TranslateCore(filter);
 
         private static SqlFragment TranslateCore(FilterExpression filter)
@@ -707,13 +707,13 @@ public sealed class OgcFeaturesStringIdentifierEndpointTests
             .AddResource(
                 "res-string-id-layer",
                 "String ID Layer",
-                MetadataV2ResourceType.FeatureDataset,
+                MetadataV2ObjectType.FeatureDataset,
                 fields: fields,
                 accessPolicy: openAccessPolicy)
             .AddResource(
                 "res-numeric-name-layer",
                 "123",
-                MetadataV2ResourceType.FeatureDataset,
+                MetadataV2ObjectType.FeatureDataset,
                 fields: fields,
                 accessPolicy: openAccessPolicy)
             .AddPublication(

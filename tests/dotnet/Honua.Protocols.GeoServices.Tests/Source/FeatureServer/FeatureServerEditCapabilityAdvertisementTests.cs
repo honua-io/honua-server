@@ -162,7 +162,7 @@ public sealed class FeatureServerEditCapabilityAdvertisementTests
         var bindingId = $"binding-{key}";
 
         builder
-            .AddResource(resourceId, $"{key} Layer", MetadataV2ResourceType.FeatureDataset,
+            .AddResource(resourceId, $"{key} Layer", MetadataV2ObjectType.FeatureDataset,
                 fields:
                 [
                     new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, Nullable = false },
@@ -170,7 +170,7 @@ public sealed class FeatureServerEditCapabilityAdvertisementTests
                     new MetadataV2Field { Name = "shape", Type = MetadataV2FieldType.Geometry, Nullable = false }
                 ],
                 accessPolicy: accessPolicy,
-                spatial: new MetadataV2ResourceSpatial
+                spatial: new MetadataV2ObjectSpatial
                 {
                     GeometryType = MetadataV2GeometryType.Point,
                     SpatialReference = new MetadataV2SpatialReference

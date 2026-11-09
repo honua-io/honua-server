@@ -230,7 +230,7 @@ public sealed class FeatureServerStatisticsResponseTests
     [UnitTest]
     public void Statistics_CountBeyondInt32_UsesBigIntegerWithoutTruncation()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             SchemaFields = [new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer }]
         };
@@ -281,7 +281,7 @@ public sealed class FeatureServerStatisticsFieldsFixture : IAsyncLifetime
 
     private sealed class StatisticsFieldMaskSource : IFieldMaskSource
     {
-        public Task<ImmutableArray<string>> ResolveAsync(MetadataV2Resource resource, CancellationToken cancellationToken = default)
+        public Task<ImmutableArray<string>> ResolveAsync(MetadataV2Object resource, CancellationToken cancellationToken = default)
             => Task.FromResult(ImmutableArray.Create("notes"));
     }
 }

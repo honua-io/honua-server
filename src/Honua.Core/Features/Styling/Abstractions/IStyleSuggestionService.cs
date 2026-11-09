@@ -9,7 +9,7 @@ namespace Honua.Core.Features.Styling.Abstractions;
 public interface IStyleSuggestionService
 {
     Task<StyleSuggestion> SuggestAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int storageLayerId,
         StyleSuggestionOptions? options = null,
         CancellationToken cancellationToken = default);

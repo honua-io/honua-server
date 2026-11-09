@@ -21,11 +21,11 @@ namespace Honua.Core.Tests.Features.Query;
 public sealed class QueryProcessorTests
 {
     private readonly QueryProcessor _processor;
-    private readonly MetadataV2Resource _resource = new()
+    private readonly MetadataV2Object _resource = new()
     {
         Metadata = new MetadataV2ObjectMetadata { Id = "res.test", Name = "test" },
-        Type = MetadataV2ResourceType.FeatureDataset,
-        Spatial = new MetadataV2ResourceSpatial
+        Type = MetadataV2ObjectType.FeatureDataset,
+        Spatial = new MetadataV2ObjectSpatial
         {
             GeometryType = MetadataV2GeometryType.Point,
             SpatialReference = MetadataV2SpatialReference.Wgs84

@@ -31,7 +31,7 @@ public sealed class BranchVersioningPublicationMetadataTests(BranchVersioningPub
     private MetadataV2Layer ManagedPublication => Baseline.Publications.Single(publication =>
         publication.ServiceId == fixture.Service.Metadata.Id && publication.LayerIndex == 0
         && ServiceProtocols.IsPreferredPublicationType(ServiceProtocols.FeatureServer, publication.PublicationType));
-    private MetadataV2Resource ManagedResource => Baseline.Resources.Single(resource => resource.Metadata.Id == ManagedPublication.ResourceId);
+    private MetadataV2Object ManagedResource => Baseline.Resources.Single(resource => resource.Metadata.Id == ManagedPublication.ResourceId);
     private MetadataV2StorageBinding ManagedBinding => new MetadataV2GraphSnapshot(Baseline, "test", DateTimeOffset.UtcNow)
         .ResolveStorageBinding(ManagedPublication)!;
 

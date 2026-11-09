@@ -141,7 +141,7 @@ public sealed class PortalCanonicalGroupSharingTestsPostgresDurability(DatabaseF
             AccessPolicy = new AccessPolicy { AllowedRoles = ["private-service-reader"] },
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
         };
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource-6366", Name = "layer", Tenant = "tenant-a" },
             AccessPolicy = new AccessPolicy { AllowedWriteRoles = ["editor"] },

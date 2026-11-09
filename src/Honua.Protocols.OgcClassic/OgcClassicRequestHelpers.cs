@@ -113,7 +113,7 @@ internal static class OgcClassicRequestHelpers
         return false;
     }
 
-    internal static string GetWmsLayerName(MetadataV2Resource resource, MetadataV2Layer? publication = null)
+    internal static string GetWmsLayerName(MetadataV2Object resource, MetadataV2Layer? publication = null)
     {
         ArgumentNullException.ThrowIfNull(resource);
         var name = resource.Metadata.Name;

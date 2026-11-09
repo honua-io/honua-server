@@ -231,10 +231,10 @@ public sealed class RedshiftFeatureDataAccessIntegrationTests : IAsyncLifetime
             Metadata = new MetadataV2ObjectMetadata { Id = "svc-parcels", Name = "Parcels" },
             SpatialReference = MetadataV2SpatialReference.Wgs84
         };
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-parcels", Name = "Parcels" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             StorageBindingIds = ["binding-parcels"],
             SchemaFields =
             [
@@ -255,7 +255,7 @@ public sealed class RedshiftFeatureDataAccessIntegrationTests : IAsyncLifetime
                 new MetadataV2Field { Name = "type", Type = MetadataV2FieldType.String },
                 new MetadataV2Field { Name = "area", Type = MetadataV2FieldType.Double }
             ],
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = MetadataV2GeometryType.Point,

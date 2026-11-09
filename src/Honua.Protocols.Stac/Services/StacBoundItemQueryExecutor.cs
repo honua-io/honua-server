@@ -17,7 +17,7 @@ internal static class StacBoundItemQueryExecutor
     public static async Task<ImmutableArray<Feature>> QueryAsync(
         IFeatureReader reader,
         int layerId,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         FeatureQuery baseQuery,
         ImmutableArray<string> itemIds,
         FilterExpression? candidateFilter,
@@ -102,7 +102,7 @@ internal static class StacBoundItemQueryExecutor
 
     internal static Dictionary<string, JsonElement> BuildPropertyBag(
         Feature feature,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         var properties = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
         foreach (var attribute in feature.Attributes)

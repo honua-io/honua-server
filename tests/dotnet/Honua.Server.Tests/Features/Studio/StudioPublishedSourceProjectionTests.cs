@@ -57,7 +57,7 @@ public sealed class StudioPublishedSourceProjectionTests : IAsyncLifetime
         {
             builder.AddResource($"resource-{id}", $"Parcels-{id}",
                 accessPolicy: new AccessPolicy { AllowAnonymous = id != 8, AllowedRoles = ["admin"] },
-                spatial: new MetadataV2ResourceSpatial { GeometryType = MetadataV2GeometryType.GeometryCollection })
+                spatial: new MetadataV2ObjectSpatial { GeometryType = MetadataV2GeometryType.GeometryCollection })
                 .AddPublication($"publication-{id}", ServiceId, $"resource-{id}", layerIndex: id);
         }
         var graph = builder.Build();

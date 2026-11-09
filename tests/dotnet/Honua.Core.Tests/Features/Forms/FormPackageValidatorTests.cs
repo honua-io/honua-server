@@ -606,7 +606,7 @@ public sealed partial class FormPackageValidatorTests
     private static FormPackageValidator CreateValidator(
         string[]? serviceCapabilities = null,
         MetadataV2SpatialReference? spatialReference = null,
-        MetadataV2Resource? targetResource = null)
+        MetadataV2Object? targetResource = null)
     {
         var service = new MetadataV2Service
         {
@@ -638,7 +638,7 @@ public sealed partial class FormPackageValidatorTests
             }));
     }
 
-    private static MetadataV2Resource CreateResource(MetadataV2SpatialReference spatialReference)
+    private static MetadataV2Object CreateResource(MetadataV2SpatialReference spatialReference)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata
@@ -647,14 +647,14 @@ public sealed partial class FormPackageValidatorTests
                 Name = "Inspections",
                 Title = "Field inspections"
             },
-            Type = MetadataV2ResourceType.FeatureDataset,
-            Spatial = new MetadataV2ResourceSpatial
+            Type = MetadataV2ObjectType.FeatureDataset,
+            Spatial = new MetadataV2ObjectSpatial
             {
                 GeometryType = MetadataV2GeometryType.Point,
                 SpatialReference = spatialReference,
                 PrimaryGeometryField = "shape"
             },
-            Editing = new MetadataV2ResourceEditing
+            Editing = new MetadataV2ObjectEditing
             {
                 SupportsAttachments = true
             },

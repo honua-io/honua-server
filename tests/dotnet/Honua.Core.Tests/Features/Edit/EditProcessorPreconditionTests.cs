@@ -21,7 +21,7 @@ namespace Honua.Core.Tests.Features.Edit;
 /// </summary>
 public sealed class EditProcessorPreconditionTests
 {
-    private static readonly MetadataV2Resource Resource = new();
+    private static readonly MetadataV2Object Resource = new();
 
     private static EditProcessor CreateProcessor() => new(NullLogger<EditProcessor>.Instance);
 
@@ -30,9 +30,9 @@ public sealed class EditProcessorPreconditionTests
     [InlineData(true)]
     public void ToFeatureEditBatch_ReplacementWithProtectedFields_PreservesProtectedAndRemovesOmittedEditableFields(bool ordered)
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
-            Editing = new MetadataV2ResourceEditing { GlobalIdField = "globalid" },
+            Editing = new MetadataV2ObjectEditing { GlobalIdField = "globalid" },
             SchemaFields =
             [
                 new() { Name = "name", Editable = true },
@@ -196,9 +196,9 @@ public sealed class EditProcessorPreconditionTests
         // over-broad BH-014 gate from #2423 that regressed attribute-only creates.)
         var processor = CreateProcessor();
 
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
-            Spatial = new Honua.Core.Features.Metadata.Domain.V2.MetadataV2ResourceSpatial
+            Spatial = new Honua.Core.Features.Metadata.Domain.V2.MetadataV2ObjectSpatial
             {
                 GeometryType = Honua.Core.Features.Metadata.Domain.V2.MetadataV2GeometryType.Point
             }
@@ -221,9 +221,9 @@ public sealed class EditProcessorPreconditionTests
         // BH-014 complement: a create with geometry on a spatial layer must still pass.
         var processor = CreateProcessor();
 
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
-            Spatial = new Honua.Core.Features.Metadata.Domain.V2.MetadataV2ResourceSpatial
+            Spatial = new Honua.Core.Features.Metadata.Domain.V2.MetadataV2ObjectSpatial
             {
                 GeometryType = Honua.Core.Features.Metadata.Domain.V2.MetadataV2GeometryType.Point
             }

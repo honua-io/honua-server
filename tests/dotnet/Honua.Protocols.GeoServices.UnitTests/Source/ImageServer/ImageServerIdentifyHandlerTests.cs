@@ -1138,7 +1138,7 @@ public class ImageServerIdentifyHandlerTests
         var services = new ServiceCollection();
         services.AddSingleton<Microsoft.Extensions.Logging.ILoggerFactory>(NullLoggerFactory.Instance);
         var masks = Substitute.For<IFieldMaskSource>();
-        masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+        masks.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(ImmutableArray<string>.Empty);
         services.AddSingleton(masks);
 
@@ -1174,7 +1174,7 @@ public class ImageServerIdentifyHandlerTests
 
     private static TestMetadataV2GraphProvider BuildGraphWithLayer(int layerIndex)
         => new TestMetadataV2GraphBuilder()
-            .AddResource($"resource-{layerIndex}", "test-layer", MetadataV2ResourceType.RasterDataset)
+            .AddResource($"resource-{layerIndex}", "test-layer", MetadataV2ObjectType.RasterDataset)
             .AddService($"service-{layerIndex}", $"image-svc-{layerIndex}", protocols: [ServiceProtocols.ImageServer])
             .AddPublication(
                 $"publication-{layerIndex}",

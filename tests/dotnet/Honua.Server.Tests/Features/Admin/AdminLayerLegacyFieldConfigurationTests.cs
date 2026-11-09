@@ -159,10 +159,10 @@ public sealed class AdminLayerLegacyFieldConfigurationTests
             DateTimeOffset.UnixEpoch);
     }
 
-    private static MetadataV2Resource Feature(string id) => new()
+    private static MetadataV2Object Feature(string id) => new()
     {
         Metadata = new MetadataV2ObjectMetadata { Id = id, Name = id },
-        Type = MetadataV2ResourceType.FeatureDataset,
+        Type = MetadataV2ObjectType.FeatureDataset,
         Status = Active,
         SchemaFields =
         [

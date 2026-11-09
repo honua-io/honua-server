@@ -143,13 +143,13 @@ public sealed class MetadataV2LifecycleRoutingTests
             Status = new MetadataV2Status { Lifecycle = serviceLifecycle },
             Protocols = ["WCS"]
         };
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource-7", Name = "layer-7" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             StorageBindingIds = ["binding-7"],
             PrimaryStorageBindingId = "binding-7",
-            Spatial = new MetadataV2ResourceSpatial { GeometryType = MetadataV2GeometryType.Point },
+            Spatial = new MetadataV2ObjectSpatial { GeometryType = MetadataV2GeometryType.Point },
             Status = new MetadataV2Status { Lifecycle = resourceLifecycle }
         };
         var binding = new MetadataV2StorageBinding

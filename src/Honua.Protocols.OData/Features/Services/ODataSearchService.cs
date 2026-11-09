@@ -305,7 +305,7 @@ internal sealed partial class ODataSearchService
             cancellationToken);
     }
 
-    private static void ValidateAggregationFields(ParsedAggregation aggregation, MetadataV2Resource resource)
+    private static void ValidateAggregationFields(ParsedAggregation aggregation, MetadataV2Object resource)
     {
         if (aggregation.Type is AggregationType.Aggregate or AggregationType.GroupBy)
         {
@@ -336,7 +336,7 @@ internal sealed partial class ODataSearchService
         }
     }
 
-    private static bool FieldExists(MetadataV2Resource resource, string field)
+    private static bool FieldExists(MetadataV2Object resource, string field)
     {
         if (field.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase) ||
             field.Equals("layerid", StringComparison.OrdinalIgnoreCase) ||
@@ -410,7 +410,7 @@ internal sealed partial class ODataSearchService
 
     private static SqlFragment BuildTextSearchCondition(
         List<List<(string term, bool isNegated, bool isPhrase)>> terms,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         if (terms.Count == 0)
         {
@@ -648,18 +648,18 @@ internal sealed partial class ODataSearchService
     private sealed record ResolvedODataLayer(
         IFeatureReader Reader,
         MetadataV2Layer Publication,
-        MetadataV2Resource Resource,
+        MetadataV2Object Resource,
         int PublicLayerId,
         int StorageLayerId);
 
     private sealed record ResolvedRelatedResource(
-        MetadataV2Resource Resource,
+        MetadataV2Object Resource,
         int PublicLayerId,
         int StorageLayerId);
 
     public async Task<Dictionary<long, Dictionary<string, object?[]>>> ProcessExpandAsync(
         string expand,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int sourceStorageLayerId,
         long[] objectIds,
         CancellationToken cancellationToken)
@@ -674,7 +674,7 @@ internal sealed partial class ODataSearchService
 
     public async Task<Dictionary<long, Dictionary<string, object?[]>>> ProcessExpandAsync(
         string expand,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int sourceStorageLayerId,
         long[] objectIds,
         HttpContext? context,

@@ -41,7 +41,7 @@ internal static partial class MapServerEndpoints
         int PublicLayerId,
         int StorageLayerId,
         string Name,
-        MetadataV2Resource Resource,
+        MetadataV2Object Resource,
         string? DefinitionExpression);
 
     private static async Task<IResult> HandleGenerateKml(HttpContext context)
@@ -518,14 +518,14 @@ internal static partial class MapServerEndpoints
         return (renderLayers.ToArray(), null);
     }
 
-    private static bool HasGenerateKmlGeometry(MetadataV2Resource resource)
+    private static bool HasGenerateKmlGeometry(MetadataV2Object resource)
     {
         var geometryType = resource.ReadGeometryType();
         return geometryType != MetadataV2GeometryType.None ||
                resource.FindPrimaryGeometryField() is not null;
     }
 
-    private static string ResolveDisplayField(MetadataV2Resource resource, string objectIdField)
+    private static string ResolveDisplayField(MetadataV2Object resource, string objectIdField)
     {
         // A publisher-hidden field is never the display field: identify/find "value" and
         // the KML placemark name would otherwise carry its value (#6098).
@@ -654,7 +654,7 @@ internal static partial class MapServerEndpoints
 
     private static bool TryBuildLayerSqlFilter(
         IFilterExpressionService filterExpressionService,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string? where,
         string? time,
         string? timeRelation,
@@ -730,7 +730,7 @@ internal static partial class MapServerEndpoints
     }
 
     private static bool TryResolveTemporalFieldSelection(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         out bool applyTemporalFilter,
         out string? error)
     {
@@ -760,7 +760,7 @@ internal static partial class MapServerEndpoints
         return true;
     }
 
-    private static MetadataV2Field? FindTemporalField(MetadataV2Resource resource, string fieldName)
+    private static MetadataV2Field? FindTemporalField(MetadataV2Object resource, string fieldName)
     {
         return resource.SchemaFields.FirstOrDefault(field =>
             field.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase) &&

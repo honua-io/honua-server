@@ -92,12 +92,12 @@ public sealed class FeatureQueryBuilderFlatGeobufTests
             .WithMessage("*cannot be represented as a PostgreSQL binary projection alias*");
     }
 
-    private static MetadataV2Resource CreateResource(params MetadataV2Field[] additionalFields)
+    private static MetadataV2Object CreateResource(params MetadataV2Field[] additionalFields)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-test-layer", Name = "Test Layer" },
-            Type = MetadataV2ResourceType.FeatureDataset,
-            Spatial = new MetadataV2ResourceSpatial
+            Type = MetadataV2ObjectType.FeatureDataset,
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = MetadataV2GeometryType.Point,

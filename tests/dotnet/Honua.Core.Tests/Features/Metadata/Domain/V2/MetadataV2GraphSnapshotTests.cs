@@ -188,7 +188,7 @@ public sealed class MetadataV2GraphSnapshotTests
         var retired = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Retired };
         var archived = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Archived };
         var publication = new MetadataV2Layer { Status = active };
-        var resource = new MetadataV2Resource { Status = active };
+        var resource = new MetadataV2Object { Status = active };
 
         publication.IsRoutable(resource).Should().BeTrue();
         (publication with { Status = deprecated }).IsRoutable(resource).Should().BeTrue();
@@ -253,7 +253,7 @@ public sealed class MetadataV2GraphSnapshotTests
                 [
                     resource with
                     {
-                        Type = MetadataV2ResourceType.Document,
+                        Type = MetadataV2ObjectType.Document,
                         StorageBindingIds = [],
                         PrimaryStorageBindingId = null,
                     }
@@ -325,7 +325,7 @@ public sealed class MetadataV2GraphSnapshotTests
         var retired = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Retired };
         var archived = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Archived };
         var binding = new MetadataV2StorageBinding { Status = active };
-        var resource = new MetadataV2Resource { Status = active };
+        var resource = new MetadataV2Object { Status = active };
 
         var snapshot = new MetadataV2GraphSnapshot(new MetadataV2Graph(), "test", DateTimeOffset.UnixEpoch);
 
@@ -445,7 +445,7 @@ public sealed class MetadataV2GraphSnapshotTests
             ],
             Resources =
             [
-                new MetadataV2Resource
+                new MetadataV2Object
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "res", Name = "parcels" },
                     StorageBindingIds = ["binding"],
@@ -495,10 +495,10 @@ public sealed class MetadataV2GraphSnapshotTests
             ],
             Resources =
             [
-                new MetadataV2Resource
+                new MetadataV2Object
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "resource.parcels", Name = "parcels" },
-                    Type = MetadataV2ResourceType.FeatureDataset,
+                    Type = MetadataV2ObjectType.FeatureDataset,
                     Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
                     StorageBindingIds = ["storage.parcels.postgis"],
 
@@ -716,10 +716,10 @@ public sealed class MetadataV2GraphSnapshotTests
             Resources =
             [
                 .. graph.Resources,
-                new MetadataV2Resource
+                new MetadataV2Object
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "resource.unbound", Name = "unbound" },
-                    Type = MetadataV2ResourceType.FeatureDataset,
+                    Type = MetadataV2ObjectType.FeatureDataset,
                     Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
                     StorageBindingIds = [],
                     SchemaFields = [],
@@ -768,10 +768,10 @@ public sealed class MetadataV2GraphSnapshotTests
             [
                 FeatureResource("resource.parcels", "parcels", "storage.parcels"),
                 FeatureResource("resource.permits", "permits", "storage.permits"),
-                new MetadataV2Resource
+                new MetadataV2Object
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "resource.documents", Name = "documents" },
-                    Type = MetadataV2ResourceType.Document,
+                    Type = MetadataV2ObjectType.Document,
                     Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
                     StorageBindingIds = [],
                     SchemaFields = [],
@@ -801,11 +801,11 @@ public sealed class MetadataV2GraphSnapshotTests
         };
     }
 
-    private static MetadataV2Resource FeatureResource(string id, string name, string storageBindingId)
+    private static MetadataV2Object FeatureResource(string id, string name, string storageBindingId)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = id, Name = name },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
             StorageBindingIds = [storageBindingId],
             PrimaryStorageBindingId = storageBindingId,

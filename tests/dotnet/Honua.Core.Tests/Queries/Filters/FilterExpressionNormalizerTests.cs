@@ -88,11 +88,11 @@ public sealed class FilterExpressionNormalizerTests
             .Should().BeTrue();
     }
 
-    private static MetadataV2Resource ResourceWithField(string name, MetadataV2FieldType type)
+    private static MetadataV2Object ResourceWithField(string name, MetadataV2FieldType type)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "audit", Name = "Audit" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             SchemaFields = [new MetadataV2Field { Name = name, Type = type }],
         };
 
@@ -147,10 +147,10 @@ public sealed class FilterExpressionNormalizerTests
     [UnitTest]
     public void Normalize_DateTimeTextWithoutOffset_AssumesUtc()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-temporal", Name = "Temporal Layer" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             SchemaFields =
             [
                 new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },
@@ -180,10 +180,10 @@ public sealed class FilterExpressionNormalizerTests
         // The OData parser marks geo.intersects predicates Geodesic; normalization
         // rebuilds the node and must not reset the protocol marker, otherwise the
         // SQL translator would silently fall back to planar semantics.
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-spatial", Name = "Spatial Layer" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             SchemaFields =
             [
                 new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },
@@ -208,10 +208,10 @@ public sealed class FilterExpressionNormalizerTests
     [UnitTest]
     public void Normalize_DeeplyNestedExpression_ThrowsArgumentException()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-nested", Name = "Nested Layer" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             SchemaFields =
             [
                 new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },

@@ -77,7 +77,7 @@ public sealed class SnowflakeFeatureStoreIntegrationTests
         return ((IBindableFeatureDataProvider)provider).CreateReaderForBinding(binding);
     }
 
-    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Service Service, MetadataV2Resource Resource, MetadataV2Layer Publication)
+    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Service Service, MetadataV2Object Resource, MetadataV2Layer Publication)
         CreateSnapshot()
     {
         var connectionId = Guid.NewGuid();
@@ -86,17 +86,17 @@ public sealed class SnowflakeFeatureStoreIntegrationTests
             Metadata = new MetadataV2ObjectMetadata { Id = "svc-parcels", Name = "Parcels" },
             SpatialReference = MetadataV2SpatialReference.Wgs84
         };
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-parcels", Name = "Parcels" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             StorageBindingIds = ["binding-parcels"],
             SchemaFields =
             [
                 new MetadataV2Field { Name = "OBJECTID", Type = MetadataV2FieldType.BigInteger, Nullable = false, SemanticRoles = ["id.primary"] },
                 new MetadataV2Field { Name = "SHAPE", Type = MetadataV2FieldType.Geography, Nullable = false, SemanticRoles = ["geometry.primary"] }
             ],
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = MetadataV2GeometryType.Polygon,

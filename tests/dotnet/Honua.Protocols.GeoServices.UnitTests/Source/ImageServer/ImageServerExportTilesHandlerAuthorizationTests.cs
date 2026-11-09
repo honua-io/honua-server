@@ -32,7 +32,7 @@ public sealed class ImageServerExportTilesHandlerAuthorizationTests
             .AddResource(
                 "replacement-resource",
                 "replacement",
-                MetadataV2ResourceType.RasterDataset,
+                MetadataV2ObjectType.RasterDataset,
                 accessPolicy: new AccessPolicy { AllowedRoles = ["imagery-admin"] })
             .AddStorageBinding(
                 "replacement-binding",

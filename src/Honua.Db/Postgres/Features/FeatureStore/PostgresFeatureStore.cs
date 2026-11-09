@@ -1155,7 +1155,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
     private Task<SqlFragment?> ResolveEnforcedSqlFilterAsync(int layerId, CancellationToken cancellationToken)
         => _readSecurity.ResolveEnforcedSqlFilterAsync(layerId, cancellationToken);
 
-    private async Task<MetadataV2Resource> GetMetadataResourceAsync(int layerId, CancellationToken cancellationToken)
+    private async Task<MetadataV2Object> GetMetadataResourceAsync(int layerId, CancellationToken cancellationToken)
     {
         if (_v2Provider == null)
         {

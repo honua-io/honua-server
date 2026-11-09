@@ -69,7 +69,7 @@ internal sealed partial class FeatureServerQueryHandler(
     private sealed record QueryLayerContext(
         MetadataV2Service Service,
         MetadataV2Layer Publication,
-        MetadataV2Resource Resource,
+        MetadataV2Object Resource,
         int PublicLayerId,
         int StorageLayerId);
 
@@ -1377,7 +1377,7 @@ internal sealed partial class FeatureServerQueryHandler(
     }
 
     private static bool CanUseRawGeoServicesPointFastPath(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         QueryParameters parameters,
         FeatureQuery query,
         int? outputSrid,
@@ -1443,7 +1443,7 @@ internal sealed partial class FeatureServerQueryHandler(
 
     private async Task<(FeatureQuery? Query, int? OutputSrid, IResult? Error)> PrepareFeatureQueryAsync(
         HttpContext context,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         QueryParameters validatedParams,
         QueryLimits queryLimits,
         string format,
@@ -1886,13 +1886,13 @@ internal sealed partial class FeatureServerQueryHandler(
         return new DatumAreaEnvelope(west, south, east, north);
     }
 
-    private static bool ShouldUseInternalObjectIdsFastPath(MetadataV2Resource resource)
+    private static bool ShouldUseInternalObjectIdsFastPath(MetadataV2Object resource)
         => GeoServicesObjectIdFieldResolver.ResolveObjectIdField(resource)?.Name.Equals(
             FieldNames.ObjectId,
             StringComparison.OrdinalIgnoreCase) != false;
 
     private static bool TryCreateObjectIdsExpression(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         IReadOnlyCollection<long> objectIds,
         out FilterExpression expression)
     {
@@ -2239,7 +2239,7 @@ internal sealed partial class FeatureServerQueryHandler(
     internal static async ValueTask<FeatureExtent?> ResolveExtentFallbackAsync(
         HttpContext context,
         QueryParameters queryParams,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int? outputSrid,
         CancellationToken cancellationToken = default)
     {
@@ -2685,7 +2685,7 @@ internal sealed partial class FeatureServerQueryHandler(
     }
 
     private static SpatialReference ResolveAreaLimitSpatialReference(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         GeoServicesGeometry geometry,
         int srid)
     {
@@ -2845,7 +2845,7 @@ internal sealed partial class FeatureServerQueryHandler(
 
     private static async Task<string?> ValidateStatisticsFieldAccessAsync(
         HttpContext context,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         ImmutableArray<StatisticDefinition> statistics,
         ImmutableArray<string>? groupByFields,
         CancellationToken cancellationToken)
@@ -2867,7 +2867,7 @@ internal sealed partial class FeatureServerQueryHandler(
     }
 
     internal static QueryResponse BuildStatisticsResponse(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         ImmutableArray<StatisticDefinition> statistics,
         ImmutableArray<string>? groupByFields,
         ImmutableArray<IReadOnlyDictionary<string, object?>> rows,
@@ -2960,7 +2960,7 @@ internal sealed partial class FeatureServerQueryHandler(
 
     internal static bool TryParseStatisticsDefinitions(
         string outStatisticsJson,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         out ImmutableArray<StatisticDefinition> definitions,
         out string? error)
     {
@@ -3086,7 +3086,7 @@ internal sealed partial class FeatureServerQueryHandler(
     internal static bool TryParseHavingConditions(
         string having,
         ImmutableArray<StatisticDefinition> statistics,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         out ImmutableArray<HavingCondition> conditions,
         out string? error)
     {
@@ -3353,7 +3353,7 @@ internal sealed partial class FeatureServerQueryHandler(
     // database and surface as a 500 instead of a structured 400.
     private static bool TryParseGroupByFields(
         string groupByFieldsForStatistics,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         out ImmutableArray<string> groupByFields,
         out string? error)
     {
@@ -3515,7 +3515,7 @@ internal sealed partial class FeatureServerQueryHandler(
 
     private async Task<(long Count, string? Error)> ResolveReturnCountAsync(
         MetadataV2Service service,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2Layer publication,
         int storageLayerId,
         FeatureQuery query,

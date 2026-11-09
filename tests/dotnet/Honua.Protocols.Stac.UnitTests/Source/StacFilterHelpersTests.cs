@@ -425,9 +425,9 @@ public sealed class StacFilterHelpersTests
         value.End.Should().BeNull();
     }
 
-    private static MetadataV2Resource CreateResource(MetadataV2Field[] fields)
+    private static MetadataV2Object CreateResource(MetadataV2Field[] fields)
     {
-        return new MetadataV2Resource
+        return new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "res-test", Name = "Test resource" },
             SchemaFields = fields,

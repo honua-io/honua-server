@@ -459,16 +459,16 @@ public sealed class ResourceValidatorTests
                 System.Globalization.CultureInfo.InvariantCulture),
             Resources =
             [
-                new MetadataV2Resource
+                new MetadataV2Object
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "res-ogc", Name = "OGC resource" },
-                    Type = MetadataV2ResourceType.FeatureDataset,
+                    Type = MetadataV2ObjectType.FeatureDataset,
                     Status = ActiveStatus(),
                 },
-                new MetadataV2Resource
+                new MetadataV2Object
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "res-feature", Name = "FeatureServer resource" },
-                    Type = MetadataV2ResourceType.FeatureDataset,
+                    Type = MetadataV2ObjectType.FeatureDataset,
                     Status = ActiveStatus(),
                 },
             ],
@@ -519,18 +519,18 @@ public sealed class ResourceValidatorTests
             GeneratedAt = DateTimeOffset.Parse("2026-06-01T00:00:00Z", System.Globalization.CultureInfo.InvariantCulture),
             Resources =
             [
-                new MetadataV2Resource
+                new MetadataV2Object
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "res-image-layer-2000", Name = "Browser Points imagery" },
-                    Type = MetadataV2ResourceType.RasterDataset,
+                    Type = MetadataV2ObjectType.RasterDataset,
                     Status = ActiveStatus(),
                     StorageBindingIds = ["storage-image-layer-2000"],
                     PrimaryStorageBindingId = "storage-image-layer-2000",
                 },
-                new MetadataV2Resource
+                new MetadataV2Object
                 {
                     Metadata = new MetadataV2ObjectMetadata { Id = "res-layer-2000", Name = "Browser Points" },
-                    Type = MetadataV2ResourceType.FeatureDataset,
+                    Type = MetadataV2ObjectType.FeatureDataset,
                     Status = ActiveStatus(),
                     StorageBindingIds = ["storage-layer-2000"],
                     PrimaryStorageBindingId = "storage-layer-2000",

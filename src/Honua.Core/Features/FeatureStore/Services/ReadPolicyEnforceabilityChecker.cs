@@ -132,7 +132,7 @@ public sealed class ReadPolicyEnforceabilityChecker
         return null;
     }
 
-    private static bool IsTargeted(MetadataV2GraphSnapshot snapshot, MetadataV2Resource resource, string service, string layer)
+    private static bool IsTargeted(MetadataV2GraphSnapshot snapshot, MetadataV2Object resource, string service, string layer)
     {
         if (string.IsNullOrWhiteSpace(resource.Metadata.Name))
         {

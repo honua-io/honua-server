@@ -138,7 +138,7 @@ internal sealed partial class Wfs20Handler
         bool enforceAccess = true)
     {
         var snapshot = await _metadataV2GraphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var candidates = new List<(int StorageLayerId, MetadataV2Resource Resource, MetadataV2Layer Publication, MetadataV2Service Service)>();
+        var candidates = new List<(int StorageLayerId, MetadataV2Object Resource, MetadataV2Layer Publication, MetadataV2Service Service)>();
         foreach (var publication in snapshot.Graph.Publications)
         {
             if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service) ||
@@ -362,7 +362,7 @@ internal sealed partial class Wfs20Handler
     }
 
 
-    private static string[] BuildKeywords(MetadataV2Resource resource)
+    private static string[] BuildKeywords(MetadataV2Object resource)
     {
         var keywords = new List<string>
         {
@@ -392,7 +392,7 @@ internal sealed partial class Wfs20Handler
 
 
     private async Task<WGS84BoundingBox?> BuildWgs84BoundingBoxAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         CancellationToken cancellationToken)
     {
         var bbox = resource.ReadBbox();

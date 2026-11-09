@@ -136,7 +136,7 @@ public sealed class FeatureServerAttachmentCapabilityAdvertisementTests
                     ],
                     accessPolicy: anonymous,
                     annotations: annotations,
-                    spatial: new MetadataV2ResourceSpatial
+                    spatial: new MetadataV2ObjectSpatial
                     {
                         GeometryType = MetadataV2GeometryType.Point,
                         SpatialReference = new MetadataV2SpatialReference { Srid = 4326, Crs = "EPSG:4326", IsGeographic = true },
@@ -154,7 +154,7 @@ public sealed class FeatureServerAttachmentCapabilityAdvertisementTests
             Resources = graph.Resources.Select((resource, index) => resource with
             {
                 Editing = Cases[index].TypedFlag is bool enabled
-                    ? new MetadataV2ResourceEditing { SupportsAttachments = enabled }
+                    ? new MetadataV2ObjectEditing { SupportsAttachments = enabled }
                     : null
             }).ToArray()
         };

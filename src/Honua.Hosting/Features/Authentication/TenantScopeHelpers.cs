@@ -14,7 +14,7 @@ internal static class TenantScopeHelpers
 
     internal static bool IsTenantVisible(
         HttpContext context,
-        MetadataV2Resource? resource,
+        MetadataV2Object? resource,
         MetadataV2Service? service)
     {
         var tenantId = ResolveRequestTenantId(context);
@@ -25,7 +25,7 @@ internal static class TenantScopeHelpers
     internal static bool IsTenantVisible(
         HttpContext context,
         MetadataV2Layer publication,
-        MetadataV2Resource? resource,
+        MetadataV2Object? resource,
         MetadataV2Service? service)
         => MetadataV2TenantVisibility.IsVisibleToTenant(
             publication, resource, service, ResolveRequestTenantId(context));
@@ -48,7 +48,7 @@ internal static class TenantScopeHelpers
     internal static bool IsPublicationVisible(
         HttpContext context,
         MetadataV2Layer publication,
-        MetadataV2Resource? resource,
+        MetadataV2Object? resource,
         MetadataV2Service? service)
         => IsTenantVisible(context, publication, resource, service);
 }

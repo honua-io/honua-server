@@ -74,17 +74,17 @@ public sealed partial class LayerSourceExecutionProofTests
 
     private void ConfigureSelectionAuthorization(IServiceCollection services)
     {
-        _rls.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
-            .Returns(call => Task.FromResult(IsGuardedSelectionLayer(call.Arg<MetadataV2Resource>()) ? _selectionRowPolicy : null));
-        _masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
-            .Returns(call => Task.FromResult(IsGuardedSelectionLayer(call.Arg<MetadataV2Resource>())
+        _rls.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
+            .Returns(call => Task.FromResult(IsGuardedSelectionLayer(call.Arg<MetadataV2Object>()) ? _selectionRowPolicy : null));
+        _masks.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
+            .Returns(call => Task.FromResult(IsGuardedSelectionLayer(call.Arg<MetadataV2Object>())
                 ? ImmutableArray.Create("secret")
                 : ImmutableArray<string>.Empty));
         services.AddSingleton(_rls);
         services.AddSingleton(_masks);
     }
 
-    private bool IsGuardedSelectionLayer(MetadataV2Resource resource)
+    private bool IsGuardedSelectionLayer(MetadataV2Object resource)
         => _enforceSelectionAuthorization && resource.Metadata.Id == _selectionResourceId;
 
     [IntegrationTest]
@@ -402,7 +402,7 @@ public sealed partial class LayerSourceExecutionProofTests
             temporal = temporal with
             {
                 SchemaFields = [.. temporal.SchemaFields.Where(field => field.Name != "observed"), observed],
-                Temporal = new MetadataV2ResourceTemporal { StartTimeField = "observed" }
+                Temporal = new MetadataV2ObjectTemporal { StartTimeField = "observed" }
             };
             await graphStore.SaveAsync(snapshot.Graph with
             {

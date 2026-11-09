@@ -1595,7 +1595,7 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
 
     /// <summary>
     /// honua-server#4666: a resource may declare geometry through its schema alone —
-    /// <see cref="MetadataV2Resource.Spatial"/> is nullable, so a graph compiled from a source
+    /// <see cref="MetadataV2Object.Spatial"/> is nullable, so a graph compiled from a source
     /// that carries a geometry column but no declared layer geometry type leaves the slot unset.
     /// The writer used to read only the typed slot, so such a layer was served as an
     /// attribute-only Parquet file: silent, unsignalled geometry loss for every consumer.
@@ -1752,9 +1752,9 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
 
     /// <summary>
     /// A resource whose geometry is declared only by a <see cref="MetadataV2FieldType.Geometry"/>
-    /// schema field, with no <see cref="MetadataV2Resource.Spatial"/> slot at all.
+    /// schema field, with no <see cref="MetadataV2Object.Spatial"/> slot at all.
     /// </summary>
-    private static MetadataV2Resource CreateResourceWithoutSpatialSlot(params MetadataV2Field[] fields)
+    private static MetadataV2Object CreateResourceWithoutSpatialSlot(params MetadataV2Field[] fields)
         => new()
         {
             Metadata = new MetadataV2ObjectMetadata
@@ -1775,7 +1775,7 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
             ]
         };
 
-    private static MetadataV2Resource CreateLayer(params MetadataV2Field[] fields)
+    private static MetadataV2Object CreateLayer(params MetadataV2Field[] fields)
         => CreateResource(fields);
 
     private static MetadataV2Field Field(
@@ -1793,10 +1793,10 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
             SqlType = sqlType
         };
 
-    private static MetadataV2Resource CreateResource(params MetadataV2Field[] fields)
+    private static MetadataV2Object CreateResource(params MetadataV2Field[] fields)
         => CreateResourceWithGeometryType(MetadataV2GeometryType.Point, fields);
 
-    private static MetadataV2Resource CreateResourceWithGeometryType(
+    private static MetadataV2Object CreateResourceWithGeometryType(
         MetadataV2GeometryType geometryType,
         params MetadataV2Field[] fields)
         => new()
@@ -1818,7 +1818,7 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
                     SemanticRoles = ["geometry.primary"]
                 }
             ],
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = new MetadataV2ObjectSpatial
             {
                 SpatialReference = MetadataV2SpatialReference.Wgs84,
                 GeometryType = geometryType,

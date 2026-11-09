@@ -72,7 +72,7 @@ public sealed class FeatureServerLifecycleCapabilityTests
             Metadata = new MetadataV2ObjectMetadata { Id = "publication", Name = "Publication" },
             Capabilities = ["Query", "Update"]
         };
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource", Name = "Resource" }
         };

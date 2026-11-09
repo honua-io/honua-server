@@ -161,7 +161,7 @@ public sealed class OgcFeatureIdentifierResolverResolveManyTests
         return Feature.Create(objectId, geometry: null, builder.ToImmutable());
     }
 
-    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Layer Publication, MetadataV2Resource Resource) BuildGraph(
+    private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Layer Publication, MetadataV2Object Resource) BuildGraph(
         bool objectIdField)
     {
         MetadataV2Field[] fields = objectIdField
@@ -245,7 +245,7 @@ public sealed class OgcFeatureIdentifierResolverResolveManyTests
 
         public UnifiedQuery? LastUnifiedQuery { get; private set; }
 
-        public FeatureQuery ToFeatureQuery(UnifiedQuery query, MetadataV2Resource resource)
+        public FeatureQuery ToFeatureQuery(UnifiedQuery query, MetadataV2Object resource)
         {
             ToFeatureQueryCalls++;
             LastUnifiedQuery = query;
@@ -254,19 +254,19 @@ public sealed class OgcFeatureIdentifierResolverResolveManyTests
             return new FeatureQuery { Limit = query.Limit };
         }
 
-        public QueryValidationResult ValidateQuery(UnifiedQuery query, MetadataV2Resource resource)
+        public QueryValidationResult ValidateQuery(UnifiedQuery query, MetadataV2Object resource)
             => throw new NotSupportedException();
 
-        public UnifiedQuery OptimizeQuery(UnifiedQuery query, MetadataV2Resource resource)
+        public UnifiedQuery OptimizeQuery(UnifiedQuery query, MetadataV2Object resource)
             => throw new NotSupportedException();
 
-        public string BuildCacheKey(UnifiedQuery query, MetadataV2Resource resource, string protocol)
+        public string BuildCacheKey(UnifiedQuery query, MetadataV2Object resource, string protocol)
             => throw new NotSupportedException();
 
-        public bool ShouldUseStreaming(UnifiedQuery query, MetadataV2Resource resource, string outputFormat)
+        public bool ShouldUseStreaming(UnifiedQuery query, MetadataV2Object resource, string outputFormat)
             => throw new NotSupportedException();
 
-        public Task<long> EstimateResultCountAsync(UnifiedQuery query, MetadataV2Resource resource, CancellationToken cancellationToken)
+        public Task<long> EstimateResultCountAsync(UnifiedQuery query, MetadataV2Object resource, CancellationToken cancellationToken)
             => throw new NotSupportedException();
     }
 }

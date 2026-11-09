@@ -15,9 +15,9 @@ public sealed class EditFieldsInfoTests
     [UnitTest]
     public void LayerMetadata_ProjectsDeclaredEditorTrackingFields()
     {
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
-            Editing = new MetadataV2ResourceEditing
+            Editing = new MetadataV2ObjectEditing
             {
                 GlobalIdField = "GlobalID",
                 CreatorField = "created_user",
@@ -55,7 +55,7 @@ public sealed class EditFieldsInfoTests
         var snapshot = new MetadataV2GraphSnapshot(new MetadataV2Graph(), "test", DateTimeOffset.UnixEpoch);
         var layer = FeatureServerEndpoints.MapLayerToResponseV2(
             new MetadataV2Service(),
-            new MetadataV2Resource(),
+            new MetadataV2Object(),
             new MetadataV2Layer(),
             snapshot,
             new QueryLimits(),

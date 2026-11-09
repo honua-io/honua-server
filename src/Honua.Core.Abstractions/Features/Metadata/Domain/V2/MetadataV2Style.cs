@@ -7,7 +7,7 @@ using Honua.Core.Serialization;
 
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
-public sealed record MetadataV2ResourceStyle : ExtensibleJsonRecord
+public sealed record MetadataV2Style : ExtensibleJsonRecord
 {
     private IReadOnlyList<MetadataV2StyleEncoding>? _encodings;
 

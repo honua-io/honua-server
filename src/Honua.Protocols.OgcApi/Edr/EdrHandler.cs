@@ -352,7 +352,7 @@ internal sealed partial class EdrHandler
     // ---- resolution ----
 
     private readonly record struct EdrResolution(
-        MetadataV2Resource? Resource,
+        MetadataV2Object? Resource,
         int StorageLayerId,
         RasterInfo Raster,
         IResult? Error);
@@ -408,7 +408,7 @@ internal sealed partial class EdrHandler
     // ---- metadata building ----
 
     private async Task<EdrCollection> BuildCollectionAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int storageLayerId,
         RasterInfo raster,
         string baseUrl,

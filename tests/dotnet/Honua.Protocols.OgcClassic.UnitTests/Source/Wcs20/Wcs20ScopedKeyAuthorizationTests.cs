@@ -323,10 +323,10 @@ public sealed class Wcs20ScopedKeyAuthorizationTests
             EnabledProtocols = ["FeatureServer"],
             AccessPolicy = new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["reader"] }
         };
-        var roads = new MetadataV2Resource
+        var roads = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource-roads", Name = "roads" },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = MetadataV2ObjectType.FeatureDataset,
             AccessPolicy = new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["reader"] }
         };
         var featurePublication = new MetadataV2Layer
@@ -407,10 +407,10 @@ public sealed class Wcs20ScopedKeyAuthorizationTests
     private static MetadataV2Graph Graph()
     {
         var policy = new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["reader"] };
-        var resources = ResourceNames.Select((name, index) => new MetadataV2Resource
+        var resources = ResourceNames.Select((name, index) => new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = $"resource-{index + 1}", Name = name },
-            Type = MetadataV2ResourceType.RasterDataset,
+            Type = MetadataV2ObjectType.RasterDataset,
             StorageBindingIds = [$"binding-{index + 1}"],
             PrimaryStorageBindingId = $"binding-{index + 1}",
             AccessPolicy = policy

@@ -9,7 +9,7 @@ namespace Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
 
 // The publication is re-resolved so a retired or rebound source cannot be read.
 internal sealed record PMTilesPublishedSource(
-    MetadataV2Resource Resource,
+    MetadataV2Object Resource,
     MetadataV2Service Service,
     MetadataV2Layer Publication);
 

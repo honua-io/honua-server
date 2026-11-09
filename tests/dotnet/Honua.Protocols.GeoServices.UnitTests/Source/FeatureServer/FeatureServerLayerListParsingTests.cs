@@ -88,12 +88,12 @@ public sealed class FeatureServerLayerListParsingTests
             // case does not depend on that default.
             Status = activeStatus,
         };
-        var activeResource = new MetadataV2Resource
+        var activeResource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource-active" },
             Status = activeStatus,
         };
-        var retiredResource = new MetadataV2Resource
+        var retiredResource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource-retired" },
             Status = retiredStatus,
@@ -159,7 +159,7 @@ public sealed class FeatureServerLayerListParsingTests
             Status = activeStatus,
             Protocols = [ServiceProtocols.FeatureServer, ServiceProtocols.OData],
         };
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource-a" },
             Status = activeStatus,
@@ -223,7 +223,7 @@ public sealed class FeatureServerLayerListParsingTests
         };
         var draftStatus = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Draft };
         var retiredStatus = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Retired };
-        var activeResource = new MetadataV2Resource
+        var activeResource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "resource-active" },
             Status = activeStatus,

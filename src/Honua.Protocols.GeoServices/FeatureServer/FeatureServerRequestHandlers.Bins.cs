@@ -213,7 +213,7 @@ internal static partial class FeatureServerEndpoints
     }
 
     // Publisher-hidden fields are treated as absent so bins cannot aggregate a hidden column.
-    private static bool IsSchemaField(MetadataV2Resource resource, string fieldName)
+    private static bool IsSchemaField(MetadataV2Object resource, string fieldName)
     {
         if (resource.IsHiddenSchemaField(fieldName))
         {
@@ -228,7 +228,7 @@ internal static partial class FeatureServerEndpoints
     }
 
     private static bool TryValidateStatisticsFields(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         ImmutableArray<StatisticDefinition> statistics,
         out string? error)
     {
@@ -244,7 +244,7 @@ internal static partial class FeatureServerEndpoints
 
     private static bool TryBuildAnalyticsFeatureQuery(
         HttpContext context,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         string? whereClause,
         out FeatureQuery query,
         out IResult? errorResult)
@@ -291,7 +291,7 @@ internal static partial class FeatureServerEndpoints
         HttpContext context,
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2Layer publication,
         int storageLayerId,
         CancellationToken cancellationToken)

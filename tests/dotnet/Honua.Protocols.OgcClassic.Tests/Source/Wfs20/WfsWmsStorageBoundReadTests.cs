@@ -126,7 +126,7 @@ public sealed class WfsWmsStorageBoundReadTests : IAsyncLifetime
             .AddResource(
                 resourceId,
                 TypeName,
-                MetadataV2ResourceType.FeatureDataset,
+                MetadataV2ObjectType.FeatureDataset,
                 accessPolicy: new AccessPolicy { AllowAnonymous = true },
                 fields:
                 [
@@ -146,7 +146,7 @@ public sealed class WfsWmsStorageBoundReadTests : IAsyncLifetime
                         SemanticRoles = ["geometry.primary"]
                     }
                 ],
-                spatial: new MetadataV2ResourceSpatial
+                spatial: new MetadataV2ObjectSpatial
                 {
                     SpatialReference = MetadataV2SpatialReference.Wgs84,
                     GeometryType = MetadataV2GeometryType.Point,

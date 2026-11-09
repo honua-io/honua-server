@@ -61,7 +61,7 @@ public sealed partial class PostgresRowSecurityWriteCheckIntegrationTests(Postgr
             SELECT setval(pg_get_serial_sequence('"{{_schema}}".features', 'objectid'), 100);
             """);
 
-        _rowPolicies.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+        _rowPolicies.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns(NorthOnly);
         _store = CreateStore();
     }
@@ -165,7 +165,7 @@ public sealed partial class PostgresRowSecurityWriteCheckIntegrationTests(Postgr
     [IntegrationTest]
     public async Task ApplyEdits_NoRlsPolicy_WritesAnyRegion()
     {
-        _rowPolicies.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+        _rowPolicies.ResolveAsync(Arg.Any<MetadataV2Object>(), Arg.Any<CancellationToken>())
             .Returns((SqlFragment?)null);
 
         var result = await _store.ApplyEditsAsync(LayerId, FeatureEditBatch.Create(
@@ -386,7 +386,7 @@ public sealed partial class PostgresRowSecurityWriteCheckIntegrationTests(Postgr
             connections, new GeometryProcessor(), cacheManager, dictionaryPool,
             null, NullLogger<FeatureDataAccess>.Instance, null, null, null, _schema, OutboxRepository: outbox));
 
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Id = "rls-write-check", Name = "regions" },
             Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },

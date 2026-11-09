@@ -76,7 +76,7 @@ public sealed class FeatureServerAppendTests
         reader.QueryAsync(4, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(QueryResult<Feature>.Create(0, ImmutableArray<Feature>.Empty)));
         var filters = Substitute.For<IFilterExpressionService>();
-        filters.Translate(Arg.Any<FilterExpression?>(), Arg.Any<MetadataV2Resource>())
+        filters.Translate(Arg.Any<FilterExpression?>(), Arg.Any<MetadataV2Object>())
             .Returns(FilterTranslationResult.Success(null, new SqlFragment("code = @p", new object?[] { "a" })));
 
         var (_, error) = await FeatureServerEndpoints.LoadAppendUpsertMatchesAsync(
@@ -134,7 +134,7 @@ public sealed class FeatureServerAppendTests
         reader.QueryAsync(4, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(QueryResult<Feature>.Create(1, ImmutableArray.Create(stored))));
         var filters = Substitute.For<IFilterExpressionService>();
-        filters.Translate(Arg.Any<FilterExpression?>(), Arg.Any<MetadataV2Resource>())
+        filters.Translate(Arg.Any<FilterExpression?>(), Arg.Any<MetadataV2Object>())
             .Returns(FilterTranslationResult.Success(null, new SqlFragment("code = @p", new object?[] { "a" })));
 
         var (matches, error) = await FeatureServerEndpoints.LoadAppendUpsertMatchesAsync(
@@ -161,7 +161,7 @@ public sealed class FeatureServerAppendTests
         reader.QueryAsync(4, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult(QueryResult<Feature>.Create(2, ImmutableArray.Create(first, second))));
         var filters = Substitute.For<IFilterExpressionService>();
-        filters.Translate(Arg.Any<FilterExpression?>(), Arg.Any<MetadataV2Resource>())
+        filters.Translate(Arg.Any<FilterExpression?>(), Arg.Any<MetadataV2Object>())
             .Returns(FilterTranslationResult.Success(null, new SqlFragment("code = @p", new object?[] { "a" })));
 
         var (_, error) = await FeatureServerEndpoints.LoadAppendUpsertMatchesAsync(
@@ -271,10 +271,10 @@ public sealed class FeatureServerAppendTests
             .Should().BeNull();
     }
 
-    private static IFilterExpressionService AcceptingFilter(MetadataV2Resource resource)
+    private static IFilterExpressionService AcceptingFilter(MetadataV2Object resource)
     {
         var filters = Substitute.For<IFilterExpressionService>();
-        filters.Translate(Arg.Any<FilterExpression?>(), Arg.Any<MetadataV2Resource>())
+        filters.Translate(Arg.Any<FilterExpression?>(), Arg.Any<MetadataV2Object>())
             .Returns(call =>
             {
                 var expression = call.ArgAt<FilterExpression?>(0);
@@ -284,7 +284,7 @@ public sealed class FeatureServerAppendTests
         return filters;
     }
 
-    private static MetadataV2Resource TemporalResource(MetadataV2FieldType observedType)
+    private static MetadataV2Object TemporalResource(MetadataV2FieldType observedType)
         => new()
         {
             SchemaFields =
@@ -299,7 +299,7 @@ public sealed class FeatureServerAppendTests
             ]
         };
 
-    private static MetadataV2Resource MatchResource()
+    private static MetadataV2Object MatchResource()
         => new()
         {
             SchemaFields =

@@ -65,7 +65,7 @@ public sealed record MigrationCatalogReconciliationInput
 {
     public required MigrationInventoryResource Resource { get; init; }
 
-    public MetadataV2Resource? PublishedResource { get; init; }
+    public MetadataV2Object? PublishedResource { get; init; }
 
     public MigrationManifestRelationshipRecord[] ExpectedRelationships { get; init; } = [];
 

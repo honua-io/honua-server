@@ -126,7 +126,7 @@ public sealed class ServiceSettingsAttachmentAuthoringTests(ITestOutputHelper ou
         defaultEditing.GetProperty("supportsRelatedRecords").GetBoolean().Should().BeTrue();
         var updated = fixture.GetCurrentV2GraphSnapshot().Graph;
         var resource = updated.Resources.Single(resource => resource.Metadata.Id == ResourceId);
-        resource.Editing.Should().BeEquivalentTo(new MetadataV2ResourceEditing { SupportsAttachments = false, CanModify = false });
+        resource.Editing.Should().BeEquivalentTo(new MetadataV2ObjectEditing { SupportsAttachments = false, CanModify = false });
         resource.Metadata.Annotations["honua.io/attachments"].Should().Be("true");
         updated.Publications.Should().BeEquivalentTo(original.Publications);
         updated.Services.Should().BeEquivalentTo(original.Services);
@@ -218,7 +218,7 @@ public sealed class ServiceSettingsAttachmentAuthoringTests(ITestOutputHelper ou
     }
 
     private static async Task AssertAuthorizationUnchangedAsync(
-        WebAppFixture fixture, MetadataV2Resource before, MetadataV2Resource after, MetadataV2Service service)
+        WebAppFixture fixture, MetadataV2Object before, MetadataV2Object after, MetadataV2Service service)
     {
         // Exercise the actual shared authorization gate with identical allow/deny
         // policies before and after the canonical editing block is introduced.
@@ -276,14 +276,14 @@ public sealed class ServiceSettingsAttachmentAuthoringTests(ITestOutputHelper ou
     {
         var access = new AccessPolicy { AllowAnonymous = true, AllowAnonymousWrite = false };
         var graph = new TestMetadataV2GraphBuilder()
-            .AddResource(ResourceId, "Attachment authoring", MetadataV2ResourceType.Table,
+            .AddResource(ResourceId, "Attachment authoring", MetadataV2ObjectType.Table,
                 fields:
                 [
                     new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer },
                     new MetadataV2Field { Name = "globalid", Type = MetadataV2FieldType.Uuid },
                     new MetadataV2Field { Name = "owner", Type = MetadataV2FieldType.String }
                 ], accessPolicy: access, annotations: new Dictionary<string, string> { ["honua.io/attachments"] = "true" })
-            .AddResource("attachment-unrelated-resource", "Unrelated", MetadataV2ResourceType.Table, accessPolicy: access)
+            .AddResource("attachment-unrelated-resource", "Unrelated", MetadataV2ObjectType.Table, accessPolicy: access)
             .AddStorageBinding("attachment-primary-binding", ResourceId, "test.layers.900", storageLayerId: 900)
             .AddStorageBinding("attachment-unrelated-binding", "attachment-unrelated-resource", "test.layers.901", storageLayerId: 901)
             .AddService("attachment-primary-service", ServiceName, protocols: [ServiceProtocols.FeatureServer], accessPolicy: access)
@@ -298,7 +298,7 @@ public sealed class ServiceSettingsAttachmentAuthoringTests(ITestOutputHelper ou
             Resources = graph.Resources.Select(resource => resource.Metadata.Id == ResourceId && withEditing
                 ? resource with
                 {
-                    Editing = new MetadataV2ResourceEditing
+                    Editing = new MetadataV2ObjectEditing
                     {
                         GlobalIdField = "globalid",
                         CreatorField = "owner",

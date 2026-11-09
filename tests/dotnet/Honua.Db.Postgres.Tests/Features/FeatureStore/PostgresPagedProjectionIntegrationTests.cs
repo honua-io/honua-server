@@ -215,7 +215,7 @@ public sealed class PostgresPagedProjectionIntegrationTests(PostgresFixture fixt
         var provider = Substitute.For<IAdoNetDatabaseConnectionProvider>();
         provider.OpenConnectionAsync(Arg.Any<CancellationToken>()).Returns(async call =>
             (DbConnection)await fixture.DataSource.OpenConnectionAsync(call.Arg<CancellationToken>()));
-        var resource = new MetadataV2Resource
+        var resource = new MetadataV2Object
         {
             Metadata = new MetadataV2ObjectMetadata { Name = "projection-points" },
             SchemaFields =

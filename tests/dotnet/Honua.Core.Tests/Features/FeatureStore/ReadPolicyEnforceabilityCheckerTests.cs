@@ -143,10 +143,10 @@ public sealed class ReadPolicyEnforceabilityCheckerTests
         return new MetadataV2GraphSnapshot(graph, "test", DateTimeOffset.UtcNow);
     }
 
-    private static MetadataV2Resource CreateResource(string id, string name, string bindingId, params string[] alternativeBindingIds) => new()
+    private static MetadataV2Object CreateResource(string id, string name, string bindingId, params string[] alternativeBindingIds) => new()
     {
         Metadata = new MetadataV2ObjectMetadata { Id = id, Name = name },
-        Type = MetadataV2ResourceType.FeatureDataset,
+        Type = MetadataV2ObjectType.FeatureDataset,
         StorageBindingIds = [bindingId, .. alternativeBindingIds]
     };
 

@@ -111,7 +111,7 @@ internal static class OgcFeaturesUtilities
     /// Builds supported CRS definitions for a Metadata V2 collection.
     /// </summary>
     public static async Task<IReadOnlyDictionary<string, CrsDefinition>> GetSupportedCrsDefinitionsAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         ICrsRegistry crsRegistry,
         CancellationToken cancellationToken)
     {
@@ -146,7 +146,7 @@ internal static class OgcFeaturesUtilities
     /// Returns supported CRS URIs for a Metadata V2 collection.
     /// </summary>
     public static async Task<ImmutableArray<string>> GetSupportedCrsUrisAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         ICrsRegistry crsRegistry,
         CancellationToken cancellationToken)
     {
@@ -236,7 +236,7 @@ internal static class OgcFeaturesUtilities
     /// </summary>
     public static BadRequest<string>? ValidateItemsQueryParameters(
         HttpRequest request,
-        MetadataV2Resource resource)
+        MetadataV2Object resource)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(resource);
@@ -260,7 +260,7 @@ internal static class OgcFeaturesUtilities
     /// <param name="featureReader">Feature reader providing the extent probe.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     public static Task<TemporalExtent?> BuildTemporalExtentAsync(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         int layerIndex,
         IFeatureReader featureReader,
         CancellationToken cancellationToken)
@@ -268,13 +268,13 @@ internal static class OgcFeaturesUtilities
 
     /// <summary>
     /// Resolves the start/end temporal field names + canonical types from a V2 resource.
-    /// Reads <see cref="MetadataV2Resource.Temporal"/> for the configured field names and
-    /// looks up the field type in <see cref="MetadataV2Resource.SchemaFields"/>. Returns
+    /// Reads <see cref="MetadataV2Object.Temporal"/> for the configured field names and
+    /// looks up the field type in <see cref="MetadataV2Object.SchemaFields"/>. Returns
     /// false when no start field is declared, the start field is not present in the schema,
     /// or the schema field type is not a recognized temporal type.
     /// </summary>
     public static bool TryResolveTemporalFieldsV2(
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         out string? startFieldName,
         out TemporalPropertyType startPropertyType,
         out string? endFieldName,

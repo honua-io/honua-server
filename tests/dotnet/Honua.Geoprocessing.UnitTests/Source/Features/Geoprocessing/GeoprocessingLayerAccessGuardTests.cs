@@ -416,7 +416,7 @@ public sealed class GeoprocessingLayerAccessGuardTests
         return new MetadataV2GraphSnapshot(graph, "\"guard-tests\"", DateTimeOffset.UnixEpoch);
     }
 
-    private static MetadataV2Resource Resource(string id, string name, string[] allowedRoles) => new()
+    private static MetadataV2Object Resource(string id, string name, string[] allowedRoles) => new()
     {
         Metadata = new MetadataV2ObjectMetadata { Id = id, Name = name },
         AccessPolicy = new AccessPolicy { AllowedRoles = allowedRoles },

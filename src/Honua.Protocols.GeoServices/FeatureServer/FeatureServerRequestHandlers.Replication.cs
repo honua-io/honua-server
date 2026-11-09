@@ -2015,7 +2015,7 @@ internal static partial class FeatureServerEndpoints
             property => string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static long? TryReadObjectId(GeoServicesFeature feature, MetadataV2Resource resource)
+    private static long? TryReadObjectId(GeoServicesFeature feature, MetadataV2Object resource)
     {
         if (feature.Attributes is null)
         {
@@ -2168,7 +2168,7 @@ internal static partial class FeatureServerEndpoints
         int PublicLayerId,
         int StorageLayerId,
         MetadataV2Layer Publication,
-        MetadataV2Resource Resource);
+        MetadataV2Object Resource);
 
     private static async Task<ReplicationServiceValidationResult> ValidateReplicationServiceV2Async(
         string serviceId,
@@ -2225,7 +2225,7 @@ internal static partial class FeatureServerEndpoints
                 // service-local layer ID (for example OData plus Esri FeatureServer).
                 // Replication needs one deterministic feature/table resource per public
                 // ID; otherwise dictionary lookups throw before access checks run.
-                .Where(layer => layer.Resource.Type is MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table)
+                .Where(layer => layer.Resource.Type is MetadataV2ObjectType.FeatureDataset or MetadataV2ObjectType.Table)
                 .OrderBy(layer => layer.Publication.PublicationType == MetadataV2LayerType.EsriFeatureLayer ? 0 : 1)
                 .ThenByDescending(layer => layer.Publication.IsPrimary)
                 .ThenBy(layer => layer.Publication.Metadata.Id, StringComparer.Ordinal)
@@ -2499,7 +2499,7 @@ internal static partial class FeatureServerEndpoints
             cancellationToken);
     }
 
-    private static GeoServicesFeature ConvertFeatureToGeoServices(Feature feature, MetadataV2Resource resource, int? deliverySrid = null)
+    private static GeoServicesFeature ConvertFeatureToGeoServices(Feature feature, MetadataV2Object resource, int? deliverySrid = null)
     {
         var attributes = feature.Attributes
             .Where(kvp => !FeatureAttributeVisibility.IsInternalAttribute(kvp.Key))
@@ -2521,7 +2521,7 @@ internal static partial class FeatureServerEndpoints
     }
 
     // Z and M are requested because a plain WKB read strips them, and coordinates are reprojected to the advertised spatial reference so a storage-mapped resource is not returned in its storage CRS.
-    internal static FeatureQuery ReplicaGeometryQuery(FeatureQuery query, MetadataV2Resource resource)
+    internal static FeatureQuery ReplicaGeometryQuery(FeatureQuery query, MetadataV2Object resource)
         => query with
         {
             IncludeZ = true,
@@ -2529,9 +2529,9 @@ internal static partial class FeatureServerEndpoints
             OutputSrid = resource.HasGeometry() ? resource.ReadSrid() : null
         };
 
-    internal static int? ResolveReplicaLayerSrid(MetadataV2Resource resource)
+    internal static int? ResolveReplicaLayerSrid(MetadataV2Object resource)
         => resource.HasGeometry() ? resource.ReadSrid() ?? SpatialReference.WGS84.Wkid : null;
 
-    internal static GeoServicesSpatialReference? CreateReplicaLayerSpatialReference(MetadataV2Resource resource)
+    internal static GeoServicesSpatialReference? CreateReplicaLayerSpatialReference(MetadataV2Object resource)
         => GeoServicesGeometryConverter.CreateSpatialReference(ResolveReplicaLayerSrid(resource));
 }

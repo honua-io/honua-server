@@ -161,7 +161,7 @@ public sealed class CogHttpTileServingTests : IAsyncLifetime
         }
 
         var graph = new Honua.TestKit.Infrastructure.TestMetadataV2GraphBuilder()
-            .AddResource("cog-http-resource", "cog-http-resource", MetadataV2ResourceType.RasterDataset)
+            .AddResource("cog-http-resource", "cog-http-resource", MetadataV2ObjectType.RasterDataset)
             .AddStorageBinding("cog-http-binding", "cog-http-resource", "rasters", storageLayerId: CogLayerId)
             .AddService("cog-http-service", "cog-http-service", protocols: [ServiceProtocols.ImageServer])
             .AddPublication(
@@ -171,7 +171,7 @@ public sealed class CogHttpTileServingTests : IAsyncLifetime
                 layerIndex: CogLayerId,
                 storageBindingId: "cog-http-binding",
                 publicationType: MetadataV2LayerType.EsriImageLayer)
-            .AddResource("cog-missing-resource", "cog-missing-resource", MetadataV2ResourceType.RasterDataset)
+            .AddResource("cog-missing-resource", "cog-missing-resource", MetadataV2ObjectType.RasterDataset)
             .AddStorageBinding("cog-missing-binding", "cog-missing-resource", "rasters", storageLayerId: MissingCogLayerId)
             .AddService("cog-missing-service", "cog-missing-service", protocols: [ServiceProtocols.ImageServer])
             .AddPublication(

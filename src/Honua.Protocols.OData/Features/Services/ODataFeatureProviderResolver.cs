@@ -20,7 +20,7 @@ internal sealed class ODataFeatureProviderResolver(
     public async Task<IFeatureReader> ResolveReaderAsync(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service? service,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2Layer? publication,
         int storageLayerId,
         FeatureProviderReadOperation operation,
@@ -46,7 +46,7 @@ internal sealed class ODataFeatureProviderResolver(
     public Task<IFeatureReader> ResolveQueryReaderAsync(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service? service,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2Layer? publication,
         int storageLayerId,
         bool requireCount,
@@ -56,7 +56,7 @@ internal sealed class ODataFeatureProviderResolver(
     public async Task<IFeatureReader> ResolveQueryReaderAsync(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service? service,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2Layer? publication,
         int storageLayerId,
         bool requireCount,
@@ -101,7 +101,7 @@ internal sealed class ODataFeatureProviderResolver(
     public async Task<(bool Supported, string? ErrorMessage)> CheckWriteSupportAsync(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service? service,
-        MetadataV2Resource resource,
+        MetadataV2Object resource,
         MetadataV2Layer? publication,
         int storageLayerId,
         CancellationToken cancellationToken)

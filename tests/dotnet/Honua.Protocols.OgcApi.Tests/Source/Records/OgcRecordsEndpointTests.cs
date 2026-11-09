@@ -302,7 +302,7 @@ public sealed class OgcRecordsEndpointTests : IClassFixture<OgcRecordsEndpointTe
             Revision = snapshot.Graph.Revision + 1,
             Resources = snapshot.Graph.Resources.Select(resource => resource with
             {
-                Spatial = (resource.Spatial ?? new MetadataV2ResourceSpatial()) with
+                Spatial = (resource.Spatial ?? new MetadataV2ObjectSpatial()) with
                 {
                     SpatialReference = snapshot.ResolveStorageLayerId(resource) == WebAppFixture.TestLayerId
                         ? new MetadataV2SpatialReference { Srid = srid }
