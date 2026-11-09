@@ -35,6 +35,8 @@ internal sealed record CapabilityManifestDocument
 
     public required CapabilityManifestDeploymentProfile DeploymentProfile { get; init; }
 
+    public CapabilityManifestDataStores? DataStores { get; init; }
+
     public required CapabilityManifestLink[] Links { get; init; }
 }
 

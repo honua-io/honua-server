@@ -8,7 +8,8 @@ namespace Honua.Ai.StudioAiProxy.Abstractions;
 
 internal interface IStudioAiPreparedHttpAdapter
 {
-    StudioAiHttpInvocation Prepare(StudioAiProxyProviderOptions options, StudioAiChatRequest request);
+    StudioAiHttpInvocation Prepare(StudioAiProxyProviderOptions options, StudioAiChatRequest request,
+        AiExecutionContext? executionContext = null);
     IAsyncEnumerable<StudioAiChatEvent> StreamPreparedAsync(StudioAiHttpInvocation invocation,
         IAiExecutionPermit permit, CancellationToken cancellationToken);
 }
