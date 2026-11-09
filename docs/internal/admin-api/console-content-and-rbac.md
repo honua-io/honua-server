@@ -71,7 +71,7 @@ publication response contract.
 
 ## Content item shape
 
-`ConsoleContentItem` (see `src/Honua.Core/Features/Console/Domain/ConsoleContentItem.cs`):
+`ConsoleContentItem` (see `src/Honua.Core/Core/Features/Console/Domain/ConsoleContentItem.cs`):
 
 ```json
 {

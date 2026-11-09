@@ -394,12 +394,14 @@ internal sealed class CapabilityManifestService(
 
     private static string[] BuildStorageFamilies()
         => Enum.GetValues<MetadataV2StorageType>()
+            .Where(value => value != MetadataV2StorageType.Unknown)
             .Select(ToWireValue)
             .Order(StringComparer.Ordinal)
             .ToArray();
 
     private static string[] BuildPublicationFamilies()
         => Enum.GetValues<MetadataV2PublicationType>()
+            .Where(value => value != MetadataV2PublicationType.Unknown)
             .Select(ToWireValue)
             .Order(StringComparer.Ordinal)
             .ToArray();

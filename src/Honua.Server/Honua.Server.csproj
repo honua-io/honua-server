@@ -71,7 +71,7 @@
   <ItemGroup>
     <EmbeddedResource Include="..\..\docs\developer\api-specs\admin-api.json"
                       LogicalName="Honua.Server.admin-api.json" />
-    <ProjectReference Include="..\Honua.Core\Honua.Core.csproj" />
+    <ProjectReference Include="..\Honua.Core\Core\Honua.Core.csproj" />
     <!-- Postgres reference for AOT assembly inclusion only -->
     <!-- Code follows dependency inversion: Server → Core ← Infrastructure -->
     <!-- Program registers Postgres services via AddPostgreSqlServices -->
@@ -87,7 +87,7 @@
     <ProjectReference Include="..\Honua.ServiceDefaults\Honua.ServiceDefaults.csproj" />
     <ProjectReference Include="..\Honua.Hosting\Honua.Hosting.csproj" />
     <ProjectReference Include="..\Honua.Jobs\Honua.Jobs.csproj" />
-    <ProjectReference Include="..\Honua.Protocols.OData\Honua.Protocols.OData.csproj" Condition="'$(HonuaIncludeOData)' == 'true'" />
+    <ProjectReference Include="..\Honua.Protocols\OData\Honua.Protocols.OData.csproj" Condition="'$(HonuaIncludeOData)' == 'true'" />
     <ProjectReference Include="..\Honua.Geocoding\Honua.Geocoding.csproj" />
 
     <ProjectReference Include="..\Honua.Cloud\Aws\Honua.Aws.csproj" Condition="'$(HonuaIncludeAws)' == 'true'" />
@@ -96,25 +96,25 @@
     <ProjectReference Include="..\Honua.Ai\Honua.Ai.csproj" />
 
     <ProjectReference Include="..\Honua.Geometry\Honua.Geometry.csproj" />
-    <ProjectReference Include="..\Honua.Geoprocessing\Honua.Geoprocessing.csproj" />
+    <ProjectReference Include="..\Honua.Geoprocessing\Core\Honua.Geoprocessing.csproj" />
     <ProjectReference Include="..\Honua.Io\Honua.Io.csproj" />
     <ProjectReference Include="..\Honua.Import\Honua.Import.csproj" />
 
-    <ProjectReference Include="..\Honua.Protocols.Scene\Honua.Protocols.Scene.csproj" Condition="'$(HonuaIncludeScene)' == 'true'" />
+    <ProjectReference Include="..\Honua.Protocols\Scene\Honua.Protocols.Scene.csproj" Condition="'$(HonuaIncludeScene)' == 'true'" />
 
-    <ProjectReference Include="..\Honua.Protocols.Ogc.Shared\Honua.Protocols.Ogc.Shared.csproj" />
+    <ProjectReference Include="..\Honua.Protocols\Ogc.Shared\Honua.Protocols.Ogc.Shared.csproj" />
 
-    <ProjectReference Include="..\Honua.Protocols.OgcApi\Honua.Protocols.OgcApi.csproj" Condition="'$(HonuaIncludeOgcApi)' == 'true'" />
+    <ProjectReference Include="..\Honua.Protocols\OgcApi\Honua.Protocols.OgcApi.csproj" Condition="'$(HonuaIncludeOgcApi)' == 'true'" />
 
-    <ProjectReference Include="..\Honua.Protocols.OgcClassic\Honua.Protocols.OgcClassic.csproj" Condition="'$(HonuaIncludeOgcClassic)' == 'true'" />
+    <ProjectReference Include="..\Honua.Protocols\OgcClassic\Honua.Protocols.OgcClassic.csproj" Condition="'$(HonuaIncludeOgcClassic)' == 'true'" />
 
-    <ProjectReference Include="..\Honua.Protocols.Stac\Honua.Protocols.Stac.csproj" Condition="'$(HonuaIncludeStac)' == 'true'" />
+    <ProjectReference Include="..\Honua.Protocols\Stac\Honua.Protocols.Stac.csproj" Condition="'$(HonuaIncludeStac)' == 'true'" />
 
-    <ProjectReference Include="..\Honua.Protocols.SensorThings\Honua.Protocols.SensorThings.csproj" Condition="'$(HonuaIncludeSensorThings)' == 'true'" />
+    <ProjectReference Include="..\Honua.Protocols\SensorThings\Honua.Protocols.SensorThings.csproj" Condition="'$(HonuaIncludeSensorThings)' == 'true'" />
 
-    <ProjectReference Include="..\Honua.Protocols.GeoServices\Honua.Protocols.GeoServices.csproj" Condition="'$(HonuaIncludeGeoServices)' == 'true'" />
+    <ProjectReference Include="..\Honua.Protocols\GeoServices\Honua.Protocols.GeoServices.csproj" Condition="'$(HonuaIncludeGeoServices)' == 'true'" />
 
-    <ProjectReference Include="..\Honua.Plugins\Honua.Plugins.csproj" />
+    <ProjectReference Include="..\Honua.Plugins\Core\Honua.Plugins.csproj" />
 
     <ProjectReference Include="..\Honua.Routing\Honua.Routing.csproj" />
 

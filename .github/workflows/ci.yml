@@ -1022,13 +1022,28 @@ jobs:
         timeout-minutes: 45
         run: scripts/ci/run-foundation-family.sh run ${{ matrix.family }}
 
+      - name: Upload protocol crash diagnostics
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure() && matrix.family == 'protocols'
+        timeout-minutes: 3
+        with:
+          name: protocol-crash-diagnostics
+          path: |
+            artifacts/test-results/**/*.dmp
+            artifacts/test-results/**/Sequence*.xml
+          if-no-files-found: ignore
+          retention-days: 1
+
       - name: Upload foundation family test results
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         timeout-minutes: 3
         with:
           name: foundation-test-results-${{ matrix.family }}
-          path: artifacts/test-results/
+          path: |
+            artifacts/test-results/
+            !artifacts/test-results/**/*.dmp
+            !artifacts/test-results/**/Sequence*.xml
           if-no-files-found: warn
           retention-days: 7
 
@@ -1193,6 +1208,7 @@ jobs:
     timeout-minutes: ${{ matrix.timeout_minutes }}
     strategy:
       fail-fast: false
+      max-parallel: 24
       matrix:
         include: ${{ fromJson(needs.targeted-shards.outputs.matrix_include) }}
     env:
@@ -2683,7 +2699,7 @@ jobs:
         # Scoped to Honua.Core's transitive ProjectReferences; the package
         # job only pack's Honua.Core. Full-sln restore was over-fetching
         # for the entire repo every run.
-        run: scripts/ci/dotnet-restore-retry.sh src/Honua.Core/Honua.Core.csproj
+        run: scripts/ci/dotnet-restore-retry.sh src/Honua.Core/Core/Honua.Core.csproj
 
       - name: Build Honua.Core package
         run: |
@@ -2692,13 +2708,13 @@ jobs:
           # (the Phase-0 contract split), so the compatibility consumer can only
           # restore Honua.Core if Honua.Core.Abstractions is in the same feed.
           # Pack both at the same version.
-          dotnet pack src/Honua.Core.Abstractions/Honua.Core.Abstractions.csproj \
+          dotnet pack src/Honua.Core/Abstractions/Honua.Core.Abstractions.csproj \
             --configuration Release \
             --output ./packages \
             --no-restore \
             -p:PackageVersion="${package_version}" \
             -p:Version="${package_version}"
-          dotnet pack src/Honua.Core/Honua.Core.csproj \
+          dotnet pack src/Honua.Core/Core/Honua.Core.csproj \
             --configuration Release \
             --output ./packages \
             --no-restore \

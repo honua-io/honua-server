@@ -294,15 +294,7 @@ public sealed partial class GeoservicesImportSubtypePersistenceTests(PostgresFix
             dataSchema,
             [dataSchema, "public"]);
 
-        var publishingService = new PostgreSqlLayerPublishingService(
-            new PostgreSqlTableDiscoveryService(
-                NullLogger<PostgreSqlTableDiscoveryService>.Instance,
-                schemaContext: null,
-                schemaConfiguration: schemaConfiguration),
-            graphStore,
-            NullLogger<PostgreSqlLayerPublishingService>.Instance,
-            schemaConfiguration: schemaConfiguration,
-            tenantContext: tenantContext);
+        var publishingService = CreateLayerPublisher(graphStore, schemaConfiguration, tenantContext);
 
         return new GeoservicesImportService(
             restClient,
@@ -316,6 +308,20 @@ public sealed partial class GeoservicesImportSubtypePersistenceTests(PostgresFix
             attachmentStore: attachmentStore,
             schemaConfiguration: schemaConfiguration);
     }
+
+    private static PostgreSqlLayerPublishingService CreateLayerPublisher(
+        IMetadataV2GraphStore graphStore,
+        PostgresSchemaConfiguration schemaConfiguration,
+        Honua.Core.Features.MultiTenancy.Abstractions.ITenantContext? tenantContext)
+        => new(
+            new PostgreSqlTableDiscoveryService(
+                NullLogger<PostgreSqlTableDiscoveryService>.Instance,
+                schemaContext: null,
+                schemaConfiguration: schemaConfiguration),
+            graphStore,
+            NullLogger<PostgreSqlLayerPublishingService>.Instance,
+            schemaConfiguration: schemaConfiguration,
+            tenantContext: tenantContext);
 
     private async Task EnsureCatalogSchemaAsync()
     {

@@ -18,7 +18,7 @@ using Moq;
 
 namespace Honua.Db.Postgres.Tests.Features.Admin;
 
-public sealed class PostgreSqlLayerPublishingServiceSqlTests
+public sealed partial class PostgreSqlLayerPublishingServiceSqlTests
 {
     [global::Xunit.Trait("Tier", "Fast")]
     [Theory]

@@ -725,12 +725,17 @@ internal static partial class FeatureStreamEndpoints
         {
             if (!binding.StorageLayerId.HasValue ||
                 !snapshot.Index.ResourcesByStorageLayerId.TryGetValue(binding.StorageLayerId.Value, out var resource) ||
-                !binding.IsRoutable(resource))
+                !snapshot.IsRoutable(binding, resource))
             {
                 continue;
             }
 
             var publication = ResolvePrimaryStreamPublication(snapshot, resource);
+            if (publication is null && snapshot.Index.PublicationsByResource[resource.Metadata.Id].Any())
+            {
+                continue;
+            }
+
             var service = publication is not null &&
                 snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var resolvedService)
                     ? resolvedService

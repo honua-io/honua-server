@@ -4,6 +4,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using FluentAssertions;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Admin.Domain;
@@ -23,6 +24,25 @@ namespace Honua.Server.Tests.Admin;
 /// </summary>
 public sealed partial class LayerPublishingIntegrationTests
 {
+    [IntegrationTheory]
+    [InlineData("99")]
+    [InlineData("\"future-rule\"")]
+    [InlineData("\"Validation\"")]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
+    public async Task PublishLayer_UnsupportedAttributeRuleType_ReturnsBadRequest(string token)
+    {
+        var request = CreateSourceMetadataPublishRequest(false, false, $"Rules_{_tableName}");
+        var json = JsonSerializer.SerializeToNode(request, _jsonOptions)!;
+        json["attributeRules"]![0]!["type"] = JsonNode.Parse(token);
+        using var content = new StringContent(json.ToJsonString(), System.Text.Encoding.UTF8, "application/json");
+        using var response = await _client.PostAsync($"/api/v1/admin/connections/{_connectionId}/layers", content);
+        var payload = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, payload);
+        payload.Should().Contain("attributeRules type is not supported.");
+    }
+
     [IntegrationTheory]
     [InlineData(false, false, "Point", "ST_Force2D", 0)]
     [InlineData(true, false, "PointZ", "ST_Force3DZ", 2)]
