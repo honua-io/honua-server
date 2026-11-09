@@ -79,7 +79,7 @@ public sealed partial class PostgresProposalPersistenceTests : IAsyncLifetime
         }).ToArray();
         start.SetResult();
 
-        Assert.Single((await Task.WhenAll(writes)).Where(won => won));
+        Assert.Single(await Task.WhenAll(writes), won => won);
         var loaded = Assert.IsType<OperationProposal>(await Store.GetAsync(proposal.ProposalId));
         Assert.Equal(1, loaded.Version);
         Assert.Equal(OperationProposalStatus.Succeeded, loaded.Status);

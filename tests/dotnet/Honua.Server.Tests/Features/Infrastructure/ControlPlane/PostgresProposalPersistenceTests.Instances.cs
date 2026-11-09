@@ -42,7 +42,7 @@ public sealed partial class PostgresProposalPersistenceTests
             }, expectedVersion: 0);
         }).ToArray();
         start.SetResult();
-        Assert.Single((await Task.WhenAll(writes)).Where(won => won));
+        Assert.Single(await Task.WhenAll(writes), won => won);
         var restored = Assert.IsType<OperationHandle>(await Instances.GetAsync(handle.OperationInstanceId));
         Assert.Equal(1, restored.Version);
         Assert.Equal(OperationHandleStatus.Completed, restored.Status);
