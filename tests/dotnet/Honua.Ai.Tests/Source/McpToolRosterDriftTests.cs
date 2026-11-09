@@ -41,7 +41,7 @@ public sealed class McpToolRosterDriftTests
     private const string EmitVariable = "HONUA_EMIT_MCP_TOOL_ROSTER";
     private const string ServerShaVariable = "HONUA_MCP_TOOL_ROSTER_SERVER_SHA";
     private const string RosterFile = "mcp-tool-roster.v1.json";
-    private const string RegenerateCommand = "bash scripts/generate-mcp-tool-roster.sh";
+    private const string RegenerateCommand = "bash scripts/ci/generate-mcp-tool-roster.sh";
 
     /// <summary>Tool names the server deliberately no longer advertises.</summary>
     internal static readonly string[] RetiredToolNames = ["honua_propose_operation"];

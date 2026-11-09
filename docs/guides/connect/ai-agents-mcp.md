@@ -315,7 +315,7 @@ The server publishes its `/mcp` tool roster as a generated file, [`docs/gis/data
 - `views`: the members of the `default`, `setup`, `configure`, `operate`, `analyze` and `review` workflow views.
 - `retired`: tool names the server no longer advertises, such as `honua_propose_operation`.
 
-`serverSha` records the commit the roster was last regenerated from. To regenerate the file, run `bash scripts/generate-mcp-tool-roster.sh`. The nightly generated-files job also regenerates it. `McpToolRosterDriftTests` fails when the committed file no longer matches the composed server.
+`serverSha` records the commit the roster was last regenerated from. To regenerate the file, run `bash scripts/ci/generate-mcp-tool-roster.sh`. The nightly generated-files job also regenerates it. `McpToolRosterDriftTests` fails when the committed file no longer matches the composed server.
 
 The roster is for build-time parity gates, not for runtime discovery. A running agent still discovers tools with `tools/list` and `honua_list_capabilities`. Downstream catalogs gate on the roster at their pinned server commit instead of keeping their own lists. These include sdk-js MCP certification (`roster-parity`), honua-release `e2e/drivers/mcp/expected-tools.json`, and the geospatial-mcp `index.json` reference tool names. A consumer that names a `retired` tool, or a tool missing from the roster, is stale.
 

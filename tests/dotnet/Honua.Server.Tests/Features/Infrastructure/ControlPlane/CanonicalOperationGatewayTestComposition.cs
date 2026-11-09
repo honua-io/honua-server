@@ -37,15 +37,14 @@ internal static class CanonicalOperationGatewayTestComposition
         services.AddLogging();
         services.AddSingleton<IAuditLog, TestAuditLog>();
         services.AddSingleton<IOperationHumanApprovalVerifier, StateMachineHumanApprovalVerifier>();
-        configure?.Invoke(services);
 
         var bridge = new ForwardingApprovalBridge();
         // Legacy proposal fixtures predate operation-instance identity. This explicit
         // test-only store supplies the migrated acceptance envelope so those tests can
         // continue exercising gateway state transitions; production replay remains
         // fail-closed when the original durable instance is absent.
-        var instanceStore = new LegacyProposalTestOperationInstanceStore();
-        services.AddSingleton<IOperationInstanceStore>(instanceStore);
+        services.AddSingleton<IOperationInstanceStore, LegacyProposalTestOperationInstanceStore>();
+        configure?.Invoke(services);
         var typedActuators = actuatorArray
             .Select(actuator => (TypedExecutor)new LegacyGatewayOperationAdapter(actuator))
             .ToArray();
@@ -55,16 +54,15 @@ internal static class CanonicalOperationGatewayTestComposition
         var policy = new CanonicalOperationPolicyDecisionPoint(
             Options.Create(new OperationPolicyOptions()),
             ladder);
-        var invoker = new OperationDispatcher(
+        services.AddSingleton<IOperationInvoker>(provider => new OperationDispatcher(
             catalog,
             typedActuators,
             policy,
             TimeProvider.System,
             bridge,
-            instanceStore,
+            provider.GetRequiredService<IOperationInstanceStore>(),
             new TestAuditLog(),
-            approvalReplayVerifier: new OperationApprovalReplayVerifier(proposalStore));
-        services.AddSingleton<IOperationInvoker>(invoker);
+            approvalReplayVerifier: new OperationApprovalReplayVerifier(proposalStore)));
 
         var provider = services.BuildServiceProvider();
         var gateway = new OperationGateway(
