@@ -99,12 +99,7 @@ class ShellServerOwnershipTests(unittest.TestCase):
         self.assertNotEqual(code, 0, output)
 
     def test_shell_boot_probes_accept_their_owned_listener(self):
-        (self.tools / "dotnet").write_text("#!/usr/bin/env python3\n"
-            "import os\nfrom http.server import BaseHTTPRequestHandler,HTTPServer\nfrom urllib.parse import urlsplit\n"
-            "class Handler(BaseHTTPRequestHandler):\n"
-            "    def do_GET(self):\n        self.send_response(200)\n        self.end_headers()\n        self.wfile.write(b'Ready')\n"
-            "    def log_message(self,*args): pass\n"
-            "url=urlsplit(os.environ['ASPNETCORE_URLS'])\nHTTPServer(('127.0.0.1',url.port),Handler).serve_forever()\n")
+        (self.tools / "dotnet").write_text((ROOT / "scripts/ci/fixtures/ready-server.py").read_text())
         for script in ("scripts/ci/server-boot-smoke.sh", "scripts/cloud/start-local-post-apply-target.sh"):
             with self.subTest(script=script):
                 code, output = self.run_harness(script, 0)
