@@ -46,6 +46,7 @@ public sealed partial class McpConnectionDiscoveryIntegrationTests : IAsyncLifet
         {
             Environment.SetEnvironmentVariable(SecretVariable, fixture.Postgres.ConnectionString);
             using var admin = fixture.CreateAdminClient();
+            (await ListToolNamesAsync(admin, "full")).Should().Contain("honua_admin_connection_layers_list");
             var connection = new NpgsqlConnectionStringBuilder(fixture.Postgres.ConnectionString);
             using var created = await admin.PostAsJsonAsync("/api/v1/admin/connections", new
             {
@@ -65,6 +66,20 @@ public sealed partial class McpConnectionDiscoveryIntegrationTests : IAsyncLifet
             var id = createdBody.RootElement.GetProperty("data").GetProperty("connectionId").GetString()!;
             await fixture.Postgres.ApplyGlobalSeedSqlAsync(
                 $"CREATE TABLE public.{name} (id integer, geom geometry(Point,4326)); INSERT INTO public.{name} VALUES (1, ST_SetSRID(ST_MakePoint(1,2),4326)); ANALYZE public.{name};");
+
+            using var published = await admin.PostAsJsonAsync($"/api/v1/admin/connections/{id}/layers", new
+            {
+                schema = "public",
+                table = name,
+                layerName = name,
+                serviceName = name,
+                geometryColumn = "geom",
+                geometryType = "POINT",
+                srid = 4326
+            });
+            published.StatusCode.Should().Be(HttpStatusCode.Created);
+            using var publishedBody = JsonDocument.Parse(await published.Content.ReadAsStringAsync());
+            var storageLayerId = publishedBody.RootElement.GetProperty("data").GetProperty("layerId").GetInt32();
 
             foreach (var view in new[] { "configure", "setup", "full" })
                 (await ListToolNamesAsync(admin, view)).Should().Contain(
@@ -89,6 +104,7 @@ public sealed partial class McpConnectionDiscoveryIntegrationTests : IAsyncLifet
                          {
                              ("honua_admin_connections_list", "/api/v1/admin/connections", (object)new { }),
                              ("honua_admin_connection_tables_list", $"/api/v1/admin/connections/{id}/tables", new { connectionId = id }),
+                             ("honua_admin_connection_layers_list", $"/api/v1/admin/connections/{id}/layers", new { connectionId = id }),
                          })
                 {
                     using var rest = await client.GetAsync(path);
@@ -113,7 +129,7 @@ public sealed partial class McpConnectionDiscoveryIntegrationTests : IAsyncLifet
                         row.GetProperty("provider").GetString().Should().Be("postgis");
                         row.GetProperty("status").GetString().Should().NotBeNullOrWhiteSpace();
                     }
-                    else
+                    else if (tool == "honua_admin_connection_tables_list")
                     {
                         row = payload.GetProperty("tables").EnumerateArray()
                             .Single(item => item.GetProperty("table").GetString() == name);
@@ -123,6 +139,15 @@ public sealed partial class McpConnectionDiscoveryIntegrationTests : IAsyncLifet
                         row.GetProperty("geometryColumn").GetString().Should().Be("geom");
                         row.GetProperty("geometryType").GetString().Should().Be("POINT");
                         row.GetProperty("estimatedRows").GetInt64().Should().Be(1);
+                    }
+                    else
+                    {
+                        row = payload.GetProperty("layers").EnumerateArray()
+                            .Single(item => item.GetProperty("layerId").GetInt32() == storageLayerId);
+                        row.EnumerateObject().Select(property => property.Name)
+                            .Should().BeEquivalentTo("layerId", "layerName", "schema", "table", "serviceName", "enabled");
+                        row.GetProperty("serviceName").GetString().Should().Be(name);
+                        payload.GetProperty("total").GetInt32().Should().BeGreaterThanOrEqualTo(1);
                     }
                     call.GetRawText().Should().NotContain(fixture.Postgres.ConnectionString)
                         .And.NotContain(connection.Password!)

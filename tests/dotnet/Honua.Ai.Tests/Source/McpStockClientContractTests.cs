@@ -11,6 +11,24 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 public sealed partial class McpWorkflowViewTests
 {
     [UnitTest]
+    public async Task LiveWorkflowViews_NativeLayerWrites_ExposeStorageLayerDiscovery()
+    {
+        var catalog = await LiveCatalogAsync();
+        var source = catalog.Select(entry => entry.Descriptor).SingleOrDefault(descriptor => descriptor.Name == "honua_admin_connection_layers_list");
+        source.Should().NotBeNull("native layer writes consume storage ids, distinct from publication indexes");
+        source!.Annotations!.ReadOnlyHint.Should().BeTrue();
+        catalog.Single(entry => entry.Descriptor.Name == "honua_admin_layer_set_enabled").Descriptor
+            .InputSchema.GetProperty("properties").GetProperty("layerId").GetProperty("description").GetString()
+            .Should().Contain("honua_admin_connection_layers_list");
+        foreach (var view in McpWorkflowViewCatalog.All.Values)
+        {
+            var members = McpWorkflowViewProjector.Project(view, catalog).Members;
+            if (members.Any(member => member.ToolName == "honua_admin_layer_set_enabled"))
+                members.Should().Contain(member => member.ToolName == source.Name, view.Name);
+        }
+    }
+
+    [UnitTest]
     public async Task LiveWorkflowViews_StudioDraftConsumers_NameTheDraftCreator()
     {
         var catalog = await LiveCatalogAsync();

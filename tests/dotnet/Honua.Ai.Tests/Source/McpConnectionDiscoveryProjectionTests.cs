@@ -21,6 +21,8 @@ public sealed class McpConnectionDiscoveryProjectionTests
         """{"data":[{"connectionId":"123","name":"catalog","provider":"postgis","healthStatus":"Healthy","password":"private-upstream-value","connectionString":"private-upstream-value","encryptedConnectionString":"private-upstream-value","credentialReference":"private-upstream-value","host":"private-upstream-value","username":"private-upstream-value","extra":{"secret":"private-upstream-value"}}],"message":"private-upstream-value"}""")]
     [InlineData(McpConnectionDiscoveryProjection.TablesOperationId,
         """{"tables":[{"schema":"public","table":"parcels","geometryColumn":null,"geometryType":null,"estimatedRows":null,"columns":[{"name":"private-upstream-value"}],"password":"private-upstream-value","connectionString":"private-upstream-value"}],"secret":"private-upstream-value"}""")]
+    [InlineData("admin.connections.layers.list",
+        """{"data":{"items":[{"layerId":47,"layerName":"parcels","schema":"public","table":"parcels","serviceName":"catalog","enabled":true,"password":"private-upstream-value","connectionString":"private-upstream-value","extra":{"secret":"private-upstream-value"}}],"page":1,"pageSize":50,"total":1},"message":"private-upstream-value"}""")]
     public void CreateResult_UpstreamAddsSensitiveFields_SerializesOnlyTheAllowlist(string operationId, string response)
     {
         var result = McpConnectionDiscoveryProjection.CreateResult(operationId, Handle(operationId, response));
@@ -30,10 +32,25 @@ public sealed class McpConnectionDiscoveryProjectionTests
             ?? throw new Xunit.Sdk.XunitException("Expected structured content.");
         structured.GetRawText().Should().NotContain(Canary);
         result.Content.Should().OnlyContain(block => block.Text != null && !block.Text.Contains(Canary));
-        var arrayName = operationId == McpConnectionDiscoveryProjection.ConnectionsOperationId ? "data" : "tables";
+        var arrayName = operationId switch
+        {
+            McpConnectionDiscoveryProjection.ConnectionsOperationId => "data",
+            "admin.connections.layers.list" => "layers",
+            _ => "tables"
+        };
         var row = structured.GetProperty(arrayName)[0];
         row.EnumerateObject().Select(property => property.Name).Should().BeEquivalentTo(
-            arrayName == "data" ? ConnectionFields : TableFields);
+            arrayName switch
+            {
+                "data" => ConnectionFields,
+                "layers" => ["layerId", "layerName", "schema", "table", "serviceName", "enabled"],
+                _ => TableFields
+            });
+        if (arrayName == "layers")
+        {
+            row.GetProperty("layerId").GetInt32().Should().Be(47);
+            structured.GetProperty("total").GetInt32().Should().Be(1);
+        }
     }
 
     [UnitTheory]
@@ -57,6 +74,7 @@ public sealed class McpConnectionDiscoveryProjectionTests
     [UnitTheory]
     [InlineData(McpConnectionDiscoveryProjection.ConnectionsOperationId)]
     [InlineData(McpConnectionDiscoveryProjection.TablesOperationId)]
+    [InlineData("admin.connections.layers.list")]
     public void ScopeAuthority_ConnectionDiscovery_RequiresReadAuthority(string operationId)
     {
         var request = new OperationRequest { OperationId = operationId };

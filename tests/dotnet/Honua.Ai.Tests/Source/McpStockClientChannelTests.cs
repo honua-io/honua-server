@@ -43,7 +43,7 @@ public sealed partial class McpConnectionDiscoveryIntegrationTests
     }
 
     private async Task<int> CheckViewChannelsAsync(HttpClient admin, string view,
-        IReadOnlyDictionary<string, McpToolDescriptor> descriptors)
+        Dictionary<string, McpToolDescriptor> descriptors)
     {
         var names = await ListToolNamesAsync(admin, view);
         names.Should().NotBeEmpty(view);
