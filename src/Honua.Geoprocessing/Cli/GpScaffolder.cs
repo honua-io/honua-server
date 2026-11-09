@@ -71,7 +71,7 @@ public static class GpScaffolder
 {
     /// <summary>Repo-relative directory the managed executor template is written to.</summary>
     public const string ManagedExecutorDirectory =
-        "src/Honua.Geoprocessing/Features/Geoprocessing/Execution";
+        "src/Honua.Geoprocessing/Core/Features/Geoprocessing/Execution";
 
     /// <summary>Repo-relative directory the native (GDAL) executor template is written to.</summary>
     public const string GdalExecutorDirectory =
@@ -241,7 +241,7 @@ public static class GpScaffolder
         var executorDirectory = kind == GpProcessKind.Gdal ? GdalExecutorDirectory : ManagedExecutorDirectory;
         var registrationFile = kind == GpProcessKind.Gdal
             ? "src/Honua.Worker.Gdal/GdalWorkerServiceCollectionExtensions.cs"
-            : "src/Honua.Geoprocessing/Features/Geoprocessing/GeoprocessingServiceCollectionExtensions.cs";
+            : "src/Honua.Geoprocessing/Core/Features/Geoprocessing/GeoprocessingServiceCollectionExtensions.cs";
         var registrationCall = kind == GpProcessKind.Gdal
             ? $"RegisterGdalExecutor<{className}>(services);"
             : $"Register<{className}>(services);";

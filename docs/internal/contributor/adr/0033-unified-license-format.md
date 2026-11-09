@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-ADR-0024 established the open-core edition model and committed to offline-capable license enforcement. The licensing slice in `Honua.Core/Features/Licensing/` (`ILicenseManager`, `ILicenseStatusProvider`, `LicenseInfo`, `Entitlement`, `FeatureCatalog`, `HonuaEdition`) reserved the runtime contract.
+ADR-0024 established the open-core edition model and committed to offline-capable license enforcement. The licensing slice in `Honua.Core/Core/Features/Licensing/` (`ILicenseManager`, `ILicenseStatusProvider`, `LicenseInfo`, `Entitlement`, `FeatureCatalog`, `HonuaEdition`) reserved the runtime contract.
 
 > Implementation note, ticket #338: `honua-server` now ships the runtime baseline for offline license loading. The active runtime file is a JSON envelope `{ version, keyId, payload, signature }`, with `payload` and `signature` Base64URL encoded and Ed25519 verification over the exact payload bytes. Runtime public keys come from `Licensing:TrustedKeys:<keyId>`; no baked-in verification key, mint-host, marketplace, public-key inspection, hot reload, or Prometheus counter work ships in the #338 baseline.
 
@@ -127,7 +127,7 @@ runbooks (referenced below) prove old/new `keyId` coexistence and retirement.
   `marketplace_reconciler_runs_total{cloud,result}`, and
   `marketplace_operation_status_patches_total{cloud,action,result}`. Counter
   shapes are documented in the companion architecture doc § 6.2.
-- **Resilience**: marketplace HTTP clients and the adapter-to-mint client reuse `Honua.Core/Features/Infrastructure/Resilience/HttpResiliencePolicies` and `HttpClientResilienceExtensions`.
+- **Resilience**: marketplace HTTP clients and the adapter-to-mint client reuse `Honua.Core/Core/Features/Infrastructure/Resilience/HttpResiliencePolicies` and `HttpClientResilienceExtensions`.
 - **Durable buffer**: metering records and webhook reconciliation reuse the durable substrate already proven in `Honua.Server/Features/Infrastructure/Events/` (`FeatureChangeRetryQueue`, `FeatureChangeEventStore`). Two new queues — `MarketplaceMeteringQueue`, `MarketplaceWebhookQueue` — use the same Redis-backed implementation and lease coordination. The shared in-memory implementation remains available for `MarketplaceMeteringQueue` (eventually consistent, accepts dead-letter loss as a counted outcome) and for dev/test of `MarketplaceWebhookQueue`, but **production deployments with `Azure:Marketplace:Enabled=true` require the Redis-backed `MarketplaceWebhookQueue`** — the webhook handler returns 5xx (so Azure retries) instead of ACKing on a volatile in-memory fallback that would lose events on process exit and break the at-least-once delivery contract Microsoft expects. No new substrate.
 - **Caching**: #338 keeps the license snapshot in-process and does not store it
   in Redis or `ICacheService`. Follow-on file-watch, adapter re-mint, and
@@ -143,7 +143,7 @@ runbooks (referenced below) prove old/new `keyId` coexistence and retirement.
 
 Following the dependency rule `Honua.Core ← Honua.Db.Postgres / Honua.Db.DuckDB ← Honua.Server`:
 
-- **`Honua.Core/Features/Licensing/`** (no infrastructure deps, AOT-safe, public abstractions documented):
+- **`Honua.Core/Core/Features/Licensing/`** (no infrastructure deps, AOT-safe, public abstractions documented):
   - `Abstractions/` — #338 adds `ILicenseEntitlementService` and keeps
     `ILicenseManager` / `ILicenseStatusProvider` as the admin/status
     compatibility APIs. Validator, signer, public-key resolver, store, and
@@ -190,7 +190,7 @@ This contract is a coordination ticket whose code deliverables exceed a single P
 2. Runtime loader + JSON context — ticket #338 lands the signed JSON envelope,
    startup load, admin upload, status, health visibility, and entitlement gates.
 3. File watch/hot reload and license-cache invalidation.
-4. Mint library — `Honua.Core/Features/Licensing/Mint/` + `Configuration/LicenseSigningOptions`. AOT-safe. Disabled by default.
+4. Mint library — `Honua.Core/Core/Features/Licensing/Mint/` + `Configuration/LicenseSigningOptions`. AOT-safe. Disabled by default.
 5. Mint host endpoints — `Honua.Server/Features/Licensing/Mint/`. Admin-scoped, M2M-authenticated.
 6. AWS marketplace adapter (entitlements + mint path) — `Honua.Server/Features/Licensing/Marketplace/Aws/`. ALM seller-issued path deferred.
 7. AWS marketplace adapter (ALM seller-issued path) — feature-flagged. Optional.

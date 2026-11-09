@@ -45,9 +45,9 @@ surface, validation, delivery-channel evaluation, and per-rule operational healt
     (`PUT /rules/{ruleId}/enabled`), **draft validation** (`POST /rules/test`), and **operational health**
     (`GET /rules/{ruleId}/health`).
 - The admin store, `IAlertAdminStore`
-  (`src/Honua.Core/Features/Alerts/Abstractions/IAlertAdminStore.cs`) with `PostgresAlertAdminStore`
+  (`src/Honua.Core/Core/Features/Alerts/Abstractions/IAlertAdminStore.cs`) with `PostgresAlertAdminStore`
   (`src/Honua.Db/Postgres/Features/Alerts/PostgresAlertAdminStore.cs`), including `GetRuleHealthAsync`.
-- The domain (`src/Honua.Core/Features/Alerts/Domain/AlertModels.cs`): `AlertRuleDefinition`,
+- The domain (`src/Honua.Core/Core/Features/Alerts/Domain/AlertModels.cs`): `AlertRuleDefinition`,
   `AlertZoneDefinition`, `AlertTriggerType` (`Enter`/`Exit`/`Dwell`/`Threshold`), `AlertSeverity`
   (`Info`/`Warning`/`Critical`), `AlertChannelType` (webhook/websocket/email/digest/aws_sns/azure_eventgrid/
   slack/microsoft_teams/aws_sqs/azure_eventhub), `AlertRuleHealthSnapshot`, `AlertRuleDeliveryHealth`.
@@ -81,7 +81,7 @@ So #1169's server contract effectively **exists.** **The work is narrow:**
 | Wire DTOs + JSON | `AlertAdminModels.cs` / `AlertAdminJsonContext` | Frozen request/response shapes |
 | Validation | `ValidateRuleDraftAsync` + `TryValidateConditions` in `AlertAdminEndpoints` | The pre-persist gate (also exposed via `/rules/test`) |
 | Delivery-state | `AlertRuleDeliveryHealth` + `BuildChannelValidation` + `ResolveDeliveryHealthStatus` | The per-channel state the editor renders |
-| Event query (recent triggers) | `IAlertEventQuery` · `Honua.Core/Features/Alerts/Abstractions/IAlertEventQuery.cs` | Backs `health.recentTriggers`; reuse for an events-by-rule list if added |
+| Event query (recent triggers) | `IAlertEventQuery` · `Honua.Core/Core/Features/Alerts/Abstractions/IAlertEventQuery.cs` | Backs `health.recentTriggers`; reuse for an events-by-rule list if added |
 | Edition policy | `IAlertEditionPolicy` (`AlertEditionPolicy.cs`) | Channel/trigger gating — already enforced |
 | Audit | `IAuditLog` (`alert_rule.*` events) | Already wired in every mutation |
 | Envelope | `ApiResponse<T>` · `src/Honua.Hosting/Features/Models/ApiResponse.cs` | This group uses it (`success`/`data`/`message`/`timestamp`) |
@@ -249,7 +249,7 @@ route to `AlertAdminEndpoints` + `EndpointRegistry.cs` + the JSON context.
   config-change event (`alert_rule.create/update/enable/disable/delete`, `alert_zone.*`).
 - **Config / secrets:** rule authoring itself needs none. **Delivery-channel configuration** (SMTP, Slack/
   Teams webhook URLs, AWS SNS/SQS, Azure Event Grid/Hub) lives in the existing alert delivery config
-  (`AlertOptions` · `src/Honua.Core/Features/Alerts/Domain/AlertOptions.cs`; sinks under
+  (`AlertOptions` · `src/Honua.Core/Core/Features/Alerts/Domain/AlertOptions.cs`; sinks under
   `src/Honua.Server/Features/Alerts/*DeliverySink.cs`). The editor does NOT author secrets — it only selects
   channels, and the server reports each channel's configured/unconfigured/unauthorized state via §4.2/§4.3
   so the operator sees which channels will actually deliver. Channel credentials (SMTP `Password`, Slack/

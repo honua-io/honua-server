@@ -5,7 +5,7 @@ Accepted
 
 ## Context
 
-The plugin SDK (`src/Honua.Plugins.Abstractions/`, `src/Honua.Plugins/`) established in
+The plugin SDK (`src/Honua.Plugins/Abstractions/`, `src/Honua.Plugins/Core/`) established in
 issue #347 (phase 1) and #1562 (phase 2) has compile-time, DI-aggregated extension points
 for edit hooks, computed fields, feature/field validators, custom endpoints, and background
 services. It deliberately does **no runtime assembly loading**: plugins are referenced at
