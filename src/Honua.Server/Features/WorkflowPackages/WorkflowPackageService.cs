@@ -937,7 +937,7 @@ internal sealed class WorkflowPackageService(
                 WorkflowPackageValidationResult.Failed(failures, version.PackageHash));
         }
 
-        ValidateScheduledCatalogBindings(steps, version.PackageHash);
+        WorkflowPackageGraphCompiler.ValidateScheduledCatalogBindings(steps, version.PackageHash);
 
         var now = clock.GetUtcNow();
         return new WorkflowDefinition
@@ -957,24 +957,6 @@ internal sealed class WorkflowPackageService(
             UpdatedAt = now,
             Metadata = BuildProvenance(version, workflowDefinitionId, WorkflowPublicationTarget.Schedule, processId: null)
         };
-    }
-
-    private static void ValidateScheduledCatalogBindings(IReadOnlyList<WorkflowStepDefinition> steps, string packageHash)
-    {
-        foreach (var step in steps)
-        {
-            var inputKey = WorkflowOrchestrationEngine.FindDynamicCatalogIdentifier(step);
-            if (inputKey is not null)
-            {
-                throw new WorkflowPackageValidationException(WorkflowPackageValidationResult.Failed(
-                    [new WorkflowPackageValidationFailure
-                    {
-                        Code = "UNSUPPORTED_DYNAMIC_CATALOG_SCHEDULE",
-                        Message = WorkflowOrchestrationEngine.DynamicCatalogIdentifierMessage(step.StepId, inputKey),
-                        FieldPath = $"graph.nodes[{step.StepId}].parameters.{inputKey}"
-                    }], packageHash));
-            }
-        }
     }
 
     // The publisher's layer binding is stored on the definition, because later ticks run under an admin identity.

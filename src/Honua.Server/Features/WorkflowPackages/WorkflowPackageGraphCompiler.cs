@@ -4,6 +4,7 @@
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Orchestration.Domain;
 using Honua.Core.Features.WorkflowPackages.Domain;
+using Honua.Server.Features.Orchestration;
 
 namespace Honua.Server.Features.WorkflowPackages;
 
@@ -47,6 +48,24 @@ internal static class WorkflowPackageGraphCompiler
         }
 
         return (IReadOnlyList<StepInputBinding>?)bindings ?? Array.Empty<StepInputBinding>();
+    }
+
+    public static void ValidateScheduledCatalogBindings(IReadOnlyList<WorkflowStepDefinition> steps, string packageHash)
+    {
+        foreach (var step in steps)
+        {
+            var inputKey = WorkflowOrchestrationEngine.FindDynamicCatalogIdentifier(step);
+            if (inputKey is not null)
+            {
+                throw new WorkflowPackageValidationException(WorkflowPackageValidationResult.Failed(
+                    [new WorkflowPackageValidationFailure
+                    {
+                        Code = "UNSUPPORTED_DYNAMIC_CATALOG_SCHEDULE",
+                        Message = WorkflowOrchestrationEngine.DynamicCatalogIdentifierMessage(step.StepId, inputKey),
+                        FieldPath = $"graph.nodes[{step.StepId}].parameters.{inputKey}"
+                    }], packageHash));
+            }
+        }
     }
 
     public static AnalysisPlan ExpandForEachPlan(AnalysisPlan plan, WorkflowGraph graph)
