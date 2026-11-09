@@ -213,12 +213,12 @@ internal sealed class PostgresMigrationStyleApplicator(
             writer.WriteStartObject();
             foreach (var layerId in layerIds)
             {
-                writer.WritePropertyName($"layer-{layerId}");
+                writer.WritePropertyName(CatalogStyleLayerSource.GetId(layerId));
                 writer.WriteStartObject();
                 writer.WriteString("type", "vector");
                 writer.WritePropertyName("tiles");
                 writer.WriteStartArray();
-                writer.WriteStringValue($"/tiles/{layerId}/{{z}}/{{x}}/{{y}}.mvt");
+                writer.WriteStringValue(CatalogStyleLayerSource.GetTileUrl(layerId));
                 writer.WriteEndArray();
                 writer.WriteNumber("minzoom", 0);
                 writer.WriteNumber("maxzoom", 22);
@@ -274,7 +274,7 @@ internal sealed class PostgresMigrationStyleApplicator(
             writer.WriteString("id", $"migrated-style-layer-{layerId}");
         }
 
-        writer.WriteString("source", $"layer-{layerId}");
+        writer.WriteString("source", CatalogStyleLayerSource.GetId(layerId));
         writer.WriteString("source-layer", "layer");
         writer.WriteEndObject();
     }

@@ -85,27 +85,41 @@ public sealed class CatalogDefaultStyleTests : IAsyncLifetime
     [IntegrationTest]
     public async Task GetLayerStyle_SharedMigratedCatalogStyle_ProjectsOnlyRequestedSource()
     {
-        var document = JsonNode.Parse(CircleStyle("#ff0000"))!.AsObject();
-        document["sources"] = JsonNode.Parse("""{"layer-1":{"type":"vector","tiles":["/tiles/1/{z}/{x}/{y}.mvt"]},"layer-2":{"type":"vector","tiles":["/tiles/2/{z}/{x}/{y}.mvt"]}}""");
-        var first = document["layers"]![0]!.DeepClone();
-        first["source"] = "layer-1";
-        first["source-layer"] = "layer";
-        var second = first.DeepClone();
-        second["id"] = "circle-layer-2";
-        second["source"] = "layer-2";
-        document["layers"] = new JsonArray(first, second);
+        var document = SharedSourceStyle();
         var catalog = _fixture.GetService<IStyleCatalog>();
         var id = $"shared-{Guid.NewGuid():N}";
-        await catalog.CreateStyleAsync(id, document.ToJsonString());
+        await catalog.CreateStyleAsync(id, document);
         (await catalog.AssociateLayerAsync(LayerId, id, ordinal: 0)).Should().BeTrue();
+        (await catalog.AssociateLayerAsync(2, id, ordinal: 0)).Should().BeTrue();
 
         var style = await _fixture.GetService<ILayerStyleCatalog>().GetLayerStyleAsync(LayerId);
         using var projected = JsonDocument.Parse(style!.MapLibreStyleJson!);
 
-        projected.RootElement.GetProperty("layers").EnumerateArray().Select(layer => layer.GetProperty("source").GetString())
-            .Should().Equal(new[] { "layer-1" }, "other target symbolizers must not be rendered against this layer's features");
+        projected.RootElement.GetProperty("layers").EnumerateArray().Select(layer => layer.GetProperty("id").GetString())
+            .Should().Equal("points", "background", "context");
         projected.RootElement.GetProperty("sources").EnumerateObject().Select(source => source.Name)
-            .Should().Equal("layer-1");
+            .Should().BeEquivalentTo(new[] { "layer-1", "external" });
+    }
+
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetLayerStyle_UnsharedMultiSourceStyle_PreservesContext(bool catalogAssociation)
+    {
+        var json = SharedSourceStyle();
+        var layerStyles = _fixture.GetService<ILayerStyleCatalog>();
+        await layerStyles.SetMapLibreStyleAsync(LayerId, json);
+        if (catalogAssociation)
+        {
+            var catalog = _fixture.GetService<IStyleCatalog>();
+            var id = $"context-{Guid.NewGuid():N}";
+            await catalog.CreateStyleAsync(id, json);
+            (await catalog.AssociateLayerAsync(LayerId, id, ordinal: 0)).Should().BeTrue();
+        }
+
+        var style = await layerStyles.GetLayerStyleAsync(LayerId);
+
+        JsonNode.DeepEquals(JsonNode.Parse(style!.MapLibreStyleJson!), JsonNode.Parse(json)).Should().BeTrue();
     }
 
     [IntegrationTest]
@@ -273,6 +287,25 @@ public sealed class CatalogDefaultStyleTests : IAsyncLifetime
         await catalog.CreateStyleAsync(styleId, CircleStyle(color));
         (await catalog.AssociateLayerAsync(LayerId, styleId)).Should().BeTrue();
         return styleId;
+    }
+
+    private static string SharedSourceStyle()
+    {
+        var document = JsonNode.Parse(CircleStyle("#ff0000"))!.AsObject();
+        document["sources"] = JsonNode.Parse("""{"layer-1":{"type":"vector","tiles":["/tiles/1/{z}/{x}/{y}.mvt"]},"layer-2":{"type":"vector","tiles":["/tiles/2/{z}/{x}/{y}.mvt"]},"external":{"type":"geojson","data":{"type":"FeatureCollection","features":[]}}}""");
+        var first = document["layers"]![0]!.DeepClone();
+        first["source"] = "layer-1";
+        first["source-layer"] = "layer";
+        var second = first.DeepClone();
+        second["id"] = "circle-layer-2";
+        second["source"] = "layer-2";
+        var context = first.DeepClone().AsObject();
+        context["id"] = "context";
+        context["source"] = "external";
+        context.Remove("source-layer");
+        document["layers"] = new JsonArray(first, second,
+            JsonNode.Parse("""{"id":"background","type":"background","paint":{"background-color":"#ffffff"}}"""), context);
+        return document.ToJsonString();
     }
 
     private static string CircleStyle(string color) => """

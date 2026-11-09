@@ -48,11 +48,13 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
                 CASE WHEN primary_style.style_id IS NULL THEN layers.style_version ELSE primary_style.style_version END,
                 CASE WHEN primary_style.style_id IS NULL THEN layers.style_revised_at ELSE primary_style.updated_at END,
                 CASE WHEN primary_style.style_id IS NULL THEN layers.style_revised_by ELSE primary_style.revised_by END,
-                CASE WHEN primary_style.style_id IS NULL THEN layers.style_change_summary ELSE primary_style.change_summary END
+                CASE WHEN primary_style.style_id IS NULL THEN layers.style_change_summary ELSE primary_style.change_summary END,
+                primary_style.layer_ids
             FROM {_layersTable} layers
             LEFT JOIN LATERAL (
                 SELECT styles.style_id, styles.maplibre_style, styles.drawing_info,
-                    styles.style_version, styles.updated_at, styles.revised_by, styles.change_summary
+                    styles.style_version, styles.updated_at, styles.revised_by, styles.change_summary,
+                    ARRAY(SELECT DISTINCT other.layer_id FROM {_refsTable} other WHERE other.style_id = styles.style_id) AS layer_ids
                 FROM {_refsTable} refs
                 JOIN {_stylesTable} styles ON styles.style_id = refs.style_id
                 WHERE refs.layer_id = layers.layer_id AND refs.ordinal = 0
@@ -73,7 +75,8 @@ internal sealed class PostgresLayerStyleCatalog : ILayerStyleCatalog
         }
 
         var style = ReadStyle(reader);
-        return style with { MapLibreStyleJson = CatalogStyleSourceProjection.ForLayer(style.MapLibreStyleJson, layerId) };
+        return style with { MapLibreStyleJson = CatalogStyleSourceProjection.ForLayer(style.MapLibreStyleJson, layerId,
+            reader.IsDBNull(7) ? [] : reader.GetFieldValue<int[]>(7)) };
     }
 
     /// <inheritdoc />
