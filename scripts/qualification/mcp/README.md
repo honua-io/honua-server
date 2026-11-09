@@ -42,3 +42,48 @@ redirects and malformed/contradictory acknowledgements, and closes its SDK
 session on all exits. Its diagnostic output does not echo server error bodies.
 The workflow retains separate control-count/source evidence with
 `candidateQualified: false`; lifecycle receipts retain the real scenario outcome.
+
+## Job status and result tools
+
+`job-results-journey.mjs` uses that same published SDK and immutable dependency
+lock. In the `analyze` view it discovers `honua_execute_plan`, `honua_list_jobs`
+and `honua_get_job_results`, submits a point buffer in EPSG:3857, polls the
+caller-scoped job list to `Succeeded`, and reads the completed result package.
+It verifies the returned GeoJSON bytes, input parameters, polygon radius,
+closure and area. Both text JSON and structured content must agree on every
+tool call. Human-readable summary blocks may accompany the full text JSON.
+
+A separate caller with job-read permission must neither list the owner's job
+nor retrieve its results. Result lookup must return the same `not_found` code
+as a nonexistent job. The journey never calls `resources/read`. Inline data
+artifacts and same-origin staged artifact downloads are supported; redirects
+and credential-bearing artifact URLs are refused. Receipts contain package
+identity, source hashes, result-byte hash, geometry measurements and refusal
+codes, never API keys or raw server responses.
+
+Run against an owned loopback server with the owner's execution key and a
+different caller's read-only key in `HONUA_MCP_JOB_OWNER_KEY` and
+`HONUA_MCP_JOB_OTHER_KEY`, respectively:
+
+```sh
+node scripts/qualification/mcp/job-results-journey.mjs http://127.0.0.1:8080
+```
+
+The **GP Lifecycle Qualification** workflow runs the installed-client journey
+on relevant pull requests against a real Kestrel server, disposable PostGIS and
+Redis, and the production geometry-buffer executor. The fixture creates the
+other caller's `admin:read` key through the actual admin API. To run that same
+focused test after installing the pinned SDK beside these scripts:
+
+```sh
+HONUA_MCP_JOB_CLIENT=1 dotnet test tests/dotnet/Honua.Ai.Tests/Honua.Ai.Tests.csproj \
+  --configuration Release --filter FullyQualifiedName~McpJobToolsInstalledClientTests
+```
+
+`HONUA_MCP_JOB_CLIENT` opts into the SDK installation prerequisite; ordinary
+test runs report this external-client test as skipped. The dedicated workflow
+requires its one actual test result to pass, so an absent prerequisite or an
+empty filter cannot satisfy that check. Its evidence establishes the source
+candidate's tool journey; it does not certify a deployed release image or
+replace the existing lifecycle matrix. Scripted-peer controls in
+`job-results-journey.test.mjs` exercise refusal boundaries separately.
