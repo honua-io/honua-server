@@ -58,7 +58,7 @@ public sealed class OperationSchemaNullabilityTests
         schema.Properties["list"].Items!.AllowsNull.Should().BeTrue();
     }
 
-    [UnitFact]
+    [UnitTest]
     public void Serialize_OmitsAllowsNullUnlessSet()
     {
         var plain = JsonSerializer.Serialize(new WorkflowSchemaDefinition { Type = WorkflowSchemaValueType.Text },
