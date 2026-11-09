@@ -30,6 +30,8 @@ internal sealed partial class IngestDatasetTool : IMcpTool
 
     public const string ImportedPrimaryKey = "id";
 
+    private const int GeocodedSourceSrid = 4326;
+
     private const string CsvFormat = "csv";
     private const string GeoJsonFormat = "geojson";
 
@@ -112,7 +114,7 @@ internal sealed partial class IngestDatasetTool : IMcpTool
                 FileName = $"{validated.DatasetName}.{validated.Format}",
                 TableName = validated.DatasetName,
                 SourceKind = "mcp-inline",
-                SourceSrid = validated.SourceSrid ?? (validated.AddressColumn is not null ? 4326 : null),
+                SourceSrid = validated.SourceSrid ?? (validated.AddressColumn is not null ? GeocodedSourceSrid : null),
                 TargetSrid = validated.TargetSrid,
                 OverwriteExisting = true,
                 CsvOptions = csvOptions
@@ -244,7 +246,7 @@ internal sealed partial class IngestDatasetTool : IMcpTool
         var allowFailover = LicenseGate
             .CheckEntitlement(httpContext.RequestServices, GeocodeTool.FailoverEntitlementKey)
             .IsActive;
-        var sourceSrid = validated.SourceSrid ?? 4326;
+        var sourceSrid = validated.SourceSrid ?? GeocodedSourceSrid;
         return new CsvImportOptions
         {
             AddressColumn = validated.AddressColumn,

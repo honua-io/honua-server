@@ -32,7 +32,7 @@ internal static partial class ImportEndpoints
         catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
         {
             var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
-            Log.PreviewFailed(logger, "coordinate-system catalog", ex);
+            Log.CoordinateSystemCatalogFailed(logger, ex);
             await AdminResponseWriter.WriteErrorAsync(context, "The coordinate-system catalog is unavailable.", StatusCodes.Status503ServiceUnavailable);
         }
     }
@@ -41,10 +41,19 @@ internal static partial class ImportEndpoints
         HttpContext context, FilePreview preview, CancellationToken cancellationToken)
     {
         if (preview.CoordinateSystem?.DetectedSrid is not { } srid) return preview;
-        var registry = context.RequestServices.GetRequiredService<ICrsRegistry>();
-        var definition = await registry.ResolveBySridAsync(srid, cancellationToken);
-        return definition.HasValue
-            ? preview with { CoordinateSystem = preview.CoordinateSystem with { DetectedCrs = CoordinateSystemEntry.FromDefinition(definition.Value) } }
-            : preview;
+        try
+        {
+            var registry = context.RequestServices.GetRequiredService<ICrsRegistry>();
+            var definition = await registry.ResolveBySridAsync(srid, cancellationToken);
+            return definition.HasValue
+                ? preview with { CoordinateSystem = preview.CoordinateSystem with { DetectedCrs = CoordinateSystemEntry.FromDefinition(definition.Value) } }
+                : preview;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
+        {
+            var logger = context.RequestServices.GetRequiredService<ILogger<ImportEndpointsLog>>();
+            Log.CoordinateSystemCatalogFailed(logger, ex);
+            return preview;
+        }
     }
 }

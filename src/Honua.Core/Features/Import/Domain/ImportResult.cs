@@ -125,6 +125,8 @@ public static class ImportValidationErrorCodes
 
     public const string SourceSridRequired = "import.source_srid_required";
 
+    public const string SourceSridHeterogeneous = "import.source_srid_heterogeneous";
+
     public const string SourceSridUnsupported = "import.source_srid_unsupported";
 
     public const string TargetSridUnsupported = "import.target_srid_unsupported";

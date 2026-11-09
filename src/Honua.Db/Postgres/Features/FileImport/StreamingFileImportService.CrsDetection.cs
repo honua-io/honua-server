@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text;
+using NetTopologySuite.Features;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Import.Abstractions;
@@ -18,6 +19,31 @@ namespace Honua.Db.Postgres.Features.FileImport;
 
 internal sealed partial class StreamingFileImportService
 {
+    private const string MixedSourceCrsMessage = "The file contains multiple source coordinate systems. Import each coordinate system separately or supply a source SRID override.";
+
+    private static bool HasConflictingSourceSrid(IFeature feature, int sourceSrid)
+        => feature.Geometry is { SRID: > 0 } geometry && geometry.SRID != sourceSrid;
+
+    private static async Task<bool> HasUniformSourceCrsAsync(
+        Stream stream, SupportedFileFormat format, int sourceSrid, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var features = format == SupportedFileFormat.Csv
+                ? CsvFormatReader.ReadStreamingAsync(stream, cancellationToken)
+                : WktFormatReader.ReadStreamingAsync(stream, cancellationToken);
+            await foreach (var feature in features.WithCancellation(cancellationToken))
+            {
+                if (HasConflictingSourceSrid(feature, sourceSrid)) return false;
+            }
+            return true;
+        }
+        finally
+        {
+            stream.Position = 0;
+        }
+    }
+
     /// <summary>
     /// Detect CRS from stream without loading entire file.
     /// </summary>
@@ -43,7 +69,7 @@ internal sealed partial class StreamingFileImportService
                 _ => null
             };
         }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
+        catch (Exception ex) when (ex is not OutOfMemoryException and not OperationCanceledException)
         {
             // Intentionally generic: best-effort CRS auto-detection — on failure, log and return null
             // so the caller falls back to an explicit source SRID or the format's default rather than
@@ -123,8 +149,8 @@ internal sealed partial class StreamingFileImportService
 
     private static async Task<int?> DetectGeoJsonSridAsync(Stream stream, CancellationToken cancellationToken)
     {
-        var detected = await StreamingGeoJsonReader.DetectCrsMetadataAsync(stream, cancellationToken);
-        return detected.Declared || !detected.Complete ? detected.Srid : 4326;
+        var detected = await StreamingGeoJsonReader.InspectCoordinateSystemAsync(stream, cancellationToken);
+        return detected.DetectedSrid;
     }
 
     private static async Task<byte[]?> ReadHeaderAsync(Stream stream, CancellationToken cancellationToken)

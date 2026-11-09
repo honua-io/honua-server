@@ -51,13 +51,9 @@ public sealed class McpIngestDatasetToolTests
         var importService = Substitute.For<IFileImportService>();
         ImportRequest? captured = null;
         importService.ImportFileAsync(Arg.Do<ImportRequest>(r => captured = r), Arg.Any<CancellationToken>())
-            .Returns(ImportResult.CreateSuccess(
-                "landmarks",
-                SupportedFileFormat.GeoJson,
-                featureCount: 1,
-                detectedSrid: 4326,
-                physicalTableName: "imported_landmarks",
-                schema: "honua_data") with { SourceSrid = 4326, StoredSrid = 4326 });
+            .Returns(JsonSerializer.Deserialize<ImportResult>(
+                """{"success":true,"tableName":"landmarks","format":0,"featureCount":1,"detectedSrid":4326,"sourceSrid":4326,"storedSrid":4326,"physicalTableName":"imported_landmarks","schema":"honua_data"}""",
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!);
 
         var response = await DispatchAsync(
             BuildServices(importService),
@@ -82,7 +78,7 @@ public sealed class McpIngestDatasetToolTests
         captured!.SourceSrid.Should().BeNull();
         captured.FileName.Should().Be("landmarks.geojson");
         captured.TableName.Should().Be("landmarks");
-        captured.TargetSrid.Should().BeNull();
+        ((object?)captured.TargetSrid).Should().BeNull();
         captured.CsvOptions.Should().BeNull();
 
     }
@@ -120,6 +116,25 @@ public sealed class McpIngestDatasetToolTests
         captured!.SourceSrid.Should().Be(sourceSrid);
         captured.TargetSrid.Should().Be(targetSrid);
         structured.GetProperty("table").GetString().Should().Be("imported_projected");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /mcp tools/call honua_ingest_dataset")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task ToolsCall_UndeclaredCsv_LeavesSourceResolutionToCanonicalImporter()
+    {
+        var importer = Substitute.For<IFileImportService>();
+        ImportRequest? captured = null;
+        importer.ImportFileAsync(Arg.Do<ImportRequest>(request => captured = request), Arg.Any<CancellationToken>())
+            .Returns(ImportResult.CreateFailure("unknown", SupportedFileFormat.Csv, "A source SRID is required.",
+                errorCode: ImportValidationErrorCodes.SourceSridRequired));
+        var structured = AssertToolSucceeded(await DispatchAsync(BuildServices(importer),
+            """{"format":"csv","data":"geometry\\nPOINT(1 2)\\n","datasetName":"unknown"}"""));
+        structured.GetProperty("success").GetBoolean().Should().BeFalse();
+        structured.GetProperty("errorCode").GetString().Should().Be(ImportValidationErrorCodes.SourceSridRequired);
+        captured!.SourceSrid.Should().BeNull();
+        ((object?)captured.TargetSrid).Should().BeNull();
     }
 
     [UnitTest]
@@ -345,6 +360,8 @@ public sealed class McpIngestDatasetToolTests
         // The tool must hand the shared pipeline a working geocoder hook bound to
         // the canonical coordinator, capped at the batch limit.
         captured!.CsvOptions.Should().NotBeNull();
+        captured.SourceSrid.Should().Be(4326);
+        ((object?)captured.TargetSrid).Should().BeNull();
         captured.CsvOptions!.AddressColumn.Should().Be("address");
         captured.CsvOptions.MaxGeocodedRows.Should().Be(100);
         captured.CsvOptions.AddressGeocoder.Should().NotBeNull();

@@ -35,7 +35,9 @@ public sealed class CsvPreviewTests
         var preview = await service.PreviewFileAsync(stream, "sample.csv");
 
         preview.Format.Should().Be(SupportedFileFormat.Csv);
-        preview.DetectedSrid.Should().Be(4326);
+        preview.DetectedSrid.Should().BeNull();
+        preview.CoordinateSystem!.RequiresSourceOverride.Should().BeTrue();
+        preview.CoordinateSystem.SourceCrsDeclared.Should().BeFalse();
         preview.TotalFeatureCount.Should().Be(2);
         preview.SampleProperties.Should().ContainKey("name");
         preview.SampleProperties["name"].Should().Be("San Francisco");
@@ -79,7 +81,9 @@ public sealed class CsvPreviewTests
         var preview = await service.PreviewFileAsync(stream, "sample.csv");
 
         preview.Format.Should().Be(SupportedFileFormat.Csv);
-        preview.DetectedSrid.Should().Be(4326);
+        preview.DetectedSrid.Should().BeNull();
+        preview.CoordinateSystem!.RequiresSourceOverride.Should().BeTrue();
+        preview.CoordinateSystem.SourceCrsDeclared.Should().BeFalse();
         preview.TotalFeatureCount.Should().Be(2);
         preview.SampleProperties.Should().ContainKey("name");
         preview.SampleProperties["name"].Should().Be("San Francisco");

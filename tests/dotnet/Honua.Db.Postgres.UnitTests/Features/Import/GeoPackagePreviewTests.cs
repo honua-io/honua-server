@@ -33,6 +33,8 @@ public sealed class GeoPackagePreviewTests
             preview.Format.Should().Be(SupportedFileFormat.GeoPackage);
             preview.AvailableLayers.Should().Contain("sample_layer");
             preview.DetectedSrid.Should().Be(4326);
+            preview.CoordinateSystem!.DetectedSrid.Should().Be(4326);
+            preview.CoordinateSystem.StoredSrid.Should().Be(4326);
             preview.TotalFeatureCount.Should().Be(1);
             preview.SampleProperties.Should().ContainKey("name");
             preview.SampleProperties["name"].Should().Be("Test Feature");
@@ -65,6 +67,8 @@ public sealed class GeoPackagePreviewTests
 
             preview.Format.Should().Be(SupportedFileFormat.GeoPackage);
             preview.DetectedSrid.Should().Be(27700);
+            preview.CoordinateSystem!.DetectedSrid.Should().Be(27700);
+            preview.CoordinateSystem.StoredSrid.Should().Be(27700);
         }
         finally
         {
@@ -123,6 +127,8 @@ public sealed class GeoPackagePreviewTests
             preview.AvailableLayers.Should().Contain("sample_layer");
             preview.TotalFeatureCount.Should().Be(1);
             preview.DetectedSrid.Should().Be(4326);
+            preview.CoordinateSystem!.DetectedSrid.Should().Be(4326);
+            preview.CoordinateSystem.StoredSrid.Should().Be(4326);
         }
         finally
         {

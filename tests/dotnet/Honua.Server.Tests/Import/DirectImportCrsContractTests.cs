@@ -11,6 +11,11 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Hosting;
 using Npgsql;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Shared.Models;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using NSubstitute;
 
 namespace Honua.Server.Tests.Import;
 
@@ -202,6 +207,47 @@ public sealed class DirectImportCrsContractTests : IAsyncLifetime
         using var response = await _fixture.Client.GetAsync("/api/v1/admin/coordinate-systems?q=2193");
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/coordinate-systems")]
+    public async Task CoordinateSystems_RegistryFailure_ReturnsSafeUnavailableResponse()
+    {
+        var registry = Substitute.For<ICrsRegistry>();
+        registry.SearchAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromException<CoordinateSystemSearchResult>(new InvalidOperationException("private-registry-details")));
+        var fixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.RemoveAll<ICrsRegistry>();
+            services.AddSingleton<ICrsRegistry>(registry);
+        });
+        try
+        {
+            await fixture.InitializeAsync();
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.GetAsync("/api/v1/admin/coordinate-systems?q=2193");
+            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+            (await response.Content.ReadAsStringAsync()).Should().NotContain("private-registry-details");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/upload")]
+    public async Task ImportFile_MixedSourceDeclarations_RejectsBeforeCreatingDestination()
+    {
+        var fields = NewImportFields();
+        using var result = await PostFileAsync("upload", new("mixed.wkt", "SRID=2193;POINT(1740000 5420000)\nSRID=3857;POINT(1 2)", fields));
+        result.RootElement.GetProperty("success").GetBoolean().Should().BeFalse();
+        result.RootElement.GetProperty("errorCode").GetString().Should().Be("import.source_srid_heterogeneous");
+        await using var connection = await _fixture.Postgres.GetConnectionAsync();
+        await using var query = new NpgsqlCommand("SELECT count(*) FROM pg_class WHERE relname = @logical OR relname = @physical", connection);
+        query.Parameters.AddWithValue("logical", fields["TableName"]);
+        query.Parameters.AddWithValue("physical", "imported_" + fields["TableName"]);
+        Convert.ToInt64(await query.ExecuteScalarAsync(), CultureInfo.InvariantCulture).Should().Be(0);
     }
 
     private async Task<JsonDocument> PostFileAsync(string operation, FileUpload upload)

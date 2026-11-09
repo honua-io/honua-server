@@ -85,6 +85,34 @@ public sealed class GeoJsonPreviewNonSeekableTests
         metadata.GetProperty("public").GetBoolean().Should().BeTrue();
     }
 
+    [Honua.TestKit.Attributes.UnitTheory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public async Task PreviewFileAsync_GeoJsonLateRootCrs_ReportsDeclaredSource(bool nonSeekable, bool bom)
+    {
+        var geoJson = "{\"type\":\"FeatureCollection\",\"features\":[{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[1740000,5420000]},\"properties\":{\"padding\":\""
+            + new string('x', 20000) + "\"}}],\"crs\":{\"type\":\"name\",\"properties\":{\"name\":\"EPSG:2193\"}}}";
+        var bytes = Encoding.UTF8.GetBytes((bom ? "\uFEFF" : "") + geoJson);
+        await using Stream stream = nonSeekable ? new NonSeekableStream(new MemoryStream(bytes)) : new MemoryStream(bytes);
+        var preview = await CreateService().PreviewFileAsync(stream, "late.geojson");
+        preview.TotalFeatureCount.Should().Be(1);
+        preview.CoordinateSystem!.DetectedSrid.Should().Be(2193);
+        preview.CoordinateSystem.SourceCrsDeclared.Should().BeTrue();
+        preview.CoordinateSystem.DetectionMethod.Should().Be("file-metadata");
+    }
+
+    [Honua.TestKit.Attributes.UnitTest]
+    public async Task PreviewFileAsync_GeoJsonCommentsAndTrailingCommas_UsesFormatDefinedCrs()
+    {
+        const string json = "{ /* metadata */ \"type\":\"FeatureCollection\",\"features\":[{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[1,2]},\"properties\":{},},],}";
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+        var preview = await CreateService().PreviewFileAsync(stream, "comments.geojson");
+        preview.CoordinateSystem!.DetectedSrid.Should().Be(4326);
+        preview.CoordinateSystem.SourceCrsDeclared.Should().BeFalse();
+        preview.CoordinateSystem.DetectionMethod.Should().Be("format-defined");
+    }
+
     private static IFileImportService CreateService() =>
         PreviewImportServiceFactory.Create();
 

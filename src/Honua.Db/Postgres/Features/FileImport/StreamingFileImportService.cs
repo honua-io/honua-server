@@ -421,10 +421,11 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                     return result;
                 }
 
-                // A geodatabase with no feature classes has nothing to georeference (the import
-                // reports NoFeaturesFound), so only then is the target SRID an acceptable source.
-                // Otherwise an unresolvable CRS must fail with SourceSridRequired like every other
-                // format instead of silently assuming the target SRID (#6114).
+                if (layers.Length == 0)
+                {
+                    return ImportResult.CreateFailure(request.TableName, format.Value, "No features found in file", stopwatch.Elapsed);
+                }
+
                 detectedSrid = await ResolveFileGdbSridAsync(layers, cancellationToken);
                 warnings = FileGdb.FileGdbAdvancedConstructs.DetectWarnings(fileGdbScratch.GdbPath);
             }
@@ -454,11 +455,9 @@ internal sealed partial class StreamingFileImportService : IFileImportService
 
                 fileStream = prep.Stream!;
             }
-            else if (format.Value == SupportedFileFormat.FlatGeobuf && !fileStream.CanSeek)
+            else if (format.Value is SupportedFileFormat.FlatGeobuf or SupportedFileFormat.GeoJson && !fileStream.CanSeek)
             {
-                // FlatGeobuf requires seeking for both CRS detection and Deserialize.
-                // Always spill non-seekable streams at the service level so progress
-                // metrics, BytesRead, and TotalBytes are available from the seekable temp file.
+                // GeoJSON needs a complete CRS inspection before validation; FlatGeobuf requires seeking to deserialize.
                 fgbTempStream = await SpillToSeekableTempAsync(fileStream, cancellationToken);
                 if (shouldDisposeStream)
                 {
@@ -550,6 +549,24 @@ internal sealed partial class StreamingFileImportService : IFileImportService
                     sridValidationErrors[0].Code,
                     sridValidationErrors);
                 return result;
+            }
+
+            if (format.Value is SupportedFileFormat.Csv or SupportedFileFormat.Wkt && !request.SourceSrid.HasValue)
+            {
+                if (!fileStream.CanSeek)
+                {
+                    var seekable = await SpillToSeekableTempAsync(fileStream, cancellationToken);
+                    if (shouldDisposeStream) await fileStream.DisposeAsync();
+                    fileStream = seekable;
+                    shouldDisposeStream = true;
+                    totalBytes = seekable.Length;
+                }
+                if (!await HasUniformSourceCrsAsync(fileStream, format.Value, sourceSrid.Value, cancellationToken))
+                {
+                    return ImportResult.CreateFailure(request.TableName, format.Value, MixedSourceCrsMessage,
+                        stopwatch.Elapsed, warnings, ImportValidationErrorCodes.SourceSridHeterogeneous,
+                        [ImportValidationIssue.Create(ImportValidationErrorCodes.SourceSridHeterogeneous, MixedSourceCrsMessage)]);
+                }
             }
 
             // Non-fatal preflight issues (e.g. GeoJSON geometries that will be repaired by the

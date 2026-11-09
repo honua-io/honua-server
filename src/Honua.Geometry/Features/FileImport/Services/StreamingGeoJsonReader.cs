@@ -950,36 +950,49 @@ internal sealed class StreamingGeoJsonReader
         };
     }
 
-    /// <summary>
-    /// Detect CRS from GeoJSON stream header without reading the entire file.
-    /// Reads only the beginning of the file to find the CRS property.
-    /// </summary>
-    public static async Task<int?> DetectCrsAsync(Stream stream, CancellationToken cancellationToken = default)
-        => (await DetectCrsMetadataAsync(stream, cancellationToken)).Srid;
-
-    public static async Task<(int? Srid, bool Declared, bool Complete)> DetectCrsMetadataAsync(
+    public static async Task<ImportCoordinateSystem> InspectCoordinateSystemAsync(
         Stream stream, CancellationToken cancellationToken = default)
     {
         var buffer = new byte[16384];
         var buffered = 0;
-        var state = new JsonReaderState();
+        var state = new JsonReaderState(new JsonReaderOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip });
         var scan = new CrsMetadataScan();
+        var firstChunk = true;
         try
         {
             while (true)
             {
                 var read = await stream.ReadAsync(buffer.AsMemory(buffered), cancellationToken);
                 buffered += read;
+                if (firstChunk)
+                {
+                    if (buffered < 3 && read > 0) continue;
+                    firstChunk = false;
+                    if (buffered >= 3 && buffer[0] == 0xEF && buffer[1] == 0xBB && buffer[2] == 0xBF)
+                    {
+                        buffer.AsSpan(3, buffered - 3).CopyTo(buffer);
+                        buffered -= 3;
+                    }
+                }
                 var consumed = ReadCrsTokens(buffer.AsSpan(0, buffered), read == 0, ref state, scan);
-                if (scan.Complete || read == 0) return (scan.Srid, scan.Declared, scan.Complete);
+                if (scan.Complete || read == 0)
+                {
+                    var formatDefined = !scan.Declared && scan.Complete;
+                    return ImportCoordinateSystem.FromDetection(scan.Srid ?? (formatDefined ? 4326 : null), scan.Declared, formatDefined);
+                }
                 buffer.AsSpan(consumed, buffered - consumed).CopyTo(buffer);
                 buffered -= consumed;
                 if (buffered == buffer.Length)
                 {
-                    if (buffer.Length >= 16 * 1024 * 1024) return (null, scan.Declared, false);
+                    if (buffer.Length >= 16 * 1024 * 1024) return ImportCoordinateSystem.FromDetection(null, scan.Declared);
                     Array.Resize(ref buffer, buffer.Length * 2);
                 }
             }
+        }
+        catch (JsonException)
+        {
+            // The shared validator and feature reader report malformed JSON before any rows are stored.
+            return ImportCoordinateSystem.FromDetection(4326, declared: false, formatDefined: true);
         }
         finally
         {

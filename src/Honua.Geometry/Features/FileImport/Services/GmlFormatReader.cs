@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.Import.Domain;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Xml;
@@ -122,6 +123,9 @@ internal static class GmlFormatReader
     /// Returns <see langword="null"/> if no srsName is found or it cannot be parsed to an EPSG code.
     /// </summary>
     internal static async Task<int?> TryDetectSridAsync(Stream stream, CancellationToken cancellationToken)
+        => (await InspectCoordinateSystemAsync(stream, cancellationToken)).DetectedSrid;
+
+    internal static async Task<ImportCoordinateSystem> InspectCoordinateSystemAsync(Stream stream, CancellationToken cancellationToken)
     {
         var settings = BuildXmlReaderSettings();
         using var reader = XmlReader.Create(stream, settings);
@@ -135,7 +139,7 @@ internal static class GmlFormatReader
                 var srsName = reader.GetAttribute("srsName");
                 if (!string.IsNullOrWhiteSpace(srsName))
                 {
-                    return ParseSrsNameToSrid(srsName);
+                    return ImportCoordinateSystem.FromDetection(ParseSrsNameToSrid(srsName), declared: true);
                 }
 
                 // Only scan the root element — stop at the first feature member
@@ -147,7 +151,7 @@ internal static class GmlFormatReader
             }
         }
 
-        return null;
+        return ImportCoordinateSystem.FromDetection(null, declared: false);
     }
 
     /// <summary>

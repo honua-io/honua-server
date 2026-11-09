@@ -2,6 +2,7 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Runtime.CompilerServices;
+using Honua.Core.Features.Import.Domain;
 using System.Text.Json;
 using NetTopologySuite.Algorithm;
 using NetTopologySuite.Features;
@@ -77,15 +78,20 @@ internal static class GeoServicesJsonFormatReader
     /// <see langword="null"/> when the document has no usable spatial reference.
     /// </summary>
     internal static async Task<int?> TryDetectSridAsync(Stream stream, CancellationToken cancellationToken)
+        => (await InspectCoordinateSystemAsync(stream, cancellationToken)).DetectedSrid;
+
+    internal static async Task<ImportCoordinateSystem> InspectCoordinateSystemAsync(Stream stream, CancellationToken cancellationToken)
     {
         try
         {
             using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
-            return TryReadWkid(document.RootElement);
+            var root = document.RootElement;
+            var declared = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("spatialReference", out _);
+            return ImportCoordinateSystem.FromDetection(TryReadWkid(root), declared);
         }
         catch (JsonException)
         {
-            return null;
+            return ImportCoordinateSystem.FromDetection(null, declared: false);
         }
     }
 

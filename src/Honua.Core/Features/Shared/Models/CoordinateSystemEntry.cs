@@ -2,10 +2,11 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 
 namespace Honua.Core.Features.Shared.Models;
 
-public sealed record CoordinateSystemEntry
+public sealed partial record CoordinateSystemEntry
 {
     public required int Code { get; init; }
     public required string Name { get; init; }
@@ -15,15 +16,33 @@ public sealed record CoordinateSystemEntry
     public string? Area { get; init; }
 
     public static CoordinateSystemEntry? FromDefinition(CrsDefinition definition)
+        => FromWkt(definition.Srid, definition.Wkt);
+
+    public static CoordinateSystemEntry? FromWkt(int code, string? wkt)
     {
-        var wkt = definition.Wkt;
-        if (string.IsNullOrEmpty(wkt)) return null;
-        var start = wkt.IndexOf('"');
-        var end = start < 0 ? -1 : wkt.IndexOf('"', start + 1);
-        return end > start
-            ? new CoordinateSystemEntry { Code = definition.Srid, Name = wkt[(start + 1)..end] }
-            : null;
+        if (string.IsNullOrWhiteSpace(wkt)) return null;
+        var name = NamePattern().Match(wkt);
+        if (!name.Success) return null;
+        var units = UnitPattern().Matches(wkt);
+        var area = AreaPattern().Match(wkt);
+        return new CoordinateSystemEntry
+        {
+            Code = code,
+            Name = name.Groups[1].Value,
+            Unit = units.Count > 0 ? units[^1].Groups[1].Value : null,
+            Area = area.Success ? area.Groups[1].Value : null
+        };
     }
+
+    [GeneratedRegex("^\\s*[A-Za-z0-9_]+\\s*\\[\\s*\"([^\"]+)\"", RegexOptions.CultureInvariant)]
+    private static partial Regex NamePattern();
+
+    [GeneratedRegex("(?:ANGLEUNIT|LENGTHUNIT|UNIT)\\s*\\[\\s*\"([^\"]+)\"", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex UnitPattern();
+
+    [GeneratedRegex("AREA\\s*\\[\\s*\"([^\"]+)\"", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex AreaPattern();
+
 }
 
 public sealed record CoordinateSystemSearchResult

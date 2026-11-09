@@ -1143,8 +1143,8 @@ internal static partial class ImportEndpoints
                 File = stagedFile,
                 TableName = tableName,
                 UploadId = NormalizeOptionalOperationId(fields, "UploadId"),
-                SourceSrid = TryParseNullableInt(fields, "SourceSrid"),
-                TargetSrid = TryParseNullableInt(fields, "TargetSrid"),
+                SourceSrid = ParseOptionalSrid(fields, "SourceSrid"),
+                TargetSrid = ParseOptionalSrid(fields, "TargetSrid"),
                 TargetSchema = targetSchema,
                 OverwriteExisting = TryParseBool(fields, "OverwriteExisting"),
                 ForceBackground = TryParseBool(fields, "ForceBackground"),
@@ -1321,7 +1321,7 @@ internal static partial class ImportEndpoints
         return string.IsNullOrWhiteSpace(fileName) ? null : WebUtility.UrlDecode(fileName);
     }
 
-    private static int? TryParseNullableInt(Dictionary<string, string> fields, string fieldName)
+    private static int? ParseOptionalSrid(Dictionary<string, string> fields, string fieldName)
     {
         if (!fields.TryGetValue(fieldName, out var value) || string.IsNullOrWhiteSpace(value)) return null;
         if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)) return parsed;
@@ -1739,6 +1739,9 @@ internal static partial class ImportEndpoints
         /// <param name="layerCount">Number of published layers whose snapshot was rebuilt.</param>
         [LoggerMessage(EventId = 3306, Level = LogLevel.Information, Message = "Rebuilt published feature snapshot for {LayerCount} layer(s) after importing table {TableName}")]
         public static partial void SnapshotRefreshed(ILogger logger, string tableName, int layerCount);
+
+        [LoggerMessage(EventId = 3308, Level = LogLevel.Warning, Message = "Coordinate-system catalog lookup failed")]
+        public static partial void CoordinateSystemCatalogFailed(ILogger logger, Exception exception);
 
         [LoggerMessage(EventId = 3307, Level = LogLevel.Warning, Message = "Failed to record the object-store import audit event")]
         public static partial void AuditRecordFailed(ILogger logger, Exception exception);

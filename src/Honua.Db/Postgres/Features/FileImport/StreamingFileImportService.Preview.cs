@@ -50,8 +50,7 @@ internal sealed partial class StreamingFileImportService
                 seekablePreviewStream = await SpillToSeekableTempAsync(fileStream, cancellationToken);
                 fileStream = seekablePreviewStream;
             }
-            bool? declaredOverride = null;
-            bool? formatDefinedOverride = null;
+            ImportCoordinateSystem? coordinateSystem = null;
             int? detectedSrid;
             string[] availableLayers = [];
 
@@ -67,6 +66,7 @@ internal sealed partial class StreamingFileImportService
                 availableLayers = layers.Select(layer => layer.TableName).ToArray();
                 previewGeoPackageLayer = layers[0];
                 detectedSrid = layers[0].Srid;
+                coordinateSystem = ImportCoordinateSystem.FromDetection(detectedSrid, declared: true);
             }
             else if (format.Value == SupportedFileFormat.Shapefile)
             {
@@ -77,6 +77,9 @@ internal sealed partial class StreamingFileImportService
 
                 shapefileScratch = await PrepareShapefileScratchAsync(fileStream, fileName, cancellationToken);
                 detectedSrid = await _crsDetectionService.DetectFromShapefilePrjAsync(shapefileScratch.ShpPath, cancellationToken);
+                var prjDeclared = Directory.EnumerateFiles(Path.GetDirectoryName(shapefileScratch.ShpPath)!)
+                    .Any(path => Path.GetExtension(path).Equals(".prj", StringComparison.OrdinalIgnoreCase));
+                coordinateSystem = ImportCoordinateSystem.FromDetection(detectedSrid, prjDeclared);
             }
             else if (format.Value == SupportedFileFormat.Kml && IsKmzFileName(fileName))
             {
@@ -99,6 +102,8 @@ internal sealed partial class StreamingFileImportService
                 availableLayers = layers.Select(layer => layer.Name).ToArray();
                 previewFileGdbLayer = layers.Length > 0 ? layers[0] : null;
                 detectedSrid = await ResolveFileGdbSridAsync(layers, cancellationToken);
+                coordinateSystem = ImportCoordinateSystem.FromDetection(detectedSrid,
+                    detectedSrid.HasValue || !string.IsNullOrWhiteSpace(previewFileGdbLayer?.SpatialReferenceWkt));
 
                 warnings = FileGdb.FileGdbAdvancedConstructs.DetectWarnings(fileGdbScratch.GdbPath);
                 if (layers.Length > 1)
@@ -114,8 +119,7 @@ internal sealed partial class StreamingFileImportService
                 var scratchStream = geoParquetScratch.Stream;
                 var parquetMeta = await GeoParquetReader.ExtractMetadataAsync(scratchStream, cancellationToken);
                 detectedSrid = parquetMeta.Srid;
-                declaredOverride = !parquetMeta.Crs84Implied;
-                formatDefinedOverride = parquetMeta.Crs84Implied;
+                coordinateSystem = ImportCoordinateSystem.FromDetection(detectedSrid, !parquetMeta.Crs84Implied, parquetMeta.Crs84Implied);
                 warnings = parquetMeta.Warnings;
                 geoParquetTotalRows = parquetMeta.TotalRowCount;
 
@@ -136,7 +140,8 @@ internal sealed partial class StreamingFileImportService
                 seekablePreviewStream = await SpillToSeekableTempAsync(fileStream, cancellationToken);
                 fileStream = seekablePreviewStream;
                 ImportLog.SpilledToTempFile(_logger, seekablePreviewStream.Length);
-                detectedSrid = await DetectCrsStreamingAsync(fileStream, format.Value, cancellationToken);
+                coordinateSystem = await InspectSourceCoordinateSystemAsync(fileStream, format.Value, cancellationToken);
+                detectedSrid = coordinateSystem.DetectedSrid;
             }
             else
             {
@@ -154,7 +159,8 @@ internal sealed partial class StreamingFileImportService
                 else
                 {
                     // Detect CRS using streaming
-                    detectedSrid = await DetectCrsStreamingAsync(fileStream, format.Value, cancellationToken);
+                    coordinateSystem = await InspectSourceCoordinateSystemAsync(fileStream, format.Value, cancellationToken);
+                detectedSrid = coordinateSystem.DetectedSrid;
                 }
             }
 
@@ -222,16 +228,8 @@ internal sealed partial class StreamingFileImportService
                 }
             }
 
-            if (fileStream.CanSeek) fileStream.Position = 0;
-            var coordinateSystem = await InspectCoordinateSystemAsync(fileStream, format.Value, detectedSrid, cancellationToken);
-            if (declaredOverride.HasValue)
-            {
-                coordinateSystem = coordinateSystem with
-                {
-                    SourceCrsDeclared = declaredOverride.Value,
-                    DetectionMethod = formatDefinedOverride == true ? "format-defined" : declaredOverride.Value ? "file-metadata" : "unknown"
-                };
-            }
+            var formatDefined = format.Value is SupportedFileFormat.Kml or SupportedFileFormat.Gpx;
+            coordinateSystem ??= ImportCoordinateSystem.FromDetection(detectedSrid, detectedSrid.HasValue && !formatDefined, formatDefined);
             var sampleProperties = new Dictionary<string, object?>();
             var firstFeature = features.FirstOrDefault();
             if (firstFeature?.Attributes is not null)

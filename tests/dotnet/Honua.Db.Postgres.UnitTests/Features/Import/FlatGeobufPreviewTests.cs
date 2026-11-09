@@ -76,6 +76,8 @@ public sealed class FlatGeobufPreviewTests
 
         preview.Format.Should().Be(SupportedFileFormat.FlatGeobuf);
         preview.DetectedSrid.Should().Be(4326);
+        preview.CoordinateSystem!.DetectedSrid.Should().Be(4326);
+        preview.CoordinateSystem.StoredSrid.Should().Be(4326);
         preview.TotalFeatureCount.Should().Be(1);
     }
 
@@ -93,6 +95,8 @@ public sealed class FlatGeobufPreviewTests
 
         preview.Format.Should().Be(SupportedFileFormat.FlatGeobuf);
         preview.DetectedSrid.Should().Be(4326);
+        preview.CoordinateSystem!.DetectedSrid.Should().Be(4326);
+        preview.CoordinateSystem.StoredSrid.Should().Be(4326);
         preview.TotalFeatureCount.Should().Be(0);
     }
 
@@ -108,6 +112,8 @@ public sealed class FlatGeobufPreviewTests
 
         preview.Format.Should().Be(SupportedFileFormat.FlatGeobuf);
         preview.DetectedSrid.Should().Be(4326);
+        preview.CoordinateSystem!.DetectedSrid.Should().Be(4326);
+        preview.CoordinateSystem.StoredSrid.Should().Be(4326);
     }
 
     [Fact]
@@ -122,6 +128,8 @@ public sealed class FlatGeobufPreviewTests
 
         preview.Format.Should().Be(SupportedFileFormat.FlatGeobuf);
         preview.DetectedSrid.Should().Be(32632);
+        preview.CoordinateSystem!.DetectedSrid.Should().Be(32632);
+        preview.CoordinateSystem.StoredSrid.Should().Be(32632);
     }
 
     [Fact]

@@ -223,7 +223,7 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
             : string.IsNullOrWhiteSpace(request.TargetSchema)
                 ? ResolveOperationalSchema(services)
                 : request.TargetSchema!;
-        var detectedSrid = importResult.DetectedSrid ?? request.TargetSrid;
+        var storedSrid = importResult.StoredSrid ?? request.TargetSrid;
 
         PublishedLayerSummary publishedLayer;
         try
@@ -241,7 +241,7 @@ internal sealed partial class ImportDatasetJobExecutor : IProcessExecutor
                     : request.GeometryColumn,
                 PrimaryKey = ImportTablePrimaryKey,
                 Fields = BuildPublishedImportFields(importResult.TypedColumns),
-                Srid = detectedSrid,
+                Srid = storedSrid,
                 StorageCrsCoordinateEpoch = importResult.StorageCrsCoordinateEpoch,
                 ServiceName = request.ServiceName,
                 ConnectionId = Guid.TryParse(request.ConnectionRef, out var pubConnectionId)

@@ -9,25 +9,30 @@ namespace Honua.Db.Postgres.Features.FileImport;
 
 internal sealed partial class StreamingFileImportService
 {
-    private static async Task<ImportCoordinateSystem> InspectCoordinateSystemAsync(
-        Stream stream, SupportedFileFormat format, int? detectedSrid, CancellationToken cancellationToken)
+    private async Task<ImportCoordinateSystem> InspectSourceCoordinateSystemAsync(
+        Stream stream, SupportedFileFormat format, CancellationToken cancellationToken)
     {
-        var formatDefined = format is SupportedFileFormat.Kml or SupportedFileFormat.Gpx;
-        var declared = detectedSrid.HasValue && !formatDefined;
-        if (format == SupportedFileFormat.GeoJson)
+        try
         {
-            var detection = await StreamingGeoJsonReader.DetectCrsMetadataAsync(stream, cancellationToken);
-            declared = detection.Declared;
-            formatDefined = !declared && detection.Complete;
+            if (format == SupportedFileFormat.GeoJson)
+            {
+                return await StreamingGeoJsonReader.InspectCoordinateSystemAsync(stream, cancellationToken);
+            }
+            if (format == SupportedFileFormat.Gml)
+            {
+                return await GmlFormatReader.InspectCoordinateSystemAsync(stream, cancellationToken);
+            }
+            if (format == SupportedFileFormat.GeoServicesJson)
+            {
+                return await GeoServicesJsonFormatReader.InspectCoordinateSystemAsync(stream, cancellationToken);
+            }
+            var srid = await DetectCrsStreamingAsync(stream, format, cancellationToken);
+            var formatDefined = format is SupportedFileFormat.Kml or SupportedFileFormat.Gpx;
+            return ImportCoordinateSystem.FromDetection(srid, srid.HasValue && !formatDefined, formatDefined);
         }
-        return new ImportCoordinateSystem
+        finally
         {
-            DetectedSrid = detectedSrid,
-            SourceCrsDeclared = declared,
-            DetectionMethod = formatDefined ? "format-defined" : declared ? "file-metadata" : "unknown",
-            EffectiveSourceSrid = detectedSrid,
-            StoredSrid = detectedSrid,
-            RequiresSourceOverride = !detectedSrid.HasValue
-        };
+            if (stream.CanSeek) stream.Position = 0;
+        }
     }
 }

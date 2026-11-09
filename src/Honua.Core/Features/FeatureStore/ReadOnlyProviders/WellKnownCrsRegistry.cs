@@ -87,10 +87,9 @@ public sealed class WellKnownCrsRegistry : ICrsRegistry
     public ValueTask<CoordinateSystemSearchResult> SearchAsync(string query, int limit, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        ArgumentException.ThrowIfNullOrWhiteSpace(query);
-        if (query.Length > 128 || limit is < 1 or > 50) throw new ArgumentOutOfRangeException(nameof(limit));
-        var codeText = query.StartsWith(EpsgPrefix, StringComparison.OrdinalIgnoreCase) ? query[EpsgPrefix.Length..] : query;
-        var exactCode = int.TryParse(codeText, NumberStyles.None, CultureInfo.InvariantCulture, out var code) ? code : 0;
+        var search = CoordinateSystemSearchQuery.Parse(query, limit);
+        var exactCode = search.ExactCode;
+        query = search.Text;
         var items = new[] { _epsg4326Definition, _epsg3857Definition }
             .Select(CoordinateSystemEntry.FromDefinition)
             .OfType<CoordinateSystemEntry>()
