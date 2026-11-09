@@ -69,9 +69,7 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
         var guardrail = gatewayRequest.ActionDiscriminator is null
             ? _legacyGuardrails.Resolve(gatewayRequest.Kind)
             : _legacyGuardrails.Resolve(gatewayRequest.Kind, gatewayRequest.ActionDiscriminator);
-        if (guardrail is { Tier: GuardrailTier.RequiresApproval, Source: "default-policy" }
-            && gatewayRequest is { Kind: OperationClass.StudioDraftMutation, ActionDiscriminator: null }
-            && IsPrivateDraftEdit(descriptor.OperationId)
+        if (IsDefaultPrivateDraftApproval(guardrail, gatewayRequest, descriptor.OperationId)
             && await IsInteractiveHumanAsync(cancellationToken).ConfigureAwait(false))
         {
             return PolicyDecision.Allowed;
@@ -101,8 +99,11 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
         return initiation is (OperationInitiationKind.Human, OperationInitiationChannel.InteractiveOidc);
     }
 
-    private static bool IsPrivateDraftEdit(string operationId) => operationId is
-        "studio.draft.create" or "studio.draft.update" or "studio.draft.delete" or
-        "studio.draft.validate" or "studio.draft.preview-plan" or "studio.draft.save-version" or
-        "studio.content.reopen-version";
+    private static bool IsDefaultPrivateDraftApproval(
+        GuardrailDecision guardrail, OperationGatewayRequest request, string operationId) =>
+        guardrail is { Tier: GuardrailTier.RequiresApproval, Source: "default-policy" }
+        && request is { Kind: OperationClass.StudioDraftMutation, ActionDiscriminator: null }
+        && operationId is ("studio.draft.create" or "studio.draft.update" or "studio.draft.delete" or
+            "studio.draft.validate" or "studio.draft.preview-plan" or "studio.draft.save-version" or
+            "studio.content.reopen-version");
 }
