@@ -11,6 +11,7 @@ using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Helpers;
 using Microsoft.AspNetCore.Hosting;
 
 namespace Honua.Server.Tests.Features.Protocols.Mcp;
