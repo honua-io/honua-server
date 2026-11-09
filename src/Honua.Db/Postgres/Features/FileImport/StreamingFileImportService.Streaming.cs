@@ -141,7 +141,8 @@ internal sealed partial class StreamingFileImportService
                     // reader's geometry factory carried (#6114). CSV is the exception: an EWKT/EWKB
                     // value already carries its own SRID, and stamping the 4326 default here stored
                     // projected coordinates as degrees (#6171). An explicit SourceSrid still wins.
-                    if (!request.SourceSrid.HasValue && feature.Geometry is { SRID: > 0 } geometry && geometry.SRID != sourceSrid)
+                    if (format is SupportedFileFormat.Csv or SupportedFileFormat.Wkt &&
+                        !request.SourceSrid.HasValue && feature.Geometry is { SRID: > 0 } geometry && geometry.SRID != sourceSrid)
                     {
                         throw new InvalidDataException("The file contains multiple source coordinate systems. Import each coordinate system separately or supply a source SRID override.");
                     }
