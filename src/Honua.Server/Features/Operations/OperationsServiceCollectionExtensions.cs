@@ -278,7 +278,7 @@ internal static class OperationsServiceCollectionExtensions
             sp.GetRequiredService<IOptions<OperationPolicyOptions>>(),
             sp.GetRequiredService<Honua.Core.Features.Guardrails.Abstractions.IGuardrailLadder>(),
             productionEnvironment,
-            sp.GetRequiredService<OperationInitiationResolver>()));
+            sp.GetService<OperationInitiationResolver>()));
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IHostedService, OperationPolicyStartupReporter>());
 
