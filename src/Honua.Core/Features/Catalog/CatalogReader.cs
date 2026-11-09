@@ -8,37 +8,34 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Metadata.Services;
 using Honua.Core.Features.MultiTenancy.Abstractions;
-using Honua.Infrastructure.Helpers;
-using Honua.Server.Features.Capabilities;
+using Honua.Core.Features.Catalog.Abstractions;
 
-namespace Honua.Server.Features.Catalog;
+namespace Honua.Core.Features.Catalog;
 
-internal sealed class CatalogDiscoveryReader(IMetadataV2GraphProvider graphProvider, CatalogGraphProjection projection,
-    ICapabilityManifestService manifestService, ITenantContext tenantContext)
+public sealed class CatalogReader(IMetadataV2GraphProvider graphProvider, CatalogGraphProjection projection,
+    ICatalogProtocolProvider protocolProvider, ITenantContext tenantContext) : ICatalogReader
 {
     private static readonly ClaimsPrincipal Anonymous = new(new ClaimsIdentity());
 
-    public async Task<IReadOnlyList<CatalogSummary>> ListAsync(HttpContext context)
+    public async Task<IReadOnlyList<CatalogSummary>> ListAsync(CatalogReadRequest request, CancellationToken cancellationToken = default)
     {
-        var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
-        return Catalogs(snapshot, context.User).Select(catalog => new CatalogSummary(catalog.Metadata.Id,
+        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        return Catalogs(snapshot, request.Principal).Select(catalog => new CatalogSummary(catalog.Metadata.Id,
             catalog.Metadata.Title ?? catalog.Metadata.Name, catalog.Configuration!.Audience.Kind,
             null)).ToArray();
     }
 
-    public async Task<CatalogReadResult?> ReadAsync(HttpContext context, string catalogId)
+    public async Task<CatalogReadResult?> ReadAsync(CatalogReadRequest request, string catalogId, CancellationToken cancellationToken = default)
     {
-        var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
-        var catalog = Catalogs(snapshot, context.User).SingleOrDefault(catalog => catalog.Metadata.Id == catalogId);
+        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var catalog = Catalogs(snapshot, request.Principal).SingleOrDefault(catalog => catalog.Metadata.Id == catalogId);
         if (catalog is null) return null;
-        var request = new CapabilityManifestRequest(context.User, tenantContext.TenantId, tenantContext.Source,
-            null, null, context.User.Identity?.IsAuthenticated == true);
-        var manifest = await manifestService.GetManifestAsync(request, context.RequestAborted).ConfigureAwait(false);
-        var metadataRequest = new PublishedMetadataRequest(snapshot, context.User, BaseUrlResolver.GetBaseUrl(context))
+        var protocols = await protocolProvider.GetProtocolsAsync(request.Principal, cancellationToken).ConfigureAwait(false);
+        var metadataRequest = new PublishedMetadataRequest(snapshot, request.Principal, request.BaseUrl)
         {
             ReadCeiling = catalog.Configuration!.Audience.Kind == "public" ? Anonymous : null
         };
-        var candidates = await projection.ProjectAsync(metadataRequest, manifest.ProtocolEndpoints, context.RequestAborted).ConfigureAwait(false);
+        var candidates = await projection.ProjectAsync(metadataRequest, protocols, cancellationToken).ConfigureAwait(false);
         var prefix = $"/api/v1/catalogs/{Uri.EscapeDataString(catalogId)}/items/";
         var items = new CatalogMembershipPolicy(catalog.Configuration).Apply(candidates)
             .Select(item => item with { DetailHref = prefix + item.Kind + "?id=" + Uri.EscapeDataString(item.Id) }).ToArray();
@@ -47,7 +44,7 @@ internal sealed class CatalogDiscoveryReader(IMetadataV2GraphProvider graphProvi
             Id = catalogId, Title = catalog.Metadata.Title ?? catalog.Metadata.Name,
             Description = catalog.Metadata.Description, Audience = catalog.Configuration.Audience.Kind,
             Revision = snapshot.Etag
-        }, items);
+        }, items) { Snapshot = snapshot };
     }
 
     private IEnumerable<MetadataV2Catalog> Catalogs(MetadataV2GraphSnapshot snapshot, ClaimsPrincipal principal)
@@ -57,5 +54,3 @@ internal sealed class CatalogDiscoveryReader(IMetadataV2GraphProvider graphProvi
                 MetadataV2TenantVisibility.IsVisibleToTenant(catalog.Metadata.Tenant, tenantContext.TenantId) &&
                 CatalogMembershipPolicy.AllowsAudience(catalog.Configuration.Audience, principal));
 }
-
-internal sealed record CatalogReadResult(CatalogView Catalog, IReadOnlyList<CatalogItem> Items);

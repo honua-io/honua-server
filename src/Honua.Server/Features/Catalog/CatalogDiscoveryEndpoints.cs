@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Catalog;
 using Honua.Core.Features.Catalog.Domain;
+using Honua.Core.Features.Catalog.Abstractions;
 using Honua.Core.Features.Raster.ZarrParser;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Helpers;
@@ -15,7 +16,8 @@ internal static class CatalogDiscoveryEndpoints
     public static IServiceCollection AddCatalogDiscovery(this IServiceCollection services)
     {
         services.AddSingleton<CatalogGraphProjection>();
-        services.AddScoped<CatalogDiscoveryReader>();
+        services.AddScoped<ICatalogReader, CatalogReader>();
+        services.AddScoped<ICatalogProtocolProvider, CatalogManifestProtocolProvider>();
         return services;
     }
 
@@ -29,33 +31,33 @@ internal static class CatalogDiscoveryEndpoints
         group.MapGet("/{catalogId}/items/{kind}", DetailAsync).WithName("GetCatalogItem").Produces<CatalogItem>().ProducesProblem(404);
     }
 
-    private static async Task<IResult> ListAsync(HttpContext context, CatalogDiscoveryReader reader)
+    private static async Task<IResult> ListAsync(HttpContext context, ICatalogReader reader)
     {
         context.Response.Headers.CacheControl = "no-store";
-        return Results.Json(await reader.ListAsync(context).ConfigureAwait(false), CatalogJsonContext.Default.IReadOnlyListCatalogSummary);
+        return Results.Json(await reader.ListAsync(Request(context), context.RequestAborted).ConfigureAwait(false), CatalogJsonContext.Default.IReadOnlyListCatalogSummary);
     }
 
-    private static async Task<IResult> ViewAsync(HttpContext context, CatalogDiscoveryReader reader)
+    private static async Task<IResult> ViewAsync(HttpContext context, ICatalogReader reader)
     {
         context.Response.Headers.CacheControl = "no-store";
-        var result = await reader.ReadAsync(context, CatalogId(context)).ConfigureAwait(false);
+        var result = await reader.ReadAsync(Request(context), CatalogId(context), context.RequestAborted).ConfigureAwait(false);
         return result is null ? NotFound(context) : Results.Json(result.Catalog, CatalogJsonContext.Default.CatalogView);
     }
 
-    private static async Task<IResult> DetailAsync(HttpContext context, CatalogDiscoveryReader reader)
+    private static async Task<IResult> DetailAsync(HttpContext context, ICatalogReader reader)
     {
         context.Response.Headers.CacheControl = "no-store";
-        var result = await reader.ReadAsync(context, CatalogId(context)).ConfigureAwait(false);
+        var result = await reader.ReadAsync(Request(context), CatalogId(context), context.RequestAborted).ConfigureAwait(false);
         var id = context.Request.Query["id"].ToString();
         var kind = context.Request.RouteValues["kind"]?.ToString();
         var item = result?.Items.SingleOrDefault(item => item.Kind == kind && item.Id == id);
         return item is null ? NotFound(context) : Results.Json(item, CatalogJsonContext.Default.CatalogItem);
     }
 
-    private static async Task<IResult> SearchAsync(HttpContext context, CatalogDiscoveryReader reader, ICommonQueryValidator validator)
+    private static async Task<IResult> SearchAsync(HttpContext context, ICatalogReader reader, ICommonQueryValidator validator)
     {
         context.Response.Headers.CacheControl = "no-store";
-        var result = await reader.ReadAsync(context, CatalogId(context)).ConfigureAwait(false);
+        var result = await reader.ReadAsync(Request(context), CatalogId(context), context.RequestAborted).ConfigureAwait(false);
         if (result is null) return NotFound(context);
         var parameters = CatalogSearchParameters.Parse(context.Request.Query);
         if (parameters is null) return StandardErrorHelpers.CreateBadRequest(context, "Invalid catalog search parameters.");
@@ -70,6 +72,7 @@ internal static class CatalogDiscoveryEndpoints
         return Results.Json(query.Apply(result.Items, result.Catalog), CatalogJsonContext.Default.CatalogPage);
     }
 
+    private static CatalogReadRequest Request(HttpContext context) => new(context.User, BaseUrlResolver.GetBaseUrl(context));
     private static string CatalogId(HttpContext context) => context.Request.RouteValues["catalogId"]?.ToString() ?? string.Empty;
     private static IResult NotFound(HttpContext context) => StandardErrorHelpers.CreateNotFound(context, "Catalog item not found.");
 }

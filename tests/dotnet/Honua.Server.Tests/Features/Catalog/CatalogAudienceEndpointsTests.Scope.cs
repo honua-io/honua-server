@@ -132,6 +132,23 @@ public sealed partial class CatalogAudienceEndpointsTests
         Assert.Equal(HttpStatusCode.NotFound, named.StatusCode);
     }
     [IntegrationTest]
+    [Endpoint("GET /api/v1/catalogs")]
+    [Endpoint("GET /api/v1/catalogs/{catalogId}")]
+    public async Task GetCatalog_DuplicateIdentity_DeniesAmbiguousAudienceConfiguration()
+    {
+        var graph = Graph();
+        var catalog = graph.Catalogs[0];
+        _provider.SetGraph(graph with { Catalogs = [catalog, catalog with
+        { Configuration = catalog.Configuration! with { Audience = new() { Kind = "roles", RoleIds = ["responder"] } } }] });
+        using var listed = await _anonymous.GetAsync("/api/v1/catalogs");
+        Assert.Equal(HttpStatusCode.OK, listed.StatusCode);
+        using var document = JsonDocument.Parse(await listed.Content.ReadAsStringAsync());
+        Assert.Empty(document.RootElement.EnumerateArray());
+        using var named = await _anonymous.GetAsync("/api/v1/catalogs/public");
+        Assert.Equal(HttpStatusCode.NotFound, named.StatusCode);
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/catalogs/{catalogId}/items")]
     public async Task ListItems_MixedServiceAccess_DerivesExtentOnlyFromReadableLayers()
     {
