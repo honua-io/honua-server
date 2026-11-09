@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Ai.Protocols.Mcp;
+using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Views;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit;
@@ -35,36 +36,47 @@ public sealed partial class McpConnectionDiscoveryIntegrationTests
         var views = McpWorkflowViewCatalog.All.Keys.Append("full");
         foreach (var view in views)
         {
-            var names = await ListToolNamesAsync(admin, view);
-            names.Should().NotBeEmpty(view);
-            names.Should().OnlyHaveUniqueItems(view);
-            foreach (var name in names)
-            {
-                // Empty arguments exercise real reads and required-input/domain refusals
-                // under an authenticated administrator. This is channel coverage, not
-                // a claim that each mutation succeeded or that its inputs are usable.
-                var call = await CallAsync(admin, name, new { });
-                call.TryGetProperty("error", out _).Should().BeFalse($"{view}/{name} must return a tool result");
-                var result = call.GetProperty("result");
-                result.TryGetProperty("structuredContent", out var structured).Should().BeTrue($"{view}/{name}");
-                var mirroredPayloads = result.GetProperty("content").EnumerateArray()
-                    .Where(block => block.GetProperty("type").GetString() == "text")
-                    .Select(block => block.GetProperty("text").GetString()!)
-                    .Count(text => IsSameJson(text, structured));
-                mirroredPayloads.Should().Be(1, $"{view}/{name} must mirror the complete JSON payload exactly once");
-                if (!result.TryGetProperty("isError", out var isError) || !isError.GetBoolean())
-                {
-                    if (descriptors[name].OutputSchema is { } outputSchema)
-                    {
-                        var valid = JToken.Parse(structured.GetRawText()).IsValid(JSchema.Parse(outputSchema.GetRawText()), out IList<ValidationError> errors);
-                        valid.Should().BeTrue($"{view}/{name} must honor its output schema: {string.Join(", ", errors.Select(error => $"{error.ErrorType} at {error.Path}"))}");
-                    }
-                    largestPayloadBytes = Math.Max(largestPayloadBytes, Encoding.UTF8.GetByteCount(structured.GetRawText()));
-                }
-            }
+            largestPayloadBytes = Math.Max(largestPayloadBytes, await CheckViewChannelsAsync(admin, view, descriptors));
         }
 
         largestPayloadBytes.Should().BeGreaterThanOrEqualTo(1024, "successful live reads must exercise the former size-elision boundary");
+    }
+
+    private async Task<int> CheckViewChannelsAsync(HttpClient admin, string view,
+        IReadOnlyDictionary<string, McpToolDescriptor> descriptors)
+    {
+        var names = await ListToolNamesAsync(admin, view);
+        names.Should().NotBeEmpty(view);
+        names.Should().OnlyHaveUniqueItems(view);
+        var largest = 0;
+        foreach (var name in names)
+        {
+            var call = await CallAsync(admin, new ToolInvocation(name, new { }, view));
+            largest = Math.Max(largest, CheckChannelResult(call, new ToolChannelContext(view, name, descriptors[name])));
+        }
+        return largest;
+    }
+
+    private sealed record ToolChannelContext(string View, string Name, McpToolDescriptor Descriptor);
+
+    private static int CheckChannelResult(JsonElement call, ToolChannelContext context)
+    {
+        var label = $"{context.View}/{context.Name}";
+        call.TryGetProperty("error", out _).Should().BeFalse($"{label} must return a tool result");
+        var result = call.GetProperty("result");
+        result.TryGetProperty("structuredContent", out var structured).Should().BeTrue(label);
+        var mirroredPayloads = result.GetProperty("content").EnumerateArray()
+            .Where(block => block.GetProperty("type").GetString() == "text")
+            .Select(block => block.GetProperty("text").GetString()!)
+            .Count(text => IsSameJson(text, structured));
+        mirroredPayloads.Should().Be(1, $"{label} must mirror the complete JSON payload exactly once");
+        if (result.TryGetProperty("isError", out var isError) && isError.GetBoolean()) return 0;
+        if (context.Descriptor.OutputSchema is { } outputSchema)
+        {
+            var valid = JToken.Parse(structured.GetRawText()).IsValid(JSchema.Parse(outputSchema.GetRawText()), out IList<ValidationError> errors);
+            valid.Should().BeTrue($"{label} must honor its output schema: {string.Join(", ", errors.Select(error => $"{error.ErrorType} at {error.Path}"))}");
+        }
+        return Encoding.UTF8.GetByteCount(structured.GetRawText());
     }
 
     private WebAppFixture CreateStockFixture()

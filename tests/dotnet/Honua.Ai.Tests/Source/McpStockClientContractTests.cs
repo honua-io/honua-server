@@ -92,7 +92,7 @@ public sealed partial class McpWorkflowViewTests
             _output.WriteLine($"{view.Name}: {projection.Members.Count} tools, {projection.AggregateCanonicalBytes} descriptor bytes");
             foreach (var member in projection.Members)
             {
-                var descriptor = catalog.Single(entry => entry.Descriptor.Name == member.ToolName).Descriptor;
+                var descriptor = member.Descriptor;
                 FindUndocumentedRequiredInputs(descriptor.InputSchema, $"{view.Name}/{descriptor.Name}", missing);
             }
         }

@@ -175,14 +175,24 @@ public sealed partial class McpConnectionDiscoveryIntegrationTests : IAsyncLifet
         return names;
     }
 
-    private static async Task<JsonElement> CallAsync(HttpClient client, string name, object arguments)
+    private sealed record ToolInvocation(string Name, object Arguments, string? View = null);
+
+    private static Task<JsonElement> CallAsync(HttpClient client, string name, object arguments) =>
+        CallAsync(client, new ToolInvocation(name, arguments));
+
+    private static async Task<JsonElement> CallAsync(HttpClient client, ToolInvocation invocation)
     {
         var payload = JsonSerializer.Serialize(new
         {
             jsonrpc = "2.0",
             id = 1,
             method = "tools/call",
-            @params = new { name, arguments },
+            @params = new
+            {
+                name = invocation.Name,
+                arguments = invocation.Arguments,
+                _meta = new Dictionary<string, string?> { ["honua.io/workflow-view"] = invocation.View }
+            },
         });
         using var content = new StringContent(payload, Encoding.UTF8, "application/json");
         using var response = await client.PostAsync("/mcp", content);
