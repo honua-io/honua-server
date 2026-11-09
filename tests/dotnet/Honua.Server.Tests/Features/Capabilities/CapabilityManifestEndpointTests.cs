@@ -52,7 +52,7 @@ namespace Honua.Server.Tests.Features.Capabilities;
 [Collection("Database")]
 [Protocol(TestProtocols.Infrastructure)]
 [Operation(Operations.Metadata)]
-public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
+public sealed partial class CapabilityManifestEndpointTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture;
     private HttpClient _anonymousClient = null!;

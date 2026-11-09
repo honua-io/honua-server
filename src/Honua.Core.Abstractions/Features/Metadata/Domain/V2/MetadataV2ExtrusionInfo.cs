@@ -3,9 +3,11 @@
 
 using System.Text.Json.Serialization;
 
+using Honua.Core.Serialization;
+
 namespace Honua.Core.Features.Metadata.Domain.V2;
 
-public sealed record MetadataV2ExtrusionInfo
+public sealed record MetadataV2ExtrusionInfo : ExtensibleJsonRecord
 {
     [JsonPropertyName("heightField")]
     public string HeightField { get; init; } = string.Empty;

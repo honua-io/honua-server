@@ -175,24 +175,26 @@ internal sealed partial class PostgreSqlLayerPublishingService
         }
 
         var spatial = resource.Spatial;
-        var resourceType = resource.Type;
+        var datasetKind = resource.TypeValue;
         if (string.IsNullOrWhiteSpace(geometryColumn))
         {
             spatial = null;
-            if (resourceType == MetadataV2ResourceType.FeatureDataset)
+            if (datasetKind.Value == MetadataV2ResourceType.FeatureDataset)
             {
-                resourceType = MetadataV2ResourceType.Table;
+                datasetKind = MetadataV2ResourceType.Table;
             }
         }
         else if (spatial is not null)
         {
-            var mappedGeometry = string.IsNullOrWhiteSpace(geometryType)
-                ? spatial.GeometryType
-                : MapMetadataV2GeometryType(NormalizeGeometryType(geometryType));
+            var geometryKind = spatial.GeometryTypeValue;
+            if (!string.IsNullOrWhiteSpace(geometryType))
+            {
+                geometryKind = MapMetadataV2GeometryType(NormalizeGeometryType(geometryType));
+            }
             spatial = spatial with
             {
                 PrimaryGeometryField = geometryColumn,
-                GeometryType = mappedGeometry
+                GeometryTypeValue = geometryKind
             };
         }
 
@@ -242,7 +244,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         return resource with
         {
             Metadata = resource.Metadata with { UpdatedAt = now },
-            Type = resourceType,
+            TypeValue = datasetKind,
             SchemaFields = schemaFields,
             Spatial = spatial,
             Temporal = temporal,

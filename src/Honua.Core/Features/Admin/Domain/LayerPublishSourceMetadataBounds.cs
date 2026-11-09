@@ -185,7 +185,7 @@ public static class LayerPublishSourceMetadataBounds
                 return "attributeRules names must be unique.";
             }
 
-            if (!Enum.IsDefined(rule.Type))
+            if (rule.Type == MetadataV2AttributeRuleType.Unknown || !Enum.IsDefined(rule.Type))
             {
                 return "attributeRules type is not supported.";
             }

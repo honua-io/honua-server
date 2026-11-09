@@ -10,6 +10,7 @@ import re
 import stat
 import tempfile
 import unittest
+from unittest.mock import patch
 import zipfile
 from pathlib import Path
 
@@ -78,6 +79,16 @@ def expected() -> dict:
 
 
 class EnvelopeTests(unittest.TestCase):
+    def test_output_allowlist_contains_only_the_three_governed_projections(self) -> None:
+        self.assertEqual(
+            {
+                "docs/gis/data/feature-catalog.json",
+                "docs/gis/data/geoservices-rest-parity.json",
+                "docs/gis/data/capability-matrix.v1.json",
+            },
+            set(MODULE.OUTPUT_LIMITS),
+        )
+
     def test_workflow_and_envelope_enforce_the_same_bounds(self) -> None:
         workflow = (SCRIPT.parents[2] / MODULE.WORKFLOW_PATH).read_text()
         projections = re.findall(r"'(docs/gis/data/[^':]+\.json):(\d+)'", workflow)
@@ -87,29 +98,28 @@ class EnvelopeTests(unittest.TestCase):
         self.assertIsNotNone(aggregate)
         self.assertEqual(MODULE.MAX_TOTAL_OUTPUT_BYTES, int(aggregate.group(1)))
 
-    def test_mcp_projection_accepts_128_kib_and_rejects_one_byte_over(self) -> None:
-        path = "docs/gis/data/admin-mcp-projection-manifest.json"
-        prefix, suffix = b'{"payload":"', b'"}'
-        for size in (65537, 131072, 131073):
-            with self.subTest(size=size):
-                content = prefix + b"x" * (size - len(prefix) - len(suffix)) + suffix
+    def test_admin_projections_cannot_be_normalization_outputs(self) -> None:
+        for path in (
+            "docs/gis/data/admin-openapi-operation-ids.json",
+            "docs/gis/data/admin-mcp-projection-manifest.json",
+        ):
+            with self.subTest(path=path):
                 value = envelope()
-                index = next(i for i, item in enumerate(value["outputs"]) if item["path"] == path)
-                value["outputs"][index] = output(path, content)
-                if size > 131072:
-                    with self.assertRaisesRegex(MODULE.EnvelopeError, "exceeds"):
-                        MODULE.validate_envelope(raw(value), **expected())
-                else:
-                    plan = MODULE.validate_envelope(raw(value), **expected())
-                    item = next(item for item in plan["outputs"] if item["path"] == path)
-                    self.assertEqual(size, item["length"])
-                    self.assertEqual(MODULE.sha256_bytes(content), item["sha256"])
+                value["outputs"][0] = output(path)
+                with self.assertRaisesRegex(MODULE.EnvelopeError, "not allowlisted"):
+                    MODULE.validate_envelope(raw(value), **expected())
+
+    def test_previous_envelope_schema_is_rejected(self) -> None:
+        value = envelope()
+        value["schema"] = "honua.normalization-envelope/v2"
+        with self.assertRaisesRegex(MODULE.EnvelopeError, "schema"):
+            MODULE.validate_envelope(raw(value), **expected())
 
     def test_valid_envelope_round_trips(self) -> None:
         plan = MODULE.validate_envelope(raw(envelope()), **expected())
         self.assertEqual(set(MODULE.OUTPUT_LIMITS), {item["path"] for item in plan["outputs"]})
 
-    def test_source_and_producer_identity_are_exact(self) -> None:
+    def test_source_commit_and_tree_identity_are_exact(self) -> None:
         value = envelope()
         value["source"]["sha"] = "d" * 40
         with self.assertRaisesRegex(MODULE.EnvelopeError, "source identity"):
@@ -119,6 +129,50 @@ class EnvelopeTests(unittest.TestCase):
         value["source"]["tree_sha"] = "f" * 40
         with self.assertRaisesRegex(MODULE.EnvelopeError, "source identity"):
             MODULE.validate_envelope(raw(value), **expected())
+
+    def test_every_producer_and_source_binding_is_exact(self) -> None:
+        for section, field, replacement in (
+            ("producer", "run_id", RUN_ID + 1),
+            ("producer", "run_attempt", ATTEMPT + 1),
+            ("producer", "workflow_path", ".github/workflows/other.yml"),
+            ("source", "base_sha", "d" * 40),
+            ("source", "repository", "other/repository"),
+            ("source", "pull_request", PR + 1),
+        ):
+            with self.subTest(section=section, field=field):
+                value = envelope()
+                value[section][field] = replacement
+                with self.assertRaisesRegex(MODULE.EnvelopeError, "identity"):
+                    MODULE.validate_envelope(raw(value), **expected())
+
+    def test_envelope_and_archive_sizes_are_bounded(self) -> None:
+        with self.assertRaisesRegex(MODULE.EnvelopeError, "envelope exceeds"):
+            MODULE.validate_envelope(b" " * (MODULE.MAX_ENVELOPE_BYTES + 1), **expected())
+        with tempfile.TemporaryDirectory() as directory:
+            archive = Path(directory) / "oversized.zip"
+            archive.write_bytes(b" " * (MODULE.MAX_ARCHIVE_BYTES + 1))
+            with self.assertRaisesRegex(MODULE.EnvelopeError, "archive exceeds"):
+                MODULE.validate_archive(archive, **expected())
+
+    def test_validation_enforces_the_aggregate_output_limit(self) -> None:
+        value = envelope()
+        actual = sum(item["length"] for item in value["outputs"])
+        with patch.object(MODULE, "MAX_TOTAL_OUTPUT_BYTES", actual - 1):
+            with self.assertRaisesRegex(MODULE.EnvelopeError, "outputs exceed"):
+                MODULE.validate_envelope(raw(value), **expected())
+
+    def test_encrypted_archive_members_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "encrypted.zip"
+            with zipfile.ZipFile(path, "w") as archive:
+                archive.writestr(MODULE.ARCHIVE_MEMBER, raw(envelope()))
+            content = bytearray(path.read_bytes())
+            content[6] |= 1
+            central = content.index(b"PK\x01\x02")
+            content[central + 8] |= 1
+            path.write_bytes(content)
+            with self.assertRaisesRegex(MODULE.EnvelopeError, "encrypted"):
+                MODULE.validate_archive(path, **expected())
 
     def test_fork_validation_may_omit_only_unverifiable_base_identity(self) -> None:
         value = envelope()
@@ -192,8 +246,6 @@ class EnvelopeTests(unittest.TestCase):
             "tests/dotnet/Honua.Server.Tests/Features/Operations/AdminOperationParityExportTests.cs",
         }
         self.assertTrue(required_implementations.issubset(MODULE.GENERATOR_INPUTS))
-
-        self.assertEqual(sum(MODULE.OUTPUT_LIMITS.values()), MODULE.MAX_TOTAL_OUTPUT_BYTES)
 
         value = envelope()
         value["generators"][0]["path"] = "scripts/unsafe.sh"
