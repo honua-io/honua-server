@@ -237,7 +237,7 @@ capability key:
    reason if it has no distinct route.
 3. Add its row to `capability-keys.v1.json`'s `capabilities` array (and any
    relevant crosswalk row).
-4. Regenerate `feature-catalog.json` (`scripts/generate-feature-catalog.sh`)
+4. Regenerate `feature-catalog.json` (`scripts/ci/generate-feature-catalog.sh`)
    and `capability-matrix.v1.json`
    (`python3 scripts/ci/generate-capability-matrix.py`).
 5. Run `dotnet test tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj`

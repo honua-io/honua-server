@@ -237,7 +237,7 @@ class EnvelopeTests(unittest.TestCase):
         required_implementations = {
             "Directory.Build.targets",
             "tests/dotnet/Honua.Architecture.SourceTests/ArchitectureTestHelpers.Source.cs",
-            "scripts/generate-admin-operation-parity-exports.sh",
+            "scripts/ci/generate-admin-operation-parity-exports.sh",
             "scripts/ci/verify-admin-operation-parity.py",
             "tests/dotnet/Honua.Architecture.Tests/FeatureCatalog/FeatureCatalogEmitter.cs",
             "tests/dotnet/Honua.Architecture.Tests/FeatureCatalog/FeatureCatalogGenerator.cs",
