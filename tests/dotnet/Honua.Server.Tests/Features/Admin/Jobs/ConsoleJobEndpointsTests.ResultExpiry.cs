@@ -2,6 +2,12 @@
 // Licensed under the Fair Core License, Version 1.0, ALv2 Future License. See LICENSE in the project root.
 
 using System.Net;
+using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Geoprocessing.CustomCode;
+using Honua.TestKit;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using NSubstitute;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Geoprocessing;
@@ -72,6 +78,81 @@ public sealed partial class ConsoleJobEndpointsTests
         var artifacts = diagnostic.RootElement.GetProperty("artifacts");
         artifacts.GetProperty("state").GetString().Should().Be("complete");
         artifacts.GetProperty("expiredCount").GetInt32().Should().Be(0);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}/diagnostics")]
+    public async Task GetJobDiagnostics_ClockCrossesExpiryDuringLookup_UsesOneAvailabilitySnapshot()
+    {
+        var retention = _fixture.Services.GetRequiredService<IOptionsMonitor<GeoprocessingExecutorOptions>>().CurrentValue.ResultRetention;
+        var completedAt = _retentionClock.GetUtcNow() - retention + TimeSpan.FromTicks(1);
+        _jobStore.Set(CreateJob("job-retention-snapshot", ExecutionJobStatus.Succeeded, completedAt.AddMinutes(-1), "corr-snapshot") with
+        {
+            CompletedAt = completedAt,
+            ArtifactReferences = ["https://example.test/one", "https://example.test/two"]
+        });
+        _artifactStore.OnLookup = () => _retentionClock.UtcNow = completedAt + retention;
+        using var response = await _client.GetAsync("/api/v1/admin/jobs/job-retention-snapshot/diagnostics");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var diagnostic = await ReadJsonAsync(response);
+        var artifacts = diagnostic.RootElement.GetProperty("artifacts");
+        artifacts.GetProperty("state").GetString().Should().Be("complete");
+        artifacts.GetProperty("availableCount").GetInt32().Should().Be(2);
+        artifacts.GetProperty("expiredCount").GetInt32().Should().Be(0);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}/artifacts")]
+    public async Task GetArtifacts_PastGpRetention_PreservesCustomAndWorkspaceLifetimes()
+    {
+        var now = _retentionClock.GetUtcNow();
+        var descriptor = new CustomCodeArtifactDescriptor
+        {
+            JobId = "job-custom-retention", Attempt = 1, Name = "output.json", ObjectKey = "retained/output",
+            Provider = CloudStorageProvider.AwsS3, State = "available", ContentType = "application/json",
+            SizeBytes = 2, Sha256 = new string('a', 64)
+        };
+        _jobStore.Set(CreateJob(descriptor.JobId, ExecutionJobStatus.Succeeded, now.AddDays(-30), "corr-custom-retention") with
+        {
+            CompletedAt = now.AddDays(-29), ArtifactReferences = [descriptor.Serialize(), "available"]
+        });
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.Provider.Returns(CloudStorageProvider.AwsS3);
+        storage.GetMetadataAsync(descriptor.ObjectKey, Arg.Any<CancellationToken>()).Returns(new CloudFile
+        {
+            FileId = descriptor.ObjectKey, FileName = descriptor.Name, StoragePath = descriptor.ObjectKey,
+            ContentType = descriptor.ContentType, SizeBytes = descriptor.SizeBytes, UploadedAt = now.AddDays(-30),
+            ExpiresAt = now.AddDays(1), Provider = descriptor.Provider
+        });
+        var fixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.RemoveAll<IExecutionJobStore>();
+            services.AddSingleton<IExecutionJobStore>(_jobStore);
+            services.RemoveAll<IArtifactStore>();
+            services.AddSingleton<IArtifactStore>(_artifactStore);
+            services.RemoveAll<ICloudFileStorage>();
+            services.AddSingleton<ICloudFileStorage>(storage);
+            services.RemoveAll<TimeProvider>();
+            services.AddSingleton<TimeProvider>(_retentionClock);
+        });
+        try
+        {
+            await fixture.InitializeAsync();
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.GetAsync($"/api/v1/admin/jobs/{descriptor.JobId}/artifacts");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var listing = await ReadJsonAsync(response);
+            var items = listing.RootElement.GetProperty("items");
+            items[0].GetProperty("availability").GetString().Should().Be("Available");
+            items[0].GetProperty("artifactId").GetString().Should().Be("custom:job-custom-retention:1:output.json");
+            items[0].GetProperty("providerLink").GetString().Should().Be(descriptor.ContentUrl);
+            items[1].GetProperty("availability").GetString().Should().Be("Available");
+            items[1].GetProperty("artifactId").GetString().Should().Be("available");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
     }
 
     private sealed class RetentionTestClock : TimeProvider
