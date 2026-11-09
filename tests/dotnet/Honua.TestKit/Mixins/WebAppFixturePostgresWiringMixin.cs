@@ -125,6 +125,7 @@ internal static class WebAppFixturePostgresWiringMixin
     {
         services.RemoveAll<NpgsqlDataSource>();
         services.RemoveAll<Honua.Core.Features.Operations.Abstractions.IOperationInstanceStore>();
+        services.RemoveAll<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore>();
         services.RemoveAll<IFeatureReader>();
         services.RemoveAll<IFeatureWriter>();
         services.RemoveAll<ITileProvider>();

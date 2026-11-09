@@ -20,7 +20,6 @@ using Honua.Infrastructure.Models;
 using Honua.Infrastructure.MultiTenancy;
 using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Options;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using CanonicalOperationExecutor = Honua.Core.Features.Operations.Abstractions.IOperationExecutor;
 
@@ -86,33 +85,13 @@ internal static class ProposalEndpoints
     }
 
     private static IResult ControlPlaneUnavailable(HttpContext context)
-    {
-        // Report the composition cause, not a blanket "add Redis": on a host where Redis is
-        // running but the Pro `caching.redis` entitlement is missing, telling the operator to
-        // configure Redis is remediation that cannot work (honua-release#202).
-        var substrate = context.RequestServices.GetService<IOptions<DurableJobSubstrateOptions>>()?.Value
-            ?? new DurableJobSubstrateOptions();
-        var unentitled = substrate.Classify(jobStorePresent: false, jobQueuePresent: false)
-            == DurableJobSubstrateCause.RedisNotEntitled;
-
-        return unentitled
-            ? ProblemDetailsHelpers.CreateCapabilityUnavailableProblem(
-                context,
-                CapabilityUnavailableCodes.UnentitledControlPlaneDetail,
-                missingDependency: null,
-                CapabilityUnavailableCodes.EntitlementRemediation,
-                CapabilityUnavailableCodes.EntitlementRemediationRef,
-                CapabilityUnavailableCodes.ControlPlaneProposalsCapability,
-                errorCode: CapabilityUnavailableCodes.EntitlementErrorCode,
-                missingEntitlement: CapabilityUnavailableCodes.RedisCacheEntitlement)
-            : ProblemDetailsHelpers.CreateCapabilityUnavailableProblem(
-                context,
-                CapabilityUnavailableCodes.DurableControlPlaneDetail,
-                CapabilityUnavailableCodes.RedisDependency,
-                CapabilityUnavailableCodes.RedisRemediation,
-                CapabilityUnavailableCodes.RedisRemediationRef,
-                CapabilityUnavailableCodes.ControlPlaneProposalsCapability);
-    }
+        => ProblemDetailsHelpers.CreateCapabilityUnavailableProblem(
+            context,
+            CapabilityUnavailableCodes.DurableControlPlaneDetail,
+            CapabilityUnavailableCodes.OperationStoreDependency,
+            CapabilityUnavailableCodes.OperationStoreRemediation,
+            CapabilityUnavailableCodes.OperationStoreRemediationRef,
+            CapabilityUnavailableCodes.ControlPlaneProposalsCapability);
 
     private static async Task<IResult> HandleListProposals(
         [FromQuery] string? status,

@@ -82,11 +82,6 @@ public static class CapabilityUnavailableCodes
         "was started without a Redis connection, so the request is refused up front instead of " +
         "being queued and never run.";
 
-    public const string UnentitledControlPlaneDetail =
-        "The operation proposal and approval control plane requires the Pro 'caching.redis' " +
-        "entitlement. Redis is configured on this server, but the active licence does not entitle " +
-        "it, so the durable control plane was never composed.";
-
     public const string UnentitledWorkflowPublicationDetail =
         "Publishing a workflow package to a Schedule target requires the durable workflow " +
         "definition store, which needs the Pro 'caching.redis' entitlement. Redis is configured " +
@@ -101,8 +96,15 @@ public static class CapabilityUnavailableCodes
         "The publication is refused up front rather than reported as successful without a " +
         "durable record.";
 
+    public const string OperationStoreDependency = "postgres";
+
+    public const string OperationStoreRemediation =
+        "Restore the PostgreSQL catalog connection, apply database migrations and restart the server.";
+
+    public const string OperationStoreRemediationRef =
+        "https://honua.io/docs/reference/control-plane-migration-guide/#proposal-history-now-lives-in-postgresql";
+
     public const string DurableControlPlaneDetail =
-        "The operation proposal and approval control plane requires a Redis-backed durable " +
-        "store. This server was started without a Redis connection, so proposals cannot be " +
-        "listed, inspected, approved, or rejected.";
+        "The operation proposal and approval control plane requires a PostgreSQL-backed durable store. " +
+        "This host has no operation persistence store, so proposals cannot be listed, inspected, approved or rejected.";
 }

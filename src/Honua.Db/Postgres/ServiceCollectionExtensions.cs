@@ -505,6 +505,10 @@ internal static class ServiceCollectionExtensions
             new Features.ControlPlane.PostgresOperationInstanceStore(
                 provider.GetRequiredService<NpgsqlDataSource>(), defaultSchema));
 
+        services.TryAddSingleton<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore>(provider =>
+            new Features.ControlPlane.PostgresOperationProposalStore(
+                provider.GetRequiredService<NpgsqlDataSource>(), defaultSchema));
+
         // Register Postgres-backed row-level security policy store (#502, epic #1275).
         // Backs IRlsPolicyStore so per-layer row-visibility policies are durable and
         // shared across scaled nodes; resolved per-request and AND-ed into queries.

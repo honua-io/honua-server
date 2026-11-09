@@ -1145,15 +1145,10 @@ public sealed partial class CapabilityManifestEndpointTests : IAsyncLifetime
         root.GetProperty("limits").GetProperty("job").GetProperty("durableJobRuntimeAvailable")
             .GetBoolean().Should().BeFalse();
 
-        // 2026.1 rc.3 J1/S1: the governed proposal/approval control plane shares the Redis-backed
-        // substrate. Its honua_admin_* tools advertise everywhere, so the manifest is what tells an
-        // agent in advance that a Redis-off host refuses proposal-requiring calls.
         var proposals = GetCapability(root, "operations.proposals");
         proposals.GetProperty("supported").GetBoolean().Should().BeTrue();
-        proposals.GetProperty("available").GetBoolean().Should().BeFalse();
-        proposals.GetProperty("reasonCode").GetString().Should().Be(CapabilityUnavailableCodes.ErrorCode);
-        proposals.GetProperty("messageKey").GetString()
-            .Should().Be($"capabilities.operations.proposals.{CapabilityUnavailableCodes.ErrorCode}");
+        proposals.GetProperty("available").GetBoolean().Should().BeTrue();
+        proposals.TryGetProperty("reasonCode", out _).Should().BeFalse();
     }
 
     [IntegrationTest]
@@ -1174,7 +1169,7 @@ public sealed partial class CapabilityManifestEndpointTests : IAsyncLifetime
 
         var proposals = GetCapability(document.RootElement, "operations.proposals");
         proposals.GetProperty("available").GetBoolean().Should().BeFalse();
-        proposals.GetProperty("reasonCode").GetString().Should().Be(CapabilityUnavailableCodes.ErrorCode);
+        proposals.GetProperty("reasonCode").GetString().Should().Be("insufficient-policy");
     }
 
     [IntegrationTest]
@@ -1224,7 +1219,7 @@ public sealed partial class CapabilityManifestEndpointTests : IAsyncLifetime
 
             var proposals = GetCapability(root, "operations.proposals");
             proposals.GetProperty("available").GetBoolean().Should().BeTrue(
-                "an entitled, attested Redis composes the durable proposal store");
+                "PostgreSQL composes the durable proposal store independently of the job runtime");
             proposals.TryGetProperty("reasonCode", out _).Should().BeFalse();
         }
         finally
@@ -1233,15 +1228,6 @@ public sealed partial class CapabilityManifestEndpointTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// Owner ruling (2026-10-10): the Redis durability attestation is INFORMATION. A connected,
-    /// entitled Redis advertises <c>jobs.runner</c> and <c>operations.proposals</c> whatever the
-    /// attestation said, and the manifest publishes the outcome as
-    /// <c>limits.job.redisDurability</c>: <c>attested</c>, <c>unverified</c> (the managed-Redis
-    /// shape: AWS ElastiCache and MemoryDB block <c>CONFIG</c>), or <c>not-durable</c>
-    /// (<c>appendonly no</c>). Before the ruling the last two read <c>dependency-unavailable</c>
-    /// with <c>missingDependency=redis</c> although Redis was serving.
-    /// </summary>
     [IntegrationTheory]
     [Endpoint("GET /api/v1/capabilities/manifest")]
     [InlineData(null, "attested")]
@@ -1290,7 +1276,7 @@ public sealed partial class CapabilityManifestEndpointTests : IAsyncLifetime
             {
                 var capability = GetCapability(root, capabilityId);
                 capability.GetProperty("available").GetBoolean().Should().BeTrue(
-                    $"a connected Redis enables {capabilityId} whatever the attestation said ({expectedStatus})");
+                    $"the registered durable stores enable {capabilityId} ({expectedStatus})");
                 capability.TryGetProperty("reasonCode", out _).Should().BeFalse();
             }
 
@@ -1323,10 +1309,8 @@ public sealed partial class CapabilityManifestEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/capabilities/manifest")]
-    public async Task GetManifest_RedisConfiguredButUnreachable_WithholdsControlPlaneWithoutDurabilityOutcome()
+    public async Task GetManifest_RedisConfiguredButUnreachable_WithholdsJobsWithoutWithholdingProposals()
     {
-        // The one Redis-on case that still withholds the control plane: Redis did not connect at
-        // startup. It is a missing dependency, not a durability outcome.
         var fixture = CreateManifestFixture()
             .ConfigureServices(static services =>
             {
@@ -1350,12 +1334,10 @@ public sealed partial class CapabilityManifestEndpointTests : IAsyncLifetime
             using var document = await ReadDocumentAsync(response);
             var root = document.RootElement;
 
-            foreach (var capability in new[] { "jobs.runner", "operations.proposals" }
-                         .Select(capabilityId => GetCapability(root, capabilityId)))
-            {
-                capability.GetProperty("available").GetBoolean().Should().BeFalse();
-                capability.GetProperty("reasonCode").GetString().Should().Be(CapabilityUnavailableCodes.ErrorCode);
-            }
+            var jobs = GetCapability(root, "jobs.runner");
+            jobs.GetProperty("available").GetBoolean().Should().BeFalse();
+            jobs.GetProperty("reasonCode").GetString().Should().Be(CapabilityUnavailableCodes.ErrorCode);
+            GetCapability(root, "operations.proposals").GetProperty("available").GetBoolean().Should().BeTrue();
 
             var job = root.GetProperty("limits").GetProperty("job");
             job.GetProperty("durableJobRuntimeAvailable").GetBoolean().Should().BeFalse();
@@ -1436,8 +1418,8 @@ public sealed partial class CapabilityManifestEndpointTests : IAsyncLifetime
                     "an unentitled but present Redis is not a missing dependency");
 
             var proposals = GetCapability(document.RootElement, "operations.proposals");
-            proposals.GetProperty("available").GetBoolean().Should().BeFalse();
-            proposals.GetProperty("reasonCode").GetString().Should().Be("license-required");
+            proposals.GetProperty("available").GetBoolean().Should().BeTrue();
+            proposals.TryGetProperty("reasonCode", out _).Should().BeFalse();
         }
         finally
         {

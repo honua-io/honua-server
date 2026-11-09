@@ -32,6 +32,8 @@ internal sealed class CapabilityManifestRuntimeInventory(
 
     public bool HasDurableOperationStore { get; } = workflowOperationStores.Any();
 
+    public bool HasDurableProposalStore { get; init; }
+
     public bool HasAutonomyPolicyStore { get; } = opsAutonomyPolicyStores.Any();
 
     public bool HasFieldCollectionSyncStore { get; } = fieldCollectionSyncStores.Any();

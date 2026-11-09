@@ -38,7 +38,22 @@ internal static class CapabilityManifestServiceCollectionExtensions
         // Keep the manifest resolvable there while preserving the canonical instance that
         // infrastructure startup registered and used to make provider-registration decisions.
         services.TryAddSingleton(_ => new WarehouseProviderDecisions(configuration));
-        services.AddScoped<CapabilityManifestRuntimeInventory>();
+        services.AddScoped(provider => new CapabilityManifestRuntimeInventory(
+            provider.GetServices<Honua.Core.Features.ControlPlane.Abstractions.IBatchComputeBackend>(),
+            provider.GetServices<Honua.Core.Features.ControlPlane.Abstractions.IDeployBackend>(),
+            provider.GetServices<Honua.Core.Features.ControlPlane.Abstractions.IWorkflowOperationStore>(),
+            provider.GetServices<Honua.Core.Features.Observability.Abstractions.IOpsAutonomyPolicyStore>(),
+            provider.GetServices<Honua.Core.Features.Mobile.FieldCollection.Abstractions.IFieldCollectionSyncStore>(),
+            provider.GetServices<Honua.Core.Features.FeatureStore.Abstractions.IFeatureDataProvider>(),
+            provider.GetServices<Honua.Core.Features.Collaboration.FeatureLocks.IFeatureLockAuthorizer>(),
+            provider.GetRequiredService<IWebHostEnvironment>(),
+            provider.GetRequiredService<IServiceProviderIsService>(),
+            provider.GetRequiredService<Honua.Plugins.Abstractions.IFeatureOutputFormatRegistry>(),
+            provider.GetRequiredService<ManifestRoutedCapabilityIndex>())
+        {
+            HasDurableProposalStore = Honua.Core.Features.ControlPlane.UnavailableOperationProposalStore.IsDurable(
+                provider.GetService<Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore>())
+        });
         services.AddScoped<ICapabilityManifestService, CapabilityManifestService>();
         return services;
     }

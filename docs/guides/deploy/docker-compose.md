@@ -204,73 +204,41 @@ proxy and deployment host.
 
 PostGIS owns the catalog, layer metadata and feature data and is required.
 
-Redis is optional for **serving**, but it is required for the **governed control
-plane**. Without Redis, a host still serves every protocol, and the admin REST API
-and Console still connect sources, import, publish layers, configure services,
-style and render. It cannot persist the following, and refuses them with a typed
-`dependency-unavailable` receipt naming `redis`:
+Redis is optional for serving. PostgreSQL persists operation instances, proposals
+and approval history, so governed operations and human approvals survive server
+restarts without Redis. The same authorization, approval and audit requirements
+apply. Existing deployments that stored this history in Redis must follow the
+[maintenance cut-over](../../reference/control-plane-migration-guide.md#proposal-history-now-lives-in-postgresql).
 
-- governed operation proposals and approvals (`/api/v1/admin/proposals`,
-  `honua_propose_*`), including any operation whose policy decision is
-  "require approval";
-- typed operations invoked through MCP (the `honua_admin_*` tools), whose
-  durable operation record is also Redis-backed in Production;
-- durable geoprocessing jobs and workflows (`jobs.runner`);
-- Studio drafts.
+Redis remains required for durable geoprocessing jobs, workflow state, operation
+secrets and other capabilities backed by Redis. PostgreSQL proposal storage does
+not enable those dependencies. A proposal for an operation that needs an absent
+dependency may be recorded, but execution still refuses that missing dependency.
+Studio publication also retains its own workflow and approval requirements.
 
-A server without Redis still serves, configures, styles and renders, so two
-operations execute directly without Redis: publishing a service
-(`service.publish`) and applying a style preset to a published layer
-(`style.apply-preset`). When `Operations:Policy` allows the caller (an `admin`
-or `scoped-admin-key` role, such as an `admin:write` API key),
-`honua_publish_service`, `honua_apply_style_preset` and
-`POST /api/v1/operations/{service.publish|style.apply-preset}/submit` make the
-change and return the usual handle: `operationId`, `operationInstanceId`,
-`correlationId`, `auditId`, `status`, `policyOutcome` and
-`authorizationOutcome`. The audit log records the acceptance and the
-completion. The operation instance record itself is kept only in memory, so the
-handle carries `durable: false` (and the evidence reference
-`operation-instance:non-durable`) and cannot be polled afterwards.
-`honua_render_map` and the OGC styles endpoints are reads and do not use the
-operation runtime. A caller the policy denies gets a `Denied` handle. A publish
-or style preset whose policy decision is "require approval" still refuses with
-the typed `redis` receipt, because it needs a governed proposal. Geoprocessing,
-Studio compositions and publication requests, proposals and approvals, and the
-`honua_admin_*` tools keep the typed refusal.
+The capability manifest (`GET /api/v1/capabilities/manifest`) reports
+`operations.proposals` from the actual proposal store, independently of
+`jobs.runner`. Without Redis, an authenticated PostgreSQL-backed deployment can
+report proposals available while jobs report `dependency-unavailable`. A custom
+host without persistent proposal storage refuses proposal requests with
+`missingDependency: "postgres"`.
 
-On a Development or Test host without Redis, Studio drafts still compose against a
-volatile operation store (create, validate, preview-plan and save a content version
-succeed), but a publish-request that needs separate-principal approval is refused with
-the same typed receipt: HTTP 503 `capability-unavailable` with `missingDependency: "redis"`
-and `capability: "operations.proposals"`, and the draft is left unchanged.
-
-The governed tools are still advertised on a Redis-off host, so an agent sees the
-same catalog everywhere. The capability manifest (`GET /api/v1/capabilities/manifest`)
-tells it in advance which ones will refuse: `operations.proposals` and
-`jobs.runner` report `available: false` with `reasonCode: "dependency-unavailable"`
-(or `"license-required"` when Redis is configured but not entitled).
-
-**What "required" means: present and working, not a proven durability policy.**
-The governed control plane and durable jobs need Redis to be configured,
-entitled and connected. They do not need a particular persistence policy (owner
-ruling, 2026-10-10). At startup the server still reads the Redis policy
-(`appendonly`, `appendfsync`, `maxmemory-policy`) and publishes the result in the
-capability manifest as `limits.job.redisDurability.status`. The value is
-`attested`, `unverified` (the policy could not be read, as on managed Redis
-that blocks `CONFIG`) or `not-durable` (the policy was read and is not
-durable). The result never disables `operations.proposals` or `jobs.runner`.
-
-A Redis started with `--appendonly yes --appendfsync everysec --maxmemory-policy
-noeviction` keeps proposals and job state across restarts and reports `attested`.
-A stock `redis:7` image also works. The manifest then reports `not-durable`, and
-a Redis restart can lose recent proposals and job state. If you would rather the server refuse to
-start unless the policy is `attested`, set `Jobs__RequireDurableStore=true`
+Durable jobs need Redis to be configured, entitled and connected. At startup the
+server reads the Redis policy (`appendonly`, `appendfsync`, `maxmemory-policy`)
+and publishes `limits.job.redisDurability.status`: `attested`, `unverified`
+(the policy could not be read), or `not-durable` (the policy was read and is not
+durable). That result does not disable a connected job runtime. Set
+`Jobs__RequireDurableStore=true` to require an attested policy at startup
 (see [Redis durability](troubleshooting.md#redis-durability)).
+
+A Redis volume with `appendonly yes`, `appendfsync everysec` and `noeviction`
+retains Redis-backed job and workflow state across restarts. PostgreSQL backups
+retain the new proposal and operation-instance history.
 
 ### Redis is configured but not entitled
 
 Redis is included with persistent storage, but installing Redis does not grant
-paid features. Durable jobs, workflows, queued imports, proposals and shared coordination need
+paid features. Durable jobs, workflows, queued imports and Redis-backed shared coordination need
 both Redis configuration and the applicable `caching.redis` licence entitlement.
 Without the dependency those operations return a typed `dependency-unavailable`
 receipt; without the entitlement the receipt is `license-required`.

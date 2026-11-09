@@ -122,15 +122,15 @@ public sealed class RedisOffGovernedControlPlaneTests
             },
             new OperationPolicyContext()));
 
-        refusal.MissingDependency.Should().Be("redis");
+        refusal.MissingDependency.Should().Be("postgres");
         var mcpError = McpErrorMapper.Map(refusal);
         mcpError.Data!.Code.Should().Be(McpErrorMapper.Codes.Unavailable);
         mcpError.Data.Retryable.Should().BeFalse();
-        mcpError.Data.MissingDependency.Should().Be("redis");
+        mcpError.Data.MissingDependency.Should().Be("postgres");
     }
 
     [UnitTest]
-    public async Task RedisOffComposition_ApprovalBridge_RefusesWithTypedRedisDependency()
+    public async Task RedisOffComposition_ApprovalBridge_RefusesWithTypedPostgresDependency()
     {
         // honua-server#5733: even where the operation record itself is volatile (Development/Test),
         // an approval-gated call must not invent a proposal, and must not degrade to a non-durable
@@ -154,9 +154,9 @@ public sealed class RedisOffGovernedControlPlaneTests
             },
             new PolicyDecision { Kind = PolicyDecisionKind.RequireApproval }));
 
-        refusal.MissingDependency.Should().Be(CapabilityUnavailableCodes.RedisDependency);
+        refusal.MissingDependency.Should().Be(CapabilityUnavailableCodes.OperationStoreDependency);
         refusal.Capability.Should().Be(CapabilityUnavailableCodes.ControlPlaneProposalsCapability);
-        refusal.RemediationRef.Should().Be(CapabilityUnavailableCodes.RedisRemediationRef);
+        refusal.RemediationRef.Should().Be(CapabilityUnavailableCodes.OperationStoreRemediationRef);
         var mcpError = McpErrorMapper.Map(refusal);
         mcpError.Data!.Code.Should().Be(McpErrorMapper.Codes.Unavailable);
         mcpError.Data.Capability.Should().Be(CapabilityUnavailableCodes.ControlPlaneProposalsCapability);
@@ -199,13 +199,13 @@ public sealed class RedisOffGovernedControlPlaneTests
     };
 
     [UnitTest]
-    public async Task UnavailableOperationProposalStore_RefusesWithTypedRedisDependency()
+    public async Task UnavailableOperationProposalStore_RefusesWithTypedPostgresDependency()
     {
         var store = new UnavailableOperationProposalStore();
 
         var refusal = await Assert.ThrowsAsync<CapabilityUnavailableException>(() => store.GetAsync("proposal-1"));
 
-        refusal.MissingDependency.Should().Be("redis");
+        refusal.MissingDependency.Should().Be("postgres");
         refusal.Capability.Should().Be(CapabilityUnavailableCodes.ControlPlaneProposalsCapability);
         UnavailableOperationProposalStore.IsDurable(store).Should().BeFalse();
         UnavailableOperationProposalStore.IsDurable(null).Should().BeFalse();

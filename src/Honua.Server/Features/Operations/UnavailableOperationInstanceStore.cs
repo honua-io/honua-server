@@ -13,9 +13,9 @@ internal sealed class UnavailableOperationInstanceStore : IOperationInstanceStor
     private static CapabilityUnavailableException Unavailable()
         => new CapabilityUnavailableException(
             CapabilityUnavailableCodes.DurableControlPlaneDetail,
-            CapabilityUnavailableCodes.RedisDependency,
-            CapabilityUnavailableCodes.RedisRemediation,
-            CapabilityUnavailableCodes.RedisRemediationRef);
+            CapabilityUnavailableCodes.OperationStoreDependency,
+            CapabilityUnavailableCodes.OperationStoreRemediation,
+            CapabilityUnavailableCodes.OperationStoreRemediationRef);
 
     public Task<bool> TryCreateAsync(OperationHandle envelope, CancellationToken cancellationToken = default)
         => Task.FromException<bool>(Unavailable());

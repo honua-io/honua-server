@@ -196,3 +196,20 @@ Deprecations follow the [versioning and support policy](versioning-and-support.m
 replacements are announced and documented, deprecated operations are preserved through the
 grace period and answer with `Deprecation` and `Sunset` headers, and removal happens only in
 the next major path.
+
+## Proposal history now lives in PostgreSQL
+
+Operation instances, proposals and their approval records use PostgreSQL as their system of record. They survive server restarts without Redis and have no automatic 30-day expiration. Redis remains optional for the separate capabilities that use it. The same human-approval verification, tenant authorization and replay checks apply to proposals stored in PostgreSQL.
+
+### Upgrade from a Redis-backed proposal store
+
+This release uses a maintenance cut-over rather than reading records from both stores. Existing Redis proposal and operation-instance records are not imported automatically.
+
+1. Pause new mutating submissions and drain client retry queues on the old deployment. Complete or reject all pending proposals and let accepted operations finish before stopping every old server instance.
+2. Back up PostgreSQL and export the existing Redis data using the [backup and restore procedure](../guides/deploy/backup-and-restore.md). Retain the export as the archive of earlier proposals, approval decisions and operation-instance identities.
+3. Upgrade all server instances together and apply the PostgreSQL migrations before resuming submissions. Avoid running old and new writers against the same deployment during the cut-over.
+4. Verify authenticated proposal discovery, create a fresh proposal and confirm that its status survives a server restart before reopening submissions.
+
+The cut-over starts a new operation-instance and idempotency history. An old idempotency key is not evidence of an accepted operation in the new store: do not replay pre-upgrade mutating requests. Keep the archived operation records available when reconciling earlier client requests. After the cut-over, new operation and proposal identities persist across restarts in PostgreSQL.
+
+A rollback must use the matching pre-upgrade PostgreSQL backup and Redis export while submissions are paused. An older server image cannot read the newer PostgreSQL proposal history.

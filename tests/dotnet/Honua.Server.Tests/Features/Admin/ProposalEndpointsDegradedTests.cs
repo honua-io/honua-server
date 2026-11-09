@@ -12,28 +12,16 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Honua.Server.Tests.Features.Admin;
 
-/// <summary>
-/// honua-release#202: the durable operation proposal/approval control plane is composed only
-/// when Redis is configured, but its routes are mapped unconditionally. On a Redis-less install
-/// the surface used to fail with an untyped <c>500</c> that leaked the unresolved DI service
-/// name; it must instead refuse with the same machine-readable capability-unavailable receipt
-/// the geoprocessing job surfaces emit, so a terminal agent can tell "this install cannot do
-/// this" from "this server is broken".
-/// </summary>
-/// <remarks>
-/// The <see cref="WebAppFixture"/> runs without Redis and registers no
-/// <c>IOperationProposalStore</c>/<c>IOperationGateway</c>, which is exactly the degraded
-/// composition under test. <c>ProposalEndpointsTests</c> covers the composed happy path.
-/// </remarks>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
 [Operation(Operations.ApprovalManagement)]
 public sealed class ProposalEndpointsDegradedTests : IAsyncLifetime
 {
-    private readonly WebAppFixture _fixture = new();
+    private readonly WebAppFixture _fixture = CreateUnavailableStoreFixture();
     private HttpClient _client = null!;
 
     public async Task InitializeAsync()
@@ -48,31 +36,12 @@ public sealed class ProposalEndpointsDegradedTests : IAsyncLifetime
         await _fixture.DisposeAsync();
     }
 
-    /// <summary>
-    /// honua-server#3599: pins the composition-root gate itself, not just the HTTP projection of it.
-    /// </summary>
-    /// <remarks>
-    /// The wire tests below prove the refusal fires when the durable control plane is absent, but
-    /// they cannot distinguish "absent because <c>Program.cs</c> gated the registration" from
-    /// "absent because something else failed". The refusal is reached only through the handlers'
-    /// optional <c>[FromServices] IOperationProposalStore? = null</c> parameters, which treat both
-    /// an unregistered store and the fail-closed <see cref="UnavailableOperationProposalStore"/>
-    /// placeholder as absent. Registering <c>RedisOperationProposalStore</c> outside the
-    /// <c>if (connectedRedis != null)</c> gate would not make these routes return the typed
-    /// refusal — it would make DI activation throw on the unresolvable
-    /// <c>IConnectionMultiplexer</c> and hand the caller an unhandled <c>500</c> naming an internal
-    /// DI type, which is exactly the shape #3599 reported from a pinned candidate image. Since
-    /// 2026.1 rc.3 (J1/S1) the no-Redis branch registers the placeholder so the governed admin
-    /// tools still advertise; asserting that the resolved store is never a durable one fails the
-    /// moment the Redis registration moves back out of the gate.
-    /// </remarks>
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/proposals")]
-    public void Composition_WithoutRedis_RegistersNeitherDurableProposalStoreNorGateway()
+    public void Composition_WithoutProposalStore_RegistersNeitherDurableProposalStoreNorGateway()
     {
         _fixture.Services.GetService<IOperationProposalStore>().Should().BeOfType<UnavailableOperationProposalStore>(
-            "the only durable implementation is Redis-backed and hard-depends on IConnectionMultiplexer, so "
-            + "a Redis-less host composes only the fail-closed placeholder");
+            "the fixture explicitly removes persistent proposal storage");
         _fixture.Services.GetService<IOperationGateway>().Should().BeNull(
             "the gateway constructor-injects IOperationProposalStore, so it cannot be composed "
             + "wherever the store is not");
@@ -122,12 +91,9 @@ public sealed class ProposalEndpointsDegradedTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/admin/proposals")]
-    public async Task ListProposals_WithRedisConfiguredButUnentitled_ReportsLicenseNotMissingRedis()
+    public async Task ListProposals_WithoutStoreAndUnentitledRedis_StillReportsPostgresDependency()
     {
-        // Redis IS deployed; only the Pro `caching.redis` entitlement is missing, so the control
-        // plane was composed out by licensing. "Configure Redis and restart" would be remediation
-        // that cannot work, so the receipt names the entitlement instead (honua-release#202).
-        var fixture = new WebAppFixture()
+        var fixture = CreateUnavailableStoreFixture()
             .ConfigureServices(static services =>
                 services.Configure<DurableJobSubstrateOptions>(options =>
                 {
@@ -141,16 +107,7 @@ public sealed class ProposalEndpointsDegradedTests : IAsyncLifetime
             using var client = fixture.CreateAdminClient();
             using var response = await client.GetAsync("/api/v1/admin/proposals");
 
-            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
-
-            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            var root = document.RootElement;
-            root.GetProperty("code").GetString().Should().Be(CapabilityUnavailableCodes.EntitlementErrorCode);
-            root.GetProperty("missingEntitlement").GetString()
-                .Should().Be(CapabilityUnavailableCodes.RedisCacheEntitlement);
-            root.TryGetProperty("missingDependency", out _).Should().BeFalse(
-                "Redis is present; nothing is missing but a licence");
-            root.GetProperty("remediation").GetString().Should().NotContain("Set ConnectionStrings__Redis");
+            await AssertCapabilityUnavailableAsync(response);
         }
         finally
         {
@@ -158,20 +115,12 @@ public sealed class ProposalEndpointsDegradedTests : IAsyncLifetime
         }
     }
 
-    /// <summary>
-    /// honua-server#3599: the entitlement split is a property of the control plane, not of the read
-    /// routes. Approve and reject are the two the terminal journey actually blocks on
-    /// (honua-release#123 stages 7/8), and they reach <c>ControlPlaneUnavailable</c> through a
-    /// different guard than list does — approve requires BOTH the gateway and the store, reject only
-    /// the gateway — so cause classification is asserted on them directly rather than assumed from
-    /// the list route.
-    /// </summary>
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/proposals/{id}/approve")]
     [Endpoint("POST /api/v1/admin/proposals/{id}/reject")]
-    public async Task ApproveAndRejectProposal_WithRedisConfiguredButUnentitled_ReportsLicenseNotMissingRedis()
+    public async Task ApproveAndRejectProposal_WithoutStoreAndUnentitledRedis_StillReportPostgresDependency()
     {
-        var fixture = new WebAppFixture()
+        var fixture = CreateUnavailableStoreFixture()
             .ConfigureServices(static services =>
                 services.Configure<DurableJobSubstrateOptions>(options =>
                 {
@@ -188,7 +137,7 @@ public sealed class ProposalEndpointsDegradedTests : IAsyncLifetime
             using var approve = await client.PostAsync(
                 "/api/v1/admin/proposals/does-not-exist/approve",
                 approveBody);
-            await AssertLicenseRequiredAsync(approve);
+            await AssertCapabilityUnavailableAsync(approve);
 
             using var rejectBody = new StringContent(
                 """{"reason":"no"}""",
@@ -197,7 +146,7 @@ public sealed class ProposalEndpointsDegradedTests : IAsyncLifetime
             using var reject = await client.PostAsync(
                 "/api/v1/admin/proposals/does-not-exist/reject",
                 rejectBody);
-            await AssertLicenseRequiredAsync(reject);
+            await AssertCapabilityUnavailableAsync(reject);
         }
         finally
         {
@@ -205,28 +154,13 @@ public sealed class ProposalEndpointsDegradedTests : IAsyncLifetime
         }
     }
 
-    private static async Task AssertLicenseRequiredAsync(HttpResponseMessage response)
-    {
-        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
-
-        var body = await response.Content.ReadAsStringAsync();
-        body.Should().NotContain("IOperationProposalStore",
-            "the refusal must not leak unresolved DI service names to a client");
-
-        using var document = JsonDocument.Parse(body);
-        var root = document.RootElement;
-        root.GetProperty("type").GetString().Should().Be(CapabilityUnavailableCodes.ProblemType);
-        root.GetProperty("code").GetString().Should().Be(CapabilityUnavailableCodes.EntitlementErrorCode);
-        root.GetProperty("missingEntitlement").GetString()
-            .Should().Be(CapabilityUnavailableCodes.RedisCacheEntitlement);
-        root.TryGetProperty("missingDependency", out _).Should().BeFalse(
-            "Redis is present; nothing is missing but a licence");
-        root.GetProperty("remediation").GetString().Should().NotContain("Set ConnectionStrings__Redis");
-        root.GetProperty("remediationRef").GetString()
-            .Should().Be(CapabilityUnavailableCodes.EntitlementRemediationRef);
-        root.GetProperty("capability").GetString()
-            .Should().Be(CapabilityUnavailableCodes.ControlPlaneProposalsCapability);
-    }
+    private static WebAppFixture CreateUnavailableStoreFixture() => new WebAppFixture()
+        .ConfigureServices(static services =>
+        {
+            services.RemoveAll<IOperationProposalStore>();
+            services.AddSingleton<IOperationProposalStore, UnavailableOperationProposalStore>();
+            services.RemoveAll<IOperationGateway>();
+        });
 
     private static async Task AssertCapabilityUnavailableAsync(HttpResponseMessage response)
     {
@@ -241,11 +175,11 @@ public sealed class ProposalEndpointsDegradedTests : IAsyncLifetime
         root.GetProperty("type").GetString().Should().Be(CapabilityUnavailableCodes.ProblemType);
         root.GetProperty("status").GetInt32().Should().Be(503);
         root.GetProperty("code").GetString().Should().Be(CapabilityUnavailableCodes.ErrorCode);
-        root.GetProperty("missingDependency").GetString().Should().Be(CapabilityUnavailableCodes.RedisDependency);
+        root.GetProperty("missingDependency").GetString().Should().Be(CapabilityUnavailableCodes.OperationStoreDependency);
         root.GetProperty("capability").GetString().Should().Be(
             CapabilityUnavailableCodes.ControlPlaneProposalsCapability,
             "the refusal joins the operations.proposals manifest entry that reports the same surface unavailable");
         root.GetProperty("remediation").GetString().Should().NotBeNullOrWhiteSpace();
-        root.GetProperty("remediationRef").GetString().Should().Be(CapabilityUnavailableCodes.RedisRemediationRef);
+        root.GetProperty("remediationRef").GetString().Should().Be(CapabilityUnavailableCodes.OperationStoreRemediationRef);
     }
 }

@@ -58,6 +58,8 @@ create this proposal decision join. Failures after the execution
 claim retain their existing compensation and `operation.apply_failed` audit
 boundary; they do not also emit this pre-claim denial event.
 
+Proposal, operation-instance and approval history persists in PostgreSQL without an automatic expiration. Redis is not required for this history. Existing Redis-backed deployments must follow the [maintenance cut-over](../../reference/control-plane-migration-guide.md#proposal-history-now-lives-in-postgresql) before upgrading.
+
 Approval records retain a versioned initiation record, the exact reviewed plan
 binding, and the verified human decision before execution is claimed. Pending
 legacy records without this binding require a fresh proposal; resolved history

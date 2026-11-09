@@ -20,6 +20,12 @@ namespace Honua.Server.Features.Operations;
 
 internal static class OperationsServiceCollectionExtensions
 {
+    internal static bool HasDurableProposalStore(this IServiceCollection services)
+        => services.Any(descriptor => descriptor.ServiceType ==
+            typeof(Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore) &&
+            descriptor.ImplementationType != typeof(Honua.Core.Features.ControlPlane.UnavailableOperationProposalStore) &&
+            descriptor.ImplementationInstance is not Honua.Core.Features.ControlPlane.UnavailableOperationProposalStore);
+
     public static IServiceCollection AddOperationsToolset(
         this IServiceCollection services,
         IConfiguration configuration,
@@ -96,13 +102,7 @@ internal static class OperationsServiceCollectionExtensions
                 sp.GetService<IConnectionMultiplexer>() is { } redis
                     ? new RedisOperationInstanceStore(redis)
                     : new UnavailableOperationInstanceStore());
-            // The durable-runtime validator and proposal reconcilers stay gated on a REAL
-            // proposal store: a Redis-off host composes the fail-closed placeholder only so
-            // the governed admin catalogs advertise (J1/S1), not to claim a durable runtime.
-            if (services.Any(descriptor => descriptor.ServiceType ==
-                    typeof(Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore) &&
-                    descriptor.ImplementationType != typeof(Honua.Core.Features.ControlPlane.UnavailableOperationProposalStore) &&
-                    descriptor.ImplementationInstance is not Honua.Core.Features.ControlPlane.UnavailableOperationProposalStore))
+            if (services.HasDurableProposalStore())
             {
                 services.AddHostedService<OperationRuntimeStartupValidator>();
                 // Janitor sweeps open Redis and the database on an interval. The event-handler
@@ -158,10 +158,6 @@ internal static class OperationsServiceCollectionExtensions
         services.TryAddDeferredOperationExecutor<CoordinatedReleaseRollbackOperationExecutor>(WorkflowRollbackOperations.CoordinatedRelease);
         services.TryAddScoped<IStudioDraftMutationRuntime, StudioDraftMutationRuntime>();
 
-        // True on every production topology: Redis-on hosts register the durable store and
-        // Redis-off hosts register UnavailableOperationProposalStore, so the governed admin
-        // tools advertise everywhere and approval-gated calls refuse at call time with the
-        // typed capability-unavailable outcome (the approval bridge finds no gateway).
         var hasProposalStore = services.Any(descriptor => descriptor.ServiceType ==
             typeof(Honua.Core.Features.ControlPlane.Abstractions.IOperationProposalStore));
         if (hasProposalStore &&

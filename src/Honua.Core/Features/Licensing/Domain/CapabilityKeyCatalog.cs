@@ -133,7 +133,7 @@ public static class CapabilityKeyCatalog
         new("admin.control-plane", "Admin Control Plane", Categories.ControlPlane,
             HonuaEdition.Community, "General administrative CRUD surfaces (connections, metadata, services, users, roles, configuration) with no dedicated entitlement of their own. Isolation between administrative scopes remains mandatory."),
         new("operations.proposals", "Governed Operation Proposals", Categories.ControlPlane,
-            HonuaEdition.Community, "The governed operation proposal and approval control plane behind approval-gated honua_admin_* tools, /api/v1/admin/proposals and Studio drafts. Advertised as operations.proposals on the honua.capability_manifest.v1 wire. The control plane itself is Community; proposals persist in the Redis-backed durable store, so a host without Redis (or without the caching.redis entitlement) advertises the governed tools but refuses proposal-requiring calls with a typed capability-unavailable receipt."),
+            HonuaEdition.Community, "The governed operation proposal and approval control plane behind approval-gated honua_admin_* tools, /api/v1/admin/proposals and Studio drafts. Advertised as operations.proposals on the honua.capability_manifest.v1 wire. The control plane itself is Community; proposals and operation instances persist in PostgreSQL independently of Redis and the caching.redis entitlement."),
 
         // Ops
         new("ops.health", "Health Checks", Categories.Ops,

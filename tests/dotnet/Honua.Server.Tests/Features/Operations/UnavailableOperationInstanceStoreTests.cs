@@ -10,16 +10,14 @@ namespace Honua.Server.Tests.Features.OperationsUnavailable;
 public sealed class UnavailableOperationInstanceStoreTests
 {
     [Fact]
-    public async Task GetAsync_WithoutRedis_ThrowsTypedCapabilityFailure()
+    public async Task GetAsync_WithoutPostgres_ThrowsTypedCapabilityFailure()
     {
         var store = new UnavailableOperationInstanceStore();
 
         var exception = await Assert.ThrowsAsync<CapabilityUnavailableException>(
             () => store.GetAsync("operation-1"));
 
-        Assert.Equal("redis", exception.MissingDependency);
-        // A missing Redis connection is distinct from an unentitled Redis deployment;
-        // the refusal must identify the dependency without conflating those remedies.
+        Assert.Equal("postgres", exception.MissingDependency);
         Assert.DoesNotContain("caching.redis", exception.Message);
     }
 }

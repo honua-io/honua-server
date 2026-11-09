@@ -154,7 +154,7 @@ internal sealed partial class RedisOperationProposalStore(
             }
 
             var proposal = await GetAsync(proposalId.ToString(), cancellationToken).ConfigureAwait(false);
-            if (proposal == null || IsTerminal(proposal.Status))
+            if (proposal == null || proposal.Status.IsTerminal())
             {
                 staleIds.Add(proposalId);
                 continue;
@@ -181,7 +181,7 @@ internal sealed partial class RedisOperationProposalStore(
 
         var payload = JsonSerializer.Serialize(proposal, OperationProposalJsonContext.Default.OperationProposal);
         var writeTask = transaction.StringSetAsync(key, payload, retention);
-        if (!IsTerminal(proposal.Status))
+        if (!proposal.Status.IsTerminal())
         {
             _ = transaction.SetAddAsync(ActiveProposalsKey, proposal.ProposalId);
             _ = transaction.SetAddAsync(GetKindActiveKey(proposal.Kind), proposal.ProposalId);
@@ -200,7 +200,7 @@ internal sealed partial class RedisOperationProposalStore(
     private async Task UpdateActiveIndexAsync(OperationProposal proposal)
     {
         var id = (RedisValue)proposal.ProposalId;
-        if (IsTerminal(proposal.Status))
+        if (proposal.Status.IsTerminal())
         {
             await _database.SetRemoveAsync(ActiveProposalsKey, id).ConfigureAwait(false);
             await _database.SetRemoveAsync(GetKindActiveKey(proposal.Kind), id).ConfigureAwait(false);
@@ -210,13 +210,6 @@ internal sealed partial class RedisOperationProposalStore(
         await _database.SetAddAsync(ActiveProposalsKey, id).ConfigureAwait(false);
         await _database.SetAddAsync(GetKindActiveKey(proposal.Kind), id).ConfigureAwait(false);
     }
-
-    private static bool IsTerminal(OperationProposalStatus status)
-        => status is OperationProposalStatus.Succeeded
-            or OperationProposalStatus.Failed
-            or OperationProposalStatus.Rejected
-            or OperationProposalStatus.RolledBack
-            or OperationProposalStatus.Cancelled;
 
     private static string GetProposalKey(string proposalId) => $"controlplane:proposal:{proposalId}";
 

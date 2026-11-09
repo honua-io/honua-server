@@ -591,7 +591,8 @@ internal sealed class CapabilityManifestService(
                 requiresAuthentication: spec.RequiresAuthentication,
                 requiresEnvironment: spec.RequiresEnvironment,
                 requiresWorkspace: spec.RequiresWorkspace,
-                requiresDurableJobStore: spec.RequiresDurableJobStore));
+                requiresDurableJobStore: spec.RequiresDurableJobStore,
+                unavailableReasonOverride: spec.UnavailableReasonOverride));
         }
 
         // codeql[cs/linq/missed-where]: adds a capability only when that id is not already present
@@ -612,14 +613,10 @@ internal sealed class CapabilityManifestService(
         =>
         [
             Capability("ops.findings", "operate", context, requiresAuthentication: true),
-            // The governed proposal/approval control plane (honua_admin_* approval-gated tools,
-            // /api/v1/admin/proposals, Studio drafts) persists in the Redis-backed durable store.
-            // The tools advertise on every topology; this entry is what tells an agent, before it
-            // calls one, that a Redis-off host refuses with the typed capability-unavailable
-            // receipt (dependency-unavailable; license-required when Redis is unentitled).
             Capability(OperationsProposalsCapabilityId, "operate", context,
+                configured: runtimeInventory.HasDurableProposalStore,
                 requiresAuthentication: true,
-                requiresDurableJobStore: true),
+                unavailableReasonOverride: CapabilityReasonCodes.DependencyUnavailable),
             Capability("ops.autonomy", "operate", context,
                 configured: operationCapabilities.HasAutonomyPolicyStore,
                 requiresAuthentication: true),
@@ -718,7 +715,12 @@ internal sealed class CapabilityManifestService(
             ["versioning.branch"] = new() { EntitlementKey = FeatureCatalog.BranchVersioningKey },
             ["operate.status"] = new() { RequiresAuthentication = true },
             ["ops.findings"] = new() { RequiresAuthentication = true },
-            [OperationsProposalsCapabilityId] = new() { RequiresAuthentication = true, RequiresDurableJobStore = true },
+            [OperationsProposalsCapabilityId] = new()
+            {
+                Configured = runtimeInventory.HasDurableProposalStore,
+                RequiresAuthentication = true,
+                UnavailableReasonOverride = CapabilityReasonCodes.DependencyUnavailable,
+            },
             ["ops.autonomy"] = new()
             {
                 Configured = operationCapabilities.HasAutonomyPolicyStore,
@@ -1565,6 +1567,8 @@ internal sealed class CapabilityManifestService(
         public bool Supported { get; init; } = true;
 
         public bool Configured { get; init; } = true;
+
+        public string? UnavailableReasonOverride { get; init; }
 
         public string? EntitlementKey { get; init; }
 

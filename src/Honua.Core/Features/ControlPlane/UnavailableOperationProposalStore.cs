@@ -10,18 +10,6 @@ using Honua.Core.Features.Guardrails.Domain;
 
 namespace Honua.Core.Features.ControlPlane;
 
-/// <summary>
-/// Fail-closed proposal store composed when the host has no Redis-backed durable
-/// control plane (Redis absent or the <c>caching.redis</c> entitlement missing).
-/// </summary>
-/// <remarks>
-/// Its presence lets the governed admin operation catalogs register their executors on
-/// every topology, so <c>honua_admin_*</c> tools are advertised consistently and an
-/// approval-gated call refuses at call time with the typed capability-unavailable
-/// receipt instead of silently disappearing from discovery (2026.1 rc.3, J1/S1).
-/// Consumers that branch on "durable proposal store present" must treat this type as
-/// absent; use <see cref="IsDurable"/>.
-/// </remarks>
 public sealed class UnavailableOperationProposalStore : IOperationProposalStore
 {
     /// <summary>
@@ -36,9 +24,9 @@ public sealed class UnavailableOperationProposalStore : IOperationProposalStore
     private static CapabilityUnavailableException Unavailable()
         => new(
             CapabilityUnavailableCodes.DurableControlPlaneDetail,
-            CapabilityUnavailableCodes.RedisDependency,
-            CapabilityUnavailableCodes.RedisRemediation,
-            CapabilityUnavailableCodes.RedisRemediationRef,
+            CapabilityUnavailableCodes.OperationStoreDependency,
+            CapabilityUnavailableCodes.OperationStoreRemediation,
+            CapabilityUnavailableCodes.OperationStoreRemediationRef,
             CapabilityUnavailableCodes.ControlPlaneProposalsCapability);
 
     /// <inheritdoc />
