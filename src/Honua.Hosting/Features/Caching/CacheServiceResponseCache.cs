@@ -229,6 +229,7 @@ internal sealed class CacheServiceResponseCache : IResponseCache
             return false;
         }
 
+        var reservationsBeforeInvalidation = Volatile.Read(ref _reservationSequence);
         // Each namespace token bumps an independent version key, so the writes have
         // no ordering dependency on one another; issue them concurrently instead of
         // one round trip at a time.
@@ -249,6 +250,7 @@ internal sealed class CacheServiceResponseCache : IResponseCache
         lock (_budgetLock)
         {
             var invalidated = _reservations.Values.Where(reservation =>
+                reservation.Sequence <= reservationsBeforeInvalidation &&
                 GetNamespaceKeysForCacheKey(reservation.Key).Any(namespaces.Contains)).ToArray();
             foreach (var reservation in invalidated)
             {

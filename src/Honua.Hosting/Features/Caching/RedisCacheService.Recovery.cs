@@ -92,22 +92,24 @@ internal sealed partial class RedisCacheService
         {
             throw new InvalidOperationException("Response-cache recovery generation could not be serialized.");
         }
-        return SetDistributedEntryAsync(key, payload, ResponseCacheVersionKeys.Lifetime, cancellationToken);
+        return SetDistributedEntryAsync(new DistributedCacheWrite(key, payload, ResponseCacheVersionKeys.Lifetime), cancellationToken);
     }
 
-    private async Task SetDistributedEntryAsync(string key, byte[] payload, TimeSpan ttl, CancellationToken cancellationToken)
+    private async Task SetDistributedEntryAsync(DistributedCacheWrite entry, CancellationToken cancellationToken)
     {
         if (_redis is not null)
         {
             await _redisPolicy.ExecuteAsync(
-                _ => SetRedisEntryWithIndexAsync(key, payload, ttl, cancellationToken), cancellationToken).ConfigureAwait(false);
+                _ => SetRedisEntryWithIndexAsync(entry.Key, entry.Payload, entry.Ttl, cancellationToken), cancellationToken).ConfigureAwait(false);
         }
         else if (_distributedCache is not null)
         {
-            var options = new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = ttl };
+            var options = new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = entry.Ttl };
             await _redisPolicy.ExecuteAsync(
-                ct => _distributedCache.SetAsync(key, payload, options, ct), cancellationToken).ConfigureAwait(false);
-            await TrackIndexedKeyAsync(key, ttl, cancellationToken).ConfigureAwait(false);
+                ct => _distributedCache.SetAsync(entry.Key, entry.Payload, options, ct), cancellationToken).ConfigureAwait(false);
+            await TrackIndexedKeyAsync(entry.Key, entry.Ttl, cancellationToken).ConfigureAwait(false);
         }
     }
+
+    private readonly record struct DistributedCacheWrite(string Key, byte[] Payload, TimeSpan Ttl);
 }

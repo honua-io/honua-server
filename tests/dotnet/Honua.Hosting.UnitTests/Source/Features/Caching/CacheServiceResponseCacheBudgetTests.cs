@@ -174,6 +174,42 @@ public sealed class CacheServiceResponseCacheBudgetTests
         Assert.Equal(2, backend.ResponseWrites);
     }
 
+    [UnitTheory]
+    [InlineData(1, 65_536)]
+    [InlineData(20, 11_000)]
+    [Operation(Operations.Cache)]
+    public async Task RemoveByPatternAsync_NewGenerationFillDuringInvalidation_RetainsItsBudget(int maxEntries, int maxBytes)
+    {
+        var backend = new RecordingCache();
+        var cache = ResponseCache(backend, maxEntries, maxBytes);
+        const string prefix = "query:featureserver:service:alpha:layer:1:";
+        var published = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finishInvalidation = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        backend.AfterVersionWrite = async _ =>
+        {
+            published.TrySetResult();
+            await finishInvalidation.Task;
+        };
+        var payload = new CachedResponse(new byte[10_000], "application/json");
+        var invalidation = cache.RemoveByPatternAsync(prefix + "*");
+        try
+        {
+            await published.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await cache.SetAsync(await cache.BindKeyAsync(prefix + "first"), payload, Lifetime);
+        }
+        finally
+        {
+            finishInvalidation.TrySetResult();
+            await invalidation;
+        }
+
+        await cache.SetAsync(await cache.BindKeyAsync(prefix + "second"), payload, Lifetime);
+
+        Assert.Equal(1, backend.ResponseWrites);
+        Assert.Same(payload, await cache.GetAsync<CachedResponse>(prefix + "first"));
+        Assert.Null(await cache.GetAsync<CachedResponse>(prefix + "second"));
+    }
+
     private static CacheServiceResponseCache ResponseCache(RecordingCache backend,
         int maxEntries = 20, int maxBytes = 65_536)
         => new(backend.Service, new CacheOptions
@@ -190,6 +226,7 @@ public sealed class CacheServiceResponseCacheBudgetTests
         public ICacheService Service { get; } = Substitute.For<ICacheService>();
         public ConcurrentDictionary<string, CachedResponse> Responses { get; } = new(StringComparer.Ordinal);
         public Func<string, Task>? BeforeResponseWrite { get; set; }
+        public Func<string, Task>? AfterVersionWrite { get; set; }
         public Func<string, string?, Task<string?>>? ReadVersion { get; set; }
         public int ResponseWrites => Volatile.Read(ref _responseWrites);
 
@@ -205,10 +242,14 @@ public sealed class CacheServiceResponseCacheBudgetTests
             Service.GetAsync<CachedResponse>(Arg.Any<string>(), Arg.Any<CancellationToken>())
                 .Returns(call => Task.FromResult(Responses.GetValueOrDefault(call.ArgAt<string>(0))));
             Service.SetAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
-                .Returns(call =>
+                .Returns(async call =>
                 {
-                    _versions[call.ArgAt<string>(0)] = call.ArgAt<string>(1);
-                    return Task.CompletedTask;
+                    var key = call.ArgAt<string>(0);
+                    _versions[key] = call.ArgAt<string>(1);
+                    if (AfterVersionWrite is { } afterWrite)
+                    {
+                        await afterWrite(key);
+                    }
                 });
             Service.SetAsync(Arg.Any<string>(), Arg.Any<CachedResponse>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
                 .Returns(async call =>

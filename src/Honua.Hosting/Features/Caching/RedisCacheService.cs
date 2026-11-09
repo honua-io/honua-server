@@ -316,7 +316,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             {
                 try
                 {
-                    await SetDistributedEntryAsync(prefixedKey, data, ttl, cancellationToken).ConfigureAwait(false);
+                    await SetDistributedEntryAsync(new DistributedCacheWrite(prefixedKey, data, ttl), cancellationToken).ConfigureAwait(false);
 
                     _writeMetadata[prefixedKey] = new CacheWriteInfo(DateTime.UtcNow.Ticks, ttl.Ticks);
                     return;
