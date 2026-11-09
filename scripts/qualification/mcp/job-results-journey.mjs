@@ -39,7 +39,7 @@ async function listJobs(client) {
   }, 'incomplete-job-pagination');
 }
 
-async function artifactBytes(artifact, owner, apiKey, jobId) {
+async function artifactBytes({ artifact, owner, apiKey, jobId }) {
   const prefix = 'data:application/geo+json;base64,';
   if (artifact.uri?.startsWith(prefix)) {
     if (artifact.uri.length > maxBytes * 2) throw new JobJourneyFailure('oversized-artifact');
@@ -118,7 +118,7 @@ export async function jobResultsJourney({ baseUrl, apiKey, otherApiKey, missingJ
       || !Array.isArray(results.errors) || results.errors.length) throw new JobJourneyFailure('invalid-job-results');
     const artifact = results.artifacts[0];
     if (!artifact.artifactId || artifact.kind !== 'FeatureLayer' || artifact.contentType !== 'application/geo+json') throw new JobJourneyFailure('invalid-buffer-artifact');
-    const geometry = verifyGeometry(await artifactBytes(artifact, owner, apiKey, jobId));
+    const geometry = verifyGeometry(await artifactBytes({ artifact, owner, apiKey, jobId }));
     if ((await listJobs(other.client)).some(job => job.jobId === jobId)) throw new JobJourneyFailure('cross-user-job-listed');
     const denied = await deniedResults(other.client, jobId);
     const missing = await deniedResults(other.client, missingJobId);
