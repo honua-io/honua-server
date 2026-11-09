@@ -40,9 +40,17 @@ function runInspector({ entry, config, directory, method, view, extra, deadline 
         resolve(result);
       } catch {
         const toolIndex = extra.indexOf('--tool-name');
+        let httpStatus;
+        let clientErrorCode;
+        try {
+          const diagnostic = JSON.parse(stderr).error;
+          if (Number.isInteger(diagnostic?.status) && diagnostic.status >= 100 && diagnostic.status <= 599) httpStatus = diagnostic.status;
+          if (['error', 'auth_required', 'unreachable', 'tool_error', 'schema_unportable', 'store_unavailable'].includes(diagnostic?.code)) clientErrorCode = diagnostic.code;
+        } catch {}
         reject(new CatalogContractFailure('inspector-invocation-failed', {
           method, view, tool: toolIndex < 0 ? undefined : extra[toolIndex + 1],
           exitCode: typeof code === 'number' ? code : undefined, timedOut: error?.killed === true,
+          httpStatus, clientErrorCode, rateLimitDiagnostic: /429|rate.?limit|too many requests/i.test(stderr),
           schemaDiagnostic: /schema|validation|format|ajv/i.test(stderr),
           authorizationDiagnostic: /authentication|unauthori|forbidden|\b401\b|\b403\b/i.test(stderr),
           interactiveDiagnostic: /elicitation|approval|input.required/i.test(stderr),
