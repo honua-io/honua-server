@@ -62,7 +62,7 @@ internal static class ImportTableOwnership
         if (promoted.Length == 0) return propertiesExpression;
         var keys = string.Join(", ", promoted.Select(QuoteLiteral));
         return $"CASE WHEN (SELECT obj_description(to_regclass({QuoteLiteral(qualifiedTable)}), 'pg_class') = '{Marker}') "
-            + $"THEN ({propertiesExpression} - ARRAY[{keys}]::text[]) ELSE {propertiesExpression} END";
+            + $"THEN (to_jsonb({propertiesExpression}) - ARRAY[{keys}]::text[]) ELSE to_jsonb({propertiesExpression}) END";
     }
 
     private static string QuoteLiteral(string value) => "'" + value.Replace("'", "''", StringComparison.Ordinal) + "'";

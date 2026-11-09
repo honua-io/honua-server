@@ -203,7 +203,7 @@ public sealed partial class LayerPublishingIntegrationTests
         using var geoJsonResult = JsonDocument.Parse(geoJsonPayload);
         var geoJsonProperties = geoJsonResult.RootElement.GetProperty("features")[0].GetProperty("properties");
         geoJsonProperties.GetProperty("name").GetString().Should().Be("Alpha");
-        if (geoJsonProperties.TryGetProperty("properties", out var residual)) AssertNoPromotedDuplicates(residual);
+        AssertNoPromotedDuplicates(geoJsonProperties.GetProperty("properties"));
 
     }
 
@@ -375,7 +375,7 @@ public sealed partial class LayerPublishingIntegrationTests
         attributes.GetProperty("population").ValueKind.Should().Be(JsonValueKind.Number);
         attributes.GetProperty("population").GetInt64().Should().Be(population);
         attributes.TryGetProperty("created_at", out _).Should().BeFalse();
-        if (attributes.TryGetProperty("properties", out var residual)) AssertNoPromotedDuplicates(residual);
+        AssertNoPromotedDuplicates(attributes.GetProperty("properties"));
     }
 
     private static void AssertNoPromotedDuplicates(JsonElement residual)

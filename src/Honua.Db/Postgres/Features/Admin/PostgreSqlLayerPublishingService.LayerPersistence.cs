@@ -391,7 +391,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 SELECT
                     src.tableoid AS source_oid,
                     src.ctid AS source_tid,
-                    src AS source_row
+                    ROW(src.*)::{sourceTable} AS source_row
                 FROM {sourceTable} AS src
                 WHERE @hasCursor = FALSE
                     OR (src.tableoid, src.ctid) > (@tableOid, @ctid::tid)
